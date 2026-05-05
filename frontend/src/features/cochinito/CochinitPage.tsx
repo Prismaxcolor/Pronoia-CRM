@@ -2,17 +2,33 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Wallet, ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
   Plus, TrendingDown, TrendingUp, Coins, Search,
+  Building2, Globe, Pencil, Trash2,
 } from 'lucide-react';
-import { obtenerBancas, obtenerMovimientos } from '../../services/banca-service';
+import { obtenerBancas, obtenerMovimientos, eliminarBanca } from '../../services/banca-service';
 import { useAuth } from '../../hooks/use-auth';
-import type { Banca, Movimiento, TipoMovimiento } from '@shared/types/index.js';
+import type { Banca, Movimiento, TipoMovimiento, TipoBanca } from '@shared/types/index.js';
 import TasaCambioWidget from './TasaCambioWidget';
 import CrearMovimientoModal from './CrearMovimientoModal';
+import BancaFormModal from './BancaFormModal';
 
-const TIPO_ICON: Record<TipoMovimiento, React.ReactNode> = {
+const TIPO_MOV_ICON: Record<TipoMovimiento, React.ReactNode> = {
   ingreso: <ArrowDownLeft size={16} className="text-green-600" />,
   egreso: <ArrowUpRight size={16} className="text-red-600" />,
   transferencia: <ArrowLeftRight size={16} className="text-blue-600" />,
+};
+
+const TIPO_BANCA_ICON: Record<TipoBanca, React.ReactNode> = {
+  banco_nacional: <Building2 size={14} />,
+  banco_internacional: <Globe size={14} />,
+  exchange: <Coins size={14} />,
+  efectivo: <Wallet size={14} />,
+};
+
+const TIPO_BANCA_LABEL: Record<TipoBanca, string> = {
+  banco_nacional: 'Nacional',
+  banco_internacional: 'Internacional',
+  exchange: 'Exchange',
+  efectivo: 'Efectivo',
 };
 
 type FiltroTipo = 'todos' | TipoMovimiento;
@@ -31,8 +47,11 @@ function CochinitPage() {
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');
   const [busqueda, setBusqueda] = useState('');
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [modalBanca, setModalBanca] = useState<{ abierto: true; banca: Banca | null } | { abierto: false }>({ abierto: false });
 
   const puedeCrear = tienePermiso('cochinito', 'crear');
+  const puedeEditar = tienePermiso('cochinito', 'editar');
+  const puedeEliminar = tienePermiso('cochinito', 'eliminar');
 
   const cargar = async () => {
     const [b, m] = await Promise.all([obtenerBancas(), obtenerMovimientos()]);
@@ -78,6 +97,26 @@ function CochinitPage() {
 
   const onMovimientoCreado = async () => {
     setModalAbierto(false);
+    setCargando(true);
+    await cargar();
+    setCargando(false);
+  };
+
+  const onBancaGuardada = async () => {
+    setModalBanca({ abierto: false });
+    setCargando(true);
+    await cargar();
+    setCargando(false);
+  };
+
+  const handleEliminarBanca = async (banca: Banca) => {
+    if (!window.confirm(`¿Eliminar la banca "${banca.nombre}"? Esta acción no se puede deshacer.`)) return;
+    const result = await eliminarBanca(banca.id, banca.saldo);
+    if (!result.ok) {
+      window.alert(result.razon ?? 'No se pudo eliminar la banca.');
+      return;
+    }
+    if (bancaSeleccionada === banca.id) setBancaSeleccionada(null);
     setCargando(true);
     await cargar();
     setCargando(false);
@@ -129,31 +168,102 @@ function CochinitPage() {
 
       {/* Bancas + tasa widget */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {bancas.map(banca => {
-            const activa = bancaSeleccionada === banca.id;
-            return (
+        <div className="lg:col-span-2 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Bancas</h2>
+            {puedeCrear && (
               <button
-                key={banca.id}
                 type="button"
-                onClick={() => setBancaSeleccionada(activa ? null : banca.id)}
-                className={`text-left bg-surface rounded-xl p-5 shadow-sm border-2 transition-all hover:shadow-md ${
-                  activa ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'
-                }`}
+                onClick={() => setModalBanca({ abierto: true, banca: null })}
+                className="inline-flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700 font-medium"
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${banca.moneda === 'USD' ? 'bg-brand-500' : 'bg-brand-800'}`} />
-                  <h3 className="font-semibold text-text-primary text-sm">{banca.nombre}</h3>
-                </div>
-                <p className="text-text-muted text-xs mb-3 line-clamp-1">{banca.descripcion}</p>
-                <p className="text-2xl font-bold text-brand-600 leading-none">
-                  {banca.moneda === 'USD' ? '$' : 'Bs '}
-                  {banca.saldo.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </p>
-                <p className="text-xs text-text-muted mt-1.5">{banca.moneda}</p>
+                <Plus size={14} />
+                Nueva banca
               </button>
-            );
-          })}
+            )}
+          </div>
+
+          {bancas.length === 0 ? (
+            <div className="bg-surface rounded-xl p-8 border-2 border-dashed border-border text-center">
+              <Wallet size={28} className="mx-auto text-text-muted mb-2 opacity-50" />
+              <p className="text-text-secondary text-sm mb-3">Aún no hay bancas registradas.</p>
+              {puedeCrear && (
+                <button
+                  type="button"
+                  onClick={() => setModalBanca({ abierto: true, banca: null })}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700"
+                >
+                  <Plus size={14} />
+                  Crear la primera banca
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {bancas.map(banca => {
+                const activa = bancaSeleccionada === banca.id;
+                return (
+                  <div
+                    key={banca.id}
+                    className={`group relative bg-surface rounded-xl p-5 shadow-sm border-2 transition-all hover:shadow-md ${
+                      activa ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'
+                    }`}
+                  >
+                    {/* Acciones de banca (top-right, hover) */}
+                    {(puedeEditar || puedeEliminar) && (
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {puedeEditar && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setModalBanca({ abierto: true, banca }); }}
+                            className="p-1.5 rounded-md bg-surface-alt hover:bg-brand-50 text-text-muted hover:text-brand-600 transition-colors"
+                            title="Editar banca"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                        {puedeEliminar && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleEliminarBanca(banca); }}
+                            className="p-1.5 rounded-md bg-surface-alt hover:bg-red-50 text-text-muted hover:text-red-600 transition-colors"
+                            title="Eliminar banca"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Cuerpo clickeable para filtrar */}
+                    <button
+                      type="button"
+                      onClick={() => setBancaSeleccionada(activa ? null : banca.id)}
+                      className="text-left w-full"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${banca.moneda === 'USD' ? 'bg-brand-50 text-brand-600' : 'bg-brand-100 text-brand-800'}`}>
+                          {TIPO_BANCA_ICON[banca.tipo]}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-semibold text-text-primary text-sm truncate">{banca.nombre}</h3>
+                          <p className="text-xs text-text-muted">{TIPO_BANCA_LABEL[banca.tipo]}</p>
+                        </div>
+                      </div>
+                      {banca.descripcion && (
+                        <p className="text-text-muted text-xs mb-3 line-clamp-1">{banca.descripcion}</p>
+                      )}
+                      <p className="text-2xl font-bold text-brand-600 leading-none">
+                        {banca.moneda === 'USD' ? '$' : 'Bs '}
+                        {banca.saldo.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-text-muted mt-1.5">{banca.moneda}</p>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-1">
@@ -227,7 +337,7 @@ function CochinitPage() {
               return (
                 <div key={mov.id} className="flex items-center gap-4 p-4 hover:bg-surface-hover transition-colors">
                   <div className="w-10 h-10 rounded-full bg-surface-alt flex items-center justify-center shrink-0">
-                    {TIPO_ICON[mov.tipo]}
+                    {TIPO_MOV_ICON[mov.tipo]}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-text-primary truncate">{mov.descripcion}</p>
@@ -264,12 +374,19 @@ function CochinitPage() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Modales */}
       {modalAbierto && (
         <CrearMovimientoModal
           bancas={bancas}
           onClose={() => setModalAbierto(false)}
           onCreado={onMovimientoCreado}
+        />
+      )}
+      {modalBanca.abierto && (
+        <BancaFormModal
+          banca={modalBanca.banca}
+          onClose={() => setModalBanca({ abierto: false })}
+          onGuardado={onBancaGuardada}
         />
       )}
     </div>

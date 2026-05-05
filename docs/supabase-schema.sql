@@ -112,3 +112,29 @@ begin
   return v_saldo;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 4 · RLS abierto en bancas/movimientos + tipo de banca
+--
+-- Contexto: el frontend usa la anon key (auth custom no integrado con Supabase
+-- Auth), así que RLS basado en auth.uid() no aplica. Para que el frontend pueda
+-- leer/escribir, se deshabilita RLS en estas tablas (consistente con productos
+-- y users, que tienen RLS off o policy abierta).
+--
+-- Deuda técnica: cualquier app con la anon key puede leer/escribir estas tablas.
+-- Para cerrarlo bien, hay que routear todo por backend Express (service_role)
+-- o migrar auth a Supabase Auth.
+-- ============================================================================
+
+alter table public.bancas      disable row level security;
+alter table public.movimientos disable row level security;
+
+-- Tipo de banca (clasifica para iconos/agrupación en UI)
+alter table public.bancas
+  add column if not exists tipo text not null default 'banco_nacional';
+
+alter table public.bancas drop constraint if exists bancas_tipo_check;
+alter table public.bancas
+  add constraint bancas_tipo_check
+  check (tipo in ('banco_nacional', 'banco_internacional', 'exchange', 'efectivo'));
