@@ -1,34 +1,28 @@
 import type { Producto, Banca, Movimiento } from '@shared/types/index.js';
 
-// --- Productos (~10, categorías variadas) ---
-
 export const PRODUCTOS_MOCK: Producto[] = [
-  { id: 'p1', nombre: 'Resma papel A4', descripcion: 'Resma 500 hojas', categoria: 'Papelería', precioUnitario: 5.50, moneda: 'USD', unidad: 'resma', activo: true },
-  { id: 'p2', nombre: 'Tóner HP 58A', descripcion: 'Cartucho tóner negro', categoria: 'Papelería', precioUnitario: 45.00, moneda: 'USD', unidad: 'unidad', activo: true },
-  { id: 'p3', nombre: 'Escritorio ejecutivo', descripcion: 'Escritorio madera 1.6m', categoria: 'Mobiliario', precioUnitario: 320.00, moneda: 'USD', unidad: 'unidad', activo: true },
-  { id: 'p4', nombre: 'Silla ergonómica', descripcion: 'Silla con soporte lumbar', categoria: 'Mobiliario', precioUnitario: 185.00, moneda: 'USD', unidad: 'unidad', activo: true },
-  { id: 'p5', nombre: 'Monitor 27"', descripcion: 'Monitor LED Full HD', categoria: 'Tecnología', precioUnitario: 250.00, moneda: 'USD', unidad: 'unidad', activo: true },
-  { id: 'p6', nombre: 'Teclado mecánico', descripcion: 'Teclado switch blue', categoria: 'Tecnología', precioUnitario: 60.00, moneda: 'USD', unidad: 'unidad', activo: true },
-  { id: 'p7', nombre: 'Café molido 1kg', descripcion: 'Café tostado premium', categoria: 'Insumos', precioUnitario: 12.00, moneda: 'USD', unidad: 'kg', activo: true },
-  { id: 'p8', nombre: 'Agua embotellada 20L', descripcion: 'Bidón de agua purificada', categoria: 'Insumos', precioUnitario: 3.50, moneda: 'USD', unidad: 'bidón', activo: true },
-  { id: 'p9', nombre: 'Desinfectante 5L', descripcion: 'Desinfectante multiusos', categoria: 'Limpieza', precioUnitario: 8.00, moneda: 'USD', unidad: 'galón', activo: true },
-  { id: 'p10', nombre: 'Cable UTP Cat6 305m', descripcion: 'Bobina cable red categoría 6', categoria: 'Tecnología', precioUnitario: 95.00, moneda: 'USD', unidad: 'bobina', activo: false },
+  { id: 'p1', nombre: 'Resma papel A4', descripcion: 'Resma 500 hojas', categoria: 'Papeleria', moneda: 'USD', activo: true, tipo: 'amarillo', peso: 2.5, costoUnitario: 5.50, imagenUrl: null, creadoPor: '', creadoEn: '2026-04-28' },
+  { id: 'p2', nombre: 'Toner HP 58A', descripcion: 'Cartucho toner negro', categoria: 'Papeleria', moneda: 'USD', activo: true, tipo: 'amarillo', peso: 0.8, costoUnitario: 45.00, imagenUrl: null, creadoPor: '', creadoEn: '2026-04-28' },
+  { id: 'p3', nombre: 'Escritorio ejecutivo', descripcion: 'Escritorio madera 1.6m', categoria: 'Mobiliario', moneda: 'USD', activo: true, tipo: 'amarillo', peso: 35, costoUnitario: 320.00, imagenUrl: null, creadoPor: '', creadoEn: '2026-04-27' },
+  { id: 'p4', nombre: 'Silla ergonomica', descripcion: 'Silla con soporte lumbar', categoria: 'Mobiliario', moneda: 'USD', activo: true, tipo: 'azul', variantes: [{ id: 'v1', nombre: 'Negro', cantidad: 5, precioUnitario: 185 }, { id: 'v2', nombre: 'Gris', cantidad: 3, precioUnitario: 190 }], imagenUrl: null, creadoPor: '', creadoEn: '2026-04-27' },
+  { id: 'p5', nombre: 'Monitor 27"', descripcion: 'Monitor LED Full HD', categoria: 'Tecnologia', moneda: 'USD', activo: true, tipo: 'amarillo', peso: 4.5, costoUnitario: 250.00, imagenUrl: null, creadoPor: '', creadoEn: '2026-04-26' },
+  { id: 'p6', nombre: 'Kit teclado + mouse', descripcion: 'Combo periferico', categoria: 'Tecnologia', moneda: 'USD', activo: true, tipo: 'verde', subProductos: [{ productoId: 'p-teclado', cantidad: 1 }, { productoId: 'p-mouse', cantidad: 1 }], costoCalculado: 75.00, imagenUrl: null, creadoPor: '', creadoEn: '2026-04-26' },
+  { id: 'p7', nombre: 'Cafe molido 1kg', descripcion: 'Cafe tostado premium', categoria: 'Insumos', moneda: 'USD', activo: true, tipo: 'azul', variantes: [{ id: 'v3', nombre: '250g', cantidad: 20, precioUnitario: 3.50 }, { id: 'v4', nombre: '500g', cantidad: 10, precioUnitario: 6.50 }, { id: 'v5', nombre: '1kg', cantidad: 5, precioUnitario: 12.00 }], imagenUrl: null, creadoPor: '', creadoEn: '2026-04-25' },
+  { id: 'p8', nombre: 'Agua embotellada 20L', descripcion: 'Bidon de agua purificada', categoria: 'Insumos', moneda: 'USD', activo: true, tipo: 'amarillo', peso: 20, costoUnitario: 3.50, imagenUrl: null, creadoPor: '', creadoEn: '2026-04-25' },
+  { id: 'p9', nombre: 'Desinfectante 5L', descripcion: 'Desinfectante multiusos', categoria: 'Limpieza', moneda: 'USD', activo: true, tipo: 'amarillo', peso: 5, costoUnitario: 8.00, imagenUrl: null, creadoPor: '', creadoEn: '2026-04-24' },
+  { id: 'p10', nombre: 'Estacion de trabajo completa', descripcion: 'Escritorio + silla + monitor', categoria: 'Mobiliario', moneda: 'USD', activo: true, tipo: 'verde', subProductos: [{ productoId: 'p3', cantidad: 1 }, { productoId: 'p4', cantidad: 1 }, { productoId: 'p5', cantidad: 1 }], costoCalculado: 755.00, imagenUrl: null, creadoPor: '', creadoEn: '2026-04-23' },
 ];
-
-// --- Bancas (3 cuentas con saldos iniciales) ---
 
 export const BANCAS_MOCK: Banca[] = [
   { id: 'b1', nombre: 'Caja Chica', saldo: 1500.00, moneda: 'USD', descripcion: 'Fondos para gastos menores' },
   { id: 'b2', nombre: 'Banco Nacional', saldo: 45000.00, moneda: 'USD', descripcion: 'Cuenta operativa principal' },
-  { id: 'b3', nombre: 'Banco Nacional BS', saldo: 120000.00, moneda: 'VES', descripcion: 'Cuenta en bolívares' },
+  { id: 'b3', nombre: 'Banco Nacional BS', saldo: 120000.00, moneda: 'VES', descripcion: 'Cuenta en bolivares' },
 ];
 
-// --- Movimientos (~5 de ejemplo) ---
-
 export const MOVIMIENTOS_MOCK: Movimiento[] = [
-  { id: 'm1', tipo: 'egreso', monto: 275.00, moneda: 'USD', descripcion: 'Compra de resmas de papel', bancaOrigenId: 'b2', bancaDestinoId: null, fecha: '2026-04-28', referencia: 'OC-001' },
-  { id: 'm2', tipo: 'egreso', monto: 500.00, moneda: 'USD', descripcion: 'Compra de 2 sillas ergonómicas', bancaOrigenId: 'b2', bancaDestinoId: null, fecha: '2026-04-27', referencia: 'OC-002' },
-  { id: 'm3', tipo: 'transferencia', monto: 2000.00, moneda: 'USD', descripcion: 'Reposición de caja chica', bancaOrigenId: 'b2', bancaDestinoId: 'b1', fecha: '2026-04-25', referencia: 'TRF-001' },
-  { id: 'm4', tipo: 'ingreso', monto: 50000.00, moneda: 'VES', descripcion: 'Depósito operativo mensual', bancaOrigenId: 'b3', bancaDestinoId: null, fecha: '2026-04-24', referencia: 'DEP-001' },
-  { id: 'm5', tipo: 'egreso', monto: 60.00, moneda: 'USD', descripcion: 'Compra de teclado mecánico', bancaOrigenId: 'b1', bancaDestinoId: null, fecha: '2026-04-23', referencia: 'OC-003' },
+  { id: 'm1', tipo: 'egreso', monto: 275.00, moneda: 'USD', descripcion: 'Compra de resmas de papel', bancaOrigenId: 'b2', bancaDestinoId: null, fecha: '2026-04-28', referencia: 'OC-001', registradoPor: '', creadoEn: '2026-04-28' },
+  { id: 'm2', tipo: 'egreso', monto: 500.00, moneda: 'USD', descripcion: 'Compra de 2 sillas ergonomicas', bancaOrigenId: 'b2', bancaDestinoId: null, fecha: '2026-04-27', referencia: 'OC-002', registradoPor: '', creadoEn: '2026-04-27' },
+  { id: 'm3', tipo: 'transferencia', monto: 2000.00, moneda: 'USD', descripcion: 'Reposicion de caja chica', bancaOrigenId: 'b2', bancaDestinoId: 'b1', fecha: '2026-04-25', referencia: 'TRF-001', registradoPor: '', creadoEn: '2026-04-25' },
+  { id: 'm4', tipo: 'ingreso', monto: 50000.00, moneda: 'VES', descripcion: 'Deposito operativo mensual', bancaOrigenId: 'b3', bancaDestinoId: null, fecha: '2026-04-24', referencia: 'DEP-001', registradoPor: '', creadoEn: '2026-04-24' },
+  { id: 'm5', tipo: 'egreso', monto: 60.00, moneda: 'USD', descripcion: 'Compra de teclado mecanico', bancaOrigenId: 'b1', bancaDestinoId: null, fecha: '2026-04-23', referencia: 'OC-003', registradoPor: '', creadoEn: '2026-04-23' },
 ];

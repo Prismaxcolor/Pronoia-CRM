@@ -16,6 +16,10 @@ build/
 .idea/
 *.swp
 
+# Memoria y configuración local de Claude Code (personal por dev)
+.claude/
+claude/
+
 # Sistema
 .DS_Store
 Thumbs.db

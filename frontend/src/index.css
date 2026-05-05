@@ -1,1 +1,38 @@
 @import "tailwindcss";
+
+@theme {
+  /* Paleta corporativa Pronoia */
+  --color-brand-50: #EBF5FF;
+  --color-brand-100: #D6EBFF;
+  --color-brand-200: #ADD6FF;
+  --color-brand-300: #85C2FF;
+  --color-brand-400: #5CADFF;
+  --color-brand-500: #3399FF;
+  --color-brand-600: #1A80E6;
+  --color-brand-700: #0066CC;
+  --color-brand-800: #004D99;
+  --color-brand-900: #003366;
+
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #F7F8FA;
+  --color-surface-hover: #F0F2F5;
+
+  --color-border: #E2E5EA;
+  --color-border-strong: #C8CDD5;
+
+  --color-text-primary: #111111;
+  --color-text-secondary: #6B7280;
+  --color-text-muted: #9CA3AF;
+  --color-text-on-brand: #FFFFFF;
+
+  /* Colores de tipo de producto */
+  --color-tipo-amarillo: #F59E0B;
+  --color-tipo-azul: #3B82F6;
+  --color-tipo-verde: #10B981;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--color-surface-alt);
+  color: var(--color-text-primary);
+}

@@ -10,4 +10,6 @@ export interface Movimiento {
   bancaDestinoId: string | null;
   fecha: string;
   referencia: string;
+  registradoPor: string;
+  creadoEn: string;
 }
