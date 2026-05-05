@@ -1,25 +1,87 @@
-import { useEffect, useState } from 'react';
-import { Wallet, ArrowDownLeft, ArrowUpRight, ArrowLeftRight } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Wallet, ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
+  Plus, TrendingDown, TrendingUp, Coins, Search,
+} from 'lucide-react';
 import { obtenerBancas, obtenerMovimientos } from '../../services/banca-service';
-import type { Banca, Movimiento } from '@shared/types/index.js';
+import { useAuth } from '../../hooks/use-auth';
+import type { Banca, Movimiento, TipoMovimiento } from '@shared/types/index.js';
+import TasaCambioWidget from './TasaCambioWidget';
+import CrearMovimientoModal from './CrearMovimientoModal';
 
-const TIPO_ICON = {
+const TIPO_ICON: Record<TipoMovimiento, React.ReactNode> = {
   ingreso: <ArrowDownLeft size={16} className="text-green-600" />,
   egreso: <ArrowUpRight size={16} className="text-red-600" />,
   transferencia: <ArrowLeftRight size={16} className="text-blue-600" />,
 };
 
+type FiltroTipo = 'todos' | TipoMovimiento;
+
+function inicioDelMes(): Date {
+  const ahora = new Date();
+  return new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+}
+
 function CochinitPage() {
+  const { tienePermiso } = useAuth();
   const [bancas, setBancas] = useState<Banca[]>([]);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [cargando, setCargando] = useState(true);
   const [bancaSeleccionada, setBancaSeleccionada] = useState<string | null>(null);
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');
+  const [busqueda, setBusqueda] = useState('');
+  const [modalAbierto, setModalAbierto] = useState(false);
+
+  const puedeCrear = tienePermiso('cochinito', 'crear');
+
+  const cargar = async () => {
+    const [b, m] = await Promise.all([obtenerBancas(), obtenerMovimientos()]);
+    setBancas(b);
+    setMovimientos(m);
+  };
 
   useEffect(() => {
-    Promise.all([obtenerBancas(), obtenerMovimientos()])
-      .then(([b, m]) => { setBancas(b); setMovimientos(m); })
-      .finally(() => setCargando(false));
+    cargar().finally(() => setCargando(false));
   }, []);
+
+  const stats = useMemo(() => {
+    const saldoUSD = bancas.filter(b => b.moneda === 'USD').reduce((s, b) => s + b.saldo, 0);
+    const saldoVES = bancas.filter(b => b.moneda === 'VES').reduce((s, b) => s + b.saldo, 0);
+    const desde = inicioDelMes();
+    const delMes = movimientos.filter(m => new Date(m.fecha) >= desde);
+    const ingresosMes = delMes
+      .filter(m => m.tipo === 'ingreso')
+      .reduce((s, m) => s + m.monto, 0);
+    const egresosMes = delMes
+      .filter(m => m.tipo === 'egreso')
+      .reduce((s, m) => s + m.monto, 0);
+    return { saldoUSD, saldoVES, ingresosMes, egresosMes };
+  }, [bancas, movimientos]);
+
+  const movFiltrados = useMemo(() => {
+    let lista = movimientos;
+    if (bancaSeleccionada) {
+      lista = lista.filter(m => m.bancaOrigenId === bancaSeleccionada || m.bancaDestinoId === bancaSeleccionada);
+    }
+    if (filtroTipo !== 'todos') {
+      lista = lista.filter(m => m.tipo === filtroTipo);
+    }
+    if (busqueda.trim()) {
+      const q = busqueda.toLowerCase();
+      lista = lista.filter(m =>
+        m.descripcion.toLowerCase().includes(q) ||
+        m.referencia.toLowerCase().includes(q)
+      );
+    }
+    return lista;
+  }, [movimientos, bancaSeleccionada, filtroTipo, busqueda]);
+
+  const onMovimientoCreado = async () => {
+    setModalAbierto(false);
+    setCargando(true);
+    await cargar();
+    setCargando(false);
+  };
 
   if (cargando) {
     return (
@@ -29,90 +91,229 @@ function CochinitPage() {
     );
   }
 
-  const movFiltrados = bancaSeleccionada
-    ? movimientos.filter(m => m.bancaOrigenId === bancaSeleccionada || m.bancaDestinoId === bancaSeleccionada)
-    : movimientos;
+  const bancaActual = bancas.find(b => b.id === bancaSeleccionada);
 
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Wallet size={28} className="text-brand-600" />
-        <h1 className="text-2xl font-bold text-text-primary">Cochinito</h1>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
+            <Wallet size={22} className="text-brand-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-text-primary leading-tight">Cochinito</h1>
+            <p className="text-xs text-text-muted">Tesorería de Pronoia · {bancas.length} bancas activas</p>
+          </div>
+        </div>
+
+        {puedeCrear && (
+          <button
+            type="button"
+            onClick={() => setModalAbierto(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shadow-sm"
+          >
+            <Plus size={16} />
+            Nuevo movimiento
+          </button>
+        )}
       </div>
 
-      {/* Bancas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        {bancas.map(banca => {
-          const activa = bancaSeleccionada === banca.id;
-          return (
-            <button
-              key={banca.id}
-              type="button"
-              onClick={() => setBancaSeleccionada(activa ? null : banca.id)}
-              className={`text-left bg-surface rounded-xl p-6 shadow-sm border-2 transition-all hover:shadow-md ${
-                activa ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className={`w-3 h-3 rounded-full ${
-                  banca.moneda === 'USD' ? 'bg-brand-500' : 'bg-brand-800'
-                }`} />
-                <h3 className="font-semibold text-text-primary">{banca.nombre}</h3>
-              </div>
-              <p className="text-text-muted text-xs mb-3">{banca.descripcion}</p>
-              <p className="text-2xl font-bold text-brand-600">
-                {banca.moneda === 'USD' ? '$' : 'Bs '}{banca.saldo.toLocaleString()}
-              </p>
-              <p className="text-xs text-text-muted mt-1">{banca.moneda}</p>
-            </button>
-          );
-        })}
+      {/* Stats cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Saldo USD" valor={`$${stats.saldoUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} icon={<Coins size={18} />} colorBg="bg-brand-500" />
+        <StatCard label="Saldo VES" valor={`Bs. ${stats.saldoVES.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`} icon={<Coins size={18} />} colorBg="bg-brand-700" />
+        <StatCard label="Ingresos del mes" valor={`+${stats.ingresosMes.toLocaleString()}`} icon={<TrendingUp size={18} />} colorBg="bg-green-500" />
+        <StatCard label="Egresos del mes" valor={`-${stats.egresosMes.toLocaleString()}`} icon={<TrendingDown size={18} />} colorBg="bg-red-500" />
       </div>
 
-      {/* Filtro activo */}
+      {/* Bancas + tasa widget */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {bancas.map(banca => {
+            const activa = bancaSeleccionada === banca.id;
+            return (
+              <button
+                key={banca.id}
+                type="button"
+                onClick={() => setBancaSeleccionada(activa ? null : banca.id)}
+                className={`text-left bg-surface rounded-xl p-5 shadow-sm border-2 transition-all hover:shadow-md ${
+                  activa ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-2.5 h-2.5 rounded-full ${banca.moneda === 'USD' ? 'bg-brand-500' : 'bg-brand-800'}`} />
+                  <h3 className="font-semibold text-text-primary text-sm">{banca.nombre}</h3>
+                </div>
+                <p className="text-text-muted text-xs mb-3 line-clamp-1">{banca.descripcion}</p>
+                <p className="text-2xl font-bold text-brand-600 leading-none">
+                  {banca.moneda === 'USD' ? '$' : 'Bs '}
+                  {banca.saldo.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-xs text-text-muted mt-1.5">{banca.moneda}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="lg:col-span-1">
+          <TasaCambioWidget />
+        </div>
+      </div>
+
+      {/* Tabs + búsqueda */}
+      <div className="flex items-center justify-between flex-wrap gap-3 border-b border-border">
+        <div className="flex gap-1 overflow-x-auto">
+          <FiltroTab activo={filtroTipo === 'todos'} onClick={() => setFiltroTipo('todos')} label="Todos" />
+          <FiltroTab activo={filtroTipo === 'ingreso'} onClick={() => setFiltroTipo('ingreso')} label="Ingresos" />
+          <FiltroTab activo={filtroTipo === 'egreso'} onClick={() => setFiltroTipo('egreso')} label="Egresos" />
+          <FiltroTab activo={filtroTipo === 'transferencia'} onClick={() => setFiltroTipo('transferencia')} label="Transferencias" />
+        </div>
+
+        <div className="relative w-full sm:w-64">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            type="text"
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar descripción o referencia..."
+            className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      {/* Filtro de banca activo */}
       {bancaSeleccionada && (
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-sm text-text-secondary">
-            Mostrando movimientos de: <strong>{bancas.find(b => b.id === bancaSeleccionada)?.nombre}</strong>
+        <div className="flex items-center gap-2 -mt-3">
+          <span className="text-xs text-text-secondary">
+            Filtrando por: <strong>{bancaActual?.nombre}</strong>
           </span>
-          <button type="button" onClick={() => setBancaSeleccionada(null)} className="text-xs text-brand-600 hover:text-brand-800 underline">
-            Ver todos
+          <button
+            type="button"
+            onClick={() => setBancaSeleccionada(null)}
+            className="text-xs text-brand-600 hover:text-brand-800 underline"
+          >
+            quitar filtro
           </button>
         </div>
       )}
 
-      {/* Movimientos */}
-      <h2 className="text-lg font-semibold text-text-primary mb-3">Movimientos</h2>
+      {/* Lista de movimientos */}
       <div className="bg-surface rounded-xl shadow-sm border border-border">
-        <div className="divide-y divide-border">
-          {movFiltrados.map(mov => (
-            <div key={mov.id} className="flex items-center gap-4 p-4 hover:bg-surface-hover transition-colors">
-              <div className="w-9 h-9 rounded-full bg-surface-alt flex items-center justify-center">
-                {TIPO_ICON[mov.tipo]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-text-primary">{mov.descripcion}</p>
-                <p className="text-xs text-text-muted">{mov.fecha} &middot; {mov.referencia}</p>
-              </div>
-              <div className="text-right">
-                <p className={`text-sm font-bold ${
-                  mov.tipo === 'ingreso' ? 'text-green-600' :
-                  mov.tipo === 'egreso' ? 'text-red-600' :
-                  'text-blue-600'
-                }`}>
-                  {mov.tipo === 'ingreso' ? '+' : mov.tipo === 'egreso' ? '-' : ''}
-                  {mov.moneda === 'USD' ? '$' : 'Bs '}{mov.monto.toLocaleString()}
-                </p>
-                <p className="text-xs text-text-muted capitalize">{mov.tipo}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-        {movFiltrados.length === 0 && (
-          <p className="p-8 text-center text-text-muted">No hay movimientos{bancaSeleccionada ? ' en esta banca' : ''}</p>
+        {movFiltrados.length === 0 ? (
+          <div className="p-12 text-center">
+            <Wallet size={32} className="mx-auto text-text-muted mb-2 opacity-50" />
+            <p className="text-text-muted text-sm">
+              No hay movimientos
+              {bancaSeleccionada ? ' en esta banca' : ''}
+              {filtroTipo !== 'todos' ? ` del tipo ${filtroTipo}` : ''}
+              {busqueda ? ' que coincidan con la búsqueda' : ''}
+            </p>
+            {puedeCrear && movimientos.length === 0 && (
+              <button
+                type="button"
+                onClick={() => setModalAbierto(true)}
+                className="mt-3 text-sm text-brand-600 hover:text-brand-800 underline"
+              >
+                Registra el primero
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {movFiltrados.map(mov => {
+              const bancaOrigen = bancas.find(b => b.id === mov.bancaOrigenId);
+              const bancaDestino = mov.bancaDestinoId ? bancas.find(b => b.id === mov.bancaDestinoId) : null;
+              return (
+                <div key={mov.id} className="flex items-center gap-4 p-4 hover:bg-surface-hover transition-colors">
+                  <div className="w-10 h-10 rounded-full bg-surface-alt flex items-center justify-center shrink-0">
+                    {TIPO_ICON[mov.tipo]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-text-primary truncate">{mov.descripcion}</p>
+                    <div className="flex items-center gap-2 text-xs text-text-muted mt-0.5">
+                      <span>{mov.fecha}</span>
+                      {mov.referencia && <><span>·</span><span>{mov.referencia}</span></>}
+                      {bancaOrigen && (
+                        <>
+                          <span>·</span>
+                          <span>
+                            {bancaOrigen.nombre}
+                            {bancaDestino && ` → ${bancaDestino.nombre}`}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={`text-sm font-bold ${
+                      mov.tipo === 'ingreso' ? 'text-green-600' :
+                      mov.tipo === 'egreso' ? 'text-red-600' :
+                      'text-blue-600'
+                    }`}>
+                      {mov.tipo === 'ingreso' ? '+' : mov.tipo === 'egreso' ? '-' : ''}
+                      {mov.moneda === 'USD' ? '$' : 'Bs '}
+                      {mov.monto.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-text-muted capitalize">{mov.tipo}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
+
+      {/* Modal */}
+      {modalAbierto && (
+        <CrearMovimientoModal
+          bancas={bancas}
+          onClose={() => setModalAbierto(false)}
+          onCreado={onMovimientoCreado}
+        />
+      )}
     </div>
+  );
+}
+
+interface StatCardProps {
+  label: string;
+  valor: string;
+  icon: React.ReactNode;
+  colorBg: string;
+}
+
+function StatCard({ label, valor, icon, colorBg }: StatCardProps) {
+  return (
+    <div className="bg-surface rounded-xl p-4 shadow-sm border border-border">
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`${colorBg} text-white p-1.5 rounded-md`}>{icon}</div>
+        <span className="text-text-secondary text-xs font-medium">{label}</span>
+      </div>
+      <p className="text-xl font-bold text-text-primary truncate">{valor}</p>
+    </div>
+  );
+}
+
+interface FiltroTabProps {
+  activo: boolean;
+  onClick: () => void;
+  label: string;
+}
+
+function FiltroTab({ activo, onClick, label }: FiltroTabProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+        activo
+          ? 'border-brand-600 text-brand-600'
+          : 'border-transparent text-text-secondary hover:text-text-primary'
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
