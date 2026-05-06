@@ -7,18 +7,11 @@
     "strict": true,
     "skipLibCheck": true,
     "outDir": "./dist",
-    "rootDir": ".",
-    "noEmit": true,
+    "rootDir": "./src",
+    "noEmit": false,
     "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-
-    /* Path aliases — resuelve @shared/ hacia ../shared/ */
-    "baseUrl": ".",
-    "paths": {
-      "@shared/*": ["../shared/*"]
-    }
+    "declaration": false,
+    "sourceMap": true
   },
-  "include": ["src", "../shared"]
+  "include": ["src"]
 }
