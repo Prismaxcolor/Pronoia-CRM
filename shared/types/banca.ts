@@ -7,4 +7,5 @@ export interface Banca {
   saldo: number;
   moneda: string;
   descripcion: string;
+  archivada: boolean;
 }

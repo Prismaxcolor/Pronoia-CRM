@@ -9,6 +9,7 @@ function mapBanca(row: Record<string, unknown>): Banca {
     saldo: Number(row.saldo),
     moneda: row.moneda as string,
     descripcion: (row.descripcion as string) ?? '',
+    archivada: Boolean(row.archivada),
   };
 }
 
@@ -28,12 +29,16 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
   };
 }
 
-export async function obtenerBancas(): Promise<Banca[]> {
-  const { data, error } = await supabase
-    .from('bancas')
-    .select('*')
-    .order('nombre');
+export interface ObtenerBancasOpts {
+  incluirArchivadas?: boolean;
+}
 
+export async function obtenerBancas(opts: ObtenerBancasOpts = {}): Promise<Banca[]> {
+  let query = supabase.from('bancas').select('*').order('nombre');
+  if (!opts.incluirArchivadas) {
+    query = query.eq('archivada', false);
+  }
+  const { data, error } = await query;
   if (error || !data) return [];
   return data.map(mapBanca);
 }
@@ -90,33 +95,39 @@ export async function actualizarBanca(id: string, campos: ActualizarBancaInput):
   return !error;
 }
 
-export interface EliminarBancaResult {
+export interface ArchivarBancaResult {
   ok: boolean;
   razon?: string;
 }
 
-/** Elimina una banca. Falla si tiene movimientos asociados o saldo distinto de 0. */
-export async function eliminarBanca(id: string, saldoActual: number): Promise<EliminarBancaResult> {
+/**
+ * Archiva una banca (soft delete). Falla si tiene saldo distinto de 0.
+ * No se permite borrar físicamente: la regla de dominio del CLAUDE.md es
+ * "en finanzas NUNCA se borra; se reversa con un movimiento contrario".
+ */
+export async function archivarBanca(id: string, saldoActual: number): Promise<ArchivarBancaResult> {
   if (Math.abs(saldoActual) > 0.001) {
-    return { ok: false, razon: 'No se puede eliminar una banca con saldo distinto de 0. Transfiere o retira los fondos primero.' };
-  }
-
-  const { count } = await supabase
-    .from('movimientos')
-    .select('id', { count: 'exact', head: true })
-    .or(`banca_origen_id.eq.${id},banca_destino_id.eq.${id}`);
-
-  if (count && count > 0) {
-    return { ok: false, razon: `La banca tiene ${count} movimiento${count > 1 ? 's' : ''} en su historial. Elimina/anula los movimientos antes de borrar la banca.` };
+    return {
+      ok: false,
+      razon: 'No se puede archivar una banca con saldo distinto de 0. Transfiere o retira los fondos primero.',
+    };
   }
 
   const { error } = await supabase
     .from('bancas')
-    .delete()
+    .update({ archivada: true, archivada_en: new Date().toISOString() })
     .eq('id', id);
 
   if (error) return { ok: false, razon: error.message };
   return { ok: true };
+}
+
+export async function desarchivarBanca(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('bancas')
+    .update({ archivada: false, archivada_en: null })
+    .eq('id', id);
+  return !error;
 }
 
 export interface CrearMovimientoInput {

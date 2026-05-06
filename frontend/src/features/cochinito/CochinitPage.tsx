@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Wallet, ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
   Plus, TrendingDown, TrendingUp, Coins, Search,
-  Building2, Globe, Pencil, Trash2,
+  Building2, Globe, Pencil, Archive, ArchiveRestore,
 } from 'lucide-react';
-import { obtenerBancas, obtenerMovimientos, eliminarBanca } from '../../services/banca-service';
+import { obtenerBancas, obtenerMovimientos, archivarBanca, desarchivarBanca } from '../../services/banca-service';
 import { useAuth } from '../../hooks/use-auth';
+import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import type { Banca, Movimiento, TipoMovimiento, TipoBanca } from '@shared/types/index.js';
 import TasaCambioWidget from './TasaCambioWidget';
 import CrearMovimientoModal from './CrearMovimientoModal';
@@ -40,32 +42,41 @@ function inicioDelMes(): Date {
 
 function CochinitPage() {
   const { tienePermiso } = useAuth();
+  const toast = useToast();
+  const confirmar = useConfirm();
   const [bancas, setBancas] = useState<Banca[]>([]);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [cargando, setCargando] = useState(true);
   const [bancaSeleccionada, setBancaSeleccionada] = useState<string | null>(null);
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');
   const [busqueda, setBusqueda] = useState('');
+  const [mostrarArchivadas, setMostrarArchivadas] = useState(false);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalBanca, setModalBanca] = useState<{ abierto: true; banca: Banca | null } | { abierto: false }>({ abierto: false });
 
   const puedeCrear = tienePermiso('cochinito', 'crear');
   const puedeEditar = tienePermiso('cochinito', 'editar');
-  const puedeEliminar = tienePermiso('cochinito', 'eliminar');
+  const puedeArchivar = tienePermiso('cochinito', 'eliminar');
 
   const cargar = async () => {
-    const [b, m] = await Promise.all([obtenerBancas(), obtenerMovimientos()]);
+    const [b, m] = await Promise.all([
+      obtenerBancas({ incluirArchivadas: mostrarArchivadas }),
+      obtenerMovimientos(),
+    ]);
     setBancas(b);
     setMovimientos(m);
   };
 
   useEffect(() => {
+    setCargando(true);
     cargar().finally(() => setCargando(false));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mostrarArchivadas]);
 
   const stats = useMemo(() => {
-    const saldoUSD = bancas.filter(b => b.moneda === 'USD').reduce((s, b) => s + b.saldo, 0);
-    const saldoVES = bancas.filter(b => b.moneda === 'VES').reduce((s, b) => s + b.saldo, 0);
+    const activas = bancas.filter(b => !b.archivada);
+    const saldoUSD = activas.filter(b => b.moneda === 'USD').reduce((s, b) => s + b.saldo, 0);
+    const saldoVES = activas.filter(b => b.moneda === 'VES').reduce((s, b) => s + b.saldo, 0);
     const desde = inicioDelMes();
     const delMes = movimientos.filter(m => new Date(m.fecha) >= desde);
     const ingresosMes = delMes
@@ -97,26 +108,47 @@ function CochinitPage() {
 
   const onMovimientoCreado = async () => {
     setModalAbierto(false);
+    toast.exito('Movimiento registrado.');
     setCargando(true);
     await cargar();
     setCargando(false);
   };
 
-  const onBancaGuardada = async () => {
+  const onBancaGuardada = async (modo: 'crear' | 'editar') => {
     setModalBanca({ abierto: false });
+    toast.exito(modo === 'crear' ? 'Banca creada.' : 'Banca actualizada.');
     setCargando(true);
     await cargar();
     setCargando(false);
   };
 
-  const handleEliminarBanca = async (banca: Banca) => {
-    if (!window.confirm(`¿Eliminar la banca "${banca.nombre}"? Esta acción no se puede deshacer.`)) return;
-    const result = await eliminarBanca(banca.id, banca.saldo);
+  const handleArchivarBanca = async (banca: Banca) => {
+    const ok = await confirmar({
+      titulo: `Archivar la banca "${banca.nombre}"`,
+      mensaje: 'Podrás restaurarla más adelante. El histórico de movimientos se conserva intacto.',
+      confirmarLabel: 'Archivar',
+      variante: 'warning',
+    });
+    if (!ok) return;
+    const result = await archivarBanca(banca.id, banca.saldo);
     if (!result.ok) {
-      window.alert(result.razon ?? 'No se pudo eliminar la banca.');
+      toast.errorMsg(result.razon ?? 'No se pudo archivar la banca.');
       return;
     }
     if (bancaSeleccionada === banca.id) setBancaSeleccionada(null);
+    toast.exito(`Banca "${banca.nombre}" archivada.`);
+    setCargando(true);
+    await cargar();
+    setCargando(false);
+  };
+
+  const handleDesarchivarBanca = async (banca: Banca) => {
+    const ok = await desarchivarBanca(banca.id);
+    if (!ok) {
+      toast.errorMsg('No se pudo restaurar la banca.');
+      return;
+    }
+    toast.exito(`Banca "${banca.nombre}" restaurada.`);
     setCargando(true);
     await cargar();
     setCargando(false);
@@ -171,16 +203,27 @@ function CochinitPage() {
         <div className="lg:col-span-2 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Bancas</h2>
-            {puedeCrear && (
-              <button
-                type="button"
-                onClick={() => setModalBanca({ abierto: true, banca: null })}
-                className="inline-flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700 font-medium"
-              >
-                <Plus size={14} />
-                Nueva banca
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={mostrarArchivadas}
+                  onChange={e => setMostrarArchivadas(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-brand-600"
+                />
+                Ver archivadas
+              </label>
+              {puedeCrear && (
+                <button
+                  type="button"
+                  onClick={() => setModalBanca({ abierto: true, banca: null })}
+                  className="inline-flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700 font-medium"
+                >
+                  <Plus size={14} />
+                  Nueva banca
+                </button>
+              )}
+            </div>
           </div>
 
           {bancas.length === 0 ? (
@@ -206,13 +249,21 @@ function CochinitPage() {
                   <div
                     key={banca.id}
                     className={`group relative bg-surface rounded-xl p-5 shadow-sm border-2 transition-all hover:shadow-md ${
+                      banca.archivada ? 'opacity-60' : ''
+                    } ${
                       activa ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'
                     }`}
                   >
+                    {banca.archivada && (
+                      <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted bg-surface-alt px-1.5 py-0.5 rounded">
+                        <Archive size={10} /> Archivada
+                      </span>
+                    )}
+
                     {/* Acciones de banca (top-right, hover) */}
-                    {(puedeEditar || puedeEliminar) && (
+                    {(puedeEditar || puedeArchivar) && (
                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {puedeEditar && (
+                        {puedeEditar && !banca.archivada && (
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setModalBanca({ abierto: true, banca }); }}
@@ -222,14 +273,24 @@ function CochinitPage() {
                             <Pencil size={13} />
                           </button>
                         )}
-                        {puedeEliminar && (
+                        {puedeArchivar && !banca.archivada && (
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); handleEliminarBanca(banca); }}
-                            className="p-1.5 rounded-md bg-surface-alt hover:bg-red-50 text-text-muted hover:text-red-600 transition-colors"
-                            title="Eliminar banca"
+                            onClick={(e) => { e.stopPropagation(); handleArchivarBanca(banca); }}
+                            className="p-1.5 rounded-md bg-surface-alt hover:bg-amber-50 text-text-muted hover:text-amber-600 transition-colors"
+                            title="Archivar banca"
                           >
-                            <Trash2 size={13} />
+                            <Archive size={13} />
+                          </button>
+                        )}
+                        {puedeArchivar && banca.archivada && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleDesarchivarBanca(banca); }}
+                            className="p-1.5 rounded-md bg-surface-alt hover:bg-green-50 text-text-muted hover:text-green-600 transition-colors"
+                            title="Restaurar banca"
+                          >
+                            <ArchiveRestore size={13} />
                           </button>
                         )}
                       </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../hooks/use-auth';
+import { useToast } from '../../hooks/use-toast';
 
 function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -9,6 +10,7 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const { login, registro } = useAuth();
+  const toast = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,12 +20,15 @@ function AuthPage() {
     try {
       if (isLogin) {
         await login(email, password);
+        toast.exito(`Bienvenido${nombre ? `, ${nombre}` : ''}.`);
       } else {
         await registro(email, password, nombre);
-        setMensaje('Registro exitoso. Revisa tu correo para confirmar la cuenta.');
+        toast.exito('Cuenta creada. Ya estás dentro.');
       }
     } catch (err) {
-      setMensaje(err instanceof Error ? err.message : 'Error inesperado');
+      const msg = err instanceof Error ? err.message : 'Error inesperado';
+      setMensaje(msg);
+      toast.errorMsg(msg);
     } finally {
       setLoading(false);
     }
@@ -104,7 +109,7 @@ function AuthPage() {
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="w-full px-4 py-3 bg-surface-alt border border-border rounded-lg
                          text-sm focus:outline-none focus:ring-2 focus:ring-brand-400
                          focus:border-transparent transition-all placeholder:text-text-muted"
@@ -168,11 +173,11 @@ function AuthPage() {
             />
             <input
               type="password"
-              placeholder="Contrasena (min 6 caracteres)"
+              placeholder="Contrasena (min 8 caracteres)"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="w-full px-4 py-3 bg-surface-alt border border-border rounded-lg
                          text-sm focus:outline-none focus:ring-2 focus:ring-brand-400
                          focus:border-transparent transition-all placeholder:text-text-muted"

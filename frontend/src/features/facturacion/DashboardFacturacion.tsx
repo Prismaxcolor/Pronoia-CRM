@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { FilePlus, FileText, Trash2, ArrowRight, ShoppingCart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/use-auth';
+import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import { obtenerBorradoresDelUsuario, crearBorrador, eliminarBorrador } from '../../services/factura-service';
 import type { Factura } from '@shared/types/index.js';
 
@@ -19,6 +21,8 @@ function formatHaceCuanto(fecha: string): string {
 function DashboardFacturacion() {
   const navigate = useNavigate();
   const { usuario } = useAuth();
+  const toast = useToast();
+  const confirmar = useConfirm();
   const [borradores, setBorradores] = useState<Factura[]>([]);
   const [cargando, setCargando] = useState(true);
   const [creando, setCreando] = useState(false);
@@ -42,7 +46,7 @@ function DashboardFacturacion() {
     if (nueva) {
       navigate(`/facturacion?factura=${nueva.id}`);
     } else {
-      window.alert('No se pudo crear el borrador. Intenta de nuevo.');
+      toast.errorMsg('No se pudo crear el borrador. Intenta de nuevo.');
     }
   };
 
@@ -52,16 +56,23 @@ function DashboardFacturacion() {
 
   const handleEliminar = async (factura: Factura) => {
     const cantidad = factura.items.length;
-    const detalle = cantidad > 0 ? ` (con ${cantidad} item${cantidad > 1 ? 's' : ''})` : '';
-    if (!window.confirm(`¿Eliminar el borrador #${factura.numero}${detalle}? No se puede deshacer.`)) return;
+    const detalle = cantidad > 0 ? `Contiene ${cantidad} item${cantidad > 1 ? 's' : ''}.` : 'Está vacío.';
+    const ok = await confirmar({
+      titulo: `Eliminar borrador #${factura.numero}`,
+      mensaje: `${detalle} Esta acción no se puede deshacer.`,
+      confirmarLabel: 'Eliminar borrador',
+      variante: 'danger',
+    });
+    if (!ok) return;
 
     setBorrando(factura.id);
-    const ok = await eliminarBorrador(factura.id);
+    const okBorrar = await eliminarBorrador(factura.id);
     setBorrando(null);
-    if (!ok) {
-      window.alert('No se pudo eliminar el borrador.');
+    if (!okBorrar) {
+      toast.errorMsg('No se pudo eliminar el borrador.');
       return;
     }
+    toast.exito(`Borrador #${factura.numero} eliminado.`);
     setBorradores(prev => prev.filter(b => b.id !== factura.id));
   };
 

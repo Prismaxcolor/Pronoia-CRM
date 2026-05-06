@@ -5,3 +5,4 @@ export type { TasaCambio } from './tasa-cambio.js';
 export type { Usuario, RolUsuario, Permiso, Recurso, Accion } from './usuario.js';
 export { PERMISOS_POR_ROL, tienePermiso } from './usuario.js';
 export type { Factura, FacturaItem, EstadoFactura } from './factura.js';
+export type { Cliente } from './cliente.js';

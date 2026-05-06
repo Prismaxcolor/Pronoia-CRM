@@ -1,30 +1,41 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { supabase } from '../config/supabase';
+import { apiFetch, setToken, clearToken, getToken, ApiError } from '../services/api-client';
 import { PERMISOS_POR_ROL, tienePermiso as checkPermiso } from '@shared/types/index.js';
 import type { Usuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
 import type { AuthContextType } from '../types/auth';
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const SESSION_KEY = 'pronoia_session';
+interface UsuarioApi {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: Usuario['rol'];
+  permisos: Permiso[] | null;
+  activo: boolean;
+  creadoEn: string;
+}
 
-function mapUser(row: Record<string, unknown>): Usuario {
-  const rol = row.rol as Usuario['rol'];
-  const permisosCustom = row.permisos as Permiso[] | null;
-  const permisos = permisosCustom && permisosCustom.length > 0
-    ? permisosCustom
-    : PERMISOS_POR_ROL[rol] ?? [];
+function mapUsuario(api: UsuarioApi): Usuario {
+  const permisos = api.permisos && api.permisos.length > 0
+    ? api.permisos
+    : PERMISOS_POR_ROL[api.rol] ?? [];
 
   return {
-    id: row.id as string,
-    authId: row.id as string,
-    nombre: row.nombre as string,
-    email: row.email as string,
-    rol,
+    id: api.id,
+    authId: api.id,
+    nombre: api.nombre,
+    email: api.email,
+    rol: api.rol,
     permisos,
-    activo: row.activo as boolean,
-    creadoEn: row.creado_en as string,
+    activo: api.activo,
+    creadoEn: api.creadoEn,
   };
+}
+
+interface AuthResponse {
+  token: string;
+  usuario: UsuarioApi;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -32,74 +43,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Restaurar sesión al cargar
   useEffect(() => {
-    const savedId = localStorage.getItem(SESSION_KEY);
-    if (savedId) {
-      supabase.from('users').select('*').eq('id', savedId).single()
-        .then(({ data }) => {
-          if (data) setUsuario(mapUser(data));
-          setCargando(false);
-        });
-    } else {
+    const token = getToken();
+    if (!token) {
       setCargando(false);
+      return;
     }
+
+    apiFetch<{ usuario: UsuarioApi }>('/api/auth/me')
+      .then(({ usuario: u }) => setUsuario(mapUsuario(u)))
+      .catch(() => clearToken())
+      .finally(() => setCargando(false));
   }, []);
 
   const login = async (email: string, password: string) => {
     setError(null);
-
-    const { data, error: err } = await supabase.rpc('verify_login', {
-      p_email: email,
-      p_password: password,
-    });
-
-    if (err || !data || data.length === 0) {
-      const msg = 'Email o contrasena incorrectos';
+    try {
+      const { token, usuario: u } = await apiFetch<AuthResponse>('/api/auth/login', {
+        method: 'POST',
+        body: { email, password },
+        auth: false,
+      });
+      setToken(token);
+      setUsuario(mapUsuario(u));
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Error inesperado al iniciar sesión.';
       setError(msg);
       throw new Error(msg);
     }
-
-    const user = mapUser(data[0]);
-    localStorage.setItem(SESSION_KEY, user.id);
-    setUsuario(user);
   };
 
   const registro = async (email: string, password: string, nombre: string) => {
     setError(null);
-
-    // Verificar si el email ya existe
-    const { data: existing } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle();
-
-    if (existing) {
-      const msg = 'Ya existe una cuenta con ese email';
+    try {
+      const { token, usuario: u } = await apiFetch<AuthResponse>('/api/auth/register', {
+        method: 'POST',
+        body: { email, password, nombre },
+        auth: false,
+      });
+      setToken(token);
+      setUsuario(mapUsuario(u));
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Error inesperado al registrarse.';
       setError(msg);
       throw new Error(msg);
     }
-
-    const { data, error: err } = await supabase.rpc('create_user', {
-      p_email: email,
-      p_password: password,
-      p_nombre: nombre,
-    });
-
-    if (err || !data || data.length === 0) {
-      const msg = 'Error al crear la cuenta';
-      setError(msg);
-      throw new Error(msg);
-    }
-
-    const user = mapUser(data[0]);
-    localStorage.setItem(SESSION_KEY, user.id);
-    setUsuario(user);
   };
 
   const logout = async () => {
-    localStorage.removeItem(SESSION_KEY);
+    clearToken();
     setUsuario(null);
   };
 

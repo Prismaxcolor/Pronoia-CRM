@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { actualizarUsuario } from '../../services/usuario-service';
+import { useToast } from '../../hooks/use-toast';
 import { PERMISOS_POR_ROL } from '@shared/types/index.js';
 import type { Usuario, RolUsuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
 
@@ -27,6 +28,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
   const [useCustom, setUseCustom] = useState(
     JSON.stringify(usuario.permisos) !== JSON.stringify(PERMISOS_POR_ROL[usuario.rol])
   );
+  const toast = useToast();
 
   const tienePermiso = (recurso: Recurso, accion: Accion): boolean => {
     return permisos.some(p => p.recurso === recurso && p.accion === accion);
@@ -57,9 +59,14 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
   const handleGuardar = async () => {
     setGuardando(true);
     const permisosGuardar = useCustom ? permisos : [];
-    const exito = await actualizarUsuario(usuario.id, { rol, permisos: permisosGuardar });
+    const result = await actualizarUsuario(usuario.id, { rol, permisos: permisosGuardar });
     setGuardando(false);
-    if (exito) onGuardado();
+    if ('usuario' in result) {
+      toast.exito(`Permisos de ${usuario.nombre} actualizados.`);
+      onGuardado();
+    } else {
+      toast.errorMsg(result.error);
+    }
   };
 
   return (

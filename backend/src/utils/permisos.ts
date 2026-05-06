@@ -1,17 +1,15 @@
+/**
+ * Matriz de permisos del sistema. Espejo del archivo
+ * shared/types/usuario.ts del frontend; se duplica intencionalmente
+ * (CLAUDE.md permite duplicar tipos compartidos cuando hace falta)
+ * porque el alias @shared no se resuelve cleanly en runtime con tsx
+ * + ESM + extensiones .js.
+ *
+ * Si se actualiza shared/types/usuario.ts, actualizar también este archivo.
+ */
+
 export type RolUsuario = 'superadmin' | 'administracion' | 'trabajador';
-
-export interface Usuario {
-  id: string;
-  authId: string;
-  nombre: string;
-  email: string;
-  rol: RolUsuario;
-  permisos: Permiso[];
-  activo: boolean;
-  creadoEn: string;
-}
-
-export type Recurso = 'dashboard' | 'productos' | 'cochinito' | 'facturacion' | 'usuarios' | 'clientes';
+export type Recurso = 'dashboard' | 'productos' | 'cochinito' | 'facturacion' | 'usuarios';
 export type Accion = 'ver' | 'crear' | 'editar' | 'eliminar';
 
 export interface Permiso {
@@ -19,7 +17,6 @@ export interface Permiso {
   accion: Accion;
 }
 
-/** Permisos por defecto de cada rol */
 export const PERMISOS_POR_ROL: Record<RolUsuario, Permiso[]> = {
   superadmin: [
     { recurso: 'dashboard', accion: 'ver' },
@@ -27,18 +24,15 @@ export const PERMISOS_POR_ROL: Record<RolUsuario, Permiso[]> = {
     { recurso: 'facturacion', accion: 'ver' }, { recurso: 'facturacion', accion: 'crear' }, { recurso: 'facturacion', accion: 'editar' },
     { recurso: 'cochinito', accion: 'ver' }, { recurso: 'cochinito', accion: 'crear' }, { recurso: 'cochinito', accion: 'editar' }, { recurso: 'cochinito', accion: 'eliminar' },
     { recurso: 'usuarios', accion: 'ver' }, { recurso: 'usuarios', accion: 'crear' }, { recurso: 'usuarios', accion: 'editar' }, { recurso: 'usuarios', accion: 'eliminar' },
-    { recurso: 'clientes', accion: 'ver' }, { recurso: 'clientes', accion: 'crear' }, { recurso: 'clientes', accion: 'editar' }, { recurso: 'clientes', accion: 'eliminar' },
   ],
   administracion: [
     { recurso: 'dashboard', accion: 'ver' },
     { recurso: 'productos', accion: 'ver' },
     { recurso: 'facturacion', accion: 'ver' }, { recurso: 'facturacion', accion: 'crear' }, { recurso: 'facturacion', accion: 'editar' },
     { recurso: 'cochinito', accion: 'ver' }, { recurso: 'cochinito', accion: 'crear' }, { recurso: 'cochinito', accion: 'editar' },
-    { recurso: 'clientes', accion: 'ver' }, { recurso: 'clientes', accion: 'crear' }, { recurso: 'clientes', accion: 'editar' },
   ],
   trabajador: [
     { recurso: 'productos', accion: 'ver' }, { recurso: 'productos', accion: 'crear' }, { recurso: 'productos', accion: 'editar' },
-    { recurso: 'clientes', accion: 'ver' },
   ],
 };
 

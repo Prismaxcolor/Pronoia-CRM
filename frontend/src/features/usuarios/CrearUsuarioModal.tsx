@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearUsuario } from '../../services/usuario-service';
+import { useToast } from '../../hooks/use-toast';
 import type { RolUsuario } from '@shared/types/index.js';
 
 interface Props {
@@ -15,6 +16,7 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
   const [rol, setRol] = useState<RolUsuario>('trabajador');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,10 +26,11 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
     const result = await crearUsuario(email, password, nombre, rol);
     setGuardando(false);
 
-    if (result) {
+    if ('usuario' in result) {
+      toast.exito(`Usuario "${result.usuario.nombre}" creado.`);
       onCreado();
     } else {
-      setError('Error al crear usuario. El email puede estar en uso.');
+      setError(result.error);
     }
   };
 
@@ -54,7 +57,7 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
           </div>
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">Contrasena</label>
-            <input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} className={inputClass} placeholder="Minimo 6 caracteres" />
+            <input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} className={inputClass} placeholder="Minimo 8 caracteres" />
           </div>
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">Rol</label>

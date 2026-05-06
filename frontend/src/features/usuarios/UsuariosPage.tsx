@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Plus, Shield, UserX, Pencil } from 'lucide-react';
-import { obtenerUsuarios, eliminarUsuario } from '../../services/usuario-service';
+import { Plus, Shield, UserX, UserCheck, Trash2 } from 'lucide-react';
+import {
+  obtenerUsuarios,
+  desactivarUsuario,
+  reactivarUsuario,
+  borrarUsuario,
+} from '../../services/usuario-service';
 import { useAuth } from '../../hooks/use-auth';
+import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import CrearUsuarioModal from './CrearUsuarioModal';
 import EditarPermisosModal from './EditarPermisosModal';
 import type { Usuario } from '@shared/types/index.js';
@@ -18,6 +25,8 @@ function UsuariosPage() {
   const [mostrarCrear, setMostrarCrear] = useState(false);
   const [editando, setEditando] = useState<Usuario | null>(null);
   const { usuario: currentUser } = useAuth();
+  const toast = useToast();
+  const confirmar = useConfirm();
 
   const cargar = () => {
     setCargando(true);
@@ -28,9 +37,47 @@ function UsuariosPage() {
 
   const handleDesactivar = async (u: Usuario) => {
     if (u.id === currentUser?.id) return;
-    const confirmado = window.confirm(`¿Desactivar a ${u.nombre}?`);
-    if (!confirmado) return;
-    await eliminarUsuario(u.id);
+    const ok = await confirmar({
+      titulo: `Desactivar a ${u.nombre}`,
+      mensaje: 'El usuario no podrá iniciar sesión, pero su historial financiero se conserva. Podrás reactivarlo más adelante.',
+      confirmarLabel: 'Desactivar',
+      variante: 'warning',
+    });
+    if (!ok) return;
+    const result = await desactivarUsuario(u.id);
+    if ('error' in result) {
+      toast.errorMsg(result.error);
+      return;
+    }
+    toast.exito(`${u.nombre} desactivado.`);
+    cargar();
+  };
+
+  const handleReactivar = async (u: Usuario) => {
+    const result = await reactivarUsuario(u.id);
+    if ('error' in result) {
+      toast.errorMsg(result.error);
+      return;
+    }
+    toast.exito(`${u.nombre} reactivado.`);
+    cargar();
+  };
+
+  const handleBorrar = async (u: Usuario) => {
+    if (u.id === currentUser?.id) return;
+    const ok = await confirmar({
+      titulo: `Borrar a ${u.nombre} definitivamente`,
+      mensaje: `Esta acción es irreversible. Solo se permite si el usuario NO tiene movimientos ni facturas asociados.\n\nSi tiene historial financiero, mantenlo desactivado en su lugar.`,
+      confirmarLabel: 'Borrar definitivamente',
+      variante: 'danger',
+    });
+    if (!ok) return;
+    const result = await borrarUsuario(u.id);
+    if ('error' in result) {
+      toast.errorMsg(result.error);
+      return;
+    }
+    toast.exito(`${u.nombre} eliminado de la base de datos.`);
     cargar();
   };
 
@@ -77,7 +124,12 @@ function UsuariosPage() {
               const badge = ROL_BADGE[u.rol] ?? ROL_BADGE.trabajador;
               const esYo = u.id === currentUser?.id;
               return (
-                <tr key={u.id} className="border-b border-border last:border-0 hover:bg-surface-hover transition-colors">
+                <tr
+                  key={u.id}
+                  className={`border-b border-border last:border-0 hover:bg-surface-hover transition-colors ${
+                    !u.activo ? 'opacity-60' : ''
+                  }`}
+                >
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-sm">
@@ -108,7 +160,7 @@ function UsuariosPage() {
                     </span>
                   </td>
                   <td className="p-4">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"
                         onClick={() => setEditando(u)}
@@ -117,15 +169,35 @@ function UsuariosPage() {
                       >
                         <Shield size={16} />
                       </button>
-                      {!esYo && (
+                      {!esYo && u.activo && (
                         <button
                           type="button"
                           onClick={() => handleDesactivar(u)}
-                          className="p-2 text-text-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-2 text-text-muted hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                           title="Desactivar"
                         >
                           <UserX size={16} />
                         </button>
+                      )}
+                      {!esYo && !u.activo && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleReactivar(u)}
+                            className="p-2 text-text-muted hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                            title="Reactivar"
+                          >
+                            <UserCheck size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleBorrar(u)}
+                            className="p-2 text-text-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Borrar definitivamente"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>

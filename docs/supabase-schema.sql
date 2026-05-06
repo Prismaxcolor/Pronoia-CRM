@@ -138,3 +138,58 @@ alter table public.bancas drop constraint if exists bancas_tipo_check;
 alter table public.bancas
   add constraint bancas_tipo_check
   check (tipo in ('banco_nacional', 'banco_internacional', 'exchange', 'efectivo'));
+
+
+-- ============================================================================
+-- Bloque 5 · soft delete de bancas (regla de dominio: en finanzas no se borra)
+--
+-- Las bancas con saldo 0 se "archivan" en lugar de borrarse físicamente.
+-- Esto preserva la integridad referencial con movimientos históricos y
+-- cumple la regla del CLAUDE.md de no borrar registros financieros.
+--
+-- Para des-archivar una banca: update bancas set archivada = false where id = '...';
+-- ============================================================================
+
+alter table public.bancas
+  add column if not exists archivada boolean not null default false;
+
+alter table public.bancas
+  add column if not exists archivada_en timestamptz;
+
+create index if not exists idx_bancas_activas
+  on public.bancas (archivada)
+  where archivada = false;
+
+
+-- ============================================================================
+-- Bloque 6 · clientes frecuentes
+--
+-- Aunque la empresa es principalmente compradora, también factura a clientes
+-- recurrentes (módulo de facturación). Esta tabla evita re-tipear datos en
+-- cada factura.
+--
+-- RLS deshabilitado por consistencia con productos/users (todo va por backend
+-- Express con service_role). Misma deuda técnica documentada en el bloque 4.
+-- ============================================================================
+
+create table if not exists public.clientes (
+  id              uuid        primary key default gen_random_uuid(),
+  nombre          text        not null,
+  identificacion  text,
+  email           text,
+  telefono        text,
+  direccion       text,
+  notas           text,
+  activo          boolean     not null default true,
+  creado_por      uuid        references public.users(id) on delete set null,
+  creado_en       timestamptz not null default now()
+);
+
+alter table public.clientes disable row level security;
+
+create index if not exists idx_clientes_activos
+  on public.clientes (activo, creado_en desc);
+
+-- Búsqueda rápida por nombre (útil para el selector de cliente en facturas).
+create index if not exists idx_clientes_nombre_lower
+  on public.clientes (lower(nombre));

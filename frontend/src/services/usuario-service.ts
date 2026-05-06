@@ -1,67 +1,104 @@
-import { supabase } from '../config/supabase';
+import { apiFetch } from './api-client';
 import type { Usuario, Permiso, RolUsuario } from '@shared/types/index.js';
 import { PERMISOS_POR_ROL } from '@shared/types/index.js';
 
-function mapRow(row: Record<string, unknown>): Usuario {
-  const rol = row.rol as RolUsuario;
-  const permisosCustom = row.permisos as Permiso[] | null;
-  const permisos = permisosCustom && permisosCustom.length > 0
-    ? permisosCustom
-    : PERMISOS_POR_ROL[rol] ?? [];
+interface UsuarioApi {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: RolUsuario;
+  permisos: Permiso[] | null;
+  activo: boolean;
+  creadoEn: string;
+}
 
+function mapApi(api: UsuarioApi): Usuario {
+  const permisos = api.permisos && api.permisos.length > 0
+    ? api.permisos
+    : PERMISOS_POR_ROL[api.rol] ?? [];
   return {
-    id: row.id as string,
-    authId: row.id as string,
-    nombre: row.nombre as string,
-    email: row.email as string,
-    rol,
+    id: api.id,
+    authId: api.id,
+    nombre: api.nombre,
+    email: api.email,
+    rol: api.rol,
     permisos,
-    activo: row.activo as boolean,
-    creadoEn: row.creado_en as string,
+    activo: api.activo,
+    creadoEn: api.creadoEn,
   };
 }
 
 export async function obtenerUsuarios(): Promise<Usuario[]> {
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .order('creado_en', { ascending: false });
-
-  if (error || !data) return [];
-  return data.map(mapRow);
-}
-
-export async function crearUsuario(email: string, password: string, nombre: string, rol: RolUsuario): Promise<Usuario | null> {
-  const { data, error } = await supabase.rpc('create_user', {
-    p_email: email,
-    p_password: password,
-    p_nombre: nombre,
-  });
-
-  if (error || !data || data.length === 0) return null;
-
-  // Actualizar rol si no es trabajador (el default)
-  if (rol !== 'trabajador') {
-    await supabase.from('users').update({ rol }).eq('id', data[0].id);
+  try {
+    const { usuarios } = await apiFetch<{ usuarios: UsuarioApi[] }>('/api/usuarios');
+    return usuarios.map(mapApi);
+  } catch {
+    return [];
   }
-
-  return mapRow({ ...data[0], rol });
 }
 
-export async function actualizarUsuario(id: string, campos: { rol?: RolUsuario; permisos?: Permiso[]; activo?: boolean; nombre?: string }): Promise<boolean> {
-  const { error } = await supabase
-    .from('users')
-    .update(campos)
-    .eq('id', id);
-
-  return !error;
+export async function crearUsuario(
+  email: string,
+  password: string,
+  nombre: string,
+  rol: RolUsuario
+): Promise<{ usuario: Usuario } | { error: string }> {
+  try {
+    const { usuario } = await apiFetch<{ usuario: UsuarioApi }>('/api/usuarios', {
+      method: 'POST',
+      body: { email, password, nombre, rol },
+    });
+    return { usuario: mapApi(usuario) };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo crear el usuario.' };
+  }
 }
 
-export async function eliminarUsuario(id: string): Promise<boolean> {
-  const { error } = await supabase
-    .from('users')
-    .update({ activo: false })
-    .eq('id', id);
+export interface ActualizarUsuarioCambios {
+  nombre?: string;
+  rol?: RolUsuario;
+  permisos?: Permiso[];
+  activo?: boolean;
+}
 
-  return !error;
+export async function actualizarUsuario(
+  id: string,
+  cambios: ActualizarUsuarioCambios
+): Promise<{ usuario: Usuario } | { error: string }> {
+  try {
+    const { usuario } = await apiFetch<{ usuario: UsuarioApi }>(`/api/usuarios/${id}`, {
+      method: 'PATCH',
+      body: cambios,
+    });
+    return { usuario: mapApi(usuario) };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo actualizar el usuario.' };
+  }
+}
+
+export async function desactivarUsuario(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/usuarios/${id}/desactivar`, { method: 'POST' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo desactivar el usuario.' };
+  }
+}
+
+export async function reactivarUsuario(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/usuarios/${id}/reactivar`, { method: 'POST' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo reactivar el usuario.' };
+  }
+}
+
+export async function borrarUsuario(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/usuarios/${id}`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo borrar el usuario.' };
+  }
 }

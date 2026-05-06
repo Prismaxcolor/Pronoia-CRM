@@ -20,7 +20,7 @@ const TIPOS: TipoOption[] = [
 interface Props {
   banca?: Banca | null;
   onClose: () => void;
-  onGuardado: () => void;
+  onGuardado: (modo: 'crear' | 'editar') => void;
 }
 
 function BancaFormModal({ banca, onClose, onGuardado }: Props) {
@@ -64,7 +64,7 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
     setGuardando(false);
 
     if (ok) {
-      onGuardado();
+      onGuardado(editando ? 'editar' : 'crear');
     } else {
       setError(`No se pudo ${editando ? 'actualizar' : 'crear'} la banca. Intenta de nuevo.`);
     }

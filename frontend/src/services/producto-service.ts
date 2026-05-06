@@ -1,68 +1,124 @@
-import { supabase } from '../config/supabase';
+import { apiFetch } from './api-client';
 import { PRODUCTOS_MOCK } from './mock-data';
-import type { Producto, TipoProducto, VarianteProducto, SubProductoRef } from '@shared/types/index.js';
+import type {
+  Producto,
+  TipoProducto,
+  VarianteProducto,
+  SubProductoRef,
+} from '@shared/types/index.js';
 
-function mapRow(row: Record<string, unknown>): Producto {
+interface ProductoApi {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  categoria: string;
+  moneda: string;
+  activo: boolean;
+  tipo: TipoProducto;
+  imagenUrl: string | null;
+  creadoPor: string;
+  creadoEn: string;
+  peso?: number;
+  costoUnitario?: number;
+  variantes?: VarianteProducto[];
+  subProductos?: SubProductoRef[];
+  costoCalculado?: number;
+}
+
+function mapApi(api: ProductoApi): Producto {
   const base = {
-    id: row.id as string,
-    nombre: row.nombre as string,
-    descripcion: row.descripcion as string,
-    categoria: row.categoria as string,
-    moneda: row.moneda as string,
-    activo: row.activo as boolean,
-    imagenUrl: (row.imagen_url as string) ?? null,
-    creadoPor: (row.creado_por as string) ?? '',
-    creadoEn: (row.creado_en as string) ?? '',
+    id: api.id,
+    nombre: api.nombre,
+    descripcion: api.descripcion,
+    categoria: api.categoria,
+    moneda: api.moneda,
+    activo: api.activo,
+    imagenUrl: api.imagenUrl,
+    creadoPor: api.creadoPor,
+    creadoEn: api.creadoEn,
   };
-  const tipo = row.tipo as TipoProducto;
-
-  if (tipo === 'azul') {
-    return { ...base, tipo: 'azul', variantes: (row.variantes ?? []) as VarianteProducto[] };
+  if (api.tipo === 'azul') {
+    return { ...base, tipo: 'azul', variantes: api.variantes ?? [] };
   }
-  if (tipo === 'verde') {
-    return { ...base, tipo: 'verde', subProductos: (row.sub_productos ?? []) as SubProductoRef[], costoCalculado: (row.costo_calculado as number) ?? 0 };
+  if (api.tipo === 'verde') {
+    return {
+      ...base,
+      tipo: 'verde',
+      subProductos: api.subProductos ?? [],
+      costoCalculado: api.costoCalculado ?? 0,
+    };
   }
-  return { ...base, tipo: 'amarillo', peso: (row.peso as number) ?? 0, costoUnitario: (row.costo_unitario as number) ?? 0 };
+  return {
+    ...base,
+    tipo: 'amarillo',
+    peso: api.peso ?? 0,
+    costoUnitario: api.costoUnitario ?? 0,
+  };
 }
 
 export async function obtenerProductos(): Promise<Producto[]> {
-  const { data, error } = await supabase
-    .from('productos')
-    .select('*')
-    .order('creado_en', { ascending: false });
-
-  if (error || !data) return PRODUCTOS_MOCK;
-  return data.map(mapRow);
+  try {
+    const { productos } = await apiFetch<{ productos: ProductoApi[] }>('/api/productos');
+    return productos.map(mapApi);
+  } catch {
+    return PRODUCTOS_MOCK;
+  }
 }
 
-export async function crearProducto(producto: Omit<Producto, 'id' | 'creadoEn'>): Promise<Producto | null> {
-  const row: Record<string, unknown> = {
-    nombre: producto.nombre,
-    descripcion: producto.descripcion,
-    categoria: producto.categoria,
-    moneda: producto.moneda,
-    activo: producto.activo,
-    tipo: producto.tipo,
-    imagen_url: producto.imagenUrl || null,
-    creado_por: producto.creadoPor || null,
-  };
+export type ProductoInput = Omit<Producto, 'id' | 'creadoEn' | 'creadoPor'>;
 
-  if (producto.tipo === 'amarillo') {
-    row.peso = producto.peso;
-    row.costo_unitario = producto.costoUnitario;
-  } else if (producto.tipo === 'azul') {
-    row.variantes = producto.variantes;
-  } else if (producto.tipo === 'verde') {
-    row.sub_productos = producto.subProductos;
-    row.costo_calculado = producto.costoCalculado;
+export async function crearProducto(
+  producto: ProductoInput
+): Promise<{ producto: Producto } | { error: string }> {
+  try {
+    const { producto: creado } = await apiFetch<{ producto: ProductoApi }>('/api/productos', {
+      method: 'POST',
+      body: producto,
+    });
+    return { producto: mapApi(creado) };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo crear el producto.' };
   }
+}
 
-  const { data, error } = await supabase
-    .from('productos')
-    .insert(row)
-    .select()
-    .single();
+export async function actualizarProducto(
+  id: string,
+  producto: ProductoInput
+): Promise<{ producto: Producto } | { error: string }> {
+  try {
+    const { producto: act } = await apiFetch<{ producto: ProductoApi }>(`/api/productos/${id}`, {
+      method: 'PATCH',
+      body: producto,
+    });
+    return { producto: mapApi(act) };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo actualizar el producto.' };
+  }
+}
 
-  if (error || !data) return null;
-  return mapRow(data);
+export async function desactivarProducto(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/productos/${id}/desactivar`, { method: 'POST' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo desactivar el producto.' };
+  }
+}
+
+export async function reactivarProducto(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/productos/${id}/reactivar`, { method: 'POST' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo reactivar el producto.' };
+  }
+}
+
+export async function borrarProducto(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/productos/${id}`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo borrar el producto.' };
+  }
 }

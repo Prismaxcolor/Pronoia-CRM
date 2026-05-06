@@ -6,6 +6,8 @@ import {
   obtenerFacturaPorId, agregarItem, actualizarCantidadItem, eliminarItem,
   actualizarNotaFactura, confirmarFactura,
 } from '../../services/factura-service';
+import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import type { Producto, TipoProducto, Factura, FacturaItem } from '@shared/types/index.js';
 
 interface Props {
@@ -27,6 +29,8 @@ function getCosto(p: Producto): number {
 
 function EditorFactura({ facturaId }: Props) {
   const navigate = useNavigate();
+  const toast = useToast();
+  const confirmar = useConfirm();
   const [factura, setFactura] = useState<Factura | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [items, setItems] = useState<FacturaItem[]>([]);
@@ -131,19 +135,27 @@ function EditorFactura({ facturaId }: Props) {
   const handleConfirmar = async () => {
     if (!factura) return;
     if (items.length === 0) {
-      window.alert('Agrega al menos un producto antes de confirmar la factura.');
+      toast.advertencia('Agrega al menos un producto antes de confirmar la factura.');
       return;
     }
-    if (!window.confirm(`¿Confirmar factura #${factura.numero} con total ${factura.moneda === 'USD' ? '$' : 'Bs '}${total.toLocaleString()}? Una vez confirmada no se puede editar.`)) return;
+    const totalFmt = `${factura.moneda === 'USD' ? '$' : 'Bs '}${total.toLocaleString()}`;
+    const ok = await confirmar({
+      titulo: `Confirmar factura #${factura.numero}`,
+      mensaje: `Total: ${totalFmt}\n\nUna vez confirmada no podrás editarla. Si necesitas cambiar algo, hazlo ahora.`,
+      confirmarLabel: 'Confirmar factura',
+      variante: 'default',
+    });
+    if (!ok) return;
 
     setConfirmando(true);
-    const ok = await confirmarFactura(factura.id);
+    const okConfirmar = await confirmarFactura(factura.id);
     setConfirmando(false);
 
-    if (ok) {
+    if (okConfirmar) {
+      toast.exito(`Factura #${factura.numero} confirmada.`);
       navigate('/historial');
     } else {
-      window.alert('No se pudo confirmar la factura. Intenta de nuevo.');
+      toast.errorMsg('No se pudo confirmar la factura. Intenta de nuevo.');
     }
   };
 

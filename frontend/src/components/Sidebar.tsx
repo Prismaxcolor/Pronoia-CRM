@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, FileText, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, FileText, ClipboardList, Contact } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth';
 import type { Recurso } from '@shared/types/index.js';
 
@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Facturacion', to: '/facturacion', icon: <FileText size={20} />, recurso: 'facturacion' },
   { label: 'Historial', to: '/historial', icon: <ClipboardList size={20} />, recurso: 'facturacion' },
   { label: 'Cochinito', to: '/cochinito', icon: <Wallet size={20} />, recurso: 'cochinito' },
+  { label: 'Clientes', to: '/clientes', icon: <Contact size={20} />, recurso: 'clientes' },
   { label: 'Usuarios', to: '/usuarios', icon: <Users size={20} />, recurso: 'usuarios' },
 ];
 

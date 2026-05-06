@@ -7,10 +7,14 @@ export interface VarianteProducto {
   precioUnitario: number;
 }
 
-export interface SubProductoRef {
-  productoId: string;
-  cantidad: number;
-}
+/**
+ * Subproducto dentro de un producto verde. Puede ser:
+ *  - tipo 'ref'   → apunta a otro producto del catálogo (por id).
+ *  - tipo 'manual'→ no existe en el catálogo, se ingresa nombre y costo a mano.
+ */
+export type SubProductoRef =
+  | { tipo: 'ref'; productoId: string; cantidad: number }
+  | { tipo: 'manual'; nombre: string; costoUnitario: number; cantidad: number };
 
 /** Producto base — todos los tipos comparten estos campos */
 export interface ProductoBase {
