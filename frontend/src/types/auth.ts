@@ -1,4 +1,4 @@
-import type { Usuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
+import type { Usuario, Recurso, Accion } from '@shared/types/index.js';
 
 export interface AuthState {
   usuario: Usuario | null;

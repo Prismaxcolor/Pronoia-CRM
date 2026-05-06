@@ -132,7 +132,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     }
 
     const result = editando && producto
-      ? await actualizarProducto(producto.id, payload)
+      ? await actualizarProducto(producto.id, payload as never)
       : await crearProducto({ ...payload, creadoPor: usuario?.id ?? '' } as never);
 
     setGuardando(false);

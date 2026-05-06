@@ -14,9 +14,9 @@ export const PRODUCTOS_MOCK: Producto[] = [
 ];
 
 export const BANCAS_MOCK: Banca[] = [
-  { id: 'b1', nombre: 'Caja Chica', saldo: 1500.00, moneda: 'USD', descripcion: 'Fondos para gastos menores' },
-  { id: 'b2', nombre: 'Banco Nacional', saldo: 45000.00, moneda: 'USD', descripcion: 'Cuenta operativa principal' },
-  { id: 'b3', nombre: 'Banco Nacional BS', saldo: 120000.00, moneda: 'VES', descripcion: 'Cuenta en bolivares' },
+  { id: 'b1', nombre: 'Caja Chica', saldo: 1500.00, moneda: 'USD', descripcion: 'Fondos para gastos menores', tipo: 'efectivo', archivada: false },
+  { id: 'b2', nombre: 'Banco Nacional', saldo: 45000.00, moneda: 'USD', descripcion: 'Cuenta operativa principal', tipo: 'banco_nacional', archivada: false },
+  { id: 'b3', nombre: 'Banco Nacional BS', saldo: 120000.00, moneda: 'VES', descripcion: 'Cuenta en bolivares', tipo: 'banco_nacional', archivada: false },
 ];
 
 export const MOVIMIENTOS_MOCK: Movimiento[] = [
