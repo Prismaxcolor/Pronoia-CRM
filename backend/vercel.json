@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "echo 'serverless functions only, no build needed'",
+  "buildCommand": "mkdir -p public && echo '<h1>Pronoia API</h1><p>Endpoints under /api/*</p>' > public/index.html",
+  "outputDirectory": "public",
   "framework": null,
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
