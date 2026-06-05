@@ -69,7 +69,7 @@ function DashboardPage() {
       {/* Ultimos movimientos */}
       <h2 className="text-lg font-semibold text-text-primary mb-3">Ultimos movimientos</h2>
       <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-surface-alt">
               <th className="text-left p-3 font-medium text-text-secondary">Fecha</th>
@@ -101,7 +101,7 @@ function DashboardPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
         {movimientos.length === 0 && (
           <p className="p-6 text-center text-text-muted">No hay movimientos registrados</p>
         )}

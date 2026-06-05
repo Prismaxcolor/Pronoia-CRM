@@ -562,3 +562,21 @@ begin
   return v_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 13 · política de Storage para el bucket 'tickets'
+--
+-- El bucket 'tickets' (fotos de pesaje) existe y es público (lectura), pero sin
+-- política de escritura la anon key no puede subir
+-- ("new row violates row-level security policy"). Esto le da el mismo acceso
+-- abierto que ya tiene el bucket 'productos' (misma deuda RLS documentada: hoy
+-- todo va por la anon key). Correr en el SQL Editor de Supabase.
+-- ============================================================================
+
+drop policy if exists "tickets acceso anon" on storage.objects;
+create policy "tickets acceso anon"
+  on storage.objects for all
+  to anon, authenticated
+  using (bucket_id = 'tickets')
+  with check (bucket_id = 'tickets');

@@ -109,6 +109,7 @@ function UsuariosPage() {
 
       {/* Tabla de usuarios */}
       <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-surface-alt">
@@ -206,6 +207,7 @@ function UsuariosPage() {
             })}
           </tbody>
         </table>
+        </div>
         {usuarios.length === 0 && (
           <p className="p-8 text-center text-text-muted">No hay usuarios registrados</p>
         )}

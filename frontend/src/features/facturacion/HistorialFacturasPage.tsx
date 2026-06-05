@@ -142,7 +142,7 @@ function HistorialFacturasPage() {
               {/* Detalle expandido */}
               {expandida === f.id && (
                 <div className="border-t border-border px-4 pb-4">
-                  <table className="w-full text-sm mt-3">
+                  <div className="overflow-x-auto"><table className="w-full text-sm mt-3">
                     <thead>
                       <tr className="text-left">
                         <th className="pb-2 text-xs font-medium text-text-secondary">Producto</th>
@@ -167,7 +167,7 @@ function HistorialFacturasPage() {
                         <td className="pt-3 text-right text-lg font-bold text-brand-600">${f.total.toLocaleString()}</td>
                       </tr>
                     </tfoot>
-                  </table>
+                  </table></div>
                   {f.nota && (
                     <div className="mt-3 p-2 bg-surface-alt rounded-lg">
                       <p className="text-xs text-text-secondary"><strong>Nota:</strong> {f.nota}</p>

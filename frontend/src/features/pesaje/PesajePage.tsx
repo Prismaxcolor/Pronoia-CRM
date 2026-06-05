@@ -254,7 +254,7 @@ function PesajePage() {
             {tickets.length === 0 ? (
               <p className="text-center text-text-muted py-10 text-sm">Aún no hay tickets de pesaje.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-text-muted">
                     <th className="px-4 py-2.5 font-medium">Fecha</th>
@@ -281,7 +281,7 @@ function PesajePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </div>
         </div>

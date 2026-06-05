@@ -187,7 +187,7 @@ function ListaDetallePage() {
         </p>
       ) : (
         <div className="bg-surface rounded-xl border border-border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-text-muted">
                 <th className="px-5 py-3 font-medium">Material</th>
@@ -248,7 +248,7 @@ function ListaDetallePage() {
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
     </div>

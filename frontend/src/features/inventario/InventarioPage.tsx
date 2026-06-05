@@ -113,7 +113,7 @@ function InventarioPage() {
                 </button>
 
                 {abierto && (
-                  <table className="w-full text-sm border-t border-border">
+                  <div className="overflow-x-auto border-t border-border"><table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs text-text-muted bg-surface-alt">
                         <th className="px-5 py-2 font-medium">Artículo</th>
@@ -136,7 +136,7 @@ function InventarioPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></div>
                 )}
               </div>
             );

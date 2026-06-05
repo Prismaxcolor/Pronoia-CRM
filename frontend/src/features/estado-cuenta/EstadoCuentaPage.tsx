@@ -112,7 +112,7 @@ function EstadoCuentaPage({ tipo }: Props) {
 
       {/* Movimientos */}
       <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-text-muted">
               <th className="px-5 py-3 font-medium">Fecha</th>
@@ -140,7 +140,7 @@ function EstadoCuentaPage({ tipo }: Props) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
 
         {estado.entradas.length === 0 && (
           <p className="text-center text-text-muted py-12 text-sm">

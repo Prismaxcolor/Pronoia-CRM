@@ -115,7 +115,7 @@ function FacturaHistorialPage({ tipo }: Props) {
         ) : facturas.length === 0 ? (
           <p className="text-center text-text-muted py-12 text-sm">No hay facturas con estos filtros.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-text-muted">
                 <th className="px-4 py-3 font-medium">Fecha</th>
@@ -145,7 +145,7 @@ function FacturaHistorialPage({ tipo }: Props) {
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         )}
       </div>
     </div>

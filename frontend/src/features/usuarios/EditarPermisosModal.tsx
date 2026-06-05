@@ -122,7 +122,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
           {/* Matriz de permisos */}
           {useCustom && (
             <div className="border border-border rounded-lg overflow-hidden">
-              <table className="w-full text-xs">
+              <div className="overflow-x-auto"><table className="w-full text-xs">
                 <thead>
                   <tr className="bg-surface-alt border-b border-border">
                     <th className="text-left p-3 font-medium text-text-secondary">Seccion</th>
@@ -153,7 +153,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           )}
 
