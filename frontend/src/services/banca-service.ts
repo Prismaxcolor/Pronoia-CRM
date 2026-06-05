@@ -139,6 +139,10 @@ export interface CrearMovimientoInput {
   referencia: string;
   fecha: string;
   registradoPor: string;
+  /** Proveedor al que se le paga (egreso). Alimenta su estado de cuenta. */
+  proveedorId?: string | null;
+  /** Cliente del que se cobra (ingreso). Alimenta su estado de cuenta. */
+  clienteId?: string | null;
 }
 
 /** Crea un movimiento de ingreso o egreso. El trigger SQL ajusta el saldo. */
@@ -155,6 +159,8 @@ export async function crearMovimiento(input: CrearMovimientoInput): Promise<Movi
       fecha: input.fecha,
       referencia: input.referencia,
       registrado_por: input.registradoPor,
+      proveedor_id: input.proveedorId ?? null,
+      cliente_id: input.clienteId ?? null,
     })
     .select()
     .single();

@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { crearMovimiento } from '../../services/banca-service';
+import { obtenerProveedores } from '../../services/proveedor-service';
+import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth';
 import type { Banca } from '@shared/types/index.js';
 
@@ -11,6 +13,7 @@ interface Props {
 }
 
 type Tipo = 'ingreso' | 'egreso';
+interface Entidad { id: string; nombre: string; activo: boolean }
 
 function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
   const { usuario } = useAuth();
@@ -22,6 +25,19 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Atribución opcional a proveedor (egreso = pago) o cliente (ingreso = cobro)
+  const [proveedores, setProveedores] = useState<Entidad[]>([]);
+  const [clientes, setClientes] = useState<Entidad[]>([]);
+  const [entidadId, setEntidadId] = useState('');
+
+  useEffect(() => {
+    obtenerProveedores().then(lista => setProveedores(lista.filter(p => p.activo)));
+    obtenerClientes().then(lista => setClientes(lista.filter(c => c.activo)));
+  }, []);
+
+  // Al cambiar de tipo, se limpia la atribución (proveedor↔cliente no se mezclan)
+  const cambiarTipo = (nuevo: Tipo) => { setTipo(nuevo); setEntidadId(''); };
 
   const bancaActual = bancas.find(b => b.id === bancaId);
   const montoNum = parseFloat(monto);
@@ -53,6 +69,8 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
       referencia: referencia.trim(),
       fecha,
       registradoPor: usuario?.id ?? '',
+      proveedorId: tipo === 'egreso' ? entidadId || null : null,
+      clienteId: tipo === 'ingreso' ? entidadId || null : null,
     });
     setGuardando(false);
 
@@ -82,7 +100,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setTipo('ingreso')}
+                onClick={() => cambiarTipo('ingreso')}
                 className={`flex items-center justify-center gap-2 py-3 rounded-lg border-2 text-sm font-medium transition-all ${
                   tipo === 'ingreso'
                     ? 'border-green-500 bg-green-50 text-green-700'
@@ -94,7 +112,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
               </button>
               <button
                 type="button"
-                onClick={() => setTipo('egreso')}
+                onClick={() => cambiarTipo('egreso')}
                 className={`flex items-center justify-center gap-2 py-3 rounded-lg border-2 text-sm font-medium transition-all ${
                   tipo === 'egreso'
                     ? 'border-red-500 bg-red-50 text-red-700'
@@ -185,6 +203,23 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
               className={inputClass}
               placeholder="Ej: OC-2026-001, TRF-432"
             />
+          </div>
+
+          {/* Atribución a proveedor (pago) o cliente (cobro) */}
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">
+              {tipo === 'egreso' ? 'Pago a proveedor' : 'Cobro de cliente'}{' '}
+              <span className="text-text-muted">(opcional)</span>
+            </label>
+            <select value={entidadId} onChange={e => setEntidadId(e.target.value)} className={inputClass}>
+              <option value="">— Sin atribuir —</option>
+              {(tipo === 'egreso' ? proveedores : clientes).map(ent => (
+                <option key={ent.id} value={ent.id}>{ent.nombre}</option>
+              ))}
+            </select>
+            <p className="text-xs text-text-muted mt-1">
+              Si lo atribuyes, aparece como {tipo === 'egreso' ? 'pago' : 'cobro'} en su estado de cuenta.
+            </p>
           </div>
 
           {error && (

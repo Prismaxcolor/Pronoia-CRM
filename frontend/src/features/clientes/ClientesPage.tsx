@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, EyeOff, Eye, Trash2, Mail, Phone, MapPin } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Pencil, EyeOff, Eye, Trash2, Mail, Phone, MapPin, FileText } from 'lucide-react';
 import {
   obtenerClientes,
   desactivarCliente,
@@ -17,6 +18,7 @@ function ClientesPage() {
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; cliente: Cliente | null } | { abierto: false }>({ abierto: false });
+  const navigate = useNavigate();
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
@@ -204,6 +206,15 @@ function ClientesPage() {
             {!c.activo && (
               <span className="mt-3 inline-block px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">Inactivo</span>
             )}
+
+            <button
+              type="button"
+              onClick={() => navigate(`/clientes/${c.id}/estado-cuenta`)}
+              className="mt-4 w-full flex items-center justify-center gap-1.5 py-2 border border-border rounded-lg text-xs font-medium text-text-secondary hover:bg-surface-alt hover:text-brand-600 transition-colors"
+            >
+              <FileText size={14} />
+              Estado de cuenta
+            </button>
           </div>
         ))}
       </div>

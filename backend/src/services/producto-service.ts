@@ -7,7 +7,7 @@ interface ProductoRow {
   id: string;
   nombre: string;
   descripcion: string | null;
-  categoria: string;
+  tipo_material_id: string | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
@@ -19,13 +19,16 @@ interface ProductoRow {
   variantes: unknown;
   sub_productos: unknown;
   costo_calculado: number | null;
+  // join con tipos_material(nombre)
+  tipos_material?: { nombre: string } | null;
 }
 
 export interface ProductoPublico {
   id: string;
   nombre: string;
   descripcion: string;
-  categoria: string;
+  tipoMaterialId: string | null;
+  tipoMaterialNombre: string | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
@@ -44,7 +47,8 @@ function toPublico(row: ProductoRow): ProductoPublico {
     id: row.id,
     nombre: row.nombre,
     descripcion: row.descripcion ?? '',
-    categoria: row.categoria,
+    tipoMaterialId: row.tipo_material_id,
+    tipoMaterialNombre: row.tipos_material?.nombre ?? null,
     moneda: row.moneda,
     activo: row.activo,
     tipo: row.tipo,
@@ -65,7 +69,7 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
   const row: Record<string, unknown> = {
     nombre: input.nombre,
     descripcion: input.descripcion,
-    categoria: input.categoria,
+    tipo_material_id: input.tipoMaterialId,
     moneda: input.moneda,
     activo: input.activo,
     tipo: input.tipo,
@@ -99,11 +103,11 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
 export async function listarProductos(): Promise<ProductoPublico[]> {
   const { data, error } = await supabaseAdmin
     .from('productos')
-    .select('*')
+    .select('*, tipos_material(nombre)')
     .order('creado_en', { ascending: false });
 
   if (error || !data) return [];
-  return (data as ProductoRow[]).map(toPublico);
+  return (data as unknown as ProductoRow[]).map(toPublico);
 }
 
 export async function crearProducto(
@@ -115,11 +119,11 @@ export async function crearProducto(
   const { data, error } = await supabaseAdmin
     .from('productos')
     .insert(row)
-    .select('*')
+    .select('*, tipos_material(nombre)')
     .single();
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el producto.' };
-  return { producto: toPublico(data as ProductoRow) };
+  return { producto: toPublico(data as unknown as ProductoRow) };
 }
 
 export async function actualizarProducto(
@@ -145,12 +149,12 @@ export async function actualizarProducto(
     .from('productos')
     .update(row)
     .eq('id', id)
-    .select('*')
+    .select('*, tipos_material(nombre)')
     .maybeSingle();
 
   if (error) return { error: error.message };
   if (!data) return { error: 'Producto no encontrado al actualizar.' };
-  return { producto: toPublico(data as ProductoRow) };
+  return { producto: toPublico(data as unknown as ProductoRow) };
 }
 
 export async function desactivarProducto(id: string): Promise<boolean> {

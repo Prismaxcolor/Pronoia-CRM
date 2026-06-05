@@ -11,7 +11,8 @@ interface ProductoApi {
   id: string;
   nombre: string;
   descripcion: string;
-  categoria: string;
+  tipoMaterialId: string | null;
+  tipoMaterialNombre: string | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
@@ -30,7 +31,8 @@ function mapApi(api: ProductoApi): Producto {
     id: api.id,
     nombre: api.nombre,
     descripcion: api.descripcion,
-    categoria: api.categoria,
+    tipoMaterialId: api.tipoMaterialId,
+    tipoMaterialNombre: api.tipoMaterialNombre,
     moneda: api.moneda,
     activo: api.activo,
     imagenUrl: api.imagenUrl,

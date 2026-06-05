@@ -3,7 +3,7 @@ import { z } from 'zod';
 const baseSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(120),
   descripcion: z.string().max(500).default(''),
-  categoria: z.string().trim().min(1, 'La categoría es obligatoria.').max(80),
+  tipoMaterialId: z.string().uuid('Debes elegir una categoría de material.'),
   moneda: z.enum(['USD', 'VES']),
   activo: z.boolean().default(true),
   imagenUrl: z.string().url('URL de imagen inválida.').nullable().optional(),

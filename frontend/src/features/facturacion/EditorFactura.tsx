@@ -68,7 +68,7 @@ function EditorFactura({ facturaId }: Props) {
     .filter(p => filtroTipo === 'todos' || p.tipo === filtroTipo)
     .filter(p =>
       p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      p.categoria.toLowerCase().includes(busqueda.toLowerCase()) ||
+      (p.tipoMaterialNombre ?? '').toLowerCase().includes(busqueda.toLowerCase()) ||
       p.descripcion.toLowerCase().includes(busqueda.toLowerCase())
     );
 
@@ -254,7 +254,7 @@ function EditorFactura({ facturaId }: Props) {
                     }`} />
                     <div className="p-3">
                       <h3 className="text-xs font-semibold text-text-primary truncate">{p.nombre}</h3>
-                      <p className="text-xs text-text-muted truncate">{p.categoria}</p>
+                      <p className="text-xs text-text-muted truncate">{p.tipoMaterialNombre ?? 'Sin categoría'}</p>
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-sm font-bold text-brand-600">${getCosto(p).toLocaleString()}</span>
                         {enCarrito && (

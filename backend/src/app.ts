@@ -8,6 +8,14 @@ import authRouter from './routes/auth.js';
 import usuariosRouter from './routes/usuarios.js';
 import productosRouter from './routes/productos.js';
 import clientesRouter from './routes/clientes.js';
+import listasPreciosRouter from './routes/listas-precios.js';
+import tiposMaterialRouter from './routes/tipos-material.js';
+import proveedoresRouter from './routes/proveedores.js';
+import ticketsPesajeRouter from './routes/tickets-pesaje.js';
+import facturasCompraRouter from './routes/facturas-compra.js';
+import facturasVentaRouter from './routes/facturas-venta.js';
+import inventarioRouter from './routes/inventario.js';
+import transformacionesRouter from './routes/transformaciones.js';
 
 const app = express();
 
@@ -44,6 +52,14 @@ app.use('/api/auth', authRouter);
 app.use('/api/usuarios', usuariosRouter);
 app.use('/api/productos', productosRouter);
 app.use('/api/clientes', clientesRouter);
+app.use('/api/listas-precios', listasPreciosRouter);
+app.use('/api/tipos-material', tiposMaterialRouter);
+app.use('/api/proveedores', proveedoresRouter);
+app.use('/api/tickets-pesaje', ticketsPesajeRouter);
+app.use('/api/facturas-compra', facturasCompraRouter);
+app.use('/api/facturas-venta', facturasVentaRouter);
+app.use('/api/inventario', inventarioRouter);
+app.use('/api/transformaciones', transformacionesRouter);
 app.use('/api/tasas', tasasRouter);
 
 export default app;

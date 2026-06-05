@@ -10,6 +10,7 @@ import {
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearClienteSchema, actualizarClienteSchema } from '../schemas/clientes.js';
+import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -19,6 +20,21 @@ router.use(requireAuth);
 router.get('/', requirePermiso('clientes', 'ver'), async (_req, res) => {
   const clientes = await listarClientes();
   res.json({ clientes });
+});
+
+router.get('/:id/estado-cuenta', requirePermiso('clientes', 'ver'), async (req, res) => {
+  const { desde, hasta } = req.query;
+  const estado = await obtenerEstadoCuenta(
+    'cliente',
+    String(req.params.id),
+    desde ? String(desde) : undefined,
+    hasta ? String(hasta) : undefined
+  );
+  if (!estado) {
+    res.status(404).json({ error: 'Cliente no encontrado.' });
+    return;
+  }
+  res.json(estado);
 });
 
 router.post(

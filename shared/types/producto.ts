@@ -21,11 +21,14 @@ export interface ProductoBase {
   id: string;
   nombre: string;
   descripcion: string;
-  categoria: string;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
   imagenUrl: string | null;
+  /** Categoría de material (FK a tipos_material). null si aún no asignada. */
+  tipoMaterialId: string | null;
+  /** Nombre de la categoría, resuelto vía join. Solo lectura (no se envía). */
+  tipoMaterialNombre?: string | null;
   creadoPor: string;
   creadoEn: string;
 }

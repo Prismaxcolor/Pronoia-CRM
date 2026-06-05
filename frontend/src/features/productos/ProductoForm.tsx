@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { X, Plus, Trash2, ImagePlus } from 'lucide-react';
 import { crearProducto, actualizarProducto, obtenerProductos } from '../../services/producto-service';
+import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { subirImagenProducto } from '../../services/storage-service';
 import { useAuth } from '../../hooks/use-auth';
 import { useToast } from '../../hooks/use-toast';
-import type { Producto, TipoProducto, VarianteProducto, SubProductoRef } from '@shared/types/index.js';
+import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial } from '@shared/types/index.js';
 
 interface Props {
   /** Si se pasa, el form arranca en modo "editar". Si no, modo "crear". */
@@ -27,8 +28,16 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
   const [tipo, setTipo] = useState<TipoProducto>(producto?.tipo ?? 'amarillo');
   const [nombre, setNombre] = useState(producto?.nombre ?? '');
   const [descripcion, setDescripcion] = useState(producto?.descripcion ?? '');
-  const [categoria, setCategoria] = useState(producto?.categoria ?? '');
+  const [tipoMaterialId, setTipoMaterialId] = useState(producto?.tipoMaterialId ?? '');
   const [moneda, setMoneda] = useState(producto?.moneda ?? 'USD');
+
+  // Categorías de material para el selector (solo activas, + la actual si quedó inactiva)
+  const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
+  useEffect(() => {
+    obtenerTiposMaterial().then(tipos =>
+      setCategorias(tipos.filter(t => t.activo || t.id === producto?.tipoMaterialId))
+    );
+  }, [producto?.tipoMaterialId]);
   const [activo, setActivo] = useState(producto?.activo ?? true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +129,13 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       imagenUrl = subida;
     }
 
-    const base = { nombre, descripcion, categoria, moneda, activo, imagenUrl };
+    if (!tipoMaterialId) {
+      setError('Elige una categoría de material.');
+      setGuardando(false);
+      return;
+    }
+
+    const base = { nombre, descripcion, tipoMaterialId, moneda, activo, imagenUrl };
 
     let payload;
     if (tipo === 'amarillo') {
@@ -226,8 +241,25 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>Categoria</label>
-              <input type="text" required value={categoria} onChange={e => setCategoria(e.target.value)} className={inputClass} placeholder="Ej: Papeleria" />
+              <label className={labelClass}>Categoría</label>
+              <select
+                required
+                value={tipoMaterialId}
+                onChange={e => setTipoMaterialId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">— Selecciona —</option>
+                {categorias.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}{!c.activo ? ' (inactiva)' : ''}
+                  </option>
+                ))}
+              </select>
+              {categorias.length === 0 && (
+                <p className="text-xs text-text-muted mt-1">
+                  No hay categorías. Créalas desde Productos → Gestionar categorías.
+                </p>
+              )}
             </div>
             <div>
               <label className={labelClass}>Moneda</label>
