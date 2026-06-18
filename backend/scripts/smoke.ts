@@ -2,7 +2,7 @@ import { supabaseAdmin as sb } from '../src/config/supabase.js';
 import {
   construirGruposInventario,
   type ProductoInventario,
-  type PesoPorProducto,
+  type MovimientoInventario,
   type CantidadPorMaterial,
 } from '../src/services/inventario-service.js';
 import {
@@ -114,8 +114,9 @@ async function main() {
 
   console.log('\n6) Inventario (función real): 85 compra − 40 venta − 10 transf = 35');
   const productos: ProductoInventario[] = [{ id: prod.id, nombre: prod.nombre, tipoMaterialId: cat.id, nombreCategoria: 'Cobre' }];
-  const compras: PesoPorProducto[] = [{ productoId: prod.id, peso: pesoC }];
-  const ventas: PesoPorProducto[] = [{ productoId: prod.id, peso: pesoV }];
+  const mppMov = (peso: number): MovimientoInventario => ({ productoId: prod.id, destinoTipo: 'mpp', loteId: null, destinoLabel: 'MPP', peso });
+  const compras: MovimientoInventario[] = [mppMov(pesoC)];
+  const ventas: MovimientoInventario[] = [mppMov(pesoV)];
   const tE: CantidadPorMaterial[] = [{ materialId: prod.id, cantidad: 30 }];
   const tS: CantidadPorMaterial[] = [{ materialId: prod.id, cantidad: 20 }];
   const grupos = construirGruposInventario(productos, compras, ventas, tE, tS);

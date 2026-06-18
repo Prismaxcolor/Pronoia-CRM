@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth';
 import type { Recurso } from '@shared/types/index.js';
 
@@ -27,14 +27,20 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Productos', to: '/productos', icon: <Package size={20} />, recurso: 'productos' },
       { label: 'Inventario', to: '/inventario', icon: <Boxes size={20} />, recurso: 'productos' },
+      { label: 'Lotes', to: '/lotes', icon: <Layers size={20} />, recurso: 'productos' },
       { label: 'Transformaciones', to: '/transformaciones', icon: <Recycle size={20} />, recurso: 'productos' },
+    ],
+  },
+  {
+    header: 'Pesaje',
+    items: [
+      { label: 'Pesaje', to: '/pesaje', icon: <Scale size={20} />, recurso: 'pesaje' },
     ],
   },
   {
     header: 'Compras',
     items: [
       { label: 'Proveedores', to: '/proveedores', icon: <Truck size={20} />, recurso: 'proveedores' },
-      { label: 'Pesaje', to: '/pesaje', icon: <Scale size={20} />, recurso: 'pesaje' },
       { label: 'Compras', to: '/compras', icon: <ShoppingCart size={20} />, recurso: 'facturacion' },
     ],
   },

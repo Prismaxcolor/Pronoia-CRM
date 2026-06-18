@@ -43,7 +43,7 @@ router.post(
       ip: clienteIp(req),
       userId: req.user!.sub,
       facturaId: result.factura.id,
-      ticketId: result.factura.ticketId,
+      ticketIds: result.factura.ticketIds,
     });
     res.status(201).json(result);
   }

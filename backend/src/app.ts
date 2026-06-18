@@ -16,6 +16,7 @@ import facturasCompraRouter from './routes/facturas-compra.js';
 import facturasVentaRouter from './routes/facturas-venta.js';
 import inventarioRouter from './routes/inventario.js';
 import transformacionesRouter from './routes/transformaciones.js';
+import lotesRouter from './routes/lotes.js';
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use('/api/facturas-compra', facturasCompraRouter);
 app.use('/api/facturas-venta', facturasVentaRouter);
 app.use('/api/inventario', inventarioRouter);
 app.use('/api/transformaciones', transformacionesRouter);
+app.use('/api/lotes', lotesRouter);
 app.use('/api/tasas', tasasRouter);
 
 export default app;

@@ -7,18 +7,19 @@ import { construirEstadoCuenta } from '../src/services/estado-cuenta-service.js'
 
 describe('construirGruposInventario', () => {
   const productos: ProductoInventario[] = [
-    { id: 'A', nombre: 'Lote 1', tipoMaterialId: 'cobre', nombreCategoria: 'Cobre' },
-    { id: 'B', nombre: 'Lote 2', tipoMaterialId: 'cobre', nombreCategoria: 'Cobre' },
+    { id: 'A', nombre: 'Mixto 1', tipoMaterialId: 'cobre', nombreCategoria: 'Cobre' },
+    { id: 'B', nombre: 'Mixto 2', tipoMaterialId: 'cobre', nombreCategoria: 'Cobre' },
     { id: 'C', nombre: 'Suelto', tipoMaterialId: null, nombreCategoria: 'Sin categoría' },
   ];
+  const mpp = (productoId: string, peso: number) => ({ productoId, destinoTipo: 'mpp' as const, loteId: null, destinoLabel: 'MPP', peso });
 
   it('calcula stock = compras − ventas ± transformaciones y agrupa por categoría', () => {
     const grupos = construirGruposInventario(
       productos,
-      [{ productoId: 'A', peso: 100 }, { productoId: 'B', peso: 50 }], // compras
-      [{ productoId: 'A', peso: 30 }],                                  // ventas
-      [{ materialId: 'B', cantidad: 10 }],                             // transf entrada (consume B)
-      [{ materialId: 'A', cantidad: 5 }]                               // transf salida (produce A)
+      [mpp('A', 100), mpp('B', 50)], // entradas (pesaje compra)
+      [mpp('A', 30)],                 // salidas (pesaje venta)
+      [{ materialId: 'B', cantidad: 10 }], // transf entrada (consume B)
+      [{ materialId: 'A', cantidad: 5 }]   // transf salida (produce A)
     );
 
     const cobre = grupos.find(g => g.tipoMaterialId === 'cobre')!;
@@ -31,6 +32,38 @@ describe('construirGruposInventario', () => {
     expect(cobre.articulos).toHaveLength(2);
   });
 
+  it('separa el stock del mismo material por destino (MPP vs Lote)', () => {
+    const grupos = construirGruposInventario(
+      [productos[0]],
+      [
+        mpp('A', 30),
+        { productoId: 'A', destinoTipo: 'lote', loteId: 'L1', destinoLabel: 'Lote 1', peso: 20 },
+      ],
+      [], [], []
+    );
+    const arts = grupos[0].articulos;
+    expect(arts).toHaveLength(2);
+    expect(arts.find(x => x.destinoTipo === 'mpp')!.stock).toBe(30);
+    expect(arts.find(x => x.loteId === 'L1')!.stock).toBe(20);
+    expect(grupos[0].totalKg).toBe(50);
+  });
+
+  it('imputa las transformaciones al destino MPP, separado de los lotes', () => {
+    const grupos = construirGruposInventario(
+      [productos[0]],
+      [{ productoId: 'A', destinoTipo: 'lote', loteId: 'L1', destinoLabel: 'Lote 1', peso: 50 }], // entró a Lote 1
+      [],
+      [{ materialId: 'A', cantidad: 30 }], // transf consume 30 (de MPP)
+      [{ materialId: 'A', cantidad: 12 }]  // transf produce 12 (a MPP)
+    );
+    const arts = grupos[0].articulos;
+    const lote = arts.find(x => x.loteId === 'L1')!;
+    const mpp = arts.find(x => x.destinoTipo === 'mpp')!;
+    expect(lote.stock).toBe(50);   // el lote no se ve afectado por la transformación
+    expect(mpp.stock).toBe(-18);   // 0 + 0 + (12 - 30)
+    expect(grupos[0].totalKg).toBe(32);
+  });
+
   it('agrupa los sin categoría aparte y ordena por nombre', () => {
     const grupos = construirGruposInventario(productos, [], [], [], []);
     expect(grupos.map(g => g.nombreCategoria)).toEqual(['Cobre', 'Sin categoría']);
@@ -38,9 +71,9 @@ describe('construirGruposInventario', () => {
 
   it('refleja stock negativo cuando se vende más de lo que entró', () => {
     const grupos = construirGruposInventario(
-      [{ id: 'A', nombre: 'Lote 1', tipoMaterialId: 'x', nombreCategoria: 'X' }],
-      [{ productoId: 'A', peso: 10 }],
-      [{ productoId: 'A', peso: 25 }],
+      [{ id: 'A', nombre: 'Mixto 1', tipoMaterialId: 'x', nombreCategoria: 'X' }],
+      [mpp('A', 10)],
+      [mpp('A', 25)],
       [],
       []
     );

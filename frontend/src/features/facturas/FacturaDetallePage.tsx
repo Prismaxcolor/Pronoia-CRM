@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, FileDown, FileText } from 'lucide-react';
-import { obtenerFactura, type FacturaCV, type TipoFactura } from '../../services/factura-cv-service';
+import { obtenerFactura, consolidarItems, type FacturaCV, type TipoFactura } from '../../services/factura-cv-service';
 import { descargarFacturaPDF, descargarFacturaWord } from '../../services/factura-export';
 import { obtenerTicket } from '../../services/ticket-pesaje-service';
-import type { TicketPesaje } from '@shared/types/index.js';
+import { destinoLabel, type TicketPesaje } from '@shared/types/index.js';
 
 const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
   borrador: { label: 'Borrador', clase: 'bg-gray-100 text-gray-600' },
@@ -31,14 +31,17 @@ function FacturaDetallePage({ tipo }: Props) {
   const titulo = esCompra ? 'Factura de compra' : 'Factura de venta';
 
   const [factura, setFactura] = useState<FacturaCV | null>(null);
-  const [ticket, setTicket] = useState<TicketPesaje | null>(null);
+  const [tickets, setTickets] = useState<TicketPesaje[]>([]);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
     obtenerFactura(tipo, id)
       .then(async f => {
         setFactura(f);
-        if (f?.ticketId) setTicket(await obtenerTicket(f.ticketId));
+        if (f && f.ticketIds.length > 0) {
+          const cargados = await Promise.all(f.ticketIds.map(tid => obtenerTicket(tid)));
+          setTickets(cargados.filter((t): t is TicketPesaje => t !== null));
+        }
       })
       .finally(() => setCargando(false));
   }, [tipo, id]);
@@ -86,7 +89,7 @@ function FacturaDetallePage({ tipo }: Props) {
             <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
             <span className={`px-2 py-0.5 rounded-full text-xs ${cfg.clase}`}>{cfg.label}</span>
           </div>
-          <p className="text-sm text-text-muted mt-1">N.º {factura.id.slice(0, 8)} · {factura.createdAt.slice(0, 10)}</p>
+          <p className="text-sm text-text-muted mt-1">{factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
           <button type="button" onClick={() => descargarFacturaPDF(factura)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
@@ -106,40 +109,92 @@ function FacturaDetallePage({ tipo }: Props) {
 
       <div className="bg-surface rounded-xl border border-border p-5 mb-6">
         <Fila label={labelEntidad} valor={factura.nombreEntidad ?? '—'} />
-        <Fila label="Material" valor={factura.nombreProducto ?? '—'} />
-        <Fila label="Peso facturado" valor={`${fmt(factura.peso)} kg`} />
-        <Fila label="Origen del peso" valor={factura.ticketId ? `Ticket de pesaje (${factura.ticketId.slice(0, 8)})` : 'Peso manual'} />
-        <Fila label="Precio unitario (kg)" valor={fmt(factura.precioUnitario)} />
+        <Fila label="Origen del peso" valor={origenPeso(factura, tickets)} />
         {factura.descripcion && <Fila label="Descripción" valor={factura.descripcion} />}
         {factura.observaciones && <Fila label="Observaciones" valor={factura.observaciones} />}
+
+        <div className="overflow-x-auto mt-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-text-muted">
+                <th className="py-2 font-medium">Material</th>
+                <th className="py-2 font-medium text-right">Peso (kg)</th>
+                <th className="py-2 font-medium text-right">Precio (kg)</th>
+                <th className="py-2 font-medium text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {consolidarItems(factura.items).map(it => (
+                <tr key={it.id} className="border-b border-border last:border-b-0">
+                  <td className="py-2 text-text-primary">{it.nombreProducto ?? '—'}</td>
+                  <td className="py-2 text-right text-text-secondary">{fmt(it.peso)}</td>
+                  <td className="py-2 text-right text-text-secondary">{fmt(it.precioUnitario)}</td>
+                  <td className="py-2 text-right font-medium text-text-primary">{fmt(it.subtotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
         <div className="flex justify-between pt-3 mt-1">
           <span className="font-semibold text-text-primary">Total</span>
           <span className="text-xl font-bold text-brand-700">{fmt(factura.total)}</span>
         </div>
       </div>
 
-      {ticket && (
-        <div className="bg-surface rounded-xl border border-border p-5">
-          <h2 className="text-sm font-semibold text-text-secondary mb-3">Ticket de pesaje</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 text-sm">
-            <div><p className="text-xs text-text-muted">Bruto</p><p className="font-medium">{fmt(ticket.pesoBruto ?? 0)} kg</p></div>
-            <div><p className="text-xs text-text-muted">Tara</p><p className="font-medium">{fmt(ticket.tara ?? 0)} kg</p></div>
-            <div><p className="text-xs text-text-muted">Devolución</p><p className="font-medium">{fmt(ticket.devolucion)} kg</p></div>
-            <div><p className="text-xs text-text-muted">Neto</p><p className="font-medium">{fmt(ticket.pesoNeto ?? 0)} kg</p></div>
-          </div>
-          {ticket.fotos && ticket.fotos.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {ticket.fotos.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
-                  <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
-                </a>
-              ))}
+      {tickets.length > 0 && (
+        <div className="space-y-4">
+          {tickets.map(ticket => (
+            <div key={ticket.id} className="bg-surface rounded-xl border border-border p-5">
+              <h2 className="text-sm font-semibold text-text-secondary mb-3">Ticket de pesaje · {ticket.codigo}</h2>
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-text-muted">
+                      <th className="py-2 font-medium">Material</th>
+                      <th className="py-2 font-medium">Destino</th>
+                      <th className="py-2 font-medium text-right">Bruto</th>
+                      <th className="py-2 font-medium text-right">Tara</th>
+                      <th className="py-2 font-medium text-right">Devol.</th>
+                      <th className="py-2 font-medium text-right">Neto (kg)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ticket.materiales.map(m => (
+                      <tr key={m.id} className="border-b border-border last:border-b-0">
+                        <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                        <td className="py-2 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>
+                        <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
+                        <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
+                        <td className="py-2 text-right text-text-secondary">{fmt(m.devolucion)}</td>
+                        <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {ticket.fotos && ticket.fotos.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {ticket.fotos.map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
+                      <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>
   );
+}
+
+/** Texto del origen del peso de la factura: peso manual o los códigos de los tickets. */
+function origenPeso(factura: FacturaCV, tickets: TicketPesaje[]): string {
+  if (factura.ticketIds.length === 0) return 'Peso manual';
+  if (tickets.length > 0) return `${tickets.length} ticket${tickets.length === 1 ? '' : 's'} · ${tickets.map(t => t.codigo).join(', ')}`;
+  return `${factura.ticketIds.length} ticket(s) de pesaje`;
 }
 
 export default FacturaDetallePage;

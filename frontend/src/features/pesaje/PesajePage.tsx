@@ -1,20 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Scale, ImagePlus, X, Loader2 } from 'lucide-react';
+import { Scale, ImagePlus, X, Loader2, Plus, Trash2 } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerTickets, crearTicket } from '../../services/ticket-pesaje-service';
+import { obtenerLotes } from '../../services/lote-service';
 import { subirFotoTicket } from '../../services/storage-service';
 import { useAuth } from '../../hooks/use-auth';
 import { useToast } from '../../hooks/use-toast';
-import type { Producto, TicketPesaje } from '@shared/types/index.js';
+import type { Producto, TicketPesaje, Lote } from '@shared/types/index.js';
 
 interface FotoLocal { file: File; preview: string }
 interface Entidad { id: string; nombre: string; activo: boolean }
 type TipoPesaje = 'compra' | 'venta';
 
+/** Valor del selector de destino: 'mpp' o el id de un lote. */
+type DestinoValor = 'mpp' | string;
+
+/** Una fila de material en el formulario (valores como string para los inputs). */
+interface MaterialFila {
+  /** id local para la key de React. */
+  uid: number;
+  productoId: string;
+  subcategoria: string;
+  pesoBruto: string;
+  tara: string;
+  devolucion: string;
+  /** 'mpp' o el id del lote destino. */
+  destino: DestinoValor;
+}
+
+let UID = 0;
+function filaVacia(): MaterialFila {
+  return { uid: UID++, productoId: '', subcategoria: '', pesoBruto: '', tara: '', devolucion: '', destino: 'mpp' };
+}
+
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function netoFila(f: MaterialFila): number {
+  return (Number(f.pesoBruto) || 0) - (Number(f.tara) || 0) - (Number(f.devolucion) || 0);
 }
 
 function PesajePage() {
@@ -25,16 +51,13 @@ function PesajePage() {
   const [proveedores, setProveedores] = useState<Entidad[]>([]);
   const [clientes, setClientes] = useState<Entidad[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
   const [tickets, setTickets] = useState<TicketPesaje[]>([]);
 
   const [tipo, setTipo] = useState<TipoPesaje>('compra');
   const [entidadId, setEntidadId] = useState('');
-  const [productoId, setProductoId] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
-  const [subcategoria, setSubcategoria] = useState('');
-  const [pesoBruto, setPesoBruto] = useState('');
-  const [tara, setTara] = useState('');
-  const [devolucion, setDevolucion] = useState('');
+  const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [observaciones, setObservaciones] = useState('');
   const [fotos, setFotos] = useState<FotoLocal[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -48,6 +71,7 @@ function PesajePage() {
     obtenerProveedores().then(lista => setProveedores(lista.filter(p => p.activo)));
     obtenerClientes().then(lista => setClientes(lista.filter(c => c.activo)));
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
+    obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
     cargarTickets();
   }, []);
 
@@ -61,10 +85,17 @@ function PesajePage() {
     return m;
   }, [proveedores, clientes]);
 
-  const bruto = Number(pesoBruto) || 0;
-  const taraN = Number(tara) || 0;
-  const devN = Number(devolucion) || 0;
-  const pesoNeto = bruto - taraN - devN;
+  const pesoNetoTotal = useMemo(
+    () => materiales.reduce((acc, f) => acc + netoFila(f), 0),
+    [materiales]
+  );
+
+  const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
+
+  const agregarMaterial = () => setMateriales(prev => [...prev, filaVacia()]);
+  const quitarMaterial = (uid: number) =>
+    setMateriales(prev => (prev.length > 1 ? prev.filter(f => f.uid !== uid) : prev));
 
   const handleFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -76,12 +107,8 @@ function PesajePage() {
 
   const limpiar = () => {
     setEntidadId('');
-    setProductoId('');
     setFecha(hoyISO());
-    setSubcategoria('');
-    setPesoBruto('');
-    setTara('');
-    setDevolucion('');
+    setMateriales([filaVacia()]);
     setObservaciones('');
     setFotos([]);
   };
@@ -91,8 +118,9 @@ function PesajePage() {
     setError(null);
 
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
-    if (!productoId) { setError('Elige el material a pesar.'); return; }
-    if (pesoNeto < 0) { setError('El peso neto no puede ser negativo. Revisa bruto, tara y devolución.'); return; }
+    if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
+    if (materiales.some(f => netoFila(f) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto, tara y devolución.'); return; }
+    if (materiales.some(f => netoFila(f) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
 
     setGuardando(true);
 
@@ -110,12 +138,16 @@ function PesajePage() {
     const result = await crearTicket({
       tipo,
       entidadId,
-      productoId,
       fecha,
-      subcategoria: subcategoria.trim() || null,
-      pesoBruto: bruto,
-      tara: taraN,
-      devolucion: devN,
+      materiales: materiales.map(f => ({
+        productoId: f.productoId,
+        subcategoria: f.subcategoria.trim() || null,
+        pesoBruto: Number(f.pesoBruto) || 0,
+        tara: Number(f.tara) || 0,
+        devolucion: Number(f.devolucion) || 0,
+        destinoTipo: f.destino === 'mpp' ? ('mpp' as const) : ('lote' as const),
+        loteId: f.destino === 'mpp' ? null : f.destino,
+      })),
       fotos: urls,
       observaciones: observaciones.trim() || null,
     });
@@ -123,7 +155,7 @@ function PesajePage() {
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    toast.exito(`Ticket de pesaje generado (neto ${result.ticket.pesoNeto} kg).`);
+    toast.exito(`${result.ticket.codigo} generado (neto ${fmt(result.ticket.pesoNetoTotal)} kg).`);
     limpiar();
     cargarTickets();
   };
@@ -166,47 +198,87 @@ function PesajePage() {
                 </select>
               </div>
               <div>
-                <label className={labelClass}>Material *</label>
-                <select value={productoId} onChange={e => setProductoId(e.target.value)} className={inputClass}>
-                  <option value="">— Selecciona —</option>
-                  {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
                 <label className={labelClass}>Fecha</label>
                 <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
               </div>
-              <div>
-                <label className={labelClass}>Subcategoría / detalle</label>
-                <input type="text" value={subcategoria} onChange={e => setSubcategoria(e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
-              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className={labelClass}>Peso bruto (kg)</label>
-                <input type="number" step="0.01" min="0" value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+            {/* Materiales */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className={labelClass + ' mb-0'}>Materiales</label>
+                <button type="button" onClick={agregarMaterial} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors">
+                  <Plus size={16} />
+                  Agregar material
+                </button>
               </div>
-              <div>
-                <label className={labelClass}>Tara (kg)</label>
-                <input type="number" step="0.01" min="0" value={tara} onChange={e => setTara(e.target.value)} className={inputClass} placeholder="0.00" />
-              </div>
-              <div>
-                <label className={labelClass}>Devolución (kg)</label>
-                <input type="number" step="0.01" min="0" value={devolucion} onChange={e => setDevolucion(e.target.value)} className={inputClass} placeholder="0.00" />
-              </div>
+
+              {materiales.map((f, idx) => {
+                const neto = netoFila(f);
+                return (
+                  <div key={f.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-text-secondary">Material {idx + 1}</span>
+                      {materiales.length > 1 && (
+                        <button type="button" onClick={() => quitarMaterial(f.uid)} className="text-text-muted hover:text-red-600 transition-colors" title="Quitar material">
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelClass}>Material *</label>
+                        <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
+                          <option value="">— Selecciona —</option>
+                          {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Subcategoría / detalle</label>
+                        <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={labelClass}>Destino (inventario) *</label>
+                      <select value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
+                        <option value="mpp">MPP (Material Por Procesar)</option>
+                        {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className={labelClass}>Peso bruto (kg)</label>
+                        <input type="number" step="0.01" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Tara (kg)</label>
+                        <input type="number" step="0.01" min="0" value={f.tara} onChange={e => setFila(f.uid, 'tara', e.target.value)} className={inputClass} placeholder="0.00" />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Devolución (kg)</label>
+                        <input type="number" step="0.01" min="0" value={f.devolucion} onChange={e => setFila(f.uid, 'devolucion', e.target.value)} className={inputClass} placeholder="0.00" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-text-muted">Neto del material</span>
+                      <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
               <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
                 <Scale size={16} />
-                Peso neto
+                Peso neto total
               </span>
-              <span className={`text-lg font-bold ${pesoNeto < 0 ? 'text-red-600' : 'text-brand-700'}`}>
-                {fmt(pesoNeto)} kg
+              <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>
+                {fmt(pesoNetoTotal)} kg
               </span>
             </div>
 
@@ -257,10 +329,11 @@ function PesajePage() {
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-text-muted">
+                    <th className="px-4 py-2.5 font-medium">N° Control</th>
                     <th className="px-4 py-2.5 font-medium">Fecha</th>
                     <th className="px-4 py-2.5 font-medium">Tipo</th>
                     <th className="px-4 py-2.5 font-medium">Entidad</th>
-                    <th className="px-4 py-2.5 font-medium">Material</th>
+                    <th className="px-4 py-2.5 font-medium">Materiales</th>
                     <th className="px-4 py-2.5 font-medium text-right">Neto (kg)</th>
                     <th className="px-4 py-2.5 font-medium text-right">Estado</th>
                   </tr>
@@ -268,11 +341,12 @@ function PesajePage() {
                 <tbody>
                   {tickets.map(t => (
                     <tr key={t.id} className="border-b border-border last:border-b-0">
+                      <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">{t.codigo}</td>
                       <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
                       <td className="px-4 py-2.5 text-text-secondary capitalize">{t.tipo}</td>
                       <td className="px-4 py-2.5 text-text-primary">{t.entidadId ? (nombrePorEntidad.get(t.entidadId) ?? '—') : '—'}</td>
-                      <td className="px-4 py-2.5 text-text-secondary">{t.nombreProducto ?? '—'}</td>
-                      <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(t.pesoNeto ?? 0)}</td>
+                      <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(t.pesoNetoTotal)}</td>
                       <td className="px-4 py-2.5 text-right">
                         <span className={`px-2 py-0.5 rounded-full text-xs ${t.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                           {t.facturado ? 'Facturado' : 'Pendiente'}
@@ -288,6 +362,13 @@ function PesajePage() {
       </div>
     </div>
   );
+}
+
+/** Resumen de los materiales de un ticket: nombre si es uno, "N materiales" si varios. */
+function resumenMateriales(t: TicketPesaje): string {
+  if (t.materiales.length === 0) return '—';
+  if (t.materiales.length === 1) return t.materiales[0].nombreProducto ?? 'material';
+  return `${t.materiales.length} materiales`;
 }
 
 export default PesajePage;

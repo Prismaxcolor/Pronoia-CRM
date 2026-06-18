@@ -1,15 +1,21 @@
 import { apiFetch } from './api-client';
 import type { TicketPesaje } from '@shared/types/index.js';
 
-export interface CrearTicketInput {
-  tipo?: 'compra' | 'venta';
-  entidadId: string;
+export interface CrearTicketMaterialInput {
   productoId: string;
-  fecha?: string | null;
   subcategoria?: string | null;
   pesoBruto: number;
   tara: number;
   devolucion: number;
+  destinoTipo: 'mpp' | 'lote';
+  loteId?: string | null;
+}
+
+export interface CrearTicketInput {
+  tipo?: 'compra' | 'venta';
+  entidadId: string;
+  fecha?: string | null;
+  materiales: CrearTicketMaterialInput[];
   fotos: string[];
   observaciones?: string | null;
 }

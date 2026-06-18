@@ -3,6 +3,9 @@ import { apiFetch } from './api-client';
 export interface ArticuloInventario {
   productoId: string;
   nombre: string;
+  destinoTipo: 'mpp' | 'lote';
+  loteId: string | null;
+  destinoLabel: string;
   entradas: number;
   salidas: number;
   transformaciones: number;

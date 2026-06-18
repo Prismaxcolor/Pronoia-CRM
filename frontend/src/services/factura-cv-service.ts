@@ -2,18 +2,26 @@ import { apiFetch } from './api-client';
 
 export type TipoFactura = 'compra' | 'venta';
 
+export interface FacturaItemCV {
+  id: string;
+  productoId: string | null;
+  nombreProducto: string | null;
+  peso: number;
+  precioUnitario: number;
+  subtotal: number;
+}
+
 export interface FacturaCV {
   id: string;
+  /** Correlativo automático. Solo en compras (null en ventas). */
+  numero: number | null;
+  /** Código de control formateado ("Compra 0001"). Solo en compras. */
+  codigo: string | null;
   tipo: TipoFactura;
   entidadId: string | null;
   nombreEntidad: string | null;
-  productoId: string | null;
-  nombreProducto: string | null;
-  ticketId: string | null;
-  pesoManual: number | null;
-  peso: number;
-  listaPreciosId: string | null;
-  precioUnitario: number;
+  ticketIds: string[];
+  items: FacturaItemCV[];
   total: number;
   descripcion: string | null;
   observaciones: string | null;
@@ -21,13 +29,41 @@ export interface FacturaCV {
   createdAt: string;
 }
 
+/**
+ * Consolida las líneas por material para la factura que ve/imprime el proveedor:
+ * agrupa por `productoId` sumando peso y subtotal. El precio mostrado es el
+ * promedio ponderado (subtotal/peso), para que peso × precio siga cuadrando con
+ * el subtotal aunque las líneas originales tuvieran precios distintos.
+ *
+ * SOLO es una vista: el inventario ya quedó registrado por separado (por destino)
+ * y no se toca. El orden de aparición se conserva.
+ */
+export function consolidarItems(items: FacturaItemCV[]): FacturaItemCV[] {
+  const mapa = new Map<string, FacturaItemCV>();
+  for (const it of items) {
+    const clave = it.productoId ?? `nombre:${it.nombreProducto ?? ''}`;
+    const ex = mapa.get(clave);
+    if (ex) {
+      ex.peso += it.peso;
+      ex.subtotal += it.subtotal;
+      ex.precioUnitario = ex.peso > 0 ? ex.subtotal / ex.peso : ex.precioUnitario;
+    } else {
+      mapa.set(clave, { ...it });
+    }
+  }
+  return Array.from(mapa.values());
+}
+
+export interface CrearFacturaItemInput {
+  productoId: string;
+  peso: number;
+  precioUnitario: number;
+}
+
 export interface CrearFacturaInput {
   entidadId: string;
-  productoId: string;
-  ticketId?: string | null;
-  pesoManual?: number | null;
-  listaPreciosId?: string | null;
-  precioUnitario: number;
+  ticketIds?: string[];
+  items: CrearFacturaItemInput[];
   descripcion?: string | null;
   observaciones?: string | null;
   estado?: 'borrador' | 'emitida' | 'pagada';

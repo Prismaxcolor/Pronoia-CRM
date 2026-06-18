@@ -580,3 +580,539 @@ create policy "tickets acceso anon"
   to anon, authenticated
   using (bucket_id = 'tickets')
   with check (bucket_id = 'tickets');
+
+
+-- ============================================================================
+-- Bloque 14 · correlativo automático de tickets de pesaje
+--
+-- Cada ticket recibe un número de control secuencial (1, 2, 3, ...) que la app
+-- muestra como "Pesaje 0001". Lo asigna la BD vía una secuencia; el usuario no
+-- lo escribe. Se respalda en una secuencia (no en max()+1) para que dos inserts
+-- concurrentes no choquen.
+-- ============================================================================
+
+create sequence if not exists public.tickets_pesaje_numero_seq;
+
+alter table public.tickets_pesaje
+  add column if not exists numero bigint;
+
+-- Backfill: numera los tickets existentes en orden de creación.
+update public.tickets_pesaje t
+set numero = o.rn
+from (
+  select id, row_number() over (order by created_at, id) as rn
+  from public.tickets_pesaje
+  where numero is null
+) o
+where t.id = o.id;
+
+-- Avanza la secuencia más allá del máximo ya asignado.
+select setval(
+  'public.tickets_pesaje_numero_seq',
+  coalesce((select max(numero) from public.tickets_pesaje), 0) + 1,
+  false
+);
+
+-- Nuevas filas toman el siguiente valor de la secuencia automáticamente.
+alter table public.tickets_pesaje
+  alter column numero set default nextval('public.tickets_pesaje_numero_seq');
+
+alter table public.tickets_pesaje
+  alter column numero set not null;
+
+-- Garantiza unicidad del correlativo.
+create unique index if not exists idx_tickets_pesaje_numero
+  on public.tickets_pesaje (numero);
+
+
+-- ============================================================================
+-- Bloque 15 · correlativo automático de facturas de compra
+--
+-- Cada factura de compra recibe un número de control secuencial (1, 2, 3, ...)
+-- que la app muestra como "Compra 0001". Lo asigna la BD vía una secuencia; el
+-- usuario no lo escribe. Mismo patrón que el Bloque 14 (tickets de pesaje).
+-- Solo aplica a facturas_compra (las de venta no lo llevan por ahora).
+-- ============================================================================
+
+create sequence if not exists public.facturas_compra_numero_seq;
+
+alter table public.facturas_compra
+  add column if not exists numero bigint;
+
+-- Backfill: numera las facturas existentes en orden de creación.
+update public.facturas_compra f
+set numero = o.rn
+from (
+  select id, row_number() over (order by created_at, id) as rn
+  from public.facturas_compra
+  where numero is null
+) o
+where f.id = o.id;
+
+-- Avanza la secuencia más allá del máximo ya asignado.
+select setval(
+  'public.facturas_compra_numero_seq',
+  coalesce((select max(numero) from public.facturas_compra), 0) + 1,
+  false
+);
+
+-- Nuevas filas toman el siguiente valor de la secuencia automáticamente.
+alter table public.facturas_compra
+  alter column numero set default nextval('public.facturas_compra_numero_seq');
+
+alter table public.facturas_compra
+  alter column numero set not null;
+
+-- Garantiza unicidad del correlativo.
+create unique index if not exists idx_facturas_compra_numero
+  on public.facturas_compra (numero);
+
+
+-- ============================================================================
+-- Bloque 16 · ticket de pesaje con múltiples materiales
+--
+-- Un ticket pasa de registrar UN material a N materiales. Cada material es una
+-- fila en detalle_tickets_pesaje, con su propio peso. El header (tickets_pesaje)
+-- conserva tipo/entidad/fecha/fotos/observaciones/facturado/numero. Las columnas
+-- por-material del header (producto_id, subcategoria, peso_bruto, tara,
+-- devolucion, peso_neto) quedan como LEGACY: ya no se escriben para tickets
+-- nuevos, pero se conservan para no perder el dato histórico ni romper la
+-- columna generada. peso_neto de cada línea se calcula igual que antes.
+-- ============================================================================
+
+create table if not exists public.detalle_tickets_pesaje (
+  id            uuid        primary key default gen_random_uuid(),
+  ticket_id     uuid        not null references public.tickets_pesaje(id) on delete cascade,
+  producto_id   uuid        references public.productos(id),
+  subcategoria  text,
+  peso_bruto    numeric,
+  tara          numeric,
+  devolucion    numeric     not null default 0,
+  peso_neto     numeric     generated always as (peso_bruto - tara - coalesce(devolucion, 0)) stored,
+  created_at    timestamptz not null default now()
+);
+
+alter table public.detalle_tickets_pesaje disable row level security;
+
+create index if not exists idx_detalle_tickets_pesaje_ticket
+  on public.detalle_tickets_pesaje (ticket_id);
+
+-- Backfill: cada ticket existente genera una línea de material (1:1).
+insert into public.detalle_tickets_pesaje (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion)
+select t.id, t.producto_id, t.subcategoria, t.peso_bruto, t.tara, coalesce(t.devolucion, 0)
+from public.tickets_pesaje t
+where not exists (
+  select 1 from public.detalle_tickets_pesaje d where d.ticket_id = t.id
+);
+
+-- RPC atómica: inserta el header (numero vía default) + N líneas de material.
+-- Mismo patrón que crear_transformacion (Bloque 12).
+-- p_materiales: jsonb array → [{ "producto_id": uuid, "subcategoria": text,
+--   "peso_bruto": numeric, "tara": numeric, "devolucion": numeric }, ...]
+create or replace function public.crear_ticket_pesaje(
+  p_tipo          text,
+  p_entidad_id    uuid,
+  p_fecha         date,
+  p_fotos         text[],
+  p_observaciones text,
+  p_materiales    jsonb
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id   uuid;
+  v_item jsonb;
+begin
+  insert into public.tickets_pesaje (tipo, entidad_id, fecha, fotos, observaciones)
+  values (p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''))
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0)
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
+
+
+-- ============================================================================
+-- Bloque 17 · facturas de compra/venta con múltiples líneas
+--
+-- Una factura pasa de UNA línea (un material, un peso, un precio) a N líneas.
+-- Cada línea vive en detalle_facturas_compra / detalle_facturas_venta, con su
+-- material, peso, precio unitario y subtotal (= peso · precio, generado). El
+-- header conserva entidad/ticket/estado/numero y `total` (ahora = suma de
+-- subtotales). Las columnas single del header (producto_id, peso_manual,
+-- precio_unitario) quedan LEGACY (precio_unitario sigue NOT NULL → se guarda 0).
+-- ============================================================================
+
+create table if not exists public.detalle_facturas_compra (
+  id              uuid        primary key default gen_random_uuid(),
+  factura_id      uuid        not null references public.facturas_compra(id) on delete cascade,
+  producto_id     uuid        references public.productos(id),
+  peso            numeric     not null,
+  precio_unitario numeric     not null,
+  subtotal        numeric     generated always as (peso * precio_unitario) stored,
+  created_at      timestamptz not null default now()
+);
+
+create table if not exists public.detalle_facturas_venta (
+  id              uuid        primary key default gen_random_uuid(),
+  factura_id      uuid        not null references public.facturas_venta(id) on delete cascade,
+  producto_id     uuid        references public.productos(id),
+  peso            numeric     not null,
+  precio_unitario numeric     not null,
+  subtotal        numeric     generated always as (peso * precio_unitario) stored,
+  created_at      timestamptz not null default now()
+);
+
+alter table public.detalle_facturas_compra disable row level security;
+alter table public.detalle_facturas_venta  disable row level security;
+
+create index if not exists idx_detalle_facturas_compra_factura
+  on public.detalle_facturas_compra (factura_id);
+create index if not exists idx_detalle_facturas_venta_factura
+  on public.detalle_facturas_venta (factura_id);
+
+-- Backfill: cada factura existente genera una línea (1:1). El peso sale del
+-- peso_manual o, si la factura venía de un ticket, del peso_neto del ticket.
+insert into public.detalle_facturas_compra (factura_id, producto_id, peso, precio_unitario)
+select f.id, f.producto_id, coalesce(f.peso_manual, t.peso_neto, 0), f.precio_unitario
+from public.facturas_compra f
+left join public.tickets_pesaje t on t.id = f.ticket_id
+where not exists (select 1 from public.detalle_facturas_compra d where d.factura_id = f.id);
+
+insert into public.detalle_facturas_venta (factura_id, producto_id, peso, precio_unitario)
+select f.id, f.producto_id, coalesce(f.peso_manual, t.peso_neto, 0), f.precio_unitario
+from public.facturas_venta f
+left join public.tickets_pesaje t on t.id = f.ticket_id
+where not exists (select 1 from public.detalle_facturas_venta d where d.factura_id = f.id);
+
+-- RPC atómica para factura de compra: header + N líneas + marca el ticket como
+-- facturado. total = suma de (peso · precio) de las líneas.
+-- p_items: jsonb array → [{ "producto_id": uuid, "peso": numeric, "precio_unitario": numeric }, ...]
+create or replace function public.crear_factura_compra(
+  p_proveedor_id  uuid,
+  p_ticket_id     uuid,
+  p_estado        text,
+  p_descripcion   text,
+  p_observaciones text,
+  p_items         jsonb
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id    uuid;
+  v_item  jsonb;
+  v_total numeric;
+begin
+  select coalesce(sum((value->>'peso')::numeric * (value->>'precio_unitario')::numeric), 0)
+    into v_total
+  from jsonb_array_elements(p_items) as elems(value);
+
+  insert into public.facturas_compra
+    (proveedor_id, ticket_id, precio_unitario, total, descripcion, observaciones, estado)
+  values (
+    p_proveedor_id, p_ticket_id, 0, v_total,
+    nullif(p_descripcion, ''), nullif(p_observaciones, ''), coalesce(p_estado, 'emitida')
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(p_items) as elems(value)
+  loop
+    insert into public.detalle_facturas_compra (factura_id, producto_id, peso, precio_unitario)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      (v_item->>'peso')::numeric,
+      (v_item->>'precio_unitario')::numeric
+    );
+  end loop;
+
+  if p_ticket_id is not null then
+    update public.tickets_pesaje set facturado = true where id = p_ticket_id;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+-- Igual que la anterior pero contra un cliente (factura de venta).
+create or replace function public.crear_factura_venta(
+  p_cliente_id    uuid,
+  p_ticket_id     uuid,
+  p_estado        text,
+  p_descripcion   text,
+  p_observaciones text,
+  p_items         jsonb
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id    uuid;
+  v_item  jsonb;
+  v_total numeric;
+begin
+  select coalesce(sum((value->>'peso')::numeric * (value->>'precio_unitario')::numeric), 0)
+    into v_total
+  from jsonb_array_elements(p_items) as elems(value);
+
+  insert into public.facturas_venta
+    (cliente_id, ticket_id, precio_unitario, total, descripcion, observaciones, estado)
+  values (
+    p_cliente_id, p_ticket_id, 0, v_total,
+    nullif(p_descripcion, ''), nullif(p_observaciones, ''), coalesce(p_estado, 'emitida')
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(p_items) as elems(value)
+  loop
+    insert into public.detalle_facturas_venta (factura_id, producto_id, peso, precio_unitario)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      (v_item->>'peso')::numeric,
+      (v_item->>'precio_unitario')::numeric
+    );
+  end loop;
+
+  if p_ticket_id is not null then
+    update public.tickets_pesaje set facturado = true where id = p_ticket_id;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+
+-- ============================================================================
+-- Bloque 18 · destino por material en el ticket de pesaje (MPP / Lote)
+--
+-- Cada material pesado se asigna a un destino de inventario: MPP (Material Por
+-- Procesar) o un Lote concreto. Los lotes son una lista gestionada (CRUD). El
+-- inventario se calcula a partir de estas líneas, separado por destino: el mismo
+-- material puede tener stock en MPP y en cada lote por separado.
+-- ============================================================================
+
+create table if not exists public.lotes (
+  id         uuid        primary key default gen_random_uuid(),
+  nombre     text        not null,
+  activo     boolean     not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table public.lotes disable row level security;
+
+-- Nombre único sin distinguir mayúsculas ("Lote 1" == "lote 1").
+create unique index if not exists idx_lotes_nombre on public.lotes (lower(nombre));
+
+-- Destino de cada línea del ticket. Por defecto 'mpp' (material por procesar).
+alter table public.detalle_tickets_pesaje
+  add column if not exists destino_tipo text not null default 'mpp'
+    check (destino_tipo in ('mpp', 'lote')),
+  add column if not exists lote_id uuid references public.lotes(id);
+
+create index if not exists idx_detalle_tickets_pesaje_lote
+  on public.detalle_tickets_pesaje (lote_id);
+
+-- Reemplaza la RPC (Bloque 16) para recibir el destino por material.
+-- p_materiales: jsonb array → [{ "producto_id", "subcategoria", "peso_bruto",
+--   "tara", "devolucion", "destino_tipo": "mpp"|"lote", "lote_id": uuid|null }, ...]
+create or replace function public.crear_ticket_pesaje(
+  p_tipo          text,
+  p_entidad_id    uuid,
+  p_fecha         date,
+  p_fotos         text[],
+  p_observaciones text,
+  p_materiales    jsonb
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id   uuid;
+  v_item jsonb;
+begin
+  insert into public.tickets_pesaje (tipo, entidad_id, fecha, fotos, observaciones)
+  values (p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''))
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
+
+
+-- ============================================================================
+-- Bloque 19 · varios tickets de pesaje por factura
+--
+-- Una factura puede agrupar VARIOS tickets del mismo proveedor/cliente. La
+-- relación deja de ser 1:1 (columna ticket_id en el header) y pasa a una tabla
+-- puente. La columna ticket_id se conserva como LEGACY (las facturas nuevas la
+-- dejan en null; la fuente de verdad es la tabla puente).
+-- ============================================================================
+
+create table if not exists public.facturas_compra_tickets (
+  factura_id uuid not null references public.facturas_compra(id) on delete cascade,
+  ticket_id  uuid not null references public.tickets_pesaje(id),
+  primary key (factura_id, ticket_id)
+);
+
+create table if not exists public.facturas_venta_tickets (
+  factura_id uuid not null references public.facturas_venta(id) on delete cascade,
+  ticket_id  uuid not null references public.tickets_pesaje(id),
+  primary key (factura_id, ticket_id)
+);
+
+alter table public.facturas_compra_tickets disable row level security;
+alter table public.facturas_venta_tickets  disable row level security;
+
+create index if not exists idx_facturas_compra_tickets_ticket on public.facturas_compra_tickets (ticket_id);
+create index if not exists idx_facturas_venta_tickets_ticket  on public.facturas_venta_tickets (ticket_id);
+
+-- Backfill: las facturas existentes con ticket_id pasan a la tabla puente (1:1).
+insert into public.facturas_compra_tickets (factura_id, ticket_id)
+select id, ticket_id from public.facturas_compra f
+where f.ticket_id is not null
+  and not exists (select 1 from public.facturas_compra_tickets ft where ft.factura_id = f.id and ft.ticket_id = f.ticket_id);
+
+insert into public.facturas_venta_tickets (factura_id, ticket_id)
+select id, ticket_id from public.facturas_venta f
+where f.ticket_id is not null
+  and not exists (select 1 from public.facturas_venta_tickets ft where ft.factura_id = f.id and ft.ticket_id = f.ticket_id);
+
+-- Reemplazo de las RPCs: el parámetro pasa de un uuid a un arreglo de uuids.
+-- Hay que DROP explícito porque cambia la firma (tipo del parámetro).
+drop function if exists public.crear_factura_compra(uuid, uuid, text, text, text, jsonb);
+drop function if exists public.crear_factura_venta(uuid, uuid, text, text, text, jsonb);
+
+create or replace function public.crear_factura_compra(
+  p_proveedor_id  uuid,
+  p_ticket_ids    uuid[],
+  p_estado        text,
+  p_descripcion   text,
+  p_observaciones text,
+  p_items         jsonb
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id     uuid;
+  v_item   jsonb;
+  v_total  numeric;
+  v_ticket uuid;
+begin
+  select coalesce(sum((value->>'peso')::numeric * (value->>'precio_unitario')::numeric), 0)
+    into v_total
+  from jsonb_array_elements(p_items) as elems(value);
+
+  insert into public.facturas_compra
+    (proveedor_id, ticket_id, precio_unitario, total, descripcion, observaciones, estado)
+  values (
+    p_proveedor_id, null, 0, v_total,
+    nullif(p_descripcion, ''), nullif(p_observaciones, ''), coalesce(p_estado, 'emitida')
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(p_items) as elems(value)
+  loop
+    insert into public.detalle_facturas_compra (factura_id, producto_id, peso, precio_unitario)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      (v_item->>'peso')::numeric,
+      (v_item->>'precio_unitario')::numeric
+    );
+  end loop;
+
+  if p_ticket_ids is not null then
+    foreach v_ticket in array p_ticket_ids
+    loop
+      insert into public.facturas_compra_tickets (factura_id, ticket_id)
+      values (v_id, v_ticket)
+      on conflict do nothing;
+      update public.tickets_pesaje set facturado = true where id = v_ticket;
+    end loop;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+create or replace function public.crear_factura_venta(
+  p_cliente_id    uuid,
+  p_ticket_ids    uuid[],
+  p_estado        text,
+  p_descripcion   text,
+  p_observaciones text,
+  p_items         jsonb
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id     uuid;
+  v_item   jsonb;
+  v_total  numeric;
+  v_ticket uuid;
+begin
+  select coalesce(sum((value->>'peso')::numeric * (value->>'precio_unitario')::numeric), 0)
+    into v_total
+  from jsonb_array_elements(p_items) as elems(value);
+
+  insert into public.facturas_venta
+    (cliente_id, ticket_id, precio_unitario, total, descripcion, observaciones, estado)
+  values (
+    p_cliente_id, null, 0, v_total,
+    nullif(p_descripcion, ''), nullif(p_observaciones, ''), coalesce(p_estado, 'emitida')
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(p_items) as elems(value)
+  loop
+    insert into public.detalle_facturas_venta (factura_id, producto_id, peso, precio_unitario)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      (v_item->>'peso')::numeric,
+      (v_item->>'precio_unitario')::numeric
+    );
+  end loop;
+
+  if p_ticket_ids is not null then
+    foreach v_ticket in array p_ticket_ids
+    loop
+      insert into public.facturas_venta_tickets (factura_id, ticket_id)
+      values (v_id, v_ticket)
+      on conflict do nothing;
+      update public.tickets_pesaje set facturado = true where id = v_ticket;
+    end loop;
+  end if;
+
+  return v_id;
+end;
+$$;

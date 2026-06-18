@@ -9,35 +9,49 @@ const UUID = '11111111-1111-4111-8111-111111111111';
 const UUID2 = '22222222-2222-4222-8222-222222222222';
 
 describe('crearFacturaSchema', () => {
-  const base = { entidadId: UUID, productoId: UUID2, precioUnitario: 5 };
+  const item = { productoId: UUID2, peso: 10, precioUnitario: 5 };
+  const base = { entidadId: UUID, items: [item] };
 
-  it('acepta factura con ticket', () => {
-    const r = crearFacturaSchema.safeParse({ ...base, ticketId: UUID });
+  it('acepta factura con varios tickets', () => {
+    const r = crearFacturaSchema.safeParse({ ...base, ticketIds: [UUID, UUID2] });
     expect(r.success).toBe(true);
   });
 
-  it('acepta factura con peso manual', () => {
-    const r = crearFacturaSchema.safeParse({ ...base, pesoManual: 10 });
-    expect(r.success).toBe(true);
-  });
-
-  it('rechaza factura sin ticket ni peso manual', () => {
+  it('ticketIds por defecto es []', () => {
     const r = crearFacturaSchema.safeParse(base);
+    expect(r.success && r.data.ticketIds).toEqual([]);
+  });
+
+  it('acepta factura con varias líneas', () => {
+    const r = crearFacturaSchema.safeParse({
+      ...base,
+      items: [item, { productoId: UUID, peso: 3, precioUnitario: 8 }],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rechaza factura sin líneas', () => {
+    const r = crearFacturaSchema.safeParse({ ...base, items: [] });
     expect(r.success).toBe(false);
   });
 
   it('rechaza precio unitario <= 0', () => {
-    const r = crearFacturaSchema.safeParse({ ...base, ticketId: UUID, precioUnitario: 0 });
+    const r = crearFacturaSchema.safeParse({ ...base, items: [{ ...item, precioUnitario: 0 }] });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza peso <= 0', () => {
+    const r = crearFacturaSchema.safeParse({ ...base, items: [{ ...item, peso: 0 }] });
     expect(r.success).toBe(false);
   });
 
   it('rechaza entidadId que no es uuid', () => {
-    const r = crearFacturaSchema.safeParse({ ...base, entidadId: 'no-uuid', ticketId: UUID });
+    const r = crearFacturaSchema.safeParse({ ...base, entidadId: 'no-uuid' });
     expect(r.success).toBe(false);
   });
 
   it('aplica estado por defecto "emitida"', () => {
-    const r = crearFacturaSchema.safeParse({ ...base, ticketId: UUID });
+    const r = crearFacturaSchema.safeParse(base);
     expect(r.success && r.data.estado).toBe('emitida');
   });
 });
@@ -71,19 +85,33 @@ describe('crearTransformacionSchema', () => {
 });
 
 describe('crearTicketSchema', () => {
-  const base = { entidadId: UUID, productoId: UUID2, pesoBruto: 100, tara: 10 };
+  const material = { productoId: UUID2, pesoBruto: 100, tara: 10 };
+  const base = { entidadId: UUID, materiales: [material] };
 
   it('aplica tipo "compra" y devolucion 0 por defecto', () => {
     const r = crearTicketSchema.safeParse(base);
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.tipo).toBe('compra');
-      expect(r.data.devolucion).toBe(0);
+      expect(r.data.materiales[0].devolucion).toBe(0);
     }
   });
 
+  it('acepta varios materiales', () => {
+    const r = crearTicketSchema.safeParse({
+      ...base,
+      materiales: [material, { productoId: UUID, pesoBruto: 50, tara: 5 }],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rechaza sin materiales', () => {
+    const r = crearTicketSchema.safeParse({ ...base, materiales: [] });
+    expect(r.success).toBe(false);
+  });
+
   it('rechaza peso bruto negativo', () => {
-    const r = crearTicketSchema.safeParse({ ...base, pesoBruto: -1 });
+    const r = crearTicketSchema.safeParse({ ...base, materiales: [{ ...material, pesoBruto: -1 }] });
     expect(r.success).toBe(false);
   });
 });

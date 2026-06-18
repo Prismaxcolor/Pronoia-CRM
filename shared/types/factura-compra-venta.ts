@@ -8,22 +8,28 @@
  */
 export type EstadoFacturaCompraVenta = 'borrador' | 'emitida' | 'pagada';
 
-/** Campos comunes a facturas de compra y de venta. */
-interface FacturaCompraVentaBase {
+/** Una línea de una factura de compra/venta: un material con su peso y precio. */
+export interface FacturaLinea {
   id: string;
   /** Material facturado (FK a productos). */
   productoId: string | null;
   /** Nombre del material, resuelto vía join. Solo lectura. */
   nombreProducto?: string | null;
-  /** Ticket de pesaje del que sale el peso. Null si se usa `pesoManual`. */
-  ticketId: string | null;
-  /** Peso ingresado a mano cuando no hay ticket. */
-  pesoManual: number | null;
-  /** Peso facturado (neto del ticket o peso manual). Solo lectura. */
-  peso?: number;
-  /** Precio aplicado desde una lista de precios (opcional). */
-  listaPreciosId: string | null;
+  /** Peso facturado de esta línea (kg). */
+  peso: number;
   precioUnitario: number;
+  /** peso · precioUnitario. Calculado en BD (columna generada). Solo lectura. */
+  subtotal: number;
+}
+
+/** Campos comunes a facturas de compra y de venta. */
+interface FacturaCompraVentaBase {
+  id: string;
+  /** Ticket de pesaje del que salen los pesos. Null si fue peso manual. */
+  ticketId: string | null;
+  /** Líneas de la factura (al menos una). */
+  items: FacturaLinea[];
+  /** Suma de los subtotales de las líneas. Solo lectura. */
   total: number;
   descripcion: string | null;
   observaciones: string | null;
@@ -37,6 +43,18 @@ export interface FacturaCompra extends FacturaCompraVentaBase {
   proveedorId: string | null;
   /** Nombre del proveedor, resuelto vía join. Solo lectura. */
   nombreProveedor?: string | null;
+  /**
+   * Correlativo numérico secuencial, asignado automáticamente por la BD al crear
+   * la factura (1, 2, 3, ...). El usuario no lo escribe. Solo lectura.
+   */
+  numero?: number | null;
+  /** Código de control formateado para mostrar: "Compra 0001". Solo lectura. */
+  codigo?: string | null;
+}
+
+/** Formatea el correlativo de una factura de compra: 1 → "Compra 0001". */
+export function formatCodigoCompra(numero: number): string {
+  return `Compra ${String(numero).padStart(4, '0')}`;
 }
 
 /** Factura contra un cliente (la empresa vende material). */

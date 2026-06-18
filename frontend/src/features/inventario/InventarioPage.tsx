@@ -48,7 +48,7 @@ function InventarioPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Inventario</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Stock por material: entradas (compras) − salidas (ventas) ± transformaciones.
+          Stock por material y destino (MPP / lote): entradas (pesaje compra) − salidas (pesaje venta) ± transformaciones.
         </p>
       </div>
 
@@ -117,6 +117,7 @@ function InventarioPage() {
                     <thead>
                       <tr className="text-left text-xs text-text-muted bg-surface-alt">
                         <th className="px-5 py-2 font-medium">Artículo</th>
+                        <th className="px-4 py-2 font-medium">Destino</th>
                         <th className="px-4 py-2 font-medium text-right">Entradas</th>
                         <th className="px-4 py-2 font-medium text-right">Salidas</th>
                         <th className="px-4 py-2 font-medium text-right">Transf.</th>
@@ -125,8 +126,13 @@ function InventarioPage() {
                     </thead>
                     <tbody>
                       {g.articulos.map(a => (
-                        <tr key={a.productoId} className="border-t border-border">
+                        <tr key={`${a.productoId}-${a.loteId ?? 'mpp'}`} className="border-t border-border">
                           <td className="px-5 py-2.5 text-text-primary">{a.nombre}</td>
+                          <td className="px-4 py-2.5">
+                            <span className={`px-2 py-0.5 rounded-full text-xs ${a.destinoTipo === 'lote' ? 'bg-brand-100 text-brand-700' : 'bg-surface-alt text-text-secondary'}`}>
+                              {a.destinoLabel}
+                            </span>
+                          </td>
                           <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
                           <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
                           <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.transformaciones)}</td>

@@ -25,6 +25,18 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Resumen de materiales de una factura: nombre si es uno, "N materiales" si varios. */
+function resumenMateriales(f: FacturaCV): string {
+  if (f.items.length === 0) return '—';
+  if (f.items.length === 1) return f.items[0].nombreProducto ?? 'material';
+  return `${f.items.length} materiales`;
+}
+
+/** Suma del peso de todas las líneas de la factura. */
+function pesoTotal(f: FacturaCV): number {
+  return f.items.reduce((acc, it) => acc + it.peso, 0);
+}
+
 interface Props {
   tipo: TipoFactura;
 }
@@ -118,11 +130,11 @@ function FacturaHistorialPage({ tipo }: Props) {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-text-muted">
+                {esCompra && <th className="px-4 py-3 font-medium">N° Control</th>}
                 <th className="px-4 py-3 font-medium">Fecha</th>
                 <th className="px-4 py-3 font-medium">{labelEntidad}</th>
-                <th className="px-4 py-3 font-medium">Material</th>
+                <th className="px-4 py-3 font-medium">Materiales</th>
                 <th className="px-4 py-3 font-medium text-right">Peso (kg)</th>
-                <th className="px-4 py-3 font-medium text-right">Precio</th>
                 <th className="px-4 py-3 font-medium text-right">Total</th>
                 <th className="px-4 py-3 font-medium text-right">Estado</th>
               </tr>
@@ -132,11 +144,11 @@ function FacturaHistorialPage({ tipo }: Props) {
                 const cfg = ESTADO_CFG[f.estado] ?? ESTADO_CFG.emitida;
                 return (
                   <tr key={f.id} onClick={() => navigate(`${ruta}/${f.id}`)} className="border-b border-border last:border-b-0 hover:bg-surface-alt cursor-pointer transition-colors">
+                    {esCompra && <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{f.codigo ?? '—'}</td>}
                     <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{f.createdAt.slice(0, 10)}</td>
                     <td className="px-4 py-3 text-text-primary">{f.nombreEntidad ?? '—'}</td>
-                    <td className="px-4 py-3 text-text-secondary">{f.nombreProducto ?? '—'}</td>
-                    <td className="px-4 py-3 text-right">{fmt(f.peso)}</td>
-                    <td className="px-4 py-3 text-right">{fmt(f.precioUnitario)}</td>
+                    <td className="px-4 py-3 text-text-secondary">{resumenMateriales(f)}</td>
+                    <td className="px-4 py-3 text-right">{fmt(pesoTotal(f))}</td>
                     <td className="px-4 py-3 text-right font-medium text-text-primary">{fmt(f.total)}</td>
                     <td className="px-4 py-3 text-right">
                       <span className={`px-2 py-0.5 rounded-full text-xs ${cfg.clase}`}>{cfg.label}</span>

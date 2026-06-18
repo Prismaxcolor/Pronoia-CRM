@@ -9,6 +9,7 @@ import DashboardPage from './features/dashboard/DashboardPage';
 import ProductosPage from './features/productos/ProductosPage';
 import InventarioPage from './features/inventario/InventarioPage';
 import TransformacionesPage from './features/transformaciones/TransformacionesPage';
+import LotesPage from './features/lotes/LotesPage';
 import CochinitPage from './features/cochinito/CochinitPage';
 import UsuariosPage from './features/usuarios/UsuariosPage';
 import ClientesPage from './features/clientes/ClientesPage';
@@ -44,6 +45,7 @@ function AppRoutes() {
         <Route path="/listas-precios/:id" element={<ProtectedRoute recurso="productos"><ListaDetallePage /></ProtectedRoute>} />
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
         <Route path="/transformaciones" element={<ProtectedRoute recurso="productos"><TransformacionesPage /></ProtectedRoute>} />
+        <Route path="/lotes" element={<ProtectedRoute recurso="productos"><LotesPage /></ProtectedRoute>} />
         <Route path="/facturacion" element={<ProtectedRoute recurso="facturacion"><FacturacionPage /></ProtectedRoute>} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
         <Route path="/compras" element={<ProtectedRoute recurso="facturacion"><FacturaHistorialPage tipo="compra" /></ProtectedRoute>} />

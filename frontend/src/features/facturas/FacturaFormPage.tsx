@@ -1,17 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerTickets } from '../../services/ticket-pesaje-service';
 import { crearFactura, type TipoFactura } from '../../services/factura-cv-service';
-import ListaPreciosSelector from '../../components/ListaPreciosSelector';
+import { obtenerListas, obtenerListaDetalle } from '../../services/lista-precios-service';
 import { useToast } from '../../hooks/use-toast';
-import type { Producto, TicketPesaje } from '@shared/types/index.js';
+import type { Producto, TicketPesaje, ListaPrecios } from '@shared/types/index.js';
 
 interface Entidad { id: string; nombre: string; activo: boolean }
 type ModoPeso = 'ticket' | 'manual';
+
+/** Una línea del formulario (valores como string para los inputs). */
+interface LineaFila {
+  uid: number;
+  productoId: string;
+  peso: string;
+  precioUnitario: string;
+  /** Viene de un ticket: material y peso bloqueados. */
+  desdeTicket: boolean;
+  /** id del material del ticket (detalle), para conservar precios al re-seleccionar. */
+  materialId?: string;
+}
+
+let UID = 0;
+function lineaVacia(): LineaFila {
+  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false };
+}
 
 interface Props {
   tipo: TipoFactura;
@@ -29,24 +46,28 @@ function FacturaFormPage({ tipo }: Props) {
   const [entidades, setEntidades] = useState<Entidad[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [ticketsPendientes, setTicketsPendientes] = useState<TicketPesaje[]>([]);
+  const [listas, setListas] = useState<ListaPrecios[]>([]);
 
   const [entidadId, setEntidadId] = useState('');
-  const [productoId, setProductoId] = useState('');
   const [modoPeso, setModoPeso] = useState<ModoPeso>('ticket');
-  const [ticketId, setTicketId] = useState('');
-  const [pesoManual, setPesoManual] = useState('');
-  const [listaPreciosId, setListaPreciosId] = useState<string | null>(null);
-  const [precioUnitario, setPrecioUnitario] = useState('');
+  const [ticketIds, setTicketIds] = useState<string[]>([]);
+  const [lineas, setLineas] = useState<LineaFila[]>([lineaVacia()]);
+  const [listaSelId, setListaSelId] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [observaciones, setObservaciones] = useState('');
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Precios de la lista elegida (productoId → precio/kg). En ref para poder
+  // precargar líneas nuevas (de ticket o manuales) sin re-disparar efectos.
+  const preciosLista = useRef<Record<string, number>>({});
+
   useEffect(() => {
     const cargar = (): Promise<Entidad[]> => (esCompra ? obtenerProveedores() : obtenerClientes());
     cargar().then(lista => setEntidades(lista.filter(e => e.activo)));
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
+    obtenerListas().then(lista => setListas(lista.filter(l => l.activo)));
   }, [esCompra]);
 
   useEffect(() => {
@@ -54,36 +75,101 @@ function FacturaFormPage({ tipo }: Props) {
     obtenerTickets({ soloNoFacturados: true, entidadId, tipo }).then(setTicketsPendientes);
   }, [entidadId, tipo]);
 
-  const ticketSel = useMemo(
-    () => ticketsPendientes.find(t => t.id === ticketId) ?? null,
-    [ticketsPendientes, ticketId]
+  const ticketsSel = useMemo(
+    () => ticketsPendientes.filter(t => ticketIds.includes(t.id)),
+    [ticketsPendientes, ticketIds]
   );
 
-  useEffect(() => {
-    if (ticketSel?.productoId) setProductoId(ticketSel.productoId);
-  }, [ticketSel]);
+  // Precio que define la lista elegida para un material (string vacío si no hay).
+  const precioDeLista = (productoId: string): string => {
+    const p = preciosLista.current[productoId];
+    return p != null ? String(p) : '';
+  };
 
-  const peso = modoPeso === 'ticket' ? (ticketSel?.pesoNeto ?? 0) : Number(pesoManual) || 0;
-  const total = peso * (Number(precioUnitario) || 0);
+  // Al (de)seleccionar tickets, reconstruir las líneas: una por material de cada
+  // ticket elegido. Se conservan los precios ya escritos (match por materialId);
+  // los nuevos se precargan con el precio de la lista elegida (si hay).
+  useEffect(() => {
+    if (modoPeso !== 'ticket') return;
+    setLineas(prev => {
+      const previos = new Map(prev.filter(l => l.materialId).map(l => [l.materialId!, l]));
+      const nuevas: LineaFila[] = ticketsSel.flatMap(t =>
+        t.materiales.map(m => {
+          const ex = previos.get(m.id);
+          return {
+            uid: ex?.uid ?? UID++,
+            productoId: m.productoId ?? '',
+            peso: String(m.pesoNeto),
+            precioUnitario: ex?.precioUnitario || precioDeLista(m.productoId ?? ''),
+            desdeTicket: true,
+            materialId: m.id,
+          };
+        })
+      );
+      return nuevas.length > 0 ? nuevas : [lineaVacia()];
+    });
+  }, [ticketsSel, modoPeso]);
+
+  const toggleTicket = (id: string) =>
+    setTicketIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+
+  const cambiarModo = (m: ModoPeso) => {
+    setModoPeso(m);
+    setTicketIds([]);
+    setLineas([lineaVacia()]);
+  };
+
+  const setLinea = (uid: number, campo: keyof LineaFila, valor: string) =>
+    setLineas(prev => prev.map(l => (l.uid === uid ? { ...l, [campo]: valor } : l)));
+
+  // Al elegir material en una línea manual, autocompletar su precio desde la lista.
+  const setMaterialLinea = (uid: number, productoId: string) =>
+    setLineas(prev => prev.map(l => {
+      if (l.uid !== uid) return l;
+      const precio = precioDeLista(productoId);
+      return { ...l, productoId, precioUnitario: precio || l.precioUnitario };
+    }));
+
+  // Elegir lista global: carga sus precios y autocompleta TODAS las líneas.
+  const aplicarLista = async (id: string) => {
+    setListaSelId(id);
+    if (!id) { preciosLista.current = {}; return; }
+    const detalle = await obtenerListaDetalle(id);
+    const mapa: Record<string, number> = {};
+    (detalle?.precios ?? []).forEach(p => { mapa[p.productoId] = p.precio; });
+    preciosLista.current = mapa;
+    setLineas(prev => prev.map(l => {
+      const precio = mapa[l.productoId];
+      return precio != null ? { ...l, precioUnitario: String(precio) } : l;
+    }));
+  };
+
+  const agregarLinea = () => setLineas(prev => [...prev, lineaVacia()]);
+  const quitarLinea = (uid: number) =>
+    setLineas(prev => (prev.length > 1 ? prev.filter(l => l.uid !== uid) : prev));
+
+  const subtotalLinea = (l: LineaFila) => (Number(l.peso) || 0) * (Number(l.precioUnitario) || 0);
+  const total = useMemo(() => lineas.reduce((acc, l) => acc + subtotalLinea(l), 0), [lineas]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
-    if (!productoId) { setError('Elige el material.'); return; }
-    if (modoPeso === 'ticket' && !ticketId) { setError('Selecciona un ticket de pesaje o cambia a peso manual.'); return; }
-    if (modoPeso === 'manual' && peso <= 0) { setError('Ingresa un peso manual mayor a 0.'); return; }
-    if (Number(precioUnitario) <= 0) { setError('Ingresa un precio unitario mayor a 0.'); return; }
+    if (modoPeso === 'ticket' && ticketIds.length === 0) { setError('Selecciona al menos un ticket de pesaje o cambia a peso manual.'); return; }
+    if (lineas.some(l => !l.productoId)) { setError('Selecciona un material en cada fila.'); return; }
+    if (lineas.some(l => (Number(l.peso) || 0) <= 0)) { setError('Cada material debe tener un peso mayor a 0.'); return; }
+    if (lineas.some(l => (Number(l.precioUnitario) || 0) <= 0)) { setError('Cada material debe tener un precio unitario mayor a 0.'); return; }
 
     setGuardando(true);
     const result = await crearFactura(tipo, {
       entidadId,
-      productoId,
-      ticketId: modoPeso === 'ticket' ? ticketId : null,
-      pesoManual: modoPeso === 'manual' ? peso : null,
-      listaPreciosId,
-      precioUnitario: Number(precioUnitario),
+      ticketIds: modoPeso === 'ticket' ? ticketIds : [],
+      items: lineas.map(l => ({
+        productoId: l.productoId,
+        peso: Number(l.peso),
+        precioUnitario: Number(l.precioUnitario),
+      })),
       descripcion: descripcion.trim() || null,
       observaciones: observaciones.trim() || null,
     });
@@ -97,6 +183,7 @@ function FacturaFormPage({ tipo }: Props) {
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
   const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const nombreProducto = (id: string) => productos.find(p => p.id === id)?.nombre ?? 'material';
 
   return (
     <div className="max-w-2xl">
@@ -110,66 +197,119 @@ function FacturaFormPage({ tipo }: Props) {
       <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4">
         <div>
           <label className={labelClass}>{labelEntidad} *</label>
-          <select value={entidadId} onChange={e => { setEntidadId(e.target.value); setTicketId(''); }} className={inputClass}>
+          <select value={entidadId} onChange={e => { setEntidadId(e.target.value); setTicketIds([]); }} className={inputClass}>
             <option value="">— Selecciona —</option>
             {entidades.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
           </select>
         </div>
 
         <div>
+          <label className={labelClass}>Lista de precios</label>
+          <select value={listaSelId} onChange={e => aplicarLista(e.target.value)} className={inputClass}>
+            <option value="">Seleccionar lista de precios</option>
+            {listas.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+          </select>
+          <p className="text-xs text-text-muted mt-1">
+            Autocompleta el precio de cada material según la lista. Puedes editarlo después a mano.
+          </p>
+        </div>
+
+        <div>
           <label className={labelClass}>Origen del peso</label>
           <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-3">
-            <button type="button" onClick={() => setModoPeso('ticket')} className={`px-4 py-1.5 ${modoPeso === 'ticket' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+            <button type="button" onClick={() => cambiarModo('ticket')} className={`px-4 py-1.5 ${modoPeso === 'ticket' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
               Ticket de pesaje
             </button>
-            <button type="button" onClick={() => setModoPeso('manual')} className={`px-4 py-1.5 ${modoPeso === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+            <button type="button" onClick={() => cambiarModo('manual')} className={`px-4 py-1.5 ${modoPeso === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
               Peso manual
             </button>
           </div>
 
-          {modoPeso === 'ticket' ? (
-            <select value={ticketId} onChange={e => setTicketId(e.target.value)} className={inputClass} disabled={!entidadId}>
-              <option value="">
-                {!entidadId ? `Elige primero un ${labelEntidad.toLowerCase()}` : ticketsPendientes.length === 0 ? `Sin tickets pendientes para este ${labelEntidad.toLowerCase()}` : '— Selecciona un ticket —'}
-              </option>
-              {ticketsPendientes.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.fecha ?? '—'} · {t.nombreProducto ?? 'material'} · {(t.pesoNeto ?? 0)} kg
-                </option>
-              ))}
-            </select>
+          {modoPeso === 'ticket' && (
+            !entidadId ? (
+              <p className="text-xs text-text-muted">Elige primero un {labelEntidad.toLowerCase()}.</p>
+            ) : ticketsPendientes.length === 0 ? (
+              <p className="text-xs text-text-muted">Sin tickets pendientes para este {labelEntidad.toLowerCase()}.</p>
+            ) : (
+              <div className="border border-border rounded-lg divide-y divide-border max-h-56 overflow-y-auto">
+                {ticketsPendientes.map(t => (
+                  <label key={t.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-alt transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={ticketIds.includes(t.id)}
+                      onChange={() => toggleTicket(t.id)}
+                      className="w-4 h-4 accent-brand-600 shrink-0"
+                    />
+                    <span className="text-sm text-text-primary">
+                      <span className="font-medium">{t.codigo}</span>
+                      <span className="text-text-muted"> · {t.fecha ?? '—'} · {t.materiales.length === 1 ? (t.materiales[0].nombreProducto ?? 'material') : `${t.materiales.length} materiales`} · {fmt(t.pesoNetoTotal)} kg</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )
+          )}
+          {modoPeso === 'ticket' && ticketIds.length > 0 && (
+            <p className="text-xs text-text-muted mt-2">{ticketIds.length} ticket{ticketIds.length === 1 ? '' : 's'} seleccionado{ticketIds.length === 1 ? '' : 's'}.</p>
+          )}
+        </div>
+
+        {/* Líneas de la factura */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className={labelClass + ' mb-0'}>Materiales {modoPeso === 'ticket' && ticketsSel.length > 0 ? '(de los tickets)' : ''}</label>
+            {modoPeso === 'manual' && (
+              <button type="button" onClick={agregarLinea} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors">
+                <Plus size={16} />
+                Agregar material
+              </button>
+            )}
+          </div>
+
+          {modoPeso === 'ticket' && ticketsSel.length === 0 ? (
+            <p className="text-xs text-text-muted">Selecciona uno o más tickets para cargar sus materiales.</p>
           ) : (
-            <input type="number" step="0.01" min="0" value={pesoManual} onChange={e => setPesoManual(e.target.value)} className={inputClass} placeholder="Peso en kg" />
-          )}
-        </div>
+            lineas.map((l, idx) => (
+              <div key={l.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-text-secondary">
+                    Material {idx + 1}{l.desdeTicket ? ` · ${nombreProducto(l.productoId)}` : ''}
+                  </span>
+                  {modoPeso === 'manual' && lineas.length > 1 && (
+                    <button type="button" onClick={() => quitarLinea(l.uid)} className="text-text-muted hover:text-red-600 transition-colors" title="Quitar material">
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
 
-        <div>
-          <label className={labelClass}>Material *</label>
-          <select value={productoId} onChange={e => setProductoId(e.target.value)} className={inputClass} disabled={modoPeso === 'ticket' && !!ticketSel}>
-            <option value="">— Selecciona —</option>
-            {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-          </select>
-          {modoPeso === 'ticket' && ticketSel && (
-            <p className="text-xs text-text-muted mt-1">El material lo define el ticket seleccionado.</p>
-          )}
-        </div>
+                {!l.desdeTicket && (
+                  <div>
+                    <label className={labelClass}>Material *</label>
+                    <select value={l.productoId} onChange={e => setMaterialLinea(l.uid, e.target.value)} className={inputClass}>
+                      <option value="">— Selecciona —</option>
+                      {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                    </select>
+                  </div>
+                )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Lista de precios</label>
-            <ListaPreciosSelector
-              productoId={productoId}
-              value={listaPreciosId}
-              onChange={(listaId, precio) => {
-                setListaPreciosId(listaId);
-                if (precio != null) setPrecioUnitario(String(precio));
-              }}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Precio unitario (por kg) *</label>
-            <input type="number" step="0.01" min="0" value={precioUnitario} onChange={e => setPrecioUnitario(e.target.value)} className={inputClass} placeholder="0.00" />
-          </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>Peso (kg) {l.desdeTicket && <span className="text-text-muted">· del ticket</span>}</label>
+                    <input type="number" step="0.01" min="0" value={l.peso} onChange={e => setLinea(l.uid, 'peso', e.target.value)} className={inputClass} placeholder="0.00" disabled={l.desdeTicket} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Precio (kg) *</label>
+                    <input type="number" step="0.01" min="0" value={l.precioUnitario} onChange={e => setLinea(l.uid, 'precioUnitario', e.target.value)} className={inputClass} placeholder="0.00" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-text-muted">Subtotal</span>
+                  <span className="font-semibold text-text-primary">{fmt(subtotalLinea(l))}</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         <div>
@@ -181,12 +321,9 @@ function FacturaFormPage({ tipo }: Props) {
           <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Opcional" />
         </div>
 
-        <div className="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
-          <div className="text-sm text-brand-800">
-            <span className="font-medium">{fmt(peso)} kg</span> × <span className="font-medium">{fmt(Number(precioUnitario) || 0)}</span>
-          </div>
+        <div className="flex items-center justify-end bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
           <div className="text-right">
-            <p className="text-xs text-brand-700">Total</p>
+            <p className="text-xs text-brand-700">Total ({lineas.length} {lineas.length === 1 ? 'material' : 'materiales'})</p>
             <p className="text-xl font-bold text-brand-700">{fmt(total)}</p>
           </div>
         </div>
