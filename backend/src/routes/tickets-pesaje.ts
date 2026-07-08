@@ -3,10 +3,11 @@ import {
   listarTickets,
   obtenerTicket,
   crearTicket,
+  completarTicket,
 } from '../services/ticket-pesaje-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearTicketSchema } from '../schemas/tickets-pesaje.js';
+import { crearTicketSchema, completarTicketSchema } from '../schemas/tickets-pesaje.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -37,18 +38,38 @@ router.post(
   requirePermiso('pesaje', 'crear'),
   validateBody(crearTicketSchema),
   async (req, res) => {
-    const result = await crearTicket(req.body);
+    const result = await crearTicket(req.body, req.user!.sub);
     if ('error' in result) {
       res.status(400).json(result);
       return;
     }
     logger.info({
-      evento: 'ticket_pesaje_creado',
+      evento: result.ticket.estado === 'bruto' ? 'ticket_pesaje_bruto_creado' : 'ticket_pesaje_creado',
       ip: clienteIp(req),
       userId: req.user!.sub,
       ticketId: result.ticket.id,
     });
     res.status(201).json(result);
+  }
+);
+
+router.patch(
+  '/:id/completar',
+  requirePermiso('pesaje', 'crear'),
+  validateBody(completarTicketSchema),
+  async (req, res) => {
+    const result = await completarTicket(String(req.params.id), req.body, req.user!.sub);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'ticket_pesaje_bruto_completado',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      ticketId: result.ticket.id,
+    });
+    res.json(result);
   }
 );
 

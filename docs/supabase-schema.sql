@@ -1245,3 +1245,142 @@ begin
   return v_mov_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 23 · peso global + pesaje en bruto (Tareas 3 y 6)
+--
+-- Reconciliación manual: las ramas feature/pesaje-peso-global (Tarea 3) y
+-- feature/pesaje-en-bruto (Tarea 6) modificaban el mismo RPC
+-- crear_ticket_pesaje cada una con parámetros nuevos distintos. Este bloque
+-- fusiona ambas — el RPC final acepta los 4 parámetros nuevos juntos.
+--
+-- Peso global (Tarea 3): el proveedor se pesa UNA sola vez con todos los
+-- materiales juntos al llegar (peso_global). Después se desglosan los pesos
+-- netos por material como ya hacía la app (detalle_tickets_pesaje):
+--
+--   diferencia = peso_global - (suma de netos por material [incluida la
+--                basura, que es una fila de material más] + devolución total)
+--
+-- La diferencia NO se guarda (se deriva en el backend). Solo se persiste
+-- peso_global.
+--
+-- Pesaje en bruto (Tarea 6): un ticket de compra se puede guardar "en bruto"
+-- (sin materiales ni destinos asignados todavía). No mueve inventario (no
+-- tiene filas en detalle_tickets_pesaje hasta completarse) y no se puede
+-- facturar mientras estado='bruto' (validado en backend, factura-service.ts).
+-- Solo aplica a compras. pesado_por = quien creó el ticket (bruto o
+-- completo); completado_por/completado_en solo se llenan al completar un
+-- bruto (vía la RPC completar_ticket_pesaje).
+-- ============================================================================
+
+alter table public.tickets_pesaje
+  add column if not exists peso_global numeric;
+
+alter table public.tickets_pesaje
+  add column if not exists estado text not null default 'completo'
+    check (estado in ('bruto', 'completo'));
+
+alter table public.tickets_pesaje
+  add column if not exists pesado_por uuid references public.users(id);
+alter table public.tickets_pesaje
+  add column if not exists completado_por uuid references public.users(id);
+alter table public.tickets_pesaje
+  add column if not exists completado_en timestamptz;
+
+-- Reemplaza la RPC (Bloque 18) para recibir peso_global + estado + pesado_por,
+-- y permitir materiales vacíos (el bruto se completa después con otra RPC).
+drop function if exists public.crear_ticket_pesaje(text, uuid, date, text[], text, jsonb);
+
+create or replace function public.crear_ticket_pesaje(
+  p_tipo          text,
+  p_entidad_id    uuid,
+  p_fecha         date,
+  p_fotos         text[],
+  p_observaciones text,
+  p_materiales    jsonb,
+  p_estado        text,
+  p_pesado_por    uuid,
+  p_peso_global   numeric
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id   uuid;
+  v_item jsonb;
+begin
+  insert into public.tickets_pesaje
+    (tipo, entidad_id, fecha, fotos, observaciones, estado, pesado_por, peso_global)
+  values (
+    p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''),
+    coalesce(p_estado, 'completo'), p_pesado_por, p_peso_global
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
+
+-- Completa un ticket en bruto: agrega las líneas de material definitivas y
+-- pasa estado a 'completo', registrando quién lo completó y cuándo.
+create or replace function public.completar_ticket_pesaje(
+  p_ticket_id      uuid,
+  p_materiales     jsonb,
+  p_completado_por uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_estado text;
+  v_item   jsonb;
+begin
+  select estado into v_estado from public.tickets_pesaje where id = p_ticket_id;
+
+  if v_estado is null then
+    raise exception 'Ticket no encontrado.';
+  end if;
+  if v_estado <> 'bruto' then
+    raise exception 'El ticket ya está completo.';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      p_ticket_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  update public.tickets_pesaje
+     set estado = 'completo',
+         completado_por = p_completado_por,
+         completado_en = now()
+   where id = p_ticket_id;
+
+  return p_ticket_id;
+end;
+$$;

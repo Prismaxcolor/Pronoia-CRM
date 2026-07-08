@@ -54,11 +54,30 @@ export interface TicketPesaje {
   materiales: TicketPesajeMaterial[];
   /** Suma de los pesos netos de todos los materiales. Solo lectura. */
   pesoNetoTotal: number;
+  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
+  pesoGlobal: number;
+  /**
+   * pesoGlobal - (suma de netos + devolución total). Mide la merma/discrepancia
+   * entre el pesaje global de entrada y lo que terminó contabilizado por
+   * material. Solo lectura, derivado (no se guarda en BD).
+   */
+  diferencia: number;
   /** URLs o paths de fotos del material/pesada. */
   fotos: string[] | null;
   observaciones: string | null;
   /** true cuando ya existe una factura (compra o venta) asociada. */
   facturado: boolean;
+  /**
+   * 'bruto': se guardó sin materiales/destinos (pendiente de completar). No
+   * mueve inventario ni se puede facturar. Solo aplica a compras.
+   */
+  estado: 'bruto' | 'completo';
+  /** Usuario que registró el pesaje (bruto o completo). */
+  pesadoPor: string | null;
+  /** Usuario que completó un ticket en bruto. Null si nunca fue bruto. */
+  completadoPor: string | null;
+  /** ISO timestamp de cuándo se completó un ticket en bruto. */
+  completadoEn: string | null;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
 }

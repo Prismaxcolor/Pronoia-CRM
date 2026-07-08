@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { crearFacturaSchema } from '../src/schemas/facturas.js';
 import { crearTransformacionSchema } from '../src/schemas/transformaciones.js';
-import { crearTicketSchema } from '../src/schemas/tickets-pesaje.js';
+import { crearTicketSchema, completarTicketSchema } from '../src/schemas/tickets-pesaje.js';
 import { crearListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
 import { crearProveedorSchema } from '../src/schemas/proveedores.js';
 import { crearTaraSchema, actualizarTaraSchema } from '../src/schemas/tara.js';
@@ -88,7 +88,7 @@ describe('crearTransformacionSchema', () => {
 
 describe('crearTicketSchema', () => {
   const material = { productoId: UUID2, pesoBruto: 100, tara: 10 };
-  const base = { entidadId: UUID, materiales: [material] };
+  const base = { entidadId: UUID, pesoGlobal: 90, materiales: [material] };
 
   it('aplica tipo "compra" y devolucion 0 por defecto', () => {
     const r = crearTicketSchema.safeParse(base);
@@ -97,6 +97,17 @@ describe('crearTicketSchema', () => {
       expect(r.data.tipo).toBe('compra');
       expect(r.data.materiales[0].devolucion).toBe(0);
     }
+  });
+
+  it('rechaza sin peso global', () => {
+    const { pesoGlobal: _pesoGlobal, ...sinPesoGlobal } = base;
+    const r = crearTicketSchema.safeParse(sinPesoGlobal);
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza peso global negativo', () => {
+    const r = crearTicketSchema.safeParse({ ...base, pesoGlobal: -1 });
+    expect(r.success).toBe(false);
   });
 
   it('acepta varios materiales', () => {
@@ -115,6 +126,36 @@ describe('crearTicketSchema', () => {
   it('rechaza peso bruto negativo', () => {
     const r = crearTicketSchema.safeParse({ ...base, materiales: [{ ...material, pesoBruto: -1 }] });
     expect(r.success).toBe(false);
+  });
+
+  it('acepta un ticket en bruto (compra) sin materiales', () => {
+    const r = crearTicketSchema.safeParse({ entidadId: UUID, pesoGlobal: 90, estado: 'bruto', materiales: [] });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.estado).toBe('bruto');
+  });
+
+  it('rechaza un ticket en bruto de tipo venta', () => {
+    const r = crearTicketSchema.safeParse({ entidadId: UUID, tipo: 'venta', estado: 'bruto', materiales: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza estado "completo" (default) sin materiales', () => {
+    const r = crearTicketSchema.safeParse({ entidadId: UUID, materiales: [] });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('completarTicketSchema', () => {
+  const material = { productoId: UUID2, pesoBruto: 100, tara: 10 };
+
+  it('exige al menos un material', () => {
+    const r = completarTicketSchema.safeParse({ materiales: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it('acepta materiales válidos', () => {
+    const r = completarTicketSchema.safeParse({ materiales: [material] });
+    expect(r.success).toBe(true);
   });
 });
 

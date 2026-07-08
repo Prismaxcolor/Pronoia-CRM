@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import type { CrearTicketInput } from '../schemas/tickets-pesaje.js';
+import type { CrearTicketInput, CompletarTicketInput } from '../schemas/tickets-pesaje.js';
 
 /** Formatea el correlativo de pesaje: 1 → "Pesaje 0001". Duplicado intencional
  *  de shared/types/ticket-pesaje.ts (el backend no comparte paquete con front). */
@@ -31,6 +31,11 @@ interface TicketRow {
   observaciones: string | null;
   facturado: boolean;
   created_at: string;
+  peso_global: number | null;
+  estado: 'bruto' | 'completo';
+  pesado_por: string | null;
+  completado_por: string | null;
+  completado_en: string | null;
   detalle_tickets_pesaje?: DetalleRow[] | null;
 }
 
@@ -57,9 +62,16 @@ export interface TicketPublico {
   fecha: string | null;
   materiales: MaterialPublico[];
   pesoNetoTotal: number;
+  pesoGlobal: number;
+  /** peso_global - (suma de netos + devolución total). Solo lectura, derivado. */
+  diferencia: number;
   fotos: string[];
   observaciones: string | null;
   facturado: boolean;
+  estado: 'bruto' | 'completo';
+  pesadoPor: string | null;
+  completadoPor: string | null;
+  completadoEn: string | null;
   createdAt: string;
 }
 
@@ -82,6 +94,8 @@ function detalleToPublico(d: DetalleRow): MaterialPublico {
 function toPublico(row: TicketRow): TicketPublico {
   const materiales = (row.detalle_tickets_pesaje ?? []).map(detalleToPublico);
   const pesoNetoTotal = materiales.reduce((acc, m) => acc + m.pesoNeto, 0);
+  const devolucionTotal = materiales.reduce((acc, m) => acc + m.devolucion, 0);
+  const pesoGlobal = Number(row.peso_global ?? 0);
   return {
     id: row.id,
     numero: Number(row.numero),
@@ -91,9 +105,15 @@ function toPublico(row: TicketRow): TicketPublico {
     fecha: row.fecha,
     materiales,
     pesoNetoTotal,
+    pesoGlobal,
+    diferencia: pesoGlobal - (pesoNetoTotal + devolucionTotal),
     fotos: row.fotos ?? [],
     observaciones: row.observaciones,
     facturado: row.facturado,
+    estado: row.estado,
+    pesadoPor: row.pesado_por,
+    completadoPor: row.completado_por,
+    completadoEn: row.completado_en,
     createdAt: row.created_at,
   };
 }
@@ -135,8 +155,21 @@ export async function obtenerTicket(id: string): Promise<TicketPublico | null> {
   return toPublico(data as unknown as TicketRow);
 }
 
+function materialesARpc(materiales: CrearTicketInput['materiales']) {
+  return materiales.map(m => ({
+    producto_id: m.productoId,
+    subcategoria: m.subcategoria,
+    peso_bruto: m.pesoBruto,
+    tara: m.tara,
+    devolucion: m.devolucion,
+    destino_tipo: m.destinoTipo,
+    lote_id: m.destinoTipo === 'lote' ? m.loteId : null,
+  }));
+}
+
 export async function crearTicket(
-  input: CrearTicketInput
+  input: CrearTicketInput,
+  pesadoPor: string
 ): Promise<{ ticket: TicketPublico } | { error: string }> {
   // RPC atómica: inserta el header (numero vía default) + N líneas de material.
   const { data: ticketId, error } = await supabaseAdmin.rpc('crear_ticket_pesaje', {
@@ -145,20 +178,34 @@ export async function crearTicket(
     p_fecha: input.fecha,
     p_fotos: input.fotos,
     p_observaciones: input.observaciones,
-    p_materiales: input.materiales.map(m => ({
-      producto_id: m.productoId,
-      subcategoria: m.subcategoria,
-      peso_bruto: m.pesoBruto,
-      tara: m.tara,
-      devolucion: m.devolucion,
-      destino_tipo: m.destinoTipo,
-      lote_id: m.destinoTipo === 'lote' ? m.loteId : null,
-    })),
+    p_materiales: materialesARpc(input.materiales),
+    p_estado: input.estado,
+    p_pesado_por: pesadoPor,
+    p_peso_global: input.pesoGlobal,
   });
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };
 
   const ticket = await obtenerTicket(ticketId as string);
   if (!ticket) return { error: 'El ticket se creó pero no se pudo leer de vuelta.' };
+  return { ticket };
+}
+
+/** Completa un ticket guardado en bruto: agrega materiales/destinos y lo marca 'completo'. */
+export async function completarTicket(
+  id: string,
+  input: CompletarTicketInput,
+  completadoPor: string
+): Promise<{ ticket: TicketPublico } | { error: string }> {
+  const { error } = await supabaseAdmin.rpc('completar_ticket_pesaje', {
+    p_ticket_id: id,
+    p_materiales: materialesARpc(input.materiales),
+    p_completado_por: completadoPor,
+  });
+
+  if (error) return { error: error.message };
+
+  const ticket = await obtenerTicket(id);
+  if (!ticket) return { error: 'El ticket se completó pero no se pudo leer de vuelta.' };
   return { ticket };
 }

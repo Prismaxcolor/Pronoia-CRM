@@ -15,6 +15,9 @@ export interface CrearTicketInput {
   tipo?: 'compra' | 'venta';
   entidadId: string;
   fecha?: string | null;
+  pesoGlobal: number;
+  /** 'bruto' guarda el ticket sin materiales/destinos, para completar después. */
+  estado?: 'bruto' | 'completo';
   materiales: CrearTicketMaterialInput[];
   fotos: string[];
   observaciones?: string | null;
@@ -62,5 +65,20 @@ export async function crearTicket(
     return { ticket };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo guardar el ticket.' };
+  }
+}
+
+export async function completarTicket(
+  id: string,
+  materiales: CrearTicketMaterialInput[]
+): Promise<{ ticket: TicketPesaje } | { error: string }> {
+  try {
+    const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}/completar`, {
+      method: 'PATCH',
+      body: { materiales },
+    });
+    return { ticket };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo completar el ticket.' };
   }
 }

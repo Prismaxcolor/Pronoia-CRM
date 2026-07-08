@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Una línea de material dentro del ticket. El peso neto lo calcula la BD. */
-const materialSchema = z
+export const materialSchema = z
   .object({
     productoId: z.string().uuid('Material inválido.'),
     subcategoria: z
@@ -26,25 +26,47 @@ const materialSchema = z
     path: ['loteId'],
   });
 
-export const crearTicketSchema = z.object({
-  tipo: z.enum(['compra', 'venta']).default('compra'),
-  entidadId: z.string().uuid('Proveedor/cliente inválido.'),
-  fecha: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).')
-    .optional()
-    .nullable()
-    .transform(v => (v && v.length > 0 ? v : null)),
+export const crearTicketSchema = z
+  .object({
+    tipo: z.enum(['compra', 'venta']).default('compra'),
+    entidadId: z.string().uuid('Proveedor/cliente inválido.'),
+    fecha: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).')
+      .optional()
+      .nullable()
+      .transform(v => (v && v.length > 0 ? v : null)),
+    /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
+    pesoGlobal: z.number().nonnegative('El peso global no puede ser negativo.'),
+    /**
+     * 'bruto': se guarda sin materiales/destinos (pesaje pendiente de completar).
+     * No mueve inventario ni se puede facturar hasta pasar a 'completo'.
+     */
+    estado: z.enum(['bruto', 'completo']).default('completo'),
+    materiales: z.array(materialSchema).default([]),
+    fotos: z.array(z.string()).default([]),
+    observaciones: z
+      .string()
+      .trim()
+      .max(500)
+      .optional()
+      .nullable()
+      .transform(v => (v && v.length > 0 ? v : null)),
+  })
+  .refine(d => d.estado === 'completo' ? d.materiales.length >= 1 : true, {
+    message: 'Agrega al menos un material (o guarda el ticket en bruto).',
+    path: ['materiales'],
+  })
+  .refine(d => d.estado === 'bruto' ? d.tipo === 'compra' : true, {
+    message: 'El pesaje en bruto solo aplica para compras (proveedor).',
+    path: ['estado'],
+  });
+
+/** Completa un ticket que se guardó en bruto: agrega los materiales/destinos definitivos. */
+export const completarTicketSchema = z.object({
   materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
-  fotos: z.array(z.string()).default([]),
-  observaciones: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .nullable()
-    .transform(v => (v && v.length > 0 ? v : null)),
 });
 
 export type CrearTicketInput = z.infer<typeof crearTicketSchema>;
 export type CrearTicketMaterialInput = z.infer<typeof materialSchema>;
+export type CompletarTicketInput = z.infer<typeof completarTicketSchema>;
