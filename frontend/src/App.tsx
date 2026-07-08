@@ -17,6 +17,7 @@ import ProveedoresPage from './features/proveedores/ProveedoresPage';
 import EstadoCuentaPage from './features/estado-cuenta/EstadoCuentaPage';
 import ListasPreciosPage from './features/listas-precios/ListasPreciosPage';
 import ListaDetallePage from './features/listas-precios/ListaDetallePage';
+import TarasPage from './features/taras/TarasPage';
 import FacturacionPage from './features/facturacion/FacturacionPage';
 import HistorialFacturasPage from './features/facturacion/HistorialFacturasPage';
 import PesajePage from './features/pesaje/PesajePage';
@@ -43,6 +44,7 @@ function AppRoutes() {
         <Route path="/productos" element={<ProtectedRoute recurso="productos"><ProductosPage /></ProtectedRoute>} />
         <Route path="/listas-precios" element={<ProtectedRoute recurso="productos"><ListasPreciosPage /></ProtectedRoute>} />
         <Route path="/listas-precios/:id" element={<ProtectedRoute recurso="productos"><ListaDetallePage /></ProtectedRoute>} />
+        <Route path="/taras" element={<ProtectedRoute recurso="productos"><TarasPage /></ProtectedRoute>} />
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
         <Route path="/transformaciones" element={<ProtectedRoute recurso="productos"><TransformacionesPage /></ProtectedRoute>} />
         <Route path="/lotes" element={<ProtectedRoute recurso="productos"><LotesPage /></ProtectedRoute>} />

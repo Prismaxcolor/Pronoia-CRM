@@ -4,6 +4,7 @@ import { crearTransformacionSchema } from '../src/schemas/transformaciones.js';
 import { crearTicketSchema } from '../src/schemas/tickets-pesaje.js';
 import { crearListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
 import { crearProveedorSchema } from '../src/schemas/proveedores.js';
+import { crearTaraSchema, actualizarTaraSchema } from '../src/schemas/tara.js';
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const UUID2 = '22222222-2222-4222-8222-222222222222';
@@ -144,5 +145,28 @@ describe('crearProveedorSchema', () => {
       expect(r.data.rfc).toBeNull();
       expect(r.data.telefono).toBeNull();
     }
+  });
+});
+
+describe('crearTaraSchema', () => {
+  it('exige nombre y peso positivo', () => {
+    expect(crearTaraSchema.safeParse({ nombre: '', peso: 10 }).success).toBe(false);
+    expect(crearTaraSchema.safeParse({ nombre: 'Camión 3 ejes', peso: 0 }).success).toBe(false);
+    expect(crearTaraSchema.safeParse({ nombre: 'Camión 3 ejes', peso: 8500 }).success).toBe(true);
+  });
+
+  it('foto es opcional pero debe ser una URL válida si se envía', () => {
+    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, foto: 'no-es-url' }).success).toBe(false);
+    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, foto: 'https://x.test/f.jpg' }).success).toBe(true);
+  });
+});
+
+describe('actualizarTaraSchema', () => {
+  it('rechaza objeto vacío', () => {
+    expect(actualizarTaraSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('acepta actualizar solo el campo activo', () => {
+    expect(actualizarTaraSchema.safeParse({ activo: false }).success).toBe(true);
   });
 });
