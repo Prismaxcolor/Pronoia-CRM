@@ -54,6 +54,14 @@ export interface TicketPesaje {
   materiales: TicketPesajeMaterial[];
   /** Suma de los pesos netos de todos los materiales. Solo lectura. */
   pesoNetoTotal: number;
+  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
+  pesoGlobal: number;
+  /**
+   * pesoGlobal - (suma de netos + devolución total). Mide la merma/discrepancia
+   * entre el pesaje global de entrada y lo que terminó contabilizado por
+   * material. Solo lectura, derivado (no se guarda en BD).
+   */
+  diferencia: number;
   /** URLs o paths de fotos del material/pesada. */
   fotos: string[] | null;
   observaciones: string | null;

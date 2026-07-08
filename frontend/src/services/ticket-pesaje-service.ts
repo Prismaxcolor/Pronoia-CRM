@@ -15,6 +15,7 @@ export interface CrearTicketInput {
   tipo?: 'compra' | 'venta';
   entidadId: string;
   fecha?: string | null;
+  pesoGlobal: number;
   materiales: CrearTicketMaterialInput[];
   fotos: string[];
   observaciones?: string | null;

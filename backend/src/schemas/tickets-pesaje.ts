@@ -35,6 +35,8 @@ export const crearTicketSchema = z.object({
     .optional()
     .nullable()
     .transform(v => (v && v.length > 0 ? v : null)),
+  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
+  pesoGlobal: z.number().nonnegative('El peso global no puede ser negativo.'),
   materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
   fotos: z.array(z.string()).default([]),
   observaciones: z

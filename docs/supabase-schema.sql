@@ -1116,3 +1116,65 @@ begin
   return v_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 21 · peso global del ticket (Tarea 3 — comparación bruto vs neto)
+--
+-- El proveedor se pesa UNA sola vez con todos los materiales juntos al llegar
+-- (peso_global). Después se desglosan los pesos netos por material como ya
+-- hacía la app (detalle_tickets_pesaje). La diferencia entre el peso global y
+-- lo que efectivamente se contabilizó por material sirve para detectar mermas
+-- o errores de pesaje:
+--
+--   diferencia = peso_global - (suma de netos por material [incluida la
+--                basura, que es una fila de material más] + devolución total)
+--
+-- La diferencia NO se guarda (se deriva en el backend, igual que peso_neto_total
+-- ya se deriva sumando detalle_tickets_pesaje). Solo se persiste peso_global.
+-- ============================================================================
+
+alter table public.tickets_pesaje
+  add column if not exists peso_global numeric;
+
+-- Reemplaza la RPC (Bloque 18) para recibir también el peso global del header.
+drop function if exists public.crear_ticket_pesaje(text, uuid, date, text[], text, jsonb);
+
+create or replace function public.crear_ticket_pesaje(
+  p_tipo          text,
+  p_entidad_id    uuid,
+  p_fecha         date,
+  p_fotos         text[],
+  p_observaciones text,
+  p_materiales    jsonb,
+  p_peso_global   numeric
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id   uuid;
+  v_item jsonb;
+begin
+  insert into public.tickets_pesaje (tipo, entidad_id, fecha, fotos, observaciones, peso_global)
+  values (p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''), p_peso_global)
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
