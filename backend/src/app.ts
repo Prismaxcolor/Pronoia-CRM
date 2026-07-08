@@ -18,6 +18,7 @@ import inventarioRouter from './routes/inventario.js';
 import transformacionesRouter from './routes/transformaciones.js';
 import lotesRouter from './routes/lotes.js';
 import tarasRouter from './routes/tara.js';
+import pagosRouter from './routes/pagos.js';
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use('/api/inventario', inventarioRouter);
 app.use('/api/transformaciones', transformacionesRouter);
 app.use('/api/lotes', lotesRouter);
 app.use('/api/taras', tarasRouter);
+app.use('/api/pagos', pagosRouter);
 app.use('/api/tasas', tasasRouter);
 
 export default app;

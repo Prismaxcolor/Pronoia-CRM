@@ -1172,3 +1172,76 @@ create policy "taras acceso anon"
   to anon, authenticated
   using (bucket_id = 'taras')
   with check (bucket_id = 'taras');
+
+
+-- ============================================================================
+-- Bloque 22 · pagos a proveedores (Tarea 8)
+--
+-- Un pago a proveedor es un movimiento de tesorería (egreso) atribuido al
+-- proveedor (proveedor_id, ya existente desde el Bloque 9). Los pagos SIEMPRE
+-- se contabilizan en USD para el estado de cuenta (facturas_compra.total está
+-- en USD), aunque la banca de origen sea en bolívares: `monto`/`moneda` del
+-- movimiento reflejan lo que realmente sale de esa banca (para que el trigger
+-- de saldo — Bloque 2 — descuente en la moneda correcta), y `monto_usd` guarda
+-- el equivalente en USD que se aplica a la factura y al estado de cuenta.
+--
+-- facturas_compra.monto_pagado acumula lo abonado (en USD) para poder marcar
+-- la factura como 'pagada' automáticamente al llegar a su total, permitiendo
+-- pagos parciales.
+-- ============================================================================
+
+alter table public.movimientos
+  add column if not exists monto_usd numeric;
+
+alter table public.facturas_compra
+  add column if not exists monto_pagado numeric not null default 0;
+
+-- RPC atómica: inserta el movimiento (el trigger del Bloque 2 ajusta el saldo
+-- de la banca automáticamente) y, si viene ligado a una factura, acumula el
+-- abono y la marca 'pagada' cuando el acumulado alcanza el total.
+create or replace function public.registrar_pago_proveedor(
+  p_proveedor_id   uuid,
+  p_banca_id       uuid,
+  p_monto          numeric,   -- en la moneda de la banca de origen
+  p_moneda         text,
+  p_monto_usd      numeric,   -- equivalente en USD, siempre presente
+  p_descripcion    text,
+  p_referencia     text,
+  p_fecha          date,
+  p_registrado_por uuid,
+  p_factura_id     uuid       -- null = adelanto sin ligar a una factura
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_mov_id  uuid;
+  v_total   numeric;
+  v_pagado  numeric;
+begin
+  insert into public.movimientos
+    (tipo, monto, moneda, monto_usd, descripcion, banca_origen_id, banca_destino_id,
+     fecha, referencia, registrado_por, proveedor_id)
+  values
+    ('egreso', p_monto, p_moneda, p_monto_usd, nullif(p_descripcion, ''), p_banca_id, null,
+     p_fecha, nullif(p_referencia, ''), p_registrado_por, p_proveedor_id)
+  returning id into v_mov_id;
+
+  if p_factura_id is not null then
+    select total, monto_pagado into v_total, v_pagado
+      from public.facturas_compra where id = p_factura_id;
+
+    if v_total is null then
+      raise exception 'Factura no encontrada.';
+    end if;
+
+    v_pagado := coalesce(v_pagado, 0) + p_monto_usd;
+
+    update public.facturas_compra
+       set monto_pagado = v_pagado,
+           estado = case when v_pagado >= v_total - 0.01 then 'pagada' else estado end
+     where id = p_factura_id;
+  end if;
+
+  return v_mov_id;
+end;
+$$;

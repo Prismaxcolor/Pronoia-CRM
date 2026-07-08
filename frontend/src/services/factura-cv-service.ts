@@ -23,6 +23,8 @@ export interface FacturaCV {
   ticketIds: string[];
   items: FacturaItemCV[];
   total: number;
+  /** Acumulado de pagos aplicados (USD). Solo compras; 0 en ventas. */
+  montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
   estado: 'borrador' | 'emitida' | 'pagada';

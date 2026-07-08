@@ -55,6 +55,8 @@ interface FacturaRow {
   proveedor_id?: string | null;
   cliente_id?: string | null;
   total: number;
+  /** Solo presente en facturas_compra (pagos parciales). */
+  monto_pagado?: number | null;
   descripcion: string | null;
   observaciones: string | null;
   estado: 'borrador' | 'emitida' | 'pagada';
@@ -89,6 +91,8 @@ export interface FacturaPublica {
   ticketIds: string[];
   items: ItemPublico[];
   total: number;
+  /** Acumulado de pagos aplicados (USD). Solo compras; 0 en ventas. */
+  montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
   estado: 'borrador' | 'emitida' | 'pagada';
@@ -124,6 +128,7 @@ function toPublico(row: FacturaRow, tipo: TipoFactura): FacturaPublica {
     ticketIds,
     items,
     total: Number(row.total),
+    montoPagado: Number(row.monto_pagado ?? 0),
     descripcion: row.descripcion,
     observaciones: row.observaciones,
     estado: row.estado,

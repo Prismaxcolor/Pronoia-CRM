@@ -20,9 +20,9 @@ export const BANCAS_MOCK: Banca[] = [
 ];
 
 export const MOVIMIENTOS_MOCK: Movimiento[] = [
-  { id: 'm1', tipo: 'egreso', monto: 275.00, moneda: 'USD', descripcion: 'Compra de resmas de papel', bancaOrigenId: 'b2', bancaDestinoId: null, fecha: '2026-04-28', referencia: 'OC-001', registradoPor: '', creadoEn: '2026-04-28' },
-  { id: 'm2', tipo: 'egreso', monto: 500.00, moneda: 'USD', descripcion: 'Compra de 2 sillas ergonomicas', bancaOrigenId: 'b2', bancaDestinoId: null, fecha: '2026-04-27', referencia: 'OC-002', registradoPor: '', creadoEn: '2026-04-27' },
-  { id: 'm3', tipo: 'transferencia', monto: 2000.00, moneda: 'USD', descripcion: 'Reposicion de caja chica', bancaOrigenId: 'b2', bancaDestinoId: 'b1', fecha: '2026-04-25', referencia: 'TRF-001', registradoPor: '', creadoEn: '2026-04-25' },
-  { id: 'm4', tipo: 'ingreso', monto: 50000.00, moneda: 'VES', descripcion: 'Deposito operativo mensual', bancaOrigenId: 'b3', bancaDestinoId: null, fecha: '2026-04-24', referencia: 'DEP-001', registradoPor: '', creadoEn: '2026-04-24' },
-  { id: 'm5', tipo: 'egreso', monto: 60.00, moneda: 'USD', descripcion: 'Compra de teclado mecanico', bancaOrigenId: 'b1', bancaDestinoId: null, fecha: '2026-04-23', referencia: 'OC-003', registradoPor: '', creadoEn: '2026-04-23' },
+  { id: 'm1', tipo: 'egreso', monto: 275.00, moneda: 'USD', descripcion: 'Compra de resmas de papel', bancaOrigenId: 'b2', bancaDestinoId: null, fecha: '2026-04-28', referencia: 'OC-001', registradoPor: '', proveedorId: null, clienteId: null, montoUsd: null, creadoEn: '2026-04-28' },
+  { id: 'm2', tipo: 'egreso', monto: 500.00, moneda: 'USD', descripcion: 'Compra de 2 sillas ergonomicas', bancaOrigenId: 'b2', bancaDestinoId: null, fecha: '2026-04-27', referencia: 'OC-002', registradoPor: '', proveedorId: null, clienteId: null, montoUsd: null, creadoEn: '2026-04-27' },
+  { id: 'm3', tipo: 'transferencia', monto: 2000.00, moneda: 'USD', descripcion: 'Reposicion de caja chica', bancaOrigenId: 'b2', bancaDestinoId: 'b1', fecha: '2026-04-25', referencia: 'TRF-001', registradoPor: '', proveedorId: null, clienteId: null, montoUsd: null, creadoEn: '2026-04-25' },
+  { id: 'm4', tipo: 'ingreso', monto: 50000.00, moneda: 'VES', descripcion: 'Deposito operativo mensual', bancaOrigenId: 'b3', bancaDestinoId: null, fecha: '2026-04-24', referencia: 'DEP-001', registradoPor: '', proveedorId: null, clienteId: null, montoUsd: null, creadoEn: '2026-04-24' },
+  { id: 'm5', tipo: 'egreso', monto: 60.00, moneda: 'USD', descripcion: 'Compra de teclado mecanico', bancaOrigenId: 'b1', bancaDestinoId: null, fecha: '2026-04-23', referencia: 'OC-003', registradoPor: '', proveedorId: null, clienteId: null, montoUsd: null, creadoEn: '2026-04-23' },
 ];
