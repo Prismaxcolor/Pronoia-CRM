@@ -205,13 +205,7 @@ function PesajePage() {
 
             {/* Materiales */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className={labelClass + ' mb-0'}>Materiales</label>
-                <button type="button" onClick={agregarMaterial} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors">
-                  <Plus size={16} />
-                  Agregar material
-                </button>
-              </div>
+              <label className={labelClass + ' mb-0'}>Materiales</label>
 
               {materiales.map((f, idx) => {
                 const neto = netoFila(f);
@@ -270,6 +264,11 @@ function PesajePage() {
                   </div>
                 );
               })}
+
+              <button type="button" onClick={agregarMaterial} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors">
+                <Plus size={16} />
+                Agregar material
+              </button>
             </div>
 
             <div className="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
