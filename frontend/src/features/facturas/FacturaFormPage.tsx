@@ -256,15 +256,7 @@ function FacturaFormPage({ tipo }: Props) {
 
         {/* Líneas de la factura */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <label className={labelClass + ' mb-0'}>Materiales {modoPeso === 'ticket' && ticketsSel.length > 0 ? '(de los tickets)' : ''}</label>
-            {modoPeso === 'manual' && (
-              <button type="button" onClick={agregarLinea} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors">
-                <Plus size={16} />
-                Agregar material
-              </button>
-            )}
-          </div>
+          <label className={labelClass + ' mb-0'}>Materiales {modoPeso === 'ticket' && ticketsSel.length > 0 ? '(de los tickets)' : ''}</label>
 
           {modoPeso === 'ticket' && ticketsSel.length === 0 ? (
             <p className="text-xs text-text-muted">Selecciona uno o más tickets para cargar sus materiales.</p>
@@ -309,6 +301,13 @@ function FacturaFormPage({ tipo }: Props) {
                 </div>
               </div>
             ))
+          )}
+
+          {modoPeso === 'manual' && (
+            <button type="button" onClick={agregarLinea} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors">
+              <Plus size={16} />
+              Agregar material
+            </button>
           )}
         </div>
 
