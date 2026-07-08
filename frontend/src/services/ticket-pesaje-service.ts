@@ -15,6 +15,7 @@ export interface CrearTicketInput {
   tipo?: 'compra' | 'venta';
   entidadId: string;
   fecha?: string | null;
+  pesoGlobal: number;
   /** 'bruto' guarda el ticket sin materiales/destinos, para completar después. */
   estado?: 'bruto' | 'completo';
   materiales: CrearTicketMaterialInput[];

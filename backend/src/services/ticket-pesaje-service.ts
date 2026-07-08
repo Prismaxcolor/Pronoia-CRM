@@ -31,6 +31,7 @@ interface TicketRow {
   observaciones: string | null;
   facturado: boolean;
   created_at: string;
+  peso_global: number | null;
   estado: 'bruto' | 'completo';
   pesado_por: string | null;
   completado_por: string | null;
@@ -61,6 +62,9 @@ export interface TicketPublico {
   fecha: string | null;
   materiales: MaterialPublico[];
   pesoNetoTotal: number;
+  pesoGlobal: number;
+  /** peso_global - (suma de netos + devolución total). Solo lectura, derivado. */
+  diferencia: number;
   fotos: string[];
   observaciones: string | null;
   facturado: boolean;
@@ -90,6 +94,8 @@ function detalleToPublico(d: DetalleRow): MaterialPublico {
 function toPublico(row: TicketRow): TicketPublico {
   const materiales = (row.detalle_tickets_pesaje ?? []).map(detalleToPublico);
   const pesoNetoTotal = materiales.reduce((acc, m) => acc + m.pesoNeto, 0);
+  const devolucionTotal = materiales.reduce((acc, m) => acc + m.devolucion, 0);
+  const pesoGlobal = Number(row.peso_global ?? 0);
   return {
     id: row.id,
     numero: Number(row.numero),
@@ -99,6 +105,8 @@ function toPublico(row: TicketRow): TicketPublico {
     fecha: row.fecha,
     materiales,
     pesoNetoTotal,
+    pesoGlobal,
+    diferencia: pesoGlobal - (pesoNetoTotal + devolucionTotal),
     fotos: row.fotos ?? [],
     observaciones: row.observaciones,
     facturado: row.facturado,
@@ -173,6 +181,7 @@ export async function crearTicket(
     p_materiales: materialesARpc(input.materiales),
     p_estado: input.estado,
     p_pesado_por: pesadoPor,
+    p_peso_global: input.pesoGlobal,
   });
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };

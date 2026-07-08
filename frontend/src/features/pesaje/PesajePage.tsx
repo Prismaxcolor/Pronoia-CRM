@@ -58,6 +58,7 @@ function PesajePage() {
   const [tipo, setTipo] = useState<TipoPesaje>('compra');
   const [entidadId, setEntidadId] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
+  const [pesoGlobal, setPesoGlobal] = useState('');
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [observaciones, setObservaciones] = useState('');
   const [fotos, setFotos] = useState<FotoLocal[]>([]);
@@ -92,6 +93,17 @@ function PesajePage() {
     [materiales]
   );
 
+  const devolucionTotal = useMemo(
+    () => materiales.reduce((acc, f) => acc + (Number(f.devolucion) || 0), 0),
+    [materiales]
+  );
+
+  // Diferencia = Peso Global - (suma de netos [incluida la basura] + devolución total).
+  const diferencia = useMemo(
+    () => (Number(pesoGlobal) || 0) - (pesoNetoTotal + devolucionTotal),
+    [pesoGlobal, pesoNetoTotal, devolucionTotal]
+  );
+
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
 
@@ -110,6 +122,7 @@ function PesajePage() {
   const limpiar = () => {
     setEntidadId('');
     setFecha(hoyISO());
+    setPesoGlobal('');
     setMateriales([filaVacia()]);
     setObservaciones('');
     setFotos([]);
@@ -119,6 +132,7 @@ function PesajePage() {
     setError(null);
 
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
+    if (!pesoGlobal || Number(pesoGlobal) <= 0) { setError('Registra el peso global de la pesada.'); return; }
     if (estado === 'completo') {
       if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
       if (materiales.some(f => netoFila(f) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto, tara y devolución.'); return; }
@@ -142,6 +156,7 @@ function PesajePage() {
       tipo,
       entidadId,
       fecha,
+      pesoGlobal: Number(pesoGlobal) || 0,
       estado,
       materiales: estado === 'bruto' ? [] : materiales.map(f => ({
         productoId: f.productoId,
@@ -216,6 +231,12 @@ function PesajePage() {
               </div>
             </div>
 
+            <div>
+              <label className={labelClass}>Peso global (kg) *</label>
+              <input type="number" step="0.01" min="0" value={pesoGlobal} onChange={e => setPesoGlobal(e.target.value)} className={inputClass} placeholder="0.00" />
+              <p className="text-xs text-text-muted mt-1">Pesaje único de todos los materiales juntos, al llegar el proveedor.</p>
+            </div>
+
             {/* Materiales */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -285,14 +306,22 @@ function PesajePage() {
               })}
             </div>
 
-            <div className="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
-              <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
-                <Scale size={16} />
-                Peso neto total
-              </span>
-              <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>
-                {fmt(pesoNetoTotal)} kg
-              </span>
+            <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
+                  <Scale size={16} />
+                  Peso neto total
+                </span>
+                <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>
+                  {fmt(pesoNetoTotal)} kg
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
+                <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
+                <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
+                  {fmt(diferencia)} kg
+                </span>
+              </div>
             </div>
 
             <div>

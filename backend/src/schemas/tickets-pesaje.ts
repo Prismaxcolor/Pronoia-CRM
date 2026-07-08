@@ -36,6 +36,8 @@ export const crearTicketSchema = z
       .optional()
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),
+    /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
+    pesoGlobal: z.number().nonnegative('El peso global no puede ser negativo.'),
     /**
      * 'bruto': se guarda sin materiales/destinos (pesaje pendiente de completar).
      * No mueve inventario ni se puede facturar hasta pasar a 'completo'.

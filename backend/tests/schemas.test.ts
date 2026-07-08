@@ -86,7 +86,7 @@ describe('crearTransformacionSchema', () => {
 
 describe('crearTicketSchema', () => {
   const material = { productoId: UUID2, pesoBruto: 100, tara: 10 };
-  const base = { entidadId: UUID, materiales: [material] };
+  const base = { entidadId: UUID, pesoGlobal: 90, materiales: [material] };
 
   it('aplica tipo "compra" y devolucion 0 por defecto', () => {
     const r = crearTicketSchema.safeParse(base);
@@ -95,6 +95,17 @@ describe('crearTicketSchema', () => {
       expect(r.data.tipo).toBe('compra');
       expect(r.data.materiales[0].devolucion).toBe(0);
     }
+  });
+
+  it('rechaza sin peso global', () => {
+    const { pesoGlobal: _pesoGlobal, ...sinPesoGlobal } = base;
+    const r = crearTicketSchema.safeParse(sinPesoGlobal);
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza peso global negativo', () => {
+    const r = crearTicketSchema.safeParse({ ...base, pesoGlobal: -1 });
+    expect(r.success).toBe(false);
   });
 
   it('acepta varios materiales', () => {
@@ -116,7 +127,7 @@ describe('crearTicketSchema', () => {
   });
 
   it('acepta un ticket en bruto (compra) sin materiales', () => {
-    const r = crearTicketSchema.safeParse({ entidadId: UUID, estado: 'bruto', materiales: [] });
+    const r = crearTicketSchema.safeParse({ entidadId: UUID, pesoGlobal: 90, estado: 'bruto', materiales: [] });
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.estado).toBe('bruto');
   });

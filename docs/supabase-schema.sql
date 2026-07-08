@@ -1119,17 +1119,34 @@ $$;
 
 
 -- ============================================================================
--- Bloque 21 · pesaje en bruto (Tarea 6)
+-- Bloque 21 · peso global + pesaje en bruto (Tareas 3 y 6)
 --
--- Un ticket de compra se puede guardar "en bruto": sin materiales ni destinos
--- asignados todavía (el proveedor llegó pero no se terminó de clasificar el
--- material). No mueve inventario (no tiene filas en detalle_tickets_pesaje
--- hasta completarse) y no se puede facturar mientras estado='bruto'
--- (validado en el backend, ver factura-service.ts). Solo aplica a compras.
+-- Reconciliación manual: las ramas feature/pesaje-peso-global (Tarea 3) y
+-- feature/pesaje-en-bruto (Tarea 6) modificaban el mismo RPC
+-- crear_ticket_pesaje cada una con parámetros nuevos distintos. Este bloque
+-- fusiona ambas — el RPC final acepta los 4 parámetros nuevos juntos.
 --
--- Auditoría: pesado_por = quien creó el ticket (bruto o completo).
--- completado_por/completado_en solo se llenan al completar un bruto.
+-- Peso global (Tarea 3): el proveedor se pesa UNA sola vez con todos los
+-- materiales juntos al llegar (peso_global). Después se desglosan los pesos
+-- netos por material como ya hacía la app (detalle_tickets_pesaje):
+--
+--   diferencia = peso_global - (suma de netos por material [incluida la
+--                basura, que es una fila de material más] + devolución total)
+--
+-- La diferencia NO se guarda (se deriva en el backend). Solo se persiste
+-- peso_global.
+--
+-- Pesaje en bruto (Tarea 6): un ticket de compra se puede guardar "en bruto"
+-- (sin materiales ni destinos asignados todavía). No mueve inventario (no
+-- tiene filas en detalle_tickets_pesaje hasta completarse) y no se puede
+-- facturar mientras estado='bruto' (validado en backend, factura-service.ts).
+-- Solo aplica a compras. pesado_por = quien creó el ticket (bruto o
+-- completo); completado_por/completado_en solo se llenan al completar un
+-- bruto (vía la RPC completar_ticket_pesaje).
 -- ============================================================================
+
+alter table public.tickets_pesaje
+  add column if not exists peso_global numeric;
 
 alter table public.tickets_pesaje
   add column if not exists estado text not null default 'completo'
@@ -1142,8 +1159,8 @@ alter table public.tickets_pesaje
 alter table public.tickets_pesaje
   add column if not exists completado_en timestamptz;
 
--- Reemplaza la RPC (Bloque 18) para aceptar estado + pesado_por y permitir
--- materiales vacíos (el bruto se completa después con otra RPC).
+-- Reemplaza la RPC (Bloque 18) para recibir peso_global + estado + pesado_por,
+-- y permitir materiales vacíos (el bruto se completa después con otra RPC).
 drop function if exists public.crear_ticket_pesaje(text, uuid, date, text[], text, jsonb);
 
 create or replace function public.crear_ticket_pesaje(
@@ -1154,7 +1171,8 @@ create or replace function public.crear_ticket_pesaje(
   p_observaciones text,
   p_materiales    jsonb,
   p_estado        text,
-  p_pesado_por    uuid
+  p_pesado_por    uuid,
+  p_peso_global   numeric
 ) returns uuid
 language plpgsql
 as $$
@@ -1162,8 +1180,12 @@ declare
   v_id   uuid;
   v_item jsonb;
 begin
-  insert into public.tickets_pesaje (tipo, entidad_id, fecha, fotos, observaciones, estado, pesado_por)
-  values (p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''), coalesce(p_estado, 'completo'), p_pesado_por)
+  insert into public.tickets_pesaje
+    (tipo, entidad_id, fecha, fotos, observaciones, estado, pesado_por, peso_global)
+  values (
+    p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''),
+    coalesce(p_estado, 'completo'), p_pesado_por, p_peso_global
+  )
   returning id into v_id;
 
   for v_item in select value from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) as elems(value)
