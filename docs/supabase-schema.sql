@@ -1140,3 +1140,35 @@ $$;
 --   drop table if exists public.factura_items;
 --   drop table if exists public.facturas;
 -- ============================================================================
+
+
+-- ============================================================================
+-- Bloque 21 · catálogo de taras predefinidas (Tarea 7)
+--
+-- Taras globales reutilizables (nombre + peso + foto), gestionadas desde
+-- Configuración. Todos los usuarios las ven y usan; el permiso 'productos'
+-- controla quién puede crearlas/editarlas (mismo patrón que tipos_material).
+-- ============================================================================
+
+create table if not exists public.taras (
+  id         uuid           primary key default gen_random_uuid(),
+  nombre     text           not null,
+  peso       numeric(10, 2) not null check (peso > 0),
+  foto       text,
+  activo     boolean        not null default true,
+  created_at timestamptz    not null default now()
+);
+
+alter table public.taras disable row level security;
+
+create index if not exists idx_taras_activas on public.taras (activo, nombre);
+
+-- Bucket de Storage 'taras' para las fotos: crear manualmente en Supabase
+-- Studio → Storage (público, igual que 'productos'/'tickets'), luego correr
+-- esta política para que la anon key pueda subir/leer (mismo patrón Bloque 13).
+drop policy if exists "taras acceso anon" on storage.objects;
+create policy "taras acceso anon"
+  on storage.objects for all
+  to anon, authenticated
+  using (bucket_id = 'taras')
+  with check (bucket_id = 'taras');

@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase';
 
 const BUCKET_PRODUCTOS = 'productos';
 const BUCKET_TICKETS = 'tickets';
+const BUCKET_TARAS = 'taras';
 
 async function subirArchivo(bucket: string, file: File): Promise<string | null> {
   const ext = file.name.split('.').pop();
@@ -24,4 +25,9 @@ export function subirImagenProducto(file: File): Promise<string | null> {
 /** Sube una foto de evidencia del pesaje. Requiere bucket público 'tickets'. */
 export function subirFotoTicket(file: File): Promise<string | null> {
   return subirArchivo(BUCKET_TICKETS, file);
+}
+
+/** Sube la foto de una tara predefinida. Requiere bucket público 'taras'. */
+export function subirFotoTara(file: File): Promise<string | null> {
+  return subirArchivo(BUCKET_TARAS, file);
 }
