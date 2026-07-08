@@ -191,7 +191,7 @@ export async function crearFactura(
   if (ticketIds.length > 0) {
     const { data: tickets } = await supabaseAdmin
       .from('tickets_pesaje')
-      .select('id, facturado, entidad_id')
+      .select('id, facturado, entidad_id, estado')
       .in('id', ticketIds);
 
     if (!tickets || tickets.length !== ticketIds.length) {
@@ -199,6 +199,9 @@ export async function crearFactura(
     }
     if (tickets.some(t => t.facturado)) {
       return { error: 'Alguno de los tickets de pesaje ya fue facturado.' };
+    }
+    if (tickets.some(t => t.estado === 'bruto')) {
+      return { error: 'Alguno de los tickets está en bruto (sin completar); no se puede facturar hasta terminarlo.' };
     }
     if (tickets.some(t => t.entidad_id !== input.entidadId)) {
       return { error: 'Todos los tickets deben ser del mismo proveedor/cliente que la factura.' };

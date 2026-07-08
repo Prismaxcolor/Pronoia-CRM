@@ -8,6 +8,7 @@ import { obtenerLotes } from '../../services/lote-service';
 import { subirFotoTicket } from '../../services/storage-service';
 import { useAuth } from '../../hooks/use-auth';
 import { useToast } from '../../hooks/use-toast';
+import CompletarTicketModal from './CompletarTicketModal';
 import type { Producto, TicketPesaje, Lote } from '@shared/types/index.js';
 
 interface FotoLocal { file: File; preview: string }
@@ -64,6 +65,7 @@ function PesajePage() {
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
 
   const cargarTickets = () => { obtenerTickets().then(setTickets); };
 
@@ -113,14 +115,15 @@ function PesajePage() {
     setFotos([]);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const guardar = async (estado: 'bruto' | 'completo') => {
     setError(null);
 
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
-    if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
-    if (materiales.some(f => netoFila(f) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto, tara y devolución.'); return; }
-    if (materiales.some(f => netoFila(f) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (estado === 'completo') {
+      if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
+      if (materiales.some(f => netoFila(f) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto, tara y devolución.'); return; }
+      if (materiales.some(f => netoFila(f) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    }
 
     setGuardando(true);
 
@@ -139,7 +142,8 @@ function PesajePage() {
       tipo,
       entidadId,
       fecha,
-      materiales: materiales.map(f => ({
+      estado,
+      materiales: estado === 'bruto' ? [] : materiales.map(f => ({
         productoId: f.productoId,
         subcategoria: f.subcategoria.trim() || null,
         pesoBruto: Number(f.pesoBruto) || 0,
@@ -155,9 +159,18 @@ function PesajePage() {
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    toast.exito(`${result.ticket.codigo} generado (neto ${fmt(result.ticket.pesoNetoTotal)} kg).`);
+    toast.exito(
+      estado === 'bruto'
+        ? `${result.ticket.codigo} guardado en bruto. Complétalo luego desde la lista.`
+        : `${result.ticket.codigo} generado (neto ${fmt(result.ticket.pesoNetoTotal)} kg).`
+    );
     limpiar();
     cargarTickets();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    guardar('completo');
   };
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
@@ -312,6 +325,17 @@ function PesajePage() {
               {guardando ? <><Loader2 size={16} className="animate-spin" /> Guardando...</> : 'Generar ticket de pesaje'}
             </button>
 
+            {tipo === 'compra' && (
+              <button
+                type="button"
+                disabled={guardando}
+                onClick={() => guardar('bruto')}
+                className="w-full py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors disabled:opacity-50"
+              >
+                Guardar en bruto (completar después)
+              </button>
+            )}
+
             <p className="text-xs text-text-muted">
               ¿La operación fue fuera de la empresa y no se pesó aquí? Entonces no se genera ticket: el peso se ingresa a mano al crear la factura.
             </p>
@@ -336,6 +360,7 @@ function PesajePage() {
                     <th className="px-4 py-2.5 font-medium">Materiales</th>
                     <th className="px-4 py-2.5 font-medium text-right">Neto (kg)</th>
                     <th className="px-4 py-2.5 font-medium text-right">Estado</th>
+                    {puedeCrear && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -348,10 +373,23 @@ function PesajePage() {
                       <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
                       <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(t.pesoNetoTotal)}</td>
                       <td className="px-4 py-2.5 text-right">
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${t.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {t.facturado ? 'Facturado' : 'Pendiente'}
-                        </span>
+                        {t.estado === 'bruto' ? (
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700">En bruto</span>
+                        ) : (
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${t.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {t.facturado ? 'Facturado' : 'Pendiente'}
+                          </span>
+                        )}
                       </td>
+                      {puedeCrear && (
+                        <td className="px-4 py-2.5 text-right">
+                          {t.estado === 'bruto' && (
+                            <button type="button" onClick={() => setTicketACompletar(t)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
+                              Completar
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -360,6 +398,16 @@ function PesajePage() {
           </div>
         </div>
       </div>
+
+      {ticketACompletar && (
+        <CompletarTicketModal
+          ticket={ticketACompletar}
+          productos={productos}
+          lotes={lotes}
+          onClose={() => setTicketACompletar(null)}
+          onCompletado={cargarTickets}
+        />
+      )}
     </div>
   );
 }

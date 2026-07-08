@@ -59,6 +59,17 @@ export interface TicketPesaje {
   observaciones: string | null;
   /** true cuando ya existe una factura (compra o venta) asociada. */
   facturado: boolean;
+  /**
+   * 'bruto': se guardó sin materiales/destinos (pendiente de completar). No
+   * mueve inventario ni se puede facturar. Solo aplica a compras.
+   */
+  estado: 'bruto' | 'completo';
+  /** Usuario que registró el pesaje (bruto o completo). */
+  pesadoPor: string | null;
+  /** Usuario que completó un ticket en bruto. Null si nunca fue bruto. */
+  completadoPor: string | null;
+  /** ISO timestamp de cuándo se completó un ticket en bruto. */
+  completadoEn: string | null;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
 }
