@@ -43,11 +43,15 @@ function netoFila(f: MaterialFila): number {
   return (Number(f.pesoBruto) || 0) - (Number(f.tara) || 0) - (Number(f.devolucion) || 0);
 }
 
+type Pestana = 'nuevo' | 'tickets';
+
 function PesajePage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const puedeCrear = tienePermiso('pesaje', 'crear');
+  const puedeVerTickets = tienePermiso('pesaje', 'ver') && tienePermiso('facturacion', 'ver');
 
+  const [pestana, setPestana] = useState<Pestana>('nuevo');
   const [proveedores, setProveedores] = useState<Entidad[]>([]);
   const [clientes, setClientes] = useState<Entidad[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -173,7 +177,19 @@ function PesajePage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {puedeVerTickets && (
+        <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
+          <button type="button" onClick={() => setPestana('nuevo')} className={`px-4 py-1.5 ${pestana === 'nuevo' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+            Nuevo pesaje
+          </button>
+          <button type="button" onClick={() => setPestana('tickets')} className={`px-4 py-1.5 ${pestana === 'tickets' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+            Tickets
+          </button>
+        </div>
+      )}
+
+      {pestana === 'nuevo' && (
+      <div className={puedeVerTickets ? 'max-w-2xl' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
         {puedeCrear ? (
           <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 h-fit">
             {/* Toggle compra/venta */}
@@ -319,46 +335,70 @@ function PesajePage() {
           <p className="text-text-muted text-sm">No tienes permiso para registrar pesajes.</p>
         )}
 
-        <div>
-          <h2 className="text-sm font-semibold text-text-secondary mb-3">Tickets recientes</h2>
-          <div className="bg-surface rounded-xl border border-border overflow-hidden">
-            {tickets.length === 0 ? (
-              <p className="text-center text-text-muted py-10 text-sm">Aún no hay tickets de pesaje.</p>
-            ) : (
-              <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-text-muted">
-                    <th className="px-4 py-2.5 font-medium">N° Control</th>
-                    <th className="px-4 py-2.5 font-medium">Fecha</th>
-                    <th className="px-4 py-2.5 font-medium">Tipo</th>
-                    <th className="px-4 py-2.5 font-medium">Entidad</th>
-                    <th className="px-4 py-2.5 font-medium">Materiales</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Neto (kg)</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tickets.map(t => (
-                    <tr key={t.id} className="border-b border-border last:border-b-0">
-                      <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">{t.codigo}</td>
-                      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
-                      <td className="px-4 py-2.5 text-text-secondary capitalize">{t.tipo}</td>
-                      <td className="px-4 py-2.5 text-text-primary">{t.entidadId ? (nombrePorEntidad.get(t.entidadId) ?? '—') : '—'}</td>
-                      <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
-                      <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(t.pesoNetoTotal)}</td>
-                      <td className="px-4 py-2.5 text-right">
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${t.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {t.facturado ? 'Facturado' : 'Pendiente'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-            )}
+        {!puedeVerTickets && (
+          <div>
+            <h2 className="text-sm font-semibold text-text-secondary mb-3">Tickets recientes</h2>
+            <TablaTickets tickets={tickets} nombrePorEntidad={nombrePorEntidad} fmt={fmt} />
           </div>
-        </div>
+        )}
       </div>
+      )}
+
+      {pestana === 'tickets' && puedeVerTickets && (
+        <div>
+          <h2 className="text-sm font-semibold text-text-secondary mb-3">Tickets de pesaje</h2>
+          <TablaTickets tickets={tickets} nombrePorEntidad={nombrePorEntidad} fmt={fmt} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TablaTickets({
+  tickets,
+  nombrePorEntidad,
+  fmt,
+}: {
+  tickets: TicketPesaje[];
+  nombrePorEntidad: Map<string, string>;
+  fmt: (n: number) => string;
+}) {
+  return (
+    <div className="bg-surface rounded-xl border border-border overflow-hidden">
+      {tickets.length === 0 ? (
+        <p className="text-center text-text-muted py-10 text-sm">Aún no hay tickets de pesaje.</p>
+      ) : (
+        <div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-text-muted">
+              <th className="px-4 py-2.5 font-medium">N° Control</th>
+              <th className="px-4 py-2.5 font-medium">Fecha</th>
+              <th className="px-4 py-2.5 font-medium">Tipo</th>
+              <th className="px-4 py-2.5 font-medium">Entidad</th>
+              <th className="px-4 py-2.5 font-medium">Materiales</th>
+              <th className="px-4 py-2.5 font-medium text-right">Neto (kg)</th>
+              <th className="px-4 py-2.5 font-medium text-right">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tickets.map(t => (
+              <tr key={t.id} className="border-b border-border last:border-b-0">
+                <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">{t.codigo}</td>
+                <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
+                <td className="px-4 py-2.5 text-text-secondary capitalize">{t.tipo}</td>
+                <td className="px-4 py-2.5 text-text-primary">{t.entidadId ? (nombrePorEntidad.get(t.entidadId) ?? '—') : '—'}</td>
+                <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
+                <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(t.pesoNetoTotal)}</td>
+                <td className="px-4 py-2.5 text-right">
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${t.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {t.facturado ? 'Facturado' : 'Pendiente'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const ROLES = ['superadmin', 'administracion', 'trabajador'] as const;
-const RECURSOS = ['dashboard', 'productos', 'cochinito', 'facturacion', 'usuarios', 'clientes'] as const;
+const RECURSOS = ['dashboard', 'productos', 'cochinito', 'facturacion', 'usuarios', 'clientes', 'proveedores', 'pesaje'] as const;
 const ACCIONES = ['ver', 'crear', 'editar', 'eliminar'] as const;
 
 const permisoSchema = z.object({

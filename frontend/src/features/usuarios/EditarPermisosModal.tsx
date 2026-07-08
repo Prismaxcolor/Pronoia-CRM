@@ -16,6 +16,9 @@ const RECURSOS: { recurso: Recurso; label: string }[] = [
   { recurso: 'productos', label: 'Productos' },
   { recurso: 'facturacion', label: 'Facturacion' },
   { recurso: 'cochinito', label: 'Cochinito (Tesoreria)' },
+  { recurso: 'clientes', label: 'Clientes' },
+  { recurso: 'proveedores', label: 'Proveedores' },
+  { recurso: 'pesaje', label: 'Pesaje' },
   { recurso: 'usuarios', label: 'Usuarios' },
 ];
 
