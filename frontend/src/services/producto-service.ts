@@ -20,10 +20,8 @@ interface ProductoApi {
   creadoPor: string;
   creadoEn: string;
   peso?: number;
-  costoUnitario?: number;
   variantes?: VarianteProducto[];
   subProductos?: SubProductoRef[];
-  costoCalculado?: number;
 }
 
 function mapApi(api: ProductoApi): Producto {
@@ -47,14 +45,12 @@ function mapApi(api: ProductoApi): Producto {
       ...base,
       tipo: 'verde',
       subProductos: api.subProductos ?? [],
-      costoCalculado: api.costoCalculado ?? 0,
     };
   }
   return {
     ...base,
     tipo: 'amarillo',
     peso: api.peso ?? 0,
-    costoUnitario: api.costoUnitario ?? 0,
   };
 }
 

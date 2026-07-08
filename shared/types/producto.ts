@@ -10,11 +10,11 @@ export interface VarianteProducto {
 /**
  * Subproducto dentro de un producto verde. Puede ser:
  *  - tipo 'ref'   → apunta a otro producto del catálogo (por id).
- *  - tipo 'manual'→ no existe en el catálogo, se ingresa nombre y costo a mano.
+ *  - tipo 'manual'→ no existe en el catálogo, se ingresa nombre a mano.
  */
 export type SubProductoRef =
   | { tipo: 'ref'; productoId: string; cantidad: number }
-  | { tipo: 'manual'; nombre: string; costoUnitario: number; cantidad: number };
+  | { tipo: 'manual'; nombre: string; cantidad: number };
 
 /** Producto base — todos los tipos comparten estos campos */
 export interface ProductoBase {
@@ -33,11 +33,10 @@ export interface ProductoBase {
   creadoEn: string;
 }
 
-/** Amarillo: producto básico con peso y costo directo */
+/** Amarillo: producto básico con peso */
 export interface ProductoAmarillo extends ProductoBase {
   tipo: 'amarillo';
   peso: number;
-  costoUnitario: number;
 }
 
 /** Azul: producto con variantes (tallas, presentaciones, cantidades) */
@@ -50,7 +49,6 @@ export interface ProductoAzul extends ProductoBase {
 export interface ProductoVerde extends ProductoBase {
   tipo: 'verde';
   subProductos: SubProductoRef[];
-  costoCalculado: number;
 }
 
 export type Producto = ProductoAmarillo | ProductoAzul | ProductoVerde;

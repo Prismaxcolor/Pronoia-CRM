@@ -15,7 +15,7 @@ interface Props {
 }
 
 const TIPO_TABS: { tipo: TipoProducto; label: string; color: string; desc: string }[] = [
-  { tipo: 'amarillo', label: 'Basico', color: 'bg-yellow-400', desc: 'Producto simple con peso y costo' },
+  { tipo: 'amarillo', label: 'Basico', color: 'bg-yellow-400', desc: 'Producto simple con peso' },
   { tipo: 'azul', label: 'Variantes', color: 'bg-blue-500', desc: 'Producto con multiples presentaciones' },
   { tipo: 'verde', label: 'Compuesto', color: 'bg-green-500', desc: 'Producto formado por subproductos' },
 ];
@@ -50,7 +50,6 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
   // Amarillo
   const initialAmarillo = producto?.tipo === 'amarillo' ? producto : null;
   const [peso, setPeso] = useState(initialAmarillo?.peso ?? 0);
-  const [costoUnitario, setCostoUnitario] = useState(initialAmarillo?.costoUnitario ?? 0);
 
   // Azul
   const initialAzul = producto?.tipo === 'azul' ? producto : null;
@@ -63,7 +62,6 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
   const [subProductos, setSubProductos] = useState<SubProductoRef[]>(
     initialVerde?.subProductos ?? [{ tipo: 'ref', productoId: '', cantidad: 1 }]
   );
-  const [costoCalculado, setCostoCalculado] = useState(initialVerde?.costoCalculado ?? 0);
 
   // Catálogo para el select de subproductos (solo se carga cuando el tipo es verde)
   const [catalogo, setCatalogo] = useState<Producto[]>([]);
@@ -107,7 +105,6 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       setSubProducto(idx, {
         tipo: 'manual',
         nombre: '',
-        costoUnitario: 0,
         cantidad: actual.cantidad,
       });
     }
@@ -139,11 +136,11 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
 
     let payload;
     if (tipo === 'amarillo') {
-      payload = { ...base, tipo: 'amarillo' as const, peso, costoUnitario };
+      payload = { ...base, tipo: 'amarillo' as const, peso };
     } else if (tipo === 'azul') {
       payload = { ...base, tipo: 'azul' as const, variantes };
     } else {
-      payload = { ...base, tipo: 'verde' as const, subProductos, costoCalculado };
+      payload = { ...base, tipo: 'verde' as const, subProductos };
     }
 
     const result = editando && producto
@@ -288,10 +285,6 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
                 <label className={labelClass}>Peso (kg)</label>
                 <input type="number" step="0.01" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
               </div>
-              <div>
-                <label className={labelClass}>Costo unitario</label>
-                <input type="number" step="0.01" min="0" required value={costoUnitario} onChange={e => setCostoUnitario(Number(e.target.value))} className={inputClass} />
-              </div>
             </div>
           )}
 
@@ -398,26 +391,13 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
                     </div>
                   ) : (
                     <div className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-6">
+                      <div className="col-span-9">
                         <input
                           type="text"
                           placeholder="Nombre del subproducto"
                           value={s.nombre}
                           onChange={e =>
                             setSubProducto(idx, { ...s, nombre: e.target.value })
-                          }
-                          className={inputClass}
-                        />
-                      </div>
-                      <div className="col-span-3">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="Costo"
-                          value={s.costoUnitario}
-                          onChange={e =>
-                            setSubProducto(idx, { ...s, costoUnitario: Number(e.target.value) })
                           }
                           className={inputClass}
                         />
@@ -438,21 +418,6 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
                   )}
                 </div>
               ))}
-
-              <div>
-                <label className={labelClass}>Costo calculado</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={costoCalculado}
-                  onChange={e => setCostoCalculado(Number(e.target.value))}
-                  className={inputClass}
-                />
-                <p className="text-xs text-text-muted mt-1">
-                  Costo total estimado del producto compuesto. Puedes ajustarlo manualmente.
-                </p>
-              </div>
             </div>
           )}
 

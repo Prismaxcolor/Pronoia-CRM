@@ -15,10 +15,8 @@ interface ProductoRow {
   creado_por: string | null;
   creado_en: string;
   peso: number | null;
-  costo_unitario: number | null;
   variantes: unknown;
   sub_productos: unknown;
-  costo_calculado: number | null;
   // join con tipos_material(nombre)
   tipos_material?: { nombre: string } | null;
 }
@@ -36,10 +34,8 @@ export interface ProductoPublico {
   creadoPor: string;
   creadoEn: string;
   peso?: number;
-  costoUnitario?: number;
   variantes?: unknown;
   subProductos?: unknown;
-  costoCalculado?: number;
 }
 
 function toPublico(row: ProductoRow): ProductoPublico {
@@ -57,12 +53,12 @@ function toPublico(row: ProductoRow): ProductoPublico {
     creadoEn: row.creado_en,
   };
   if (row.tipo === 'amarillo') {
-    return { ...base, peso: row.peso ?? 0, costoUnitario: row.costo_unitario ?? 0 };
+    return { ...base, peso: row.peso ?? 0 };
   }
   if (row.tipo === 'azul') {
     return { ...base, variantes: row.variantes ?? [] };
   }
-  return { ...base, subProductos: row.sub_productos ?? [], costoCalculado: row.costo_calculado ?? 0 };
+  return { ...base, subProductos: row.sub_productos ?? [] };
 }
 
 function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<string, unknown> {
@@ -79,21 +75,15 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
 
   if (input.tipo === 'amarillo') {
     row.peso = input.peso;
-    row.costo_unitario = input.costoUnitario;
     row.variantes = null;
     row.sub_productos = null;
-    row.costo_calculado = null;
   } else if (input.tipo === 'azul') {
     row.variantes = input.variantes;
     row.peso = null;
-    row.costo_unitario = null;
     row.sub_productos = null;
-    row.costo_calculado = null;
   } else {
     row.sub_productos = input.subProductos;
-    row.costo_calculado = input.costoCalculado;
     row.peso = null;
-    row.costo_unitario = null;
     row.variantes = null;
   }
 

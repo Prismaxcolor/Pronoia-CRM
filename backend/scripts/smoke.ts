@@ -43,7 +43,7 @@ async function main() {
   ids.cat = cat.id;
   const prod = await ins('productos', {
     nombre: `${TAG} Lote 2`, descripcion: '', tipo: 'amarillo', moneda: 'USD',
-    activo: true, tipo_material_id: cat.id, peso: 0, costo_unitario: 0, creado_por: userId,
+    activo: true, tipo_material_id: cat.id, peso: 0, creado_por: userId,
   });
   ids.prod = prod.id;
   const lista = await ins('listas_precios', { nombre: `${TAG} Junio`, vigente_desde: today, activo: true });

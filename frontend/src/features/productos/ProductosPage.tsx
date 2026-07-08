@@ -21,12 +21,6 @@ const TIPO_CONFIG: Record<TipoProducto, { label: string; color: string; bg: stri
   verde: { label: 'Compuesto', color: 'text-green-700', bg: 'bg-green-100' },
 };
 
-function getCosto(p: Producto): string {
-  if (p.tipo === 'amarillo') return `$${p.costoUnitario.toLocaleString()}`;
-  if (p.tipo === 'azul') return `${p.variantes.length} variante(s)`;
-  return `$${p.costoCalculado.toLocaleString()} (calc)`;
-}
-
 function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -270,7 +264,9 @@ function ProductosPage() {
               <p className="text-text-secondary text-xs mb-3 line-clamp-2">{p.descripcion}</p>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-text-muted">{p.tipoMaterialNombre ?? SIN_CATEGORIA}</span>
-                <span className="text-sm font-bold text-text-primary">{getCosto(p)}</span>
+                {p.tipo === 'azul' && (
+                  <span className="text-xs text-text-muted">{p.variantes.length} variante(s)</span>
+                )}
               </div>
               {!p.activo && (
                 <span className="mt-2 inline-block px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">Inactivo</span>

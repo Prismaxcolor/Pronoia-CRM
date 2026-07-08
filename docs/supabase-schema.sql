@@ -1116,3 +1116,27 @@ begin
   return v_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 20 · limpieza pendiente tras eliminar costos de productos (Tarea 1)
+--
+-- El cliente pidió eliminar TODOS los costos del catálogo de productos (Costo
+-- unitario del tipo Básico y Costo calculado del tipo Compuesto). El código ya
+-- dejó de leer/escribir estas columnas, pero se conservan en la tabla por si
+-- hay que revertir o auditar datos históricos. NO se ejecuta automáticamente:
+-- correr manualmente solo cuando se confirme que ya no hace falta el dato.
+--
+--   alter table public.productos drop column if exists costo_unitario;
+--   alter table public.productos drop column if exists costo_calculado;
+--
+-- Además, el módulo frontend de "Factura genérica" (carrito tipo POS, distinto
+-- del flujo real de compras/ventas por pesaje) se eliminó del código porque
+-- dependía de esos costos como precio y el dominio del proyecto excluye
+-- explícitamente un carrito de cliente (ver CLAUDE.md). Las tablas que usaba
+-- (`facturas`, `factura_items`) ya no reciben escrituras del frontend. Se
+-- dejan sin borrar por si tienen historial que el cliente quiera conservar:
+--
+--   drop table if exists public.factura_items;
+--   drop table if exists public.facturas;
+-- ============================================================================

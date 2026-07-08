@@ -33,7 +33,6 @@ const subProductoSchema = z.preprocess(
     z.object({
       tipo: z.literal('manual'),
       nombre: z.string().trim().min(1, 'Nombre del subproducto obligatorio.').max(120),
-      costoUnitario: z.number().min(0),
       cantidad: z.number().min(1),
     }),
   ])
@@ -42,7 +41,6 @@ const subProductoSchema = z.preprocess(
 const amarilloSchema = baseSchema.extend({
   tipo: z.literal('amarillo'),
   peso: z.number().min(0).default(0),
-  costoUnitario: z.number().min(0),
 });
 
 const azulSchema = baseSchema.extend({
@@ -53,7 +51,6 @@ const azulSchema = baseSchema.extend({
 const verdeSchema = baseSchema.extend({
   tipo: z.literal('verde'),
   subProductos: z.array(subProductoSchema).min(1, 'Debe tener al menos un subproducto.'),
-  costoCalculado: z.number().min(0),
 });
 
 export const crearProductoSchema = z.discriminatedUnion('tipo', [

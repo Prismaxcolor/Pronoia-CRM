@@ -17,8 +17,6 @@ import ProveedoresPage from './features/proveedores/ProveedoresPage';
 import EstadoCuentaPage from './features/estado-cuenta/EstadoCuentaPage';
 import ListasPreciosPage from './features/listas-precios/ListasPreciosPage';
 import ListaDetallePage from './features/listas-precios/ListaDetallePage';
-import FacturacionPage from './features/facturacion/FacturacionPage';
-import HistorialFacturasPage from './features/facturacion/HistorialFacturasPage';
 import PesajePage from './features/pesaje/PesajePage';
 import FacturaHistorialPage from './features/facturas/FacturaHistorialPage';
 import FacturaFormPage from './features/facturas/FacturaFormPage';
@@ -46,7 +44,6 @@ function AppRoutes() {
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
         <Route path="/transformaciones" element={<ProtectedRoute recurso="productos"><TransformacionesPage /></ProtectedRoute>} />
         <Route path="/lotes" element={<ProtectedRoute recurso="productos"><LotesPage /></ProtectedRoute>} />
-        <Route path="/facturacion" element={<ProtectedRoute recurso="facturacion"><FacturacionPage /></ProtectedRoute>} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
         <Route path="/compras" element={<ProtectedRoute recurso="facturacion"><FacturaHistorialPage tipo="compra" /></ProtectedRoute>} />
         <Route path="/compras/nueva" element={<ProtectedRoute recurso="facturacion"><FacturaFormPage tipo="compra" /></ProtectedRoute>} />
@@ -54,7 +51,6 @@ function AppRoutes() {
         <Route path="/ventas" element={<ProtectedRoute recurso="facturacion"><FacturaHistorialPage tipo="venta" /></ProtectedRoute>} />
         <Route path="/ventas/nueva" element={<ProtectedRoute recurso="facturacion"><FacturaFormPage tipo="venta" /></ProtectedRoute>} />
         <Route path="/ventas/:id" element={<ProtectedRoute recurso="facturacion"><FacturaDetallePage tipo="venta" /></ProtectedRoute>} />
-        <Route path="/historial" element={<ProtectedRoute recurso="facturacion"><HistorialFacturasPage /></ProtectedRoute>} />
         <Route path="/cochinito" element={<ProtectedRoute recurso="cochinito"><CochinitPage /></ProtectedRoute>} />
         <Route path="/clientes" element={<ProtectedRoute recurso="clientes"><ClientesPage /></ProtectedRoute>} />
         <Route path="/clientes/:id/estado-cuenta" element={<ProtectedRoute recurso="clientes"><EstadoCuentaPage tipo="cliente" /></ProtectedRoute>} />
