@@ -101,12 +101,15 @@ export async function obtenerEstadoCuenta(
   const facturas: FacturaCruda[] = ((facturasData as Array<{ id: string; total: number; descripcion: string | null; created_at: string }> | null) ?? [])
     .map(f => ({ id: f.id, total: f.total, descripcion: f.descripcion, fecha: f.created_at }));
 
-  let qPagos = supabaseAdmin.from('movimientos').select('id, monto, descripcion, referencia, fecha').eq(columnaEntidad, id).eq('tipo', tipoMovAbono);
+  let qPagos = supabaseAdmin.from('movimientos').select('id, monto, monto_usd, descripcion, referencia, fecha').eq(columnaEntidad, id).eq('tipo', tipoMovAbono);
   if (desde) qPagos = qPagos.gte('fecha', desde);
   if (hasta) qPagos = qPagos.lte('fecha', hasta);
   const { data: pagosData } = await qPagos;
-  const pagos: PagoCrudo[] = ((pagosData as Array<{ monto: number; descripcion: string | null; referencia: string | null; fecha: string }> | null) ?? [])
-    .map(p => ({ monto: p.monto, descripcion: p.descripcion, referencia: p.referencia, fecha: p.fecha }));
+  const pagos: PagoCrudo[] = ((pagosData as Array<{ monto: number; monto_usd: number | null; descripcion: string | null; referencia: string | null; fecha: string }> | null) ?? [])
+    // El estado de cuenta se lleva en USD (facturas_compra/venta.total está en USD).
+    // monto_usd es el equivalente correcto cuando el pago salió de una banca en
+    // otra moneda (ej. Bs); si no está presente, el movimiento ya estaba en USD.
+    .map(p => ({ monto: Number(p.monto_usd ?? p.monto), descripcion: p.descripcion, referencia: p.referencia, fecha: p.fecha }));
 
   return construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos);
 }

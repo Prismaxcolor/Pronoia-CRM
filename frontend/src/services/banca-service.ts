@@ -25,6 +25,9 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
     fecha: row.fecha as string,
     referencia: (row.referencia as string) ?? '',
     registradoPor: (row.registrado_por as string) ?? '',
+    proveedorId: (row.proveedor_id as string) ?? null,
+    clienteId: (row.cliente_id as string) ?? null,
+    montoUsd: row.monto_usd != null ? Number(row.monto_usd) : null,
     creadoEn: row.creado_en as string,
   };
 }

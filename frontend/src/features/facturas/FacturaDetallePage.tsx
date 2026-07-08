@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, FileDown, FileText } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown, FileText, DollarSign } from 'lucide-react';
 import { obtenerFactura, consolidarItems, type FacturaCV, type TipoFactura } from '../../services/factura-cv-service';
 import { descargarFacturaPDF, descargarFacturaWord } from '../../services/factura-export';
 import { obtenerTicket } from '../../services/ticket-pesaje-service';
+import { useAuth } from '../../hooks/use-auth';
+import { useToast } from '../../hooks/use-toast';
+import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
 import { destinoLabel, type TicketPesaje } from '@shared/types/index.js';
 
 const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
@@ -23,18 +26,22 @@ interface Props {
 function FacturaDetallePage({ tipo }: Props) {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const { tienePermiso } = useAuth();
+  const toast = useToast();
 
   const esCompra = tipo === 'compra';
   const ruta = esCompra ? '/compras' : '/ventas';
   const etiquetaLista = esCompra ? 'Compras' : 'Ventas';
   const labelEntidad = esCompra ? 'Proveedor' : 'Cliente';
   const titulo = esCompra ? 'Factura de compra' : 'Factura de venta';
+  const puedePagar = tienePermiso('cochinito', 'crear');
 
   const [factura, setFactura] = useState<FacturaCV | null>(null);
   const [tickets, setTickets] = useState<TicketPesaje[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [pagoAbierto, setPagoAbierto] = useState(false);
 
-  useEffect(() => {
+  const cargarFactura = () => {
     obtenerFactura(tipo, id)
       .then(async f => {
         setFactura(f);
@@ -44,7 +51,15 @@ function FacturaDetallePage({ tipo }: Props) {
         }
       })
       .finally(() => setCargando(false));
-  }, [tipo, id]);
+  };
+
+  useEffect(() => { cargarFactura(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tipo, id]);
+
+  const handlePagoRegistrado = () => {
+    setPagoAbierto(false);
+    toast.exito('Pago registrado.');
+    cargarFactura();
+  };
 
   if (cargando) {
     return (
@@ -92,6 +107,12 @@ function FacturaDetallePage({ tipo }: Props) {
           <p className="text-sm text-text-muted mt-1">{factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
+          {esCompra && puedePagar && factura.estado !== 'pagada' && factura.entidadId && (
+            <button type="button" onClick={() => setPagoAbierto(true)} className="flex items-center gap-2 px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors" title="Registrar pago">
+              <DollarSign size={16} />
+              Registrar pago
+            </button>
+          )}
           <button type="button" onClick={() => descargarFacturaPDF(factura)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
             <FileDown size={16} />
             PDF
@@ -140,6 +161,19 @@ function FacturaDetallePage({ tipo }: Props) {
           <span className="font-semibold text-text-primary">Total</span>
           <span className="text-xl font-bold text-brand-700">{fmt(factura.total)}</span>
         </div>
+
+        {esCompra && factura.montoPagado > 0 && (
+          <>
+            <div className="flex justify-between pt-1 text-sm">
+              <span className="text-text-secondary">Pagado</span>
+              <span className="text-text-primary font-medium">{fmt(factura.montoPagado)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-text-secondary">Saldo pendiente</span>
+              <span className="text-text-primary font-medium">{fmt(Math.max(factura.total - factura.montoPagado, 0))}</span>
+            </div>
+          </>
+        )}
       </div>
 
       {tickets.length > 0 && (
@@ -185,6 +219,16 @@ function FacturaDetallePage({ tipo }: Props) {
             </div>
           ))}
         </div>
+      )}
+
+      {pagoAbierto && factura.entidadId && (
+        <RegistrarPagoModal
+          proveedorId={factura.entidadId}
+          facturaId={factura.id}
+          saldoPendiente={factura.total - factura.montoPagado}
+          onClose={() => setPagoAbierto(false)}
+          onRegistrado={handlePagoRegistrado}
+        />
       )}
     </div>
   );

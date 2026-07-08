@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer } from 'lucide-react';
+import { ArrowLeft, Printer, DollarSign } from 'lucide-react';
 import {
   obtenerEstadoCuenta,
   type EstadoCuenta,
   type TipoEntidad,
 } from '../../services/estado-cuenta-service';
+import { useAuth } from '../../hooks/use-auth';
+import { useToast } from '../../hooks/use-toast';
+import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
 
 interface Props {
   /** Define de dónde se jalan los datos. La pantalla es idéntica para ambos. */
@@ -19,14 +22,18 @@ function fmt(n: number): string {
 function EstadoCuentaPage({ tipo }: Props) {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const { tienePermiso } = useAuth();
+  const toast = useToast();
 
   const [estado, setEstado] = useState<EstadoCuenta | null>(null);
   const [cargando, setCargando] = useState(true);
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
+  const [pagoAbierto, setPagoAbierto] = useState(false);
 
   const volverA = tipo === 'proveedor' ? '/proveedores' : '/clientes';
   const etiquetaEntidad = tipo === 'proveedor' ? 'Proveedores' : 'Clientes';
+  const puedePagar = tipo === 'proveedor' && tienePermiso('cochinito', 'crear');
 
   const cargar = () => {
     setCargando(true);
@@ -36,6 +43,12 @@ function EstadoCuentaPage({ tipo }: Props) {
   };
 
   useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tipo, id, desde, hasta]);
+
+  const handlePagoRegistrado = () => {
+    setPagoAbierto(false);
+    toast.exito('Pago registrado.');
+    cargar();
+  };
 
   if (cargando && !estado) {
     return (
@@ -79,14 +92,26 @@ function EstadoCuentaPage({ tipo }: Props) {
           <h1 className="text-2xl font-bold text-text-primary">Estado de cuenta</h1>
           <p className="text-sm text-text-secondary mt-1">{estado.entidad.nombre}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="print:hidden flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors shrink-0"
-        >
-          <Printer size={16} />
-          Imprimir
-        </button>
+        <div className="print:hidden flex items-center gap-2 shrink-0">
+          {puedePagar && (
+            <button
+              type="button"
+              onClick={() => setPagoAbierto(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+            >
+              <DollarSign size={16} />
+              Registrar pago
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
+          >
+            <Printer size={16} />
+            Imprimir
+          </button>
+        </div>
       </div>
 
       {/* Filtro de fechas */}
@@ -166,6 +191,14 @@ function EstadoCuentaPage({ tipo }: Props) {
           </span>
         </div>
       </div>
+
+      {pagoAbierto && tipo === 'proveedor' && (
+        <RegistrarPagoModal
+          proveedorId={estado.entidad.id}
+          onClose={() => setPagoAbierto(false)}
+          onRegistrado={handlePagoRegistrado}
+        />
+      )}
     </div>
   );
 }

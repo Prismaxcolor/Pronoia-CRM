@@ -4,6 +4,7 @@ import { crearTransformacionSchema } from '../src/schemas/transformaciones.js';
 import { crearTicketSchema } from '../src/schemas/tickets-pesaje.js';
 import { crearListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
 import { crearProveedorSchema } from '../src/schemas/proveedores.js';
+import { registrarPagoSchema } from '../src/schemas/pagos.js';
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const UUID2 = '22222222-2222-4222-8222-222222222222';
@@ -144,5 +145,40 @@ describe('crearProveedorSchema', () => {
       expect(r.data.rfc).toBeNull();
       expect(r.data.telefono).toBeNull();
     }
+  });
+});
+
+describe('registrarPagoSchema', () => {
+  const base = {
+    proveedorId: UUID,
+    bancaId: UUID2,
+    monto: 100,
+    moneda: 'USD' as const,
+    montoUsd: 100,
+    fecha: '2026-07-08',
+  };
+
+  it('acepta un pago válido sin factura (adelanto)', () => {
+    const r = registrarPagoSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.facturaId ?? null).toBeNull();
+  });
+
+  it('acepta un pago ligado a una factura', () => {
+    const r = registrarPagoSchema.safeParse({ ...base, facturaId: UUID });
+    expect(r.success).toBe(true);
+  });
+
+  it('rechaza monto o montoUsd <= 0', () => {
+    expect(registrarPagoSchema.safeParse({ ...base, monto: 0 }).success).toBe(false);
+    expect(registrarPagoSchema.safeParse({ ...base, montoUsd: 0 }).success).toBe(false);
+  });
+
+  it('rechaza moneda distinta de USD/VES', () => {
+    expect(registrarPagoSchema.safeParse({ ...base, moneda: 'EUR' }).success).toBe(false);
+  });
+
+  it('rechaza fecha con formato inválido', () => {
+    expect(registrarPagoSchema.safeParse({ ...base, fecha: '08/07/2026' }).success).toBe(false);
   });
 });

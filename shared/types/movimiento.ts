@@ -11,5 +11,16 @@ export interface Movimiento {
   fecha: string;
   referencia: string;
   registradoPor: string;
+  /** Proveedor al que se le pagó (egreso). Alimenta su estado de cuenta. */
+  proveedorId: string | null;
+  /** Cliente del que se cobró (ingreso). Alimenta su estado de cuenta. */
+  clienteId: string | null;
+  /**
+   * Equivalente en USD del movimiento. Los pagos a proveedores siempre se
+   * registran en USD para efectos de estado de cuenta, aunque `monto`/`moneda`
+   * reflejen la banca de origen (ej. Bs si se pagó desde una cuenta en
+   * bolívares). Null en movimientos que no lo necesitan (ya están en USD).
+   */
+  montoUsd: number | null;
   creadoEn: string;
 }

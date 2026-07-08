@@ -401,7 +401,19 @@ function CochinitPage() {
                     {TIPO_MOV_ICON[mov.tipo]}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">{mov.descripcion}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-text-primary truncate">{mov.descripcion}</p>
+                      {mov.proveedorId && (
+                        <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
+                          Pago a proveedor
+                        </span>
+                      )}
+                      {mov.clienteId && (
+                        <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-700">
+                          Cobro a cliente
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 text-xs text-text-muted mt-0.5">
                       <span>{mov.fecha}</span>
                       {mov.referencia && <><span>·</span><span>{mov.referencia}</span></>}
