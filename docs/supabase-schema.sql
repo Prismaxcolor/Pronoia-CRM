@@ -1193,6 +1193,13 @@ create policy "taras acceso anon"
 alter table public.movimientos
   add column if not exists monto_usd numeric;
 
+-- La tabla movimientos es preexistente y traía referencia como NOT NULL
+-- (pensada para los tipos de movimiento anteriores, que siempre la
+-- completaban). Los pagos a proveedores la dejan opcional (adelantos sin
+-- referencia), así que hay que permitir NULL explícitamente.
+alter table public.movimientos
+  alter column referencia drop not null;
+
 alter table public.facturas_compra
   add column if not exists monto_pagado numeric not null default 0;
 

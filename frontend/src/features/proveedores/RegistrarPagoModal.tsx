@@ -78,7 +78,7 @@ function RegistrarPagoModal({ proveedorId, facturaId, saldoPendiente, onClose, o
       return;
     }
     if (saldoAplicable != null && montoUsdNum > saldoAplicable + 0.01) {
-      setError(`El monto supera el saldo pendiente de la factura ($${saldoAplicable.toLocaleString(undefined, { minimumFractionDigits: 2 })}). Para un pago mayor, regístralo como adelanto.`);
+      setError(`El monto supera el saldo pendiente de la factura ($${saldoAplicable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Para un pago mayor, regístralo como adelanto.`);
       return;
     }
 
@@ -123,7 +123,7 @@ function RegistrarPagoModal({ proveedorId, facturaId, saldoPendiente, onClose, o
                 <option value={SIN_FACTURA}>— Adelanto (sin factura específica) —</option>
                 {facturasPendientes.map(f => (
                   <option key={f.id} value={f.id}>
-                    {f.codigo ?? f.id.slice(0, 8)} · saldo ${(f.total - f.montoPagado).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {f.codigo ?? f.id.slice(0, 8)} · saldo ${(f.total - f.montoPagado).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </option>
                 ))}
               </select>
@@ -156,13 +156,13 @@ function RegistrarPagoModal({ proveedorId, facturaId, saldoPendiente, onClose, o
             {esBs && (
               <p className="text-xs text-text-muted mt-1">
                 {tasa
-                  ? `Equivalente a transferir: Bs ${montoBancaMoneda.toLocaleString(undefined, { minimumFractionDigits: 2 })} (tasa ${tasa.toLocaleString()})`
+                  ? `Equivalente a transferir: Bs ${montoBancaMoneda.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (tasa ${tasa.toLocaleString()})`
                   : 'No se pudo obtener la tasa de cambio.'}
               </p>
             )}
             {saldoAplicable != null && Number.isFinite(saldoAplicable) && (
               <p className="text-xs text-text-muted mt-1">
-                Saldo pendiente de la factura: ${saldoAplicable.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                Saldo pendiente de la factura: ${saldoAplicable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             )}
           </div>
