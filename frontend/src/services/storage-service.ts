@@ -1,33 +1,33 @@
-import { supabase } from '../config/supabase';
+import { getToken } from './api-client';
 
-const BUCKET_PRODUCTOS = 'productos';
-const BUCKET_TICKETS = 'tickets';
-const BUCKET_TARAS = 'taras';
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
-async function subirArchivo(bucket: string, file: File): Promise<string | null> {
-  const ext = file.name.split('.').pop();
-  const nombre = `${crypto.randomUUID()}.${ext}`;
+async function subirArchivo(tipo: 'productos' | 'tickets' | 'taras', file: File): Promise<string | null> {
+  const formData = new FormData();
+  formData.append('file', file);
 
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(nombre, file, { contentType: file.type });
+  const token = getToken();
+  const resp = await fetch(`${API_URL}/api/uploads/${tipo}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
 
-  if (error) return null;
-
-  const { data } = supabase.storage.from(bucket).getPublicUrl(nombre);
-  return data.publicUrl;
+  if (!resp.ok) return null;
+  const data = (await resp.json()) as { url: string };
+  return data.url;
 }
 
 export function subirImagenProducto(file: File): Promise<string | null> {
-  return subirArchivo(BUCKET_PRODUCTOS, file);
+  return subirArchivo('productos', file);
 }
 
-/** Sube una foto de evidencia del pesaje. Requiere bucket público 'tickets'. */
+/** Sube una foto de evidencia del pesaje. */
 export function subirFotoTicket(file: File): Promise<string | null> {
-  return subirArchivo(BUCKET_TICKETS, file);
+  return subirArchivo('tickets', file);
 }
 
-/** Sube la foto de una tara predefinida. Requiere bucket público 'taras'. */
+/** Sube la foto de una tara predefinida. */
 export function subirFotoTara(file: File): Promise<string | null> {
-  return subirArchivo(BUCKET_TARAS, file);
+  return subirArchivo('taras', file);
 }

@@ -130,7 +130,7 @@ function CochinitPage() {
       variante: 'warning',
     });
     if (!ok) return;
-    const result = await archivarBanca(banca.id, banca.saldo);
+    const result = await archivarBanca(banca.id);
     if (!result.ok) {
       toast.errorMsg(result.razon ?? 'No se pudo archivar la banca.');
       return;

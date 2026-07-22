@@ -24,44 +24,51 @@ Esta segunda opción es la que vamos a implementar.
 
 Crear endpoints REST que reemplacen las llamadas directas a Supabase del frontend. Cada uno valida JWT con `requireAuth` y permisos con la matriz `PERMISOS_POR_ROL`.
 
+**✅ Bancas y movimientos: hecho (jul 2026).** A diferencia de la tabla original, se movieron también las **lecturas** al backend (no solo las escrituras) — ver nota en Fase B. Endpoints reales implementados en `backend/src/routes/cochinito.ts`:
+
 | Recurso | Método | Path | Permiso requerido |
 |---|---|---|---|
-| Bancas | POST | `/api/bancas` | `cochinito:crear` |
-| Bancas | PATCH | `/api/bancas/:id` | `cochinito:editar` |
-| Bancas | POST | `/api/bancas/:id/archivar` | `cochinito:eliminar` |
-| Bancas | POST | `/api/bancas/:id/desarchivar` | `cochinito:eliminar` |
-| Movimientos | POST | `/api/movimientos` | `cochinito:crear` |
-| Movimientos | POST | `/api/movimientos/:id/reversar` | `cochinito:editar` (no hay delete real) |
-| Productos | POST/PATCH/DELETE | `/api/productos*` | según acción |
-| Facturas | POST/PATCH/DELETE | `/api/facturas*` | según acción |
-| Usuarios admin | POST/PATCH | `/api/usuarios*` | `usuarios:*` |
+| Bancas | GET | `/api/cochinito/bancas` | `cochinito:ver` |
+| Bancas | POST | `/api/cochinito/bancas` | `cochinito:crear` |
+| Bancas | PATCH | `/api/cochinito/bancas/:id` | `cochinito:editar` |
+| Bancas | POST | `/api/cochinito/bancas/:id/archivar` | `cochinito:editar` |
+| Bancas | POST | `/api/cochinito/bancas/:id/desarchivar` | `cochinito:editar` |
+| Movimientos | GET | `/api/cochinito/movimientos` | `cochinito:ver` |
+| Movimientos | POST | `/api/cochinito/movimientos` | `cochinito:crear` |
 
-El frontend deja de importar `supabase` para escrituras y pasa todo por `apiFetch`.
+También se creó `POST /api/uploads/:tipo` (`productos`\|`tickets`\|`taras`) para que la subida de imágenes (antes directa a Supabase Storage con la anon key) pase por el backend con `multer` + la service key.
 
-### Fase B — RLS solo lectura para anon
+**Pendiente:** `Productos` | `Facturas` | `Usuarios admin` (ver tabla original de esta fase — no tocado aún).
 
-Las **lecturas** pueden seguir siendo directas desde el frontend (es lo que más pesa en latencia). Activamos RLS con policies de solo SELECT para anon:
+### Fase B — RLS
+
+Con bancas y movimientos moviendo **tanto lecturas como escrituras** al backend, esas dos tablas no necesitan la variante "solo SELECT para anon" — pueden ir directo a **deny-all**, porque ningún cliente anon debe tocarlas nunca:
 
 ```sql
--- Ejemplo para bancas
 alter table public.bancas enable row level security;
+alter table public.movimientos enable row level security;
 
-create policy bancas_select_anon
-  on public.bancas
+create policy bancas_deny_anon on public.bancas for all to anon using (false) with check (false);
+create policy movimientos_deny_anon on public.movimientos for all to anon using (false) with check (false);
+```
+
+Para las tablas que **sigan** con lectura directa desde el frontend (`productos`, `facturas`, etc., mientras no se migren en Fase A), aplicar el patrón original de solo-SELECT:
+
+```sql
+-- Ejemplo para una tabla que aún no pasa por backend
+create policy productos_select_anon
+  on public.productos
   for select
   to anon
-  using (archivada = false);
+  using (true);
 
--- Bloquear cualquier escritura desde anon
-create policy bancas_no_write_anon
-  on public.bancas
+create policy productos_no_write_anon
+  on public.productos
   for all
   to anon
   using (false)
   with check (false);
 ```
-
-Aplicar policies similares a `movimientos`, `productos`, `facturas`, `factura_items`.
 
 ### Estado tras Fase B (mayo 2026)
 

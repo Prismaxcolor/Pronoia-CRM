@@ -19,6 +19,8 @@ import transformacionesRouter from './routes/transformaciones.js';
 import lotesRouter from './routes/lotes.js';
 import tarasRouter from './routes/tara.js';
 import pagosRouter from './routes/pagos.js';
+import cochinitoRouter from './routes/cochinito.js';
+import uploadsRouter from './routes/uploads.js';
 
 const app = express();
 
@@ -66,6 +68,8 @@ app.use('/api/transformaciones', transformacionesRouter);
 app.use('/api/lotes', lotesRouter);
 app.use('/api/taras', tarasRouter);
 app.use('/api/pagos', pagosRouter);
+app.use('/api/cochinito', cochinitoRouter);
+app.use('/api/uploads', uploadsRouter);
 app.use('/api/tasas', tasasRouter);
 
 export default app;
