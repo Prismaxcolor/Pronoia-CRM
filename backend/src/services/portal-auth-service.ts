@@ -5,9 +5,25 @@ import { logger } from '../utils/logger.js';
 import { generarToken, type EntidadTelegram } from './telegram-link-service.js';
 
 const TOKEN_TTL_MINUTOS = 15;
-const SESION_TTL = '30d'; // más largo que el del staff — volver a pedir el link cada
+const SESION_TTL_DIAS = 30; // más largo que el del staff — volver a pedir el link cada
 // vez que expire es más fricción para un proveedor externo que para un empleado.
+const SESION_TTL_MS = SESION_TTL_DIAS * 24 * 60 * 60 * 1000;
 const WEBHOOK_TIMEOUT_MS = 10_000;
+
+export const PORTAL_COOKIE_NAME = 'portal_session';
+
+/** httpOnly: JS del portal nunca puede leer el token (mitiga robo por XSS).
+ *  sameSite:'none' + secure: frontend y backend viven en orígenes distintos
+ *  (dev: puertos distintos o túneles distintos; prod: subdominios distintos). */
+export function portalCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none' as const,
+    path: '/',
+    maxAge: SESION_TTL_MS,
+  };
+}
 
 export interface PortalJwtPayload {
   entidadTipo: EntidadTelegram;
@@ -121,7 +137,7 @@ export async function verificarLoginToken(token: string): Promise<PortalJwtPaylo
 }
 
 export function firmarSesionPortal(payload: PortalJwtPayload): string {
-  return jwt.sign(payload, ENV.PORTAL_JWT_SECRET, { expiresIn: SESION_TTL });
+  return jwt.sign(payload, ENV.PORTAL_JWT_SECRET, { expiresIn: `${SESION_TTL_DIAS}d` });
 }
 
 export function verificarSesionPortal(token: string): PortalJwtPayload {

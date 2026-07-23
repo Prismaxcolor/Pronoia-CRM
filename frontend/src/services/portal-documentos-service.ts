@@ -1,4 +1,4 @@
-import { portalApiFetch, getPortalToken } from './portal-api-client';
+import { portalApiFetch } from './portal-api-client';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -41,13 +41,10 @@ export async function obtenerDocumentosPortal(): Promise<PortalDocumentos | null
   }
 }
 
-/** Abre el PDF (factura o ticket) en una pestaña nueva. El endpoint exige el token
+/** Abre el PDF (factura o ticket) en una pestaña nueva. El endpoint exige la cookie
  *  de sesión del portal, así que no alcanza con un <a href> simple. */
 async function abrirPdf(path: string): Promise<{ error: string } | void> {
-  const token = getPortalToken();
-  const resp = await fetch(`${API_URL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
+  const resp = await fetch(`${API_URL}${path}`, { credentials: 'include' });
 
   if (!resp.ok) return { error: 'No se pudo abrir el documento.' };
 

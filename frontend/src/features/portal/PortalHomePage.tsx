@@ -28,7 +28,7 @@ function PortalHomePage() {
         </div>
         <button
           type="button"
-          onClick={logout}
+          onClick={() => logout()}
           className="p-2 rounded-lg text-text-muted hover:bg-surface-alt hover:text-red-600 transition-colors"
           title="Cerrar sesión"
         >

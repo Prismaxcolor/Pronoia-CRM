@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { verificarSesionPortal, type PortalJwtPayload } from '../services/portal-auth-service.js';
+import { verificarSesionPortal, PORTAL_COOKIE_NAME, type PortalJwtPayload } from '../services/portal-auth-service.js';
 
 declare global {
   namespace Express {
@@ -10,16 +10,16 @@ declare global {
 }
 
 /** Análogo a requireAuth pero para sesiones del portal de proveedores/clientes —
- *  usa un secreto de firma distinto (ver ENV.PORTAL_JWT_SECRET), nunca acepta un
- *  token de staff ni viceversa. */
+ *  usa un secreto de firma distinto (ver ENV.PORTAL_JWT_SECRET) y viaja en una
+ *  cookie httpOnly (no en Authorization header como el staff), para que un XSS
+ *  en el portal no pueda robar el token vía JS. */
 export function requirePortalAuth(req: Request, res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
+  const token = req.cookies?.[PORTAL_COOKIE_NAME];
+  if (!token) {
     res.status(401).json({ error: 'Falta iniciar sesión.' });
     return;
   }
 
-  const token = header.slice('Bearer '.length).trim();
   try {
     req.portalUser = verificarSesionPortal(token);
     next();

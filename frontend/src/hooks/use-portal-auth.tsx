@@ -5,7 +5,7 @@ interface PortalAuthContextType {
   entidad: PortalMe | null;
   cargando: boolean;
   refrescar: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const PortalAuthContext = createContext<PortalAuthContextType | null>(null);
@@ -23,8 +23,8 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
     cargar().finally(() => setCargando(false));
   }, []);
 
-  const logout = () => {
-    cerrarSesionPortal();
+  const logout = async () => {
+    await cerrarSesionPortal();
     setEntidad(null);
   };
 

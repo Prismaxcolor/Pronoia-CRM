@@ -3,7 +3,13 @@ import { validateBody } from '../middlewares/validate.js';
 import { requirePortalAuth } from '../middlewares/require-portal-auth.js';
 import { portalLoginLimiter } from '../middlewares/rate-limit.js';
 import { portalLoginSchema, portalVerificarSchema } from '../schemas/portal.js';
-import { solicitarLogin, verificarLoginToken, firmarSesionPortal } from '../services/portal-auth-service.js';
+import {
+  solicitarLogin,
+  verificarLoginToken,
+  firmarSesionPortal,
+  PORTAL_COOKIE_NAME,
+  portalCookieOptions,
+} from '../services/portal-auth-service.js';
 import { obtenerDocumentosPortal } from '../services/portal-documentos-service.js';
 import { TABLA_ENTIDAD } from '../services/telegram-link-service.js';
 import { obtenerFactura } from '../services/factura-service.js';
@@ -32,13 +38,19 @@ router.post('/verificar', validateBody(portalVerificarSchema), async (req, res) 
   }
 
   const token = firmarSesionPortal(resultado);
+  res.cookie(PORTAL_COOKIE_NAME, token, portalCookieOptions());
   logger.info({
     evento: 'portal_login_exitoso',
     ip: clienteIp(req),
     entidadTipo: resultado.entidadTipo,
     entidadId: resultado.entidadId,
   });
-  res.json({ token });
+  res.json({ ok: true });
+});
+
+router.post('/logout', (_req, res) => {
+  res.clearCookie(PORTAL_COOKIE_NAME, portalCookieOptions());
+  res.json({ ok: true });
 });
 
 router.get('/me', requirePortalAuth, async (req, res) => {

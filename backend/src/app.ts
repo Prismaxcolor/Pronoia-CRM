@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { ENV } from './config/env.js';
 import healthRouter from './routes/health.js';
 import tasasRouter from './routes/tasas.js';
@@ -52,6 +53,9 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '100kb' }));
+// Solo para la cookie httpOnly de sesión del portal — el staff sigue usando
+// Bearer token, no depende de esto.
+app.use(cookieParser());
 
 app.use(healthRouter);
 app.use('/api/auth', authRouter);
