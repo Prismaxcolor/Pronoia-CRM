@@ -22,6 +22,16 @@ export const ENV = {
    *  y hace la entrega real por Telegram. Si falta, notificarDocumento no hace nada
    *  (no rompe el flujo de negocio que lo dispara). */
   N8N_WEBHOOK_ENVIAR_DOCUMENTO: process.env.N8N_WEBHOOK_ENVIAR_DOCUMENTO || '',
+  /** Webhook de n8n que manda el link de acceso al portal por Telegram. */
+  N8N_WEBHOOK_PORTAL_LOGIN: process.env.N8N_WEBHOOK_PORTAL_LOGIN || '',
+  /** Base del portal para armar el link de acceso (ej. https://portal.pronoiascrap.com). */
+  PORTAL_URL: process.env.PORTAL_URL || 'http://localhost:5173',
+  /** Secreto para firmar sesiones del portal de proveedores/clientes — deliberadamente
+   *  distinto del JWT_SECRET del staff (un token robado de un lado nunca sirve en el
+   *  otro). Sin variable propia, se deriva de JWT_SECRET (que ya es obligatorio) para
+   *  no agregar una variable de entorno nueva obligatoria que rompa despliegues
+   *  existentes — se puede sobreescribir con PORTAL_JWT_SECRET si se prefiere. */
+  PORTAL_JWT_SECRET: process.env.PORTAL_JWT_SECRET || `portal-session:${process.env.JWT_SECRET || ''}`,
 } as const;
 
 if (!ENV.JWT_SECRET || ENV.JWT_SECRET.length < 32) {

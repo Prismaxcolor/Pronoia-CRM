@@ -1447,3 +1447,55 @@ create table if not exists public.notificaciones_fallidas (
 
 create index if not exists idx_notificaciones_fallidas_pendientes
   on public.notificaciones_fallidas (entidad_id) where resuelto = false;
+
+-- Bloque 26 · Portal de proveedores/clientes
+-- Login sin contraseña (magic link vía Telegram), agendamiento de despacho, y guías
+-- CORPOEZ ligadas a la entidad correspondiente. Ver
+-- clients/PRONOIA/portal-clientes/PLAN.md en el workspace de la agencia.
+
+-- Tabla separada de telegram_link_tokens (Bloque 24) a propósito: mezclar tokens de
+-- vinculación con tokens de login sería un riesgo de seguridad sutil.
+create table if not exists public.portal_login_tokens (
+  id uuid primary key default gen_random_uuid(),
+  entidad_tipo text not null check (entidad_tipo in ('proveedor', 'cliente')),
+  entidad_id uuid not null,
+  token text not null unique,
+  usado boolean not null default false,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '15 minutes')
+);
+
+create index if not exists idx_portal_login_tokens_token
+  on public.portal_login_tokens (token);
+
+create table if not exists public.citas_despacho (
+  id uuid primary key default gen_random_uuid(),
+  entidad_tipo text not null check (entidad_tipo in ('proveedor', 'cliente')),
+  entidad_id uuid not null,
+  fecha date not null,
+  hora time not null,
+  estado text not null default 'pendiente'
+    check (estado in ('pendiente', 'confirmada', 'reprogramada', 'cancelada', 'completada')),
+  notas text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_citas_despacho_fecha
+  on public.citas_despacho (fecha) where estado not in ('cancelada', 'completada');
+
+-- La escribe el workflow n8n de permisos gubernamentales (modificado aparte, fuera de
+-- este repo), no el backend — acá solo se lee para mostrarla en el portal.
+create table if not exists public.guias_corpoez (
+  id uuid primary key default gen_random_uuid(),
+  entidad_tipo text not null check (entidad_tipo in ('proveedor', 'cliente')),
+  entidad_id uuid not null,
+  estado text not null default 'solicitada'
+    check (estado in ('solicitada', 'en_tramite', 'lista', 'rechazada')),
+  url_pdf text,
+  numero_guia text,
+  created_at timestamptz not null default now(),
+  actualizado_en timestamptz not null default now()
+);
+
+create index if not exists idx_guias_corpoez_entidad
+  on public.guias_corpoez (entidad_tipo, entidad_id);

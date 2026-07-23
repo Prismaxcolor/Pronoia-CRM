@@ -21,6 +21,7 @@ import tarasRouter from './routes/tara.js';
 import pagosRouter from './routes/pagos.js';
 import cochinitoRouter from './routes/cochinito.js';
 import uploadsRouter from './routes/uploads.js';
+import portalRouter from './routes/portal.js';
 
 const app = express();
 
@@ -71,5 +72,6 @@ app.use('/api/pagos', pagosRouter);
 app.use('/api/cochinito', cochinitoRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/tasas', tasasRouter);
+app.use('/api/portal', portalRouter);
 
 export default app;

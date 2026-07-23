@@ -1,10 +1,15 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/use-auth';
+import { PortalAuthProvider, usePortalAuth } from './hooks/use-portal-auth';
 import { ToastProvider } from './hooks/use-toast';
 import { ConfirmProvider } from './hooks/use-confirm';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import AuthPage from './features/auth/AuthPage';
+import PortalLoginPage from './features/portal/PortalLoginPage';
+import PortalVerificarPage from './features/portal/PortalVerificarPage';
+import PortalHomePage from './features/portal/PortalHomePage';
+import PortalDocumentosPage from './features/portal/PortalDocumentosPage';
 import DashboardPage from './features/dashboard/DashboardPage';
 import ProductosPage from './features/productos/ProductosPage';
 import InventarioPage from './features/inventario/InventarioPage';
@@ -23,6 +28,30 @@ import FacturaHistorialPage from './features/facturas/FacturaHistorialPage';
 import FacturaFormPage from './features/facturas/FacturaFormPage';
 import FacturaDetallePage from './features/facturas/FacturaDetallePage';
 
+// Rutas del portal de proveedores/clientes — sesión completamente separada de la
+// del staff (usePortalAuth, no useAuth), por eso vive en su propio subárbol.
+function PortalRoutes() {
+  const { entidad, cargando } = usePortalAuth();
+
+  if (cargando) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface-alt">
+        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="login" element={entidad ? <Navigate to="/portal" replace /> : <PortalLoginPage />} />
+      <Route path="verificar" element={<PortalVerificarPage />} />
+      <Route path="" element={entidad ? <PortalHomePage /> : <Navigate to="/portal/login" replace />} />
+      <Route path="documentos" element={entidad ? <PortalDocumentosPage /> : <Navigate to="/portal/login" replace />} />
+      <Route path="*" element={<Navigate to="/portal" replace />} />
+    </Routes>
+  );
+}
+
 function AppRoutes() {
   const { usuario, cargando } = useAuth();
 
@@ -36,6 +65,7 @@ function AppRoutes() {
 
   return (
     <Routes>
+      <Route path="/portal/*" element={<PortalRoutes />} />
       <Route path="/auth" element={usuario ? <Navigate to="/" replace /> : <AuthPage />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<ProtectedRoute recurso="dashboard"><DashboardPage /></ProtectedRoute>} />
@@ -71,7 +101,9 @@ function App() {
       <ToastProvider>
         <ConfirmProvider>
           <AuthProvider>
-            <AppRoutes />
+            <PortalAuthProvider>
+              <AppRoutes />
+            </PortalAuthProvider>
           </AuthProvider>
         </ConfirmProvider>
       </ToastProvider>

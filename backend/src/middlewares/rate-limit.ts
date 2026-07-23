@@ -24,3 +24,16 @@ export const registerLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiados registros desde esta IP. Reintenta más tarde.' },
 });
+
+/** 5 solicitudes de link de acceso al portal por IP+identificador por minuto. */
+export const portalLoginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espera un minuto y reintenta.' },
+  keyGenerator: (req) => {
+    const identificador = typeof req.body?.identificador === 'string' ? req.body.identificador : '';
+    return `${req.ip ?? 'na'}::${identificador}`;
+  },
+});
