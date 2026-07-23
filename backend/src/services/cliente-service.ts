@@ -12,6 +12,8 @@ interface ClienteRow {
   activo: boolean;
   creado_por: string | null;
   creado_en: string;
+  telegram_chat_id: string | null;
+  telegram_linked_at: string | null;
 }
 
 export interface ClientePublico {
@@ -25,6 +27,8 @@ export interface ClientePublico {
   activo: boolean;
   creadoPor: string;
   creadoEn: string;
+  telegramChatId: string | null;
+  telegramLinkedAt: string | null;
 }
 
 function toPublico(row: ClienteRow): ClientePublico {
@@ -39,6 +43,8 @@ function toPublico(row: ClienteRow): ClientePublico {
     activo: row.activo,
     creadoPor: row.creado_por ?? '',
     creadoEn: row.creado_en,
+    telegramChatId: row.telegram_chat_id,
+    telegramLinkedAt: row.telegram_linked_at,
   };
 }
 

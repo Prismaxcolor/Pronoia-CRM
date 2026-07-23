@@ -12,4 +12,8 @@ export interface Proveedor {
   activo: boolean;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
+  /** chat_id de Telegram una vez vinculado (ver integración Telegram). */
+  telegramChatId: string | null;
+  /** ISO timestamp de cuándo se vinculó, null si nunca se vinculó. */
+  telegramLinkedAt: string | null;
 }

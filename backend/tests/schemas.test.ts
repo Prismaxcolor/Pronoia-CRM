@@ -246,4 +246,18 @@ describe('registrarPagoSchema', () => {
   it('rechaza fecha con formato inválido', () => {
     expect(registrarPagoSchema.safeParse({ ...base, fecha: '08/07/2026' }).success).toBe(false);
   });
+
+  it('acepta un pago con comprobanteUrl', () => {
+    const r = registrarPagoSchema.safeParse({ ...base, comprobanteUrl: 'https://x.supabase.co/storage/v1/object/public/comprobantes/abc.jpg' });
+    expect(r.success).toBe(true);
+  });
+
+  it('acepta un pago sin comprobanteUrl (opcional)', () => {
+    const r = registrarPagoSchema.safeParse(base);
+    expect(r.success && (r.data.comprobanteUrl ?? null)).toBeNull();
+  });
+
+  it('rechaza comprobanteUrl que no es una URL válida', () => {
+    expect(registrarPagoSchema.safeParse({ ...base, comprobanteUrl: 'no-es-una-url' }).success).toBe(false);
+  });
 });

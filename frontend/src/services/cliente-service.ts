@@ -12,6 +12,8 @@ interface ClienteApi {
   activo: boolean;
   creadoPor: string;
   creadoEn: string;
+  telegramChatId: string | null;
+  telegramLinkedAt: string | null;
 }
 
 function mapApi(api: ClienteApi): Cliente {
@@ -89,5 +91,17 @@ export async function borrarCliente(id: string): Promise<{ ok: true } | { error:
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo borrar el cliente.' };
+  }
+}
+
+export async function generarLinkTelegramCliente(
+  id: string
+): Promise<{ deepLink: string } | { error: string }> {
+  try {
+    return await apiFetch<{ deepLink: string }>(`/api/clientes/${id}/telegram/generar-link`, {
+      method: 'POST',
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo generar el link de Telegram.' };
   }
 }

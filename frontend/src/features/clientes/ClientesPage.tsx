@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, EyeOff, Eye, Trash2, Mail, Phone, MapPin, FileText } from 'lucide-react';
+import { Plus, Pencil, EyeOff, Eye, Trash2, Mail, Phone, MapPin, FileText, Send, CheckCircle2 } from 'lucide-react';
 import {
   obtenerClientes,
   desactivarCliente,
   reactivarCliente,
   borrarCliente,
+  generarLinkTelegramCliente,
 } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth';
 import { useToast } from '../../hooks/use-toast';
 import { useConfirm } from '../../hooks/use-confirm';
 import ClienteFormModal from './ClienteFormModal';
+import TelegramLinkModal from '../../components/TelegramLinkModal';
 import type { Cliente } from '@shared/types/index.js';
 
 function ClientesPage() {
@@ -18,6 +20,7 @@ function ClientesPage() {
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; cliente: Cliente | null } | { abierto: false }>({ abierto: false });
+  const [telegramAbierto, setTelegramAbierto] = useState<Cliente | null>(null);
   const navigate = useNavigate();
   const { tienePermiso } = useAuth();
   const toast = useToast();
@@ -68,6 +71,17 @@ function ClientesPage() {
     toast.exito(`"${c.nombre}" eliminado.`);
     cargar();
   };
+
+  const generarLinkTelegram = useCallback(async () => {
+    if (!telegramAbierto) return { error: 'Sin cliente seleccionado.' };
+    return generarLinkTelegramCliente(telegramAbierto.id);
+  }, [telegramAbierto]);
+
+  const telegramYaVinculado = useCallback(async () => {
+    if (!telegramAbierto) return false;
+    const actualizados = await obtenerClientes();
+    return actualizados.some(c => c.id === telegramAbierto.id && !!c.telegramChatId);
+  }, [telegramAbierto]);
 
   const filtrados = clientes.filter(c => {
     if (!busqueda.trim()) return true;
@@ -215,6 +229,27 @@ function ClientesPage() {
               <FileText size={14} />
               Estado de cuenta
             </button>
+
+            {puedeEditar && (
+              c.telegramChatId ? (
+                <span
+                  title={c.telegramLinkedAt ? `Vinculado el ${new Date(c.telegramLinkedAt).toLocaleDateString()}` : undefined}
+                  className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-green-600"
+                >
+                  <CheckCircle2 size={14} />
+                  Telegram vinculado
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setTelegramAbierto(c)}
+                  className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 border border-border rounded-lg text-xs font-medium text-text-secondary hover:bg-surface-alt hover:text-brand-600 transition-colors"
+                >
+                  <Send size={14} />
+                  Vincular Telegram
+                </button>
+              )
+            )}
           </div>
         ))}
       </div>
@@ -230,6 +265,20 @@ function ClientesPage() {
           cliente={formAbierto.cliente}
           onClose={() => setFormAbierto({ abierto: false })}
           onGuardado={() => { setFormAbierto({ abierto: false }); cargar(); }}
+        />
+      )}
+
+      {telegramAbierto && (
+        <TelegramLinkModal
+          nombreEntidad={telegramAbierto.nombre}
+          generarLink={generarLinkTelegram}
+          yaVinculado={telegramYaVinculado}
+          onClose={() => setTelegramAbierto(null)}
+          onVinculado={() => {
+            toast.exito(`"${telegramAbierto.nombre}" vinculó su Telegram.`);
+            setTelegramAbierto(null);
+            cargar();
+          }}
         />
       )}
     </div>

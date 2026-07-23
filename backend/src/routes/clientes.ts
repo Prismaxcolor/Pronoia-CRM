@@ -11,6 +11,7 @@ import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearClienteSchema, actualizarClienteSchema } from '../schemas/clientes.js';
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
+import { generarLinkTelegram } from '../services/telegram-link-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -71,6 +72,27 @@ router.patch(
     }
     logger.info({
       evento: 'cliente_actualizado',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      clienteId: id,
+    });
+    res.json(result);
+  }
+);
+
+router.post(
+  '/:id/telegram/generar-link',
+  requirePermiso('clientes', 'editar'),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const result = await generarLinkTelegram('cliente', id);
+    if ('error' in result) {
+      const status = result.error.includes('no encontrado') ? 404 : 400;
+      res.status(status).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'cliente_telegram_link_generado',
       ip: clienteIp(req),
       userId: req.user!.sub,
       clienteId: id,

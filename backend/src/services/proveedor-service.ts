@@ -9,6 +9,8 @@ interface ProveedorRow {
   email: string | null;
   activo: boolean;
   created_at: string;
+  telegram_chat_id: string | null;
+  telegram_linked_at: string | null;
 }
 
 export interface ProveedorPublico {
@@ -19,6 +21,8 @@ export interface ProveedorPublico {
   email: string | null;
   activo: boolean;
   createdAt: string;
+  telegramChatId: string | null;
+  telegramLinkedAt: string | null;
 }
 
 function toPublico(row: ProveedorRow): ProveedorPublico {
@@ -30,6 +34,8 @@ function toPublico(row: ProveedorRow): ProveedorPublico {
     email: row.email,
     activo: row.activo,
     createdAt: row.created_at,
+    telegramChatId: row.telegram_chat_id,
+    telegramLinkedAt: row.telegram_linked_at,
   };
 }
 
