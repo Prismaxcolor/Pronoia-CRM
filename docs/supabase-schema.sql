@@ -1428,3 +1428,22 @@ create unique index if not exists idx_clientes_telegram_chat_id
 
 alter table public.movimientos
   add column if not exists comprobante_url text;
+
+-- Bloque 25 · Fase 1 de Telegram — envío de ticket/factura por Telegram
+-- Registro de entregas fallidas (Telegram caído, chat_id inválido, etc.) para que el
+-- gerente pueda ver desde el dashboard qué no llegó y reenviarlo. Lo escribe el
+-- workflow n8n "Enviar Documento a Proveedor", no el backend.
+create table if not exists public.notificaciones_fallidas (
+  id uuid primary key default gen_random_uuid(),
+  entidad_tipo text not null check (entidad_tipo in ('proveedor', 'cliente')),
+  entidad_id uuid not null,
+  tipo_documento text not null,
+  nombre_archivo text,
+  url text,
+  error text,
+  resuelto boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_notificaciones_fallidas_pendientes
+  on public.notificaciones_fallidas (entidad_id) where resuelto = false;

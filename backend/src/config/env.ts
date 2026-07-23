@@ -18,6 +18,10 @@ export const ENV = {
   CORS_ORIGINS: parseOrigins(process.env.CORS_ORIGINS),
   /** Username del bot de Telegram (sin @) para vincular proveedores/clientes. */
   TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || '',
+  /** Webhook de n8n que recibe {tipoDocumento, chatId, nombreEntidad, url, nombreArchivo}
+   *  y hace la entrega real por Telegram. Si falta, notificarDocumento no hace nada
+   *  (no rompe el flujo de negocio que lo dispara). */
+  N8N_WEBHOOK_ENVIAR_DOCUMENTO: process.env.N8N_WEBHOOK_ENVIAR_DOCUMENTO || '',
 } as const;
 
 if (!ENV.JWT_SECRET || ENV.JWT_SECRET.length < 32) {

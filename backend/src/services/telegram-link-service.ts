@@ -4,7 +4,8 @@ import { ENV } from '../config/env.js';
 
 export type EntidadTelegram = 'proveedor' | 'cliente';
 
-const TABLA: Record<EntidadTelegram, string> = {
+/** Tabla de Supabase para cada tipo de entidad — reusada también en telegram-notify-service.ts. */
+export const TABLA_ENTIDAD: Record<EntidadTelegram, string> = {
   proveedor: 'proveedores',
   cliente: 'clientes',
 };
@@ -37,7 +38,7 @@ export async function generarLinkTelegram(
   }
 
   const { data: entidad, error: errorEntidad } = await supabaseAdmin
-    .from(TABLA[entidadTipo])
+    .from(TABLA_ENTIDAD[entidadTipo])
     .select('id')
     .eq('id', entidadId)
     .maybeSingle();

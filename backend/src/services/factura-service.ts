@@ -1,5 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearFacturaInput } from '../schemas/facturas.js';
+import { notificarDocumento } from './telegram-notify-service.js';
+import { generarFacturaPdf, nombreArchivoFactura } from './document-generator.js';
 
 export type TipoFactura = 'compra' | 'venta';
 
@@ -184,6 +186,18 @@ export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<Fac
   return toPublico(data as unknown as FacturaRow, tipo);
 }
 
+/** Dispara el envío de la factura por Telegram cuando queda 'emitida' (fire-and-forget). */
+function notificarFacturaSiCorresponde(factura: FacturaPublica): void {
+  if (factura.estado !== 'emitida' || !factura.entidadId) return;
+  void notificarDocumento({
+    entidadTipo: factura.tipo === 'compra' ? 'proveedor' : 'cliente',
+    entidadId: factura.entidadId,
+    tipoDocumento: 'factura',
+    nombreArchivo: nombreArchivoFactura(factura),
+    generarBuffer: () => generarFacturaPdf(factura),
+  });
+}
+
 export async function crearFactura(
   tipo: TipoFactura,
   input: CrearFacturaInput
@@ -231,5 +245,6 @@ export async function crearFactura(
 
   const factura = await obtenerFactura(tipo, facturaId as string);
   if (!factura) return { error: 'La factura se creó pero no se pudo leer de vuelta.' };
+  notificarFacturaSiCorresponde(factura);
   return { factura };
 }

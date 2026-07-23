@@ -1,5 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearTicketInput, CompletarTicketInput } from '../schemas/tickets-pesaje.js';
+import { notificarDocumento } from './telegram-notify-service.js';
+import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
 
 /** Formatea el correlativo de pesaje: 1 → "Pesaje 0001". Duplicado intencional
  *  de shared/types/ticket-pesaje.ts (el backend no comparte paquete con front). */
@@ -155,6 +157,18 @@ export async function obtenerTicket(id: string): Promise<TicketPublico | null> {
   return toPublico(data as unknown as TicketRow);
 }
 
+/** Dispara el envío del ticket por Telegram cuando queda 'completo' (fire-and-forget). */
+function notificarTicketSiCorresponde(ticket: TicketPublico): void {
+  if (ticket.estado !== 'completo' || !ticket.entidadId) return;
+  void notificarDocumento({
+    entidadTipo: ticket.tipo === 'compra' ? 'proveedor' : 'cliente',
+    entidadId: ticket.entidadId,
+    tipoDocumento: 'ticket',
+    nombreArchivo: nombreArchivoTicket(ticket),
+    generarBuffer: nombreEntidad => generarTicketPdf(ticket, nombreEntidad),
+  });
+}
+
 function materialesARpc(materiales: CrearTicketInput['materiales']) {
   return materiales.map(m => ({
     producto_id: m.productoId,
@@ -188,6 +202,7 @@ export async function crearTicket(
 
   const ticket = await obtenerTicket(ticketId as string);
   if (!ticket) return { error: 'El ticket se creó pero no se pudo leer de vuelta.' };
+  notificarTicketSiCorresponde(ticket);
   return { ticket };
 }
 
@@ -207,5 +222,6 @@ export async function completarTicket(
 
   const ticket = await obtenerTicket(id);
   if (!ticket) return { error: 'El ticket se completó pero no se pudo leer de vuelta.' };
+  notificarTicketSiCorresponde(ticket);
   return { ticket };
 }
