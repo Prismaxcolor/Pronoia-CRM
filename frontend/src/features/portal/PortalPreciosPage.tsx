@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 import { obtenerPreciosPortal, type ListaPreciosPortal } from '../../services/portal-precios-service';
+import PortalHeader from '../../components/PortalHeader';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -25,14 +24,9 @@ function PortalPreciosPage() {
 
   return (
     <div className="min-h-screen bg-surface-alt">
-      <header className="bg-surface border-b border-border px-4 py-4 flex items-center gap-3">
-        <Link to="/portal" className="text-text-muted hover:text-text-primary transition-colors">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-lg font-bold text-text-primary">Lista de precios</h1>
-      </header>
+      <PortalHeader title="Lista de precios" backTo="/portal" />
 
-      <main className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6">
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
         {listas.length ? (
           listas.map(({ lista, precios }) => (
             <section key={lista.id}>
@@ -42,7 +36,7 @@ function PortalPreciosPage() {
                   <span className="text-text-muted font-normal"> · vigente desde {lista.vigenteDesde.slice(0, 10)}</span>
                 )}
               </h2>
-              <div className="bg-surface rounded-xl border border-border divide-y divide-border">
+              <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
                 {precios.length ? (
                   precios.map(p => (
                     <div key={p.id} className="flex items-center justify-between p-4">

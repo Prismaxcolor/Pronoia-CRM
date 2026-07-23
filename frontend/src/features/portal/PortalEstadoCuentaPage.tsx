@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 import {
   obtenerEstadoCuentaPortal,
   type EstadoCuentaPortal,
 } from '../../services/portal-estado-cuenta-service';
+import PortalHeader from '../../components/PortalHeader';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -47,21 +46,16 @@ function PortalEstadoCuentaPage() {
 
   return (
     <div className="min-h-screen bg-surface-alt">
-      <header className="bg-surface border-b border-border px-4 py-4 flex items-center gap-3">
-        <Link to="/portal" className="text-text-muted hover:text-text-primary transition-colors">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-lg font-bold text-text-primary">Estado de cuenta</h1>
-      </header>
+      <PortalHeader title="Estado de cuenta" backTo="/portal" />
 
-      <main className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6">
-        <div className="bg-surface rounded-xl border border-border p-5 text-center">
-          <p className="text-xs text-text-muted uppercase tracking-wide">Saldo actual</p>
-          <p className={`text-3xl font-bold mt-1 ${mensaje.positivo ? 'text-green-600' : 'text-red-600'}`}>
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+        <div className="bg-surface rounded-2xl shadow-sm p-6 text-center">
+          <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">Saldo actual</p>
+          <p className={`text-4xl font-bold mt-2 ${mensaje.positivo ? 'text-green-600' : 'text-red-600'}`}>
             ${fmt(Math.abs(saldo))}
           </p>
-          <p className="text-xs text-text-muted mt-1">{mensaje.texto}</p>
-          <div className="flex justify-center gap-6 mt-4 pt-4 border-t border-border text-sm">
+          <p className="text-sm text-text-muted mt-1">{mensaje.texto}</p>
+          <div className="flex justify-center gap-6 mt-5 pt-5 border-t border-border text-sm">
             <div>
               <p className="text-text-muted">Facturado</p>
               <p className="font-semibold text-text-primary">${fmt(datos?.totales.facturado ?? 0)}</p>
@@ -75,7 +69,7 @@ function PortalEstadoCuentaPage() {
 
         <section>
           <h2 className="text-sm font-semibold text-text-secondary mb-2">Movimientos</h2>
-          <div className="bg-surface rounded-xl border border-border divide-y divide-border">
+          <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
             {datos?.entradas.length ? (
               datos.entradas.map((e, i) => (
                 <div key={i} className="flex items-center justify-between p-4">

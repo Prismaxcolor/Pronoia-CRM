@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Clock } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import {
   obtenerDisponibilidad,
   listarMisCitas,
@@ -9,6 +8,7 @@ import {
   type CitaPortal,
   type EstadoCita,
 } from '../../services/portal-agendar-service';
+import PortalHeader from '../../components/PortalHeader';
 
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -71,15 +71,10 @@ function PortalAgendarPage() {
 
   return (
     <div className="min-h-screen bg-surface-alt">
-      <header className="bg-surface border-b border-border px-4 py-4 flex items-center gap-3">
-        <Link to="/portal" className="text-text-muted hover:text-text-primary transition-colors">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-lg font-bold text-text-primary">Agendar despacho</h1>
-      </header>
+      <PortalHeader title="Agendar despacho" backTo="/portal" />
 
-      <main className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6">
-        <section className="bg-surface rounded-xl border border-border p-4">
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+        <section className="bg-surface rounded-2xl shadow-sm p-5">
           <label className="block text-xs font-medium text-text-secondary mb-2">Elige el día</label>
           <input
             type="date"
@@ -117,7 +112,7 @@ function PortalAgendarPage() {
 
         <section>
           <h2 className="text-sm font-semibold text-text-secondary mb-2">Tus citas</h2>
-          <div className="bg-surface rounded-xl border border-border divide-y divide-border">
+          <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
             {misCitas.length ? (
               misCitas.map(c => (
                 <div key={c.id} className="flex items-center justify-between p-4">

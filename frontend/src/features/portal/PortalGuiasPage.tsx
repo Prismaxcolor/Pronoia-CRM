@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, FileCheck2, Download } from 'lucide-react';
+import { FileCheck2, Download } from 'lucide-react';
 import { listarMisGuias, type GuiaPortal, type EstadoGuia } from '../../services/portal-guias-service';
+import PortalHeader from '../../components/PortalHeader';
 
 const ESTADO_LABEL: Record<EstadoGuia, { texto: string; clase: string }> = {
   solicitada: { texto: 'Solicitada', clase: 'bg-amber-100 text-amber-700' },
@@ -32,15 +32,10 @@ function PortalGuiasPage() {
 
   return (
     <div className="min-h-screen bg-surface-alt">
-      <header className="bg-surface border-b border-border px-4 py-4 flex items-center gap-3">
-        <Link to="/portal" className="text-text-muted hover:text-text-primary transition-colors">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-lg font-bold text-text-primary">Guías CORPOEZ</h1>
-      </header>
+      <PortalHeader title="Guías CORPOEZ" backTo="/portal" />
 
-      <main className="p-4 sm:p-6 max-w-2xl mx-auto">
-        <div className="bg-surface rounded-xl border border-border divide-y divide-border">
+      <main className="max-w-2xl mx-auto px-4 py-6">
+        <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
           {guias.length ? (
             guias.map(g => (
               <div key={g.id} className="flex items-center justify-between p-4">

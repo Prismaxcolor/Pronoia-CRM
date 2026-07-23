@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Send } from 'lucide-react';
+import { Send, Recycle } from 'lucide-react';
 import { solicitarLoginPortal } from '../../services/portal-auth-service';
 
 function PortalLoginPage() {
@@ -24,8 +24,11 @@ function PortalLoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-alt px-4">
-      <div className="w-full max-w-sm bg-surface rounded-2xl shadow-sm border border-border p-6 sm:p-8">
-        <h1 className="text-xl font-bold text-text-primary text-center">Pronoia Scrap</h1>
+      <div className="w-full max-w-sm bg-surface rounded-2xl shadow-md p-6 sm:p-8">
+        <div className="w-14 h-14 rounded-2xl bg-brand-600 flex items-center justify-center text-white mx-auto shadow-sm">
+          <Recycle size={26} />
+        </div>
+        <h1 className="text-2xl font-bold text-text-primary text-center mt-4">Pronoia Scrap</h1>
         <p className="text-sm text-text-secondary text-center mt-1 mb-6">
           Portal de proveedores y clientes
         </p>
@@ -62,7 +65,7 @@ function PortalLoginPage() {
             </button>
 
             <p className="text-xs text-text-muted text-center">
-              Te lo mandamos por Telegram. Si todavía no vinculaste tu Telegram, pedile a
+              Te lo mandamos por Telegram. Si todavía no vinculaste tu Telegram, pídele a
               Pronoia que te genere el link de vinculación primero.
             </p>
           </form>

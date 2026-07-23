@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, FileText, Scale, Receipt, Image as ImageIcon } from 'lucide-react';
+import { FileText, Scale, Receipt, Image as ImageIcon } from 'lucide-react';
 import {
   obtenerDocumentosPortal,
   abrirFacturaPdf,
   abrirTicketPdf,
   type PortalDocumentos,
 } from '../../services/portal-documentos-service';
+import PortalHeader from '../../components/PortalHeader';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34,20 +34,15 @@ function PortalDocumentosPage() {
 
   return (
     <div className="min-h-screen bg-surface-alt">
-      <header className="bg-surface border-b border-border px-4 py-4 flex items-center gap-3">
-        <Link to="/portal" className="text-text-muted hover:text-text-primary transition-colors">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-lg font-bold text-text-primary">Tus documentos</h1>
-      </header>
+      <PortalHeader title="Tus documentos" backTo="/portal" />
 
-      <main className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6">
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
         <section>
           <h2 className="flex items-center gap-2 text-sm font-semibold text-text-secondary mb-2">
             <FileText size={16} />
             Facturas
           </h2>
-          <div className="bg-surface rounded-xl border border-border divide-y divide-border">
+          <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
             {datos?.facturas.length ? (
               datos.facturas.map(f => (
                 <button
@@ -74,7 +69,7 @@ function PortalDocumentosPage() {
             <Scale size={16} />
             Tickets de pesaje
           </h2>
-          <div className="bg-surface rounded-xl border border-border divide-y divide-border">
+          <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
             {datos?.tickets.length ? (
               datos.tickets.map(t => (
                 <button
@@ -108,7 +103,7 @@ function PortalDocumentosPage() {
             <Receipt size={16} />
             Comprobantes de pago
           </h2>
-          <div className="bg-surface rounded-xl border border-border divide-y divide-border">
+          <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
             {datos?.comprobantes.length ? (
               datos.comprobantes.map(c => (
                 <a
