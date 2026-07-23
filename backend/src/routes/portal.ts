@@ -15,6 +15,8 @@ import { TABLA_ENTIDAD } from '../services/telegram-link-service.js';
 import { obtenerFactura } from '../services/factura-service.js';
 import { obtenerTicket } from '../services/ticket-pesaje-service.js';
 import { generarFacturaPdf, generarTicketPdf, nombreArchivoFactura, nombreArchivoTicket } from '../services/document-generator.js';
+import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
+import { listarListas, obtenerListaDetalle } from '../services/lista-precios-service.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -114,6 +116,26 @@ router.get('/documentos/tickets/:id/pdf', requirePortalAuth, async (req, res) =>
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${nombreArchivoTicket(ticket)}"`);
   res.send(buffer);
+});
+
+router.get('/estado-cuenta', requirePortalAuth, async (req, res) => {
+  const { entidadTipo, entidadId } = req.portalUser!;
+  const estado = await obtenerEstadoCuenta(entidadTipo, entidadId);
+  if (!estado) {
+    res.status(404).json({ error: 'No encontrado.' });
+    return;
+  }
+  res.json(estado);
+});
+
+// Listas de precios activas — no hay una lista "asignada" a cada proveedor/cliente
+// en el modelo de datos actual (facturas_compra/venta eligen la lista al momento de
+// facturar), así que se muestran todas las vigentes por igual.
+router.get('/precios', requirePortalAuth, async (_req, res) => {
+  const listas = await listarListas();
+  const activas = listas.filter(l => l.activo);
+  const detalles = await Promise.all(activas.map(l => obtenerListaDetalle(l.id)));
+  res.json({ listas: detalles.filter((d): d is NonNullable<typeof d> => d !== null) });
 });
 
 export default router;

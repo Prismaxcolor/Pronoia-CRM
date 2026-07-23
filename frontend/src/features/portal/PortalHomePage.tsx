@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { LogOut, FileText, Wallet, CalendarClock, FileCheck2, ChevronRight } from 'lucide-react';
+import { LogOut, FileText, Wallet, Tag, CalendarClock, FileCheck2, ChevronRight } from 'lucide-react';
 import { usePortalAuth } from '../../hooks/use-portal-auth';
 
 interface Opcion {
@@ -11,7 +11,8 @@ interface Opcion {
 
 const OPCIONES: Opcion[] = [
   { to: '/portal/documentos', label: 'Mis documentos', icon: FileText, disponible: true },
-  { to: '/portal/estado-cuenta', label: 'Estado de cuenta', icon: Wallet, disponible: false },
+  { to: '/portal/estado-cuenta', label: 'Estado de cuenta', icon: Wallet, disponible: true },
+  { to: '/portal/precios', label: 'Lista de precios', icon: Tag, disponible: true },
   { to: '/portal/agendar', label: 'Agendar despacho', icon: CalendarClock, disponible: false },
   { to: '/portal/guias', label: 'Guías', icon: FileCheck2, disponible: false },
 ];

@@ -10,6 +10,8 @@ import PortalLoginPage from './features/portal/PortalLoginPage';
 import PortalVerificarPage from './features/portal/PortalVerificarPage';
 import PortalHomePage from './features/portal/PortalHomePage';
 import PortalDocumentosPage from './features/portal/PortalDocumentosPage';
+import PortalEstadoCuentaPage from './features/portal/PortalEstadoCuentaPage';
+import PortalPreciosPage from './features/portal/PortalPreciosPage';
 import DashboardPage from './features/dashboard/DashboardPage';
 import ProductosPage from './features/productos/ProductosPage';
 import InventarioPage from './features/inventario/InventarioPage';
@@ -47,6 +49,8 @@ function PortalRoutes() {
       <Route path="verificar" element={<PortalVerificarPage />} />
       <Route path="" element={entidad ? <PortalHomePage /> : <Navigate to="/portal/login" replace />} />
       <Route path="documentos" element={entidad ? <PortalDocumentosPage /> : <Navigate to="/portal/login" replace />} />
+      <Route path="estado-cuenta" element={entidad ? <PortalEstadoCuentaPage /> : <Navigate to="/portal/login" replace />} />
+      <Route path="precios" element={entidad ? <PortalPreciosPage /> : <Navigate to="/portal/login" replace />} />
       <Route path="*" element={<Navigate to="/portal" replace />} />
     </Routes>
   );
