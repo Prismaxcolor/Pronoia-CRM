@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { FileCheck2, Download } from 'lucide-react';
+import { FileCheck2, Download, Inbox } from 'lucide-react';
 import { listarMisGuias, type GuiaPortal, type EstadoGuia } from '../../services/portal-guias-service';
 import PortalHeader from '../../components/PortalHeader';
+import PortalSkeleton from '../../components/PortalSkeleton';
 
 const ESTADO_LABEL: Record<EstadoGuia, { texto: string; clase: string }> = {
   solicitada: { texto: 'Solicitada', clase: 'bg-amber-100 text-amber-700' },
@@ -24,8 +25,9 @@ function PortalGuiasPage() {
 
   if (cargando) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-alt">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-surface-alt">
+        <PortalHeader title="Guías CORPOEZ" backTo="/portal" />
+        <PortalSkeleton filas={2} />
       </div>
     );
   }
@@ -65,7 +67,10 @@ function PortalGuiasPage() {
               </div>
             ))
           ) : (
-            <p className="p-4 text-sm text-text-muted">Todavía no tienes guías solicitadas.</p>
+            <div className="flex flex-col items-center gap-2 p-8 text-center">
+              <Inbox size={22} className="text-text-muted" />
+              <p className="text-sm text-text-muted">Todavía no tienes guías solicitadas.</p>
+            </div>
           )}
         </div>
       </main>

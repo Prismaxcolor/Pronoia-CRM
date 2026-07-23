@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react';
-import { Clock } from 'lucide-react';
+import { Clock, X } from 'lucide-react';
 import {
   obtenerDisponibilidad,
   listarMisCitas,
   agendarCita,
+  cancelarCita,
   type HorarioDisponibilidad,
   type CitaPortal,
   type EstadoCita,
 } from '../../services/portal-agendar-service';
 import PortalHeader from '../../components/PortalHeader';
+import PortalSkeleton from '../../components/PortalSkeleton';
+import { useConfirm } from '../../hooks/use-confirm';
+import { useToast } from '../../hooks/use-toast';
 
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function fechaLegible(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 const ESTADO_LABEL: Record<EstadoCita, { texto: string; clase: string }> = {
@@ -22,17 +31,23 @@ const ESTADO_LABEL: Record<EstadoCita, { texto: string; clase: string }> = {
   completada: { texto: 'Completada', clase: 'bg-gray-100 text-gray-600' },
 };
 
+const CANCELABLES: EstadoCita[] = ['pendiente', 'confirmada'];
+
 function PortalAgendarPage() {
+  const confirmar = useConfirm();
+  const toast = useToast();
+
   const [fecha, setFecha] = useState(hoyISO());
   const [horarios, setHorarios] = useState<HorarioDisponibilidad[]>([]);
   const [misCitas, setMisCitas] = useState<CitaPortal[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [agendando, setAgendando] = useState<string | null>(null);
-  const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
+  const [procesando, setProcesando] = useState<string | null>(null);
 
   const cargarDisponibilidad = (f: string) => {
     obtenerDisponibilidad(f).then(setHorarios);
   };
+
+  const cargarCitas = () => listarMisCitas().then(setMisCitas);
 
   useEffect(() => {
     Promise.all([listarMisCitas(), obtenerDisponibilidad(fecha)])
@@ -43,28 +58,58 @@ function PortalAgendarPage() {
 
   const handleFecha = (f: string) => {
     setFecha(f);
-    setMensaje(null);
     cargarDisponibilidad(f);
   };
 
   const handleAgendar = async (hora: string) => {
-    setAgendando(hora);
-    setMensaje(null);
+    const ok = await confirmar({
+      titulo: 'Agendar despacho',
+      mensaje: `¿Confirmas tu despacho para el ${fechaLegible(fecha)} a las ${hora}?`,
+      confirmarLabel: 'Agendar',
+    });
+    if (!ok) return;
+
+    setProcesando(hora);
     const resultado = await agendarCita(fecha, hora);
-    setAgendando(null);
+    setProcesando(null);
+
     if ('error' in resultado) {
-      setMensaje({ tipo: 'error', texto: resultado.error });
+      toast.errorMsg(resultado.error);
       return;
     }
-    setMensaje({ tipo: 'ok', texto: `Cita agendada para el ${fecha} a las ${hora}.` });
+    toast.exito(`Despacho agendado para el ${fechaLegible(fecha)} a las ${hora}.`);
     cargarDisponibilidad(fecha);
-    listarMisCitas().then(setMisCitas);
+    cargarCitas();
+  };
+
+  const handleCancelar = async (cita: CitaPortal) => {
+    const ok = await confirmar({
+      titulo: 'Cancelar despacho',
+      mensaje: `¿Seguro que quieres cancelar el despacho del ${fechaLegible(cita.fecha)} a las ${cita.hora}?`,
+      confirmarLabel: 'Sí, cancelar',
+      cancelarLabel: 'No',
+      variante: 'danger',
+    });
+    if (!ok) return;
+
+    setProcesando(cita.id);
+    const resultado = await cancelarCita(cita.id);
+    setProcesando(null);
+
+    if ('error' in resultado) {
+      toast.errorMsg(resultado.error);
+      return;
+    }
+    toast.exito('Despacho cancelado.');
+    if (cita.fecha === fecha) cargarDisponibilidad(fecha);
+    cargarCitas();
   };
 
   if (cargando) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-alt">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-surface-alt">
+        <PortalHeader title="Agendar despacho" backTo="/portal" />
+        <PortalSkeleton filas={2} />
       </div>
     );
   }
@@ -90,24 +135,18 @@ function PortalAgendarPage() {
               <button
                 key={h.hora}
                 type="button"
-                disabled={!h.disponible || agendando !== null}
+                disabled={!h.disponible || procesando !== null}
                 onClick={() => handleAgendar(h.hora)}
                 className={`py-2 rounded-lg text-sm font-medium border transition-colors ${
                   h.disponible
                     ? 'border-brand-300 text-brand-700 hover:bg-brand-50'
                     : 'border-border text-text-muted opacity-40 cursor-not-allowed'
-                } ${agendando === h.hora ? 'opacity-60' : ''}`}
+                } ${procesando === h.hora ? 'opacity-60' : ''}`}
               >
                 {h.hora}
               </button>
             ))}
           </div>
-
-          {mensaje && (
-            <p className={`text-sm mt-4 ${mensaje.tipo === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
-              {mensaje.texto}
-            </p>
-          )}
         </section>
 
         <section>
@@ -116,16 +155,29 @@ function PortalAgendarPage() {
             {misCitas.length ? (
               misCitas.map(c => (
                 <div key={c.id} className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} className="text-text-muted" />
+                  <div className="flex items-center gap-3">
+                    <Clock size={16} className="text-text-muted shrink-0" />
                     <div>
-                      <p className="text-sm font-medium text-text-primary">{c.fecha}</p>
+                      <p className="text-sm font-medium text-text-primary capitalize">{fechaLegible(c.fecha)}</p>
                       <p className="text-xs text-text-muted">{c.hora}</p>
                     </div>
                   </div>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_LABEL[c.estado].clase}`}>
-                    {ESTADO_LABEL[c.estado].texto}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_LABEL[c.estado].clase}`}>
+                      {ESTADO_LABEL[c.estado].texto}
+                    </span>
+                    {CANCELABLES.includes(c.estado) && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelar(c)}
+                        disabled={procesando !== null}
+                        className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-red-600 transition-colors disabled:opacity-50"
+                        title="Cancelar"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             ) : (

@@ -139,6 +139,30 @@ export async function listarCitasStaff(desde?: string, hasta?: string): Promise<
   return citas.map(c => ({ ...c, nombreEntidad: nombresPorId.get(`${c.entidadTipo}:${c.entidadId}`) ?? '—' }));
 }
 
+const ESTADOS_CANCELABLES_POR_ENTIDAD = ['pendiente', 'confirmada'] as const;
+
+/** Cancelación desde el portal (el dueño de la cita) — a diferencia de
+ *  actualizarEstadoCita (staff), valida que la cita sea de esta entidad y que
+ *  todavía tenga sentido cancelarla. */
+export async function cancelarCitaPropia(
+  entidadTipo: EntidadTelegram,
+  entidadId: string,
+  citaId: string
+): Promise<CitaPublica | null> {
+  const { data, error } = await supabaseAdmin
+    .from('citas_despacho')
+    .update({ estado: 'cancelada' })
+    .eq('id', citaId)
+    .eq('entidad_tipo', entidadTipo)
+    .eq('entidad_id', entidadId)
+    .in('estado', ESTADOS_CANCELABLES_POR_ENTIDAD)
+    .select('*')
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return citaToPublica(data as CitaRow);
+}
+
 export async function actualizarEstadoCita(id: string, estado: EstadoCita): Promise<CitaPublica | null> {
   const { data, error } = await supabaseAdmin
     .from('citas_despacho')

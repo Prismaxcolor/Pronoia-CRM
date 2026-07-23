@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Inbox } from 'lucide-react';
 import {
   obtenerEstadoCuentaPortal,
   type EstadoCuentaPortal,
 } from '../../services/portal-estado-cuenta-service';
 import PortalHeader from '../../components/PortalHeader';
+import PortalSkeleton from '../../components/PortalSkeleton';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -35,8 +37,9 @@ function PortalEstadoCuentaPage() {
 
   if (cargando) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-alt">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-surface-alt">
+        <PortalHeader title="Estado de cuenta" backTo="/portal" />
+        <PortalSkeleton filas={3} />
       </div>
     );
   }
@@ -88,7 +91,10 @@ function PortalEstadoCuentaPage() {
                 </div>
               ))
             ) : (
-              <p className="p-4 text-sm text-text-muted">Todavía no tienes movimientos.</p>
+              <div className="flex flex-col items-center gap-2 p-8 text-center">
+                <Inbox size={22} className="text-text-muted" />
+                <p className="text-sm text-text-muted">Todavía no tienes movimientos.</p>
+              </div>
             )}
           </div>
         </section>

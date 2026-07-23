@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, Scale, Receipt, Image as ImageIcon } from 'lucide-react';
+import { FileText, Scale, Receipt, Image as ImageIcon, Inbox } from 'lucide-react';
 import {
   obtenerDocumentosPortal,
   abrirFacturaPdf,
@@ -7,6 +7,8 @@ import {
   type PortalDocumentos,
 } from '../../services/portal-documentos-service';
 import PortalHeader from '../../components/PortalHeader';
+import PortalSkeleton from '../../components/PortalSkeleton';
+import { useToast } from '../../hooks/use-toast';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -16,18 +18,37 @@ function fecha(iso: string): string {
   return iso.slice(0, 10);
 }
 
+function EstadoVacio({ texto }: { texto: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 p-8 text-center">
+      <Inbox size={22} className="text-text-muted" />
+      <p className="text-sm text-text-muted">{texto}</p>
+    </div>
+  );
+}
+
 function PortalDocumentosPage() {
+  const toast = useToast();
   const [datos, setDatos] = useState<PortalDocumentos | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [abriendo, setAbriendo] = useState<string | null>(null);
 
   useEffect(() => {
     obtenerDocumentosPortal().then(setDatos).finally(() => setCargando(false));
   }, []);
 
+  const handleAbrir = async (id: string, abrir: (id: string) => Promise<{ error: string } | void>) => {
+    setAbriendo(id);
+    const resultado = await abrir(id);
+    setAbriendo(null);
+    if (resultado && 'error' in resultado) toast.errorMsg(resultado.error);
+  };
+
   if (cargando) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-alt">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-surface-alt">
+        <PortalHeader title="Tus documentos" backTo="/portal" />
+        <PortalSkeleton filas={4} />
       </div>
     );
   }
@@ -48,18 +69,23 @@ function PortalDocumentosPage() {
                 <button
                   key={f.id}
                   type="button"
-                  onClick={() => abrirFacturaPdf(f.id)}
-                  className="w-full flex items-center justify-between p-4 text-left hover:bg-surface-alt transition-colors"
+                  disabled={abriendo === f.id}
+                  onClick={() => handleAbrir(f.id, abrirFacturaPdf)}
+                  className="w-full flex items-center justify-between p-4 text-left hover:bg-surface-alt transition-colors disabled:opacity-60"
                 >
                   <div>
                     <p className="text-sm font-medium text-text-primary">{f.codigo ?? `N.º ${f.id.slice(0, 8)}`}</p>
                     <p className="text-xs text-text-muted">{fecha(f.createdAt)} · {f.estado}</p>
                   </div>
-                  <p className="text-sm font-semibold text-text-primary">${fmt(f.total)}</p>
+                  {abriendo === f.id ? (
+                    <div className="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+                  ) : (
+                    <p className="text-sm font-semibold text-text-primary">${fmt(f.total)}</p>
+                  )}
                 </button>
               ))
             ) : (
-              <p className="p-4 text-sm text-text-muted">Todavía no tienes facturas.</p>
+              <EstadoVacio texto="Todavía no tienes facturas." />
             )}
           </div>
         </section>
@@ -75,8 +101,9 @@ function PortalDocumentosPage() {
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => abrirTicketPdf(t.id)}
-                  className="w-full flex items-center justify-between p-4 text-left hover:bg-surface-alt transition-colors"
+                  disabled={abriendo === t.id}
+                  onClick={() => handleAbrir(t.id, abrirTicketPdf)}
+                  className="w-full flex items-center justify-between p-4 text-left hover:bg-surface-alt transition-colors disabled:opacity-60"
                 >
                   <div>
                     <p className="text-sm font-medium text-text-primary">{t.codigo}</p>
@@ -89,11 +116,15 @@ function PortalDocumentosPage() {
                       )}
                     </p>
                   </div>
-                  <p className="text-sm font-semibold text-text-primary">{fmt(t.pesoNetoTotal)} kg</p>
+                  {abriendo === t.id ? (
+                    <div className="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+                  ) : (
+                    <p className="text-sm font-semibold text-text-primary">{fmt(t.pesoNetoTotal)} kg</p>
+                  )}
                 </button>
               ))
             ) : (
-              <p className="p-4 text-sm text-text-muted">Todavía no tienes tickets de pesaje.</p>
+              <EstadoVacio texto="Todavía no tienes tickets de pesaje." />
             )}
           </div>
         </section>
@@ -118,7 +149,7 @@ function PortalDocumentosPage() {
                 </a>
               ))
             ) : (
-              <p className="p-4 text-sm text-text-muted">Todavía no tienes comprobantes de pago.</p>
+              <EstadoVacio texto="Todavía no tienes comprobantes de pago." />
             )}
           </div>
         </section>

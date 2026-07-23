@@ -4,7 +4,7 @@ import { requirePortalAuth } from '../middlewares/require-portal-auth.js';
 import { portalLoginLimiter } from '../middlewares/rate-limit.js';
 import { portalLoginSchema, portalVerificarSchema } from '../schemas/portal.js';
 import { crearCitaSchema, FECHA_RE } from '../schemas/citas.js';
-import { obtenerDisponibilidad, crearCita, listarCitasEntidad } from '../services/cita-despacho-service.js';
+import { obtenerDisponibilidad, crearCita, listarCitasEntidad, cancelarCitaPropia } from '../services/cita-despacho-service.js';
 import {
   solicitarLogin,
   verificarLoginToken,
@@ -165,6 +165,16 @@ router.post('/agendar', requirePortalAuth, validateBody(crearCitaSchema), async 
     return;
   }
   res.status(201).json(resultado);
+});
+
+router.post('/agendar/:id/cancelar', requirePortalAuth, async (req, res) => {
+  const { entidadTipo, entidadId } = req.portalUser!;
+  const cita = await cancelarCitaPropia(entidadTipo, entidadId, String(req.params.id));
+  if (!cita) {
+    res.status(404).json({ error: 'La cita no existe o ya no se puede cancelar.' });
+    return;
+  }
+  res.json({ cita });
 });
 
 router.get('/guias', requirePortalAuth, async (req, res) => {

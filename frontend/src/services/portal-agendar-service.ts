@@ -44,3 +44,12 @@ export async function agendarCita(fecha: string, hora: string): Promise<{ ok: tr
     return { error: err instanceof Error ? err.message : 'No se pudo agendar la cita.' };
   }
 }
+
+export async function cancelarCita(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await portalApiFetch(`/api/portal/agendar/${id}/cancelar`, { method: 'POST' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo cancelar la cita.' };
+  }
+}

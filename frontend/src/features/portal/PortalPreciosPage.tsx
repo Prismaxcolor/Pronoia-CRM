@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Tag } from 'lucide-react';
 import { obtenerPreciosPortal, type ListaPreciosPortal } from '../../services/portal-precios-service';
 import PortalHeader from '../../components/PortalHeader';
+import PortalSkeleton from '../../components/PortalSkeleton';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -16,8 +18,9 @@ function PortalPreciosPage() {
 
   if (cargando) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-alt">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-surface-alt">
+        <PortalHeader title="Lista de precios" backTo="/portal" />
+        <PortalSkeleton filas={3} />
       </div>
     );
   }
@@ -51,7 +54,10 @@ function PortalPreciosPage() {
             </section>
           ))
         ) : (
-          <p className="text-sm text-text-muted">No hay listas de precios vigentes por el momento.</p>
+          <div className="flex flex-col items-center gap-2 py-12 text-center">
+            <Tag size={22} className="text-text-muted" />
+            <p className="text-sm text-text-muted">No hay listas de precios vigentes por el momento.</p>
+          </div>
         )}
       </main>
     </div>
