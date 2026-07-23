@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const portalLoginSchema = z.object({
   /** RIF/cédula o teléfono ya registrado como proveedor/cliente. */
-  identificador: z.string().trim().min(3, 'Ingresá tu RIF, cédula o teléfono.'),
+  identificador: z.string().trim().min(3, 'Ingresa tu RIF, cédula o teléfono.'),
 });
 export type PortalLoginInput = z.infer<typeof portalLoginSchema>;
 

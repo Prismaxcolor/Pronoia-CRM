@@ -3,6 +3,8 @@ import { validateBody } from '../middlewares/validate.js';
 import { requirePortalAuth } from '../middlewares/require-portal-auth.js';
 import { portalLoginLimiter } from '../middlewares/rate-limit.js';
 import { portalLoginSchema, portalVerificarSchema } from '../schemas/portal.js';
+import { crearCitaSchema, FECHA_RE } from '../schemas/citas.js';
+import { obtenerDisponibilidad, crearCita, listarCitasEntidad } from '../services/cita-despacho-service.js';
 import {
   solicitarLogin,
   verificarLoginToken,
@@ -136,6 +138,32 @@ router.get('/precios', requirePortalAuth, async (_req, res) => {
   const activas = listas.filter(l => l.activo);
   const detalles = await Promise.all(activas.map(l => obtenerListaDetalle(l.id)));
   res.json({ listas: detalles.filter((d): d is NonNullable<typeof d> => d !== null) });
+});
+
+router.get('/agendar/disponibilidad', requirePortalAuth, async (req, res) => {
+  const fecha = String(req.query.fecha ?? '');
+  if (!FECHA_RE.test(fecha)) {
+    res.status(400).json({ error: 'Fecha inválida.' });
+    return;
+  }
+  const horarios = await obtenerDisponibilidad(fecha);
+  res.json({ horarios });
+});
+
+router.get('/agendar', requirePortalAuth, async (req, res) => {
+  const { entidadTipo, entidadId } = req.portalUser!;
+  const citas = await listarCitasEntidad(entidadTipo, entidadId);
+  res.json({ citas });
+});
+
+router.post('/agendar', requirePortalAuth, validateBody(crearCitaSchema), async (req, res) => {
+  const { entidadTipo, entidadId } = req.portalUser!;
+  const resultado = await crearCita(entidadTipo, entidadId, req.body);
+  if ('error' in resultado) {
+    res.status(409).json(resultado);
+    return;
+  }
+  res.status(201).json(resultado);
 });
 
 export default router;

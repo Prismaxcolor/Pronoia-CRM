@@ -12,6 +12,8 @@ import PortalHomePage from './features/portal/PortalHomePage';
 import PortalDocumentosPage from './features/portal/PortalDocumentosPage';
 import PortalEstadoCuentaPage from './features/portal/PortalEstadoCuentaPage';
 import PortalPreciosPage from './features/portal/PortalPreciosPage';
+import PortalAgendarPage from './features/portal/PortalAgendarPage';
+import CitasPage from './features/citas/CitasPage';
 import DashboardPage from './features/dashboard/DashboardPage';
 import ProductosPage from './features/productos/ProductosPage';
 import InventarioPage from './features/inventario/InventarioPage';
@@ -51,6 +53,7 @@ function PortalRoutes() {
       <Route path="documentos" element={entidad ? <PortalDocumentosPage /> : <Navigate to="/portal/login" replace />} />
       <Route path="estado-cuenta" element={entidad ? <PortalEstadoCuentaPage /> : <Navigate to="/portal/login" replace />} />
       <Route path="precios" element={entidad ? <PortalPreciosPage /> : <Navigate to="/portal/login" replace />} />
+      <Route path="agendar" element={entidad ? <PortalAgendarPage /> : <Navigate to="/portal/login" replace />} />
       <Route path="*" element={<Navigate to="/portal" replace />} />
     </Routes>
   );
@@ -93,6 +96,7 @@ function AppRoutes() {
         <Route path="/proveedores" element={<ProtectedRoute recurso="proveedores"><ProveedoresPage /></ProtectedRoute>} />
         <Route path="/proveedores/:id/estado-cuenta" element={<ProtectedRoute recurso="proveedores"><EstadoCuentaPage tipo="proveedor" /></ProtectedRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute recurso="usuarios"><UsuariosPage /></ProtectedRoute>} />
+        <Route path="/citas" element={<ProtectedRoute recurso="despachos"><CitasPage /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

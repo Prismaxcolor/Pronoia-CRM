@@ -13,7 +13,7 @@ const OPCIONES: Opcion[] = [
   { to: '/portal/documentos', label: 'Mis documentos', icon: FileText, disponible: true },
   { to: '/portal/estado-cuenta', label: 'Estado de cuenta', icon: Wallet, disponible: true },
   { to: '/portal/precios', label: 'Lista de precios', icon: Tag, disponible: true },
-  { to: '/portal/agendar', label: 'Agendar despacho', icon: CalendarClock, disponible: false },
+  { to: '/portal/agendar', label: 'Agendar despacho', icon: CalendarClock, disponible: true },
   { to: '/portal/guias', label: 'Guías', icon: FileCheck2, disponible: false },
 ];
 
