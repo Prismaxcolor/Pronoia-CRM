@@ -13,6 +13,7 @@ import PortalDocumentosPage from './features/portal/PortalDocumentosPage';
 import PortalEstadoCuentaPage from './features/portal/PortalEstadoCuentaPage';
 import PortalPreciosPage from './features/portal/PortalPreciosPage';
 import PortalAgendarPage from './features/portal/PortalAgendarPage';
+import PortalGuiasPage from './features/portal/PortalGuiasPage';
 import CitasPage from './features/citas/CitasPage';
 import DashboardPage from './features/dashboard/DashboardPage';
 import ProductosPage from './features/productos/ProductosPage';
@@ -54,6 +55,7 @@ function PortalRoutes() {
       <Route path="estado-cuenta" element={entidad ? <PortalEstadoCuentaPage /> : <Navigate to="/portal/login" replace />} />
       <Route path="precios" element={entidad ? <PortalPreciosPage /> : <Navigate to="/portal/login" replace />} />
       <Route path="agendar" element={entidad ? <PortalAgendarPage /> : <Navigate to="/portal/login" replace />} />
+      <Route path="guias" element={entidad ? <PortalGuiasPage /> : <Navigate to="/portal/login" replace />} />
       <Route path="*" element={<Navigate to="/portal" replace />} />
     </Routes>
   );

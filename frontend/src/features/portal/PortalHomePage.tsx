@@ -14,7 +14,7 @@ const OPCIONES: Opcion[] = [
   { to: '/portal/estado-cuenta', label: 'Estado de cuenta', icon: Wallet, disponible: true },
   { to: '/portal/precios', label: 'Lista de precios', icon: Tag, disponible: true },
   { to: '/portal/agendar', label: 'Agendar despacho', icon: CalendarClock, disponible: true },
-  { to: '/portal/guias', label: 'Guías', icon: FileCheck2, disponible: false },
+  { to: '/portal/guias', label: 'Guías', icon: FileCheck2, disponible: true },
 ];
 
 function PortalHomePage() {

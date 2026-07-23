@@ -19,6 +19,7 @@ import { obtenerTicket } from '../services/ticket-pesaje-service.js';
 import { generarFacturaPdf, generarTicketPdf, nombreArchivoFactura, nombreArchivoTicket } from '../services/document-generator.js';
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { listarListas, obtenerListaDetalle } from '../services/lista-precios-service.js';
+import { listarGuiasEntidad } from '../services/guia-corpoez-service.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -164,6 +165,12 @@ router.post('/agendar', requirePortalAuth, validateBody(crearCitaSchema), async 
     return;
   }
   res.status(201).json(resultado);
+});
+
+router.get('/guias', requirePortalAuth, async (req, res) => {
+  const { entidadTipo, entidadId } = req.portalUser!;
+  const guias = await listarGuiasEntidad(entidadTipo, entidadId);
+  res.json({ guias });
 });
 
 export default router;
