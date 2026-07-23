@@ -1391,3 +1391,40 @@ begin
   return p_ticket_id;
 end;
 $$;
+
+-- Bloque 24 · integración Telegram (documentos + comprobantes de pago)
+-- Vinculación self-service de proveedores/clientes a un bot de Telegram dedicado
+-- (distinto del bot interno de permisos gubernamentales). Ver
+-- clients/PRONOIA/integracion-telegram/PLAN.md en el workspace de la agencia.
+
+alter table public.proveedores
+  add column if not exists telegram_chat_id text,
+  add column if not exists telegram_linked_at timestamptz;
+
+alter table public.clientes
+  add column if not exists telegram_chat_id text,
+  add column if not exists telegram_linked_at timestamptz;
+
+create table if not exists public.telegram_link_tokens (
+  id uuid primary key default gen_random_uuid(),
+  entidad_tipo text not null check (entidad_tipo in ('proveedor', 'cliente')),
+  entidad_id uuid not null,
+  token text not null unique,
+  usado boolean not null default false,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '48 hours')
+);
+
+create index if not exists idx_telegram_link_tokens_token
+  on public.telegram_link_tokens (token);
+
+-- Evita que dos proveedores/clientes distintos queden vinculados al mismo chat de
+-- Telegram (mezclaría a quién le llegan documentos y comprobantes de pago).
+create unique index if not exists idx_proveedores_telegram_chat_id
+  on public.proveedores (telegram_chat_id) where telegram_chat_id is not null;
+
+create unique index if not exists idx_clientes_telegram_chat_id
+  on public.clientes (telegram_chat_id) where telegram_chat_id is not null;
+
+alter table public.movimientos
+  add column if not exists comprobante_url text;

@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, EyeOff, Eye, Trash2, Mail, Phone, FileText } from 'lucide-react';
+import { Plus, Pencil, EyeOff, Eye, Trash2, Mail, Phone, FileText, Send, CheckCircle2 } from 'lucide-react';
 import {
   obtenerProveedores,
   desactivarProveedor,
   reactivarProveedor,
   borrarProveedor,
+  generarLinkTelegramProveedor,
 } from '../../services/proveedor-service';
 import { useAuth } from '../../hooks/use-auth';
 import { useToast } from '../../hooks/use-toast';
 import { useConfirm } from '../../hooks/use-confirm';
 import ProveedorFormModal from './ProveedorFormModal';
+import TelegramLinkModal from '../../components/TelegramLinkModal';
 import type { Proveedor } from '@shared/types/index.js';
 
 function ProveedoresPage() {
@@ -18,6 +20,7 @@ function ProveedoresPage() {
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; proveedor: Proveedor | null } | { abierto: false }>({ abierto: false });
+  const [telegramAbierto, setTelegramAbierto] = useState<Proveedor | null>(null);
   const navigate = useNavigate();
   const { tienePermiso } = useAuth();
   const toast = useToast();
@@ -68,6 +71,17 @@ function ProveedoresPage() {
     toast.exito(`"${p.nombre}" eliminado.`);
     cargar();
   };
+
+  const generarLinkTelegram = useCallback(async () => {
+    if (!telegramAbierto) return { error: 'Sin proveedor seleccionado.' };
+    return generarLinkTelegramProveedor(telegramAbierto.id);
+  }, [telegramAbierto]);
+
+  const telegramYaVinculado = useCallback(async () => {
+    if (!telegramAbierto) return false;
+    const actualizados = await obtenerProveedores();
+    return actualizados.some(p => p.id === telegramAbierto.id && !!p.telegramChatId);
+  }, [telegramAbierto]);
 
   const filtrados = proveedores.filter(p => {
     if (!busqueda.trim()) return true;
@@ -209,6 +223,27 @@ function ProveedoresPage() {
               <FileText size={14} />
               Estado de cuenta
             </button>
+
+            {puedeEditar && (
+              p.telegramChatId ? (
+                <span
+                  title={p.telegramLinkedAt ? `Vinculado el ${new Date(p.telegramLinkedAt).toLocaleDateString()}` : undefined}
+                  className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-green-600"
+                >
+                  <CheckCircle2 size={14} />
+                  Telegram vinculado
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setTelegramAbierto(p)}
+                  className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 border border-border rounded-lg text-xs font-medium text-text-secondary hover:bg-surface-alt hover:text-brand-600 transition-colors"
+                >
+                  <Send size={14} />
+                  Vincular Telegram
+                </button>
+              )
+            )}
           </div>
         ))}
       </div>
@@ -224,6 +259,20 @@ function ProveedoresPage() {
           proveedor={formAbierto.proveedor}
           onClose={() => setFormAbierto({ abierto: false })}
           onGuardado={() => { setFormAbierto({ abierto: false }); cargar(); }}
+        />
+      )}
+
+      {telegramAbierto && (
+        <TelegramLinkModal
+          nombreEntidad={telegramAbierto.nombre}
+          generarLink={generarLinkTelegram}
+          yaVinculado={telegramYaVinculado}
+          onClose={() => setTelegramAbierto(null)}
+          onVinculado={() => {
+            toast.exito(`"${telegramAbierto.nombre}" vinculó su Telegram.`);
+            setTelegramAbierto(null);
+            cargar();
+          }}
         />
       )}
     </div>

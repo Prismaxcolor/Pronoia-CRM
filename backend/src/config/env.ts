@@ -16,6 +16,8 @@ export const ENV = {
   SUPABASE_URL: process.env.SUPABASE_URL || '',
   SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || '',
   CORS_ORIGINS: parseOrigins(process.env.CORS_ORIGINS),
+  /** Username del bot de Telegram (sin @) para vincular proveedores/clientes. */
+  TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || '',
 } as const;
 
 if (!ENV.JWT_SECRET || ENV.JWT_SECRET.length < 32) {

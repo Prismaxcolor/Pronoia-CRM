@@ -9,6 +9,8 @@ interface ProveedorApi {
   email: string | null;
   activo: boolean;
   createdAt: string;
+  telegramChatId: string | null;
+  telegramLinkedAt: string | null;
 }
 
 function mapApi(api: ProveedorApi): Proveedor {
@@ -84,5 +86,17 @@ export async function borrarProveedor(id: string): Promise<{ ok: true } | { erro
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo borrar el proveedor.' };
+  }
+}
+
+export async function generarLinkTelegramProveedor(
+  id: string
+): Promise<{ deepLink: string } | { error: string }> {
+  try {
+    return await apiFetch<{ deepLink: string }>(`/api/proveedores/${id}/telegram/generar-link`, {
+      method: 'POST',
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo generar el link de Telegram.' };
   }
 }
