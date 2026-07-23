@@ -2,7 +2,7 @@ import { getToken } from './api-client';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
-async function subirArchivo(tipo: 'productos' | 'tickets' | 'taras', file: File): Promise<string | null> {
+async function subirArchivo(tipo: 'productos' | 'tickets' | 'taras' | 'comprobantes', file: File): Promise<string | null> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -30,4 +30,9 @@ export function subirFotoTicket(file: File): Promise<string | null> {
 /** Sube la foto de una tara predefinida. */
 export function subirFotoTara(file: File): Promise<string | null> {
   return subirArchivo('taras', file);
+}
+
+/** Sube la foto del comprobante de un pago (transferencia, USDT, etc.). */
+export function subirComprobantePago(file: File): Promise<string | null> {
+  return subirArchivo('comprobantes', file);
 }

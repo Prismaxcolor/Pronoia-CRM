@@ -57,8 +57,11 @@ function lineaTextoFactura(it: ItemPublico): string {
 }
 
 function lineaTextoMaterial(m: MaterialPublico): string {
-  const devolucion = m.devolucion ? ` − devolución ${fmt(m.devolucion)} kg` : '';
-  return `${m.nombreProducto ?? m.subcategoria ?? 'material'} · bruto ${fmt(m.pesoBruto)} kg − tara ${fmt(m.tara)} kg${devolucion} = neto ${fmt(m.pesoNeto)} kg`;
+  // Guion ASCII normal, no el signo menos matemático (U+2212) — jsPDF con la fuente
+  // helvetica estándar no lo tiene en su tabla de caracteres y rompe el renderizado
+  // de toda la línea (confirmado visualmente en la prueba en vivo del 2026-07-23).
+  const devolucion = m.devolucion ? ` - devolución ${fmt(m.devolucion)} kg` : '';
+  return `${m.nombreProducto ?? m.subcategoria ?? 'material'} · bruto ${fmt(m.pesoBruto)} kg - tara ${fmt(m.tara)} kg${devolucion} = neto ${fmt(m.pesoNeto)} kg`;
 }
 
 function encabezado(doc: jsPDF, titulo: string): number {

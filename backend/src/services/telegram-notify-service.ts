@@ -31,8 +31,12 @@ export interface NotificarDocumentoParams {
   entidadId: string;
   tipoDocumento: 'ticket' | 'factura' | 'comprobante';
   nombreArchivo: string;
-  /** Genera el PDF solo si hace falta (evita el trabajo si no hay a quién avisar). */
-  generarBuffer: (nombreEntidad: string) => Buffer;
+  /** 'application/pdf' para ticket/factura; el mime real de la imagen para comprobante. */
+  contentType?: string;
+  /** Genera el documento solo si hace falta (evita el trabajo si no hay a quién avisar).
+   *  Puede ser async — el comprobante ya viene de una URL subida, no de un PDF armado
+   *  al vuelo, así que necesita poder descargarlo antes de devolver el buffer. */
+  generarBuffer: (nombreEntidad: string) => Buffer | Promise<Buffer>;
 }
 
 /**
@@ -45,12 +49,12 @@ export async function notificarDocumento(params: NotificarDocumentoParams): Prom
     if (!contacto) return; // no vinculado a Telegram todavía — no hay a quién avisar
     if (!ENV.N8N_WEBHOOK_ENVIAR_DOCUMENTO) return;
 
-    const buffer = params.generarBuffer(contacto.nombre);
+    const buffer = await params.generarBuffer(contacto.nombre);
     const ruta = `${params.entidadTipo}/${params.entidadId}/${Date.now()}-${params.nombreArchivo}`;
 
     const { error: errorSubida } = await supabaseAdmin.storage
       .from(BUCKET)
-      .upload(ruta, buffer, { contentType: 'application/pdf' });
+      .upload(ruta, buffer, { contentType: params.contentType ?? 'application/pdf' });
 
     if (errorSubida) {
       logger.error({ evento: 'telegram_notify_error_storage', mensaje: errorSubida.message });
