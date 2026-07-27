@@ -12,6 +12,8 @@ import { validateBody } from '../middlewares/validate.js';
 import { crearProveedorSchema, actualizarProveedorSchema } from '../schemas/proveedores.js';
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { generarLinkTelegram } from '../services/telegram-link-service.js';
+import { crearNotaAjuste, anularNotaAjuste } from '../services/nota-ajuste-service.js';
+import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-ajuste.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -37,6 +39,56 @@ router.get('/:id/estado-cuenta', requirePermiso('proveedores', 'ver'), async (re
   }
   res.json(estado);
 });
+
+// Ajuste manual del saldo (sin factura ni pago real) → mismo permiso que editar
+// el proveedor, no 'cochinito' porque no mueve dinero de ninguna banca.
+router.post(
+  '/:id/notas-ajuste',
+  requirePermiso('proveedores', 'editar'),
+  validateBody(crearNotaAjusteSchema),
+  async (req, res) => {
+    const proveedorId = String(req.params.id);
+    const result = await crearNotaAjuste(proveedorId, req.body, req.user!.sub);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'nota_ajuste_proveedor_creada',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      proveedorId,
+      notaId: result.id,
+      tipo: req.body.tipo,
+    });
+    res.status(201).json(result);
+  }
+);
+
+router.post(
+  '/:id/notas-ajuste/:notaId/anular',
+  requirePermiso('proveedores', 'editar'),
+  validateBody(anularNotaAjusteSchema),
+  async (req, res) => {
+    const proveedorId = String(req.params.id);
+    const notaId = String(req.params.notaId);
+    const result = await anularNotaAjuste(proveedorId, notaId, req.body.motivo, req.user!.sub);
+    if ('error' in result) {
+      const status = result.error.includes('no encontrada') ? 404 : 400;
+      res.status(status).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'nota_ajuste_proveedor_anulada',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      proveedorId,
+      notaOriginalId: notaId,
+      notaNuevaId: result.id,
+    });
+    res.status(201).json(result);
+  }
+);
 
 router.post(
   '/',

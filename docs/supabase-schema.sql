@@ -1565,3 +1565,84 @@ begin
   return p_ticket_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 28 · notas de crédito y débito para proveedores
+--
+-- Ajuste manual del saldo pendiente del proveedor en su Estado de Cuenta, sin
+-- factura ni pago real: nota de crédito resta del saldo (a favor de la
+-- empresa, ej. descuento de flete), nota de débito suma al saldo (a favor del
+-- proveedor, ej. comisión). NO generan movimientos de tesorería ni tocan
+-- bancas/Cochinito — el saldo de las bancas solo cambia con dinero real
+-- (regla del proyecto).
+--
+-- Corrección de errores: en finanzas nunca se borra (regla del proyecto). Una
+-- nota mal cargada se anula con una nota contraria del mismo monto (RPC
+-- abajo), que además marca la original como `anulada` para que el Estado de
+-- Cuenta la muestre tachada — ambas quedan visibles para auditoría, y su
+-- efecto neto en el saldo se cancela solo.
+-- ============================================================================
+
+create table if not exists public.notas_ajuste_proveedor (
+  id              uuid        primary key default gen_random_uuid(),
+  proveedor_id    uuid        not null references public.proveedores(id),
+  tipo            text        not null check (tipo in ('credito', 'debito')),
+  monto           numeric     not null check (monto > 0),
+  motivo          text        not null,
+  anulada         boolean     not null default false,
+  anula_nota_id   uuid        references public.notas_ajuste_proveedor(id),
+  registrado_por  uuid        references public.users(id),
+  created_at      timestamptz not null default now()
+);
+
+alter table public.notas_ajuste_proveedor disable row level security;
+
+create index if not exists idx_notas_ajuste_proveedor_proveedor
+  on public.notas_ajuste_proveedor (proveedor_id);
+
+-- RPC atómica: inserta la nota contraria (mismo monto, tipo invertido, ligada
+-- a la original vía anula_nota_id) y marca la original como anulada.
+create or replace function public.anular_nota_ajuste_proveedor(
+  p_nota_id        uuid,
+  p_motivo         text,
+  p_registrado_por uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_proveedor_id uuid;
+  v_tipo         text;
+  v_monto        numeric;
+  v_anulada      boolean;
+  v_nueva_id     uuid;
+begin
+  select proveedor_id, tipo, monto, anulada
+    into v_proveedor_id, v_tipo, v_monto, v_anulada
+    from public.notas_ajuste_proveedor
+   where id = p_nota_id;
+
+  if v_proveedor_id is null then
+    raise exception 'Nota no encontrada.';
+  end if;
+  if v_anulada then
+    raise exception 'Esta nota ya fue anulada.';
+  end if;
+
+  insert into public.notas_ajuste_proveedor
+    (proveedor_id, tipo, monto, motivo, anula_nota_id, registrado_por)
+  values (
+    v_proveedor_id,
+    case when v_tipo = 'credito' then 'debito' else 'credito' end,
+    v_monto,
+    p_motivo,
+    p_nota_id,
+    p_registrado_por
+  )
+  returning id into v_nueva_id;
+
+  update public.notas_ajuste_proveedor set anulada = true where id = p_nota_id;
+
+  return v_nueva_id;
+end;
+$$;

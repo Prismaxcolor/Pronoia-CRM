@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, DollarSign } from 'lucide-react';
+import { ArrowLeft, Printer, DollarSign, FileEdit, Ban } from 'lucide-react';
 import {
   obtenerEstadoCuenta,
+  type EntradaEstadoCuenta,
   type EstadoCuenta,
   type TipoEntidad,
 } from '../../services/estado-cuenta-service';
 import { useAuth } from '../../hooks/use-auth';
 import { useToast } from '../../hooks/use-toast';
 import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
+import NotaAjusteModal from '../proveedores/NotaAjusteModal';
+import AnularNotaModal from '../proveedores/AnularNotaModal';
 
 interface Props {
   /** Define de dónde se jalan los datos. La pantalla es idéntica para ambos. */
@@ -18,6 +21,20 @@ interface Props {
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
+  factura: 'Factura',
+  pago: 'Pago',
+  nota_credito: 'Nota crédito',
+  nota_debito: 'Nota débito',
+};
+
+const BADGE_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
+  factura: 'bg-amber-100 text-amber-700',
+  pago: 'bg-green-100 text-green-700',
+  nota_credito: 'bg-blue-100 text-blue-700',
+  nota_debito: 'bg-purple-100 text-purple-700',
+};
 
 function EstadoCuentaPage({ tipo }: Props) {
   const { id = '' } = useParams();
@@ -30,10 +47,13 @@ function EstadoCuentaPage({ tipo }: Props) {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [pagoAbierto, setPagoAbierto] = useState(false);
+  const [notaAbierta, setNotaAbierta] = useState(false);
+  const [notaAAnular, setNotaAAnular] = useState<EntradaEstadoCuenta | null>(null);
 
   const volverA = tipo === 'proveedor' ? '/proveedores' : '/clientes';
   const etiquetaEntidad = tipo === 'proveedor' ? 'Proveedores' : 'Clientes';
   const puedePagar = tipo === 'proveedor' && tienePermiso('cochinito', 'crear');
+  const puedeAjustar = tipo === 'proveedor' && tienePermiso('proveedores', 'editar');
 
   const cargar = () => {
     setCargando(true);
@@ -47,6 +67,18 @@ function EstadoCuentaPage({ tipo }: Props) {
   const handlePagoRegistrado = () => {
     setPagoAbierto(false);
     toast.exito('Pago registrado.');
+    cargar();
+  };
+
+  const handleNotaCreada = () => {
+    setNotaAbierta(false);
+    toast.exito('Nota registrada.');
+    cargar();
+  };
+
+  const handleNotaAnulada = () => {
+    setNotaAAnular(null);
+    toast.exito('Nota anulada.');
     cargar();
   };
 
@@ -93,6 +125,16 @@ function EstadoCuentaPage({ tipo }: Props) {
           <p className="text-sm text-text-secondary mt-1">{estado.entidad.nombre}</p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
+          {puedeAjustar && (
+            <button
+              type="button"
+              onClick={() => setNotaAbierta(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
+            >
+              <FileEdit size={16} />
+              Nota crédito/débito
+            </button>
+          )}
           {puedePagar && (
             <button
               type="button"
@@ -145,23 +187,38 @@ function EstadoCuentaPage({ tipo }: Props) {
               <th className="px-5 py-3 font-medium">Referencia</th>
               <th className="px-5 py-3 font-medium text-right">Cargo</th>
               <th className="px-5 py-3 font-medium text-right">Abono</th>
+              {puedeAjustar && <th className="px-5 py-3 font-medium text-right print:hidden">Acción</th>}
             </tr>
           </thead>
           <tbody>
             {estado.entradas.map((e, i) => (
-              <tr key={i} className="border-b border-border last:border-b-0">
+              <tr key={i} className={`border-b border-border last:border-b-0 ${e.anulada ? 'opacity-50' : ''}`}>
                 <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{e.fecha}</td>
                 <td className="px-5 py-3 text-text-primary">
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs mr-2 ${
-                    e.tipo === 'factura' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-                  }`}>
-                    {e.tipo === 'factura' ? 'Factura' : 'Pago'}
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs mr-2 ${BADGE_POR_TIPO[e.tipo]}`}>
+                    {LABEL_POR_TIPO[e.tipo]}
                   </span>
-                  {e.descripcion}
+                  <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
+                  {e.anulada && <span className="text-xs text-text-muted ml-2">(anulada)</span>}
                 </td>
                 <td className="px-5 py-3 text-text-muted">{e.referencia ?? '—'}</td>
                 <td className="px-5 py-3 text-right text-text-primary">{e.cargo ? fmt(e.cargo) : '—'}</td>
                 <td className="px-5 py-3 text-right text-text-primary">{e.abono ? fmt(e.abono) : '—'}</td>
+                {puedeAjustar && (
+                  <td className="px-5 py-3 text-right print:hidden">
+                    {(e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && (
+                      <button
+                        type="button"
+                        onClick={() => setNotaAAnular(e)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700"
+                        title="Anular nota"
+                      >
+                        <Ban size={13} />
+                        Anular
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -197,6 +254,23 @@ function EstadoCuentaPage({ tipo }: Props) {
           proveedorId={estado.entidad.id}
           onClose={() => setPagoAbierto(false)}
           onRegistrado={handlePagoRegistrado}
+        />
+      )}
+
+      {notaAbierta && tipo === 'proveedor' && (
+        <NotaAjusteModal
+          proveedorId={estado.entidad.id}
+          onClose={() => setNotaAbierta(false)}
+          onCreada={handleNotaCreada}
+        />
+      )}
+
+      {notaAAnular && tipo === 'proveedor' && (
+        <AnularNotaModal
+          proveedorId={estado.entidad.id}
+          nota={notaAAnular}
+          onClose={() => setNotaAAnular(null)}
+          onAnulada={handleNotaAnulada}
         />
       )}
     </div>
