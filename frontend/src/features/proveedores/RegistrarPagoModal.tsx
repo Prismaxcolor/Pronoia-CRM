@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Paperclip } from 'lucide-react';
 import { obtenerBancas } from '../../services/banca-service';
 import { obtenerTasaOficial } from '../../services/tasa-service';
 import { obtenerFacturas } from '../../services/factura-cv-service';
 import { registrarPago } from '../../services/pago-service';
+import { subirComprobantePago } from '../../services/storage-service';
 import type { Banca } from '@shared/types/index.js';
 import type { FacturaCV } from '../../services/factura-cv-service';
 
@@ -32,6 +33,7 @@ function RegistrarPagoModal({ proveedorId, facturaId, saldoPendiente, onClose, o
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [descripcion, setDescripcion] = useState('');
   const [referencia, setReferencia] = useState('');
+  const [comprobante, setComprobante] = useState<File | null>(null);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +87,17 @@ function RegistrarPagoModal({ proveedorId, facturaId, saldoPendiente, onClose, o
     const facturaAplicada = facturaFija ? facturaId! : (facturaSelId !== SIN_FACTURA ? facturaSelId : null);
 
     setGuardando(true);
+
+    let comprobanteUrl: string | null = null;
+    if (comprobante) {
+      comprobanteUrl = await subirComprobantePago(comprobante);
+      if (!comprobanteUrl) {
+        setGuardando(false);
+        setError('No se pudo subir el comprobante. Probá de nuevo o registrá el pago sin él.');
+        return;
+      }
+    }
+
     const result = await registrarPago({
       proveedorId,
       bancaId,
@@ -95,6 +108,7 @@ function RegistrarPagoModal({ proveedorId, facturaId, saldoPendiente, onClose, o
       referencia: referencia.trim() || null,
       fecha,
       facturaId: facturaAplicada,
+      comprobanteUrl,
     });
     setGuardando(false);
 
@@ -180,6 +194,25 @@ function RegistrarPagoModal({ proveedorId, facturaId, saldoPendiente, onClose, o
           <div>
             <label className={labelClass}>Referencia <span className="text-text-muted">(opcional)</span></label>
             <input type="text" maxLength={50} value={referencia} onChange={e => setReferencia(e.target.value)} className={inputClass} placeholder="Ej: TRF-432" />
+          </div>
+
+          <div>
+            <label className={labelClass}>Comprobante de pago <span className="text-text-muted">(opcional)</span></label>
+            <label className="flex items-center gap-2 px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm cursor-pointer hover:bg-surface-hover transition-colors">
+              <Paperclip size={16} className="text-text-muted shrink-0" />
+              <span className="truncate text-text-secondary">
+                {comprobante ? comprobante.name : 'Subir foto (JPG, PNG o WEBP)'}
+              </span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={e => setComprobante(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <p className="text-xs text-text-muted mt-1">
+              Si el proveedor ya está vinculado a Telegram, se lo mandamos automático.
+            </p>
           </div>
 
           {error && (

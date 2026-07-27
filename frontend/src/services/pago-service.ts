@@ -13,6 +13,8 @@ export interface RegistrarPagoInput {
   fecha: string;
   /** Factura a la que se aplica el pago. Si se omite, es un adelanto. */
   facturaId?: string | null;
+  /** URL del comprobante ya subido vía subirComprobantePago(). */
+  comprobanteUrl?: string | null;
 }
 
 export async function registrarPago(

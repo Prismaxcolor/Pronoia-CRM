@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight, CalendarClock } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth';
 import type { Recurso } from '@shared/types/index.js';
 
@@ -35,6 +35,7 @@ const NAV_SECTIONS: NavSection[] = [
     header: 'Pesaje',
     items: [
       { label: 'Pesaje', to: '/pesaje', icon: <Scale size={20} />, recurso: 'pesaje' },
+      { label: 'Despachos', to: '/citas', icon: <CalendarClock size={20} />, recurso: 'despachos' },
     ],
   },
   {

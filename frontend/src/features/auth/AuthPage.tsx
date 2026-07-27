@@ -46,11 +46,12 @@ function AuthPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 via-surface to-brand-100 p-4">
       <div className="relative w-full max-w-[900px] min-h-[540px] bg-surface rounded-2xl shadow-2xl overflow-hidden flex">
 
-        {/* Panel decorativo con slider */}
+        {/* Panel decorativo con slider — solo en pantallas md+, en mobile no hay
+            espacio para dos columnas y el toggle de abajo ya cubre esa función. */}
         <div
           className={`
-            absolute top-0 h-full w-1/2 bg-gradient-to-br from-brand-600 to-brand-900
-            flex flex-col items-center justify-center text-text-on-brand p-10 z-10
+            hidden md:flex absolute top-0 h-full w-1/2 bg-gradient-to-br from-brand-600 to-brand-900
+            flex-col items-center justify-center text-text-on-brand p-10 z-10
             transition-transform duration-700 ease-in-out
             ${isLogin ? 'translate-x-full' : 'translate-x-0'}
           `}
@@ -84,7 +85,7 @@ function AuthPage() {
         {/* Formulario de Login */}
         <div
           className={`
-            w-1/2 flex flex-col items-center justify-center p-10
+            w-full md:w-1/2 flex flex-col items-center justify-center p-6 sm:p-10
             transition-all duration-700 ease-in-out
             ${isLogin ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none absolute'}
           `}
@@ -142,9 +143,9 @@ function AuthPage() {
         {/* Formulario de Registro */}
         <div
           className={`
-            w-1/2 flex flex-col items-center justify-center p-10
+            w-full md:w-1/2 flex flex-col items-center justify-center p-6 sm:p-10
             transition-all duration-700 ease-in-out
-            ${!isLogin ? 'opacity-100 translate-x-full' : 'opacity-0 translate-x-full pointer-events-none absolute right-0'}
+            ${!isLogin ? 'opacity-100 translate-x-0 md:translate-x-full' : 'opacity-0 translate-x-full pointer-events-none absolute right-0'}
           `}
         >
           <h1 className="text-2xl font-bold text-text-primary mb-2">Crear Cuenta</h1>

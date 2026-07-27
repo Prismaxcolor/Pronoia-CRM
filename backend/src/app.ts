@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { ENV } from './config/env.js';
 import healthRouter from './routes/health.js';
 import tasasRouter from './routes/tasas.js';
@@ -21,6 +22,8 @@ import tarasRouter from './routes/tara.js';
 import pagosRouter from './routes/pagos.js';
 import cochinitoRouter from './routes/cochinito.js';
 import uploadsRouter from './routes/uploads.js';
+import portalRouter from './routes/portal.js';
+import citasRouter from './routes/citas.js';
 
 const app = express();
 
@@ -51,6 +54,9 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '100kb' }));
+// Solo para la cookie httpOnly de sesión del portal — el staff sigue usando
+// Bearer token, no depende de esto.
+app.use(cookieParser());
 
 app.use(healthRouter);
 app.use('/api/auth', authRouter);
@@ -71,5 +77,7 @@ app.use('/api/pagos', pagosRouter);
 app.use('/api/cochinito', cochinitoRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/tasas', tasasRouter);
+app.use('/api/portal', portalRouter);
+app.use('/api/citas', citasRouter);
 
 export default app;

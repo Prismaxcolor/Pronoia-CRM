@@ -22,6 +22,8 @@ export const registrarPagoSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   /** Factura a la que se aplica el pago. Si se omite, es un adelanto. */
   facturaId: z.string().uuid('Factura inválida.').optional().nullable(),
+  /** URL del comprobante ya subido vía POST /api/uploads/comprobantes. */
+  comprobanteUrl: z.string().url('Comprobante inválido.').optional().nullable(),
 });
 
 export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
