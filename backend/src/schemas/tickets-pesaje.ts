@@ -67,6 +67,20 @@ export const completarTicketSchema = z.object({
   materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
 });
 
+/** Edita un ticket ya completo (corrección de errores). Solo mientras no esté facturado. */
+export const editarTicketSchema = z.object({
+  materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
+  pesoGlobal: z.number().positive('El peso global debe ser mayor a 0.').optional(),
+  observaciones: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .nullable()
+    .transform(v => (v && v.length > 0 ? v : null)),
+});
+
 export type CrearTicketInput = z.infer<typeof crearTicketSchema>;
 export type CrearTicketMaterialInput = z.infer<typeof materialSchema>;
 export type CompletarTicketInput = z.infer<typeof completarTicketSchema>;
+export type EditarTicketInput = z.infer<typeof editarTicketSchema>;

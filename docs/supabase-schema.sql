@@ -1499,3 +1499,150 @@ create table if not exists public.guias_corpoez (
 
 create index if not exists idx_guias_corpoez_entidad
   on public.guias_corpoez (entidad_tipo, entidad_id);
+
+
+-- ============================================================================
+-- Bloque 27 · edición de tickets de pesaje completos (Tarea 2 — corrección de
+-- errores de registro)
+--
+-- Permite corregir un ticket ya 'completo' (material, pesos, tara, destino,
+-- peso_global, observaciones) SOLO mientras no esté facturado — una vez que
+-- existe una factura asociada, el ticket queda congelado para no descuadrar
+-- lo ya emitido. Reemplaza todas las líneas de detalle_tickets_pesaje del
+-- ticket (igual que completar_ticket_pesaje, pero partiendo de un ticket que
+-- ya tenía materiales en vez de uno en bruto).
+-- ============================================================================
+
+create or replace function public.editar_ticket_pesaje(
+  p_ticket_id     uuid,
+  p_materiales    jsonb,
+  p_peso_global   numeric default null,
+  p_observaciones text default null
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_estado    text;
+  v_facturado boolean;
+  v_item      jsonb;
+begin
+  select estado, facturado into v_estado, v_facturado
+    from public.tickets_pesaje where id = p_ticket_id;
+
+  if v_estado is null then
+    raise exception 'Ticket no encontrado.';
+  end if;
+  if v_estado <> 'completo' then
+    raise exception 'Solo se pueden editar tickets completos (usa completar_ticket_pesaje para uno en bruto).';
+  end if;
+  if v_facturado then
+    raise exception 'No se puede editar un ticket ya facturado.';
+  end if;
+
+  update public.tickets_pesaje
+     set peso_global   = coalesce(p_peso_global, peso_global),
+         observaciones = coalesce(nullif(p_observaciones, ''), observaciones)
+   where id = p_ticket_id;
+
+  delete from public.detalle_tickets_pesaje where ticket_id = p_ticket_id;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      p_ticket_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return p_ticket_id;
+end;
+$$;
+
+
+-- ============================================================================
+-- Bloque 28 · notas de crédito y débito para proveedores
+--
+-- Ajuste manual del saldo pendiente del proveedor en su Estado de Cuenta, sin
+-- factura ni pago real: nota de crédito resta del saldo (a favor de la
+-- empresa, ej. descuento de flete), nota de débito suma al saldo (a favor del
+-- proveedor, ej. comisión). NO generan movimientos de tesorería ni tocan
+-- bancas/Cochinito — el saldo de las bancas solo cambia con dinero real
+-- (regla del proyecto).
+--
+-- Corrección de errores: en finanzas nunca se borra (regla del proyecto). Una
+-- nota mal cargada se anula con una nota contraria del mismo monto (RPC
+-- abajo), que además marca la original como `anulada` para que el Estado de
+-- Cuenta la muestre tachada — ambas quedan visibles para auditoría, y su
+-- efecto neto en el saldo se cancela solo.
+-- ============================================================================
+
+create table if not exists public.notas_ajuste_proveedor (
+  id              uuid        primary key default gen_random_uuid(),
+  proveedor_id    uuid        not null references public.proveedores(id),
+  tipo            text        not null check (tipo in ('credito', 'debito')),
+  monto           numeric     not null check (monto > 0),
+  motivo          text        not null,
+  anulada         boolean     not null default false,
+  anula_nota_id   uuid        references public.notas_ajuste_proveedor(id),
+  registrado_por  uuid        references public.users(id),
+  created_at      timestamptz not null default now()
+);
+
+alter table public.notas_ajuste_proveedor disable row level security;
+
+create index if not exists idx_notas_ajuste_proveedor_proveedor
+  on public.notas_ajuste_proveedor (proveedor_id);
+
+-- RPC atómica: inserta la nota contraria (mismo monto, tipo invertido, ligada
+-- a la original vía anula_nota_id) y marca la original como anulada.
+create or replace function public.anular_nota_ajuste_proveedor(
+  p_nota_id        uuid,
+  p_motivo         text,
+  p_registrado_por uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_proveedor_id uuid;
+  v_tipo         text;
+  v_monto        numeric;
+  v_anulada      boolean;
+  v_nueva_id     uuid;
+begin
+  select proveedor_id, tipo, monto, anulada
+    into v_proveedor_id, v_tipo, v_monto, v_anulada
+    from public.notas_ajuste_proveedor
+   where id = p_nota_id;
+
+  if v_proveedor_id is null then
+    raise exception 'Nota no encontrada.';
+  end if;
+  if v_anulada then
+    raise exception 'Esta nota ya fue anulada.';
+  end if;
+
+  insert into public.notas_ajuste_proveedor
+    (proveedor_id, tipo, monto, motivo, anula_nota_id, registrado_por)
+  values (
+    v_proveedor_id,
+    case when v_tipo = 'credito' then 'debito' else 'credito' end,
+    v_monto,
+    p_motivo,
+    p_nota_id,
+    p_registrado_por
+  )
+  returning id into v_nueva_id;
+
+  update public.notas_ajuste_proveedor set anulada = true where id = p_nota_id;
+
+  return v_nueva_id;
+end;
+$$;

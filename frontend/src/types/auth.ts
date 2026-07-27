@@ -7,7 +7,7 @@ export interface AuthState {
 }
 
 export interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, remember?: boolean) => Promise<void>;
   registro: (email: string, password: string, nombre: string) => Promise<void>;
   logout: () => Promise<void>;
   tienePermiso: (recurso: Recurso, accion: Accion) => boolean;

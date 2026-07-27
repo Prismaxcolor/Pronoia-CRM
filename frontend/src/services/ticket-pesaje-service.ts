@@ -6,7 +6,6 @@ export interface CrearTicketMaterialInput {
   subcategoria?: string | null;
   pesoBruto: number;
   tara: number;
-  devolucion: number;
   destinoTipo: 'mpp' | 'lote';
   loteId?: string | null;
 }
@@ -80,5 +79,28 @@ export async function completarTicket(
     return { ticket };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo completar el ticket.' };
+  }
+}
+
+export interface EditarTicketInput {
+  materiales: CrearTicketMaterialInput[];
+  pesoGlobal?: number;
+  observaciones?: string | null;
+}
+
+/** Corrige un ticket ya completo (material, pesos, peso global, observaciones).
+ *  El backend rechaza la edición si el ticket ya está facturado. */
+export async function editarTicket(
+  id: string,
+  input: EditarTicketInput
+): Promise<{ ticket: TicketPesaje } | { error: string }> {
+  try {
+    const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}`, {
+      method: 'PATCH',
+      body: input,
+    });
+    return { ticket };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo editar el ticket.' };
   }
 }

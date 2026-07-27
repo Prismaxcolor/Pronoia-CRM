@@ -4,10 +4,11 @@ import {
   obtenerTicket,
   crearTicket,
   completarTicket,
+  editarTicket,
 } from '../services/ticket-pesaje-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearTicketSchema, completarTicketSchema } from '../schemas/tickets-pesaje.js';
+import { crearTicketSchema, completarTicketSchema, editarTicketSchema } from '../schemas/tickets-pesaje.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -65,6 +66,26 @@ router.patch(
     }
     logger.info({
       evento: 'ticket_pesaje_bruto_completado',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      ticketId: result.ticket.id,
+    });
+    res.json(result);
+  }
+);
+
+router.patch(
+  '/:id',
+  requirePermiso('pesaje', 'editar'),
+  validateBody(editarTicketSchema),
+  async (req, res) => {
+    const result = await editarTicket(String(req.params.id), req.body);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'ticket_pesaje_editado',
       ip: clienteIp(req),
       userId: req.user!.sub,
       ticketId: result.ticket.id,

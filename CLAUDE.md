@@ -65,7 +65,8 @@ Catálogo público, recibos a clientes, links de pago, ventas por WhatsApp/IG, P
 ### Git
 - Commits en formato Conventional Commits: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`.
 - Mensajes en español o inglés, pero consistentes.
-- NUNCA push directo a `main`. Trabajar en ramas `feature/...` o `fix/...`.
+- Flujo de trabajo: se desarrolla y prueba localmente en la rama `carlos`; cuando el usuario confirma explícitamente, esos cambios se llevan a `main` (rama que despliega en Vercel). Claude puede hacer push a `main` cuando el usuario lo pida expresamente para esa subida — no por iniciativa propia.
+- `main` tiene protección real en GitHub (PR + 1 review, `enforce_admins: true`, sin force-push). Un push directo será rechazado por GitHub aunque esta regla lo permita; para que pase hay que bajar temporalmente `required_approving_review_count` a 0, hacer el push/merge, y restaurarlo a 1 de inmediato (mismo patrón ya usado antes). Confirmar con el usuario antes de tocar esa configuración cada vez.
 - NUNCA commitear `.env`, `node_modules/`, ni archivos de build.
 
 ## Flujo de trabajo con Claude Code
