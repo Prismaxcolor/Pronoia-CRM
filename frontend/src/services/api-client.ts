@@ -2,15 +2,21 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 const TOKEN_KEY = 'pronoia_token';
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+/** `remember=true` (default) persiste el token entre sesiones del navegador
+ *  (localStorage). `remember=false` lo guarda solo para la pestaña actual
+ *  (sessionStorage), para el checkbox "Recordarme" del login. */
+export function setToken(token: string, remember = true): void {
+  const [activo, otro] = remember ? [localStorage, sessionStorage] : [sessionStorage, localStorage];
+  activo.setItem(TOKEN_KEY, token);
+  otro.removeItem(TOKEN_KEY);
 }
 
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export class ApiError extends Error {

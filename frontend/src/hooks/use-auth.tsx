@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setCargando(false));
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, remember = true) => {
     setError(null);
     try {
       const { token, usuario: u } = await apiFetch<AuthResponse>('/api/auth/login', {
@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: { email, password },
         auth: false,
       });
-      setToken(token);
+      setToken(token, remember);
       setUsuario(mapUsuario(u));
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Error inesperado al iniciar sesión.';
