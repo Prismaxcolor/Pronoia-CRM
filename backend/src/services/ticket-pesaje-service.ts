@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import type { CrearTicketInput, CompletarTicketInput } from '../schemas/tickets-pesaje.js';
+import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput } from '../schemas/tickets-pesaje.js';
 
 /** Formatea el correlativo de pesaje: 1 → "Pesaje 0001". Duplicado intencional
  *  de shared/types/ticket-pesaje.ts (el backend no comparte paquete con front). */
@@ -63,7 +63,7 @@ export interface TicketPublico {
   materiales: MaterialPublico[];
   pesoNetoTotal: number;
   pesoGlobal: number;
-  /** peso_global - (suma de netos + devolución total). Solo lectura, derivado. */
+  /** peso_global - suma de netos (incluida la basura). Solo lectura, derivado. */
   diferencia: number;
   fotos: string[];
   observaciones: string | null;
@@ -94,7 +94,6 @@ function detalleToPublico(d: DetalleRow): MaterialPublico {
 function toPublico(row: TicketRow): TicketPublico {
   const materiales = (row.detalle_tickets_pesaje ?? []).map(detalleToPublico);
   const pesoNetoTotal = materiales.reduce((acc, m) => acc + m.pesoNeto, 0);
-  const devolucionTotal = materiales.reduce((acc, m) => acc + m.devolucion, 0);
   const pesoGlobal = Number(row.peso_global ?? 0);
   return {
     id: row.id,
@@ -106,7 +105,7 @@ function toPublico(row: TicketRow): TicketPublico {
     materiales,
     pesoNetoTotal,
     pesoGlobal,
-    diferencia: pesoGlobal - (pesoNetoTotal + devolucionTotal),
+    diferencia: pesoGlobal - pesoNetoTotal,
     fotos: row.fotos ?? [],
     observaciones: row.observaciones,
     facturado: row.facturado,
@@ -207,5 +206,25 @@ export async function completarTicket(
 
   const ticket = await obtenerTicket(id);
   if (!ticket) return { error: 'El ticket se completó pero no se pudo leer de vuelta.' };
+  return { ticket };
+}
+
+/** Corrige un ticket ya completo (material, pesos, peso global, observaciones).
+ *  La RPC rechaza tickets facturados o en bruto. */
+export async function editarTicket(
+  id: string,
+  input: EditarTicketInput
+): Promise<{ ticket: TicketPublico } | { error: string }> {
+  const { error } = await supabaseAdmin.rpc('editar_ticket_pesaje', {
+    p_ticket_id: id,
+    p_materiales: materialesARpc(input.materiales),
+    p_peso_global: input.pesoGlobal ?? null,
+    p_observaciones: input.observaciones,
+  });
+
+  if (error) return { error: error.message };
+
+  const ticket = await obtenerTicket(id);
+  if (!ticket) return { error: 'El ticket se editó pero no se pudo leer de vuelta.' };
   return { ticket };
 }

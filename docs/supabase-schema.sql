@@ -1391,3 +1391,69 @@ begin
   return p_ticket_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 24 · edición de tickets de pesaje completos (Tarea 2 — corrección de
+-- errores de registro)
+--
+-- Permite corregir un ticket ya 'completo' (material, pesos, tara, destino,
+-- peso_global, observaciones) SOLO mientras no esté facturado — una vez que
+-- existe una factura asociada, el ticket queda congelado para no descuadrar
+-- lo ya emitido. Reemplaza todas las líneas de detalle_tickets_pesaje del
+-- ticket (igual que completar_ticket_pesaje, pero partiendo de un ticket que
+-- ya tenía materiales en vez de uno en bruto).
+-- ============================================================================
+
+create or replace function public.editar_ticket_pesaje(
+  p_ticket_id     uuid,
+  p_materiales    jsonb,
+  p_peso_global   numeric default null,
+  p_observaciones text default null
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_estado    text;
+  v_facturado boolean;
+  v_item      jsonb;
+begin
+  select estado, facturado into v_estado, v_facturado
+    from public.tickets_pesaje where id = p_ticket_id;
+
+  if v_estado is null then
+    raise exception 'Ticket no encontrado.';
+  end if;
+  if v_estado <> 'completo' then
+    raise exception 'Solo se pueden editar tickets completos (usa completar_ticket_pesaje para uno en bruto).';
+  end if;
+  if v_facturado then
+    raise exception 'No se puede editar un ticket ya facturado.';
+  end if;
+
+  update public.tickets_pesaje
+     set peso_global   = coalesce(p_peso_global, peso_global),
+         observaciones = coalesce(nullif(p_observaciones, ''), observaciones)
+   where id = p_ticket_id;
+
+  delete from public.detalle_tickets_pesaje where ticket_id = p_ticket_id;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      p_ticket_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return p_ticket_id;
+end;
+$$;

@@ -63,3 +63,21 @@ body {
     transform: scale(1);
   }
 }
+
+/* Documentos impresos (facturas, tickets): priorizar legibilidad sobre el
+ * estilo de pantalla — texto siempre en negro y sin recortes de página. */
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+
+  body,
+  main {
+    background: #ffffff !important;
+  }
+
+  .print-documento,
+  .print-documento * {
+    color: #000000 !important;
+  }
+}

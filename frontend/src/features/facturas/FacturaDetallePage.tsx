@@ -81,16 +81,17 @@ function FacturaDetallePage({ tipo }: Props) {
   }
 
   const cfg = ESTADO_CFG[factura.estado] ?? ESTADO_CFG.emitida;
+  const totalPesoFacturado = consolidarItems(factura.items).reduce((acc, it) => acc + it.peso, 0);
 
   const Fila = ({ label, valor }: { label: string; valor: string }) => (
-    <div className="flex justify-between py-2 border-b border-border last:border-b-0">
+    <div className="flex justify-between py-2 border-b border-border last:border-b-0 print:border-black">
       <span className="text-text-secondary text-sm">{label}</span>
       <span className="text-text-primary text-sm font-medium text-right">{valor}</span>
     </div>
   );
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl print-documento print:max-w-none">
       <div className="print:hidden">
         <button type="button" onClick={() => navigate(ruta)} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
           <ArrowLeft size={16} />
@@ -102,7 +103,7 @@ function FacturaDetallePage({ tipo }: Props) {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs ${cfg.clase}`}>{cfg.label}</span>
+            <span className={`px-2 py-0.5 rounded-full text-xs ${cfg.clase} print:border print:border-black print:bg-transparent`}>{cfg.label}</span>
           </div>
           <p className="text-sm text-text-muted mt-1">{factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
         </div>
@@ -128,29 +129,29 @@ function FacturaDetallePage({ tipo }: Props) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border p-5 mb-6">
+      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
         <Fila label={labelEntidad} valor={factura.nombreEntidad ?? '—'} />
         <Fila label="Origen del peso" valor={origenPeso(factura, tickets)} />
         {factura.descripcion && <Fila label="Descripción" valor={factura.descripcion} />}
         {factura.observaciones && <Fila label="Observaciones" valor={factura.observaciones} />}
 
         <div className="overflow-x-auto mt-4">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm print:border-collapse">
             <thead>
-              <tr className="border-b border-border text-left text-xs text-text-muted">
-                <th className="py-2 font-medium">Material</th>
-                <th className="py-2 font-medium text-right">Peso (kg)</th>
-                <th className="py-2 font-medium text-right">Precio (kg)</th>
-                <th className="py-2 font-medium text-right">Subtotal</th>
+              <tr className="border-b border-border text-left text-xs text-text-muted print:border-black">
+                <th className="py-2 font-medium print:border print:border-black print:px-2">Ítem</th>
+                <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Cantidad (kg)</th>
+                <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Precio unitario</th>
+                <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Monto total</th>
               </tr>
             </thead>
             <tbody>
               {consolidarItems(factura.items).map(it => (
-                <tr key={it.id} className="border-b border-border last:border-b-0">
-                  <td className="py-2 text-text-primary">{it.nombreProducto ?? '—'}</td>
-                  <td className="py-2 text-right text-text-secondary">{fmt(it.peso)}</td>
-                  <td className="py-2 text-right text-text-secondary">{fmt(it.precioUnitario)}</td>
-                  <td className="py-2 text-right font-medium text-text-primary">{fmt(it.subtotal)}</td>
+                <tr key={it.id} className="border-b border-border last:border-b-0 print:border-black">
+                  <td className="py-2 text-text-primary print:border print:border-black print:px-2">{it.nombreProducto ?? '—'}</td>
+                  <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(it.peso)}</td>
+                  <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(it.precioUnitario)}</td>
+                  <td className="py-2 text-right font-medium text-text-primary print:border print:border-black print:px-2">{fmt(it.subtotal)}</td>
                 </tr>
               ))}
             </tbody>
@@ -174,6 +175,11 @@ function FacturaDetallePage({ tipo }: Props) {
             </div>
           </>
         )}
+
+        <div className="flex justify-between items-center mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
+          <span className="font-bold text-text-primary">Total de kilos facturados</span>
+          <span className="text-xl font-bold text-brand-700">{fmt(totalPesoFacturado)} kg</span>
+        </div>
       </div>
 
       {tickets.length > 0 && (

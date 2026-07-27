@@ -19,6 +19,7 @@ import ListasPreciosPage from './features/listas-precios/ListasPreciosPage';
 import ListaDetallePage from './features/listas-precios/ListaDetallePage';
 import TarasPage from './features/taras/TarasPage';
 import PesajePage from './features/pesaje/PesajePage';
+import TicketDetallePage from './features/pesaje/TicketDetallePage';
 import FacturaHistorialPage from './features/facturas/FacturaHistorialPage';
 import FacturaFormPage from './features/facturas/FacturaFormPage';
 import FacturaDetallePage from './features/facturas/FacturaDetallePage';
@@ -47,6 +48,7 @@ function AppRoutes() {
         <Route path="/transformaciones" element={<ProtectedRoute recurso="productos"><TransformacionesPage /></ProtectedRoute>} />
         <Route path="/lotes" element={<ProtectedRoute recurso="productos"><LotesPage /></ProtectedRoute>} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
+        <Route path="/pesaje/:id" element={<ProtectedRoute recurso="pesaje"><TicketDetallePage /></ProtectedRoute>} />
         <Route path="/compras" element={<ProtectedRoute recurso="facturacion"><FacturaHistorialPage tipo="compra" /></ProtectedRoute>} />
         <Route path="/compras/nueva" element={<ProtectedRoute recurso="facturacion"><FacturaFormPage tipo="compra" /></ProtectedRoute>} />
         <Route path="/compras/:id" element={<ProtectedRoute recurso="facturacion"><FacturaDetallePage tipo="compra" /></ProtectedRoute>} />
