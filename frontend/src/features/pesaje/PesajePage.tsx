@@ -13,6 +13,7 @@ import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import CompletarTicketModal from './CompletarTicketModal';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
 
@@ -59,6 +60,7 @@ function PesajePage() {
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [buscaCodigo, setBuscaCodigo] = useState('');
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
 
   const cargarTickets = () => { obtenerTickets().then(setTickets); };
 
@@ -337,10 +339,16 @@ function PesajePage() {
                         {f.taraModo === 'preconfigurada' ? (
                           <div>
                             <div className="grid grid-cols-2 gap-2">
-                              <select value={f.taraId} onChange={e => setFila(f.uid, 'taraId', e.target.value)} className={inputClass}>
-                                <option value="">— Tara —</option>
-                                {taras.map(t => <option key={t.id} value={t.id}>{t.nombre} ({t.peso} kg)</option>)}
-                              </select>
+                              <button
+                                type="button"
+                                onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorTara(true); }}
+                                className={`${inputClass} flex items-center justify-between gap-1 text-left`}
+                              >
+                                <span className={f.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                                  {taras.find(t => t.id === f.taraId)?.nombre ?? '— Tara —'}
+                                </span>
+                                <ChevronDown size={14} className="text-text-muted shrink-0" />
+                              </button>
                               <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
                             </div>
                             <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
@@ -504,6 +512,18 @@ function PesajePage() {
             const uid = filaActiva?.uid ?? materiales[0].uid;
             setFila(uid, 'productoId', productoId);
             setMostrarSelectorMaterial(false);
+          }}
+        />
+      )}
+
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => {
+            const uid = filaActiva?.uid ?? materiales[0].uid;
+            setFila(uid, 'taraId', taraId);
+            setMostrarSelectorTara(false);
           }}
         />
       )}
