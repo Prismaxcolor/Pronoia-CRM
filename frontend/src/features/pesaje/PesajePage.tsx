@@ -59,6 +59,8 @@ function PesajePage() {
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [buscaCodigo, setBuscaCodigo] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | TipoPesaje>('todos');
+  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
 
@@ -204,11 +206,26 @@ function PesajePage() {
   const filaActiva = materiales.find(f => f.uid === filaActivaUid) ?? materiales[0];
 
   const ticketsFiltrados = useMemo(
-    () => tickets.filter(t => coincideCodigo(t.codigo, buscaCodigo)),
-    [tickets, buscaCodigo]
+    () => tickets.filter(t =>
+      coincideCodigo(t.codigo, buscaCodigo) && (filtroTipo === 'todos' || t.tipo === filtroTipo)
+    ),
+    [tickets, buscaCodigo, filtroTipo]
   );
-  const ticketsBruto = useMemo(() => ticketsFiltrados.filter(t => t.estado === 'bruto'), [ticketsFiltrados]);
-  const ticketsCompletos = useMemo(() => ticketsFiltrados.filter(t => t.estado === 'completo'), [ticketsFiltrados]);
+  const ticketsBruto = useMemo(
+    () => (filtroEstado === 'todos' || filtroEstado === 'bruto'
+      ? ticketsFiltrados.filter(t => t.estado === 'bruto')
+      : []),
+    [ticketsFiltrados, filtroEstado]
+  );
+  const ticketsCompletos = useMemo(() => {
+    if (filtroEstado === 'bruto') return [];
+    return ticketsFiltrados.filter(t => {
+      if (t.estado !== 'completo') return false;
+      if (filtroEstado === 'pendiente') return !t.facturado;
+      if (filtroEstado === 'facturado') return t.facturado;
+      return true;
+    });
+  }, [ticketsFiltrados, filtroEstado]);
   const totalPendientePorRecepcionar = useMemo(
     () => ticketsBruto.reduce((acc, t) => acc + t.pesoGlobal, 0),
     [ticketsBruto]
@@ -327,14 +344,16 @@ function PesajePage() {
                         <input type="number" step="0.01" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
                       </div>
                       <div>
-                        <label className={labelClass}>Tara</label>
-                        <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
-                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'preconfigurada')} className={`px-2 py-1 ${f.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-                            Preconfigurada
-                          </button>
-                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'manual')} className={`px-2 py-1 ${f.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-                            Manual
-                          </button>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <label className="text-xs font-medium text-text-secondary">Tara</label>
+                          <div className="flex rounded-md overflow-hidden border border-border text-[11px] shrink-0">
+                            <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'preconfigurada')} className={`px-2 py-1 ${f.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+                              Preconfigurada
+                            </button>
+                            <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'manual')} className={`px-2 py-1 ${f.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+                              Manual
+                            </button>
+                          </div>
                         </div>
                         {f.taraModo === 'preconfigurada' ? (
                           <div>
@@ -468,6 +487,10 @@ function PesajePage() {
             puedeEliminar={puedeEliminarTicket}
             buscaCodigo={buscaCodigo}
             onBuscaCodigo={setBuscaCodigo}
+            filtroTipo={filtroTipo}
+            onFiltroTipo={setFiltroTipo}
+            filtroEstado={filtroEstado}
+            onFiltroEstado={setFiltroEstado}
             onCompletar={setTicketACompletar}
             onEliminar={handleEliminarTicket}
             onVerDetalle={id => navigate(`/pesaje/${id}`)}
@@ -487,6 +510,10 @@ function PesajePage() {
           puedeEliminar={puedeEliminarTicket}
           buscaCodigo={buscaCodigo}
           onBuscaCodigo={setBuscaCodigo}
+          filtroTipo={filtroTipo}
+          onFiltroTipo={setFiltroTipo}
+          filtroEstado={filtroEstado}
+          onFiltroEstado={setFiltroEstado}
           onCompletar={setTicketACompletar}
           onEliminar={handleEliminarTicket}
           onVerDetalle={id => navigate(`/pesaje/${id}`)}
@@ -544,6 +571,10 @@ function SeccionTickets({
   puedeEliminar,
   buscaCodigo,
   onBuscaCodigo,
+  filtroTipo,
+  onFiltroTipo,
+  filtroEstado,
+  onFiltroEstado,
   onCompletar,
   onEliminar,
   onVerDetalle,
@@ -557,28 +588,60 @@ function SeccionTickets({
   puedeEliminar: boolean;
   buscaCodigo: string;
   onBuscaCodigo: (v: string) => void;
+  filtroTipo: 'todos' | 'compra' | 'venta';
+  onFiltroTipo: (v: 'todos' | 'compra' | 'venta') => void;
+  filtroEstado: 'todos' | 'bruto' | 'pendiente' | 'facturado';
+  onFiltroEstado: (v: 'todos' | 'bruto' | 'pendiente' | 'facturado') => void;
   onCompletar: (t: TicketPesaje) => void;
   onEliminar: (t: TicketPesaje) => void;
   onVerDetalle: (id: string) => void;
 }) {
+  const filtroActivo = filtroTipo !== 'todos' || filtroEstado !== 'todos';
+  const selectFiltroClass = "px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
+
   return (
     <div className="space-y-8">
-      <div className="relative w-full max-w-xs">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input
-          type="search"
-          value={buscaCodigo}
-          onChange={e => onBuscaCodigo(e.target.value)}
-          placeholder="Buscar por N° de control..."
-          className="w-full pl-9 pr-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
-        />
-        {buscaCodigo && (
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full max-w-xs">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            type="search"
+            value={buscaCodigo}
+            onChange={e => onBuscaCodigo(e.target.value)}
+            placeholder="Buscar por N° de control..."
+            className="w-full pl-9 pr-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
+          />
+          {buscaCodigo && (
+            <button
+              type="button"
+              onClick={() => onBuscaCodigo('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted hover:text-text-primary"
+            >
+              Limpiar
+            </button>
+          )}
+        </div>
+
+        <select value={filtroTipo} onChange={e => onFiltroTipo(e.target.value as typeof filtroTipo)} className={selectFiltroClass}>
+          <option value="todos">Compra y venta</option>
+          <option value="compra">Solo compra</option>
+          <option value="venta">Solo venta</option>
+        </select>
+
+        <select value={filtroEstado} onChange={e => onFiltroEstado(e.target.value as typeof filtroEstado)} className={selectFiltroClass}>
+          <option value="todos">Todos los estados</option>
+          <option value="bruto">En bruto</option>
+          <option value="pendiente">Pendiente por facturar</option>
+          <option value="facturado">Facturado</option>
+        </select>
+
+        {filtroActivo && (
           <button
             type="button"
-            onClick={() => onBuscaCodigo('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted hover:text-text-primary"
+            onClick={() => { onFiltroTipo('todos'); onFiltroEstado('todos'); }}
+            className="text-xs text-text-muted hover:text-text-primary underline"
           >
-            Limpiar
+            Limpiar filtros
           </button>
         )}
       </div>

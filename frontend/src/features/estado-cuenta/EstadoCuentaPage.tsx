@@ -208,7 +208,9 @@ function EstadoCuentaPage({ tipo }: Props) {
                   {e.tipo === 'factura' && e.facturaId ? (
                     <button
                       type="button"
-                      onClick={() => navigate(`${tipo === 'proveedor' ? '/compras' : '/ventas'}/${e.facturaId}`)}
+                      onClick={() => navigate(`${tipo === 'proveedor' ? '/compras' : '/ventas'}/${e.facturaId}`, {
+                        state: { volverA: `/${tipo === 'proveedor' ? 'proveedores' : 'clientes'}/${id}/estado-cuenta`, volverALabel: 'Estado de cuenta' },
+                      })}
                       className="text-brand-600 hover:underline print:text-inherit print:no-underline"
                     >
                       {e.referencia ?? '—'}

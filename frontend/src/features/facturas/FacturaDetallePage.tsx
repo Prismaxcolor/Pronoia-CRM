@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Printer, FileDown, FileText, DollarSign } from 'lucide-react';
 import { obtenerFactura, consolidarItems, type FacturaCV, type TipoFactura } from '../../services/factura-cv-service';
 import { descargarFacturaPDF, descargarFacturaWord } from '../../services/factura-export';
@@ -26,12 +26,17 @@ interface Props {
 function FacturaDetallePage({ tipo }: Props) {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { tienePermiso } = useAuth();
   const toast = useToast();
 
+  // Si se llegó desde Estado de Cuenta, "volver" debe regresar ahí directo en
+  // vez de al listado completo de compras/ventas — de lo contrario hacen
+  // falta 2-3 clicks extra para volver a encontrar la misma entidad.
+  const navState = location.state as { volverA?: string; volverALabel?: string } | null;
   const esCompra = tipo === 'compra';
-  const ruta = esCompra ? '/compras' : '/ventas';
-  const etiquetaLista = esCompra ? 'Compras' : 'Ventas';
+  const ruta = navState?.volverA ?? (esCompra ? '/compras' : '/ventas');
+  const etiquetaLista = navState?.volverALabel ?? (esCompra ? 'Compras' : 'Ventas');
   const labelEntidad = esCompra ? 'Proveedor' : 'Cliente';
   const titulo = esCompra ? 'Factura de compra' : 'Factura de venta';
   const puedePagar = tienePermiso('cochinito', 'crear');
@@ -110,7 +115,7 @@ function FacturaDetallePage({ tipo }: Props) {
               Registrar pago
             </button>
           )}
-          <button type="button" onClick={() => descargarFacturaPDF(factura)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
+          <button type="button" onClick={() => descargarFacturaPDF(factura, tickets)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
             <FileDown size={16} />
             PDF
           </button>

@@ -58,10 +58,13 @@ function FacturaHistorialPage({ tipo }: Props) {
   const [cargando, setCargando] = useState(true);
   const [filtros, setFiltros] = useState<FiltrosFacturas>({});
   const [buscaCodigo, setBuscaCodigo] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'borrador' | 'emitida' | 'pagada'>('todos');
 
   const facturasFiltradas = useMemo(
-    () => facturas.filter(f => coincideCodigo(f.codigo, buscaCodigo)),
-    [facturas, buscaCodigo]
+    () => facturas.filter(f =>
+      coincideCodigo(f.codigo, buscaCodigo) && (filtroEstado === 'todos' || f.estado === filtroEstado)
+    ),
+    [facturas, buscaCodigo, filtroEstado]
   );
 
   useEffect(() => {
@@ -121,8 +124,17 @@ function FacturaHistorialPage({ tipo }: Props) {
             {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
           </select>
         </div>
-        {(buscaCodigo || filtros.desde || filtros.hasta || filtros.entidadId || filtros.productoId) && (
-          <button type="button" onClick={() => { setBuscaCodigo(''); setFiltros({}); }} className="text-xs text-text-muted hover:text-text-primary underline pb-2">
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Estado</label>
+          <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value as typeof filtroEstado)} className={`${inputClass} w-40`}>
+            <option value="todos">Todos</option>
+            <option value="borrador">Borrador</option>
+            <option value="emitida">Emitida</option>
+            <option value="pagada">Pagada</option>
+          </select>
+        </div>
+        {(buscaCodigo || filtros.desde || filtros.hasta || filtros.entidadId || filtros.productoId || filtroEstado !== 'todos') && (
+          <button type="button" onClick={() => { setBuscaCodigo(''); setFiltros({}); setFiltroEstado('todos'); }} className="text-xs text-text-muted hover:text-text-primary underline pb-2">
             Limpiar
           </button>
         )}

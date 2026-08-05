@@ -1,4 +1,5 @@
 import { consolidarItems, type FacturaCV } from './factura-cv-service';
+import { destinoLabel, type TicketPesaje } from '@shared/types/index.js';
 
 // jspdf y docx se cargan bajo demanda (dynamic import) para no inflar el bundle
 // inicial: solo pesan cuando el usuario descarga una factura.
@@ -31,11 +32,12 @@ function refFactura(f: FacturaCV): string {
   return f.codigo ?? `N.º ${f.id.slice(0, 8)}`;
 }
 
-/** Texto del origen del peso: peso manual o cantidad de tickets (sin fetch
- *  extra — mismo fallback que usa FacturaDetallePage cuando no hay tickets
- *  cargados). */
-function origenPeso(f: FacturaCV): string {
+/** Texto del origen del peso: códigos reales de los tickets si están
+ *  cargados (mismo criterio que FacturaDetallePage), o un conteo genérico si
+ *  no se pasaron. */
+function origenPeso(f: FacturaCV, tickets: TicketPesaje[]): string {
   if (f.ticketIds.length === 0) return 'Peso manual';
+  if (tickets.length > 0) return `${tickets.length} ticket${tickets.length === 1 ? '' : 's'} · ${tickets.map(t => t.codigo).join(', ')}`;
   return `${f.ticketIds.length} ticket${f.ticketIds.length === 1 ? '' : 's'} de pesaje`;
 }
 
@@ -71,7 +73,7 @@ function descargarBlob(blob: Blob, nombre: string): void {
   URL.revokeObjectURL(url);
 }
 
-export async function descargarFacturaPDF(f: FacturaCV): Promise<void> {
+export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] = []): Promise<void> {
   const { default: jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
   const esCompra = f.tipo === 'compra';
@@ -95,7 +97,7 @@ export async function descargarFacturaPDF(f: FacturaCV): Promise<void> {
   doc.setFontSize(11);
   const filas: Array<[string, string]> = [
     [esCompra ? 'Proveedor' : 'Cliente', f.nombreEntidad ?? '—'],
-    ['Origen del peso', origenPeso(f)],
+    ['Origen del peso', origenPeso(f, tickets)],
     ...filasFactura(f).slice(1),
   ];
   for (const [k, v] of filas) {
@@ -144,6 +146,34 @@ export async function descargarFacturaPDF(f: FacturaCV): Promise<void> {
   y += 20;
   doc.setFontSize(12).setFont('helvetica', 'bold').text('Total de kilos facturados', 56, y);
   doc.text(`${fmt(totalPeso)} kg`, 539, y, { align: 'right' });
+
+  const pageHeight = doc.internal.pageSize.getHeight();
+  for (const ticket of tickets) {
+    y += 30;
+    if (y > pageHeight - 100) { doc.addPage(); y = 56; }
+    doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(0);
+    doc.text(sanitizarPdf(`Ticket de pesaje - ${ticket.codigo}`), 56, y);
+    y += 10;
+    autoTable(doc, {
+      startY: y,
+      head: [['Material', 'Destino', 'Bruto', 'Tara', 'Devol.', 'Neto (kg)']],
+      body: ticket.materiales.map(m => [
+        sanitizarPdf(m.nombreProducto ?? '-'),
+        sanitizarPdf(destinoLabel(m.destinoTipo, m.nombreLote)),
+        fmt(m.pesoBruto),
+        fmt(m.tara),
+        fmt(m.devolucion),
+        fmt(m.pesoNeto),
+      ]),
+      margin: { left: 56, right: 56 },
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 5 },
+      headStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
+      columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+      theme: 'grid',
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    y = (doc as any).lastAutoTable.finalY;
+  }
 
   doc.save(nombreArchivo(f, 'pdf'));
 }
