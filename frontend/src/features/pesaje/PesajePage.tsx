@@ -13,6 +13,7 @@ import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import CompletarTicketModal from './CompletarTicketModal';
 import PreviewMaterialTara from './PreviewMaterialTara';
+import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
 
@@ -58,6 +59,7 @@ function PesajePage() {
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [buscaCodigo, setBuscaCodigo] = useState('');
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
 
   const cargarTickets = () => { obtenerTickets().then(setTickets); };
 
@@ -453,6 +455,7 @@ function PesajePage() {
               tara={taraActiva}
               taraCantidad={Number(filaActiva?.taraCantidad) || 0}
               taraKg={filaActiva ? taraKgFila(filaActiva, taras) : 0}
+              onAbrirSelectorMaterial={() => setMostrarSelectorMaterial(true)}
             />
           </div>
         )}
@@ -501,6 +504,18 @@ function PesajePage() {
           taras={taras}
           onClose={() => setTicketACompletar(null)}
           onCompletado={cargarTickets}
+        />
+      )}
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={productoId => {
+            const uid = filaActiva?.uid ?? materiales[0].uid;
+            setFila(uid, 'productoId', productoId);
+            setMostrarSelectorMaterial(false);
+          }}
         />
       )}
     </div>
@@ -627,7 +642,17 @@ function TablaTickets({
                 onClick={modo === 'completo' ? () => onVerDetalle(t.id) : undefined}
                 className={`border-b border-border last:border-b-0 ${modo === 'completo' ? 'cursor-pointer hover:bg-surface-alt/60 transition-colors' : ''}`}
               >
-                <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">{t.codigo}</td>
+                <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">
+                  <span
+                    className={`inline-flex items-center justify-center w-4 h-4 rounded text-[10px] font-bold mr-1.5 ${
+                      t.tipo === 'compra' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                    }`}
+                    title={t.tipo === 'compra' ? 'Compra' : 'Venta'}
+                  >
+                    {t.tipo === 'compra' ? 'C' : 'V'}
+                  </span>
+                  {t.codigo}
+                </td>
                 <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
                 <td className="px-4 py-2.5 text-text-secondary capitalize">{t.tipo}</td>
                 <td className="px-4 py-2.5 text-text-primary">{t.entidadId ? (nombrePorEntidad.get(t.entidadId) ?? '—') : '—'}</td>
