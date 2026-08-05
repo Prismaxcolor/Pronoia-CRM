@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import {
@@ -11,7 +11,7 @@ import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { useAuth } from '../../hooks/use-auth';
-import type { Producto } from '@shared/types/index.js';
+import { coincideCodigo, type Producto } from '@shared/types/index.js';
 
 interface Entidad { id: string; nombre: string }
 
@@ -57,6 +57,12 @@ function FacturaHistorialPage({ tipo }: Props) {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [cargando, setCargando] = useState(true);
   const [filtros, setFiltros] = useState<FiltrosFacturas>({});
+  const [buscaCodigo, setBuscaCodigo] = useState('');
+
+  const facturasFiltradas = useMemo(
+    () => facturas.filter(f => coincideCodigo(f.codigo, buscaCodigo)),
+    [facturas, buscaCodigo]
+  );
 
   useEffect(() => {
     const cargar = (): Promise<Entidad[]> => (esCompra ? obtenerProveedores() : obtenerClientes());
@@ -91,6 +97,10 @@ function FacturaHistorialPage({ tipo }: Props) {
 
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">N° Control</label>
+          <input type="search" value={buscaCodigo} onChange={e => setBuscaCodigo(e.target.value)} placeholder="Ej. C-0018" className={`${inputClass} w-36`} />
+        </div>
+        <div>
           <label className="block text-xs font-medium text-text-secondary mb-1">Desde</label>
           <input type="date" value={filtros.desde ?? ''} onChange={e => setFiltro('desde', e.target.value)} className={inputClass} />
         </div>
@@ -112,8 +122,8 @@ function FacturaHistorialPage({ tipo }: Props) {
             {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
           </select>
         </div>
-        {(filtros.desde || filtros.hasta || filtros.entidadId || filtros.productoId) && (
-          <button type="button" onClick={() => setFiltros({})} className="text-xs text-text-muted hover:text-text-primary underline pb-2">
+        {(buscaCodigo || filtros.desde || filtros.hasta || filtros.entidadId || filtros.productoId) && (
+          <button type="button" onClick={() => { setBuscaCodigo(''); setFiltros({}); }} className="text-xs text-text-muted hover:text-text-primary underline pb-2">
             Limpiar
           </button>
         )}
@@ -124,7 +134,7 @@ function FacturaHistorialPage({ tipo }: Props) {
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
           </div>
-        ) : facturas.length === 0 ? (
+        ) : facturasFiltradas.length === 0 ? (
           <p className="text-center text-text-muted py-12 text-sm">No hay facturas con estos filtros.</p>
         ) : (
           <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -140,7 +150,7 @@ function FacturaHistorialPage({ tipo }: Props) {
               </tr>
             </thead>
             <tbody>
-              {facturas.map(f => {
+              {facturasFiltradas.map(f => {
                 const cfg = ESTADO_CFG[f.estado] ?? ESTADO_CFG.emitida;
                 return (
                   <tr key={f.id} onClick={() => navigate(`${ruta}/${f.id}`)} className="border-b border-border last:border-b-0 hover:bg-surface-alt cursor-pointer transition-colors">

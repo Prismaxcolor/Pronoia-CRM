@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen } from 'lucide-react';
+import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen, Search } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
@@ -14,7 +14,7 @@ import { useConfirm } from '../../hooks/use-confirm';
 import CompletarTicketModal from './CompletarTicketModal';
 import PreviewMaterialTara from './PreviewMaterialTara';
 import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
-import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
+import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
 
 interface FotoLocal { file: File; preview: string }
 interface Entidad { id: string; nombre: string; activo: boolean }
@@ -56,6 +56,7 @@ function PesajePage() {
   const [error, setError] = useState<string | null>(null);
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
+  const [buscaCodigo, setBuscaCodigo] = useState('');
 
   const cargarTickets = () => { obtenerTickets().then(setTickets); };
 
@@ -200,8 +201,12 @@ function PesajePage() {
     ? taras.find(t => t.id === filaActiva.taraId) ?? null
     : null;
 
-  const ticketsBruto = useMemo(() => tickets.filter(t => t.estado === 'bruto'), [tickets]);
-  const ticketsCompletos = useMemo(() => tickets.filter(t => t.estado === 'completo'), [tickets]);
+  const ticketsFiltrados = useMemo(
+    () => tickets.filter(t => coincideCodigo(t.codigo, buscaCodigo)),
+    [tickets, buscaCodigo]
+  );
+  const ticketsBruto = useMemo(() => ticketsFiltrados.filter(t => t.estado === 'bruto'), [ticketsFiltrados]);
+  const ticketsCompletos = useMemo(() => ticketsFiltrados.filter(t => t.estado === 'completo'), [ticketsFiltrados]);
   const totalPendientePorRecepcionar = useMemo(
     () => ticketsBruto.reduce((acc, t) => acc + t.pesoGlobal, 0),
     [ticketsBruto]
@@ -441,6 +446,8 @@ function PesajePage() {
             fmt={fmt}
             puedeCrear={puedeCrear}
             puedeEliminar={puedeEliminarTicket}
+            buscaCodigo={buscaCodigo}
+            onBuscaCodigo={setBuscaCodigo}
             onCompletar={setTicketACompletar}
             onEliminar={handleEliminarTicket}
             onVerDetalle={id => navigate(`/pesaje/${id}`)}
@@ -458,6 +465,8 @@ function PesajePage() {
           fmt={fmt}
           puedeCrear={puedeCrear}
           puedeEliminar={puedeEliminarTicket}
+          buscaCodigo={buscaCodigo}
+          onBuscaCodigo={setBuscaCodigo}
           onCompletar={setTicketACompletar}
           onEliminar={handleEliminarTicket}
           onVerDetalle={id => navigate(`/pesaje/${id}`)}
@@ -489,6 +498,8 @@ function SeccionTickets({
   fmt,
   puedeCrear,
   puedeEliminar,
+  buscaCodigo,
+  onBuscaCodigo,
   onCompletar,
   onEliminar,
   onVerDetalle,
@@ -500,12 +511,34 @@ function SeccionTickets({
   fmt: (n: number) => string;
   puedeCrear: boolean;
   puedeEliminar: boolean;
+  buscaCodigo: string;
+  onBuscaCodigo: (v: string) => void;
   onCompletar: (t: TicketPesaje) => void;
   onEliminar: (t: TicketPesaje) => void;
   onVerDetalle: (id: string) => void;
 }) {
   return (
     <div className="space-y-8">
+      <div className="relative w-full max-w-xs">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+        <input
+          type="search"
+          value={buscaCodigo}
+          onChange={e => onBuscaCodigo(e.target.value)}
+          placeholder="Buscar por N° de control..."
+          className="w-full pl-9 pr-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
+        />
+        {buscaCodigo && (
+          <button
+            type="button"
+            onClick={() => onBuscaCodigo('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted hover:text-text-primary"
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
+
       <div>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h2 className="text-sm font-semibold text-text-secondary">Por recepcionar (completar)</h2>
