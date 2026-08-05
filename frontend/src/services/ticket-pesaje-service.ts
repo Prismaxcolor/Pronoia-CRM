@@ -104,3 +104,13 @@ export async function editarTicket(
     return { error: err instanceof Error ? err.message : 'No se pudo editar el ticket.' };
   }
 }
+
+/** Borra un ticket no facturado. El backend rechaza si ya está facturado. */
+export async function borrarTicket(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/tickets-pesaje/${id}`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo eliminar el ticket.' };
+  }
+}

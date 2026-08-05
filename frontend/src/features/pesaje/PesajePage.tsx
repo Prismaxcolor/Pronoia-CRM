@@ -4,13 +4,15 @@ import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen } from 'lucide-
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { obtenerTickets, crearTicket } from '../../services/ticket-pesaje-service';
+import { obtenerTickets, crearTicket, borrarTicket } from '../../services/ticket-pesaje-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
 import { subirFotoTicket } from '../../services/storage-service';
 import { useAuth } from '../../hooks/use-auth';
 import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm';
 import CompletarTicketModal from './CompletarTicketModal';
+import PreviewMaterialTara from './PreviewMaterialTara';
 import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
@@ -27,8 +29,10 @@ type Pestana = 'nuevo' | 'tickets';
 function PesajePage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
+  const confirmar = useConfirm();
   const navigate = useNavigate();
   const puedeCrear = tienePermiso('pesaje', 'crear');
+  const puedeEliminarTicket = tienePermiso('pesaje', 'eliminar');
   const puedeVerTickets = tienePermiso('pesaje', 'ver') && tienePermiso('facturacion', 'ver');
 
   const [pestana, setPestana] = useState<Pestana>('nuevo');
@@ -51,6 +55,7 @@ function PesajePage() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
+  const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
 
   const cargarTickets = () => { obtenerTickets().then(setTickets); };
 
@@ -171,9 +176,29 @@ function PesajePage() {
     guardar('completo');
   };
 
+  const handleEliminarTicket = async (t: TicketPesaje) => {
+    const ok = await confirmar({
+      titulo: 'Eliminar ticket',
+      mensaje: `¿Eliminar el ticket ${t.codigo}? Esta acción no se puede deshacer.`,
+      confirmarLabel: 'Eliminar',
+      variante: 'danger',
+    });
+    if (!ok) return;
+    const result = await borrarTicket(t.id);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito(`${t.codigo} eliminado.`);
+    cargarTickets();
+  };
+
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
   const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const filaActiva = materiales.find(f => f.uid === filaActivaUid) ?? materiales[0];
+  const productoActivo = productos.find(p => p.id === filaActiva?.productoId) ?? null;
+  const taraActiva = filaActiva?.taraModo === 'preconfigurada'
+    ? taras.find(t => t.id === filaActiva.taraId) ?? null
+    : null;
 
   const ticketsBruto = useMemo(() => tickets.filter(t => t.estado === 'bruto'), [tickets]);
   const ticketsCompletos = useMemo(() => tickets.filter(t => t.estado === 'completo'), [tickets]);
@@ -203,7 +228,7 @@ function PesajePage() {
       )}
 
       {pestana === 'nuevo' && (
-      <div className={puedeVerTickets ? 'max-w-2xl' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
+      <div className={puedeVerTickets ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,42rem)_minmax(0,1fr)] gap-6 items-start' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
         {puedeCrear ? (
           <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 h-fit">
             {/* Toggle compra/venta */}
@@ -246,7 +271,12 @@ function PesajePage() {
               {materiales.map((f, idx) => {
                 const neto = netoFila(f, taras);
                 return (
-                  <div key={f.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
+                  <div
+                    key={f.uid}
+                    onFocusCapture={() => setFilaActivaUid(f.uid)}
+                    onClick={() => setFilaActivaUid(f.uid)}
+                    className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-text-secondary">Material {idx + 1}</span>
                       {materiales.length > 1 && (
@@ -391,6 +421,17 @@ function PesajePage() {
           <p className="text-text-muted text-sm">No tienes permiso para registrar pesajes.</p>
         )}
 
+        {puedeCrear && puedeVerTickets && (
+          <div className="hidden lg:block lg:sticky lg:top-6">
+            <PreviewMaterialTara
+              producto={productoActivo}
+              tara={taraActiva}
+              taraCantidad={Number(filaActiva?.taraCantidad) || 0}
+              taraKg={filaActiva ? taraKgFila(filaActiva, taras) : 0}
+            />
+          </div>
+        )}
+
         {!puedeVerTickets && (
           <SeccionTickets
             ticketsBruto={ticketsBruto}
@@ -399,7 +440,9 @@ function PesajePage() {
             nombrePorEntidad={nombrePorEntidad}
             fmt={fmt}
             puedeCrear={puedeCrear}
+            puedeEliminar={puedeEliminarTicket}
             onCompletar={setTicketACompletar}
+            onEliminar={handleEliminarTicket}
             onVerDetalle={id => navigate(`/pesaje/${id}`)}
           />
         )}
@@ -414,7 +457,9 @@ function PesajePage() {
           nombrePorEntidad={nombrePorEntidad}
           fmt={fmt}
           puedeCrear={puedeCrear}
+          puedeEliminar={puedeEliminarTicket}
           onCompletar={setTicketACompletar}
+          onEliminar={handleEliminarTicket}
           onVerDetalle={id => navigate(`/pesaje/${id}`)}
         />
       )}
@@ -443,7 +488,9 @@ function SeccionTickets({
   nombrePorEntidad,
   fmt,
   puedeCrear,
+  puedeEliminar,
   onCompletar,
+  onEliminar,
   onVerDetalle,
 }: {
   ticketsBruto: TicketPesaje[];
@@ -452,7 +499,9 @@ function SeccionTickets({
   nombrePorEntidad: Map<string, string>;
   fmt: (n: number) => string;
   puedeCrear: boolean;
+  puedeEliminar: boolean;
   onCompletar: (t: TicketPesaje) => void;
+  onEliminar: (t: TicketPesaje) => void;
   onVerDetalle: (id: string) => void;
 }) {
   return (
@@ -466,12 +515,12 @@ function SeccionTickets({
             <span className="text-sm font-bold text-amber-800">{fmt(totalPendiente)} kg</span>
           </div>
         </div>
-        <TablaTickets tickets={ticketsBruto} modo="bruto" nombrePorEntidad={nombrePorEntidad} fmt={fmt} puedeCrear={puedeCrear} onCompletar={onCompletar} onVerDetalle={onVerDetalle} />
+        <TablaTickets tickets={ticketsBruto} modo="bruto" nombrePorEntidad={nombrePorEntidad} fmt={fmt} puedeCrear={puedeCrear} puedeEliminar={puedeEliminar} onCompletar={onCompletar} onEliminar={onEliminar} onVerDetalle={onVerDetalle} />
       </div>
 
       <div>
         <h2 className="text-sm font-semibold text-text-secondary mb-3">Pendientes por facturar / Facturados</h2>
-        <TablaTickets tickets={ticketsCompletos} modo="completo" nombrePorEntidad={nombrePorEntidad} fmt={fmt} puedeCrear={puedeCrear} onCompletar={onCompletar} onVerDetalle={onVerDetalle} />
+        <TablaTickets tickets={ticketsCompletos} modo="completo" nombrePorEntidad={nombrePorEntidad} fmt={fmt} puedeCrear={puedeCrear} puedeEliminar={puedeEliminar} onCompletar={onCompletar} onEliminar={onEliminar} onVerDetalle={onVerDetalle} />
       </div>
     </div>
   );
@@ -483,7 +532,9 @@ function TablaTickets({
   nombrePorEntidad,
   fmt,
   puedeCrear,
+  puedeEliminar,
   onCompletar,
+  onEliminar,
   onVerDetalle,
 }: {
   tickets: TicketPesaje[];
@@ -491,7 +542,9 @@ function TablaTickets({
   nombrePorEntidad: Map<string, string>;
   fmt: (n: number) => string;
   puedeCrear: boolean;
+  puedeEliminar: boolean;
   onCompletar: (t: TicketPesaje) => void;
+  onEliminar: (t: TicketPesaje) => void;
   onVerDetalle: (id: string) => void;
 }) {
   return (
@@ -511,7 +564,7 @@ function TablaTickets({
               <th className="px-4 py-2.5 font-medium">Materiales</th>
               <th className="px-4 py-2.5 font-medium text-right">{modo === 'bruto' ? 'Peso global (kg)' : 'Neto (kg)'}</th>
               <th className="px-4 py-2.5 font-medium text-right">Estado</th>
-              {puedeCrear && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
+              {(puedeCrear || puedeEliminar) && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
             </tr>
           </thead>
           <tbody>
@@ -536,13 +589,20 @@ function TablaTickets({
                     </span>
                   )}
                 </td>
-                {puedeCrear && (
+                {(puedeCrear || puedeEliminar) && (
                   <td className="px-4 py-2.5 text-right">
-                    {t.estado === 'bruto' && (
-                      <button type="button" onClick={e => { e.stopPropagation(); onCompletar(t); }} className="text-xs font-medium text-brand-600 hover:text-brand-700">
-                        Completar
-                      </button>
-                    )}
+                    <div className="flex items-center justify-end gap-3">
+                      {puedeCrear && t.estado === 'bruto' && (
+                        <button type="button" onClick={e => { e.stopPropagation(); onCompletar(t); }} className="text-xs font-medium text-brand-600 hover:text-brand-700">
+                          Completar
+                        </button>
+                      )}
+                      {puedeEliminar && !t.facturado && (
+                        <button type="button" onClick={e => { e.stopPropagation(); onEliminar(t); }} className="text-text-muted hover:text-red-600 transition-colors" title="Eliminar ticket">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>

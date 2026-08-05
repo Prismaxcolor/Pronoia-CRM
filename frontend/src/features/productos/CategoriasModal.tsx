@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Pencil, Check, EyeOff, Eye } from 'lucide-react';
+import { X, Plus, Pencil, Check, EyeOff, Eye, Trash2 } from 'lucide-react';
 import {
   obtenerTiposMaterial,
   crearTipoMaterial,
   actualizarTipoMaterial,
   desactivarTipoMaterial,
   reactivarTipoMaterial,
+  borrarTipoMaterial,
 } from '../../services/tipo-material-service';
 import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../hooks/use-auth';
+import { useConfirm } from '../../hooks/use-confirm';
 import type { TipoMaterial } from '@shared/types/index.js';
 
 interface Props {
@@ -20,6 +22,7 @@ interface Props {
 function CategoriasModal({ onClose, onCambios }: Props) {
   const toast = useToast();
   const { tienePermiso } = useAuth();
+  const confirmar = useConfirm();
 
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -31,6 +34,7 @@ function CategoriasModal({ onClose, onCambios }: Props) {
 
   const puedeCrear = tienePermiso('productos', 'crear');
   const puedeEditar = tienePermiso('productos', 'editar');
+  const puedeEliminar = tienePermiso('productos', 'eliminar');
 
   const cargar = () => {
     setCargando(true);
@@ -80,6 +84,21 @@ function CategoriasModal({ onClose, onCambios }: Props) {
       : await reactivarTipoMaterial(c.id);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     toast.exito(c.activo ? `"${c.nombre}" desactivada.` : `"${c.nombre}" reactivada.`);
+    marcarCambio();
+    cargar();
+  };
+
+  const handleEliminar = async (c: TipoMaterial) => {
+    const ok = await confirmar({
+      titulo: 'Eliminar categoría',
+      mensaje: `¿Eliminar "${c.nombre}"? Esta acción no se puede deshacer.`,
+      confirmarLabel: 'Eliminar',
+      variante: 'danger',
+    });
+    if (!ok) return;
+    const result = await borrarTipoMaterial(c.id);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito(`"${c.nombre}" eliminada.`);
     marcarCambio();
     cargar();
   };
@@ -181,6 +200,16 @@ function CategoriasModal({ onClose, onCambios }: Props) {
                           >
                             {c.activo ? <EyeOff size={14} /> : <Eye size={14} />}
                           </button>
+                          {puedeEliminar && (
+                            <button
+                              type="button"
+                              onClick={() => handleEliminar(c)}
+                              className="p-1.5 rounded-md text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors"
+                              title="Eliminar"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </>
                       )}
                     </>
@@ -192,6 +221,7 @@ function CategoriasModal({ onClose, onCambios }: Props) {
 
           <p className="text-xs text-text-muted">
             Desactivar una categoría la oculta del selector de productos, pero conserva los que ya la usan.
+            Solo se pueden eliminar categorías que ningún producto esté usando.
           </p>
         </div>
       </div>

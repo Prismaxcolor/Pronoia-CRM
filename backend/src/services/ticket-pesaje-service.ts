@@ -246,3 +246,33 @@ export async function editarTicket(
   if (!ticket) return { error: 'El ticket se editó pero no se pudo leer de vuelta.' };
   return { ticket };
 }
+
+export interface BorrarTicketResult { ok: boolean; razon?: string; noEncontrado?: boolean }
+
+/**
+ * Borrado físico de un ticket no facturado. Las líneas de
+ * detalle_tickets_pesaje caen por cascade, así que su aporte al inventario
+ * desaparece con el ticket. Un ticket facturado nunca se borra: descuadraría
+ * una factura ya emitida (misma frontera que usa editar_ticket_pesaje).
+ */
+export async function borrarTicket(id: string): Promise<BorrarTicketResult> {
+  const { data: ticket } = await supabaseAdmin
+    .from('tickets_pesaje').select('id, facturado').eq('id', id).maybeSingle();
+  if (!ticket) return { ok: false, noEncontrado: true, razon: 'Ticket no encontrado.' };
+  if (ticket.facturado) {
+    return { ok: false, razon: 'El ticket ya está facturado y no se puede eliminar.' };
+  }
+
+  // Cinturón y tirantes: las tablas puente tienen FK sin cascade.
+  for (const tabla of ['facturas_compra_tickets', 'facturas_venta_tickets'] as const) {
+    const { count } = await supabaseAdmin
+      .from(tabla).select('ticket_id', { count: 'exact', head: true }).eq('ticket_id', id);
+    if ((count ?? 0) > 0) {
+      return { ok: false, razon: 'El ticket está asociado a una factura y no se puede eliminar.' };
+    }
+  }
+
+  const { error } = await supabaseAdmin.from('tickets_pesaje').delete().eq('id', id);
+  if (error) return { ok: false, razon: error.message };
+  return { ok: true };
+}

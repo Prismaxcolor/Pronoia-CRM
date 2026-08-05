@@ -5,6 +5,7 @@ import {
   actualizarTipoMaterial,
   desactivarTipoMaterial,
   reactivarTipoMaterial,
+  borrarTipoMaterial,
 } from '../services/tipo-material-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -92,6 +93,22 @@ router.post('/:id/reactivar', requirePermiso('productos', 'editar'), async (req,
   }
   logger.info({
     evento: 'tipo_material_reactivado',
+    ip: clienteIp(req),
+    userId: req.user!.sub,
+    tipoMaterialId: id,
+  });
+  res.json({ ok: true });
+});
+
+router.delete('/:id', requirePermiso('productos', 'eliminar'), async (req, res) => {
+  const id = String(req.params.id);
+  const result = await borrarTipoMaterial(id);
+  if (!result.ok) {
+    res.status(409).json({ error: result.razon, referencias: result.referencias });
+    return;
+  }
+  logger.info({
+    evento: 'tipo_material_eliminado',
     ip: clienteIp(req),
     userId: req.user!.sub,
     tipoMaterialId: id,

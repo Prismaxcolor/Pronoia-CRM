@@ -33,4 +33,10 @@ describe('matriz de permisos por rol', () => {
       expect(tienePermiso(PERMISOS_POR_ROL.superadmin, r, 'ver')).toBe(true);
     }
   });
+
+  it('solo superadmin puede eliminar tickets de pesaje', () => {
+    expect(tienePermiso(PERMISOS_POR_ROL.superadmin, 'pesaje', 'eliminar')).toBe(true);
+    expect(tienePermiso(PERMISOS_POR_ROL.administracion, 'pesaje', 'eliminar')).toBe(false);
+    expect(tienePermiso(PERMISOS_POR_ROL.trabajador, 'pesaje', 'eliminar')).toBe(false);
+  });
 });

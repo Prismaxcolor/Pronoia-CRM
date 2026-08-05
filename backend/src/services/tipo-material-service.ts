@@ -100,3 +100,33 @@ export async function reactivarTipoMaterial(id: string): Promise<boolean> {
     .eq('id', id);
   return !error;
 }
+
+export interface BorrarTipoMaterialResult {
+  ok: boolean;
+  razon?: string;
+  referencias?: { productos: number };
+}
+
+/**
+ * Borrado físico. Solo permitido si ningún producto usa la categoría. Si hay
+ * productos asignados, se mantiene desactivada (no rompe el historial).
+ */
+export async function borrarTipoMaterial(id: string): Promise<BorrarTipoMaterialResult> {
+  const { count } = await supabaseAdmin
+    .from('productos')
+    .select('id', { count: 'exact', head: true })
+    .eq('tipo_material_id', id);
+
+  const productos = count ?? 0;
+  if (productos > 0) {
+    return {
+      ok: false,
+      razon: `La categoría la usan ${productos} producto${productos > 1 ? 's' : ''}. Reasígnalos o desactívala en vez de borrarla.`,
+      referencias: { productos },
+    };
+  }
+
+  const { error } = await supabaseAdmin.from('tipos_material').delete().eq('id', id);
+  if (error) return { ok: false, razon: error.message };
+  return { ok: true };
+}

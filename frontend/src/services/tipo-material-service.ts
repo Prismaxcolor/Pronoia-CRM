@@ -61,3 +61,12 @@ export async function reactivarTipoMaterial(id: string): Promise<{ ok: true } | 
     return { error: err instanceof Error ? err.message : 'No se pudo reactivar la categoría.' };
   }
 }
+
+export async function borrarTipoMaterial(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/tipos-material/${id}`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo eliminar la categoría.' };
+  }
+}

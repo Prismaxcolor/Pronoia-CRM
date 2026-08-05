@@ -29,7 +29,7 @@ export const PERMISOS_POR_ROL: Record<RolUsuario, Permiso[]> = {
     { recurso: 'usuarios', accion: 'ver' }, { recurso: 'usuarios', accion: 'crear' }, { recurso: 'usuarios', accion: 'editar' }, { recurso: 'usuarios', accion: 'eliminar' },
     { recurso: 'clientes', accion: 'ver' }, { recurso: 'clientes', accion: 'crear' }, { recurso: 'clientes', accion: 'editar' }, { recurso: 'clientes', accion: 'eliminar' },
     { recurso: 'proveedores', accion: 'ver' }, { recurso: 'proveedores', accion: 'crear' }, { recurso: 'proveedores', accion: 'editar' }, { recurso: 'proveedores', accion: 'eliminar' },
-    { recurso: 'pesaje', accion: 'ver' }, { recurso: 'pesaje', accion: 'crear' }, { recurso: 'pesaje', accion: 'editar' },
+    { recurso: 'pesaje', accion: 'ver' }, { recurso: 'pesaje', accion: 'crear' }, { recurso: 'pesaje', accion: 'editar' }, { recurso: 'pesaje', accion: 'eliminar' },
     { recurso: 'despachos', accion: 'ver' }, { recurso: 'despachos', accion: 'crear' }, { recurso: 'despachos', accion: 'editar' }, { recurso: 'despachos', accion: 'eliminar' },
   ],
   administracion: [
