@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen, Search } from 'lucide-react';
+import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen, Search, ChevronDown } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
@@ -12,7 +12,6 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import CompletarTicketModal from './CompletarTicketModal';
-import PreviewMaterialTara from './PreviewMaterialTara';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
@@ -201,10 +200,6 @@ function PesajePage() {
   const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const filaActiva = materiales.find(f => f.uid === filaActivaUid) ?? materiales[0];
-  const productoActivo = productos.find(p => p.id === filaActiva?.productoId) ?? null;
-  const taraActiva = filaActiva?.taraModo === 'preconfigurada'
-    ? taras.find(t => t.id === filaActiva.taraId) ?? null
-    : null;
 
   const ticketsFiltrados = useMemo(
     () => tickets.filter(t => coincideCodigo(t.codigo, buscaCodigo)),
@@ -238,7 +233,7 @@ function PesajePage() {
       )}
 
       {pestana === 'nuevo' && (
-      <div className={puedeVerTickets ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,42rem)_minmax(0,1fr)] gap-6 items-start' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
+      <div className={puedeVerTickets ? 'max-w-2xl' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
         {puedeCrear ? (
           <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 h-fit">
             {/* Toggle compra/venta */}
@@ -299,10 +294,16 @@ function PesajePage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className={labelClass}>Material *</label>
-                        <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
-                          <option value="">— Selecciona —</option>
-                          {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                        </select>
+                        <button
+                          type="button"
+                          onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                          className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                        >
+                          <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                            {productos.find(p => p.id === f.productoId)?.nombre ?? '— Selecciona —'}
+                          </span>
+                          <ChevronDown size={14} className="text-text-muted shrink-0" />
+                        </button>
                       </div>
                       <div>
                         <label className={labelClass}>Subcategoría / detalle</label>
@@ -446,18 +447,6 @@ function PesajePage() {
           </form>
         ) : (
           <p className="text-text-muted text-sm">No tienes permiso para registrar pesajes.</p>
-        )}
-
-        {puedeCrear && puedeVerTickets && (
-          <div className="hidden lg:block lg:sticky lg:top-6">
-            <PreviewMaterialTara
-              producto={productoActivo}
-              tara={taraActiva}
-              taraCantidad={Number(filaActiva?.taraCantidad) || 0}
-              taraKg={filaActiva ? taraKgFila(filaActiva, taras) : 0}
-              onAbrirSelectorMaterial={() => setMostrarSelectorMaterial(true)}
-            />
-          </div>
         )}
 
         {!puedeVerTickets && (
