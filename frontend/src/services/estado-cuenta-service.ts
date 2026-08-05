@@ -13,6 +13,8 @@ export interface EntradaEstadoCuenta {
   notaId?: string;
   /** Solo notas: ya fue reversada con una nota contraria. */
   anulada?: boolean;
+  /** Solo facturas: id para abrir el detalle. Ausente para pagos/notas. */
+  facturaId?: string;
 }
 
 export interface EstadoCuenta {

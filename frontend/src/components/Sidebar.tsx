@@ -35,6 +35,7 @@ const NAV_SECTIONS: NavSection[] = [
     header: 'Pesaje',
     items: [
       { label: 'Pesaje', to: '/pesaje', icon: <Scale size={20} />, recurso: 'pesaje' },
+      { label: 'Taras', to: '/taras', icon: <Weight size={20} />, recurso: 'productos' },
       { label: 'Despachos', to: '/citas', icon: <CalendarClock size={20} />, recurso: 'despachos' },
     ],
   },
@@ -62,7 +63,6 @@ const NAV_SECTIONS: NavSection[] = [
     header: 'Configuración',
     items: [
       { label: 'Listas de precios', to: '/listas-precios', icon: <Tag size={20} />, recurso: 'productos' },
-      { label: 'Taras', to: '/taras', icon: <Weight size={20} />, recurso: 'productos' },
       { label: 'Usuarios', to: '/usuarios', icon: <Users size={20} />, recurso: 'usuarios' },
     ],
   },

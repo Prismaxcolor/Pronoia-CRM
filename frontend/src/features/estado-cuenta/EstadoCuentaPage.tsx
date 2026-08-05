@@ -201,7 +201,19 @@ function EstadoCuentaPage({ tipo }: Props) {
                   <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
                   {e.anulada && <span className="text-xs text-text-muted ml-2">(anulada)</span>}
                 </td>
-                <td className="px-5 py-3 text-text-muted">{e.referencia ?? '—'}</td>
+                <td className="px-5 py-3 text-text-muted">
+                  {e.tipo === 'factura' && e.facturaId ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`${tipo === 'proveedor' ? '/compras' : '/ventas'}/${e.facturaId}`)}
+                      className="text-brand-600 hover:underline print:text-inherit print:no-underline"
+                    >
+                      {e.referencia ?? '—'}
+                    </button>
+                  ) : (
+                    e.referencia ?? '—'
+                  )}
+                </td>
                 <td className="px-5 py-3 text-right text-text-primary">{e.cargo ? fmt(e.cargo) : '—'}</td>
                 <td className="px-5 py-3 text-right text-text-primary">{e.abono ? fmt(e.abono) : '—'}</td>
                 {puedeAjustar && (

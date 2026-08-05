@@ -84,11 +84,11 @@ export async function completarTicket(
 
 export interface EditarTicketInput {
   materiales: CrearTicketMaterialInput[];
-  pesoGlobal?: number;
   observaciones?: string | null;
 }
 
-/** Corrige un ticket ya completo (material, pesos, peso global, observaciones).
+/** Corrige un ticket ya completo (material, pesos, observaciones). El peso
+ *  global no se edita — se fija al crear el ticket.
  *  El backend rechaza la edición si el ticket ya está facturado. */
 export async function editarTicket(
   id: string,

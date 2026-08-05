@@ -225,7 +225,9 @@ export async function completarTicket(
   return { ticket };
 }
 
-/** Corrige un ticket ya completo (material, pesos, peso global, observaciones).
+/** Corrige un ticket ya completo (material, pesos, observaciones). El peso
+ *  global se fija al crear el ticket y no se edita después (es la lectura
+ *  física de báscula de entrada) — el RPC hace coalesce(null, peso_global).
  *  La RPC rechaza tickets facturados o en bruto. */
 export async function editarTicket(
   id: string,
@@ -234,7 +236,7 @@ export async function editarTicket(
   const { error } = await supabaseAdmin.rpc('editar_ticket_pesaje', {
     p_ticket_id: id,
     p_materiales: materialesARpc(input.materiales),
-    p_peso_global: input.pesoGlobal ?? null,
+    p_peso_global: null,
     p_observaciones: input.observaciones,
   });
 

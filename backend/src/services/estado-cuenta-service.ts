@@ -14,6 +14,8 @@ export interface EntradaEstadoCuenta {
   abono: number;
   /** Solo notas: id para poder anularla. Ausente para facturas/pagos. */
   notaId?: string;
+  /** Solo facturas: id para abrir el detalle. Ausente para pagos/notas. */
+  facturaId?: string;
   /** Solo notas: ya fue reversada con una nota contraria. */
   anulada?: boolean;
 }
@@ -55,6 +57,7 @@ export function construirEstadoCuenta(
       referencia: f.id.slice(0, 8),
       cargo: Number(f.total),
       abono: 0,
+      facturaId: f.id,
     });
   }
   for (const p of pagos) {

@@ -51,7 +51,6 @@ function TicketDetallePage() {
 
   const [editando, setEditando] = useState(false);
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
-  const [pesoGlobalEdit, setPesoGlobalEdit] = useState('');
   const [observacionesEdit, setObservacionesEdit] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,14 +77,13 @@ function TicketDetallePage() {
     [materiales, taras]
   );
   const diferencia = useMemo(
-    () => (Number(pesoGlobalEdit) || 0) - pesoNetoTotal,
-    [pesoGlobalEdit, pesoNetoTotal]
+    () => (ticket?.pesoGlobal ?? 0) - pesoNetoTotal,
+    [ticket, pesoNetoTotal]
   );
 
   const iniciarEdicion = () => {
     if (!ticket) return;
     setMateriales(filasDesdeTicket(ticket));
-    setPesoGlobalEdit(String(ticket.pesoGlobal));
     setObservacionesEdit(ticket.observaciones ?? '');
     setError(null);
     setEditando(true);
@@ -105,7 +103,6 @@ function TicketDetallePage() {
     if (!ticket) return;
     setError(null);
 
-    if (!pesoGlobalEdit || Number(pesoGlobalEdit) <= 0) { setError('Registra el peso global de la pesada.'); return; }
     if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
     if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
       setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
@@ -115,7 +112,6 @@ function TicketDetallePage() {
 
     setGuardando(true);
     const result = await editarTicket(ticket.id, {
-      pesoGlobal: Number(pesoGlobalEdit),
       observaciones: observacionesEdit.trim() || null,
       materiales: materiales.map(f => ({
         productoId: f.productoId,
@@ -251,9 +247,9 @@ function TicketDetallePage() {
         </div>
       ) : (
         <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
-          <div>
-            <label className={labelClass}>Peso global (kg) *</label>
-            <input type="number" step="0.01" min="0" value={pesoGlobalEdit} onChange={e => setPesoGlobalEdit(e.target.value)} className={inputClass} placeholder="0.00" />
+          <div className="flex items-center justify-between text-sm bg-surface-alt border border-border rounded-lg px-4 py-2.5">
+            <span className="text-text-secondary">Peso global (fijado al crear el ticket)</span>
+            <span className="font-semibold text-text-primary">{fmt(ticket.pesoGlobal)} kg</span>
           </div>
 
           <div className="space-y-3">

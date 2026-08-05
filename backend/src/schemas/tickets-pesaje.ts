@@ -70,7 +70,6 @@ export const completarTicketSchema = z.object({
 /** Edita un ticket ya completo (corrección de errores). Solo mientras no esté facturado. */
 export const editarTicketSchema = z.object({
   materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
-  pesoGlobal: z.number().positive('El peso global debe ser mayor a 0.').optional(),
   observaciones: z
     .string()
     .trim()
