@@ -9,6 +9,8 @@ import {
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { obtenerProductos } from '../../services/producto-service';
 import Accordion from '../../components/Accordion';
+import AlmacenesPanel from './AlmacenesPanel';
+import TrasladosPanel from './TrasladosPanel';
 import type { TipoMaterial, Producto } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -41,8 +43,10 @@ function agruparPorDestino(grupos: GrupoInventario[]): GrupoDestino[] {
 }
 
 type Agrupacion = 'categoria' | 'lote';
+type Pestana = 'inventario' | 'almacenes' | 'traslados';
 
 function InventarioPage() {
+  const [pestana, setPestana] = useState<Pestana>('inventario');
   const [grupos, setGrupos] = useState<GrupoInventario[]>([]);
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -83,6 +87,23 @@ function InventarioPage() {
         </p>
       </div>
 
+      <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
+        <button type="button" onClick={() => setPestana('inventario')} className={`px-4 py-1.5 ${pestana === 'inventario' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Inventario
+        </button>
+        <button type="button" onClick={() => setPestana('almacenes')} className={`px-4 py-1.5 ${pestana === 'almacenes' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Almacenes
+        </button>
+        <button type="button" onClick={() => setPestana('traslados')} className={`px-4 py-1.5 ${pestana === 'traslados' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Traslados
+        </button>
+      </div>
+
+      {pestana === 'almacenes' && <AlmacenesPanel />}
+      {pestana === 'traslados' && <TrasladosPanel />}
+
+      {pestana === 'inventario' && (
+      <>
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <div>
@@ -236,6 +257,8 @@ function InventarioPage() {
             </Accordion>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );

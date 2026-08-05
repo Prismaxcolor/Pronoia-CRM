@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen, Search, ChevronDown } from 'lucide-react';
+import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen, Search, ChevronDown, AlertTriangle } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerTickets, crearTicket, borrarTicket } from '../../services/ticket-pesaje-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
+import { obtenerAlmacenes, obtenerStockAlmacen } from '../../services/almacen-service';
+import { crearTraslado } from '../../services/traslado-service';
 import { subirFotoTicket } from '../../services/storage-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
@@ -15,11 +17,11 @@ import CompletarTicketModal from './CompletarTicketModal';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
-import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
+import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen } from '@shared/types/index.js';
 
 interface FotoLocal { file: File; preview: string }
 interface Entidad { id: string; nombre: string; activo: boolean }
-type TipoPesaje = 'compra' | 'venta';
+type TipoPesaje = 'compra' | 'venta' | 'traslado';
 
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -43,9 +45,13 @@ function PesajePage() {
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
   const [tickets, setTickets] = useState<TicketPesaje[]>([]);
+  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
+  const [stockOrigen, setStockOrigen] = useState<Map<string, number>>(new Map());
 
   const [tipo, setTipo] = useState<TipoPesaje>('compra');
   const [entidadId, setEntidadId] = useState('');
+  const [almacenOrigenId, setAlmacenOrigenId] = useState('');
+  const [almacenDestinoId, setAlmacenDestinoId] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
   const [pesoGlobal, setPesoGlobal] = useState('');
   const [devolucion, setDevolucion] = useState('');
@@ -59,7 +65,7 @@ function PesajePage() {
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [buscaCodigo, setBuscaCodigo] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState<'todos' | TipoPesaje>('todos');
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'compra' | 'venta'>('todos');
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
@@ -72,8 +78,18 @@ function PesajePage() {
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
     obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
+    obtenerAlmacenes().then(lista => setAlmacenes(lista.filter(a => a.activo)));
     cargarTickets();
   }, []);
+
+  // Stock del almacén de origen elegido, para avisar (sin bloquear) si un
+  // traslado deja el material en negativo.
+  useEffect(() => {
+    const promesa = tipo === 'traslado' && almacenOrigenId
+      ? obtenerStockAlmacen(almacenOrigenId)
+      : Promise.resolve(new Map<string, number>());
+    promesa.then(setStockOrigen);
+  }, [tipo, almacenOrigenId]);
 
   const entidades = tipo === 'compra' ? proveedores : clientes;
   const labelEntidad = tipo === 'compra' ? 'Proveedor' : 'Cliente';
@@ -113,12 +129,43 @@ function PesajePage() {
 
   const limpiar = () => {
     setEntidadId('');
+    setAlmacenOrigenId('');
+    setAlmacenDestinoId('');
     setFecha(hoyISO());
     setPesoGlobal('');
     setDevolucion('');
     setMateriales([filaVacia()]);
     setObservaciones('');
     setFotos([]);
+  };
+
+  const guardarTraslado = async () => {
+    setError(null);
+
+    if (!almacenOrigenId) { setError('Elige el almacén de origen.'); return; }
+    if (!almacenDestinoId) { setError('Elige el almacén de destino.'); return; }
+    if (almacenOrigenId === almacenDestinoId) { setError('El almacén de origen y destino no pueden ser el mismo.'); return; }
+    if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
+    if (materiales.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
+    if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+
+    setGuardando(true);
+    const result = await crearTraslado({
+      almacenOrigenId,
+      almacenDestinoId,
+      materiales: materiales.map(f => ({
+        productoId: f.productoId,
+        subcategoria: f.subcategoria.trim() || null,
+        pesoBruto: Number(f.pesoBruto) || 0,
+        tara: taraKgFila(f, taras),
+      })),
+      observaciones: observaciones.trim() || null,
+    });
+    setGuardando(false);
+
+    if ('error' in result) { setError(result.error); return; }
+    toast.exito(`${result.traslado.codigo} generado (${fmt(result.traslado.pesoNetoEnviado)} kg). Queda pendiente hasta que el almacén destino confirme la recepción.`);
+    limpiar();
   };
 
   const guardar = async (estado: 'bruto' | 'completo') => {
@@ -150,7 +197,7 @@ function PesajePage() {
     }
 
     const result = await crearTicket({
-      tipo,
+      tipo: tipo === 'venta' ? 'venta' : 'compra',
       entidadId,
       fecha,
       pesoGlobal: Number(pesoGlobal) || 0,
@@ -182,6 +229,7 @@ function PesajePage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (tipo === 'traslado') { guardarTraslado(); return; }
     guardar('completo');
   };
 
@@ -255,7 +303,7 @@ function PesajePage() {
       <div className={puedeVerTickets ? 'max-w-2xl' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
         {puedeCrear ? (
           <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 h-fit">
-            {/* Toggle compra/venta */}
+            {/* Toggle compra/venta/traslado */}
             <div>
               <label className={labelClass}>Tipo de operación</label>
               <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
@@ -265,9 +313,30 @@ function PesajePage() {
                 <button type="button" onClick={() => { setTipo('venta'); setEntidadId(''); }} className={`px-4 py-1.5 ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
                   Venta (cliente)
                 </button>
+                <button type="button" onClick={() => { setTipo('traslado'); setEntidadId(''); }} className={`px-4 py-1.5 ${tipo === 'traslado' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Traslado (almacén)
+                </button>
               </div>
             </div>
 
+            {tipo === 'traslado' ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Almacén origen *</label>
+                  <select value={almacenOrigenId} onChange={e => setAlmacenOrigenId(e.target.value)} className={inputClass}>
+                    <option value="">— Selecciona —</option>
+                    {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Almacén destino *</label>
+                  <select value={almacenDestinoId} onChange={e => setAlmacenDestinoId(e.target.value)} className={inputClass}>
+                    <option value="">— Selecciona —</option>
+                    {almacenes.filter(a => a.id !== almacenOrigenId).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                  </select>
+                </div>
+              </div>
+            ) : (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>{labelEntidad} *</label>
@@ -281,12 +350,15 @@ function PesajePage() {
                 <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
               </div>
             </div>
+            )}
 
+            {tipo !== 'traslado' && (
             <div>
               <label className={labelClass}>Peso global (kg) *</label>
               <input type="number" step="0.01" min="0" value={pesoGlobal} onChange={e => setPesoGlobal(e.target.value)} className={inputClass} placeholder="0.00" />
               <p className="text-xs text-text-muted mt-1">Pesaje único de todos los materiales juntos, al llegar el proveedor.</p>
             </div>
+            )}
 
             {/* Materiales */}
             <div className="space-y-3">
@@ -330,6 +402,7 @@ function PesajePage() {
                       </div>
                     </div>
 
+                    {tipo !== 'traslado' && (
                     <div>
                       <label className={labelClass}>Destino (inventario) *</label>
                       <select value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
@@ -337,6 +410,7 @@ function PesajePage() {
                         {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                       </select>
                     </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 items-center">
                       {/* Las 4 celdas son hermanas directas del grid (no divs anidados por
@@ -386,6 +460,19 @@ function PesajePage() {
                       <span className="text-text-muted">Neto del material</span>
                       <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                     </div>
+
+                    {tipo === 'traslado' && f.productoId && (() => {
+                      const disponible = stockOrigen.get(f.productoId) ?? 0;
+                      if (neto <= disponible) return null;
+                      return (
+                        <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5">
+                          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                          <span>
+                            El almacén de origen solo tiene {fmt(disponible)} kg disponibles de este material — el inventario quedará en {fmt(disponible - neto)} kg.
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -406,6 +493,13 @@ function PesajePage() {
                   {fmt(pesoNetoTotal)} kg
                 </span>
               </div>
+              {tipo === 'traslado' ? (
+                <p className="text-[11px] text-brand-700/80">
+                  Total que sale del almacén de origen. Queda pendiente hasta que el almacén destino confirme la
+                  recepción (pestaña Traslados, dentro de Inventario).
+                </p>
+              ) : (
+              <>
               <div className="flex items-center justify-between gap-3 text-sm border-t border-brand-200 pt-2">
                 <label htmlFor="devolucion" className="text-brand-800 shrink-0">Devolución (kg)</label>
                 <input
@@ -429,8 +523,11 @@ function PesajePage() {
                   {fmt(diferencia)} kg
                 </span>
               </div>
+              </>
+              )}
             </div>
 
+            {tipo !== 'traslado' && (
             <div>
               <label className={labelClass}>Fotos de evidencia</label>
               <div className="flex flex-wrap gap-2">
@@ -449,6 +546,7 @@ function PesajePage() {
               </div>
               <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFotos} className="hidden" />
             </div>
+            )}
 
             <div>
               <label className={labelClass}>Observaciones</label>
@@ -458,7 +556,9 @@ function PesajePage() {
             {error && <p className="text-red-500 text-sm">{error}</p>}
 
             <button type="submit" disabled={guardando} className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? <><Loader2 size={16} className="animate-spin" /> Guardando...</> : 'Generar ticket de pesaje'}
+              {guardando
+                ? <><Loader2 size={16} className="animate-spin" /> Guardando...</>
+                : tipo === 'traslado' ? 'Generar traslado' : 'Generar ticket de pesaje'}
             </button>
 
             {tipo === 'compra' && (
@@ -472,9 +572,11 @@ function PesajePage() {
               </button>
             )}
 
+            {tipo !== 'traslado' && (
             <p className="text-xs text-text-muted">
               ¿La operación fue fuera de la empresa y no se pesó aquí? Entonces no se genera ticket: el peso se ingresa a mano al crear la factura.
             </p>
+            )}
           </form>
         ) : (
           <p className="text-text-muted text-sm">No tienes permiso para registrar pesajes.</p>

@@ -1889,3 +1889,203 @@ alter table public.listas_precios
 
 create index if not exists idx_listas_precios_tipo
   on public.listas_precios (tipo, activo, nombre);
+
+
+-- ============================================================================
+-- Bloque 33 · Almacenes y traslados entre almacenes (Tareas 17/18, MVP)
+--
+-- Primer armado para que Julio se haga una idea, no la versión final: agrega
+-- el catálogo de almacenes (CRUD simple) y un tipo de operación de pesaje
+-- nuevo, "traslado", que mueve material de un almacén a otro con su propio
+-- flujo pendiente → completado (como un ticket de pesaje, pero recepciona en
+-- vez de facturar). No toca tickets_pesaje/detalle_tickets_pesaje ni el
+-- concepto existente destino_tipo (mpp/lote) — es un sistema paralelo,
+-- deliberadamente aislado para no arriesgar el inventario ya en producción.
+--
+-- Stock por almacén: derivado 100% de traslados COMPLETADOS (recepciones -
+-- envíos), igual que el resto del inventario del sistema ya es derivado y no
+-- una tabla de saldo. Un almacén nuevo empieza en 0 para todo — no hay forma
+-- de asignarle un stock inicial en este primer armado (deliberado, fuera de
+-- alcance de esta pasada).
+-- ============================================================================
+
+create table if not exists public.almacenes (
+  id         uuid        primary key default gen_random_uuid(),
+  nombre     text        not null unique,
+  detalle    text,
+  activo     boolean     not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table public.almacenes disable row level security;
+
+create index if not exists idx_almacenes_activos
+  on public.almacenes (activo, nombre);
+
+
+create sequence if not exists public.tickets_traslado_numero_seq;
+
+create table if not exists public.tickets_traslado (
+  id                 uuid        primary key default gen_random_uuid(),
+  numero             bigint      not null default nextval('public.tickets_traslado_numero_seq'),
+  almacen_origen_id  uuid        not null references public.almacenes(id),
+  almacen_destino_id uuid        not null references public.almacenes(id),
+  estado             text        not null default 'pendiente' check (estado in ('pendiente', 'completo')),
+  observaciones      text,
+  fotos              text[],
+  pesado_por         uuid references public.users(id),
+  completado_por     uuid references public.users(id),
+  completado_en      timestamptz,
+  created_at         timestamptz not null default now(),
+  constraint chk_traslado_origen_destino_distintos check (almacen_origen_id <> almacen_destino_id)
+);
+
+alter table public.tickets_traslado disable row level security;
+
+create unique index if not exists idx_tickets_traslado_numero
+  on public.tickets_traslado (numero);
+
+create index if not exists idx_tickets_traslado_estado
+  on public.tickets_traslado (estado, created_at desc);
+
+
+-- peso_neto: igual criterio que detalle_tickets_pesaje (bruto - tara). Sin
+-- devolución acá — no aplica a un traslado interno.
+-- peso_recibido: nulo hasta que se completa el traslado (lo llena quien
+-- recepciona); es lo que realmente movió el inventario del almacén destino.
+create table if not exists public.detalle_traslado (
+  id             uuid        primary key default gen_random_uuid(),
+  traslado_id    uuid        not null references public.tickets_traslado(id) on delete cascade,
+  producto_id    uuid        references public.productos(id),
+  subcategoria   text,
+  peso_bruto     numeric,
+  tara           numeric,
+  peso_neto      numeric     generated always as (peso_bruto - tara) stored,
+  peso_recibido  numeric,
+  created_at     timestamptz not null default now()
+);
+
+alter table public.detalle_traslado disable row level security;
+
+create index if not exists idx_detalle_traslado_traslado
+  on public.detalle_traslado (traslado_id);
+
+
+-- RPC atómica: crea el header (numero vía default, estado 'pendiente') + N
+-- líneas de material sin peso_recibido todavía. Mismo patrón que
+-- crear_ticket_pesaje (Bloque 16/23).
+create or replace function public.crear_traslado(
+  p_almacen_origen_id  uuid,
+  p_almacen_destino_id uuid,
+  p_observaciones      text,
+  p_materiales         jsonb,
+  p_pesado_por         uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id   uuid;
+  v_item jsonb;
+begin
+  if p_almacen_origen_id = p_almacen_destino_id then
+    raise exception 'El almacén de origen y destino no pueden ser el mismo.';
+  end if;
+
+  insert into public.tickets_traslado
+    (almacen_origen_id, almacen_destino_id, observaciones, pesado_por)
+  values (
+    p_almacen_origen_id, p_almacen_destino_id, nullif(p_observaciones, ''), p_pesado_por
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) as elems(value)
+  loop
+    insert into public.detalle_traslado
+      (traslado_id, producto_id, subcategoria, peso_bruto, tara)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
+
+
+-- RPC atómica: registra lo recibido por línea de material (puede diferir de
+-- lo enviado — la diferencia se deriva en el backend, igual que
+-- diferencia en tickets_pesaje) y marca el traslado 'completo'. Exige fotos
+-- de evidencia (al menos 1) — se valida acá y también en el backend, doble
+-- verificación intencional igual que otros flujos de este sistema.
+create or replace function public.completar_traslado(
+  p_traslado_id     uuid,
+  p_recepciones     jsonb,
+  p_fotos           text[],
+  p_completado_por  uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_estado text;
+  v_item   jsonb;
+begin
+  select estado into v_estado from public.tickets_traslado where id = p_traslado_id;
+
+  if v_estado is null then
+    raise exception 'Traslado no encontrado.';
+  end if;
+  if v_estado <> 'pendiente' then
+    raise exception 'El traslado ya está completo.';
+  end if;
+  if p_fotos is null or array_length(p_fotos, 1) is null or array_length(p_fotos, 1) < 1 then
+    raise exception 'La recepción requiere al menos una foto de evidencia.';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_recepciones, '[]'::jsonb)) as elems(value)
+  loop
+    update public.detalle_traslado
+       set peso_recibido = (v_item->>'peso_recibido')::numeric
+     where id = (v_item->>'detalle_id')::uuid
+       and traslado_id = p_traslado_id;
+  end loop;
+
+  update public.tickets_traslado
+     set estado         = 'completo',
+         fotos           = p_fotos,
+         completado_por  = p_completado_por,
+         completado_en   = now()
+   where id = p_traslado_id;
+
+  return p_traslado_id;
+end;
+$$;
+
+
+-- Stock derivado por almacén: recepciones completadas (entran) menos envíos
+-- completados (salen), por producto. Traslados 'pendiente' NO se cuentan —
+-- el material sigue físicamente en el almacén de origen hasta que alguien
+-- confirma la recepción. Un almacén nuevo sin movimientos no aparece en el
+-- resultado (equivale a stock 0 para todo).
+create or replace function public.stock_almacen(p_almacen_id uuid)
+returns table(producto_id uuid, stock numeric)
+language sql
+stable
+as $$
+  select producto_id, sum(entrada) - sum(salida) as stock
+  from (
+    select dt.producto_id, coalesce(dt.peso_recibido, 0) as entrada, 0::numeric as salida
+    from public.detalle_traslado dt
+    join public.tickets_traslado t on t.id = dt.traslado_id
+    where t.almacen_destino_id = p_almacen_id and t.estado = 'completo'
+    union all
+    select dt.producto_id, 0::numeric, coalesce(dt.peso_neto, 0) as salida
+    from public.detalle_traslado dt
+    join public.tickets_traslado t on t.id = dt.traslado_id
+    where t.almacen_origen_id = p_almacen_id and t.estado = 'completo'
+  ) x
+  group by producto_id;
+$$;

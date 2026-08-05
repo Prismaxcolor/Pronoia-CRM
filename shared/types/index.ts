@@ -17,3 +17,6 @@ export { formatCodigoCompra, formatCodigoVenta } from './factura-compra-venta.js
 export { normalizarCodigo, coincideCodigo } from './codigo.js';
 export type { Transformacion, DetalleTransformacion } from './transformacion.js';
 export type { Tara } from './tara.js';
+export type { Almacen } from './almacen.js';
+export type { Traslado, TrasladoMaterial } from './traslado.js';
+export { formatCodigoTraslado } from './traslado.js';

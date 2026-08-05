@@ -24,6 +24,8 @@ import cochinitoRouter from './routes/cochinito.js';
 import uploadsRouter from './routes/uploads.js';
 import portalRouter from './routes/portal.js';
 import citasRouter from './routes/citas.js';
+import almacenesRouter from './routes/almacenes.js';
+import trasladosRouter from './routes/traslados.js';
 
 const app = express();
 
@@ -79,5 +81,7 @@ app.use('/api/uploads', uploadsRouter);
 app.use('/api/tasas', tasasRouter);
 app.use('/api/portal', portalRouter);
 app.use('/api/citas', citasRouter);
+app.use('/api/almacenes', almacenesRouter);
+app.use('/api/traslados', trasladosRouter);
 
 export default app;
