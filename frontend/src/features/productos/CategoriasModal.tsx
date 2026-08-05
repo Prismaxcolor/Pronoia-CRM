@@ -8,9 +8,9 @@ import {
   reactivarTipoMaterial,
   borrarTipoMaterial,
 } from '../../services/tipo-material-service';
-import { useToast } from '../../hooks/use-toast';
-import { useAuth } from '../../hooks/use-auth';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useToast } from '../../hooks/use-toast-context';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import type { TipoMaterial } from '@shared/types/index.js';
 
 interface Props {
@@ -36,12 +36,10 @@ function CategoriasModal({ onClose, onCambios }: Props) {
   const puedeEditar = tienePermiso('productos', 'editar');
   const puedeEliminar = tienePermiso('productos', 'eliminar');
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerTiposMaterial().then(setCategorias).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerTiposMaterial().then(setCategorias).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const marcarCambio = () => { setHuboCambios(true); };
 

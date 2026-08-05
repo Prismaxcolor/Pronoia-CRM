@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearCliente, actualizarCliente } from '../../services/cliente-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Cliente } from '@shared/types/index.js';
 
 interface Props {

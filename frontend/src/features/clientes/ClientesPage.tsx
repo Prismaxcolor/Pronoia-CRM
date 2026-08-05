@@ -8,9 +8,9 @@ import {
   borrarCliente,
   generarLinkTelegramCliente,
 } from '../../services/cliente-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import ClienteFormModal from './ClienteFormModal';
 import TelegramLinkModal from '../../components/TelegramLinkModal';
 import type { Cliente } from '@shared/types/index.js';
@@ -30,12 +30,13 @@ function ClientesPage() {
   const puedeEditar = tienePermiso('clientes', 'editar');
   const puedeBorrar = tienePermiso('clientes', 'eliminar');
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerClientes().then(setClientes).finally(() => setCargando(false));
-  };
+  // recargar() no toca setCargando(true): al montar, cargando ya arranca en
+  // true, así que llamarlo de nuevo síncronamente dentro del efecto dispara
+  // el lint react-hooks/set-state-in-effect sin necesidad real.
+  const recargar = () => obtenerClientes().then(setClientes).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleDesactivar = async (c: Cliente) => {
     const ok = await confirmar({

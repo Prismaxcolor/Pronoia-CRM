@@ -8,9 +8,9 @@ import { obtenerTickets, crearTicket, borrarTicket } from '../../services/ticket
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
 import { subirFotoTicket } from '../../services/storage-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import CompletarTicketModal from './CompletarTicketModal';
 import PreviewMaterialTara from './PreviewMaterialTara';
 import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';

@@ -8,9 +8,9 @@ import {
   borrarProveedor,
   generarLinkTelegramProveedor,
 } from '../../services/proveedor-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import ProveedorFormModal from './ProveedorFormModal';
 import TelegramLinkModal from '../../components/TelegramLinkModal';
 import type { Proveedor } from '@shared/types/index.js';
@@ -30,12 +30,10 @@ function ProveedoresPage() {
   const puedeEditar = tienePermiso('proveedores', 'editar');
   const puedeBorrar = tienePermiso('proveedores', 'eliminar');
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerProveedores().then(setProveedores).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerProveedores().then(setProveedores).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleDesactivar = async (p: Proveedor) => {
     const ok = await confirmar({

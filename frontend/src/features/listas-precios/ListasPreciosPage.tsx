@@ -5,9 +5,9 @@ import {
   obtenerListas,
   eliminarLista,
 } from '../../services/lista-precios-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import ListaFormModal from './ListaFormModal';
 import type { ListaPrecios } from '@shared/types/index.js';
 
@@ -27,12 +27,10 @@ function ListasPreciosPage() {
   const puedeEditar = tienePermiso('productos', 'editar');
   const puedeBorrar = tienePermiso('productos', 'eliminar');
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerListas().then(setListas).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerListas().then(setListas).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleBorrar = async (l: ListaPrecios, e: React.MouseEvent) => {
     e.stopPropagation();

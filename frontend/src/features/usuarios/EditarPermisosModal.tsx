@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { actualizarUsuario } from '../../services/usuario-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import { PERMISOS_POR_ROL } from '@shared/types/index.js';
 import type { Usuario, RolUsuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
 

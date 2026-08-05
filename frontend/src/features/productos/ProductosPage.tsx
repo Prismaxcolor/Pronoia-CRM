@@ -6,9 +6,9 @@ import {
   reactivarProducto,
   borrarProducto,
 } from '../../services/producto-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import ProductoForm from './ProductoForm';
 import CategoriasModal from './CategoriasModal';
 import type { Producto, TipoProducto } from '@shared/types/index.js';
@@ -58,12 +58,10 @@ function ProductosPage() {
     });
   }, [productos, busqueda, categoriaFiltro, tipoFiltro]);
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerProductos().then(setProductos).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerProductos().then(setProductos).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleDesactivar = async (p: Producto) => {
     const ok = await confirmar({

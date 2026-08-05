@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight, CalendarClock } from 'lucide-react';
-import { useAuth } from '../hooks/use-auth';
+import { useAuth } from '../hooks/use-auth-context';
 import type { Recurso } from '@shared/types/index.js';
 
 interface NavItem {

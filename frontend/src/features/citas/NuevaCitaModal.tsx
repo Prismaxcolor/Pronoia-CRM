@@ -3,7 +3,7 @@ import { X, Loader2 } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerHorarios, crearCitaStaff } from '../../services/citas-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 
 interface Entidad { id: string; nombre: string; activo: boolean }
 type TipoEntidad = 'proveedor' | 'cliente';
@@ -33,6 +33,10 @@ function NuevaCitaModal({ onClose, onAgendada }: Props) {
   useEffect(() => {
     const cargar = (): Promise<Entidad[]> => (tipo === 'proveedor' ? obtenerProveedores() : obtenerClientes());
     cargar().then(lista => setEntidades(lista.filter(e => e.activo)));
+    // Reset real, no redundante: si el usuario ya había elegido una entidad y
+    // cambia de pestaña Proveedor/Cliente, ese id queda inválido para el
+    // nuevo tipo — sin este reset se podría enviar el id equivocado.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEntidadId('');
   }, [tipo]);
 

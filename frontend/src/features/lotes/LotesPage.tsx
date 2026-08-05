@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Plus, Boxes, Loader2 } from 'lucide-react';
 import { obtenerLotes, crearLote, actualizarLote } from '../../services/lote-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Lote } from '@shared/types/index.js';
 
 function LotesPage() {
@@ -16,12 +16,10 @@ function LotesPage() {
   const [nombre, setNombre] = useState('');
   const [guardando, setGuardando] = useState(false);
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerLotes().then(setLotes).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerLotes().then(setLotes).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleCrear = async (e: React.FormEvent) => {
     e.preventDefault();

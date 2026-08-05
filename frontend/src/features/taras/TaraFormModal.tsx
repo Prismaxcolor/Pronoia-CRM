@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { X, ImagePlus } from 'lucide-react';
 import { crearTara, actualizarTara } from '../../services/tara-service';
 import { subirFotoTara } from '../../services/storage-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Tara } from '@shared/types/index.js';
 
 interface Props {

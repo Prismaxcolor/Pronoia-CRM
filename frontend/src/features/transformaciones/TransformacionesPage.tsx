@@ -7,8 +7,8 @@ import {
 } from '../../services/transformacion-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerInventario } from '../../services/inventario-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Producto } from '@shared/types/index.js';
 
 interface SalidaForm { materialSalidaId: string; cantidad: string }

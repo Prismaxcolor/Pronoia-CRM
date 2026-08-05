@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale } from 'lucide-react';
 import { completarTicket } from '../../services/ticket-pesaje-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 

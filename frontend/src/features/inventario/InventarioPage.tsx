@@ -59,7 +59,6 @@ function InventarioPage() {
   }, []);
 
   useEffect(() => {
-    setCargando(true);
     obtenerInventario(filtros).then(setGrupos).finally(() => setCargando(false));
   }, [filtros]);
 

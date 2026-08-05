@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, X, CheckCheck, Truck, Contact, Plus } from 'lucide-react';
 import { listarCitas, actualizarEstadoCita, obtenerHorarios, type Cita, type EstadoCita } from '../../services/citas-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 import AgendaSemana from './AgendaSemana';
 import NuevaCitaModal from './NuevaCitaModal';
 
@@ -51,12 +51,11 @@ function CitasPage() {
     ? { desde: lunes, hasta: sumarDias(lunes, 6) }
     : { desde: verHistorico ? undefined : hoyISO(), hasta: undefined };
 
-  const cargar = () => {
-    setCargando(true);
-    listarCitas(rangoActivo.desde, rangoActivo.hasta).then(setCitas).finally(() => setCargando(false));
-  };
+  const recargar = () => listarCitas(rangoActivo.desde, rangoActivo.hasta).then(setCitas).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [vista, verHistorico, lunes]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { recargar(); }, [vista, verHistorico, lunes]);
   useEffect(() => { obtenerHorarios().then(setHorarios); }, []);
 
   const citasPorDia = useMemo(() => {

@@ -10,7 +10,7 @@ import {
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { useAuth } from '../../hooks/use-auth';
+import { useAuth } from '../../hooks/use-auth-context';
 import { coincideCodigo, type Producto } from '@shared/types/index.js';
 
 interface Entidad { id: string; nombre: string }
@@ -71,7 +71,6 @@ function FacturaHistorialPage({ tipo }: Props) {
   }, [esCompra]);
 
   useEffect(() => {
-    setCargando(true);
     obtenerFacturas(tipo, filtros).then(setFacturas).finally(() => setCargando(false));
   }, [tipo, filtros]);
 

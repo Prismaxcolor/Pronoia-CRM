@@ -3,8 +3,8 @@ import { X, Plus, Trash2, ImagePlus } from 'lucide-react';
 import { crearProducto, actualizarProducto, obtenerProductos } from '../../services/producto-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { subirImagenProducto } from '../../services/storage-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial } from '@shared/types/index.js';
 
 interface Props {

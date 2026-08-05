@@ -7,8 +7,8 @@ import {
   type EstadoCuenta,
   type TipoEntidad,
 } from '../../services/estado-cuenta-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
 import NotaAjusteModal from '../proveedores/NotaAjusteModal';
 import AnularNotaModal from '../proveedores/AnularNotaModal';
@@ -55,14 +55,17 @@ function EstadoCuentaPage({ tipo }: Props) {
   const puedePagar = tipo === 'proveedor' && tienePermiso('cochinito', 'crear');
   const puedeAjustar = tipo === 'proveedor' && tienePermiso('proveedores', 'editar');
 
-  const cargar = () => {
-    setCargando(true);
+  const recargar = () =>
     obtenerEstadoCuenta(tipo, id, desde || undefined, hasta || undefined)
       .then(setEstado)
       .finally(() => setCargando(false));
-  };
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tipo, id, desde, hasta]);
+  /* recargar() se redefine cada render cerrando sobre estas mismas deps;
+   * agregarla dispararía el efecto en cada render en vez de solo cuando
+   * cambian tipo/id/desde/hasta. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { recargar(); }, [tipo, id, desde, hasta]);
 
   const handlePagoRegistrado = () => {
     setPagoAbierto(false);

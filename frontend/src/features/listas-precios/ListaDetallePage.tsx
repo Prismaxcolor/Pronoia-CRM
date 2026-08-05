@@ -7,9 +7,9 @@ import {
   eliminarPrecio,
 } from '../../services/lista-precios-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import type { ListaPrecios, PrecioLista, Producto } from '@shared/types/index.js';
 
 function ListaDetallePage() {
@@ -32,8 +32,10 @@ function ListaDetallePage() {
 
   const puedeEditar = tienePermiso('productos', 'editar');
 
-  const cargar = () => {
-    setCargando(true);
+  // Sin "loud" version con setCargando(true): las mutaciones de precios en esta
+  // pantalla actualizan `precios` en el momento (setPrecios(prev => ...)), no
+  // recargan la página entera.
+  useEffect(() => {
     Promise.all([obtenerListaDetalle(id), obtenerProductos()])
       .then(([detalle, prods]) => {
         if (detalle) {
@@ -43,9 +45,7 @@ function ListaDetallePage() {
         setProductos(prods);
       })
       .finally(() => setCargando(false));
-  };
-
-  useEffect(() => { cargar(); }, [id]);
+  }, [id]);
 
   // productos que aún no tienen precio en esta lista
   const productosDisponibles = useMemo(() => {

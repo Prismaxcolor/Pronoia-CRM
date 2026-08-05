@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { DollarSign, Package, ArrowUpDown, TrendingDown } from 'lucide-react';
 import { obtenerBancas, obtenerMovimientos } from '../../services/banca-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { useAuth } from '../../hooks/use-auth';
+import { useAuth } from '../../hooks/use-auth-context';
 import ProximosDespachos from './ProximosDespachos';
 import type { Banca, Movimiento, Producto } from '@shared/types/index.js';
 

@@ -6,9 +6,9 @@ import {
   reactivarUsuario,
   borrarUsuario,
 } from '../../services/usuario-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import CrearUsuarioModal from './CrearUsuarioModal';
 import EditarPermisosModal from './EditarPermisosModal';
 import type { Usuario } from '@shared/types/index.js';
@@ -28,12 +28,10 @@ function UsuariosPage() {
   const toast = useToast();
   const confirmar = useConfirm();
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerUsuarios().then(setUsuarios).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerUsuarios().then(setUsuarios).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleDesactivar = async (u: Usuario) => {
     if (u.id === currentUser?.id) return;

@@ -7,7 +7,7 @@ import { obtenerProductos } from '../../services/producto-service';
 import { obtenerTickets } from '../../services/ticket-pesaje-service';
 import { crearFactura, type TipoFactura } from '../../services/factura-cv-service';
 import { obtenerListas, obtenerListaDetalle } from '../../services/lista-precios-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Producto, TicketPesaje, ListaPrecios } from '@shared/types/index.js';
 
 interface Entidad { id: string; nombre: string; activo: boolean }
@@ -71,6 +71,10 @@ function FacturaFormPage({ tipo }: Props) {
   }, [esCompra, tipo]);
 
   useEffect(() => {
+    // El setState del early-return es real, no redundante: limpia la lista de
+    // tickets cuando el usuario DESELECCIONA la entidad después de haber
+    // elegido una (no solo en el mount, donde ya arranca en []).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!entidadId) { setTicketsPendientes([]); return; }
     obtenerTickets({ soloNoFacturados: true, entidadId, tipo }).then(setTicketsPendientes);
   }, [entidadId, tipo]);
@@ -91,6 +95,10 @@ function FacturaFormPage({ tipo }: Props) {
   // los nuevos se precargan con el precio de la lista elegida (si hay).
   useEffect(() => {
     if (modoPeso !== 'ticket') return;
+    // Reconstruye las líneas fusionando con las anteriores (conserva precios ya
+    // escritos a mano) — es una sincronización real con los tickets seleccionados,
+    // no una inicialización que se pueda mover a render/useMemo sin perder ese merge.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLineas(prev => {
       const previos = new Map(prev.filter(l => l.materialId).map(l => [l.materialId!, l]));
       const nuevas: LineaFila[] = ticketsSel.flatMap(t =>

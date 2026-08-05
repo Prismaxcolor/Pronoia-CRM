@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './hooks/use-auth';
-import { PortalAuthProvider, usePortalAuth } from './hooks/use-portal-auth';
+import { AuthProvider } from './hooks/use-auth';
+import { useAuth } from './hooks/use-auth-context';
+import { PortalAuthProvider } from './hooks/use-portal-auth';
+import { usePortalAuth } from './hooks/use-portal-auth-context';
 import { ToastProvider } from './hooks/use-toast';
 import { ConfirmProvider } from './hooks/use-confirm';
 import Layout from './components/Layout';

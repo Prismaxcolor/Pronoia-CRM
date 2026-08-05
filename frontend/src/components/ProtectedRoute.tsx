@@ -1,5 +1,5 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../hooks/use-auth';
+import { useAuth } from '../hooks/use-auth-context';
 import type { Recurso } from '@shared/types/index.js';
 
 interface Props {

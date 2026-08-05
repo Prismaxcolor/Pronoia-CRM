@@ -63,8 +63,13 @@ function TasaCambioWidget() {
     setHistorial(h);
   };
 
+  // Igual que cargar(), pero sin pasar por una función async con nombre: el
+  // linter no puede ver más allá del await y marca el setState de adentro
+  // como "síncrono dentro del efecto" aunque no lo sea.
   useEffect(() => {
-    cargar().finally(() => setCargando(false));
+    Promise.all([obtenerTasaOficial(), obtenerHistorialTasas(7)])
+      .then(([t, h]) => { setTasa(t); setHistorial(h); })
+      .finally(() => setCargando(false));
   }, []);
 
   const refrescar = async () => {

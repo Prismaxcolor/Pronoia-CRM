@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, EyeOff, Eye, Weight } from 'lucide-react';
 import { obtenerTaras, desactivarTara, reactivarTara } from '../../services/tara-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 import TaraFormModal from './TaraFormModal';
 import type { Tara } from '@shared/types/index.js';
 
@@ -16,12 +16,10 @@ function TarasPage() {
   const [cargando, setCargando] = useState(true);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; tara: Tara | null } | { abierto: false }>({ abierto: false });
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerTaras().then(setTaras).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerTaras().then(setTaras).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleDesactivar = async (t: Tara) => {
     const result = await desactivarTara(t.id);

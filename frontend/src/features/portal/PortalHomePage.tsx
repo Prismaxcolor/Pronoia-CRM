@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { LogOut, FileText, Wallet, Tag, CalendarClock, FileCheck2, ChevronRight } from 'lucide-react';
-import { usePortalAuth } from '../../hooks/use-portal-auth';
+import { usePortalAuth } from '../../hooks/use-portal-auth-context';
 
 interface Opcion {
   to: string;

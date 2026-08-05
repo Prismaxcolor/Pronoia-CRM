@@ -1,10 +1,8 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { apiFetch, setToken, clearToken, getToken, ApiError } from '../services/api-client';
 import { PERMISOS_POR_ROL, tienePermiso as checkPermiso } from '@shared/types/index.js';
 import type { Usuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
-import type { AuthContextType } from '../types/auth';
-
-const AuthContext = createContext<AuthContextType | null>(null);
+import { AuthContext } from './use-auth-context';
 
 interface UsuarioApi {
   id: string;
@@ -40,15 +38,15 @@ interface AuthResponse {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null);
-  const [cargando, setCargando] = useState(true);
+  // Sin token no hay nada que cargar — se resuelve en el estado inicial (el
+  // token ya está disponible de forma síncrona vía localStorage) en vez de
+  // vía setState síncrono dentro del efecto.
+  const [cargando, setCargando] = useState(() => !!getToken());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const token = getToken();
-    if (!token) {
-      setCargando(false);
-      return;
-    }
+    if (!token) return;
 
     apiFetch<{ usuario: UsuarioApi }>('/api/auth/me')
       .then(({ usuario: u }) => setUsuario(mapUsuario(u)))
@@ -69,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Error inesperado al iniciar sesión.';
       setError(msg);
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   };
 
@@ -86,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Error inesperado al registrarse.';
       setError(msg);
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   };
 
@@ -106,10 +104,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth(): AuthContextType {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth debe usarse dentro de AuthProvider');
-  return ctx;
 }

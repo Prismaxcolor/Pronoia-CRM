@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearProveedor, actualizarProveedor } from '../../services/proveedor-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Proveedor } from '@shared/types/index.js';
 
 interface Props {

@@ -5,9 +5,9 @@ import {
   Building2, Globe, Pencil, Archive, ArchiveRestore,
 } from 'lucide-react';
 import { obtenerBancas, obtenerMovimientos, archivarBanca, desarchivarBanca } from '../../services/banca-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import type { Banca, Movimiento, TipoMovimiento, TipoBanca } from '@shared/types/index.js';
 import TasaCambioWidget from './TasaCambioWidget';
 import CrearMovimientoModal from './CrearMovimientoModal';
@@ -67,10 +67,16 @@ function CochinitPage() {
     setMovimientos(m);
   };
 
+  // Igual que cargar(), pero sin pasar por una función async con nombre: el
+  // linter no puede ver más allá del await y marca el setState de adentro
+  // como "síncrono dentro del efecto" aunque no lo sea.
   useEffect(() => {
-    setCargando(true);
-    cargar().finally(() => setCargando(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    Promise.all([
+      obtenerBancas({ incluirArchivadas: mostrarArchivadas }),
+      obtenerMovimientos(),
+    ])
+      .then(([b, m]) => { setBancas(b); setMovimientos(m); })
+      .finally(() => setCargando(false));
   }, [mostrarArchivadas]);
 
   const stats = useMemo(() => {

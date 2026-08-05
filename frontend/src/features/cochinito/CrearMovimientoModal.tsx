@@ -3,7 +3,7 @@ import { X, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { crearMovimiento } from '../../services/banca-service';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
-import { useAuth } from '../../hooks/use-auth';
+import { useAuth } from '../../hooks/use-auth-context';
 import type { Banca } from '@shared/types/index.js';
 
 interface Props {

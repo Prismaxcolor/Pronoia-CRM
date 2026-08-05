@@ -8,7 +8,7 @@ import {
 } from '../../services/portal-documentos-service';
 import PortalHeader from '../../components/PortalHeader';
 import PortalSkeleton from '../../components/PortalSkeleton';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

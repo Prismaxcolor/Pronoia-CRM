@@ -4,8 +4,8 @@ import { ArrowLeft, Printer, FileDown, FileText, DollarSign } from 'lucide-react
 import { obtenerFactura, consolidarItems, type FacturaCV, type TipoFactura } from '../../services/factura-cv-service';
 import { descargarFacturaPDF, descargarFacturaWord } from '../../services/factura-export';
 import { obtenerTicket } from '../../services/ticket-pesaje-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
 import { destinoLabel, type TicketPesaje } from '@shared/types/index.js';
 
@@ -53,7 +53,10 @@ function FacturaDetallePage({ tipo }: Props) {
       .finally(() => setCargando(false));
   };
 
-  useEffect(() => { cargarFactura(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tipo, id]);
+  /* cargarFactura se redefine cada render cerrando sobre tipo/id; agregarla
+   * como dep dispararía el efecto en cada render. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { cargarFactura(); }, [tipo, id]);
 
   const handlePagoRegistrado = () => {
     setPagoAbierto(false);
@@ -82,13 +85,6 @@ function FacturaDetallePage({ tipo }: Props) {
 
   const cfg = ESTADO_CFG[factura.estado] ?? ESTADO_CFG.emitida;
   const totalPesoFacturado = consolidarItems(factura.items).reduce((acc, it) => acc + it.peso, 0);
-
-  const Fila = ({ label, valor }: { label: string; valor: string }) => (
-    <div className="flex justify-between py-2 border-b border-border last:border-b-0 print:border-black">
-      <span className="text-text-secondary text-sm">{label}</span>
-      <span className="text-text-primary text-sm font-medium text-right">{valor}</span>
-    </div>
-  );
 
   return (
     <div className="max-w-2xl print-documento print:max-w-none">
@@ -245,6 +241,15 @@ function origenPeso(factura: FacturaCV, tickets: TicketPesaje[]): string {
   if (factura.ticketIds.length === 0) return 'Peso manual';
   if (tickets.length > 0) return `${tickets.length} ticket${tickets.length === 1 ? '' : 's'} · ${tickets.map(t => t.codigo).join(', ')}`;
   return `${factura.ticketIds.length} ticket(s) de pesaje`;
+}
+
+function Fila({ label, valor }: { label: string; valor: string }) {
+  return (
+    <div className="flex justify-between py-2 border-b border-border last:border-b-0 print:border-black">
+      <span className="text-text-secondary text-sm">{label}</span>
+      <span className="text-text-primary text-sm font-medium text-right">{valor}</span>
+    </div>
+  );
 }
 
 export default FacturaDetallePage;

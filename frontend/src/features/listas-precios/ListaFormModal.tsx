@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearLista, actualizarLista } from '../../services/lista-precios-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import type { ListaPrecios } from '@shared/types/index.js';
 
 interface Props {
