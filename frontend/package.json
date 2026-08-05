@@ -12,6 +12,7 @@
   "dependencies": {
     "docx": "^9.7.1",
     "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.14.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.5",
