@@ -212,6 +212,12 @@ function FacturaDetallePage({ tipo }: Props) {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-border">
+                      <td colSpan={5} className="py-2 text-right font-semibold text-text-secondary">Total del ticket</td>
+                      <td className="py-2 text-right font-bold text-text-primary">{fmt(ticket.pesoNetoTotal)} kg</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
               {ticket.fotos && ticket.fotos.length > 0 && (

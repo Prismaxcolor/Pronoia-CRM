@@ -165,9 +165,11 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
         fmt(m.devolucion),
         fmt(m.pesoNeto),
       ]),
+      foot: [['Total del ticket', '', '', '', '', `${fmt(ticket.pesoNetoTotal)} kg`]],
       margin: { left: 56, right: 56 },
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 5 },
       headStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
+      footStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
       columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
       theme: 'grid',
     });
