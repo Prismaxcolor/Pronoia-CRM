@@ -21,6 +21,7 @@ function fmt(n: number): string {
 function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onCompletado }: Props) {
   const toast = useToast();
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
+  const [devolucion, setDevolucion] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +39,10 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
 
   // Bugfix: el peso global se toma del ticket guardado en bruto (no de un input
   // nuevo) para que la diferencia se calcule en vivo mientras se cargan los materiales.
-  const diferencia = useMemo(() => ticket.pesoGlobal - pesoNetoTotal, [ticket.pesoGlobal, pesoNetoTotal]);
+  const diferencia = useMemo(
+    () => ticket.pesoGlobal - pesoNetoTotal - (Number(devolucion) || 0),
+    [ticket.pesoGlobal, pesoNetoTotal, devolucion]
+  );
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
@@ -62,7 +66,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       tara: taraKgFila(f, taras),
       destinoTipo: f.destino === 'mpp' ? ('mpp' as const) : ('lote' as const),
       loteId: f.destino === 'mpp' ? null : f.destino,
-    })));
+    })), Number(devolucion) || 0);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -174,14 +178,27 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
                 <Scale size={16} />
-                Peso neto total
+                Suma de materiales
               </span>
               <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>
                 {fmt(pesoNetoTotal)} kg
               </span>
             </div>
+            <div className="flex items-center justify-between gap-3 text-sm border-t border-brand-200 pt-2">
+              <label htmlFor="devolucion-completar" className="text-brand-800 shrink-0">Devolución (kg)</label>
+              <input
+                id="devolucion-completar"
+                type="number"
+                step="0.01"
+                min="0"
+                value={devolucion}
+                onChange={e => setDevolucion(e.target.value)}
+                className="w-28 px-2 py-1 bg-surface border border-brand-200 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400"
+                placeholder="0.00"
+              />
+            </div>
             <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
-              <span className="text-brand-800">Diferencia (global vs. neto)</span>
+              <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
               <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
                 {fmt(diferencia)} kg
               </span>

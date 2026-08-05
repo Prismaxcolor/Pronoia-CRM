@@ -1688,3 +1688,171 @@ alter table public.facturas_venta
 -- Garantiza unicidad del correlativo.
 create unique index if not exists idx_facturas_venta_numero
   on public.facturas_venta (numero);
+
+
+-- ============================================================================
+-- Bloque 30 · devolución a nivel de ticket (rediseñado 05-ago-2026)
+--
+-- Kg de devolución, capturados UNA sola vez por ticket (no por material). Se
+-- SUMA a la suma de materiales para reconciliar contra el peso global — no
+-- resta de inventario ni de factura, es un campo informativo/de conciliación:
+--
+--   diferencia = peso_global - (suma de netos por material) - devolucion
+--
+-- Los 3 RPCs ganan p_devolucion como parámetro FINAL con default, vía
+-- `create or replace function` — Postgres permite esto sin `drop function`,
+-- así que no hay ventana donde el RPC no exista.
+-- ============================================================================
+
+alter table public.tickets_pesaje
+  add column if not exists devolucion numeric not null default 0
+    check (devolucion >= 0);
+
+create or replace function public.crear_ticket_pesaje(
+  p_tipo          text,
+  p_entidad_id    uuid,
+  p_fecha         date,
+  p_fotos         text[],
+  p_observaciones text,
+  p_materiales    jsonb,
+  p_estado        text,
+  p_pesado_por    uuid,
+  p_peso_global   numeric,
+  p_devolucion    numeric default 0
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id   uuid;
+  v_item jsonb;
+begin
+  insert into public.tickets_pesaje
+    (tipo, entidad_id, fecha, fotos, observaciones, estado, pesado_por, peso_global, devolucion)
+  values (
+    p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''),
+    coalesce(p_estado, 'completo'), p_pesado_por, p_peso_global, coalesce(p_devolucion, 0)
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
+
+create or replace function public.completar_ticket_pesaje(
+  p_ticket_id      uuid,
+  p_materiales     jsonb,
+  p_completado_por uuid,
+  p_devolucion     numeric default null
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_estado text;
+  v_item   jsonb;
+begin
+  select estado into v_estado from public.tickets_pesaje where id = p_ticket_id;
+
+  if v_estado is null then
+    raise exception 'Ticket no encontrado.';
+  end if;
+  if v_estado <> 'bruto' then
+    raise exception 'El ticket ya está completo.';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      p_ticket_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  update public.tickets_pesaje
+     set estado = 'completo',
+         completado_por = p_completado_por,
+         completado_en = now(),
+         devolucion = coalesce(p_devolucion, devolucion)
+   where id = p_ticket_id;
+
+  return p_ticket_id;
+end;
+$$;
+
+create or replace function public.editar_ticket_pesaje(
+  p_ticket_id     uuid,
+  p_materiales    jsonb,
+  p_peso_global   numeric default null,
+  p_observaciones text default null,
+  p_devolucion    numeric default null
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_estado    text;
+  v_facturado boolean;
+  v_item      jsonb;
+begin
+  select estado, facturado into v_estado, v_facturado
+    from public.tickets_pesaje where id = p_ticket_id;
+
+  if v_estado is null then
+    raise exception 'Ticket no encontrado.';
+  end if;
+  if v_estado <> 'completo' then
+    raise exception 'Solo se pueden editar tickets completos (usa completar_ticket_pesaje para uno en bruto).';
+  end if;
+  if v_facturado then
+    raise exception 'No se puede editar un ticket ya facturado.';
+  end if;
+
+  update public.tickets_pesaje
+     set peso_global   = coalesce(p_peso_global, peso_global),
+         observaciones = coalesce(nullif(p_observaciones, ''), observaciones),
+         devolucion    = coalesce(p_devolucion, devolucion)
+   where id = p_ticket_id;
+
+  delete from public.detalle_tickets_pesaje where ticket_id = p_ticket_id;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      p_ticket_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return p_ticket_id;
+end;
+$$;

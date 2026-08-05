@@ -51,6 +51,7 @@ function TicketDetallePage() {
 
   const [editando, setEditando] = useState(false);
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
+  const [devolucionEdit, setDevolucionEdit] = useState('');
   const [observacionesEdit, setObservacionesEdit] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,13 +78,14 @@ function TicketDetallePage() {
     [materiales, taras]
   );
   const diferencia = useMemo(
-    () => (ticket?.pesoGlobal ?? 0) - pesoNetoTotal,
-    [ticket, pesoNetoTotal]
+    () => (ticket?.pesoGlobal ?? 0) - pesoNetoTotal - (Number(devolucionEdit) || 0),
+    [ticket, pesoNetoTotal, devolucionEdit]
   );
 
   const iniciarEdicion = () => {
     if (!ticket) return;
     setMateriales(filasDesdeTicket(ticket));
+    setDevolucionEdit(ticket.devolucion ? String(ticket.devolucion) : '');
     setObservacionesEdit(ticket.observaciones ?? '');
     setError(null);
     setEditando(true);
@@ -113,6 +115,7 @@ function TicketDetallePage() {
     setGuardando(true);
     const result = await editarTicket(ticket.id, {
       observaciones: observacionesEdit.trim() || null,
+      devolucion: Number(devolucionEdit) || 0,
       materiales: materiales.map(f => ({
         productoId: f.productoId,
         subcategoria: f.subcategoria.trim() || null,
@@ -227,11 +230,17 @@ function TicketDetallePage() {
             <span className="text-text-primary font-medium">{fmt(ticket.pesoGlobal)} kg</span>
           </div>
           <div className="flex justify-between pt-1">
-            <span className="font-semibold text-text-primary">Peso neto total</span>
-            <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoNetoTotal)} kg</span>
+            <span className="font-semibold text-text-primary">Suma de materiales</span>
+            <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoNetoMateriales)} kg</span>
           </div>
+          {ticket.devolucion > 0 && (
+            <div className="flex justify-between pt-1 text-sm">
+              <span className="text-text-secondary">Devolución</span>
+              <span className="text-text-primary font-medium">{fmt(ticket.devolucion)} kg</span>
+            </div>
+          )}
           <div className="flex justify-between pt-1 text-sm">
-            <span className="text-text-secondary">Diferencia (global vs. neto)</span>
+            <span className="text-text-secondary">Diferencia (global vs. neto + devolución)</span>
             <span className={`font-medium ${Math.abs(ticket.diferencia) > 0.01 ? 'text-amber-600' : 'text-text-primary'}`}>{fmt(ticket.diferencia)} kg</span>
           </div>
 
@@ -340,12 +349,25 @@ function TicketDetallePage() {
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
                 <Scale size={16} />
-                Peso neto total
+                Suma de materiales
               </span>
               <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>{fmt(pesoNetoTotal)} kg</span>
             </div>
+            <div className="flex items-center justify-between gap-3 text-sm border-t border-brand-200 pt-2">
+              <label htmlFor="devolucion-edit" className="text-brand-800 shrink-0">Devolución (kg)</label>
+              <input
+                id="devolucion-edit"
+                type="number"
+                step="0.01"
+                min="0"
+                value={devolucionEdit}
+                onChange={e => setDevolucionEdit(e.target.value)}
+                className="w-28 px-2 py-1 bg-surface border border-brand-200 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400"
+                placeholder="0.00"
+              />
+            </div>
             <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
-              <span className="text-brand-800">Diferencia (global vs. neto)</span>
+              <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
               <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>{fmt(diferencia)} kg</span>
             </div>
           </div>

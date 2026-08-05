@@ -212,5 +212,12 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   doc.setFontSize(14).setFont('helvetica', 'bold').text('Peso neto total', 56, y);
   doc.text(`${fmt(t.pesoNetoTotal)} kg`, 539, y, { align: 'right' });
 
+  if (t.devolucion > 0) {
+    y += 20;
+    doc.setFontSize(10).setFont('helvetica', 'normal');
+    doc.text('Devolución', 56, y);
+    doc.text(`${fmt(t.devolucion)} kg`, 539, y, { align: 'right' });
+  }
+
   return Buffer.from(doc.output('arraybuffer'));
 }

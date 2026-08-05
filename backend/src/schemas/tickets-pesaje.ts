@@ -38,6 +38,9 @@ export const crearTicketSchema = z
       .transform(v => (v && v.length > 0 ? v : null)),
     /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
     pesoGlobal: z.number().nonnegative('El peso global no puede ser negativo.'),
+    /** Kg de devolución del ticket completo (no por material). Se suma a la
+     *  suma de materiales para reconciliar contra el peso global. */
+    devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
     /**
      * 'bruto': se guarda sin materiales/destinos (pesaje pendiente de completar).
      * No mueve inventario ni se puede facturar hasta pasar a 'completo'.
@@ -65,11 +68,13 @@ export const crearTicketSchema = z
 /** Completa un ticket que se guardó en bruto: agrega los materiales/destinos definitivos. */
 export const completarTicketSchema = z.object({
   materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
+  devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
 });
 
 /** Edita un ticket ya completo (corrección de errores). Solo mientras no esté facturado. */
 export const editarTicketSchema = z.object({
   materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
+  devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
   observaciones: z
     .string()
     .trim()

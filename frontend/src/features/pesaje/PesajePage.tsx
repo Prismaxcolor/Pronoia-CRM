@@ -47,6 +47,7 @@ function PesajePage() {
   const [entidadId, setEntidadId] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
   const [pesoGlobal, setPesoGlobal] = useState('');
+  const [devolucion, setDevolucion] = useState('');
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [observaciones, setObservaciones] = useState('');
   const [fotos, setFotos] = useState<FotoLocal[]>([]);
@@ -84,10 +85,10 @@ function PesajePage() {
     [materiales, taras]
   );
 
-  // Diferencia = Peso Global - suma de todos los materiales netos (incluida la basura).
+  // Diferencia = Peso Global - suma de materiales netos - devolución.
   const diferencia = useMemo(
-    () => (Number(pesoGlobal) || 0) - pesoNetoTotal,
-    [pesoGlobal, pesoNetoTotal]
+    () => (Number(pesoGlobal) || 0) - pesoNetoTotal - (Number(devolucion) || 0),
+    [pesoGlobal, pesoNetoTotal, devolucion]
   );
 
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
@@ -109,6 +110,7 @@ function PesajePage() {
     setEntidadId('');
     setFecha(hoyISO());
     setPesoGlobal('');
+    setDevolucion('');
     setMateriales([filaVacia()]);
     setObservaciones('');
     setFotos([]);
@@ -147,6 +149,7 @@ function PesajePage() {
       entidadId,
       fecha,
       pesoGlobal: Number(pesoGlobal) || 0,
+      devolucion: Number(devolucion) || 0,
       estado,
       materiales: estado === 'bruto' ? [] : materiales.map(f => ({
         productoId: f.productoId,
@@ -363,14 +366,31 @@ function PesajePage() {
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
                   <Scale size={16} />
-                  Peso neto total
+                  Suma de materiales
                 </span>
                 <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>
                   {fmt(pesoNetoTotal)} kg
                 </span>
               </div>
+              <div className="flex items-center justify-between gap-3 text-sm border-t border-brand-200 pt-2">
+                <label htmlFor="devolucion" className="text-brand-800 shrink-0">Devolución (kg)</label>
+                <input
+                  id="devolucion"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={devolucion}
+                  onChange={e => setDevolucion(e.target.value)}
+                  className="w-28 px-2 py-1 bg-surface border border-brand-200 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400"
+                  placeholder="0.00"
+                />
+              </div>
+              <p className="text-[11px] text-brand-700/80 -mt-1">
+                Kg que el proveedor se lleva de vuelta. Se suma al peso de los materiales para que
+                encuadre contra el peso global — no afecta el inventario ni la factura.
+              </p>
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
-                <span className="text-brand-800">Diferencia (global vs. neto)</span>
+                <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
                 <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
                   {fmt(diferencia)} kg
                 </span>
