@@ -85,7 +85,7 @@ function Sidebar() {
       </div>
 
       {/* Navegacion */}
-      <nav className="flex-1 py-4 overflow-y-auto">
+      <nav className="flex-1 py-4 overflow-y-auto scrollbar-none">
         {seccionesVisibles.map((sec, idx) => (
           <div key={sec.header ?? `sec-${idx}`} className={idx > 0 ? 'mt-3' : ''}>
             {sec.header && (

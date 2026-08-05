@@ -37,6 +37,18 @@ body {
   color: var(--color-text-primary);
 }
 
+/* Oculta la barra de scroll visualmente sin desactivar el scroll — el
+ * scrollbar por defecto del navegador se ve mal sobre fondos oscuros
+ * (ej. el menú lateral). El contenido sigue siendo scrolleable normalmente
+ * con mouse, trackpad o teclado. */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes slide-in {
   from {
     opacity: 0;
