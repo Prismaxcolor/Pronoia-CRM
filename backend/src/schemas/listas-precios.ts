@@ -10,10 +10,16 @@ const fechaIso = z
 
 export const crearListaSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(120),
+  /** Obligatorio, sin default: se fuerza a elegir para qué es la lista al
+   *  crearla. No se puede cambiar después (ver actualizarListaSchema). */
+  tipo: z.enum(['compra', 'venta'], { message: 'Elige si la lista es de compra o de venta.' }),
   vigenteDesde: fechaIso,
 });
 
+// tipo se omite a propósito: no es editable después de crear la lista (D12
+// del plan — una lista con historial no debe poder cambiar de tipo a medio camino).
 export const actualizarListaSchema = crearListaSchema
+  .omit({ tipo: true })
   .extend({ activo: z.boolean().optional() })
   .partial()
   .refine(

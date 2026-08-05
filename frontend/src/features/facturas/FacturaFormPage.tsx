@@ -67,8 +67,8 @@ function FacturaFormPage({ tipo }: Props) {
     const cargar = (): Promise<Entidad[]> => (esCompra ? obtenerProveedores() : obtenerClientes());
     cargar().then(lista => setEntidades(lista.filter(e => e.activo)));
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
-    obtenerListas().then(lista => setListas(lista.filter(l => l.activo)));
-  }, [esCompra]);
+    obtenerListas(tipo).then(lista => setListas(lista.filter(l => l.activo)));
+  }, [esCompra, tipo]);
 
   useEffect(() => {
     if (!entidadId) { setTicketsPendientes([]); return; }

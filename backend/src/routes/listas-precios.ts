@@ -22,16 +22,19 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Listas de precios = configuración del catálogo de compra → permiso 'productos'.
+// Listas de precios = configuración del catálogo → permiso 'productos'. Hay
+// listas de compra (a proveedores) y de venta (a clientes), ver Bloque 32.
 
-router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
-  const listas = await listarListas();
+router.get('/', requirePermiso('productos', 'ver'), async (req, res) => {
+  const tipo = req.query.tipo === 'compra' || req.query.tipo === 'venta' ? req.query.tipo : undefined;
+  const listas = await listarListas(tipo);
   res.json({ listas });
 });
 
 // IMPORTANTE: declarar antes de '/:id' para que no lo capture la ruta dinámica.
 router.get('/para-producto/:productoId', requirePermiso('productos', 'ver'), async (req, res) => {
-  const listas = await listasParaProducto(String(req.params.productoId));
+  const tipo = req.query.tipo === 'venta' ? 'venta' : 'compra';
+  const listas = await listasParaProducto(String(req.params.productoId), tipo);
   res.json({ listas });
 });
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { crearFacturaSchema } from '../src/schemas/facturas.js';
 import { crearTransformacionSchema } from '../src/schemas/transformaciones.js';
 import { crearTicketSchema, completarTicketSchema } from '../src/schemas/tickets-pesaje.js';
-import { crearListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
+import { crearListaSchema, actualizarListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
 import { crearProveedorSchema } from '../src/schemas/proveedores.js';
 import { crearTaraSchema, actualizarTaraSchema } from '../src/schemas/tara.js';
 import { registrarPagoSchema } from '../src/schemas/pagos.js';
@@ -160,9 +160,18 @@ describe('completarTicketSchema', () => {
 });
 
 describe('listas de precios', () => {
-  it('crearListaSchema exige nombre', () => {
-    expect(crearListaSchema.safeParse({ nombre: '' }).success).toBe(false);
-    expect(crearListaSchema.safeParse({ nombre: 'Precios Junio' }).success).toBe(true);
+  it('crearListaSchema exige nombre y tipo', () => {
+    expect(crearListaSchema.safeParse({ nombre: '', tipo: 'compra' }).success).toBe(false);
+    expect(crearListaSchema.safeParse({ nombre: 'Precios Junio' }).success).toBe(false);
+    expect(crearListaSchema.safeParse({ nombre: 'Precios Junio', tipo: 'compra' }).success).toBe(true);
+    expect(crearListaSchema.safeParse({ nombre: 'Lista clientes', tipo: 'venta' }).success).toBe(true);
+    expect(crearListaSchema.safeParse({ nombre: 'X', tipo: 'otro' }).success).toBe(false);
+  });
+
+  it('actualizarListaSchema ignora tipo (no editable después de crear)', () => {
+    const r = actualizarListaSchema.safeParse({ activo: false, tipo: 'venta' });
+    expect(r.success).toBe(true);
+    if (r.success) expect((r.data as Record<string, unknown>).tipo).toBeUndefined();
   });
 
   it('upsertPrecioSchema exige precio > 0', () => {

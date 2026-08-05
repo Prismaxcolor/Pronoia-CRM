@@ -7,15 +7,18 @@ import type { ListaPrecios } from '@shared/types/index.js';
 interface Props {
   /** Si se pasa, modo "editar". Si no, modo "crear". */
   lista?: ListaPrecios | null;
+  /** Tipo preseleccionado al crear (ej. la pestaña activa en la lista). */
+  tipoInicial?: 'compra' | 'venta';
   onClose: () => void;
   onGuardado: () => void;
 }
 
-function ListaFormModal({ lista, onClose, onGuardado }: Props) {
+function ListaFormModal({ lista, tipoInicial, onClose, onGuardado }: Props) {
   const toast = useToast();
   const editando = !!lista;
 
   const [nombre, setNombre] = useState(lista?.nombre ?? '');
+  const [tipo, setTipo] = useState<'compra' | 'venta'>(lista?.tipo ?? tipoInicial ?? 'compra');
   const [vigenteDesde, setVigenteDesde] = useState(lista?.vigenteDesde ?? '');
   const [activo, setActivo] = useState(lista?.activo ?? true);
   const [guardando, setGuardando] = useState(false);
@@ -32,7 +35,7 @@ function ListaFormModal({ lista, onClose, onGuardado }: Props) {
           vigenteDesde: vigenteDesde || null,
           activo,
         })
-      : await crearLista({ nombre: nombre.trim(), vigenteDesde: vigenteDesde || null });
+      : await crearLista({ nombre: nombre.trim(), tipo, vigenteDesde: vigenteDesde || null });
 
     setGuardando(false);
 
@@ -71,6 +74,28 @@ function ListaFormModal({ lista, onClose, onGuardado }: Props) {
               placeholder="Ej. Precios Junio"
             />
           </div>
+
+          {editando ? (
+            <div>
+              <label className={labelClass}>Tipo</label>
+              <p className="text-sm text-text-primary px-3 py-2 bg-surface-alt border border-border rounded-lg">
+                {lista?.tipo === 'venta' ? 'Venta (a clientes)' : 'Compra (a proveedores)'}
+              </p>
+              <p className="text-[11px] text-text-muted mt-1">El tipo no se puede cambiar después de crear la lista.</p>
+            </div>
+          ) : (
+            <div>
+              <label className={labelClass}>Tipo *</label>
+              <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
+                <button type="button" onClick={() => setTipo('compra')} className={`px-4 py-1.5 ${tipo === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Compra
+                </button>
+                <button type="button" onClick={() => setTipo('venta')} className={`px-4 py-1.5 ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Venta
+                </button>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className={labelClass}>Vigente desde</label>

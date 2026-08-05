@@ -1871,3 +1871,21 @@ $$;
 create unique index if not exists idx_citas_despacho_slot
   on public.citas_despacho (fecha, hora)
   where estado in ('pendiente', 'confirmada', 'reprogramada');
+
+
+-- ============================================================================
+-- Bloque 32 · listas de precios separadas por tipo (compra / venta)
+--
+-- listas_precios ya era genérica (facturas_compra y facturas_venta ya
+-- referenciaban lista_precios_id cada una); lo que faltaba era el
+-- discriminador para que el selector de una factura de venta no ofreciera
+-- listas pensadas para compra. Todo lo existente se marca 'compra' por
+-- defecto — es el uso real que tenía hasta hoy.
+-- ============================================================================
+
+alter table public.listas_precios
+  add column if not exists tipo text not null default 'compra'
+    check (tipo in ('compra', 'venta'));
+
+create index if not exists idx_listas_precios_tipo
+  on public.listas_precios (tipo, activo, nombre);

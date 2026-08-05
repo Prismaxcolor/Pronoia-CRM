@@ -6,7 +6,7 @@ export type { Usuario, RolUsuario, Permiso, Recurso, Accion } from './usuario.js
 export { PERMISOS_POR_ROL, tienePermiso } from './usuario.js';
 export type { Cliente } from './cliente.js';
 export type { TipoMaterial } from './tipos-material.js';
-export type { ListaPrecios, PrecioLista } from './lista-precios.js';
+export type { ListaPrecios, PrecioLista, TipoListaPrecios } from './lista-precios.js';
 export type { Proveedor } from './proveedor.js';
 export type { TicketPesaje, TicketPesajeMaterial, TipoTicketPesaje } from './ticket-pesaje.js';
 export type { Lote, DestinoTipo } from './lote.js';

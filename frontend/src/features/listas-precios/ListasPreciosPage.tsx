@@ -14,6 +14,7 @@ import type { ListaPrecios } from '@shared/types/index.js';
 function ListasPreciosPage() {
   const [listas, setListas] = useState<ListaPrecios[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [tipoVisible, setTipoVisible] = useState<'compra' | 'venta'>('compra');
   const [formAbierto, setFormAbierto] = useState<
     { abierto: true; lista: ListaPrecios | null } | { abierto: false }
   >({ abierto: false });
@@ -53,6 +54,8 @@ function ListasPreciosPage() {
     setFormAbierto({ abierto: true, lista: l });
   };
 
+  const listasVisibles = listas.filter(l => l.tipo === tipoVisible);
+
   if (cargando) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -82,11 +85,22 @@ function ListasPreciosPage() {
         )}
       </div>
 
-      {listas.length === 0 ? (
-        <p className="text-center text-text-muted py-12">No hay listas de precios todavía.</p>
+      <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
+        <button type="button" onClick={() => setTipoVisible('compra')} className={`px-4 py-1.5 ${tipoVisible === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Compra
+        </button>
+        <button type="button" onClick={() => setTipoVisible('venta')} className={`px-4 py-1.5 ${tipoVisible === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Venta
+        </button>
+      </div>
+
+      {listasVisibles.length === 0 ? (
+        <p className="text-center text-text-muted py-12">
+          No hay listas de {tipoVisible === 'compra' ? 'compra' : 'venta'} todavía.
+        </p>
       ) : (
         <div className="bg-surface rounded-xl border border-border overflow-hidden">
-          {listas.map(l => (
+          {listasVisibles.map(l => (
             <div
               key={l.id}
               onClick={() => navigate(`/listas-precios/${l.id}`)}
@@ -138,6 +152,7 @@ function ListasPreciosPage() {
       {formAbierto.abierto && (
         <ListaFormModal
           lista={formAbierto.lista}
+          tipoInicial={tipoVisible}
           onClose={() => setFormAbierto({ abierto: false })}
           onGuardado={() => { setFormAbierto({ abierto: false }); cargar(); }}
         />
