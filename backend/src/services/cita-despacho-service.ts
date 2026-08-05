@@ -96,7 +96,14 @@ export async function crearCita(
     .select('*')
     .single();
 
-  if (error || !data) return { error: error?.message ?? 'No se pudo agendar la cita.' };
+  if (error || !data) {
+    // 23505 = violación del índice único idx_citas_despacho_slot (Bloque 31):
+    // el SELECT de arriba es una verificación de cortesía, no atómica: dos
+    // agendamientos simultáneos pueden pasarla ambos. El índice es la
+    // garantía real.
+    if (error?.code === '23505') return { error: 'Ese horario ya fue tomado. Elige otro.' };
+    return { error: error?.message ?? 'No se pudo agendar la cita.' };
+  }
   return { cita: citaToPublica(data as CitaRow) };
 }
 

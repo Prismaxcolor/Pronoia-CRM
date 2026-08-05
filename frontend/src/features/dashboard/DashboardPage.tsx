@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { DollarSign, Package, ArrowUpDown, TrendingDown } from 'lucide-react';
 import { obtenerBancas, obtenerMovimientos } from '../../services/banca-service';
 import { obtenerProductos } from '../../services/producto-service';
+import { useAuth } from '../../hooks/use-auth';
+import ProximosDespachos from './ProximosDespachos';
 import type { Banca, Movimiento, Producto } from '@shared/types/index.js';
 
 function DashboardPage() {
+  const { tienePermiso } = useAuth();
   const [bancas, setBancas] = useState<Banca[]>([]);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -65,6 +68,12 @@ function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {tienePermiso('despachos', 'ver') && (
+        <div className="mb-8">
+          <ProximosDespachos />
+        </div>
+      )}
 
       {/* Ultimos movimientos */}
       <h2 className="text-lg font-semibold text-text-primary mb-3">Ultimos movimientos</h2>

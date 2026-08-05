@@ -1856,3 +1856,18 @@ begin
   return p_ticket_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 31 · slot único de citas de despacho (Tarea 11)
+--
+-- crearCita ya validaba colisión con un SELECT + INSERT no atómico (bug
+-- preexistente del portal, no introducido acá). Al agregar agendamiento por
+-- staff (mismo servicio, más superficie de exposición) se cierra de verdad
+-- con un índice único: dos agendamientos simultáneos para el mismo
+-- fecha+hora ya no pueden colar ambos.
+-- ============================================================================
+
+create unique index if not exists idx_citas_despacho_slot
+  on public.citas_despacho (fecha, hora)
+  where estado in ('pendiente', 'confirmada', 'reprogramada');
