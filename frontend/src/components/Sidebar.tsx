@@ -77,7 +77,7 @@ function Sidebar() {
     .filter(sec => sec.items.length > 0);
 
   return (
-    <aside className="w-64 bg-brand-900 text-white flex flex-col min-h-screen print:hidden">
+    <aside className="w-64 bg-brand-900 text-white flex flex-col h-screen print:hidden">
       {/* Logo */}
       <div className="p-6 border-b border-brand-800">
         <h1 className="text-xl font-bold tracking-wide">Pronoia</h1>

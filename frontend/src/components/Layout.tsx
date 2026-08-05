@@ -1,24 +1,25 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 
 function Layout() {
-  // <main> usa flex-1 dentro de un contenedor min-h-screen (no h-screen), así
-  // que crece junto con el contenido en vez de quedar acotado — su
-  // overflow-y-auto casi nunca llega a activarse. El scroll real ocurre en
-  // la ventana. React Router no lo resetea solo al cambiar de ruta: sin
-  // esto, entrar a una pantalla nueva desde un punto scrolleado del menú la
-  // deja abierta a mitad de página en vez de arriba.
+  // El contenedor externo estaba en min-h-screen (crece con el contenido en
+  // vez de quedar acotado a la pantalla), así que ni <main> ni el <aside> del
+  // menú llegaban a tener scroll propio: scrolleaba la ventana completa, y
+  // resetearla también arrastraba el menú a su posición inicial. Con h-screen
+  // acá y en Sidebar, cada uno queda con su overflow-y-auto real e
+  // independiente — resetear <main> al cambiar de ruta ya no toca el menú.
+  const mainRef = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
 
   useEffect(() => {
-    window.scrollTo(0, 0);
+    mainRef.current?.scrollTo(0, 0);
   }, [pathname]);
 
   return (
-    <div className="flex min-h-screen bg-surface-alt print:block print:bg-white">
+    <div className="flex h-screen bg-surface-alt print:block print:h-auto print:bg-white">
       <Sidebar />
-      <main className="flex-1 p-8 overflow-y-auto print:p-0 print:overflow-visible">
+      <main ref={mainRef} className="flex-1 p-8 overflow-y-auto print:p-0 print:overflow-visible">
         <Outlet />
       </main>
     </div>
