@@ -13,9 +13,9 @@ export interface FacturaItemCV {
 
 export interface FacturaCV {
   id: string;
-  /** Correlativo automático. Solo en compras (null en ventas). */
+  /** Correlativo automático, en ambos tipos de factura. */
   numero: number | null;
-  /** Código de control formateado ("Compra 0001"). Solo en compras. */
+  /** Código de control formateado ("C-0001" / "V-0001"). */
   codigo: string | null;
   tipo: TipoFactura;
   entidadId: string | null;

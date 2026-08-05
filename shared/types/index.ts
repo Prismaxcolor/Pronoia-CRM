@@ -13,6 +13,6 @@ export type { Lote, DestinoTipo } from './lote.js';
 export { destinoLabel } from './lote.js';
 export { formatCodigoPesaje } from './ticket-pesaje.js';
 export type { FacturaCompra, FacturaVenta, FacturaLinea, EstadoFacturaCompraVenta } from './factura-compra-venta.js';
-export { formatCodigoCompra } from './factura-compra-venta.js';
+export { formatCodigoCompra, formatCodigoVenta } from './factura-compra-venta.js';
 export type { Transformacion, DetalleTransformacion } from './transformacion.js';
 export type { Tara } from './tara.js';

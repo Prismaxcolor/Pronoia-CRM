@@ -2,6 +2,13 @@ import { supabaseAdmin } from '../config/supabase.js';
 
 export type TipoEntidad = 'proveedor' | 'cliente';
 
+/** Duplicado intencional de factura-service.ts (mismo patrón que formatCodigoPesaje). */
+function formatCodigo(tipoEntidad: TipoEntidad, numero: number): string {
+  return tipoEntidad === 'proveedor'
+    ? `C-${String(numero).padStart(4, '0')}`
+    : `V-${String(numero).padStart(4, '0')}`;
+}
+
 export interface EntradaEstadoCuenta {
   /** Fecha ISO (YYYY-MM-DD). */
   fecha: string;
@@ -32,7 +39,7 @@ function soloFecha(valor: string): string {
 
 // ---- núcleo puro (testeable sin BD) ----------------------------------------
 
-export interface FacturaCruda { id: string; total: number; descripcion: string | null; fecha: string }
+export interface FacturaCruda { id: string; total: number; descripcion: string | null; fecha: string; codigo?: string | null }
 export interface PagoCrudo { monto: number; descripcion: string | null; referencia: string | null; fecha: string }
 export interface NotaCruda { id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; fecha: string }
 
@@ -54,7 +61,7 @@ export function construirEstadoCuenta(
       fecha: soloFecha(f.fecha),
       tipo: 'factura',
       descripcion: f.descripcion ?? 'Factura',
-      referencia: f.id.slice(0, 8),
+      referencia: f.codigo ?? f.id.slice(0, 8),
       cargo: Number(f.total),
       abono: 0,
       facturaId: f.id,
@@ -120,12 +127,18 @@ export async function obtenerEstadoCuenta(
     .maybeSingle();
   if (errEnt || !entidad) return null;
 
-  let qFacturas = supabaseAdmin.from(tablaFacturas).select('id, total, descripcion, created_at').eq(columnaEntidad, id);
+  let qFacturas = supabaseAdmin.from(tablaFacturas).select('id, numero, total, descripcion, created_at').eq(columnaEntidad, id);
   if (desde) qFacturas = qFacturas.gte('created_at', desde);
   if (hasta) qFacturas = qFacturas.lte('created_at', `${hasta}T23:59:59`);
   const { data: facturasData } = await qFacturas;
-  const facturas: FacturaCruda[] = ((facturasData as Array<{ id: string; total: number; descripcion: string | null; created_at: string }> | null) ?? [])
-    .map(f => ({ id: f.id, total: f.total, descripcion: f.descripcion, fecha: f.created_at }));
+  const facturas: FacturaCruda[] = ((facturasData as Array<{ id: string; numero: number | null; total: number; descripcion: string | null; created_at: string }> | null) ?? [])
+    .map(f => ({
+      id: f.id,
+      total: f.total,
+      descripcion: f.descripcion,
+      fecha: f.created_at,
+      codigo: f.numero != null ? formatCodigo(tipoEntidad, f.numero) : null,
+    }));
 
   let qPagos = supabaseAdmin.from('movimientos').select('id, monto, monto_usd, descripcion, referencia, fecha').eq(columnaEntidad, id).eq('tipo', tipoMovAbono);
   if (desde) qPagos = qPagos.gte('fecha', desde);

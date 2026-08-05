@@ -6,7 +6,7 @@ import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
 /** Formatea el correlativo de pesaje: 1 → "Pesaje 0001". Duplicado intencional
  *  de shared/types/ticket-pesaje.ts (el backend no comparte paquete con front). */
 function formatCodigoPesaje(numero: number): string {
-  return `Pesaje ${String(numero).padStart(4, '0')}`;
+  return `Pesaje-${String(numero).padStart(4, '0')}`;
 }
 
 interface DetalleRow {

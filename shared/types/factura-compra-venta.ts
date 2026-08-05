@@ -36,6 +36,13 @@ interface FacturaCompraVentaBase {
   estado: EstadoFacturaCompraVenta;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
+  /**
+   * Correlativo numérico secuencial, asignado automáticamente por la BD al crear
+   * la factura (1, 2, 3, ...). El usuario no lo escribe. Solo lectura.
+   */
+  numero?: number | null;
+  /** Código de control formateado para mostrar: "C-0001" / "V-0001". Solo lectura. */
+  codigo?: string | null;
 }
 
 /** Factura contra un proveedor (la empresa compra material). */
@@ -43,18 +50,16 @@ export interface FacturaCompra extends FacturaCompraVentaBase {
   proveedorId: string | null;
   /** Nombre del proveedor, resuelto vía join. Solo lectura. */
   nombreProveedor?: string | null;
-  /**
-   * Correlativo numérico secuencial, asignado automáticamente por la BD al crear
-   * la factura (1, 2, 3, ...). El usuario no lo escribe. Solo lectura.
-   */
-  numero?: number | null;
-  /** Código de control formateado para mostrar: "Compra 0001". Solo lectura. */
-  codigo?: string | null;
 }
 
-/** Formatea el correlativo de una factura de compra: 1 → "Compra 0001". */
+/** Formatea el correlativo de una factura de compra: 1 → "C-0001". */
 export function formatCodigoCompra(numero: number): string {
-  return `Compra ${String(numero).padStart(4, '0')}`;
+  return `C-${String(numero).padStart(4, '0')}`;
+}
+
+/** Formatea el correlativo de una factura de venta: 1 → "V-0001". */
+export function formatCodigoVenta(numero: number): string {
+  return `V-${String(numero).padStart(4, '0')}`;
 }
 
 /** Factura contra un cliente (la empresa vende material). */

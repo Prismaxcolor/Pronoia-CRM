@@ -631,7 +631,7 @@ create unique index if not exists idx_tickets_pesaje_numero
 -- Cada factura de compra recibe un número de control secuencial (1, 2, 3, ...)
 -- que la app muestra como "Compra 0001". Lo asigna la BD vía una secuencia; el
 -- usuario no lo escribe. Mismo patrón que el Bloque 14 (tickets de pesaje).
--- Solo aplica a facturas_compra (las de venta no lo llevan por ahora).
+-- Las facturas de venta tienen su propio correlativo espejo en el Bloque 29.
 -- ============================================================================
 
 create sequence if not exists public.facturas_compra_numero_seq;
@@ -1646,3 +1646,45 @@ begin
   return v_nueva_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 29 · correlativo automático de facturas de venta
+--
+-- Espejo exacto del Bloque 15 (compras). Se agrega porque el cliente pidió que
+-- las ventas también lleven número de control ("V-0001"). Deja sin efecto la
+-- nota del Bloque 15 que decía que las de venta "no lo llevan por ahora".
+-- ============================================================================
+
+create sequence if not exists public.facturas_venta_numero_seq;
+
+alter table public.facturas_venta
+  add column if not exists numero bigint;
+
+-- Backfill: numera las facturas existentes en orden de creación.
+update public.facturas_venta f
+set numero = o.rn
+from (
+  select id, row_number() over (order by created_at, id) as rn
+  from public.facturas_venta
+  where numero is null
+) o
+where f.id = o.id;
+
+-- Avanza la secuencia más allá del máximo ya asignado.
+select setval(
+  'public.facturas_venta_numero_seq',
+  coalesce((select max(numero) from public.facturas_venta), 0) + 1,
+  false
+);
+
+-- Nuevas filas toman el siguiente valor de la secuencia automáticamente.
+alter table public.facturas_venta
+  alter column numero set default nextval('public.facturas_venta_numero_seq');
+
+alter table public.facturas_venta
+  alter column numero set not null;
+
+-- Garantiza unicidad del correlativo.
+create unique index if not exists idx_facturas_venta_numero
+  on public.facturas_venta (numero);

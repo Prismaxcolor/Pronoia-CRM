@@ -36,9 +36,14 @@ const CONFIG: Record<TipoFactura, Config> = {
   },
 };
 
-/** Formatea el correlativo de una factura de compra: 1 → "Compra 0001". */
+/** Formatea el correlativo de una factura de compra: 1 → "C-0001". */
 function formatCodigoCompra(numero: number): string {
-  return `Compra ${String(numero).padStart(4, '0')}`;
+  return `C-${String(numero).padStart(4, '0')}`;
+}
+
+/** Formatea el correlativo de una factura de venta: 1 → "V-0001". */
+function formatCodigoVenta(numero: number): string {
+  return `V-${String(numero).padStart(4, '0')}`;
 }
 
 interface DetalleRow {
@@ -52,7 +57,7 @@ interface DetalleRow {
 
 interface FacturaRow {
   id: string;
-  /** Solo presente en facturas_compra (correlativo automático). */
+  /** Correlativo automático, presente en ambas tablas. */
   numero?: number | null;
   proveedor_id?: string | null;
   cliente_id?: string | null;
@@ -82,9 +87,9 @@ export interface ItemPublico {
 
 export interface FacturaPublica {
   id: string;
-  /** Correlativo automático. Solo en compras (null en ventas). */
+  /** Correlativo automático, en ambos tipos de factura. */
   numero: number | null;
-  /** Código de control formateado ("Compra 0001"). Solo en compras. */
+  /** Código de control formateado ("C-0001" / "V-0001"). */
   codigo: string | null;
   tipo: TipoFactura;
   entidadId: string | null;
@@ -119,11 +124,12 @@ function toPublico(row: FacturaRow, tipo: TipoFactura): FacturaPublica {
   const items = (detalle ?? []).map(detalleToPublico);
   const ticketsJoin = tipo === 'compra' ? row.facturas_compra_tickets : row.facturas_venta_tickets;
   const ticketIds = (ticketsJoin ?? []).map(t => t.ticket_id);
-  const numero = tipo === 'compra' && row.numero != null ? Number(row.numero) : null;
+  const numero = row.numero != null ? Number(row.numero) : null;
+  const codigo = numero == null ? null : tipo === 'compra' ? formatCodigoCompra(numero) : formatCodigoVenta(numero);
   return {
     id: row.id,
     numero,
-    codigo: numero != null ? formatCodigoCompra(numero) : null,
+    codigo,
     tipo,
     entidadId,
     nombreEntidad,
