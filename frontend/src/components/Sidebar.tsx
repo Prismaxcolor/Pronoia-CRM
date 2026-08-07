@@ -79,9 +79,12 @@ function Sidebar() {
   return (
     <aside className="w-64 bg-brand-900 text-white flex flex-col h-screen print:hidden">
       {/* Logo */}
-      <div className="p-6 border-b border-brand-800">
-        <h1 className="text-xl font-bold tracking-wide">Pronoia</h1>
-        <p className="text-brand-300 text-xs mt-1">Sistema de compras</p>
+      <div className="p-6 border-b border-brand-800 flex items-center gap-3">
+        <img src="/logo-pronoia.png" alt="Pronoia" className="w-9 h-9 shrink-0" />
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-wide">Pronoia</h1>
+          <p className="text-brand-300 text-xs mt-1">Sistema de compras</p>
+        </div>
       </div>
 
       {/* Navegacion */}

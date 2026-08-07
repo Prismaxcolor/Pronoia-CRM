@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { FacturaPublica, ItemPublico } from './factura-service.js';
 import type { TicketPublico, MaterialPublico } from './ticket-pesaje-service.js';
+import { LOGO_PRONOIA_BASE64 } from '../assets/logo-pronoia.js';
 
 // Réplica server-side de frontend/src/services/factura-export.ts (descargarFacturaPDF):
 // mismo armado de documento, solo cambia la salida final (arraybuffer en vez de
@@ -79,8 +80,9 @@ function consolidarItems(items: ItemPublico[]): ItemPublico[] {
 
 function encabezado(doc: jsPDF, titulo: string): number {
   let y = 56;
-  doc.setFontSize(20).setFont('helvetica', 'bold').text('Pronoia', 56, y);
-  doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', 56, y + 15);
+  doc.addImage(LOGO_PRONOIA_BASE64, 'PNG', 56, 30, 36, 36);
+  doc.setFontSize(20).setFont('helvetica', 'bold').text('Pronoia', 102, y);
+  doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', 102, y + 15);
   doc.setTextColor(0);
 
   y += 52;

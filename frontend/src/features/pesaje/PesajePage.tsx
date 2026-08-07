@@ -78,7 +78,6 @@ function PesajePage() {
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
     obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
-    obtenerAlmacenes().then(lista => setAlmacenes(lista.filter(a => a.activo)));
     cargarTickets();
   }, []);
 
@@ -93,6 +92,13 @@ function PesajePage() {
 
   const entidades = tipo === 'compra' ? proveedores : clientes;
   const labelEntidad = tipo === 'compra' ? 'Proveedor' : 'Cliente';
+  const almacenPredeterminado = almacenes.find(a => a.esPredeterminado);
+
+  // Recarga la lista de almacenes al cambiar de pestaña de tipo — si la
+  // estrella se movió desde otra pantalla, se refleja sin recargar la página.
+  useEffect(() => {
+    obtenerAlmacenes().then(lista => setAlmacenes(lista.filter(a => a.activo)));
+  }, [tipo]);
 
   // Mapa id→nombre de proveedores + clientes (para la tabla de tickets recientes)
   const nombrePorEntidad = useMemo(() => {
@@ -350,6 +356,24 @@ function PesajePage() {
                 <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
               </div>
             </div>
+            )}
+
+            {tipo !== 'traslado' && (
+              almacenPredeterminado ? (
+                <div className="select-none px-3 py-2 bg-surface-alt border border-border rounded-lg">
+                  <p className="text-sm font-medium text-text-primary">Almacén: {almacenPredeterminado.nombre}</p>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    {tipo === 'compra'
+                      ? 'Esta compra entra al inventario de este almacén.'
+                      : 'Esta venta sale del inventario de este almacén.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800">
+                  <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                  <p className="text-xs">Ningún almacén está marcado como predeterminado — este pesaje no afectará a ningún almacén.</p>
+                </div>
+              )
             )}
 
             {tipo !== 'traslado' && (

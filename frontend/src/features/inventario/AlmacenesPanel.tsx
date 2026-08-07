@@ -1,49 +1,94 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, EyeOff, Eye, Warehouse, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Pencil, EyeOff, Eye, Warehouse, ChevronDown, ChevronUp, Star, AlertTriangle } from 'lucide-react';
 import {
   obtenerAlmacenes,
-  obtenerStockAlmacen,
+  obtenerInventarioAlmacen,
   desactivarAlmacen,
   reactivarAlmacen,
+  marcarPredeterminado,
 } from '../../services/almacen-service';
-import { obtenerProductos } from '../../services/producto-service';
+import type { GrupoInventario } from '../../services/inventario-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import AlmacenFormModal from './AlmacenFormModal';
-import type { Almacen, Producto } from '@shared/types/index.js';
+import Accordion from '../../components/Accordion';
+import type { Almacen } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Inventario propio de un almacén (colapsable), derivado de sus traslados
- *  completados — se pide bajo demanda, no en la carga inicial de la lista. */
-function StockAlmacen({ almacenId, productos }: { almacenId: string; productos: Producto[] }) {
-  const [stock, setStock] = useState<Map<string, number> | null>(null);
+/** Inventario propio de un almacén (colapsable), agrupado por categoría →
+ *  producto igual que el inventario general — a partir de compras, ventas y
+ *  traslados que quedaron ligados a este almacén. Se pide bajo demanda, no en
+ *  la carga inicial de la lista. */
+function StockAlmacen({ almacenId }: { almacenId: string }) {
+  const [grupos, setGrupos] = useState<GrupoInventario[] | null>(null);
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    obtenerStockAlmacen(almacenId).then(setStock);
+    obtenerInventarioAlmacen(almacenId).then(setGrupos);
   }, [almacenId]);
 
-  if (!stock) {
+  const toggle = (clave: string) => {
+    setExpandidos(prev => {
+      const next = new Set(prev);
+      if (next.has(clave)) next.delete(clave);
+      else next.add(clave);
+      return next;
+    });
+  };
+
+  if (!grupos) {
     return <p className="text-xs text-text-muted px-5 py-3">Cargando inventario...</p>;
   }
-  const filas = Array.from(stock.entries()).filter(([, kg]) => kg !== 0);
-  if (filas.length === 0) {
+  if (grupos.length === 0) {
     return <p className="text-xs text-text-muted px-5 py-3">Sin movimientos todavía en este almacén.</p>;
   }
   return (
-    <div className="px-5 py-3 bg-surface-alt/60">
-      <table className="w-full text-xs">
-        <tbody>
-          {filas.map(([productoId, kg]) => (
-            <tr key={productoId}>
-              <td className="py-1 text-text-secondary">{productos.find(p => p.id === productoId)?.nombre ?? productoId}</td>
-              <td className={`py-1 text-right font-medium ${kg < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(kg)} kg</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="px-5 py-3 bg-surface-alt/60 space-y-2">
+      {grupos.map(g => {
+        const clave = g.tipoMaterialId ?? '__sin__';
+        return (
+          <Accordion
+            key={clave}
+            open={expandidos.has(clave)}
+            onToggle={() => toggle(clave)}
+            header={
+              <>
+                <span className="font-semibold text-text-primary text-xs flex-1 text-left">{g.nombreCategoria}</span>
+                <span className="text-[11px] text-text-muted mr-2">{g.articulos.length} art.</span>
+                <span className={`text-sm font-bold ${g.totalKg < 0 ? 'text-red-600' : 'text-text-primary'}`}>
+                  {fmt(g.totalKg)} kg
+                </span>
+              </>
+            }
+          >
+            <div className="overflow-x-auto"><table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[11px] text-text-muted bg-surface-alt">
+                  <th className="px-4 py-1.5 font-medium">Artículo</th>
+                  <th className="px-3 py-1.5 font-medium text-right">Entradas</th>
+                  <th className="px-3 py-1.5 font-medium text-right">Salidas</th>
+                  <th className="px-4 py-1.5 font-medium text-right">Stock (kg)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.articulos.map(a => (
+                  <tr key={a.productoId} className="border-t border-border">
+                    <td className="px-4 py-1.5 text-text-secondary">{a.nombre}</td>
+                    <td className="px-3 py-1.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
+                    <td className="px-3 py-1.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
+                    <td className={`px-4 py-1.5 text-right font-medium ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
+                      {fmt(a.stock)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table></div>
+          </Accordion>
+        );
+      })}
     </div>
   );
 }
@@ -55,7 +100,6 @@ function AlmacenesPanel() {
   const puedeEditar = tienePermiso('productos', 'editar');
 
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
   const [cargando, setCargando] = useState(true);
   const [expandido, setExpandido] = useState<string | null>(null);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; almacen: Almacen | null } | { abierto: false }>({ abierto: false });
@@ -65,7 +109,6 @@ function AlmacenesPanel() {
 
   useEffect(() => {
     recargar();
-    obtenerProductos().then(setProductos);
   }, []);
 
   const handleDesactivar = async (a: Almacen) => {
@@ -82,6 +125,16 @@ function AlmacenesPanel() {
     cargar();
   };
 
+  const handlePredeterminado = async (a: Almacen) => {
+    if (a.esPredeterminado) return;
+    const result = await marcarPredeterminado(a.id);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito(`Ahora las compras y ventas afectan a "${a.nombre}".`);
+    cargar();
+  };
+
+  const hayPredeterminado = almacenes.some(a => a.esPredeterminado && a.activo);
+
   if (cargando) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -92,11 +145,17 @@ function AlmacenesPanel() {
 
   return (
     <div className="max-w-2xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg font-semibold text-text-primary">Almacenes</h2>
           <p className="text-sm text-text-secondary mt-1">
-            Cada almacén tiene su propio inventario, derivado de los traslados que recibió y envió.
+            Cada almacén tiene su propio inventario: compras y ventas afectan al almacén
+            predeterminado (<Star size={12} className="inline fill-amber-400 text-amber-500 -mt-0.5" />),
+            y los traslados mueven material entre almacenes.
+          </p>
+          <p className="text-xs text-text-muted mt-1">
+            El inventario general incluye además los pesajes anteriores a los almacenes y las
+            transformaciones, que no pertenecen a ningún almacén específico.
           </p>
         </div>
         {puedeCrear && (
@@ -110,6 +169,13 @@ function AlmacenesPanel() {
           </button>
         )}
       </div>
+
+      {!hayPredeterminado && almacenes.length > 0 && (
+        <div className="flex items-start gap-2 mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>Ningún almacén está marcado como predeterminado — las compras y ventas nuevas no afectarán a ningún almacén.</span>
+        </div>
+      )}
 
       {almacenes.length === 0 ? (
         <p className="text-center text-text-muted py-12 text-sm">No hay almacenes registrados.</p>
@@ -130,6 +196,21 @@ function AlmacenesPanel() {
                   </div>
                   {a.detalle && <p className="text-xs text-text-muted truncate">{a.detalle}</p>}
                 </div>
+                {a.activo && (
+                  <button
+                    type="button"
+                    onClick={() => handlePredeterminado(a)}
+                    disabled={!puedeEditar || a.esPredeterminado}
+                    title={a.esPredeterminado ? 'Almacén predeterminado' : puedeEditar ? 'Marcar como predeterminado' : 'Almacén predeterminado'}
+                    className={`shrink-0 p-1 rounded-md transition-colors ${
+                      a.esPredeterminado
+                        ? 'fill-amber-400 text-amber-500'
+                        : `text-text-muted ${puedeEditar ? 'hover:text-amber-500 cursor-pointer' : 'cursor-default'}`
+                    }`}
+                  >
+                    <Star size={16} className={a.esPredeterminado ? 'fill-amber-400' : ''} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setExpandido(prev => (prev === a.id ? null : a.id))}
@@ -170,7 +251,7 @@ function AlmacenesPanel() {
                   </div>
                 )}
               </div>
-              {expandido === a.id && <StockAlmacen almacenId={a.id} productos={productos} />}
+              {expandido === a.id && <StockAlmacen almacenId={a.id} />}
             </div>
           ))}
         </div>

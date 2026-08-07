@@ -1,5 +1,6 @@
 import { apiFetch } from './api-client';
 import type { Almacen } from '@shared/types/index.js';
+import type { GrupoInventario } from './inventario-service';
 
 export interface AlmacenInput {
   nombre: string;
@@ -67,5 +68,29 @@ export async function reactivarAlmacen(id: string): Promise<{ ok: true } | { err
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo reactivar el almacén.' };
+  }
+}
+
+/** Marca este almacén como el único predeterminado — el que recibe/pierde
+ *  stock automáticamente por compra/venta. */
+export async function marcarPredeterminado(id: string): Promise<{ almacen: Almacen } | { error: string }> {
+  try {
+    const { almacen } = await apiFetch<{ almacen: Almacen }>(`/api/almacenes/${id}/marcar-predeterminado`, {
+      method: 'POST',
+    });
+    return { almacen };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo marcar el almacén como predeterminado.' };
+  }
+}
+
+/** Inventario propio del almacén, agrupado por categoría → producto (igual
+ *  que el inventario general), a partir de compras/ventas + traslados. */
+export async function obtenerInventarioAlmacen(almacenId: string): Promise<GrupoInventario[]> {
+  try {
+    const { grupos } = await apiFetch<{ grupos: GrupoInventario[] }>(`/api/almacenes/${almacenId}/inventario`);
+    return grupos;
+  } catch {
+    return [];
   }
 }

@@ -6,7 +6,9 @@ import {
   desactivarAlmacen,
   reactivarAlmacen,
   stockAlmacen,
+  marcarPredeterminado,
 } from '../services/almacen-service.js';
+import { obtenerInventarioAlmacen } from '../services/inventario-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearAlmacenSchema, actualizarAlmacenSchema } from '../schemas/almacen.js';
@@ -26,6 +28,11 @@ router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
 router.get('/:id/stock', requirePermiso('productos', 'ver'), async (req, res) => {
   const stock = await stockAlmacen(String(req.params.id));
   res.json({ stock: Object.fromEntries(stock) });
+});
+
+router.get('/:id/inventario', requirePermiso('productos', 'ver'), async (req, res) => {
+  const grupos = await obtenerInventarioAlmacen(String(req.params.id));
+  res.json({ grupos });
 });
 
 router.post(
@@ -72,9 +79,9 @@ router.patch(
 
 router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req, res) => {
   const id = String(req.params.id);
-  const ok = await desactivarAlmacen(id);
-  if (!ok) {
-    res.status(500).json({ error: 'No se pudo desactivar el almacén.' });
+  const result = await desactivarAlmacen(id);
+  if ('error' in result) {
+    res.status(400).json(result);
     return;
   }
   logger.info({
@@ -84,6 +91,22 @@ router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req
     almacenId: id,
   });
   res.json({ ok: true });
+});
+
+router.post('/:id/marcar-predeterminado', requirePermiso('productos', 'editar'), async (req, res) => {
+  const id = String(req.params.id);
+  const result = await marcarPredeterminado(id);
+  if ('error' in result) {
+    res.status(400).json(result);
+    return;
+  }
+  logger.info({
+    evento: 'almacen_predeterminado_cambiado',
+    ip: clienteIp(req),
+    userId: req.user!.sub,
+    almacenId: id,
+  });
+  res.json(result);
 });
 
 router.post('/:id/reactivar', requirePermiso('productos', 'editar'), async (req, res) => {

@@ -23,6 +23,7 @@ function PortalHeader({ title, subtitle, backTo, right }: Props) {
             <ArrowLeft size={20} />
           </Link>
         )}
+        <img src="/logo-pronoia.png" alt="Pronoia" className="w-8 h-8 shrink-0" />
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold tracking-tight truncate">{title}</h1>
           {subtitle && <p className="text-sm text-brand-200 mt-0.5 truncate">{subtitle}</p>}

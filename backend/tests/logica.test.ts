@@ -80,6 +80,61 @@ describe('construirGruposInventario', () => {
     expect(grupos[0].articulos[0].stock).toBe(-15);
     expect(grupos[0].totalKg).toBe(-15);
   });
+
+  // Bloque 34 · inventario por almacén (opciones.incluirSinMovimiento) --------
+
+  it('por defecto (sin opciones) sigue listando productos sin movimiento en cero — no-regresión del inventario general', () => {
+    const grupos = construirGruposInventario(productos, [], [], [], []);
+    const cobre = grupos.find(g => g.tipoMaterialId === 'cobre')!;
+    expect(cobre.articulos.map(a => a.productoId).sort()).toEqual(['A', 'B']);
+    expect(cobre.articulos.every(a => a.stock === 0)).toBe(true);
+  });
+
+  it('incluirSinMovimiento: false omite del todo los productos del catálogo sin movimiento — así arranca un almacén nuevo', () => {
+    const grupos = construirGruposInventario(productos, [], [], [], [], { incluirSinMovimiento: false });
+    expect(grupos).toEqual([]);
+  });
+
+  it('con incluirSinMovimiento: false, un almacén con una sola compra solo lista ese producto, no todo el catálogo', () => {
+    const grupos = construirGruposInventario(
+      productos,
+      [mpp('A', 40)],
+      [],
+      [], [],
+      { incluirSinMovimiento: false }
+    );
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].articulos.map(a => a.productoId)).toEqual(['A']);
+    expect(grupos[0].totalKg).toBe(40);
+  });
+
+  it('agrupa entradas de traslado (recepción) y salidas de venta del mismo almacén bajo la misma categoría', () => {
+    // obtenerInventarioAlmacen() alimenta esta función con movimientos de
+    // compra/venta y de traslado ya mezclados en los mismos arrays de
+    // entradas/salidas — la función no distingue el origen, solo suma.
+    const grupos = construirGruposInventario(
+      productos,
+      [mpp('A', 60), mpp('B', 20)], // A: recibido por traslado. B: compra.
+      [mpp('A', 15)],                // A: vendido desde este almacén.
+      [], [],
+      { incluirSinMovimiento: false }
+    );
+    const cobre = grupos.find(g => g.tipoMaterialId === 'cobre')!;
+    expect(cobre.articulos.find(a => a.productoId === 'A')!.stock).toBe(45);
+    expect(cobre.articulos.find(a => a.productoId === 'B')!.stock).toBe(20);
+  });
+
+  it('D-3: colapsa entradas y salidas del mismo producto en una sola fila cuando todo llega como destino mpp (inventario por almacén no cruza MPP/lote)', () => {
+    const grupos = construirGruposInventario(
+      [productos[0]],
+      [mpp('A', 60)], // recepción de traslado, forzada a 'mpp' por el servicio
+      [mpp('A', 25)], // venta, también 'mpp'
+      [], [],
+      { incluirSinMovimiento: false }
+    );
+    expect(grupos[0].articulos).toHaveLength(1);
+    expect(grupos[0].articulos[0].stock).toBe(35);
+  });
 });
 
 describe('construirEstadoCuenta', () => {

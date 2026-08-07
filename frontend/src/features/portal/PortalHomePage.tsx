@@ -25,9 +25,12 @@ function PortalHomePage() {
     <div className="min-h-screen bg-surface-alt">
       <header className="bg-brand-900 text-white px-4 pt-6 pb-10 shadow-md">
         <div className="max-w-2xl mx-auto flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-brand-200 text-sm font-medium">Pronoia Scrap</p>
-            <h1 className="text-2xl font-bold tracking-tight mt-1 truncate">Hola, {entidad?.nombre}</h1>
+          <div className="flex items-start gap-3 min-w-0">
+            <img src="/logo-pronoia.png" alt="Pronoia" className="w-9 h-9 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-brand-200 text-sm font-medium">Pronoia Scrap</p>
+              <h1 className="text-2xl font-bold tracking-tight mt-1 truncate">Hola, {entidad?.nombre}</h1>
+            </div>
           </div>
           <button
             type="button"

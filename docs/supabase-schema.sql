@@ -2089,3 +2089,184 @@ as $$
   ) x
   group by producto_id;
 $$;
+
+-- ============================================================================
+-- Bloque 34 · Almacén predeterminado + compras/ventas que mueven inventario
+--             de almacén (mejora 1 sobre el MVP del Bloque 33)
+--
+-- Qué cambia respecto al Bloque 33:
+--  1. almacenes.es_predeterminado: como máximo UN almacén predeterminado a la
+--     vez (índice único parcial). Es el único que recibe/pierde stock
+--     automáticamente por compra/venta — no hay selector en Pesaje.
+--  2. tickets_pesaje.almacen_id (nullable): a qué almacén afectó ese pesaje.
+--     Se llena solo, dentro de crear_ticket_pesaje, con el predeterminado
+--     ACTIVO del momento. NO se agrega como parámetro nuevo de la función —
+--     agregar un parámetro crea una función sobrecargada distinta en
+--     Postgres (mismo problema que ya resolvió el drop function del Bloque
+--     23) — se resuelve dentro del cuerpo, la firma de 10 parámetros queda
+--     intacta.
+--  3. stock_almacen() ahora suma también compras (entran) y ventas (salen)
+--     del almacén, no solo traslados.
+--  4. Backfill (34.6): confirmado por Julio 07-ago-2026 — los 19 tickets de
+--     compra/venta anteriores a este bloque (sin almacen_id) se asignan a
+--     Almacén G2 (id c2ce16a1-e832-4f95-8c2a-bfcc9dbb131c). Verificado antes
+--     y después: totales de compra (1638.66 kg) y venta (101 kg) sin cambios.
+--
+-- Aditivo y no destructivo en su estructura: no borra ni reescribe pesos ni
+-- montos, no cambia el cálculo del inventario general (nunca lee almacen_id)
+-- y no toca los tickets ya facturados salvo la nueva columna almacen_id.
+-- ============================================================================
+
+alter table public.almacenes
+  add column if not exists es_predeterminado boolean not null default false;
+
+-- Máximo un predeterminado: unicidad del valor `true` entre las filas que lo
+-- tienen. Las filas en false no participan del índice parcial.
+create unique index if not exists idx_almacenes_un_solo_predeterminado
+  on public.almacenes (es_predeterminado)
+  where es_predeterminado;
+
+-- Desmarca el anterior y marca el nuevo en la MISMA transacción y en ese
+-- orden — el índice único se verifica por sentencia, así que invertir el
+-- orden dispararía una colisión transitoria.
+create or replace function public.marcar_almacen_predeterminado(p_almacen_id uuid)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_activo boolean;
+begin
+  select activo into v_activo from public.almacenes where id = p_almacen_id;
+
+  if v_activo is null then
+    raise exception 'Almacén no encontrado.';
+  end if;
+  if not v_activo then
+    raise exception 'Un almacén inactivo no puede ser el predeterminado.';
+  end if;
+
+  update public.almacenes
+     set es_predeterminado = false
+   where es_predeterminado and id <> p_almacen_id;
+
+  update public.almacenes
+     set es_predeterminado = true
+   where id = p_almacen_id;
+
+  return p_almacen_id;
+end;
+$$;
+
+alter table public.tickets_pesaje
+  add column if not exists almacen_id uuid references public.almacenes(id);
+
+create index if not exists idx_tickets_pesaje_almacen
+  on public.tickets_pesaje (almacen_id);
+
+-- Reemplaza la RPC (Bloque 30) con exactamente los mismos 10 parámetros —
+-- el único cambio es que ahora resuelve el almacén predeterminado ACTIVO del
+-- momento y lo guarda en almacen_id. Si no hay ninguno marcado, queda NULL y
+-- el ticket no pertenece a ningún almacén (no bloquea el guardado).
+create or replace function public.crear_ticket_pesaje(
+  p_tipo          text,
+  p_entidad_id    uuid,
+  p_fecha         date,
+  p_fotos         text[],
+  p_observaciones text,
+  p_materiales    jsonb,
+  p_estado        text,
+  p_pesado_por    uuid,
+  p_peso_global   numeric,
+  p_devolucion    numeric default 0
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id         uuid;
+  v_item       jsonb;
+  v_almacen_id uuid;
+begin
+  select id into v_almacen_id
+    from public.almacenes
+   where es_predeterminado and activo
+   limit 1;
+
+  insert into public.tickets_pesaje
+    (tipo, entidad_id, fecha, fotos, observaciones, estado, pesado_por,
+     peso_global, devolucion, almacen_id)
+  values (
+    p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''),
+    coalesce(p_estado, 'completo'), p_pesado_por, p_peso_global,
+    coalesce(p_devolucion, 0), v_almacen_id
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
+
+-- Stock derivado por almacén. Ahora incluye 4 orígenes:
+--   traslados recibidos (+) / enviados (−) — solo completados
+--   compras (+) / ventas (−) cuyo ticket apunta a este almacén
+-- No se filtra por tickets_pesaje.estado: un ticket en bruto no tiene filas
+-- en detalle_tickets_pesaje, así que aporta 0 por construcción. Mantenerlo
+-- sin filtro garantiza que este cálculo y el del inventario general sumen
+-- sobre exactamente el mismo conjunto de filas.
+create or replace function public.stock_almacen(p_almacen_id uuid)
+returns table(producto_id uuid, stock numeric)
+language sql
+stable
+as $$
+  select producto_id, sum(entrada) - sum(salida) as stock
+  from (
+    select dt.producto_id, coalesce(dt.peso_recibido, 0) as entrada, 0::numeric as salida
+    from public.detalle_traslado dt
+    join public.tickets_traslado t on t.id = dt.traslado_id
+    where t.almacen_destino_id = p_almacen_id and t.estado = 'completo'
+    union all
+    select dt.producto_id, 0::numeric, coalesce(dt.peso_neto, 0)
+    from public.detalle_traslado dt
+    join public.tickets_traslado t on t.id = dt.traslado_id
+    where t.almacen_origen_id = p_almacen_id and t.estado = 'completo'
+    union all
+    select d.producto_id, coalesce(d.peso_neto, 0), 0::numeric
+    from public.detalle_tickets_pesaje d
+    join public.tickets_pesaje tp on tp.id = d.ticket_id
+    where tp.almacen_id = p_almacen_id and tp.tipo = 'compra'
+    union all
+    select d.producto_id, 0::numeric, coalesce(d.peso_neto, 0)
+    from public.detalle_tickets_pesaje d
+    join public.tickets_pesaje tp on tp.id = d.ticket_id
+    where tp.almacen_id = p_almacen_id and tp.tipo = 'venta'
+  ) x
+  where producto_id is not null
+  group by producto_id;
+$$;
+
+-- 34.6 · Backfill histórico → Almacén G2 (decisión de negocio confirmada por
+-- Julio, 07-ago-2026). Corrido una sola vez el 07-ago-2026 vía Management
+-- API. No es idempotente en el mismo sentido que el resto del bloque (es un
+-- UPDATE, no un DDL con IF NOT EXISTS) — se deja documentado como referencia
+-- histórica, no para re-ejecutar: si algún ticket queda sin almacen_id en el
+-- futuro es porque no había ningún almacén predeterminado activo al crearlo,
+-- no porque falte correr esto de nuevo.
+--
+-- update public.tickets_pesaje
+--    set almacen_id = 'c2ce16a1-e832-4f95-8c2a-bfcc9dbb131c'
+--  where almacen_id is null;
