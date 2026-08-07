@@ -23,6 +23,7 @@ export const crearClienteSchema = z.object({
   telefono: opcionalTrim(40),
   direccion: opcionalTrim(300),
   notas: opcionalTrim(500),
+  fotoUrl: opcionalTrim(500),
 });
 
 export const actualizarClienteSchema = crearClienteSchema

@@ -28,14 +28,14 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Productos', to: '/productos', icon: <Package size={20} />, recurso: 'productos' },
       { label: 'Inventario', to: '/inventario', icon: <Boxes size={20} />, recurso: 'productos' },
       { label: 'Lotes', to: '/lotes', icon: <Layers size={20} />, recurso: 'productos' },
-      { label: 'Transformaciones', to: '/transformaciones', icon: <Recycle size={20} />, recurso: 'productos' },
+      { label: 'Transformaciones', to: '/transformaciones', icon: <Recycle size={20} />, recurso: 'transformaciones' },
     ],
   },
   {
     header: 'Pesaje',
     items: [
       { label: 'Pesaje', to: '/pesaje', icon: <Scale size={20} />, recurso: 'pesaje' },
-      { label: 'Taras', to: '/taras', icon: <Weight size={20} />, recurso: 'productos' },
+      { label: 'Taras', to: '/taras', icon: <Weight size={20} />, recurso: 'taras' },
       { label: 'Despachos', to: '/citas', icon: <CalendarClock size={20} />, recurso: 'despachos' },
     ],
   },
@@ -62,7 +62,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     header: 'Configuración',
     items: [
-      { label: 'Listas de precios', to: '/listas-precios', icon: <Tag size={20} />, recurso: 'productos' },
+      { label: 'Listas de precios', to: '/listas-precios', icon: <Tag size={20} />, recurso: 'listas_precios' },
       { label: 'Usuarios', to: '/usuarios', icon: <Users size={20} />, recurso: 'usuarios' },
     ],
   },

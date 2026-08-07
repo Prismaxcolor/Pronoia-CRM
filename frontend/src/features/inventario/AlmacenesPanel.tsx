@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, EyeOff, Eye, Warehouse, ChevronDown, ChevronUp, Star, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, EyeOff, Eye, Warehouse, ChevronDown, ChevronRight, ChevronUp, Star, AlertTriangle, Boxes } from 'lucide-react';
 import {
   obtenerAlmacenes,
   obtenerInventarioAlmacen,
@@ -11,7 +11,6 @@ import type { GrupoInventario } from '../../services/inventario-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import AlmacenFormModal from './AlmacenFormModal';
-import Accordion from '../../components/Accordion';
 import type { Almacen } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -40,53 +39,54 @@ function StockAlmacen({ almacenId }: { almacenId: string }) {
   };
 
   if (!grupos) {
-    return <p className="text-xs text-text-muted px-5 py-3">Cargando inventario...</p>;
+    return (
+      <div className="px-5 py-6 flex items-center justify-center bg-surface-alt/40">
+        <div className="w-5 h-5 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      </div>
+    );
   }
   if (grupos.length === 0) {
-    return <p className="text-xs text-text-muted px-5 py-3">Sin movimientos todavía en este almacén.</p>;
+    return (
+      <div className="px-5 py-8 bg-surface-alt/40 text-center">
+        <Boxes size={22} className="mx-auto text-text-muted/50 mb-2" />
+        <p className="text-xs text-text-muted">Sin movimientos todavía en este almacén.</p>
+      </div>
+    );
   }
   return (
-    <div className="px-5 py-3 bg-surface-alt/60 space-y-2">
+    <div className="px-4 py-3 bg-surface-alt/40 space-y-2">
       {grupos.map(g => {
         const clave = g.tipoMaterialId ?? '__sin__';
         return (
-          <Accordion
-            key={clave}
-            open={expandidos.has(clave)}
-            onToggle={() => toggle(clave)}
-            header={
-              <>
-                <span className="font-semibold text-text-primary text-xs flex-1 text-left">{g.nombreCategoria}</span>
-                <span className="text-[11px] text-text-muted mr-2">{g.articulos.length} art.</span>
-                <span className={`text-sm font-bold ${g.totalKg < 0 ? 'text-red-600' : 'text-text-primary'}`}>
-                  {fmt(g.totalKg)} kg
-                </span>
-              </>
-            }
-          >
-            <div className="overflow-x-auto"><table className="w-full text-xs">
-              <thead>
-                <tr className="text-left text-[11px] text-text-muted bg-surface-alt">
-                  <th className="px-4 py-1.5 font-medium">Artículo</th>
-                  <th className="px-3 py-1.5 font-medium text-right">Entradas</th>
-                  <th className="px-3 py-1.5 font-medium text-right">Salidas</th>
-                  <th className="px-4 py-1.5 font-medium text-right">Stock (kg)</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div key={clave} className="bg-surface rounded-lg border border-border/70 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggle(clave)}
+              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-surface-alt/60 transition-colors"
+            >
+              {expandidos.has(clave) ? <ChevronDown size={14} className="text-text-muted shrink-0" /> : <ChevronRight size={14} className="text-text-muted shrink-0" />}
+              <span className="text-xs font-semibold text-text-primary flex-1 text-left truncate">{g.nombreCategoria}</span>
+              <span className="text-[11px] text-text-muted">{g.articulos.length} art.</span>
+              <span className={`text-xs font-bold tabular-nums px-2 py-0.5 rounded-full ${g.totalKg < 0 ? 'bg-red-50 text-red-600' : 'bg-brand-50 text-brand-700'}`}>
+                {fmt(g.totalKg)} kg
+              </span>
+            </button>
+
+            {expandidos.has(clave) && (
+              <div className="border-t border-border/70 divide-y divide-border/50">
                 {g.articulos.map(a => (
-                  <tr key={a.productoId} className="border-t border-border">
-                    <td className="px-4 py-1.5 text-text-secondary">{a.nombre}</td>
-                    <td className="px-3 py-1.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
-                    <td className="px-3 py-1.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
-                    <td className={`px-4 py-1.5 text-right font-medium ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
-                      {fmt(a.stock)}
-                    </td>
-                  </tr>
+                  <div key={a.productoId} className="flex items-center gap-3 px-3.5 py-2 text-xs">
+                    <span className="text-text-secondary flex-1 truncate">{a.nombre}</span>
+                    <span className="text-text-muted tabular-nums w-16 text-right" title="Entradas">+{fmt(a.entradas)}</span>
+                    <span className="text-text-muted tabular-nums w-16 text-right" title="Salidas">−{fmt(a.salidas)}</span>
+                    <span className={`font-semibold tabular-nums w-20 text-right ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
+                      {fmt(a.stock)} kg
+                    </span>
+                  </div>
                 ))}
-              </tbody>
-            </table></div>
-          </Accordion>
+              </div>
+            )}
+          </div>
         );
       })}
     </div>
@@ -96,8 +96,8 @@ function StockAlmacen({ almacenId }: { almacenId: string }) {
 function AlmacenesPanel() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
-  const puedeCrear = tienePermiso('productos', 'crear');
-  const puedeEditar = tienePermiso('productos', 'editar');
+  const puedeCrear = tienePermiso('almacenes', 'crear');
+  const puedeEditar = tienePermiso('almacenes', 'editar');
 
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [cargando, setCargando] = useState(true);

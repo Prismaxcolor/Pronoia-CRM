@@ -2270,3 +2270,118 @@ $$;
 -- update public.tickets_pesaje
 --    set almacen_id = 'c2ce16a1-e832-4f95-8c2a-bfcc9dbb131c'
 --  where almacen_id is null;
+
+-- ============================================================================
+-- Bloque 35 · Numeración separada por tipo (compra / venta)
+--
+-- Antes: una sola secuencia (tickets_pesaje_numero_seq) compartida entre
+-- compra y venta, mostrada siempre como "Pesaje-000N" sin importar el tipo.
+-- Ahora: cada tipo tiene su propia secuencia, arrancando justo después del
+-- máximo histórico de SU propio tipo (no se renumera nada existente — un
+-- ticket viejo conserva su `numero` de siempre, solo cambia el PREFIJO de
+-- texto que ya venía de una función de formato, no de la base de datos:
+-- "Pesaje-0014" pasa a leerse "Compra-0014" o "Venta-0014" según corresponda,
+-- mismo número, sin tocar ninguna fila).
+--
+-- El índice único de `numero` pasa de ser global a ser por (tipo, numero) —
+-- imprescindible porque de ahora en adelante un ticket de compra y uno de
+-- venta SÍ pueden compartir el mismo número (ej. Compra-0020 y Venta-0020
+-- coexisten, cada uno en su propia cuenta).
+-- ============================================================================
+
+-- 35.1 · Secuencias nuevas, una por tipo, arrancando después del máximo
+-- histórico de ese tipo (evita cualquier colisión con datos existentes).
+do $$
+declare
+  v_max_compra integer;
+  v_max_venta  integer;
+begin
+  select coalesce(max(numero), 0) into v_max_compra from public.tickets_pesaje where tipo = 'compra';
+  select coalesce(max(numero), 0) into v_max_venta  from public.tickets_pesaje where tipo = 'venta';
+
+  execute format('create sequence if not exists public.tickets_pesaje_numero_compra_seq start with %s', v_max_compra + 1);
+  execute format('create sequence if not exists public.tickets_pesaje_numero_venta_seq start with %s', v_max_venta + 1);
+end $$;
+
+-- 35.2 · El índice único pasa de (numero) a (tipo, numero).
+drop index if exists public.idx_tickets_pesaje_numero;
+create unique index if not exists idx_tickets_pesaje_numero
+  on public.tickets_pesaje (tipo, numero);
+
+-- 35.3 · crear_ticket_pesaje asigna numero explícitamente según el tipo, en
+-- vez de depender del default de columna (que seguía apuntando a la
+-- secuencia vieja compartida). Misma firma de 10 parámetros, sin drop.
+create or replace function public.crear_ticket_pesaje(
+  p_tipo          text,
+  p_entidad_id    uuid,
+  p_fecha         date,
+  p_fotos         text[],
+  p_observaciones text,
+  p_materiales    jsonb,
+  p_estado        text,
+  p_pesado_por    uuid,
+  p_peso_global   numeric,
+  p_devolucion    numeric default 0
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id         uuid;
+  v_item       jsonb;
+  v_almacen_id uuid;
+  v_numero     integer;
+begin
+  select id into v_almacen_id
+    from public.almacenes
+   where es_predeterminado and activo
+   limit 1;
+
+  if p_tipo = 'compra' then
+    v_numero := nextval('public.tickets_pesaje_numero_compra_seq');
+  else
+    v_numero := nextval('public.tickets_pesaje_numero_venta_seq');
+  end if;
+
+  insert into public.tickets_pesaje
+    (tipo, entidad_id, fecha, fotos, observaciones, estado, pesado_por,
+     peso_global, devolucion, almacen_id, numero)
+  values (
+    p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''),
+    coalesce(p_estado, 'completo'), p_pesado_por, p_peso_global,
+    coalesce(p_devolucion, 0), v_almacen_id, v_numero
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
+
+-- ============================================================================
+-- Bloque 36 · Foto de clientes y proveedores
+--
+-- Selector visual con imagen en Nueva Factura (mismo patrón que material/tara
+-- en Pesaje). Buckets de Storage "clientes" y "proveedores" creados públicos,
+-- mismo criterio que "productos"/"taras"/"comprobantes".
+-- ============================================================================
+
+alter table public.clientes
+  add column if not exists foto_url text;
+
+alter table public.proveedores
+  add column if not exists foto_url text;

@@ -21,6 +21,7 @@ export const crearProveedorSchema = z.object({
     .optional()
     .nullable()
     .transform(v => (v && v.length > 0 ? v : null)),
+  fotoUrl: opcionalTrim(500),
 });
 
 export const actualizarProveedorSchema = crearProveedorSchema

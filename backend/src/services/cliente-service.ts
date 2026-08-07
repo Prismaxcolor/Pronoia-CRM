@@ -12,6 +12,7 @@ interface ClienteRow {
   activo: boolean;
   creado_por: string | null;
   creado_en: string;
+  foto_url: string | null;
   telegram_chat_id: string | null;
   telegram_linked_at: string | null;
 }
@@ -27,6 +28,7 @@ export interface ClientePublico {
   activo: boolean;
   creadoPor: string;
   creadoEn: string;
+  fotoUrl: string | null;
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
 }
@@ -43,6 +45,7 @@ function toPublico(row: ClienteRow): ClientePublico {
     activo: row.activo,
     creadoPor: row.creado_por ?? '',
     creadoEn: row.creado_en,
+    fotoUrl: row.foto_url,
     telegramChatId: row.telegram_chat_id,
     telegramLinkedAt: row.telegram_linked_at,
   };
@@ -71,6 +74,7 @@ export async function crearCliente(
       telefono: input.telefono,
       direccion: input.direccion,
       notas: input.notas,
+      foto_url: input.fotoUrl ?? null,
       creado_por: creadoPor,
     })
     .select('*')
@@ -84,9 +88,19 @@ export async function actualizarCliente(
   id: string,
   cambios: ActualizarClienteInput
 ): Promise<{ cliente: ClientePublico } | { error: string }> {
+  const update: Record<string, unknown> = {};
+  if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
+  if (cambios.identificacion !== undefined) update.identificacion = cambios.identificacion;
+  if (cambios.email !== undefined) update.email = cambios.email;
+  if (cambios.telefono !== undefined) update.telefono = cambios.telefono;
+  if (cambios.direccion !== undefined) update.direccion = cambios.direccion;
+  if (cambios.notas !== undefined) update.notas = cambios.notas;
+  if (cambios.fotoUrl !== undefined) update.foto_url = cambios.fotoUrl;
+  if (cambios.activo !== undefined) update.activo = cambios.activo;
+
   const { data, error } = await supabaseAdmin
     .from('clientes')
-    .update(cambios)
+    .update(update)
     .eq('id', id)
     .select('*')
     .maybeSingle();

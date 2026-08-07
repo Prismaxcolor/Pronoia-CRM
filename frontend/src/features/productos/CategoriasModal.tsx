@@ -32,9 +32,9 @@ function CategoriasModal({ onClose, onCambios }: Props) {
   const [editId, setEditId] = useState<string | null>(null);
   const [editNombre, setEditNombre] = useState('');
 
-  const puedeCrear = tienePermiso('productos', 'crear');
-  const puedeEditar = tienePermiso('productos', 'editar');
-  const puedeEliminar = tienePermiso('productos', 'eliminar');
+  const puedeCrear = tienePermiso('categorias', 'crear');
+  const puedeEditar = tienePermiso('categorias', 'editar');
+  const puedeEliminar = tienePermiso('categorias', 'eliminar');
 
   const recargar = () => obtenerTiposMaterial().then(setCategorias).finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };

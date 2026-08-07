@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Loader2, Plus, Trash2 } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
@@ -8,9 +8,10 @@ import { obtenerTickets } from '../../services/ticket-pesaje-service';
 import { crearFactura, type TipoFactura } from '../../services/factura-cv-service';
 import { obtenerListas, obtenerListaDetalle } from '../../services/lista-precios-service';
 import { useToast } from '../../hooks/use-toast-context';
+import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import type { Producto, TicketPesaje, ListaPrecios } from '@shared/types/index.js';
 
-interface Entidad { id: string; nombre: string; activo: boolean }
+interface Entidad { id: string; nombre: string; activo: boolean; fotoUrl: string | null }
 type ModoPeso = 'ticket' | 'manual';
 
 /** Una línea del formulario (valores como string para los inputs). */
@@ -58,6 +59,7 @@ function FacturaFormPage({ tipo }: Props) {
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
 
   // Precios de la lista elegida (productoId → precio/kg). En ref para poder
   // precargar líneas nuevas (de ticket o manuales) sin re-disparar efectos.
@@ -205,10 +207,16 @@ function FacturaFormPage({ tipo }: Props) {
       <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4">
         <div>
           <label className={labelClass}>{labelEntidad} *</label>
-          <select value={entidadId} onChange={e => { setEntidadId(e.target.value); setTicketIds([]); }} className={inputClass}>
-            <option value="">— Selecciona —</option>
-            {entidades.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-          </select>
+          <button
+            type="button"
+            onClick={() => setMostrarSelectorEntidad(true)}
+            className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+          >
+            <span className={entidadId ? 'text-text-primary truncate' : 'text-text-muted'}>
+              {entidades.find(e => e.id === entidadId)?.nombre ?? '— Selecciona —'}
+            </span>
+            <ChevronDown size={14} className="text-text-muted shrink-0" />
+          </button>
         </div>
 
         <div>
@@ -346,6 +354,19 @@ function FacturaFormPage({ tipo }: Props) {
           </button>
         </div>
       </form>
+
+      {mostrarSelectorEntidad && (
+        <SeleccionarEntidadModal
+          titulo={`Elegir ${labelEntidad.toLowerCase()}`}
+          entidades={entidades}
+          onClose={() => setMostrarSelectorEntidad(false)}
+          onSeleccionar={id => {
+            setEntidadId(id);
+            setTicketIds([]);
+            setMostrarSelectorEntidad(false);
+          }}
+        />
+      )}
     </div>
   );
 }

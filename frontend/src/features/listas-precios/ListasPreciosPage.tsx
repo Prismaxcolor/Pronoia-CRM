@@ -23,9 +23,9 @@ function ListasPreciosPage() {
   const toast = useToast();
   const confirmar = useConfirm();
 
-  const puedeCrear = tienePermiso('productos', 'crear');
-  const puedeEditar = tienePermiso('productos', 'editar');
-  const puedeBorrar = tienePermiso('productos', 'eliminar');
+  const puedeCrear = tienePermiso('listas_precios', 'crear');
+  const puedeEditar = tienePermiso('listas_precios', 'editar');
+  const puedeBorrar = tienePermiso('listas_precios', 'eliminar');
 
   const recargar = () => obtenerListas().then(setListas).finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };

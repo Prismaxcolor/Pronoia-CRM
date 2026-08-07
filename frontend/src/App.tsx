@@ -82,11 +82,11 @@ function AppRoutes() {
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<ProtectedRoute recurso="dashboard"><DashboardPage /></ProtectedRoute>} />
         <Route path="/productos" element={<ProtectedRoute recurso="productos"><ProductosPage /></ProtectedRoute>} />
-        <Route path="/listas-precios" element={<ProtectedRoute recurso="productos"><ListasPreciosPage /></ProtectedRoute>} />
-        <Route path="/listas-precios/:id" element={<ProtectedRoute recurso="productos"><ListaDetallePage /></ProtectedRoute>} />
-        <Route path="/taras" element={<ProtectedRoute recurso="productos"><TarasPage /></ProtectedRoute>} />
+        <Route path="/listas-precios" element={<ProtectedRoute recurso="listas_precios"><ListasPreciosPage /></ProtectedRoute>} />
+        <Route path="/listas-precios/:id" element={<ProtectedRoute recurso="listas_precios"><ListaDetallePage /></ProtectedRoute>} />
+        <Route path="/taras" element={<ProtectedRoute recurso="taras"><TarasPage /></ProtectedRoute>} />
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
-        <Route path="/transformaciones" element={<ProtectedRoute recurso="productos"><TransformacionesPage /></ProtectedRoute>} />
+        <Route path="/transformaciones" element={<ProtectedRoute recurso="transformaciones"><TransformacionesPage /></ProtectedRoute>} />
         <Route path="/lotes" element={<ProtectedRoute recurso="productos"><LotesPage /></ProtectedRoute>} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
         <Route path="/pesaje/:id" element={<ProtectedRoute recurso="pesaje"><TicketDetallePage /></ProtectedRoute>} />

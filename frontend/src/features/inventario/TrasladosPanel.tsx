@@ -17,7 +17,7 @@ function resumenMateriales(t: Traslado): string {
 
 function TrasladosPanel() {
   const { tienePermiso } = useAuth();
-  const puedeCompletar = tienePermiso('pesaje', 'crear');
+  const puedeCompletar = tienePermiso('traslados', 'crear');
 
   const [traslados, setTraslados] = useState<Traslado[]>([]);
   const [cargando, setCargando] = useState(true);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, ArrowRight, ArrowLeft, Loader2, Recycle } from 'lucide-react';
+import { Plus, Trash2, ArrowRight, ArrowLeft, Loader2, Recycle, ChevronDown } from 'lucide-react';
 import {
   obtenerTransformaciones,
   crearTransformacion,
@@ -9,6 +9,7 @@ import { obtenerProductos } from '../../services/producto-service';
 import { obtenerInventario } from '../../services/inventario-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
+import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
 import type { Producto } from '@shared/types/index.js';
 
 interface SalidaForm { materialSalidaId: string; cantidad: string }
@@ -23,7 +24,7 @@ function fmt(n: number): string {
 function TransformacionesPage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
-  const puedeCrear = tienePermiso('productos', 'crear');
+  const puedeCrear = tienePermiso('transformaciones', 'crear');
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [stockMap, setStockMap] = useState<Map<string, number>>(new Map());
@@ -37,6 +38,8 @@ function TransformacionesPage() {
   const [salidas, setSalidas] = useState<SalidaForm[]>([{ materialSalidaId: '', cantidad: '' }]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 'entrada' o el índice de la fila de salidas cuyo selector visual está abierto. */
+  const [selectorAbierto, setSelectorAbierto] = useState<'entrada' | number | null>(null);
 
   const cargarDatos = () => {
     obtenerInventario().then(grupos => {
@@ -137,10 +140,16 @@ function TransformacionesPage() {
               <div className="space-y-4">
                 <div>
                   <label className={labelClass}>Material de entrada *</label>
-                  <select value={entradaId} onChange={e => setEntradaId(e.target.value)} className={inputClass}>
-                    <option value="">— Selecciona —</option>
-                    {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setSelectorAbierto('entrada')}
+                    className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                  >
+                    <span className={entradaId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                      {nombrePorProducto.get(entradaId) ?? '— Selecciona —'}
+                    </span>
+                    <ChevronDown size={14} className="text-text-muted shrink-0" />
+                  </button>
                   {entradaId && (
                     <p className="text-xs text-text-muted mt-1">
                       Stock disponible: <span className={stockEntrada < 0 ? 'text-red-600 font-medium' : 'font-medium'}>{fmt(stockEntrada)} kg</span>
@@ -175,10 +184,16 @@ function TransformacionesPage() {
                   <label className={labelClass}>Materiales que salen</label>
                   {salidas.map((s, idx) => (
                     <div key={idx} className="flex gap-2 items-center">
-                      <select value={s.materialSalidaId} onChange={e => setSalida(idx, 'materialSalidaId', e.target.value)} className={inputClass}>
-                        <option value="">— Material —</option>
-                        {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setSelectorAbierto(idx)}
+                        className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                      >
+                        <span className={s.materialSalidaId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                          {nombrePorProducto.get(s.materialSalidaId) ?? '— Material —'}
+                        </span>
+                        <ChevronDown size={14} className="text-text-muted shrink-0" />
+                      </button>
                       <input type="number" step="0.01" min="0" value={s.cantidad} onChange={e => setSalida(idx, 'cantidad', e.target.value)} className="w-28 px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400" placeholder="kg" />
                       {salidas.length > 1 && (
                         <button type="button" onClick={() => removeSalida(idx)} className="text-red-400 hover:text-red-600 p-1 shrink-0">
@@ -256,6 +271,18 @@ function TransformacionesPage() {
           </div>
         </div>
       </div>
+
+      {selectorAbierto !== null && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setSelectorAbierto(null)}
+          onSeleccionar={productoId => {
+            if (selectorAbierto === 'entrada') setEntradaId(productoId);
+            else setSalida(selectorAbierto, 'materialSalidaId', productoId);
+            setSelectorAbierto(null);
+          }}
+        />
+      )}
     </div>
   );
 }

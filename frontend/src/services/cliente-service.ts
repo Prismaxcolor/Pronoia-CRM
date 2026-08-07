@@ -12,6 +12,7 @@ interface ClienteApi {
   activo: boolean;
   creadoPor: string;
   creadoEn: string;
+  fotoUrl: string | null;
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
 }
@@ -27,6 +28,7 @@ export interface ClienteInput {
   telefono?: string | null;
   direccion?: string | null;
   notas?: string | null;
+  fotoUrl?: string | null;
 }
 
 export async function obtenerClientes(): Promise<Cliente[]> {

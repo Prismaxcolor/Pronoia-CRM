@@ -83,6 +83,26 @@ body {
   }
 }
 
+/* Aparición suave del contenido de cada pantalla al cargar/navegar — se
+ * aplica una sola vez al montar, no en cada re-render (ver Layout.tsx). */
+@keyframes content-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 /* Documentos impresos (facturas, tickets): priorizar legibilidad sobre el
  * estilo de pantalla — texto siempre en negro y sin recortes de página. */
 @media print {

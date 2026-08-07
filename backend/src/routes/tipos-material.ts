@@ -19,16 +19,16 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Categorías de material = configuración del catálogo → permiso 'productos'.
+// Categorías de material = configuración del catálogo → permiso 'categorias'.
 
-router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
+router.get('/', requirePermiso('categorias', 'ver'), async (_req, res) => {
   const tipos = await listarTiposMaterial();
   res.json({ tipos });
 });
 
 router.post(
   '/',
-  requirePermiso('productos', 'crear'),
+  requirePermiso('categorias', 'crear'),
   validateBody(crearTipoMaterialSchema),
   async (req, res) => {
     const result = await crearTipoMaterial(req.body);
@@ -48,7 +48,7 @@ router.post(
 
 router.patch(
   '/:id',
-  requirePermiso('productos', 'editar'),
+  requirePermiso('categorias', 'editar'),
   validateBody(actualizarTipoMaterialSchema),
   async (req, res) => {
     const id = String(req.params.id);
@@ -68,7 +68,7 @@ router.patch(
   }
 );
 
-router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/desactivar', requirePermiso('categorias', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const ok = await desactivarTipoMaterial(id);
   if (!ok) {
@@ -84,7 +84,7 @@ router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req
   res.json({ ok: true });
 });
 
-router.post('/:id/reactivar', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/reactivar', requirePermiso('categorias', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const ok = await reactivarTipoMaterial(id);
   if (!ok) {
@@ -100,7 +100,7 @@ router.post('/:id/reactivar', requirePermiso('productos', 'editar'), async (req,
   res.json({ ok: true });
 });
 
-router.delete('/:id', requirePermiso('productos', 'eliminar'), async (req, res) => {
+router.delete('/:id', requirePermiso('categorias', 'eliminar'), async (req, res) => {
   const id = String(req.params.id);
   const result = await borrarTipoMaterial(id);
   if (!result.ok) {

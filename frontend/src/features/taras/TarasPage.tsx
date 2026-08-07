@@ -9,8 +9,8 @@ import type { Tara } from '@shared/types/index.js';
 function TarasPage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
-  const puedeCrear = tienePermiso('productos', 'crear');
-  const puedeEditar = tienePermiso('productos', 'editar');
+  const puedeCrear = tienePermiso('taras', 'crear');
+  const puedeEditar = tienePermiso('taras', 'editar');
 
   const [taras, setTaras] = useState<Tara[]>([]);
   const [cargando, setCargando] = useState(true);

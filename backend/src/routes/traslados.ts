@@ -9,14 +9,14 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Traslado = otra operación de pesaje (al lado de compra/venta) → mismo permiso 'pesaje'.
+// Traslado = otra operación de pesaje (al lado de compra/venta) → su propio permiso 'traslados'.
 
-router.get('/', requirePermiso('pesaje', 'ver'), async (_req, res) => {
+router.get('/', requirePermiso('traslados', 'ver'), async (_req, res) => {
   const traslados = await listarTraslados();
   res.json({ traslados });
 });
 
-router.get('/:id', requirePermiso('pesaje', 'ver'), async (req, res) => {
+router.get('/:id', requirePermiso('traslados', 'ver'), async (req, res) => {
   const traslado = await obtenerTraslado(String(req.params.id));
   if (!traslado) {
     res.status(404).json({ error: 'Traslado no encontrado.' });
@@ -27,7 +27,7 @@ router.get('/:id', requirePermiso('pesaje', 'ver'), async (req, res) => {
 
 router.post(
   '/',
-  requirePermiso('pesaje', 'crear'),
+  requirePermiso('traslados', 'crear'),
   validateBody(crearTrasladoSchema),
   async (req, res) => {
     const result = await crearTraslado(req.body, req.user!.sub);
@@ -47,7 +47,7 @@ router.post(
 
 router.patch(
   '/:id/completar',
-  requirePermiso('pesaje', 'crear'),
+  requirePermiso('traslados', 'crear'),
   validateBody(completarTrasladoSchema),
   async (req, res) => {
     const result = await completarTraslado(String(req.params.id), req.body, req.user!.sub);

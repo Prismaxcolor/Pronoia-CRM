@@ -30,7 +30,7 @@ function ListaDetallePage() {
   const [nuevoProductoId, setNuevoProductoId] = useState('');
   const [nuevoPrecio, setNuevoPrecio] = useState('');
 
-  const puedeEditar = tienePermiso('productos', 'editar');
+  const puedeEditar = tienePermiso('listas_precios', 'editar');
 
   // Sin "loud" version con setCargando(true): las mutaciones de precios en esta
   // pantalla actualizan `precios` en el momento (setPrecios(prev => ...)), no

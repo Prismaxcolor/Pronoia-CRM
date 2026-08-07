@@ -18,26 +18,26 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Almacenes = catálogo de inventario, mismo permiso que taras/productos.
+// Almacenes tiene su propio permiso (antes reusaba 'productos').
 
-router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
+router.get('/', requirePermiso('almacenes', 'ver'), async (_req, res) => {
   const almacenes = await listarAlmacenes();
   res.json({ almacenes });
 });
 
-router.get('/:id/stock', requirePermiso('productos', 'ver'), async (req, res) => {
+router.get('/:id/stock', requirePermiso('almacenes', 'ver'), async (req, res) => {
   const stock = await stockAlmacen(String(req.params.id));
   res.json({ stock: Object.fromEntries(stock) });
 });
 
-router.get('/:id/inventario', requirePermiso('productos', 'ver'), async (req, res) => {
+router.get('/:id/inventario', requirePermiso('almacenes', 'ver'), async (req, res) => {
   const grupos = await obtenerInventarioAlmacen(String(req.params.id));
   res.json({ grupos });
 });
 
 router.post(
   '/',
-  requirePermiso('productos', 'crear'),
+  requirePermiso('almacenes', 'crear'),
   validateBody(crearAlmacenSchema),
   async (req, res) => {
     const result = await crearAlmacen(req.body);
@@ -57,7 +57,7 @@ router.post(
 
 router.patch(
   '/:id',
-  requirePermiso('productos', 'editar'),
+  requirePermiso('almacenes', 'editar'),
   validateBody(actualizarAlmacenSchema),
   async (req, res) => {
     const id = String(req.params.id);
@@ -77,7 +77,7 @@ router.patch(
   }
 );
 
-router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/desactivar', requirePermiso('almacenes', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const result = await desactivarAlmacen(id);
   if ('error' in result) {
@@ -93,7 +93,7 @@ router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req
   res.json({ ok: true });
 });
 
-router.post('/:id/marcar-predeterminado', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/marcar-predeterminado', requirePermiso('almacenes', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const result = await marcarPredeterminado(id);
   if ('error' in result) {
@@ -109,7 +109,7 @@ router.post('/:id/marcar-predeterminado', requirePermiso('productos', 'editar'),
   res.json(result);
 });
 
-router.post('/:id/reactivar', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/reactivar', requirePermiso('almacenes', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const ok = await reactivarAlmacen(id);
   if (!ok) {

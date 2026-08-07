@@ -12,7 +12,7 @@ const router = Router();
 
 router.use(requireAuth);
 
-router.get('/', requirePermiso('productos', 'ver'), async (req, res) => {
+router.get('/', requirePermiso('transformaciones', 'ver'), async (req, res) => {
   const transformaciones = await listarTransformaciones({
     desde: req.query.desde ? String(req.query.desde) : undefined,
     hasta: req.query.hasta ? String(req.query.hasta) : undefined,
@@ -22,7 +22,7 @@ router.get('/', requirePermiso('productos', 'ver'), async (req, res) => {
 
 router.post(
   '/',
-  requirePermiso('productos', 'crear'),
+  requirePermiso('transformaciones', 'crear'),
   validateBody(crearTransformacionSchema),
   async (req, res) => {
     const result = await crearTransformacion(req.body);

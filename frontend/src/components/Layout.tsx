@@ -20,7 +20,9 @@ function Layout() {
     <div className="flex h-screen bg-surface-alt print:block print:h-auto print:bg-white">
       <Sidebar />
       <main ref={mainRef} className="flex-1 p-8 overflow-y-auto print:p-0 print:overflow-visible">
-        <Outlet />
+        <div key={pathname} className="animate-[content-in_0.25s_ease-out]">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

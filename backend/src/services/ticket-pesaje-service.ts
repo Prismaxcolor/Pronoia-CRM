@@ -3,10 +3,14 @@ import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput } from '
 import { notificarDocumento } from './telegram-notify-service.js';
 import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
 
-/** Formatea el correlativo de pesaje: 1 → "Pesaje 0001". Duplicado intencional
- *  de shared/types/ticket-pesaje.ts (el backend no comparte paquete con front). */
-function formatCodigoPesaje(numero: number): string {
-  return `Pesaje-${String(numero).padStart(4, '0')}`;
+/** Formatea el correlativo de pesaje: (1, 'compra') → "Compra-0001". Cada tipo
+ *  tiene su propio contador desde el Bloque 35 (antes compra y venta
+ *  compartían una sola secuencia bajo el prefijo genérico "Pesaje-"). Duplicado
+ *  intencional de shared/types/ticket-pesaje.ts (el backend no comparte
+ *  paquete con front). */
+function formatCodigoPesaje(numero: number, tipo: 'compra' | 'venta'): string {
+  const prefijo = tipo === 'compra' ? 'Compra' : 'Venta';
+  return `${prefijo}-${String(numero).padStart(4, '0')}`;
 }
 
 interface DetalleRow {
@@ -112,7 +116,7 @@ function toPublico(row: TicketRow): TicketPublico {
   return {
     id: row.id,
     numero: Number(row.numero),
-    codigo: formatCodigoPesaje(Number(row.numero)),
+    codigo: formatCodigoPesaje(Number(row.numero), row.tipo),
     tipo: row.tipo,
     entidadId: row.entidad_id,
     fecha: row.fecha,

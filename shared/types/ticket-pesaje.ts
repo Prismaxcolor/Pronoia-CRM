@@ -91,7 +91,9 @@ export interface TicketPesaje {
   createdAt: string;
 }
 
-/** Formatea el correlativo de un ticket de pesaje: 1 → "Pesaje 0001". */
-export function formatCodigoPesaje(numero: number): string {
-  return `Pesaje-${String(numero).padStart(4, '0')}`;
+/** Formatea el correlativo de un ticket de pesaje: (1, 'compra') → "Compra-0001".
+ *  Cada tipo tiene su propio contador desde el Bloque 35. */
+export function formatCodigoPesaje(numero: number, tipo: 'compra' | 'venta'): string {
+  const prefijo = tipo === 'compra' ? 'Compra' : 'Venta';
+  return `${prefijo}-${String(numero).padStart(4, '0')}`;
 }

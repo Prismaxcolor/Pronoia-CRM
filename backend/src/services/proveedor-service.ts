@@ -9,6 +9,7 @@ interface ProveedorRow {
   email: string | null;
   activo: boolean;
   created_at: string;
+  foto_url: string | null;
   telegram_chat_id: string | null;
   telegram_linked_at: string | null;
 }
@@ -21,6 +22,7 @@ export interface ProveedorPublico {
   email: string | null;
   activo: boolean;
   createdAt: string;
+  fotoUrl: string | null;
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
 }
@@ -34,6 +36,7 @@ function toPublico(row: ProveedorRow): ProveedorPublico {
     email: row.email,
     activo: row.activo,
     createdAt: row.created_at,
+    fotoUrl: row.foto_url,
     telegramChatId: row.telegram_chat_id,
     telegramLinkedAt: row.telegram_linked_at,
   };
@@ -59,6 +62,7 @@ export async function crearProveedor(
       rfc: input.rfc,
       telefono: input.telefono,
       email: input.email,
+      foto_url: input.fotoUrl ?? null,
     })
     .select('*')
     .single();
@@ -71,9 +75,17 @@ export async function actualizarProveedor(
   id: string,
   cambios: ActualizarProveedorInput
 ): Promise<{ proveedor: ProveedorPublico } | { error: string }> {
+  const update: Record<string, unknown> = {};
+  if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
+  if (cambios.rfc !== undefined) update.rfc = cambios.rfc;
+  if (cambios.telefono !== undefined) update.telefono = cambios.telefono;
+  if (cambios.email !== undefined) update.email = cambios.email;
+  if (cambios.fotoUrl !== undefined) update.foto_url = cambios.fotoUrl;
+  if (cambios.activo !== undefined) update.activo = cambios.activo;
+
   const { data, error } = await supabaseAdmin
     .from('proveedores')
-    .update(cambios)
+    .update(update)
     .eq('id', id)
     .select('*')
     .maybeSingle();

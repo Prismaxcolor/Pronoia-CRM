@@ -14,11 +14,18 @@ interface Props {
 const RECURSOS: { recurso: Recurso; label: string }[] = [
   { recurso: 'dashboard', label: 'Dashboard' },
   { recurso: 'productos', label: 'Productos' },
+  { recurso: 'categorias', label: 'Categorías' },
+  { recurso: 'taras', label: 'Taras' },
+  { recurso: 'almacenes', label: 'Almacenes' },
+  { recurso: 'listas_precios', label: 'Listas de precios' },
+  { recurso: 'pesaje', label: 'Pesaje' },
+  { recurso: 'traslados', label: 'Traslados' },
+  { recurso: 'transformaciones', label: 'Transformaciones' },
   { recurso: 'facturacion', label: 'Facturacion' },
   { recurso: 'cochinito', label: 'Cochinito (Tesoreria)' },
   { recurso: 'clientes', label: 'Clientes' },
   { recurso: 'proveedores', label: 'Proveedores' },
-  { recurso: 'pesaje', label: 'Pesaje' },
+  { recurso: 'despachos', label: 'Despachos' },
   { recurso: 'usuarios', label: 'Usuarios' },
 ];
 
@@ -118,7 +125,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
               onClick={() => handleCustomToggle(!useCustom)}
               className={`w-11 h-6 rounded-full transition-colors relative ${useCustom ? 'bg-brand-600' : 'bg-gray-300'}`}
             >
-              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${useCustom ? 'translate-x-5.5' : 'translate-x-0.5'}`} />
+              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${useCustom ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </button>
           </div>
 
