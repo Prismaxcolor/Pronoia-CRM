@@ -4,15 +4,21 @@ import { ArrowLeft, ChevronDown, Loader2, Plus, Trash2 } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { obtenerTickets } from '../../services/ticket-pesaje-service';
+import { obtenerTickets, crearTicket } from '../../services/ticket-pesaje-service';
+import { obtenerLotes } from '../../services/lote-service';
 import { crearFactura, type TipoFactura } from '../../services/factura-cv-service';
 import { obtenerListas, obtenerListaDetalle } from '../../services/lista-precios-service';
 import { useToast } from '../../hooks/use-toast-context';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
-import type { Producto, TicketPesaje, ListaPrecios } from '@shared/types/index.js';
+import type { DestinoValor } from '../pesaje/material-fila';
+import type { Producto, TicketPesaje, ListaPrecios, Lote } from '@shared/types/index.js';
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotoUrl: string | null }
 type ModoPeso = 'ticket' | 'manual';
+
+function hoyISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 /** Una línea del formulario (valores como string para los inputs). */
 interface LineaFila {
@@ -24,11 +30,13 @@ interface LineaFila {
   desdeTicket: boolean;
   /** id del material del ticket (detalle), para conservar precios al re-seleccionar. */
   materialId?: string;
+  /** Solo modo manual: 'mpp' o el id del lote destino, para el ticket que se genera. */
+  destino: DestinoValor;
 }
 
 let UID = 0;
 function lineaVacia(): LineaFila {
-  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false };
+  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false, destino: 'mpp' };
 }
 
 interface Props {
@@ -46,6 +54,7 @@ function FacturaFormPage({ tipo }: Props) {
 
   const [entidades, setEntidades] = useState<Entidad[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
   const [ticketsPendientes, setTicketsPendientes] = useState<TicketPesaje[]>([]);
   const [listas, setListas] = useState<ListaPrecios[]>([]);
 
@@ -53,6 +62,7 @@ function FacturaFormPage({ tipo }: Props) {
   const [modoPeso, setModoPeso] = useState<ModoPeso>('ticket');
   const [ticketIds, setTicketIds] = useState<string[]>([]);
   const [lineas, setLineas] = useState<LineaFila[]>([lineaVacia()]);
+  const [devolucion, setDevolucion] = useState('');
   const [listaSelId, setListaSelId] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [observaciones, setObservaciones] = useState('');
@@ -70,6 +80,7 @@ function FacturaFormPage({ tipo }: Props) {
     cargar().then(lista => setEntidades(lista.filter(e => e.activo)));
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerListas(tipo).then(lista => setListas(lista.filter(l => l.activo)));
+    obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
   }, [esCompra, tipo]);
 
   useEffect(() => {
@@ -127,6 +138,7 @@ function FacturaFormPage({ tipo }: Props) {
     setModoPeso(m);
     setTicketIds([]);
     setLineas([lineaVacia()]);
+    setDevolucion('');
   };
 
   const setLinea = (uid: number, campo: keyof LineaFila, valor: string) =>
@@ -172,9 +184,42 @@ function FacturaFormPage({ tipo }: Props) {
     if (lineas.some(l => (Number(l.precioUnitario) || 0) <= 0)) { setError('Cada material debe tener un precio unitario mayor a 0.'); return; }
 
     setGuardando(true);
+
+    // En modo manual, el peso siempre genera su propio ticket de pesaje (con
+    // devolución y destino de inventario), igual que si se hubiera cargado
+    // desde la pestaña Pesaje — así el material sí se contabiliza en el
+    // inventario y queda el documento del ticket.
+    let ticketIdsAEnviar = ticketIds;
+    if (modoPeso === 'manual') {
+      const pesoTotal = lineas.reduce((acc, l) => acc + (Number(l.peso) || 0), 0);
+      const devolucionNum = Number(devolucion) || 0;
+      const resultTicket = await crearTicket({
+        tipo,
+        entidadId,
+        fecha: hoyISO(),
+        pesoGlobal: pesoTotal + devolucionNum,
+        devolucion: devolucionNum,
+        estado: 'completo',
+        materiales: lineas.map(l => ({
+          productoId: l.productoId,
+          pesoBruto: Number(l.peso) || 0,
+          tara: 0,
+          destinoTipo: l.destino === 'mpp' ? 'mpp' : 'lote',
+          loteId: l.destino === 'mpp' ? null : l.destino,
+        })),
+        fotos: [],
+      });
+      if ('error' in resultTicket) {
+        setError(resultTicket.error);
+        setGuardando(false);
+        return;
+      }
+      ticketIdsAEnviar = [resultTicket.ticket.id];
+    }
+
     const result = await crearFactura(tipo, {
       entidadId,
-      ticketIds: modoPeso === 'ticket' ? ticketIds : [],
+      ticketIds: ticketIdsAEnviar,
       items: lineas.map(l => ({
         productoId: l.productoId,
         peso: Number(l.peso),
@@ -268,6 +313,11 @@ function FacturaFormPage({ tipo }: Props) {
           {modoPeso === 'ticket' && ticketIds.length > 0 && (
             <p className="text-xs text-text-muted mt-2">{ticketIds.length} ticket{ticketIds.length === 1 ? '' : 's'} seleccionado{ticketIds.length === 1 ? '' : 's'}.</p>
           )}
+          {modoPeso === 'manual' && (
+            <p className="text-xs text-text-muted">
+              Se genera automáticamente su propio ticket de pesaje con estos materiales (con destino de inventario y devolución).
+            </p>
+          )}
         </div>
 
         {/* Líneas de la factura */}
@@ -300,6 +350,19 @@ function FacturaFormPage({ tipo }: Props) {
                   </div>
                 )}
 
+                {modoPeso === 'manual' && (
+                  <div>
+                    <label className={labelClass}>{esCompra ? 'Destino (inventario) *' : 'Origen (inventario) *'}</label>
+                    <select value={l.destino} onChange={e => setLinea(l.uid, 'destino', e.target.value)} className={inputClass}>
+                      <option value="mpp">MPP (Material Por Procesar)</option>
+                      {lotes.map(lo => <option key={lo.id} value={lo.id}>{lo.nombre}</option>)}
+                    </select>
+                    <p className="text-xs text-text-muted mt-1">
+                      {esCompra ? 'A qué lote (o MPP) entra este material comprado.' : 'De qué lote (o MPP) sale este material vendido.'}
+                    </p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Peso (kg) {l.desdeTicket && <span className="text-text-muted">· del ticket</span>}</label>
@@ -324,6 +387,27 @@ function FacturaFormPage({ tipo }: Props) {
               <Plus size={16} />
               Agregar material
             </button>
+          )}
+
+          {modoPeso === 'manual' && (
+            <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 space-y-1">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <label htmlFor="devolucion-manual" className="text-brand-800 shrink-0">Devolución (kg)</label>
+                <input
+                  id="devolucion-manual"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={devolucion}
+                  onChange={e => setDevolucion(e.target.value)}
+                  className="w-28 px-2 py-1 bg-surface border border-brand-200 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400"
+                  placeholder="0.00"
+                />
+              </div>
+              <p className="text-[11px] text-brand-700/80">
+                Kg que {esCompra ? 'el proveedor se lleva' : 'el cliente se lleva'} de vuelta. Va en el ticket que se genera, no afecta el inventario ni la factura.
+              </p>
+            </div>
           )}
         </div>
 

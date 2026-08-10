@@ -2,8 +2,23 @@ import { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { actualizarUsuario } from '../../services/usuario-service';
 import { useToast } from '../../hooks/use-toast-context';
+import Switch from '../../components/Switch';
 import { PERMISOS_POR_ROL } from '@shared/types/index.js';
 import type { Usuario, RolUsuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
+
+/** Compara dos listas de permisos por contenido (recurso+acción), sin
+ *  importar el orden — a diferencia de JSON.stringify, no da falsos
+ *  "personalizado" cuando la lista de PERMISOS_POR_ROL cambia de orden o de
+ *  tamaño (ej. se agregan recursos nuevos) pero el contenido efectivo del
+ *  usuario sigue siendo el del rol. */
+function mismosPermisos(a: Permiso[], b: Permiso[]): boolean {
+  const claves = (arr: Permiso[]) => new Set(arr.map(p => `${p.recurso}:${p.accion}`));
+  const setA = claves(a);
+  const setB = claves(b);
+  if (setA.size !== setB.size) return false;
+  for (const k of setA) if (!setB.has(k)) return false;
+  return true;
+}
 
 interface Props {
   usuario: Usuario;
@@ -36,7 +51,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
   const [permisos, setPermisos] = useState<Permiso[]>(usuario.permisos);
   const [guardando, setGuardando] = useState(false);
   const [useCustom, setUseCustom] = useState(
-    JSON.stringify(usuario.permisos) !== JSON.stringify(PERMISOS_POR_ROL[usuario.rol])
+    !mismosPermisos(usuario.permisos, PERMISOS_POR_ROL[usuario.rol])
   );
   const toast = useToast();
 
@@ -120,13 +135,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
               <p className="text-sm font-medium text-text-primary">Permisos personalizados</p>
               <p className="text-xs text-text-muted">Sobreescribe los permisos por defecto del rol</p>
             </div>
-            <button
-              type="button"
-              onClick={() => handleCustomToggle(!useCustom)}
-              className={`w-11 h-6 rounded-full transition-colors relative ${useCustom ? 'bg-brand-600' : 'bg-gray-300'}`}
-            >
-              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${useCustom ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </button>
+            <Switch checked={useCustom} onChange={handleCustomToggle} />
           </div>
 
           {/* Matriz de permisos */}

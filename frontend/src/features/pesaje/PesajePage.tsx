@@ -638,7 +638,7 @@ function PesajePage() {
 
             {tipo !== 'traslado' && (
             <p className="text-xs text-text-muted">
-              ¿La operación fue fuera de la empresa y no se pesó aquí? Entonces no se genera ticket: el peso se ingresa a mano al crear la factura.
+              ¿Prefieres cargar el peso directamente al crear la factura? También puedes hacerlo desde ahí con "Peso manual" — se genera el ticket igual.
             </p>
             )}
           </form>
