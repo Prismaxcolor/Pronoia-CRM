@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import type { RegistrarPagoInput } from '../schemas/pagos.js';
+import type { RegistrarPagoInput, RegistrarPagoMultipleInput } from '../schemas/pagos.js';
 import { notificarDocumento } from './telegram-notify-service.js';
 import { logger } from '../utils/logger.js';
 
@@ -34,6 +34,23 @@ function notificarComprobanteSiCorresponde(proveedorId: string, comprobanteUrl: 
   });
 }
 
+/** Adjunta el comprobante ya subido al movimiento y notifica por Telegram. El
+ *  pago ya quedó registrado antes de llamar esto — si guardar el comprobante
+ *  falla, no se deshace el pago, solo se loguea. La plata ya se movió, es lo
+ *  que importa. */
+async function adjuntarComprobante(movimientoId: string, proveedorId: string, comprobanteUrl: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('movimientos')
+    .update({ comprobante_url: comprobanteUrl })
+    .eq('id', movimientoId);
+
+  if (error) {
+    logger.error({ evento: 'pago_comprobante_no_guardado', mensaje: error.message, movimientoId });
+  } else {
+    notificarComprobanteSiCorresponde(proveedorId, comprobanteUrl);
+  }
+}
+
 export async function registrarPago(
   input: RegistrarPagoInput,
   registradoPor: string
@@ -54,24 +71,35 @@ export async function registrarPago(
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
   const movimientoId = data as string;
 
-  if (input.comprobanteUrl) {
-    // El pago ya quedó registrado (arriba) — si guardar el comprobante falla, no se
-    // deshace el pago, solo se loguea. La plata ya se movió, es lo que importa.
-    const { error: errorComprobante } = await supabaseAdmin
-      .from('movimientos')
-      .update({ comprobante_url: input.comprobanteUrl })
-      .eq('id', movimientoId);
+  if (input.comprobanteUrl) await adjuntarComprobante(movimientoId, input.proveedorId, input.comprobanteUrl);
 
-    if (errorComprobante) {
-      logger.error({
-        evento: 'pago_comprobante_no_guardado',
-        mensaje: errorComprobante.message,
-        movimientoId,
-      });
-    } else {
-      notificarComprobanteSiCorresponde(input.proveedorId, input.comprobanteUrl);
-    }
-  }
+  return { movimientoId };
+}
+
+/** Pago combinado ("Pagar todo"): un solo movimiento que liquida varias
+ *  facturas y/o notas de débito a la vez, más un adelanto libre (la
+ *  diferencia entre montoUsd total y la suma de los ítems). */
+export async function registrarPagoMultiple(
+  input: RegistrarPagoMultipleInput,
+  registradoPor: string
+): Promise<{ movimientoId: string } | { error: string }> {
+  const { data, error } = await supabaseAdmin.rpc('registrar_pago_proveedor_multiple', {
+    p_proveedor_id: input.proveedorId,
+    p_banca_id: input.bancaId,
+    p_monto: input.monto,
+    p_moneda: input.moneda,
+    p_monto_usd: input.montoUsd,
+    p_descripcion: input.descripcion,
+    p_referencia: input.referencia,
+    p_fecha: input.fecha,
+    p_registrado_por: registradoPor,
+    p_items: input.items.map(i => ({ tipo: i.tipo, id: i.id, montoUsd: i.montoUsd })),
+  });
+
+  if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
+  const movimientoId = data as string;
+
+  if (input.comprobanteUrl) await adjuntarComprobante(movimientoId, input.proveedorId, input.comprobanteUrl);
 
   return { movimientoId };
 }

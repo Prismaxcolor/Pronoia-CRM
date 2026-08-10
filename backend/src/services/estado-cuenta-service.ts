@@ -25,6 +25,8 @@ export interface EntradaEstadoCuenta {
   facturaId?: string;
   /** Solo notas: ya fue reversada con una nota contraria. */
   anulada?: boolean;
+  /** Solo notas de débito: ya se liquidó en un pago combinado ("Pagar todo"). */
+  pagada?: boolean;
 }
 
 export interface EstadoCuenta {
@@ -41,7 +43,7 @@ function soloFecha(valor: string): string {
 
 export interface FacturaCruda { id: string; total: number; descripcion: string | null; fecha: string; codigo?: string | null }
 export interface PagoCrudo { monto: number; descripcion: string | null; referencia: string | null; fecha: string }
-export interface NotaCruda { id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; fecha: string }
+export interface NotaCruda { id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; pagada: boolean; fecha: string }
 
 /**
  * Arma el estado de cuenta a partir de facturas (cargos), pagos (abonos) y
@@ -91,6 +93,7 @@ export function construirEstadoCuenta(
       abono: n.tipo === 'credito' ? Number(n.monto) : 0,
       notaId: n.id,
       anulada: n.anulada,
+      pagada: n.pagada,
     });
   }
 
@@ -155,13 +158,13 @@ export async function obtenerEstadoCuenta(
   if (esProveedor) {
     let qNotas = supabaseAdmin
       .from('notas_ajuste_proveedor')
-      .select('id, tipo, monto, motivo, anulada, created_at')
+      .select('id, tipo, monto, motivo, anulada, pagada, created_at')
       .eq('proveedor_id', id);
     if (desde) qNotas = qNotas.gte('created_at', desde);
     if (hasta) qNotas = qNotas.lte('created_at', `${hasta}T23:59:59`);
     const { data: notasData } = await qNotas;
-    notas = ((notasData as Array<{ id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; created_at: string }> | null) ?? [])
-      .map(n => ({ id: n.id, tipo: n.tipo, monto: Number(n.monto), motivo: n.motivo, anulada: n.anulada, fecha: n.created_at }));
+    notas = ((notasData as Array<{ id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; pagada: boolean; created_at: string }> | null) ?? [])
+      .map(n => ({ id: n.id, tipo: n.tipo, monto: Number(n.monto), motivo: n.motivo, anulada: n.anulada, pagada: n.pagada, fecha: n.created_at }));
   }
 
   return construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos, notas);

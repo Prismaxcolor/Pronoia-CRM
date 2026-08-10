@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, DollarSign, FileEdit, Ban } from 'lucide-react';
+import { ArrowLeft, Printer, DollarSign, Wallet, FileEdit, Ban } from 'lucide-react';
 import {
   obtenerEstadoCuenta,
   type EntradaEstadoCuenta,
@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
+import PagarTodoModal from '../proveedores/PagarTodoModal';
 import NotaAjusteModal from '../proveedores/NotaAjusteModal';
 import AnularNotaModal from '../proveedores/AnularNotaModal';
 
@@ -47,6 +48,7 @@ function EstadoCuentaPage({ tipo }: Props) {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [pagoAbierto, setPagoAbierto] = useState(false);
+  const [pagarTodoAbierto, setPagarTodoAbierto] = useState(false);
   const [notaAbierta, setNotaAbierta] = useState(false);
   const [notaAAnular, setNotaAAnular] = useState<EntradaEstadoCuenta | null>(null);
 
@@ -67,8 +69,19 @@ function EstadoCuentaPage({ tipo }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { recargar(); }, [tipo, id, desde, hasta]);
 
+  const notasDebitoPendientes = useMemo(
+    () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_debito' && !e.anulada && !e.pagada),
+    [estado]
+  );
+
   const handlePagoRegistrado = () => {
     setPagoAbierto(false);
+    toast.exito('Pago registrado.');
+    cargar();
+  };
+
+  const handlePagoMultipleRegistrado = () => {
+    setPagarTodoAbierto(false);
     toast.exito('Pago registrado.');
     cargar();
   };
@@ -148,6 +161,17 @@ function EstadoCuentaPage({ tipo }: Props) {
               Registrar pago
             </button>
           )}
+          {puedePagar && (totales.saldo > 0.01 || notasDebitoPendientes.length > 0) && (
+            <button
+              type="button"
+              onClick={() => setPagarTodoAbierto(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white rounded-lg text-sm font-medium hover:bg-brand-800 transition-colors"
+              title="Selecciona varias facturas y/o notas de débito y págalas en un solo pago"
+            >
+              <Wallet size={16} />
+              Pagar todo
+            </button>
+          )}
           <button
             type="button"
             onClick={() => window.print()}
@@ -203,6 +227,7 @@ function EstadoCuentaPage({ tipo }: Props) {
                   </span>
                   <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
                   {e.anulada && <span className="text-xs text-text-muted ml-2">(anulada)</span>}
+                  {e.pagada && !e.anulada && <span className="text-xs text-text-muted ml-2">(pagada)</span>}
                 </td>
                 <td className="px-5 py-3 text-text-muted">
                   {e.tipo === 'factura' && e.facturaId ? (
@@ -223,7 +248,7 @@ function EstadoCuentaPage({ tipo }: Props) {
                 <td className="px-5 py-3 text-right text-text-primary">{e.abono ? fmt(e.abono) : '—'}</td>
                 {puedeAjustar && (
                   <td className="px-5 py-3 text-right print:hidden">
-                    {(e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && (
+                    {(e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && !e.pagada && (
                       <button
                         type="button"
                         onClick={() => setNotaAAnular(e)}
@@ -271,6 +296,15 @@ function EstadoCuentaPage({ tipo }: Props) {
           proveedorId={estado.entidad.id}
           onClose={() => setPagoAbierto(false)}
           onRegistrado={handlePagoRegistrado}
+        />
+      )}
+
+      {pagarTodoAbierto && tipo === 'proveedor' && (
+        <PagarTodoModal
+          proveedorId={estado.entidad.id}
+          notasDebitoPendientes={notasDebitoPendientes}
+          onClose={() => setPagarTodoAbierto(false)}
+          onRegistrado={handlePagoMultipleRegistrado}
         />
       )}
 

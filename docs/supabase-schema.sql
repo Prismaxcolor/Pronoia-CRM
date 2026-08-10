@@ -2385,3 +2385,164 @@ alter table public.clientes
 
 alter table public.proveedores
   add column if not exists foto_url text;
+
+
+-- ============================================================================
+-- Bloque 37 · Pago combinado a proveedor ("Pagar todo")
+--
+-- Extiende el pago existente (Bloque 22, registrar_pago_proveedor: 1 pago →
+-- máximo 1 factura) para poder liquidar varias facturas y notas de débito
+-- pendientes en un solo movimiento de tesorería, más un monto libre de
+-- adelanto. Un solo INSERT en movimientos (mismo trigger de saldo del
+-- Bloque 2, no hace falta tocarlo) — así queda como "un solo ticket" en el
+-- estado de cuenta, con el detalle de qué cubrió en `descripcion` (texto
+-- libre armado del lado del frontend).
+--
+-- Las notas de ajuste ganan `pagada`/`movimiento_id` para poder excluirlas
+-- ya liquidadas del selector y dejar rastro de qué pago las cubrió — no
+-- reemplaza el mecanismo de anulación del Bloque 28, que sigue siendo la
+-- única forma de corregir una nota mal cargada (en finanzas nunca se borra).
+-- ============================================================================
+
+alter table public.notas_ajuste_proveedor
+  add column if not exists pagada boolean not null default false;
+
+alter table public.notas_ajuste_proveedor
+  add column if not exists movimiento_id uuid references public.movimientos(id);
+
+-- RPC atómica: un solo movimiento de egreso por el total, aplicado a N
+-- facturas (acumula monto_pagado, misma lógica que registrar_pago_proveedor)
+-- y N notas de débito (las marca pagada=true). El monto de cada ítem viene
+-- del backend/frontend ya calculado contra el saldo pendiente real de esa
+-- factura/nota; la suma de los ítems puede ser menor a p_monto_usd — la
+-- diferencia es la porción de adelanto (sin ítem asociado, igual que un pago
+-- simple sin factura).
+create or replace function public.registrar_pago_proveedor_multiple(
+  p_proveedor_id   uuid,
+  p_banca_id       uuid,
+  p_monto          numeric,   -- en la moneda de la banca de origen
+  p_moneda         text,
+  p_monto_usd      numeric,   -- equivalente en USD del TOTAL (facturas + notas + adelanto)
+  p_descripcion    text,
+  p_referencia     text,
+  p_fecha          date,
+  p_registrado_por uuid,
+  p_items          jsonb      -- [{ "tipo": "factura"|"nota_debito", "id": uuid, "montoUsd": numeric }]
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_mov_id uuid;
+  v_item   jsonb;
+  v_tipo   text;
+  v_id     uuid;
+  v_monto  numeric;
+  v_total  numeric;
+  v_pagado numeric;
+  v_filas  int;
+begin
+  insert into public.movimientos
+    (tipo, monto, moneda, monto_usd, descripcion, banca_origen_id, banca_destino_id,
+     fecha, referencia, registrado_por, proveedor_id)
+  values
+    ('egreso', p_monto, p_moneda, p_monto_usd, nullif(p_descripcion, ''), p_banca_id, null,
+     p_fecha, nullif(p_referencia, ''), p_registrado_por, p_proveedor_id)
+  returning id into v_mov_id;
+
+  for v_item in select value from jsonb_array_elements(p_items) as elems(value)
+  loop
+    v_tipo  := v_item->>'tipo';
+    v_id    := (v_item->>'id')::uuid;
+    v_monto := (v_item->>'montoUsd')::numeric;
+
+    if v_tipo = 'factura' then
+      select total, monto_pagado into v_total, v_pagado
+        from public.facturas_compra where id = v_id and proveedor_id = p_proveedor_id;
+
+      if v_total is null then
+        raise exception 'Factura % no encontrada para este proveedor.', v_id;
+      end if;
+
+      v_pagado := coalesce(v_pagado, 0) + v_monto;
+
+      update public.facturas_compra
+         set monto_pagado = v_pagado,
+             estado = case when v_pagado >= v_total - 0.01 then 'pagada' else estado end
+       where id = v_id;
+
+    elsif v_tipo = 'nota_debito' then
+      update public.notas_ajuste_proveedor
+         set pagada = true,
+             movimiento_id = v_mov_id
+       where id = v_id
+         and proveedor_id = p_proveedor_id
+         and tipo = 'debito'
+         and anulada = false
+         and pagada = false;
+
+      get diagnostics v_filas = row_count;
+      if v_filas = 0 then
+        raise exception 'Nota de débito % no encontrada, ya pagada o anulada.', v_id;
+      end if;
+
+    else
+      raise exception 'Tipo de ítem desconocido: %', v_tipo;
+    end if;
+  end loop;
+
+  return v_mov_id;
+end;
+$$;
+
+-- Redefinición de anular_nota_ajuste_proveedor (Bloque 28) para bloquear la
+-- anulación de una nota ya pagada con dinero real: anularla dejaría un
+-- movimiento de tesorería real respaldado por una nota que ya no "existe"
+-- contablemente. Para corregir una nota pagada por error, hay que reversar
+-- primero el pago (fuera de alcance de esta RPC).
+create or replace function public.anular_nota_ajuste_proveedor(
+  p_nota_id        uuid,
+  p_motivo         text,
+  p_registrado_por uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_proveedor_id uuid;
+  v_tipo         text;
+  v_monto        numeric;
+  v_anulada      boolean;
+  v_pagada       boolean;
+  v_nueva_id     uuid;
+begin
+  select proveedor_id, tipo, monto, anulada, pagada
+    into v_proveedor_id, v_tipo, v_monto, v_anulada, v_pagada
+    from public.notas_ajuste_proveedor
+   where id = p_nota_id;
+
+  if v_proveedor_id is null then
+    raise exception 'Nota no encontrada.';
+  end if;
+  if v_anulada then
+    raise exception 'Esta nota ya fue anulada.';
+  end if;
+  if v_pagada then
+    raise exception 'Esta nota ya fue pagada — no se puede anular sin reversar antes el pago.';
+  end if;
+
+  insert into public.notas_ajuste_proveedor
+    (proveedor_id, tipo, monto, motivo, anula_nota_id, registrado_por)
+  values (
+    v_proveedor_id,
+    case when v_tipo = 'credito' then 'debito' else 'credito' end,
+    v_monto,
+    p_motivo,
+    p_nota_id,
+    p_registrado_por
+  )
+  returning id into v_nueva_id;
+
+  update public.notas_ajuste_proveedor set anulada = true where id = p_nota_id;
+
+  return v_nueva_id;
+end;
+$$;
