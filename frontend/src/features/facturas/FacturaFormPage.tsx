@@ -124,6 +124,7 @@ function FacturaFormPage({ tipo }: Props) {
             precioUnitario: ex?.precioUnitario || precioDeLista(m.productoId ?? ''),
             desdeTicket: true,
             materialId: m.id,
+            destino: 'mpp',
           };
         })
       );
