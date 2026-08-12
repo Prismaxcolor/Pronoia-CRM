@@ -253,20 +253,13 @@ function ProductosPage() {
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => puedeEditar && setFormAbierto({ abierto: true, producto: p })}
-                title={puedeEditar ? 'Editar imagen' : undefined}
-                className={`w-full aspect-video mb-3 rounded-lg overflow-hidden bg-brand-100 flex items-center justify-center text-brand-700 ${
-                  puedeEditar ? 'cursor-pointer hover:opacity-90 transition-opacity' : 'cursor-default'
-                }`}
-              >
+              <div className="w-full aspect-video mb-3 rounded-lg overflow-hidden bg-brand-100 flex items-center justify-center text-brand-700">
                 {p.imagenUrl ? (
                   <img src={p.imagenUrl} alt={p.nombre} loading="lazy" className="w-full h-full object-cover" />
                 ) : (
                   <Package size={28} />
                 )}
-              </button>
+              </div>
 
               <div className="flex items-start justify-between mb-3">
                 <h3 className="font-semibold text-text-primary text-sm leading-tight pr-20">{p.nombre}</h3>
