@@ -26,7 +26,9 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
   const [bancaId, setBancaId] = useState('');
   const [tasa, setTasa] = useState<number | null>(null);
   const [facturasPendientes, setFacturasPendientes] = useState<FacturaCV[]>([]);
-  const [facturaIdsSel, setFacturaIdsSel] = useState<string[]>([]);
+  /** Facturas marcadas → monto (USD, string editable) que se les aplica de este pago.
+   *  Por defecto el saldo pendiente completo, pero se puede bajar para un pago parcial. */
+  const [montosFactura, setMontosFactura] = useState<Record<string, string>>({});
   const [notaIdsSel, setNotaIdsSel] = useState<string[]>([]);
   const [adelantoExtra, setAdelantoExtra] = useState('');
 
@@ -49,21 +51,28 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
     );
   }, [proveedorId]);
 
-  const toggleFactura = (id: string) =>
-    setFacturaIdsSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const toggleFactura = (f: FacturaCV) =>
+    setMontosFactura(prev => {
+      if (!(f.id in prev)) return { ...prev, [f.id]: (f.total - f.montoPagado).toFixed(2) };
+      const next = { ...prev };
+      delete next[f.id];
+      return next;
+    });
+  const setMontoFactura = (id: string, value: string) =>
+    setMontosFactura(prev => ({ ...prev, [id]: value }));
   const toggleNota = (id: string) =>
     setNotaIdsSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
 
   const facturasSel = useMemo(
-    () => facturasPendientes.filter(f => facturaIdsSel.includes(f.id)),
-    [facturasPendientes, facturaIdsSel]
+    () => facturasPendientes.filter(f => f.id in montosFactura),
+    [facturasPendientes, montosFactura]
   );
   const notasSel = useMemo(
     () => notasDebitoPendientes.filter(n => n.notaId && notaIdsSel.includes(n.notaId)),
     [notasDebitoPendientes, notaIdsSel]
   );
 
-  const totalFacturas = facturasSel.reduce((acc, f) => acc + (f.total - f.montoPagado), 0);
+  const totalFacturas = facturasSel.reduce((acc, f) => acc + (parseFloat(montosFactura[f.id]) || 0), 0);
   const totalNotas = notasSel.reduce((acc, n) => acc + n.cargo, 0);
   const adelantoNum = parseFloat(adelantoExtra) || 0;
   const montoUsdTotal = totalFacturas + totalNotas + adelantoNum;
@@ -92,8 +101,19 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
       return;
     }
 
+    for (const f of facturasSel) {
+      const monto = parseFloat(montosFactura[f.id]) || 0;
+      const saldoFactura = f.total - f.montoPagado;
+      const nombre = f.codigo ?? f.id.slice(0, 8);
+      if (monto <= 0) { setError(`El monto de ${nombre} debe ser mayor a 0.`); return; }
+      if (monto > saldoFactura + 0.01) {
+        setError(`El monto de ${nombre} supera su saldo pendiente ($${fmt(saldoFactura)}).`);
+        return;
+      }
+    }
+
     const items: ItemPagoMultiple[] = [
-      ...facturasSel.map(f => ({ tipo: 'factura' as const, id: f.id, montoUsd: f.total - f.montoPagado })),
+      ...facturasSel.map(f => ({ tipo: 'factura' as const, id: f.id, montoUsd: parseFloat(montosFactura[f.id]) || 0 })),
       ...notasSel.map(n => ({ tipo: 'nota_debito' as const, id: n.notaId!, montoUsd: n.cargo })),
     ];
 
@@ -135,8 +155,8 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
       <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
           <div>
-            <h2 className="text-lg font-bold text-text-primary">Pagar todo</h2>
-            <p className="text-sm text-text-secondary">Un solo pago para varias facturas y/o notas de débito.</p>
+            <h2 className="text-lg font-bold text-text-primary">Registrar pago</h2>
+            <p className="text-sm text-text-secondary">Selecciona una o varias facturas y/o notas de débito, o regístralo como adelanto.</p>
           </div>
           <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
@@ -149,22 +169,43 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
             {facturasPendientes.length === 0 ? (
               <p className="text-xs text-text-muted">Sin facturas pendientes.</p>
             ) : (
+              <>
               <div className="border border-border rounded-lg divide-y divide-border max-h-48 overflow-y-auto">
-                {facturasPendientes.map(f => (
-                  <label key={f.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-alt transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={facturaIdsSel.includes(f.id)}
-                      onChange={() => toggleFactura(f.id)}
-                      className="w-4 h-4 accent-brand-600 shrink-0"
-                    />
-                    <span className="text-sm text-text-primary flex-1 flex items-center justify-between gap-2">
-                      <span>{f.codigo ?? f.id.slice(0, 8)}</span>
-                      <span className="text-text-muted">${fmt(f.total - f.montoPagado)}</span>
-                    </span>
-                  </label>
-                ))}
+                {facturasPendientes.map(f => {
+                  const marcada = f.id in montosFactura;
+                  const saldoFactura = f.total - f.montoPagado;
+                  return (
+                    <div key={f.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-alt transition-colors">
+                      <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={marcada}
+                          onChange={() => toggleFactura(f)}
+                          className="w-4 h-4 accent-brand-600 shrink-0"
+                        />
+                        <span className="text-sm text-text-primary truncate">{f.codigo ?? f.id.slice(0, 8)}</span>
+                      </label>
+                      {marcada ? (
+                        <div className="relative shrink-0">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-xs">$</span>
+                          <input
+                            type="number" step="0.01" min="0.01" max={saldoFactura}
+                            value={montosFactura[f.id]}
+                            onChange={e => setMontoFactura(f.id, e.target.value)}
+                            className="w-24 pl-5 pr-2 py-1 text-right text-xs bg-surface border border-border rounded focus:outline-none focus:ring-2 focus:ring-brand-400"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-text-muted shrink-0">${fmt(saldoFactura)}</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+              <p className="text-xs text-text-muted mt-1">
+                Al marcar una factura se aplica su saldo completo por defecto — el monto es editable para un pago parcial.
+              </p>
+              </>
             )}
           </div>
 
@@ -280,7 +321,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Registrando...' : 'Pagar todo'}
+              {guardando ? 'Registrando...' : 'Registrar pago'}
             </button>
           </div>
         </form>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, DollarSign, Wallet, FileEdit, Ban } from 'lucide-react';
+import { ArrowLeft, Printer, DollarSign, FileEdit, Ban } from 'lucide-react';
 import {
   obtenerEstadoCuenta,
   type EntradaEstadoCuenta,
@@ -9,7 +9,6 @@ import {
 } from '../../services/estado-cuenta-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
 import PagarTodoModal from '../proveedores/PagarTodoModal';
 import NotaAjusteModal from '../proveedores/NotaAjusteModal';
 import AnularNotaModal from '../proveedores/AnularNotaModal';
@@ -48,7 +47,6 @@ function EstadoCuentaPage({ tipo }: Props) {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [pagoAbierto, setPagoAbierto] = useState(false);
-  const [pagarTodoAbierto, setPagarTodoAbierto] = useState(false);
   const [notaAbierta, setNotaAbierta] = useState(false);
   const [notaAAnular, setNotaAAnular] = useState<EntradaEstadoCuenta | null>(null);
 
@@ -76,12 +74,6 @@ function EstadoCuentaPage({ tipo }: Props) {
 
   const handlePagoRegistrado = () => {
     setPagoAbierto(false);
-    toast.exito('Pago registrado.');
-    cargar();
-  };
-
-  const handlePagoMultipleRegistrado = () => {
-    setPagarTodoAbierto(false);
     toast.exito('Pago registrado.');
     cargar();
   };
@@ -156,20 +148,10 @@ function EstadoCuentaPage({ tipo }: Props) {
               type="button"
               onClick={() => setPagoAbierto(true)}
               className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+              title="Selecciona una o varias facturas y/o notas de débito, o regístralo como adelanto"
             >
               <DollarSign size={16} />
               Registrar pago
-            </button>
-          )}
-          {puedePagar && (totales.saldo > 0.01 || notasDebitoPendientes.length > 0) && (
-            <button
-              type="button"
-              onClick={() => setPagarTodoAbierto(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white rounded-lg text-sm font-medium hover:bg-brand-800 transition-colors"
-              title="Selecciona varias facturas y/o notas de débito y págalas en un solo pago"
-            >
-              <Wallet size={16} />
-              Pagar todo
             </button>
           )}
           <button
@@ -292,19 +274,11 @@ function EstadoCuentaPage({ tipo }: Props) {
       </div>
 
       {pagoAbierto && tipo === 'proveedor' && (
-        <RegistrarPagoModal
-          proveedorId={estado.entidad.id}
-          onClose={() => setPagoAbierto(false)}
-          onRegistrado={handlePagoRegistrado}
-        />
-      )}
-
-      {pagarTodoAbierto && tipo === 'proveedor' && (
         <PagarTodoModal
           proveedorId={estado.entidad.id}
           notasDebitoPendientes={notasDebitoPendientes}
-          onClose={() => setPagarTodoAbierto(false)}
-          onRegistrado={handlePagoMultipleRegistrado}
+          onClose={() => setPagoAbierto(false)}
+          onRegistrado={handlePagoRegistrado}
         />
       )}
 
