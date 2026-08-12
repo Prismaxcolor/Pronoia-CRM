@@ -12,6 +12,7 @@ import { useToast } from '../../hooks/use-toast-context';
 import PagarTodoModal from '../proveedores/PagarTodoModal';
 import NotaAjusteModal from '../proveedores/NotaAjusteModal';
 import AnularNotaModal from '../proveedores/AnularNotaModal';
+import type { ResultadoPagoMultiple } from '../../services/pago-service';
 
 interface Props {
   /** Define de dónde se jalan los datos. La pantalla es idéntica para ambos. */
@@ -25,6 +26,7 @@ function fmt(n: number): string {
 const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   factura: 'Factura',
   pago: 'Pago',
+  adelanto: 'Adelanto',
   nota_credito: 'Nota crédito',
   nota_debito: 'Nota débito',
 };
@@ -32,9 +34,17 @@ const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
 const BADGE_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   factura: 'bg-amber-100 text-amber-700',
   pago: 'bg-green-100 text-green-700',
+  adelanto: 'bg-teal-100 text-teal-700',
   nota_credito: 'bg-blue-100 text-blue-700',
   nota_debito: 'bg-purple-100 text-purple-700',
 };
+
+function formatCodigoPago(numero: number | null): string {
+  return numero != null ? `PG-${String(numero).padStart(4, '0')}` : '';
+}
+function formatCodigoAdelanto(numero: number | null): string {
+  return numero != null ? `AD-${String(numero).padStart(4, '0')}` : '';
+}
 
 function EstadoCuentaPage({ tipo }: Props) {
   const { id = '' } = useParams();
@@ -72,15 +82,19 @@ function EstadoCuentaPage({ tipo }: Props) {
     [estado]
   );
 
-  const handlePagoRegistrado = () => {
+  const handlePagoRegistrado = (resultado: ResultadoPagoMultiple) => {
     setPagoAbierto(false);
-    toast.exito('Pago registrado.');
+    const partes = [
+      resultado.numeroPago != null ? `Pago ${formatCodigoPago(resultado.numeroPago)}` : null,
+      resultado.numeroAdelanto != null ? `adelanto ${formatCodigoAdelanto(resultado.numeroAdelanto)}` : null,
+    ].filter(Boolean);
+    toast.exito(partes.length > 0 ? `${partes.join(' y ')} registrados.` : 'Pago registrado.');
     cargar();
   };
 
-  const handleNotaCreada = () => {
+  const handleNotaCreada = (codigo?: string | null) => {
     setNotaAbierta(false);
-    toast.exito('Nota registrada.');
+    toast.exito(codigo ? `Nota ${codigo} registrada.` : 'Nota registrada.');
     cargar();
   };
 
@@ -224,6 +238,9 @@ function EstadoCuentaPage({ tipo }: Props) {
                     </button>
                   ) : (
                     e.referencia ?? '—'
+                  )}
+                  {e.referenciaExterna && (
+                    <span className="block text-xs text-text-muted">{e.referenciaExterna}</span>
                   )}
                 </td>
                 <td className="px-5 py-3 text-right text-text-primary">{e.cargo ? fmt(e.cargo) : '—'}</td>

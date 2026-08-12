@@ -23,4 +23,10 @@ export interface Movimiento {
    */
   montoUsd: number | null;
   creadoEn: string;
+  /** Solo egresos a proveedor: distingue pago de adelanto (Bloque 38). */
+  subtipo: 'pago' | 'adelanto' | null;
+  /** Correlativo (PG-.../AD-...), null si `subtipo` es null. */
+  numero: number | null;
+  /** Agrupa las filas de una misma operación (pago repartido entre bancas). */
+  grupoId: string | null;
 }

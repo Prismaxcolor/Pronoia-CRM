@@ -3,7 +3,7 @@ import {
   construirGruposInventario,
   type ProductoInventario,
 } from '../src/services/inventario-service.js';
-import { construirEstadoCuenta } from '../src/services/estado-cuenta-service.js';
+import { construirEstadoCuenta, agruparPagos } from '../src/services/estado-cuenta-service.js';
 
 describe('construirGruposInventario', () => {
   const productos: ProductoInventario[] = [
@@ -147,7 +147,7 @@ describe('construirEstadoCuenta', () => {
         { id: 'f1abcdef', total: 100, descripcion: null, fecha: '2026-06-01T10:00:00Z' },
         { id: 'f2abcdef', total: 50, descripcion: 'Cobre', fecha: '2026-06-03T10:00:00Z' },
       ],
-      [{ monto: 40, descripcion: 'abono', referencia: 'TRF1', fecha: '2026-06-02' }]
+      [{ id: 'm1', monto: 40, descripcion: 'abono', referencia: 'TRF1', fecha: '2026-06-02' }]
     );
 
     expect(ec.totales.facturado).toBe(150);
@@ -159,7 +159,7 @@ describe('construirEstadoCuenta', () => {
     const ec = construirEstadoCuenta(
       entidad,
       [{ id: 'f1abcdef', total: 100, descripcion: null, fecha: '2026-06-01T10:00:00Z' }],
-      [{ monto: 40, descripcion: 'abono', referencia: 'TRF1', fecha: '2026-06-02' }]
+      [{ id: 'm1', monto: 40, descripcion: 'abono', referencia: 'TRF1', fecha: '2026-06-02' }]
     );
 
     expect(ec.entradas.map(e => e.tipo)).toEqual(['factura', 'pago']);
@@ -173,5 +173,68 @@ describe('construirEstadoCuenta', () => {
     const ec = construirEstadoCuenta(entidad, [], []);
     expect(ec.totales.saldo).toBe(0);
     expect(ec.entradas).toHaveLength(0);
+  });
+
+  it('subtipo adelanto se muestra como tipo "adelanto" con su propio correlativo AD-', () => {
+    const ec = construirEstadoCuenta(
+      entidad,
+      [],
+      [{ id: 'm1', monto: 500, descripcion: null, referencia: 'TRF-9', fecha: '2026-06-02', subtipo: 'adelanto', numero: 3 }]
+    );
+    expect(ec.entradas[0].tipo).toBe('adelanto');
+    expect(ec.entradas[0].referencia).toBe('AD-0003');
+    expect(ec.entradas[0].referenciaExterna).toBe('TRF-9');
+  });
+
+  it('subtipo pago se muestra como "pago" con correlativo PG-', () => {
+    const ec = construirEstadoCuenta(
+      entidad,
+      [],
+      [{ id: 'm1', monto: 200, descripcion: null, referencia: null, fecha: '2026-06-02', subtipo: 'pago', numero: 7 }]
+    );
+    expect(ec.entradas[0].tipo).toBe('pago');
+    expect(ec.entradas[0].referencia).toBe('PG-0007');
+  });
+
+  it('nota con numero muestra su correlativo NC-/ND- en vez de referencia vacía', () => {
+    const ec = construirEstadoCuenta(
+      entidad,
+      [],
+      [],
+      [{ id: 'n1', tipo: 'debito', monto: 30, motivo: 'Comisión', anulada: false, pagada: false, fecha: '2026-06-02', numero: 5 }]
+    );
+    expect(ec.entradas[0].referencia).toBe('ND-0005');
+  });
+});
+
+describe('agruparPagos', () => {
+  it('colapsa filas del mismo grupo_id y subtipo en una sola entrada, sumando el monto', () => {
+    const filas = [
+      { id: 'm1', monto: 700, descripcion: 'Pago', referencia: null, fecha: '2026-08-12', subtipo: 'pago' as const, numero: 9, grupoId: 'g1' },
+      { id: 'm2', monto: 300, descripcion: 'Pago', referencia: null, fecha: '2026-08-12', subtipo: 'pago' as const, numero: 9, grupoId: 'g1' },
+    ];
+    const agrupado = agruparPagos(filas);
+    expect(agrupado).toHaveLength(1);
+    expect(agrupado[0].monto).toBe(1000);
+  });
+
+  it('pago y adelanto del mismo grupo quedan como 2 entradas separadas', () => {
+    const filas = [
+      { id: 'm1', monto: 1000, descripcion: 'Pago', referencia: null, fecha: '2026-08-12', subtipo: 'pago' as const, numero: 9, grupoId: 'g1' },
+      { id: 'm2', monto: 500, descripcion: 'Adelanto', referencia: null, fecha: '2026-08-12', subtipo: 'adelanto' as const, numero: 3, grupoId: 'g1' },
+    ];
+    const agrupado = agruparPagos(filas);
+    expect(agrupado).toHaveLength(2);
+    expect(agrupado.find(p => p.subtipo === 'pago')!.monto).toBe(1000);
+    expect(agrupado.find(p => p.subtipo === 'adelanto')!.monto).toBe(500);
+  });
+
+  it('filas legacy sin grupoId quedan cada una como su propia entrada', () => {
+    const filas = [
+      { id: 'm1', monto: 100, descripcion: 'Pago viejo', referencia: null, fecha: '2026-01-01', subtipo: 'pago' as const, numero: 1, grupoId: null },
+      { id: 'm2', monto: 200, descripcion: 'Pago viejo', referencia: null, fecha: '2026-01-02', subtipo: 'pago' as const, numero: 2, grupoId: null },
+    ];
+    const agrupado = agruparPagos(filas);
+    expect(agrupado).toHaveLength(2);
   });
 });

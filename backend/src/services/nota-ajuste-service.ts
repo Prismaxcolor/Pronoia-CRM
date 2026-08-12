@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearNotaAjusteInput } from '../schemas/notas-ajuste.js';
+import { formatCodigoNotaCredito, formatCodigoNotaDebito } from '../utils/codigos.js';
 
 export interface NotaAjusteCruda {
   id: string;
@@ -42,7 +43,7 @@ export async function crearNotaAjuste(
   proveedorId: string,
   input: CrearNotaAjusteInput,
   registradoPor: string
-): Promise<{ id: string } | { error: string }> {
+): Promise<{ id: string; codigo: string | null } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('notas_ajuste_proveedor')
     .insert({
@@ -52,11 +53,15 @@ export async function crearNotaAjuste(
       motivo: input.motivo,
       registrado_por: registradoPor,
     })
-    .select('id')
+    .select('id, tipo, numero')
     .single();
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la nota.' };
-  return { id: (data as { id: string }).id };
+  const row = data as { id: string; tipo: 'credito' | 'debito'; numero: number | null };
+  const codigo = row.numero != null
+    ? (row.tipo === 'credito' ? formatCodigoNotaCredito(row.numero) : formatCodigoNotaDebito(row.numero))
+    : null;
+  return { id: row.id, codigo };
 }
 
 /** Anula una nota ya creada: la RPC inserta la nota contraria (nunca se borra). */

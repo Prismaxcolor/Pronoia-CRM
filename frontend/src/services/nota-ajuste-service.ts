@@ -11,9 +11,9 @@ export interface CrearNotaAjusteInput {
 export async function crearNotaAjuste(
   proveedorId: string,
   input: CrearNotaAjusteInput
-): Promise<{ id: string } | { error: string }> {
+): Promise<{ id: string; codigo: string | null } | { error: string }> {
   try {
-    return await apiFetch<{ id: string }>(`/api/proveedores/${proveedorId}/notas-ajuste`, {
+    return await apiFetch<{ id: string; codigo: string | null }>(`/api/proveedores/${proveedorId}/notas-ajuste`, {
       method: 'POST',
       body: input,
     });

@@ -5,7 +5,7 @@ import { crearNotaAjuste } from '../../services/nota-ajuste-service';
 interface Props {
   proveedorId: string;
   onClose: () => void;
-  onCreada: () => void;
+  onCreada: (codigo?: string | null) => void;
 }
 
 type Tipo = 'credito' | 'debito';
@@ -34,7 +34,7 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    onCreada();
+    onCreada(result.codigo);
   };
 
   return (

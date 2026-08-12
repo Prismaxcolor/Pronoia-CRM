@@ -32,7 +32,8 @@ router.post(
   }
 );
 
-// "Pagar todo": un solo pago que liquida varias facturas/notas de débito.
+// "Registrar pago" combinado: una o varias facturas/notas de débito,
+// repartido entre una o varias bancas; el excedente queda como adelanto.
 router.post(
   '/multiple',
   requirePermiso('cochinito', 'crear'),
@@ -49,7 +50,9 @@ router.post(
       userId: req.user!.sub,
       proveedorId: req.body.proveedorId,
       items: req.body.items.length,
-      movimientoId: result.movimientoId,
+      bancas: req.body.bancas.length,
+      numeroPago: result.numeroPago,
+      numeroAdelanto: result.numeroAdelanto,
     });
     res.status(201).json(result);
   }

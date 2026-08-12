@@ -5,7 +5,7 @@ import { crearTicketSchema, completarTicketSchema } from '../src/schemas/tickets
 import { crearListaSchema, actualizarListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
 import { crearProveedorSchema } from '../src/schemas/proveedores.js';
 import { crearTaraSchema, actualizarTaraSchema } from '../src/schemas/tara.js';
-import { registrarPagoSchema } from '../src/schemas/pagos.js';
+import { registrarPagoSchema, registrarPagoMultipleSchema } from '../src/schemas/pagos.js';
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const UUID2 = '22222222-2222-4222-8222-222222222222';
@@ -268,5 +268,74 @@ describe('registrarPagoSchema', () => {
 
   it('rechaza comprobanteUrl que no es una URL válida', () => {
     expect(registrarPagoSchema.safeParse({ ...base, comprobanteUrl: 'no-es-una-url' }).success).toBe(false);
+  });
+});
+
+const UUID3 = '33333333-3333-4333-8333-333333333333';
+
+describe('registrarPagoMultipleSchema', () => {
+  const base = {
+    proveedorId: UUID,
+    bancas: [{ bancaId: UUID2, monto: 1000, moneda: 'USD' as const, montoUsd: 1000 }],
+    montoUsd: 1000,
+    fecha: '2026-08-12',
+    items: [] as never[],
+  };
+
+  it('acepta un pago con una sola banca que cubre el total exacto', () => {
+    const r = registrarPagoMultipleSchema.safeParse(base);
+    expect(r.success).toBe(true);
+  });
+
+  it('acepta un pago repartido entre 2 bancas cuya suma coincide con el total', () => {
+    const r = registrarPagoMultipleSchema.safeParse({
+      ...base,
+      bancas: [
+        { bancaId: UUID2, monto: 700, moneda: 'USD' as const, montoUsd: 700 },
+        { bancaId: UUID3, monto: 300, moneda: 'USD' as const, montoUsd: 300 },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rechaza si la suma de las bancas no coincide con el total a pagar', () => {
+    const r = registrarPagoMultipleSchema.safeParse({ ...base, montoUsd: 1500 });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza bancas repetidas', () => {
+    const r = registrarPagoMultipleSchema.safeParse({
+      ...base,
+      bancas: [
+        { bancaId: UUID2, monto: 500, moneda: 'USD' as const, montoUsd: 500 },
+        { bancaId: UUID2, monto: 500, moneda: 'USD' as const, montoUsd: 500 },
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza sin ninguna banca', () => {
+    const r = registrarPagoMultipleSchema.safeParse({ ...base, bancas: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza si el total a pagar es menor a la suma de los ítems seleccionados', () => {
+    const r = registrarPagoMultipleSchema.safeParse({
+      ...base,
+      montoUsd: 100,
+      bancas: [{ bancaId: UUID2, monto: 100, moneda: 'USD' as const, montoUsd: 100 }],
+      items: [{ tipo: 'factura' as const, id: UUID3, montoUsd: 500 }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('acepta el excedente del total sobre los ítems como adelanto implícito (sin error)', () => {
+    const r = registrarPagoMultipleSchema.safeParse({
+      ...base,
+      montoUsd: 1000,
+      bancas: [{ bancaId: UUID2, monto: 1000, moneda: 'USD' as const, montoUsd: 1000 }],
+      items: [{ tipo: 'factura' as const, id: UUID3, montoUsd: 400 }],
+    });
+    expect(r.success).toBe(true);
   });
 });

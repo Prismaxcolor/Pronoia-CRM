@@ -34,6 +34,9 @@ export interface Movimiento {
   clienteId: string | null;
   montoUsd: number | null;
   creadoEn: string;
+  subtipo: 'pago' | 'adelanto' | null;
+  numero: number | null;
+  grupoId: string | null;
 }
 
 function mapBanca(row: Record<string, unknown>): Banca {
@@ -64,6 +67,9 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
     clienteId: (row.cliente_id as string) ?? null,
     montoUsd: row.monto_usd != null ? Number(row.monto_usd) : null,
     creadoEn: row.creado_en as string,
+    subtipo: (row.subtipo as 'pago' | 'adelanto' | null) ?? null,
+    numero: row.numero != null ? Number(row.numero) : null,
+    grupoId: (row.grupo_id as string) ?? null,
   };
 }
 

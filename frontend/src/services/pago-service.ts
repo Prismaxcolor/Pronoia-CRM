@@ -38,11 +38,19 @@ export interface ItemPagoMultiple {
   montoUsd: number;
 }
 
-export interface RegistrarPagoMultipleInput {
-  proveedorId: string;
+export interface BancaPago {
   bancaId: string;
+  /** En la moneda propia de esa banca. */
   monto: number;
   moneda: 'USD' | 'VES';
+  montoUsd: number;
+}
+
+export interface RegistrarPagoMultipleInput {
+  proveedorId: string;
+  bancas: BancaPago[];
+  /** Total a pagar (USD) — puede superar la suma de los ítems, el excedente
+   *  se registra como adelanto aparte. */
   montoUsd: number;
   descripcion?: string | null;
   referencia?: string | null;
@@ -51,13 +59,22 @@ export interface RegistrarPagoMultipleInput {
   comprobanteUrl?: string | null;
 }
 
-/** "Pagar todo": un solo pago que liquida varias facturas y/o notas de
- *  débito, más un adelanto libre (montoUsd total menos la suma de los ítems). */
+export interface ResultadoPagoMultiple {
+  movimientoPrincipalId: string;
+  movimientoIds: string[];
+  grupoId: string;
+  numeroPago: number | null;
+  numeroAdelanto: number | null;
+}
+
+/** "Registrar pago": una o varias bancas de origen, liquida varias facturas
+ *  y/o notas de débito, y el excedente sobre esos ítems queda como adelanto
+ *  en un movimiento aparte (lo separa el backend). */
 export async function registrarPagoMultiple(
   input: RegistrarPagoMultipleInput
-): Promise<{ movimientoId: string } | { error: string }> {
+): Promise<ResultadoPagoMultiple | { error: string }> {
   try {
-    const result = await apiFetch<{ movimientoId: string }>('/api/pagos/multiple', {
+    const result = await apiFetch<ResultadoPagoMultiple>('/api/pagos/multiple', {
       method: 'POST',
       body: input,
     });

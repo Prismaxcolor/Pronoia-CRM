@@ -4,16 +4,19 @@ export type TipoEntidad = 'proveedor' | 'cliente';
 
 export interface EntradaEstadoCuenta {
   fecha: string;
-  tipo: 'factura' | 'pago' | 'nota_credito' | 'nota_debito';
+  tipo: 'factura' | 'pago' | 'adelanto' | 'nota_credito' | 'nota_debito';
   descripcion: string;
+  /** Correlativo formateado (C-0001, PG-0007, AD-0003, NC-0004...). */
   referencia: string | null;
+  /** Texto libre que el usuario tipeó a mano, aparte del correlativo. */
+  referenciaExterna?: string | null;
   cargo: number;
   abono: number;
   /** Solo notas: id para poder anularla. Ausente para facturas/pagos. */
   notaId?: string;
   /** Solo notas: ya fue reversada con una nota contraria. */
   anulada?: boolean;
-  /** Solo notas de débito: ya se liquidó en un pago combinado ("Pagar todo"). */
+  /** Solo notas de débito: ya se liquidó en un pago combinado ("Registrar pago"). */
   pagada?: boolean;
   /** Solo facturas: id para abrir el detalle. Ausente para pagos/notas. */
   facturaId?: string;

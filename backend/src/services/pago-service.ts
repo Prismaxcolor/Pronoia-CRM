@@ -76,18 +76,25 @@ export async function registrarPago(
   return { movimientoId };
 }
 
-/** Pago combinado ("Pagar todo"): un solo movimiento que liquida varias
- *  facturas y/o notas de débito a la vez, más un adelanto libre (la
- *  diferencia entre montoUsd total y la suma de los ítems). */
+interface ResultadoPagoMulti {
+  movimientoPrincipalId: string;
+  movimientoIds: string[];
+  grupoId: string;
+  numeroPago: number | null;
+  numeroAdelanto: number | null;
+}
+
+/** Pago combinado ("Registrar pago"): repartido entre una o varias bancas de
+ *  origen, liquida varias facturas y/o notas de débito a la vez. El
+ *  excedente del total sobre la suma de esos ítems queda como adelanto, en
+ *  un movimiento aparte con su propio correlativo (lo separa la RPC). */
 export async function registrarPagoMultiple(
   input: RegistrarPagoMultipleInput,
   registradoPor: string
-): Promise<{ movimientoId: string } | { error: string }> {
-  const { data, error } = await supabaseAdmin.rpc('registrar_pago_proveedor_multiple', {
+): Promise<ResultadoPagoMulti | { error: string }> {
+  const { data, error } = await supabaseAdmin.rpc('registrar_pago_proveedor_multi_banca', {
     p_proveedor_id: input.proveedorId,
-    p_banca_id: input.bancaId,
-    p_monto: input.monto,
-    p_moneda: input.moneda,
+    p_bancas: input.bancas.map(b => ({ bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda })),
     p_monto_usd: input.montoUsd,
     p_descripcion: input.descripcion,
     p_referencia: input.referencia,
@@ -97,9 +104,11 @@ export async function registrarPagoMultiple(
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
-  const movimientoId = data as string;
+  const resultado = data as ResultadoPagoMulti;
 
-  if (input.comprobanteUrl) await adjuntarComprobante(movimientoId, input.proveedorId, input.comprobanteUrl);
+  if (input.comprobanteUrl) {
+    await adjuntarComprobante(resultado.movimientoPrincipalId, input.proveedorId, input.comprobanteUrl);
+  }
 
-  return { movimientoId };
+  return resultado;
 }

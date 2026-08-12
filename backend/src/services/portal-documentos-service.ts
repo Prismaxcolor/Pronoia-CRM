@@ -27,17 +27,34 @@ async function listarComprobantes(entidadTipo: EntidadTelegram, entidadId: strin
 
   const { data, error } = await supabaseAdmin
     .from('movimientos')
-    .select('id, fecha, monto_usd, comprobante_url')
+    .select('id, fecha, monto_usd, comprobante_url, grupo_id')
     .eq('proveedor_id', entidadId)
     .not('comprobante_url', 'is', null)
     .order('fecha', { ascending: false });
 
   if (error || !data) return [];
 
+  // Un pago repartido entre bancas y/o con adelanto (Bloque 39) es varias
+  // filas de movimientos con el mismo grupo_id; el comprobante se adjunta
+  // solo a la fila principal, pero acá se muestra el monto TOTAL de la
+  // operación, no el de esa fila sola.
+  const grupoIds = [...new Set(data.map(m => m.grupo_id).filter((g): g is string => !!g))];
+  const totalPorGrupo = new Map<string, number>();
+  if (grupoIds.length > 0) {
+    const { data: filasGrupo } = await supabaseAdmin
+      .from('movimientos')
+      .select('grupo_id, monto_usd')
+      .in('grupo_id', grupoIds);
+    for (const f of filasGrupo ?? []) {
+      const clave = f.grupo_id as string;
+      totalPorGrupo.set(clave, (totalPorGrupo.get(clave) ?? 0) + Number(f.monto_usd ?? 0));
+    }
+  }
+
   return data.map(m => ({
     id: m.id,
     fecha: m.fecha,
-    montoUsd: Number(m.monto_usd ?? 0),
+    montoUsd: m.grupo_id ? (totalPorGrupo.get(m.grupo_id as string) ?? Number(m.monto_usd ?? 0)) : Number(m.monto_usd ?? 0),
     comprobanteUrl: m.comprobante_url as string,
   }));
 }

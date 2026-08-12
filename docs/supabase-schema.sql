@@ -2546,3 +2546,491 @@ begin
   return v_nueva_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 38 · correlativos de pagos, adelantos y notas de ajuste
+--
+-- Pagos, adelantos y notas de crédito/débito no tenían ningún identificador
+-- visible al usuario (solo el uuid interno). Se agregan 4 correlativos
+-- independientes (PG-/AD-/NC-/ND-), mismo patrón de los Bloques 14/15/29
+-- (secuencia nativa + columna `numero` + backfill), con dos diferencias:
+--
+--   1. `movimientos` es una tabla compartida por Cochinito (ingresos, egresos
+--      y transferencias genéricas) y por pagos a proveedor — el correlativo
+--      solo aplica a estos últimos, así que se agrega `subtipo` para
+--      distinguir 'pago' de 'adelanto' dentro de los egresos con proveedor.
+--      Queda NULL en cualquier movimiento que no sea uno de los dos.
+--   2. Como `subtipo` decide CUÁL de las dos secuencias usar, un DEFAULT de
+--      columna no alcanza (no puede mirar otra columna) — se resuelve con un
+--      trigger BEFORE INSERT que además respeta un `numero` ya provisto, lo
+--      que permite que un pago partido entre varias bancas (Bloque 39)
+--      comparta un solo correlativo entre sus filas.
+--
+-- `grupo_id` agrupa las filas de una misma operación (un pago con adelanto
+-- y/o repartido entre bancas genera varias filas de movimientos) para que el
+-- estado de cuenta las muestre como una sola línea por documento.
+--
+-- Históricos: todo egreso ya ligado a un proveedor se etiqueta 'pago' (hoy no
+-- hay forma de distinguir retroactivamente cuáles eran adelanto sin factura
+-- asociada — la diferencia se perdía en el total combinado del Bloque 37) y
+-- se numera por fecha de creación, así ninguna fila del estado de cuenta
+-- queda con referencia vacía.
+-- ============================================================================
+
+-- --- movimientos: subtipo + numero + grupo_id -------------------------------
+
+alter table public.movimientos
+  add column if not exists subtipo text;
+
+alter table public.movimientos drop constraint if exists movimientos_subtipo_check;
+alter table public.movimientos
+  add constraint movimientos_subtipo_check
+  check (subtipo is null or subtipo in ('pago', 'adelanto'));
+
+alter table public.movimientos
+  add column if not exists numero bigint;
+
+alter table public.movimientos
+  add column if not exists grupo_id uuid;
+
+update public.movimientos
+set subtipo = 'pago'
+where subtipo is null
+  and tipo = 'egreso'
+  and proveedor_id is not null;
+
+create sequence if not exists public.movimientos_pago_numero_seq;
+create sequence if not exists public.movimientos_adelanto_numero_seq;
+
+update public.movimientos m
+set numero = o.rn
+from (
+  select id, row_number() over (order by creado_en, id) as rn
+  from public.movimientos
+  where subtipo = 'pago' and numero is null
+) o
+where m.id = o.id;
+
+select setval(
+  'public.movimientos_pago_numero_seq',
+  coalesce((select max(numero) from public.movimientos where subtipo = 'pago'), 0) + 1,
+  false
+);
+-- La secuencia de adelanto arranca en 1: no hay históricos identificables
+-- como tales (ver nota de históricos arriba).
+
+-- No único: un pago partido entre varias bancas genera varias filas que
+-- comparten a propósito el mismo (subtipo, numero) — es el correlativo de
+-- la OPERACIÓN, no de la fila.
+create index if not exists idx_movimientos_subtipo_numero
+  on public.movimientos (subtipo, numero)
+  where subtipo is not null;
+
+create index if not exists idx_movimientos_grupo
+  on public.movimientos (grupo_id)
+  where grupo_id is not null;
+
+create or replace function public.asignar_correlativo_movimiento()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.numero is null then
+    if new.subtipo = 'pago' then
+      new.numero := nextval('public.movimientos_pago_numero_seq');
+    elsif new.subtipo = 'adelanto' then
+      new.numero := nextval('public.movimientos_adelanto_numero_seq');
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_asignar_correlativo_movimiento on public.movimientos;
+
+create trigger trg_asignar_correlativo_movimiento
+before insert on public.movimientos
+for each row
+execute function public.asignar_correlativo_movimiento();
+
+-- --- notas_ajuste_proveedor: numero -----------------------------------------
+
+alter table public.notas_ajuste_proveedor
+  add column if not exists numero bigint;
+
+create sequence if not exists public.notas_credito_numero_seq;
+create sequence if not exists public.notas_debito_numero_seq;
+
+update public.notas_ajuste_proveedor n
+set numero = o.rn
+from (
+  select id, row_number() over (partition by tipo order by created_at, id) as rn
+  from public.notas_ajuste_proveedor
+  where numero is null
+) o
+where n.id = o.id;
+
+select setval(
+  'public.notas_credito_numero_seq',
+  coalesce((select max(numero) from public.notas_ajuste_proveedor where tipo = 'credito'), 0) + 1,
+  false
+);
+select setval(
+  'public.notas_debito_numero_seq',
+  coalesce((select max(numero) from public.notas_ajuste_proveedor where tipo = 'debito'), 0) + 1,
+  false
+);
+
+alter table public.notas_ajuste_proveedor
+  alter column numero set not null;
+
+-- Único: 1 fila de nota = 1 documento (a diferencia de movimientos, acá no
+-- hay reparto entre varias filas).
+create unique index if not exists idx_notas_ajuste_proveedor_tipo_numero
+  on public.notas_ajuste_proveedor (tipo, numero);
+
+create or replace function public.asignar_correlativo_nota_ajuste()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.numero is null then
+    if new.tipo = 'credito' then
+      new.numero := nextval('public.notas_credito_numero_seq');
+    elsif new.tipo = 'debito' then
+      new.numero := nextval('public.notas_debito_numero_seq');
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_asignar_correlativo_nota_ajuste on public.notas_ajuste_proveedor;
+
+create trigger trg_asignar_correlativo_nota_ajuste
+before insert on public.notas_ajuste_proveedor
+for each row
+execute function public.asignar_correlativo_nota_ajuste();
+
+
+-- ============================================================================
+-- Bloque 39 · pago simple con validación de saldo + pago multi-banca con
+-- adelanto separado (extiende Bloques 22 y 37)
+--
+-- registrar_pago_proveedor (simple, misma firma): ahora bloquea la banca con
+-- `for update` antes de descontar y lanza excepción si el saldo no alcanza
+-- (antes solo se validaba en el frontend contra el saldo leído al abrir el
+-- modal — condición de carrera real entre dos pagos concurrentes). También
+-- etiqueta el movimiento con `subtipo` ('adelanto' si no viene ligado a
+-- factura, 'pago' si sí) para que reciba su correlativo del Bloque 38.
+--
+-- registrar_pago_proveedor_multi_banca (nueva, no reemplaza a
+-- registrar_pago_proveedor_multiple del Bloque 37 — esa se deja viva y se
+-- dropea en un bloque aparte una vez el deploy esté verde, para no romper
+-- el código en producción mientras se despliega el nuevo):
+--   - Recibe un array de bancas en vez de una sola (reparto multi-cuenta).
+--   - El total ya no se deriva de los ítems: `p_monto_usd` es lo que el
+--     usuario escribió en "Total a pagar". Si supera la suma de los ítems
+--     seleccionados, el excedente es un adelanto y se registra en una fila
+--     de movimiento APARTE (subtipo 'adelanto', su propio correlativo AD-),
+--     en vez de mezclarse en el mismo movimiento del pago (a diferencia del
+--     Bloque 37 original).
+--   - Si una banca cae "a caballo" entre cubrir pago y adelanto, su aporte
+--     se parte en dos filas (mismo banca_origen_id, subtipo distinto),
+--     prorrateando el monto en moneda local sin perder centavos (el
+--     residuo exacto va a la segunda fila) — el trigger de saldo del
+--     Bloque 2 debita por fila, así que la suma debitada de esa banca sigue
+--     siendo exactamente lo que el usuario indicó.
+--   - Todas las filas de una misma operación comparten `grupo_id` para que
+--     el estado de cuenta las muestre agrupadas por documento.
+-- ============================================================================
+
+create or replace function public.registrar_pago_proveedor(
+  p_proveedor_id   uuid,
+  p_banca_id       uuid,
+  p_monto          numeric,
+  p_moneda         text,
+  p_monto_usd      numeric,
+  p_descripcion    text,
+  p_referencia     text,
+  p_fecha          date,
+  p_registrado_por uuid,
+  p_factura_id     uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_mov_id   uuid;
+  v_total    numeric;
+  v_pagado   numeric;
+  v_saldo    numeric;
+  v_nombre   text;
+  v_archivada boolean;
+  v_subtipo  text;
+begin
+  select saldo, nombre, archivada into v_saldo, v_nombre, v_archivada
+    from public.bancas where id = p_banca_id
+    for update;
+
+  if v_saldo is null then
+    raise exception 'Banca no encontrada.';
+  end if;
+  if v_archivada then
+    raise exception 'La banca % está archivada.', v_nombre;
+  end if;
+  if p_monto > v_saldo + 0.01 then
+    raise exception 'Saldo insuficiente en %: disponible %, requerido %', v_nombre, v_saldo, p_monto;
+  end if;
+
+  v_subtipo := case when p_factura_id is null then 'adelanto' else 'pago' end;
+
+  insert into public.movimientos
+    (tipo, subtipo, monto, moneda, monto_usd, descripcion, banca_origen_id, banca_destino_id,
+     fecha, referencia, registrado_por, proveedor_id)
+  values
+    ('egreso', v_subtipo, p_monto, p_moneda, p_monto_usd, nullif(p_descripcion, ''), p_banca_id, null,
+     p_fecha, nullif(p_referencia, ''), p_registrado_por, p_proveedor_id)
+  returning id into v_mov_id;
+
+  if p_factura_id is not null then
+    select total, monto_pagado into v_total, v_pagado
+      from public.facturas_compra where id = p_factura_id;
+
+    if v_total is null then
+      raise exception 'Factura no encontrada.';
+    end if;
+
+    v_pagado := coalesce(v_pagado, 0) + p_monto_usd;
+
+    update public.facturas_compra
+       set monto_pagado = v_pagado,
+           estado = case when v_pagado >= v_total - 0.01 then 'pagada' else estado end
+     where id = p_factura_id;
+  end if;
+
+  return v_mov_id;
+end;
+$$;
+
+create or replace function public.registrar_pago_proveedor_multi_banca(
+  p_proveedor_id   uuid,
+  p_bancas         jsonb,     -- [{ "bancaId": uuid, "monto": numeric, "montoUsd": numeric, "moneda": "USD"|"VES" }]
+  p_monto_usd      numeric,   -- total declarado por el usuario ("Total a pagar")
+  p_descripcion    text,
+  p_referencia     text,
+  p_fecha          date,
+  p_registrado_por uuid,
+  p_items          jsonb      -- [{ "tipo": "factura"|"nota_debito", "id": uuid, "montoUsd": numeric }]
+) returns jsonb
+language plpgsql
+as $$
+declare
+  v_item              jsonb;
+  v_banca             jsonb;
+  v_tipo               text;
+  v_id                 uuid;
+  v_monto              numeric;
+  v_total              numeric;
+  v_pagado             numeric;
+  v_filas              int;
+  v_total_items        numeric;
+  v_total_bancas       numeric;
+  v_adelanto           numeric;
+  v_saldo              numeric;
+  v_nombre             text;
+  v_archivada          boolean;
+  v_num_pago           bigint;
+  v_num_adel           bigint;
+  v_grupo_id           uuid;
+  v_restante_pago      numeric;
+  v_banca_id           uuid;
+  v_banca_monto        numeric;
+  v_banca_monto_usd    numeric;
+  v_banca_moneda       text;
+  v_ap_pago_usd        numeric;
+  v_ap_adel_usd        numeric;
+  v_monto_pago         numeric;
+  v_monto_adel         numeric;
+  v_mov_id             uuid;
+  v_mov_pago_principal uuid;
+  v_mov_adel_principal uuid;
+  v_ids                uuid[] := '{}';
+begin
+  if p_bancas is null or jsonb_typeof(p_bancas) <> 'array' or jsonb_array_length(p_bancas) = 0 then
+    raise exception 'Debe indicar al menos una banca de origen.';
+  end if;
+
+  if (select count(*) from jsonb_array_elements(p_bancas)) <>
+     (select count(distinct (value->>'bancaId')) from jsonb_array_elements(p_bancas)) then
+    raise exception 'No se puede repetir la misma banca en un pago.';
+  end if;
+
+  select coalesce(sum((value->>'montoUsd')::numeric), 0) into v_total_items
+    from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) as elems(value);
+
+  select coalesce(sum((value->>'montoUsd')::numeric), 0) into v_total_bancas
+    from jsonb_array_elements(p_bancas) as elems(value);
+
+  if abs(v_total_bancas - p_monto_usd) > 0.01 then
+    raise exception 'La suma de las bancas (%) no coincide con el total a pagar (%).', v_total_bancas, p_monto_usd;
+  end if;
+
+  v_adelanto := round(p_monto_usd - v_total_items, 2);
+  if v_adelanto < -0.01 then
+    raise exception 'El total a pagar (%) es menor a la suma de lo seleccionado (%).', p_monto_usd, v_total_items;
+  end if;
+  if abs(v_adelanto) <= 0.01 then
+    v_adelanto := 0;
+  end if;
+
+  -- Bloquea todas las bancas involucradas en orden estable (por id) antes de
+  -- tocar ninguna, para no generar deadlocks con otro pago concurrente que
+  -- use el mismo conjunto de bancas en distinto orden.
+  for v_banca in
+    select value from jsonb_array_elements(p_bancas) as elems(value)
+    order by (value->>'bancaId')
+  loop
+    select saldo, nombre, archivada into v_saldo, v_nombre, v_archivada
+      from public.bancas where id = (v_banca->>'bancaId')::uuid
+      for update;
+
+    if v_saldo is null then
+      raise exception 'Banca % no encontrada.', v_banca->>'bancaId';
+    end if;
+    if v_archivada then
+      raise exception 'La banca % está archivada.', v_nombre;
+    end if;
+    if (v_banca->>'monto')::numeric > v_saldo + 0.01 then
+      raise exception 'Saldo insuficiente en %: disponible %, requerido %',
+        v_nombre, v_saldo, (v_banca->>'monto')::numeric;
+    end if;
+  end loop;
+
+  v_grupo_id := gen_random_uuid();
+  if v_total_items > 0 then
+    v_num_pago := nextval('public.movimientos_pago_numero_seq');
+  end if;
+  if v_adelanto > 0 then
+    v_num_adel := nextval('public.movimientos_adelanto_numero_seq');
+  end if;
+
+  -- Reparte cada banca entre pago/adelanto en el orden en que el usuario las
+  -- cargó (no el orden de bloqueo de arriba, que es solo para evitar
+  -- deadlocks): llena primero el pago hasta agotar v_total_items, el resto
+  -- de cada banca es adelanto.
+  v_restante_pago := v_total_items;
+
+  for v_banca in select value from jsonb_array_elements(p_bancas) as elems(value)
+  loop
+    v_banca_id := (v_banca->>'bancaId')::uuid;
+    v_banca_monto := (v_banca->>'monto')::numeric;
+    v_banca_monto_usd := (v_banca->>'montoUsd')::numeric;
+    v_banca_moneda := v_banca->>'moneda';
+
+    if v_banca_monto_usd <= 0 then
+      continue;
+    end if;
+
+    v_ap_pago_usd := least(v_banca_monto_usd, v_restante_pago);
+    v_ap_adel_usd := v_banca_monto_usd - v_ap_pago_usd;
+    v_restante_pago := v_restante_pago - v_ap_pago_usd;
+    v_monto_pago := 0;
+
+    if v_ap_pago_usd > 0.01 then
+      v_monto_pago := round(v_banca_monto * v_ap_pago_usd / v_banca_monto_usd, 2);
+
+      insert into public.movimientos
+        (tipo, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion,
+         banca_origen_id, banca_destino_id, fecha, referencia, registrado_por, proveedor_id)
+      values
+        ('egreso', 'pago', v_num_pago, v_grupo_id, v_monto_pago, v_banca_moneda, v_ap_pago_usd,
+         nullif(p_descripcion, ''), v_banca_id, null, p_fecha, nullif(p_referencia, ''),
+         p_registrado_por, p_proveedor_id)
+      returning id into v_mov_id;
+
+      v_ids := v_ids || v_mov_id;
+      if v_mov_pago_principal is null then v_mov_pago_principal := v_mov_id; end if;
+    end if;
+
+    if v_ap_adel_usd > 0.01 then
+      -- Residuo exacto del monto en moneda local (no se recalcula por
+      -- separado) para que la suma pago+adelanto de esta banca sea
+      -- exactamente v_banca_monto, sin drift de centavos.
+      v_monto_adel := v_banca_monto - v_monto_pago;
+
+      insert into public.movimientos
+        (tipo, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion,
+         banca_origen_id, banca_destino_id, fecha, referencia, registrado_por, proveedor_id)
+      values
+        ('egreso', 'adelanto', v_num_adel, v_grupo_id, v_monto_adel, v_banca_moneda, v_ap_adel_usd,
+         nullif(case when v_total_items > 0 then 'Adelanto' else p_descripcion end, ''),
+         v_banca_id, null, p_fecha, nullif(p_referencia, ''), p_registrado_por, p_proveedor_id)
+      returning id into v_mov_id;
+
+      v_ids := v_ids || v_mov_id;
+      if v_mov_adel_principal is null then v_mov_adel_principal := v_mov_id; end if;
+    end if;
+  end loop;
+
+  -- Aplica los ítems (misma lógica que registrar_pago_proveedor_multiple del
+  -- Bloque 37): factura acumula monto_pagado, nota_debito se marca pagada,
+  -- ligada a la fila principal del pago (no a la del adelanto).
+  for v_item in select value from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) as elems(value)
+  loop
+    v_tipo  := v_item->>'tipo';
+    v_id    := (v_item->>'id')::uuid;
+    v_monto := (v_item->>'montoUsd')::numeric;
+
+    if v_tipo = 'factura' then
+      select total, monto_pagado into v_total, v_pagado
+        from public.facturas_compra where id = v_id and proveedor_id = p_proveedor_id;
+
+      if v_total is null then
+        raise exception 'Factura % no encontrada para este proveedor.', v_id;
+      end if;
+
+      v_pagado := coalesce(v_pagado, 0) + v_monto;
+
+      update public.facturas_compra
+         set monto_pagado = v_pagado,
+             estado = case when v_pagado >= v_total - 0.01 then 'pagada' else estado end
+       where id = v_id;
+
+    elsif v_tipo = 'nota_debito' then
+      update public.notas_ajuste_proveedor
+         set pagada = true,
+             movimiento_id = v_mov_pago_principal
+       where id = v_id
+         and proveedor_id = p_proveedor_id
+         and tipo = 'debito'
+         and anulada = false
+         and pagada = false;
+
+      get diagnostics v_filas = row_count;
+      if v_filas = 0 then
+        raise exception 'Nota de débito % no encontrada, ya pagada o anulada.', v_id;
+      end if;
+
+    else
+      raise exception 'Tipo de ítem desconocido: %', v_tipo;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'movimientoPrincipalId', coalesce(v_mov_pago_principal, v_mov_adel_principal),
+    'movimientoIds', to_jsonb(v_ids),
+    'grupoId', v_grupo_id,
+    'numeroPago', v_num_pago,
+    'numeroAdelanto', v_num_adel
+  );
+end;
+$$;
+
+-- Nota de despliegue: registrar_pago_proveedor_multiple (Bloque 37) se deja
+-- viva a propósito — el backend en producción sigue llamándola hasta que el
+-- deploy que usa registrar_pago_proveedor_multi_banca esté verificado en el
+-- preview y mergeado a main. Recién ahí correr, en una migración aparte:
+--   drop function if exists public.registrar_pago_proveedor_multiple(
+--     uuid, uuid, numeric, text, numeric, text, text, date, uuid, jsonb
+--   );
