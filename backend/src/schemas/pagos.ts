@@ -43,6 +43,8 @@ export const bancaPagoSchema = z.object({
   monto: z.number().positive('El monto debe ser mayor a 0.'),
   moneda: z.enum(['USD', 'VES']),
   montoUsd: z.number().positive('El monto en USD debe ser mayor a 0.'),
+  /** Referencia propia de esta banca (ej. número de transferencia). */
+  referencia: textoOpcional(50),
 });
 
 /** Pago combinado ("Registrar pago"): puede repartirse entre varias bancas de

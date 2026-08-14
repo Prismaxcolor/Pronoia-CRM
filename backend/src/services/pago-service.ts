@@ -94,7 +94,7 @@ export async function registrarPagoMultiple(
 ): Promise<ResultadoPagoMulti | { error: string }> {
   const { data, error } = await supabaseAdmin.rpc('registrar_pago_proveedor_multi_banca', {
     p_proveedor_id: input.proveedorId,
-    p_bancas: input.bancas.map(b => ({ bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda })),
+    p_bancas: input.bancas.map(b => ({ bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, referencia: b.referencia ?? null })),
     p_monto_usd: input.montoUsd,
     p_descripcion: input.descripcion,
     p_referencia: input.referencia,

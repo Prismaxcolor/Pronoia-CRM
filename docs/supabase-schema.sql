@@ -2815,7 +2815,7 @@ $$;
 
 create or replace function public.registrar_pago_proveedor_multi_banca(
   p_proveedor_id   uuid,
-  p_bancas         jsonb,     -- [{ "bancaId": uuid, "monto": numeric, "montoUsd": numeric, "moneda": "USD"|"VES" }]
+  p_bancas         jsonb,     -- [{ "bancaId": uuid, "monto": numeric, "montoUsd": numeric, "moneda": "USD"|"VES", "referencia": text|null }]
   p_monto_usd      numeric,   -- total declarado por el usuario ("Total a pagar")
   p_descripcion    text,
   p_referencia     text,
@@ -2848,6 +2848,7 @@ declare
   v_banca_monto        numeric;
   v_banca_monto_usd    numeric;
   v_banca_moneda       text;
+  v_banca_referencia   text;
   v_ap_pago_usd        numeric;
   v_ap_adel_usd        numeric;
   v_monto_pago         numeric;
@@ -2927,6 +2928,9 @@ begin
     v_banca_monto := (v_banca->>'monto')::numeric;
     v_banca_monto_usd := (v_banca->>'montoUsd')::numeric;
     v_banca_moneda := v_banca->>'moneda';
+    -- Referencia propia de esta banca; si viene vacía, cae a la referencia
+    -- global del pago (compatibilidad con llamadas que no manden por línea).
+    v_banca_referencia := coalesce(nullif(v_banca->>'referencia', ''), nullif(p_referencia, ''));
 
     if v_banca_monto_usd <= 0 then
       continue;
@@ -2945,7 +2949,7 @@ begin
          banca_origen_id, banca_destino_id, fecha, referencia, registrado_por, proveedor_id)
       values
         ('egreso', 'pago', v_num_pago, v_grupo_id, v_monto_pago, v_banca_moneda, v_ap_pago_usd,
-         nullif(p_descripcion, ''), v_banca_id, null, p_fecha, nullif(p_referencia, ''),
+         nullif(p_descripcion, ''), v_banca_id, null, p_fecha, v_banca_referencia,
          p_registrado_por, p_proveedor_id)
       returning id into v_mov_id;
 
@@ -2965,7 +2969,7 @@ begin
       values
         ('egreso', 'adelanto', v_num_adel, v_grupo_id, v_monto_adel, v_banca_moneda, v_ap_adel_usd,
          nullif(case when v_total_items > 0 then 'Adelanto' else p_descripcion end, ''),
-         v_banca_id, null, p_fecha, nullif(p_referencia, ''), p_registrado_por, p_proveedor_id)
+         v_banca_id, null, p_fecha, v_banca_referencia, p_registrado_por, p_proveedor_id)
       returning id into v_mov_id;
 
       v_ids := v_ids || v_mov_id;

@@ -22,6 +22,8 @@ interface LineaBanca {
   bancaId: string;
   /** USD, string editable. */
   montoUsd: string;
+  /** Referencia propia de esta banca (ej. número de transferencia). */
+  referencia: string;
 }
 
 function fmt(n: number): string {
@@ -51,7 +53,6 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
 
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [descripcion, setDescripcion] = useState('');
-  const [referencia, setReferencia] = useState('');
   const [comprobante, setComprobante] = useState<File | null>(null);
 
   const [guardando, setGuardando] = useState(false);
@@ -60,7 +61,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
   useEffect(() => {
     obtenerBancas().then(lista => {
       setBancas(lista);
-      setLineasBanca([{ id: nextLineaId.current++, bancaId: lista[0]?.id ?? '', montoUsd: '' }]);
+      setLineasBanca([{ id: nextLineaId.current++, bancaId: lista[0]?.id ?? '', montoUsd: '', referencia: '' }]);
     });
     obtenerTasaOficial().then(t => setTasa(t?.tasa ?? null));
     obtenerFacturas('compra', { entidadId: proveedorId }).then(lista =>
@@ -114,7 +115,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
       const base = prev.length === 1 && !bancaLineaTocada
         ? [{ ...prev[0], montoUsd: totalEditado }]
         : prev;
-      return [...base, { id: nextLineaId.current++, bancaId: disponible?.id ?? '', montoUsd: '' }];
+      return [...base, { id: nextLineaId.current++, bancaId: disponible?.id ?? '', montoUsd: '', referencia: '' }];
     });
   };
   const quitarLinea = (id: number) =>
@@ -125,6 +126,8 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
     setLineasBanca(prev => prev.map(l => (l.id === id ? { ...l, montoUsd } : l)));
     if (lineasBanca.length === 1) setBancaLineaTocada(true);
   };
+  const setLineaReferencia = (id: number, referencia: string) =>
+    setLineasBanca(prev => prev.map(l => (l.id === id ? { ...l, referencia } : l)));
 
   const sumaBancasUsd = lineasEfectivas.reduce((acc, l) => acc + (parseFloat(l.montoUsd) || 0), 0);
   const sumaBancasCuadra = Math.abs(sumaBancasUsd - totalEditadoNum) <= 0.01;
@@ -181,7 +184,13 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
         setError(`Saldo insuficiente en ${banca.nombre}. Disponible: ${banca.moneda === 'USD' ? '$' : 'Bs '}${banca.saldo.toLocaleString()}`);
         return;
       }
-      bancasPayload.push({ bancaId: banca.id, monto: montoBanca, moneda: banca.moneda as 'USD' | 'VES', montoUsd: montoUsdLinea });
+      bancasPayload.push({
+        bancaId: banca.id,
+        monto: montoBanca,
+        moneda: banca.moneda as 'USD' | 'VES',
+        montoUsd: montoUsdLinea,
+        referencia: linea.referencia.trim() || null,
+      });
     }
 
     if (!sumaBancasCuadra) {
@@ -211,7 +220,6 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
       bancas: bancasPayload,
       montoUsd: totalEditadoNum,
       descripcion: (descripcion.trim() || descripcionSugerida) || null,
-      referencia: referencia.trim() || null,
       fecha,
       items,
       comprobanteUrl,
@@ -368,46 +376,55 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
                 const montoUsdLinea = parseFloat(linea.montoUsd) || 0;
                 const montoBsLinea = esBsLinea && tasa ? montoUsdLinea * tasa : null;
                 return (
-                  <div key={linea.id} className="flex items-start gap-2">
-                    <select
-                      required
-                      value={linea.bancaId}
-                      onChange={e => setLineaBancaId(linea.id, e.target.value)}
-                      className={`${inputClass} flex-1`}
-                    >
-                      {bancas
-                        .filter(b => b.id === linea.bancaId || !bancasUsadas.has(b.id))
-                        .map(b => (
-                          <option key={b.id} value={b.id}>
-                            {b.nombre} — {b.moneda === 'USD' ? '$' : 'Bs '}{b.saldo.toLocaleString()}
-                          </option>
-                        ))}
-                    </select>
-                    <div className="shrink-0">
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">$</span>
-                        <input
-                          type="number" step="0.01" min="0.01"
-                          value={linea.montoUsd}
-                          onChange={e => setLineaMonto(linea.id, e.target.value)}
-                          className={`${inputClass} w-28 pl-6`}
-                          placeholder="0.00"
-                        />
+                  <div key={linea.id} className="border border-border rounded-lg p-2 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <select
+                        required
+                        value={linea.bancaId}
+                        onChange={e => setLineaBancaId(linea.id, e.target.value)}
+                        className={`${inputClass} flex-1`}
+                      >
+                        {bancas
+                          .filter(b => b.id === linea.bancaId || !bancasUsadas.has(b.id))
+                          .map(b => (
+                            <option key={b.id} value={b.id}>
+                              {b.nombre} — {b.moneda === 'USD' ? '$' : 'Bs '}{b.saldo.toLocaleString()}
+                            </option>
+                          ))}
+                      </select>
+                      <div className="shrink-0">
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">$</span>
+                          <input
+                            type="number" step="0.01" min="0.01"
+                            value={linea.montoUsd}
+                            onChange={e => setLineaMonto(linea.id, e.target.value)}
+                            className={`${inputClass} w-28 pl-6`}
+                            placeholder="0.00"
+                          />
+                        </div>
+                        {montoBsLinea != null && (
+                          <p className="text-xs text-text-muted mt-1 text-right">≈ Bs {fmt(montoBsLinea)}</p>
+                        )}
                       </div>
-                      {montoBsLinea != null && (
-                        <p className="text-xs text-text-muted mt-1 text-right">≈ Bs {fmt(montoBsLinea)}</p>
+                      {lineasBanca.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => quitarLinea(linea.id)}
+                          className="p-2.5 text-text-muted hover:text-red-600 transition-colors shrink-0"
+                          title="Quitar banca"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       )}
                     </div>
-                    {lineasBanca.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => quitarLinea(linea.id)}
-                        className="p-2.5 text-text-muted hover:text-red-600 transition-colors shrink-0"
-                        title="Quitar banca"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
+                    <input
+                      type="text" maxLength={50}
+                      value={linea.referencia}
+                      onChange={e => setLineaReferencia(linea.id, e.target.value)}
+                      className={`${inputClass} text-xs`}
+                      placeholder="Referencia de esta banca (opcional) — ej: TRF-432"
+                    />
                   </div>
                 );
               })}
@@ -437,11 +454,6 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
               className={inputClass}
               placeholder={descripcionSugerida || 'Ej: Pago combinado de facturas'}
             />
-          </div>
-
-          <div>
-            <label className={labelClass}>Referencia <span className="text-text-muted">(opcional)</span></label>
-            <input type="text" maxLength={50} value={referencia} onChange={e => setReferencia(e.target.value)} className={inputClass} placeholder="Ej: TRF-432" />
           </div>
 
           <div>

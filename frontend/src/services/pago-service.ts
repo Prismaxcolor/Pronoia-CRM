@@ -44,6 +44,8 @@ export interface BancaPago {
   monto: number;
   moneda: 'USD' | 'VES';
   montoUsd: number;
+  /** Referencia propia de esta banca (ej. número de transferencia). */
+  referencia?: string | null;
 }
 
 export interface RegistrarPagoMultipleInput {
