@@ -3,11 +3,13 @@ import { supabaseAdmin } from '../config/supabase.js';
 export interface ArticuloInventario {
   productoId: string;
   nombre: string;
-  /** Destino de inventario de esta fila: 'mpp' o 'lote'. */
-  destinoTipo: 'mpp' | 'lote';
-  /** Lote cuando destinoTipo === 'lote'. Null para MPP. */
+  /** Destino de inventario de esta fila. 'mpp' y 'lote' son destinos reales
+   *  elegidos al pesar; 'sin_movimiento' es sintético — el producto existe
+   *  en el catálogo pero nunca se pesó, no implica que su destino sea MPP. */
+  destinoTipo: 'mpp' | 'lote' | 'sin_movimiento';
+  /** Lote cuando destinoTipo === 'lote'. Null en cualquier otro caso. */
   loteId: string | null;
-  /** Etiqueta legible del destino: "MPP" o el nombre del lote. */
+  /** Etiqueta legible del destino: "MPP", "Sin movimiento" o el nombre del lote. */
   destinoLabel: string;
   entradas: number;        // kg que entraron por pesaje de compra
   salidas: number;         // kg que salieron por pesaje de venta
@@ -31,6 +33,9 @@ export interface FiltrosInventario {
 
 const SIN_CATEGORIA = 'Sin categoría';
 const MPP_LABEL = 'MPP';
+/** Catálogo sin ningún pesaje todavía — no implica que su destino sea MPP,
+ *  solo que nunca se movió. Ver ArticuloInventario.destinoTipo. */
+const SIN_MOVIMIENTO_LABEL = 'Sin movimiento';
 
 // ---- núcleo puro (testeable sin BD) ----------------------------------------
 
@@ -67,14 +72,14 @@ export function construirGruposInventario(
   const meta = new Map<string, ProductoInventario>();
   for (const p of productos) meta.set(p.id, p);
 
-  // Clave de bucket: material + destino (lote_id o 'mpp').
+  // Clave de bucket: material + destino (lote_id o 'sin-lote').
   const buckets = new Map<string, ArticuloInventario>();
   const claveBucket = (productoId: string, loteId: string | null) =>
-    `${productoId}::${loteId ?? 'mpp'}`;
+    `${productoId}::${loteId ?? 'sin-lote'}`;
 
   const obtenerBucket = (
     productoId: string,
-    destinoTipo: 'mpp' | 'lote',
+    destinoTipo: 'mpp' | 'lote' | 'sin_movimiento',
     loteId: string | null,
     destinoLabel: string
   ): ArticuloInventario => {
@@ -103,14 +108,16 @@ export function construirGruposInventario(
   for (const t of transfEntrada) obtenerBucket(t.materialId, 'mpp', null, MPP_LABEL).transformaciones -= t.cantidad;
   for (const t of transfSalida) obtenerBucket(t.materialId, 'mpp', null, MPP_LABEL).transformaciones += t.cantidad;
 
-  // Productos sin ningún movimiento → fila MPP en cero (para listar el catálogo).
+  // Productos sin ningún movimiento → fila "Sin movimiento" en cero (para
+  // listar el catálogo). No es MPP: MPP es un destino real que se elige al
+  // pesar, esto solo significa que el producto nunca se pesó.
   // El inventario por almacén desactiva esto: un almacén no lista todo el
   // catálogo en cero, solo lo que de verdad tuvo movimiento ahí.
   if (opciones.incluirSinMovimiento !== false) {
     const conMovimiento = new Set<string>();
     for (const b of buckets.values()) conMovimiento.add(b.productoId);
     for (const p of productos) {
-      if (!conMovimiento.has(p.id)) obtenerBucket(p.id, 'mpp', null, MPP_LABEL);
+      if (!conMovimiento.has(p.id)) obtenerBucket(p.id, 'sin_movimiento', null, SIN_MOVIMIENTO_LABEL);
     }
   }
 

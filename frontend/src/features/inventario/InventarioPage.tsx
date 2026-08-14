@@ -8,10 +8,11 @@ import {
 } from '../../services/inventario-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { obtenerProductos } from '../../services/producto-service';
+import { obtenerLotes } from '../../services/lote-service';
 import Accordion from '../../components/Accordion';
 import AlmacenesPanel from './AlmacenesPanel';
 import TrasladosPanel from './TrasladosPanel';
-import type { TipoMaterial, Producto } from '@shared/types/index.js';
+import type { TipoMaterial, Producto, Lote } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -25,18 +26,26 @@ interface GrupoDestino {
   articulos: ArticuloConCategoria[];
 }
 
-/** Regrupa los mismos artículos ya cargados por destino (MPP o lote) en vez de por categoría. */
-function agruparPorDestino(grupos: GrupoInventario[]): GrupoDestino[] {
+/** Regrupa los mismos artículos ya cargados por destino (MPP, lote o "sin
+ *  movimiento") en vez de por categoría. Además incluye los lotes activos
+ *  que todavía no tienen ningún producto pesado adentro, como grupo vacío —
+ *  si no, un lote recién creado desaparece de esta vista hasta su primer pesaje. */
+function agruparPorDestino(grupos: GrupoInventario[], lotes: Lote[]): GrupoDestino[] {
   const mapa = new Map<string, GrupoDestino>();
   for (const g of grupos) {
     for (const a of g.articulos) {
-      const clave = a.loteId ?? 'mpp';
+      const clave = a.loteId ?? a.destinoTipo;
       if (!mapa.has(clave)) {
         mapa.set(clave, { clave, label: a.destinoLabel, totalKg: 0, articulos: [] });
       }
       const grupo = mapa.get(clave)!;
       grupo.articulos.push({ ...a, categoria: g.nombreCategoria });
       grupo.totalKg += a.stock;
+    }
+  }
+  for (const l of lotes) {
+    if (l.activo && !mapa.has(l.id)) {
+      mapa.set(l.id, { clave: l.id, label: l.nombre, totalKg: 0, articulos: [] });
     }
   }
   return Array.from(mapa.values()).sort((a, b) => a.label.localeCompare(b.label));
@@ -50,16 +59,18 @@ function InventarioPage() {
   const [grupos, setGrupos] = useState<GrupoInventario[]>([]);
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
   const [cargando, setCargando] = useState(true);
   const [filtros, setFiltros] = useState<FiltrosInventario>({});
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [agrupacion, setAgrupacion] = useState<Agrupacion>('categoria');
 
-  const gruposPorDestino = useMemo(() => agruparPorDestino(grupos), [grupos]);
+  const gruposPorDestino = useMemo(() => agruparPorDestino(grupos, lotes), [grupos, lotes]);
 
   useEffect(() => {
     obtenerTiposMaterial().then(setCategorias);
     obtenerProductos().then(setProductos);
+    obtenerLotes().then(setLotes);
   }, []);
 
   useEffect(() => {
@@ -240,7 +251,13 @@ function InventarioPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {g.articulos.map(a => (
+                  {g.articulos.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-3 text-text-muted text-xs">
+                        Todavía no se pesó ningún artículo hacia este lote.
+                      </td>
+                    </tr>
+                  ) : g.articulos.map(a => (
                     <tr key={a.productoId} className="border-t border-border">
                       <td className="px-5 py-2.5 text-text-primary">{a.nombre}</td>
                       <td className="px-4 py-2.5 text-text-secondary">{a.categoria}</td>
