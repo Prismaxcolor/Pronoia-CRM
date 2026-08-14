@@ -11,9 +11,17 @@ export interface TasaOficial {
   stale?: boolean;
 }
 
-export async function obtenerTasaOficial(): Promise<TasaOficial | null> {
+export type FuenteTasaKey = 'bcv' | 'euro' | 'binance';
+
+const RUTA_POR_FUENTE: Record<FuenteTasaKey, string> = {
+  bcv: 'oficial',
+  euro: 'euro',
+  binance: 'binance',
+};
+
+export async function obtenerTasa(fuenteKey: FuenteTasaKey): Promise<TasaOficial | null> {
   try {
-    const resp = await fetch(`${API_URL}/api/tasas/oficial`);
+    const resp = await fetch(`${API_URL}/api/tasas/${RUTA_POR_FUENTE[fuenteKey]}`);
     if (!resp.ok) return null;
     return await resp.json();
   } catch {
@@ -21,12 +29,24 @@ export async function obtenerTasaOficial(): Promise<TasaOficial | null> {
   }
 }
 
-export async function obtenerHistorialTasas(limit = 30): Promise<TasaOficial[]> {
+/** Tasa BCV USD→VES. Se mantiene por compatibilidad con quienes ya la usan
+ *  (ej. conversión a bolívares al pagar) — equivale a obtenerTasa('bcv'). */
+export async function obtenerTasaOficial(): Promise<TasaOficial | null> {
+  return obtenerTasa('bcv');
+}
+
+export async function obtenerHistorialTasa(fuenteKey: FuenteTasaKey = 'bcv', limit = 30): Promise<TasaOficial[]> {
   try {
-    const resp = await fetch(`${API_URL}/api/tasas/historial?limit=${limit}`);
+    const resp = await fetch(`${API_URL}/api/tasas/historial?fuenteKey=${fuenteKey}&limit=${limit}`);
     if (!resp.ok) return [];
     return await resp.json();
   } catch {
     return [];
   }
+}
+
+/** Historial BCV. Se mantiene por compatibilidad — equivale a
+ *  obtenerHistorialTasa('bcv', limit). */
+export async function obtenerHistorialTasas(limit = 30): Promise<TasaOficial[]> {
+  return obtenerHistorialTasa('bcv', limit);
 }

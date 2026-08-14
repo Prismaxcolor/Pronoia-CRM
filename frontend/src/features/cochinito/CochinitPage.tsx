@@ -204,10 +204,37 @@ function CochinitPage() {
         <StatCard label="Egresos del mes" valor={`-${stats.egresosMes.toLocaleString()}`} icon={<TrendingDown size={18} />} colorBg="bg-red-500" />
       </div>
 
-      {/* Bancas + tasa widget */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center justify-between">
+      {/* Tasas de cambio */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <TasaCambioWidget
+          fuenteKey="bcv"
+          titulo="Tasa BCV"
+          subtitulo="Banco Central de Venezuela"
+          monedaOrigen="USD"
+          cacheMs={24 * 60 * 60 * 1000}
+          acento="brand"
+        />
+        <TasaCambioWidget
+          fuenteKey="binance"
+          titulo="Tasa Binance"
+          subtitulo="Binance P2P — precio de venta"
+          monedaOrigen="USD"
+          cacheMs={15 * 60 * 1000}
+          acento="binance"
+        />
+        <TasaCambioWidget
+          fuenteKey="euro"
+          titulo="Tasa Euro"
+          subtitulo="Banco Central de Venezuela"
+          monedaOrigen="EUR"
+          cacheMs={24 * 60 * 60 * 1000}
+          acento="euro"
+        />
+      </div>
+
+      {/* Bancas */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Bancas</h2>
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
@@ -332,11 +359,6 @@ function CochinitPage() {
             </div>
           )}
         </div>
-
-        <div className="lg:col-span-1">
-          <TasaCambioWidget />
-        </div>
-      </div>
 
       {/* Tabs + búsqueda */}
       <div className="flex items-center justify-between flex-wrap gap-3 border-b border-border">

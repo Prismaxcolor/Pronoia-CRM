@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TrendingUp, RefreshCw, ArrowRight, AlertTriangle } from 'lucide-react';
-import { obtenerTasaOficial, obtenerHistorialTasas, type TasaOficial } from '../../services/tasa-service';
-
-const HORAS_24_MS = 24 * 60 * 60 * 1000;
+import { obtenerTasa, obtenerHistorialTasa, type TasaOficial, type FuenteTasaKey } from '../../services/tasa-service';
 
 function formatHaceCuanto(fecha: string): string {
   const ms = Date.now() - new Date(fecha).getTime();
@@ -15,8 +13,8 @@ function formatHaceCuanto(fecha: string): string {
   return `hace ${d} día${d > 1 ? 's' : ''}`;
 }
 
-function formatProxima(fecha: string): string {
-  const ms = HORAS_24_MS - (Date.now() - new Date(fecha).getTime());
+function formatProxima(fecha: string, cacheMs: number): string {
+  const ms = cacheMs - (Date.now() - new Date(fecha).getTime());
   if (ms <= 0) return 'pendiente al recargar';
   const h = Math.floor(ms / 3600000);
   const min = Math.floor((ms % 3600000) / 60000);
@@ -51,14 +49,35 @@ function Sparkline({ values, color }: SparklineProps) {
   );
 }
 
-function TasaCambioWidget() {
+type Acento = 'brand' | 'binance' | 'euro';
+
+/** Clases literales (no interpoladas) para que Tailwind las detecte al
+ *  escanear este archivo, sin importar qué `acento` se pase en runtime. */
+const ACENTOS: Record<Acento, { iconoBg: string; iconoText: string }> = {
+  brand: { iconoBg: 'bg-brand-50', iconoText: 'text-brand-600' },
+  binance: { iconoBg: 'bg-yellow-50', iconoText: 'text-yellow-600' },
+  euro: { iconoBg: 'bg-indigo-50', iconoText: 'text-indigo-600' },
+};
+
+interface Props {
+  fuenteKey: FuenteTasaKey;
+  titulo: string;
+  subtitulo: string;
+  monedaOrigen: string;
+  /** Cada cuánto se refresca contra la API externa (debe coincidir con el
+   *  backend) — solo afecta el texto "Próxima sync". */
+  cacheMs: number;
+  acento: Acento;
+}
+
+function TasaCambioWidget({ fuenteKey, titulo, subtitulo, monedaOrigen, cacheMs, acento }: Props) {
   const [tasa, setTasa] = useState<TasaOficial | null>(null);
   const [historial, setHistorial] = useState<TasaOficial[]>([]);
   const [cargando, setCargando] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
 
   const cargar = async () => {
-    const [t, h] = await Promise.all([obtenerTasaOficial(), obtenerHistorialTasas(7)]);
+    const [t, h] = await Promise.all([obtenerTasa(fuenteKey), obtenerHistorialTasa(fuenteKey, 7)]);
     setTasa(t);
     setHistorial(h);
   };
@@ -67,16 +86,19 @@ function TasaCambioWidget() {
   // linter no puede ver más allá del await y marca el setState de adentro
   // como "síncrono dentro del efecto" aunque no lo sea.
   useEffect(() => {
-    Promise.all([obtenerTasaOficial(), obtenerHistorialTasas(7)])
+    setCargando(true);
+    Promise.all([obtenerTasa(fuenteKey), obtenerHistorialTasa(fuenteKey, 7)])
       .then(([t, h]) => { setTasa(t); setHistorial(h); })
       .finally(() => setCargando(false));
-  }, []);
+  }, [fuenteKey]);
 
   const refrescar = async () => {
     setRefrescando(true);
     await cargar();
     setRefrescando(false);
   };
+
+  const colores = ACENTOS[acento];
 
   if (cargando) {
     return (
@@ -118,12 +140,12 @@ function TasaCambioWidget() {
     <div className="bg-surface rounded-xl p-6 shadow-sm border border-border h-full flex flex-col">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
-            <TrendingUp size={18} className="text-brand-600" />
+          <div className={`w-8 h-8 rounded-lg ${colores.iconoBg} flex items-center justify-center`}>
+            <TrendingUp size={18} className={colores.iconoText} />
           </div>
           <div>
-            <h3 className="font-semibold text-text-primary text-sm leading-tight">Tasa BCV</h3>
-            <p className="text-xs text-text-muted leading-tight">Banco Central de Venezuela</p>
+            <h3 className="font-semibold text-text-primary text-sm leading-tight">{titulo}</h3>
+            <p className="text-xs text-text-muted leading-tight">{subtitulo}</p>
           </div>
         </div>
         <button
@@ -138,14 +160,14 @@ function TasaCambioWidget() {
       </div>
 
       <div className="flex items-baseline gap-1.5 mb-1 text-text-muted text-xs uppercase tracking-wider">
-        <span>USD</span>
+        <span>{monedaOrigen}</span>
         <ArrowRight size={11} />
         <span>VES</span>
       </div>
       <div className="text-3xl font-bold text-text-primary leading-none mb-1">
         Bs. {tasa.tasa.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
       </div>
-      <div className="text-xs text-text-muted mb-4">por 1 USD</div>
+      <div className="text-xs text-text-muted mb-4">por 1 {monedaOrigen}</div>
 
       {valoresOrdenados.length >= 2 && (
         <div className="mb-4">
@@ -166,7 +188,7 @@ function TasaCambioWidget() {
         </div>
         <div className="flex justify-between">
           <span>Próxima sync</span>
-          <span className="text-text-secondary">{formatProxima(tasa.fecha)}</span>
+          <span className="text-text-secondary">{formatProxima(tasa.fecha, cacheMs)}</span>
         </div>
         {tasa.stale && (
           <div className="flex items-center gap-1 text-amber-600 pt-1">
