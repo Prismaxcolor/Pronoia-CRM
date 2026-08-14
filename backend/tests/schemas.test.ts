@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { crearFacturaSchema } from '../src/schemas/facturas.js';
-import { crearTransformacionSchema } from '../src/schemas/transformaciones.js';
+import { crearTransformacionSchema, completarTransformacionSchema } from '../src/schemas/transformaciones.js';
 import { crearTicketSchema, completarTicketSchema } from '../src/schemas/tickets-pesaje.js';
 import { crearListaSchema, actualizarListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
 import { crearProveedorSchema } from '../src/schemas/proveedores.js';
@@ -59,29 +59,58 @@ describe('crearFacturaSchema', () => {
 });
 
 describe('crearTransformacionSchema', () => {
-  const base = { materialEntradaId: UUID, cantidadEntrada: 100 };
+  const base = { loteOrigenId: UUID, pesoBruto: 100, fecha: '2026-08-14' };
 
-  it('acepta cuando la suma de salidas <= entrada', () => {
-    const r = crearTransformacionSchema.safeParse({
-      ...base,
-      detalles: [
-        { materialSalidaId: UUID2, cantidad: 80 },
-        { materialSalidaId: UUID, cantidad: 19 },
+  it('acepta con tara por defecto 0', () => {
+    const r = crearTransformacionSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.tara).toBe(0);
+  });
+
+  it('rechaza pesoBruto <= 0', () => {
+    const r = crearTransformacionSchema.safeParse({ ...base, pesoBruto: 0 });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza fecha con formato inválido', () => {
+    const r = crearTransformacionSchema.safeParse({ ...base, fecha: '14-08-2026' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza loteOrigenId que no es uuid', () => {
+    const r = crearTransformacionSchema.safeParse({ ...base, loteOrigenId: 'no-uuid' });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('completarTransformacionSchema', () => {
+  it('acepta con al menos una salida, tara por defecto 0', () => {
+    const r = completarTransformacionSchema.safeParse({
+      salidas: [{ loteDestinoId: UUID, pesoBruto: 50 }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.salidas[0].tara).toBe(0);
+  });
+
+  it('acepta varias salidas', () => {
+    const r = completarTransformacionSchema.safeParse({
+      salidas: [
+        { loteDestinoId: UUID, pesoBruto: 50 },
+        { loteDestinoId: UUID2, pesoBruto: 30, tara: 2 },
       ],
     });
     expect(r.success).toBe(true);
   });
 
-  it('rechaza cuando la suma de salidas supera la entrada', () => {
-    const r = crearTransformacionSchema.safeParse({
-      ...base,
-      detalles: [{ materialSalidaId: UUID2, cantidad: 101 }],
-    });
+  it('rechaza sin salidas', () => {
+    const r = completarTransformacionSchema.safeParse({ salidas: [] });
     expect(r.success).toBe(false);
   });
 
-  it('rechaza sin materiales de salida', () => {
-    const r = crearTransformacionSchema.safeParse({ ...base, detalles: [] });
+  it('rechaza pesoBruto <= 0 en una salida', () => {
+    const r = completarTransformacionSchema.safeParse({
+      salidas: [{ loteDestinoId: UUID, pesoBruto: 0 }],
+    });
     expect(r.success).toBe(false);
   });
 });

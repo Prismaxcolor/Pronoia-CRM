@@ -1,18 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, ArrowRight, ArrowLeft, Loader2, Recycle, ChevronDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Loader2, Recycle, CheckCircle2, Clock, X } from 'lucide-react';
 import {
   obtenerTransformaciones,
   crearTransformacion,
-  type TransformacionHistorial,
+  borrarTransformacion,
 } from '../../services/transformacion-service';
-import { obtenerProductos } from '../../services/producto-service';
-import { obtenerInventario } from '../../services/inventario-service';
+import { obtenerLotes } from '../../services/lote-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
-import type { Producto } from '@shared/types/index.js';
-
-interface SalidaForm { materialSalidaId: string; cantidad: string }
+import CompletarTransformacionModal from './CompletarTransformacionModal';
+import type { Transformacion, Lote } from '@shared/types/index.js';
 
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -25,93 +22,76 @@ function TransformacionesPage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const puedeCrear = tienePermiso('transformaciones', 'crear');
+  const puedeEliminar = tienePermiso('transformaciones', 'eliminar');
 
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [stockMap, setStockMap] = useState<Map<string, number>>(new Map());
-  const [historial, setHistorial] = useState<TransformacionHistorial[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
+  const [transformaciones, setTransformaciones] = useState<Transformacion[]>([]);
+  const [cargando, setCargando] = useState(true);
 
-  const [paso, setPaso] = useState<1 | 2>(1);
-  const [entradaId, setEntradaId] = useState('');
-  const [cantidadEntrada, setCantidadEntrada] = useState('');
+  const [loteOrigenId, setLoteOrigenId] = useState('');
+  const [pesoBruto, setPesoBruto] = useState('');
+  const [tara, setTara] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
   const [notas, setNotas] = useState('');
-  const [salidas, setSalidas] = useState<SalidaForm[]>([{ materialSalidaId: '', cantidad: '' }]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** 'entrada' o el índice de la fila de salidas cuyo selector visual está abierto. */
-  const [selectorAbierto, setSelectorAbierto] = useState<'entrada' | number | null>(null);
+
+  const [completando, setCompletando] = useState<Transformacion | null>(null);
 
   const cargarDatos = () => {
-    obtenerInventario().then(grupos => {
-      const m = new Map<string, number>();
-      grupos.flatMap(g => g.articulos).forEach(a => m.set(a.productoId, a.stock));
-      setStockMap(m);
+    obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
+    obtenerTransformaciones().then(lista => {
+      setTransformaciones(lista);
+      setCargando(false);
     });
-    obtenerTransformaciones().then(setHistorial);
   };
 
-  useEffect(() => {
-    obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
-    cargarDatos();
-  }, []);
+  useEffect(cargarDatos, []);
 
-  const stockEntrada = stockMap.get(entradaId) ?? 0;
-  const entradaNum = Number(cantidadEntrada) || 0;
-  const sumaSalidas = salidas.reduce((s, x) => s + (Number(x.cantidad) || 0), 0);
-  const merma = entradaNum - sumaSalidas;
+  const loteOrigen = lotes.find(l => l.id === loteOrigenId);
+  const neto = (Number(pesoBruto) || 0) - (Number(tara) || 0);
 
-  const nombrePorProducto = useMemo(() => {
-    const m = new Map<string, string>();
-    productos.forEach(p => m.set(p.id, p.nombre));
-    return m;
-  }, [productos]);
-
-  const irPaso2 = () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
-    if (!entradaId) { setError('Elige el material de entrada.'); return; }
-    if (entradaNum <= 0) { setError('Ingresa una cantidad de entrada mayor a 0.'); return; }
-    if (entradaNum > stockEntrada + 1e-9) { setError(`Solo hay ${fmt(stockEntrada)} kg disponibles.`); return; }
-    setPaso(2);
-  };
 
-  const setSalida = (idx: number, campo: keyof SalidaForm, valor: string) =>
-    setSalidas(prev => prev.map((s, i) => (i === idx ? { ...s, [campo]: valor } : s)));
-  const addSalida = () => setSalidas(prev => [...prev, { materialSalidaId: '', cantidad: '' }]);
-  const removeSalida = (idx: number) => setSalidas(prev => prev.filter((_, i) => i !== idx));
-
-  const reset = () => {
-    setPaso(1);
-    setEntradaId('');
-    setCantidadEntrada('');
-    setFecha(hoyISO());
-    setNotas('');
-    setSalidas([{ materialSalidaId: '', cantidad: '' }]);
-    setError(null);
-  };
-
-  const confirmar = async () => {
-    setError(null);
-    const detalles = salidas
-      .filter(s => s.materialSalidaId && Number(s.cantidad) > 0)
-      .map(s => ({ materialSalidaId: s.materialSalidaId, cantidad: Number(s.cantidad) }));
-    if (detalles.length === 0) { setError('Agrega al menos un material de salida con cantidad.'); return; }
-    if (merma < -1e-9) { setError('La suma de salidas no puede superar la entrada.'); return; }
+    if (!loteOrigen) { setError('Elige el lote de origen.'); return; }
+    if (neto <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
+    if (neto > loteOrigen.stockKg + 0.01) {
+      setError(`Solo hay ${fmt(loteOrigen.stockKg)} kg disponibles en ${loteOrigen.nombre}.`);
+      return;
+    }
 
     setGuardando(true);
     const result = await crearTransformacion({
-      materialEntradaId: entradaId,
-      cantidadEntrada: entradaNum,
+      loteOrigenId,
+      pesoBruto: Number(pesoBruto) || 0,
+      tara: Number(tara) || 0,
       fecha,
       notas: notas.trim() || null,
-      detalles,
     });
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    toast.exito('Transformación registrada.');
-    reset();
+    toast.exito('Retiro registrado. Complétalo cuando peses las salidas.');
+    setLoteOrigenId('');
+    setPesoBruto('');
+    setTara('');
+    setFecha(hoyISO());
+    setNotas('');
     cargarDatos();
   };
+
+  const cancelar = async (t: Transformacion) => {
+    if (!confirm(`¿Cancelar el retiro de ${fmt(t.pesoNeto)} kg de ${t.nombreLoteOrigen}?`)) return;
+    const result = await borrarTransformacion(t.id);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito('Retiro cancelado.');
+    cargarDatos();
+  };
+
+  const pendientes = transformaciones.filter(t => t.estado === 'bruto');
+  const completas = transformaciones.filter(t => t.estado === 'completa');
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
@@ -121,166 +101,167 @@ function TransformacionesPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Transformaciones</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Procesa un material y obtén varios. Descuenta la entrada del inventario y suma las salidas.
+          Retira material de un lote mezclado (MPP, BGPP...), procésalo, y pesa a dónde salió.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Asistente */}
+        {/* Registrar retiro */}
         {puedeCrear ? (
           <div className="bg-surface rounded-xl border border-border p-5 h-fit">
-            {/* Indicador de pasos */}
-            <div className="flex items-center gap-2 mb-5 text-xs">
-              <span className={`px-2 py-1 rounded-full ${paso === 1 ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-muted'}`}>1. Material que entra</span>
-              <ArrowRight size={14} className="text-text-muted" />
-              <span className={`px-2 py-1 rounded-full ${paso === 2 ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-muted'}`}>2. Materiales que salen</span>
-            </div>
-
-            {paso === 1 ? (
-              <div className="space-y-4">
-                <div>
-                  <label className={labelClass}>Material de entrada *</label>
-                  <button
-                    type="button"
-                    onClick={() => setSelectorAbierto('entrada')}
-                    className={`${inputClass} flex items-center justify-between gap-2 text-left`}
-                  >
-                    <span className={entradaId ? 'text-text-primary truncate' : 'text-text-muted'}>
-                      {nombrePorProducto.get(entradaId) ?? '— Selecciona —'}
-                    </span>
-                    <ChevronDown size={14} className="text-text-muted shrink-0" />
-                  </button>
-                  {entradaId && (
-                    <p className="text-xs text-text-muted mt-1">
-                      Stock disponible: <span className={stockEntrada < 0 ? 'text-red-600 font-medium' : 'font-medium'}>{fmt(stockEntrada)} kg</span>
-                    </p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelClass}>Cantidad (kg) *</label>
-                    <input type="number" step="0.01" min="0" max={stockEntrada} value={cantidadEntrada} onChange={e => setCantidadEntrada(e.target.value)} className={inputClass} placeholder="0.00" />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Fecha</label>
-                    <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
-                  </div>
-                </div>
-
-                {error && <p className="text-red-500 text-sm">{error}</p>}
-
-                <button type="button" onClick={irPaso2} className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors">
-                  Siguiente <ArrowRight size={16} />
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-2.5 text-sm text-brand-800">
-                  Entra: <span className="font-semibold">{fmt(entradaNum)} kg</span> de {nombrePorProducto.get(entradaId) ?? 'material'}
-                </div>
-
-                <div className="space-y-2">
-                  <label className={labelClass}>Materiales que salen</label>
-                  {salidas.map((s, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <button
-                        type="button"
-                        onClick={() => setSelectorAbierto(idx)}
-                        className={`${inputClass} flex items-center justify-between gap-2 text-left`}
-                      >
-                        <span className={s.materialSalidaId ? 'text-text-primary truncate' : 'text-text-muted'}>
-                          {nombrePorProducto.get(s.materialSalidaId) ?? '— Material —'}
-                        </span>
-                        <ChevronDown size={14} className="text-text-muted shrink-0" />
-                      </button>
-                      <input type="number" step="0.01" min="0" value={s.cantidad} onChange={e => setSalida(idx, 'cantidad', e.target.value)} className="w-28 px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400" placeholder="kg" />
-                      {salidas.length > 1 && (
-                        <button type="button" onClick={() => removeSalida(idx)} className="text-red-400 hover:text-red-600 p-1 shrink-0">
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
+            <h2 className="text-sm font-semibold text-text-secondary mb-4">Registrar retiro</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className={labelClass}>Lote de origen *</label>
+                <select required value={loteOrigenId} onChange={e => setLoteOrigenId(e.target.value)} className={inputClass}>
+                  <option value="" disabled>-Selecciona-</option>
+                  {lotes.map(l => (
+                    <option key={l.id} value={l.id}>{l.nombre} — {fmt(l.stockKg)} kg</option>
                   ))}
-                  <button type="button" onClick={addSalida} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-800">
-                    <Plus size={14} /> Agregar material de salida
-                  </button>
-                </div>
+                </select>
+                {loteOrigen && (
+                  <p className="text-xs text-text-muted mt-1">
+                    Disponible: <span className={loteOrigen.stockKg < 0 ? 'text-red-600 font-medium' : 'font-medium'}>{fmt(loteOrigen.stockKg)} kg</span>
+                  </p>
+                )}
+              </div>
 
-                {/* Merma */}
-                <div className="flex items-center justify-between bg-surface-alt rounded-lg px-4 py-2.5 text-sm">
-                  <span className="text-text-secondary">Merma (no explicada)</span>
-                  <span className={`font-bold ${merma < -1e-9 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(merma)} kg</span>
-                </div>
-
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={labelClass}>Notas</label>
-                  <textarea value={notas} onChange={e => setNotas(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Opcional" />
+                  <label className={labelClass}>Peso bruto (kg) *</label>
+                  <input type="number" step="0.01" min="0.01" required value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
                 </div>
-
-                {error && <p className="text-red-500 text-sm">{error}</p>}
-
-                <div className="flex gap-3">
-                  <button type="button" onClick={() => { setPaso(1); setError(null); }} className="flex items-center justify-center gap-1.5 px-4 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-                    <ArrowLeft size={16} /> Atrás
-                  </button>
-                  <button type="button" onClick={confirmar} disabled={guardando} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-                    {guardando ? <><Loader2 size={16} className="animate-spin" /> Registrando...</> : 'Confirmar transformación'}
-                  </button>
+                <div>
+                  <label className={labelClass}>Tara (kg)</label>
+                  <input type="number" step="0.01" min="0" value={tara} onChange={e => setTara(e.target.value)} className={inputClass} placeholder="0.00" />
                 </div>
               </div>
-            )}
+
+              <p className="text-xs text-text-muted">Neto a retirar: <span className="font-semibold text-text-primary">{fmt(neto)} kg</span></p>
+
+              <div>
+                <label className={labelClass}>Fecha</label>
+                <input type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
+              </div>
+
+              <div>
+                <label className={labelClass}>Notas <span className="text-text-muted">(opcional)</span></label>
+                <textarea value={notas} onChange={e => setNotas(e.target.value)} className={`${inputClass} resize-none`} rows={2} />
+              </div>
+
+              {error && <p className="text-red-500 text-sm">{error}</p>}
+
+              <button type="submit" disabled={guardando} className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+                {guardando ? <><Loader2 size={16} className="animate-spin" /> Registrando...</> : <>Registrar retiro <ArrowRight size={16} /></>}
+              </button>
+            </form>
           </div>
         ) : (
           <p className="text-text-muted text-sm">No tienes permiso para registrar transformaciones.</p>
         )}
 
-        {/* Historial */}
-        <div>
-          <h2 className="text-sm font-semibold text-text-secondary mb-3">Historial</h2>
-          <div className="space-y-2">
-            {historial.length === 0 ? (
+        {/* Listas */}
+        <div className="space-y-6">
+          {pendientes.length > 0 && (
+            <div>
+              <h2 className="text-sm font-semibold text-text-secondary mb-3">Pendientes de completar</h2>
+              <div className="space-y-2">
+                {pendientes.map(t => (
+                  <div key={t.id} className="bg-surface rounded-xl border border-amber-200 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                        <Clock size={14} />
+                      </div>
+                      <span className="text-sm font-medium text-text-primary">{fmt(t.pesoNeto)} kg de {t.nombreLoteOrigen}</span>
+                      <span className="text-xs text-text-muted ml-auto">{t.fecha}</span>
+                    </div>
+                    <div className="flex gap-2 pl-9">
+                      <button
+                        type="button"
+                        onClick={() => setCompletando(t)}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                      >
+                        Completar →
+                      </button>
+                      {puedeEliminar && (
+                        <button
+                          type="button"
+                          onClick={() => cancelar(t)}
+                          className="text-xs font-medium text-text-muted hover:text-red-600 flex items-center gap-0.5"
+                        >
+                          <X size={12} /> Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <h2 className="text-sm font-semibold text-text-secondary mb-3">Historial</h2>
+            {cargando ? (
+              <div className="flex justify-center py-10">
+                <Loader2 size={20} className="animate-spin text-text-muted" />
+              </div>
+            ) : completas.length === 0 ? (
               <div className="bg-surface rounded-xl border border-border">
-                <p className="text-center text-text-muted py-10 text-sm">Aún no hay transformaciones.</p>
+                <p className="text-center text-text-muted py-10 text-sm">Aún no hay transformaciones completadas.</p>
               </div>
             ) : (
-              historial.map(t => (
-                <div key={t.id} className="bg-surface rounded-xl border border-border p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
-                      <Recycle size={14} />
-                    </div>
-                    <span className="text-sm font-medium text-text-primary">{fmt(t.cantidadEntrada)} kg de {t.nombreEntrada}</span>
-                    <span className="text-xs text-text-muted ml-auto">{t.fecha ?? t.createdAt.slice(0, 10)}</span>
-                  </div>
-                  <div className="pl-9 text-xs text-text-secondary space-y-0.5">
-                    {t.salidas.map((s, i) => (
-                      <div key={i} className="flex justify-between">
-                        <span>→ {s.nombre}</span>
-                        <span className="font-medium">{fmt(s.cantidad)} kg</span>
+              <div className="space-y-2">
+                {completas.map(t => (
+                  <div key={t.id} className="bg-surface rounded-xl border border-border p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
+                        <Recycle size={14} />
                       </div>
-                    ))}
-                    <div className="flex justify-between text-text-muted pt-1 border-t border-border mt-1">
-                      <span>Merma</span>
-                      <span>{fmt(t.merma)} kg</span>
+                      <span className="text-sm font-medium text-text-primary">{fmt(t.pesoNeto)} kg de {t.nombreLoteOrigen}</span>
+                      <CheckCircle2 size={13} className="text-green-600 shrink-0" />
+                      <span className="text-xs text-text-muted ml-auto">{t.fecha}</span>
                     </div>
+                    <div className="pl-9 text-xs text-text-secondary space-y-0.5">
+                      {t.salidas.map(s => (
+                        <div key={s.id} className="flex justify-between">
+                          <span>→ {s.nombreLoteDestino}</span>
+                          <span className="font-medium">{fmt(s.pesoNeto)} kg</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between text-text-muted pt-1 border-t border-border mt-1">
+                        <span>Merma</span>
+                        <span>{fmt(t.pesoNeto - t.salidas.reduce((acc, s) => acc + s.pesoNeto, 0))} kg</span>
+                      </div>
+                    </div>
+                    {t.entradaDetalle.length > 0 && (
+                      <details className="pl-9 mt-2">
+                        <summary className="text-xs text-text-muted cursor-pointer hover:text-text-secondary">
+                          Composición retirada ({t.entradaDetalle.length} material{t.entradaDetalle.length === 1 ? '' : 'es'})
+                        </summary>
+                        <div className="text-xs text-text-muted space-y-0.5 mt-1">
+                          {t.entradaDetalle.map(d => (
+                            <div key={d.productoId} className="flex justify-between">
+                              <span>{d.nombreProducto}</span>
+                              <span>{fmt(d.pesoKg)} kg</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {selectorAbierto !== null && (
-        <SeleccionarMaterialModal
-          productos={productos}
-          onClose={() => setSelectorAbierto(null)}
-          onSeleccionar={productoId => {
-            if (selectorAbierto === 'entrada') setEntradaId(productoId);
-            else setSalida(selectorAbierto, 'materialSalidaId', productoId);
-            setSelectorAbierto(null);
-          }}
+      {completando && (
+        <CompletarTransformacionModal
+          transformacion={completando}
+          lotes={lotes}
+          onClose={() => setCompletando(null)}
+          onCompletada={() => { setCompletando(null); cargarDatos(); }}
         />
       )}
     </div>

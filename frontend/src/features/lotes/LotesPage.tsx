@@ -5,6 +5,10 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Lote } from '@shared/types/index.js';
 
+function fmt(n: number): string {
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function LotesPage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
@@ -95,6 +99,9 @@ function LotesPage() {
                     <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full shrink-0">Inactivo</span>
                   )}
                 </div>
+                <p className={`text-xs mt-0.5 ${l.stockKg < 0 ? 'text-red-600' : 'text-text-muted'}`}>
+                  {fmt(l.stockKg)} kg
+                </p>
               </div>
               {puedeEditar && (
                 <button

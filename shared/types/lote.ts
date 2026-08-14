@@ -9,6 +9,11 @@ export interface Lote {
   activo: boolean;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
+  /** Kg reales en este lote ahora mismo (Bloque 40: stock_lote_total). Suma
+   *  compras/traslados directos a este lote y salidas de transformaciones que
+   *  lo alimentaron, menos ventas directas y retiros de transformaciones que
+   *  lo usaron como origen. */
+  stockKg: number;
 }
 
 /** Destino de inventario de una línea de pesaje: MPP o un lote concreto. */

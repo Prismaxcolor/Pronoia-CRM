@@ -13,15 +13,29 @@ export interface LotePublico {
   nombre: string;
   activo: boolean;
   createdAt: string;
+  stockKg: number;
 }
 
-function toPublico(row: LoteRow): LotePublico {
-  return { id: row.id, nombre: row.nombre, activo: row.activo, createdAt: row.created_at };
+function toPublico(row: LoteRow, stockKg = 0): LotePublico {
+  return { id: row.id, nombre: row.nombre, activo: row.activo, createdAt: row.created_at, stockKg };
 }
 
 /** Postgres lanza 23505 al violar el índice único de nombre. */
 function esNombreDuplicado(error: { code?: string } | null): boolean {
   return error?.code === '23505';
+}
+
+/** stock_lote_total() por lote (Bloque 40) — la cantidad de lotes es chica
+ *  (decenas, no miles), así que N llamadas RPC en paralelo es más simple que
+ *  mantener un balance corriente. */
+async function stockPorLote(ids: string[]): Promise<Map<string, number>> {
+  const entradas = await Promise.all(
+    ids.map(async id => {
+      const { data } = await supabaseAdmin.rpc('stock_lote_total', { p_lote_id: id });
+      return [id, Number(data ?? 0)] as const;
+    })
+  );
+  return new Map(entradas);
 }
 
 export async function listarLotes(): Promise<LotePublico[]> {
@@ -31,7 +45,9 @@ export async function listarLotes(): Promise<LotePublico[]> {
     .order('nombre', { ascending: true });
 
   if (error || !data) return [];
-  return (data as LoteRow[]).map(toPublico);
+  const rows = data as LoteRow[];
+  const stocks = await stockPorLote(rows.map(r => r.id));
+  return rows.map(r => toPublico(r, stocks.get(r.id) ?? 0));
 }
 
 export async function crearLote(
@@ -70,5 +86,8 @@ export async function actualizarLote(
     return { error: error.message };
   }
   if (!data) return { error: 'Lote no encontrado.' };
-  return { lote: toPublico(data as LoteRow) };
+  // A diferencia de crearLote() (stock siempre 0 recién creado), acá el lote
+  // puede ya tener stock real — nombre/activo no lo tocan, hay que leerlo.
+  const { data: stockData } = await supabaseAdmin.rpc('stock_lote_total', { p_lote_id: id });
+  return { lote: toPublico(data as LoteRow, Number(stockData ?? 0)) };
 }

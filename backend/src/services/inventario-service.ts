@@ -53,20 +53,31 @@ export interface MovimientoInventario {
   destinoLabel: string;
   peso: number;
 }
-export interface CantidadPorMaterial { materialId: string; cantidad: number }
+/** Un retiro de material hacia una transformación (Bloque 40): cuenta como
+ *  salida del (producto, lote_origen) donde se retiró, para que la
+ *  composición de un pool se refleje correctamente con el tiempo. A
+ *  diferencia de una venta, se acumula en `transformaciones`, no en
+ *  `salidas`, para distinguir el motivo en la UI. */
+export interface RetiroTransformacion {
+  productoId: string;
+  loteOrigenId: string;
+  nombreLoteOrigen: string;
+  peso: number;
+}
 
 /**
  * Calcula el stock por (material, destino) y lo agrupa por categoría.
- * stock = entradas (pesaje compra) − salidas (pesaje venta) + neto de
- * transformaciones. Las transformaciones se imputan al destino MPP (material
- * por procesar). Función pura: recibe los datos ya cargados, no toca la BD.
+ * stock = entradas (pesaje compra) − salidas (pesaje venta) − retiros hacia
+ * transformaciones. Las salidas de una transformación (a qué lote fueron a
+ * parar) no participan de este cálculo por producto — no tienen producto_id
+ * (ver transformacion_salida_detalle) y se consultan aparte por lote
+ * (stock_lote_total). Función pura: recibe los datos ya cargados, no toca la BD.
  */
 export function construirGruposInventario(
   productos: ProductoInventario[],
   entradas: MovimientoInventario[],
   salidas: MovimientoInventario[],
-  transfEntrada: CantidadPorMaterial[],
-  transfSalida: CantidadPorMaterial[],
+  retirosTransformacion: RetiroTransformacion[],
   opciones: { incluirSinMovimiento?: boolean } = {}
 ): GrupoInventario[] {
   const meta = new Map<string, ProductoInventario>();
@@ -105,8 +116,9 @@ export function construirGruposInventario(
 
   for (const e of entradas) obtenerBucket(e.productoId, e.destinoTipo, e.loteId, e.destinoLabel).entradas += e.peso;
   for (const s of salidas) obtenerBucket(s.productoId, s.destinoTipo, s.loteId, s.destinoLabel).salidas += s.peso;
-  for (const t of transfEntrada) obtenerBucket(t.materialId, 'mpp', null, MPP_LABEL).transformaciones -= t.cantidad;
-  for (const t of transfSalida) obtenerBucket(t.materialId, 'mpp', null, MPP_LABEL).transformaciones += t.cantidad;
+  for (const r of retirosTransformacion) {
+    obtenerBucket(r.productoId, 'lote', r.loteOrigenId, r.nombreLoteOrigen).transformaciones -= r.peso;
+  }
 
   // Productos sin ningún movimiento → fila "Sin movimiento" en cero (para
   // listar el catálogo). No es MPP: MPP es un destino real que se elige al
@@ -218,28 +230,31 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     }
   }
 
-  // Transformaciones (se imputan a MPP).
-  let qTe = supabaseAdmin.from('transformaciones').select('material_entrada_id, cantidad_entrada, fecha');
-  if (filtros.desde) qTe = qTe.gte('fecha', filtros.desde);
-  if (filtros.hasta) qTe = qTe.lte('fecha', filtros.hasta);
-  const { data: teData } = await qTe;
-  const transfEntrada: CantidadPorMaterial[] = ((teData as Array<{ material_entrada_id: string | null; cantidad_entrada: number }> | null) ?? [])
-    .filter(t => t.material_entrada_id && idsPermitidos.has(t.material_entrada_id))
-    .map(t => ({ materialId: t.material_entrada_id!, cantidad: Number(t.cantidad_entrada) }));
-
-  const { data: tsData } = await supabaseAdmin
-    .from('detalle_transformaciones')
-    .select('material_salida_id, cantidad, transformaciones(fecha)');
-  const transfSalida: CantidadPorMaterial[] = [];
-  for (const d of (tsData as unknown as Array<{ material_salida_id: string | null; cantidad: number; transformaciones?: { fecha: string | null } | null }> | null) ?? []) {
-    if (!d.material_salida_id || !idsPermitidos.has(d.material_salida_id)) continue;
-    const fecha = d.transformaciones?.fecha ?? null;
+  // Retiros hacia transformaciones (Bloque 40): cuentan como salida del
+  // (producto, lote_origen) de esa transformación. Filtrado de fecha en JS,
+  // igual que el resto de este archivo, porque el embed no lo soporta.
+  const { data: tedData } = await supabaseAdmin
+    .from('transformacion_entrada_detalle')
+    .select('producto_id, peso_kg, transformaciones(lote_origen_id, fecha, lotes(nombre))');
+  const retirosTransformacion: RetiroTransformacion[] = [];
+  for (const d of (tedData as unknown as Array<{
+    producto_id: string;
+    peso_kg: number;
+    transformaciones?: { lote_origen_id: string; fecha: string | null; lotes?: { nombre: string } | null } | null;
+  }> | null) ?? []) {
+    if (!idsPermitidos.has(d.producto_id) || !d.transformaciones) continue;
+    const fecha = d.transformaciones.fecha;
     if (filtros.desde && fecha && fecha < filtros.desde) continue;
     if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
-    transfSalida.push({ materialId: d.material_salida_id, cantidad: Number(d.cantidad) });
+    retirosTransformacion.push({
+      productoId: d.producto_id,
+      loteOrigenId: d.transformaciones.lote_origen_id,
+      nombreLoteOrigen: d.transformaciones.lotes?.nombre ?? 'Lote',
+      peso: Number(d.peso_kg),
+    });
   }
 
-  return construirGruposInventario(productos, entradas, salidas, transfEntrada, transfSalida);
+  return construirGruposInventario(productos, entradas, salidas, retirosTransformacion);
 }
 
 interface TrasladoDetalleRow {
@@ -313,5 +328,5 @@ export async function obtenerInventarioAlmacen(almacenId: string): Promise<Grupo
     }
   }
 
-  return construirGruposInventario(productos, entradas, salidas, [], [], { incluirSinMovimiento: false });
+  return construirGruposInventario(productos, entradas, salidas, [], { incluirSinMovimiento: false });
 }

@@ -13,22 +13,21 @@ describe('construirGruposInventario', () => {
   ];
   const mpp = (productoId: string, peso: number) => ({ productoId, destinoTipo: 'mpp' as const, loteId: null, destinoLabel: 'MPP', peso });
 
-  it('calcula stock = compras − ventas ± transformaciones y agrupa por categoría', () => {
+  it('calcula stock = compras − ventas y agrupa por categoría', () => {
     const grupos = construirGruposInventario(
       productos,
       [mpp('A', 100), mpp('B', 50)], // entradas (pesaje compra)
       [mpp('A', 30)],                 // salidas (pesaje venta)
-      [{ materialId: 'B', cantidad: 10 }], // transf entrada (consume B)
-      [{ materialId: 'A', cantidad: 5 }]   // transf salida (produce A)
+      []
     );
 
     const cobre = grupos.find(g => g.tipoMaterialId === 'cobre')!;
     const a = cobre.articulos.find(x => x.productoId === 'A')!;
     const b = cobre.articulos.find(x => x.productoId === 'B')!;
 
-    expect(a.stock).toBe(75); // 100 - 30 + 5
-    expect(b.stock).toBe(40); // 50 - 0 - 10
-    expect(cobre.totalKg).toBe(115);
+    expect(a.stock).toBe(70); // 100 - 30
+    expect(b.stock).toBe(50);
+    expect(cobre.totalKg).toBe(120);
     expect(cobre.articulos).toHaveLength(2);
   });
 
@@ -39,7 +38,7 @@ describe('construirGruposInventario', () => {
         mpp('A', 30),
         { productoId: 'A', destinoTipo: 'lote', loteId: 'L1', destinoLabel: 'Lote 1', peso: 20 },
       ],
-      [], [], []
+      [], []
     );
     const arts = grupos[0].articulos;
     expect(arts).toHaveLength(2);
@@ -48,24 +47,23 @@ describe('construirGruposInventario', () => {
     expect(grupos[0].totalKg).toBe(50);
   });
 
-  it('imputa las transformaciones al destino MPP, separado de los lotes', () => {
+  it('un retiro de transformación afecta solo el bucket del (producto, lote_origen) donde se retiró, no otros destinos del mismo producto', () => {
     const grupos = construirGruposInventario(
       [productos[0]],
       [{ productoId: 'A', destinoTipo: 'lote', loteId: 'L1', destinoLabel: 'Lote 1', peso: 50 }], // entró a Lote 1
       [],
-      [{ materialId: 'A', cantidad: 30 }], // transf consume 30 (de MPP)
-      [{ materialId: 'A', cantidad: 12 }]  // transf produce 12 (a MPP)
+      [{ productoId: 'A', loteOrigenId: 'MPP', nombreLoteOrigen: 'MPP', peso: 30 }] // retiro desde MPP (lote distinto)
     );
     const arts = grupos[0].articulos;
     const lote = arts.find(x => x.loteId === 'L1')!;
-    const mpp = arts.find(x => x.destinoTipo === 'mpp')!;
-    expect(lote.stock).toBe(50);   // el lote no se ve afectado por la transformación
-    expect(mpp.stock).toBe(-18);   // 0 + 0 + (12 - 30)
-    expect(grupos[0].totalKg).toBe(32);
+    const mpp = arts.find(x => x.loteId === 'MPP')!;
+    expect(lote.stock).toBe(50);   // Lote 1 no se ve afectado por un retiro de MPP
+    expect(mpp.stock).toBe(-30);   // 0 entradas - 0 salidas - 30 retirado
+    expect(grupos[0].totalKg).toBe(20);
   });
 
   it('agrupa los sin categoría aparte y ordena por nombre', () => {
-    const grupos = construirGruposInventario(productos, [], [], [], []);
+    const grupos = construirGruposInventario(productos, [], [], []);
     expect(grupos.map(g => g.nombreCategoria)).toEqual(['Cobre', 'Sin categoría']);
   });
 
@@ -74,7 +72,6 @@ describe('construirGruposInventario', () => {
       [{ id: 'A', nombre: 'Mixto 1', tipoMaterialId: 'x', nombreCategoria: 'X' }],
       [mpp('A', 10)],
       [mpp('A', 25)],
-      [],
       []
     );
     expect(grupos[0].articulos[0].stock).toBe(-15);
@@ -84,14 +81,14 @@ describe('construirGruposInventario', () => {
   // Bloque 34 · inventario por almacén (opciones.incluirSinMovimiento) --------
 
   it('por defecto (sin opciones) sigue listando productos sin movimiento en cero — no-regresión del inventario general', () => {
-    const grupos = construirGruposInventario(productos, [], [], [], []);
+    const grupos = construirGruposInventario(productos, [], [], []);
     const cobre = grupos.find(g => g.tipoMaterialId === 'cobre')!;
     expect(cobre.articulos.map(a => a.productoId).sort()).toEqual(['A', 'B']);
     expect(cobre.articulos.every(a => a.stock === 0)).toBe(true);
   });
 
   it('incluirSinMovimiento: false omite del todo los productos del catálogo sin movimiento — así arranca un almacén nuevo', () => {
-    const grupos = construirGruposInventario(productos, [], [], [], [], { incluirSinMovimiento: false });
+    const grupos = construirGruposInventario(productos, [], [], [], { incluirSinMovimiento: false });
     expect(grupos).toEqual([]);
   });
 
@@ -100,7 +97,7 @@ describe('construirGruposInventario', () => {
       productos,
       [mpp('A', 40)],
       [],
-      [], [],
+      [],
       { incluirSinMovimiento: false }
     );
     expect(grupos).toHaveLength(1);
@@ -116,7 +113,7 @@ describe('construirGruposInventario', () => {
       productos,
       [mpp('A', 60), mpp('B', 20)], // A: recibido por traslado. B: compra.
       [mpp('A', 15)],                // A: vendido desde este almacén.
-      [], [],
+      [],
       { incluirSinMovimiento: false }
     );
     const cobre = grupos.find(g => g.tipoMaterialId === 'cobre')!;
@@ -129,7 +126,7 @@ describe('construirGruposInventario', () => {
       [productos[0]],
       [mpp('A', 60)], // recepción de traslado, forzada a 'mpp' por el servicio
       [mpp('A', 25)], // venta, también 'mpp'
-      [], [],
+      [],
       { incluirSinMovimiento: false }
     );
     expect(grupos[0].articulos).toHaveLength(1);

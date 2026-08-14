@@ -15,7 +15,12 @@ export { formatCodigoPesaje } from './ticket-pesaje.js';
 export type { FacturaCompra, FacturaVenta, FacturaLinea, EstadoFacturaCompraVenta } from './factura-compra-venta.js';
 export { formatCodigoCompra, formatCodigoVenta } from './factura-compra-venta.js';
 export { normalizarCodigo, coincideCodigo } from './codigo.js';
-export type { Transformacion, DetalleTransformacion } from './transformacion.js';
+export type {
+  Transformacion,
+  EstadoTransformacion,
+  EntradaDetalleTransformacion,
+  SalidaTransformacion,
+} from './transformacion.js';
 export type { Tara } from './tara.js';
 export type { Almacen } from './almacen.js';
 export type { Traslado, TrasladoMaterial } from './traslado.js';

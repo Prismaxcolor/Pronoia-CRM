@@ -403,6 +403,12 @@ create index if not exists idx_facturas_venta_estado
 
 
 -- ---- transformaciones + detalle --------------------------------------------
+-- SUPERADO por el Bloque 40 (rediseño completo de Transformaciones) — estas
+-- tablas y la RPC crear_transformacion (Bloque 12) fueron reemplazadas por
+-- completo. Se dejan aquí sin tocar como registro histórico de la primera
+-- versión; el Bloque 40 las hace DROP explícitamente antes de crear las
+-- nuevas.
+--
 -- Un material de entrada se transforma en uno o varios materiales de salida.
 -- material_entrada_id y material_salida_id apuntan a productos (el catálogo
 -- de materiales).
@@ -532,6 +538,7 @@ create index if not exists idx_facturas_venta_producto  on public.facturas_venta
 
 -- ============================================================================
 -- Bloque 12 · RPC atómica para registrar transformaciones
+-- SUPERADO por el Bloque 40 — ver nota ahí.
 --
 -- Inserta la cabecera (transformaciones) y todas las líneas de salida
 -- (detalle_transformaciones) en UNA sola transacción: una función plpgsql corre
@@ -3047,3 +3054,291 @@ $$;
 --   drop function if exists public.registrar_pago_proveedor_multiple(
 --     uuid, uuid, numeric, text, numeric, text, text, date, uuid, jsonb
 --   );
+
+
+-- ============================================================================
+-- Bloque 40 · Rediseño completo de Transformaciones (Fase 1 — flujo físico)
+--
+-- Reemplaza por completo las tablas `transformaciones`/`detalle_transformaciones`
+-- del Bloque 7 y la RPC `crear_transformacion` del Bloque 12 (0 filas en
+-- producción al momento de este cambio, sin datos que migrar). El modelo
+-- viejo (1 material entra → N materiales salen, sin lote, sin pesaje real, sin
+-- estado) no reflejaba el proceso real de planta: una transformación retira
+-- kilos de un lote-pool de mezcla (MPP, BGPP — ya son lotes reales, no el
+-- sentinela `destino_tipo='mpp'`, ver Bloque de pesaje) y produce salidas
+-- pesadas hacia otros lotes (Lote1, Lote2, incluso "Basura" — es un lote más).
+--
+-- Costeo del pool de entrada: promedio ponderado — al retirar X kg de un pool
+-- mezclado no se sabe qué producto original salió, se reparte proporcional a
+-- la composición actual del pool (transformacion_entrada_detalle, snapshot
+-- persistido porque la composición sigue cambiando con el tiempo).
+--
+-- Decisión de diseño: sin tabla de saldo/ledger + trigger (como bancas.saldo).
+-- `editar_ticket_pesaje` borra y reinserta filas de detalle_tickets_pesaje —
+-- un trigger AFTER INSERT simple no lo revertiría bien (riesgo de doble
+-- conteo). Se usa el patrón ya existente de stock derivado por consulta
+-- (mismo estilo que stock_almacen()): stock_lote_por_producto() y
+-- stock_lote_total().
+--
+-- Fuera de esta fase (deliberado, a futuro): matriz de rendimiento
+-- producto→lote_destino, precio de referencia por lote (valorización NRV),
+-- márgenes de la transformación, y la pestaña "Exportaciones".
+-- ============================================================================
+
+drop function if exists public.crear_transformacion(uuid, numeric, text, date, jsonb);
+drop table if exists public.detalle_transformaciones;
+drop table if exists public.transformaciones;
+
+create table public.transformaciones (
+  id                uuid        primary key default gen_random_uuid(),
+  lote_origen_id    uuid        not null references public.lotes(id),
+  peso_bruto        numeric     not null,
+  tara              numeric     not null default 0,
+  peso_neto         numeric     generated always as (peso_bruto - tara) stored,
+  fecha             date        not null,
+  estado            text        not null default 'bruto' check (estado in ('bruto', 'completa')),
+  notas             text,
+  registrado_por    uuid        references public.users(id),
+  completado_por    uuid        references public.users(id),
+  completado_en     timestamptz,
+  created_at        timestamptz not null default now(),
+  check (peso_bruto > tara)
+);
+
+alter table public.transformaciones disable row level security;
+
+create index idx_transformaciones_fecha on public.transformaciones (fecha desc);
+create index idx_transformaciones_lote_origen on public.transformaciones (lote_origen_id);
+create index idx_transformaciones_estado on public.transformaciones (estado);
+
+-- Snapshot persistido del reparto proporcional del pool en el momento del
+-- retiro (composición por promedio ponderado). No se puede recalcular
+-- después porque la composición del pool sigue cambiando con el tiempo.
+create table public.transformacion_entrada_detalle (
+  id                uuid    primary key default gen_random_uuid(),
+  transformacion_id uuid    not null references public.transformaciones(id) on delete cascade,
+  producto_id       uuid    not null references public.productos(id),
+  peso_kg           numeric not null check (peso_kg > 0)
+);
+
+alter table public.transformacion_entrada_detalle disable row level security;
+
+create index idx_transf_entrada_detalle_transformacion on public.transformacion_entrada_detalle (transformacion_id);
+create index idx_transf_entrada_detalle_producto on public.transformacion_entrada_detalle (producto_id);
+
+-- Salidas reales pesadas. Sin producto_id a propósito: al pesar la salida no
+-- se puede saber con certeza qué producto original representa cada kilo (es
+-- justo el problema de la mezcla que se está resolviendo). Un lote
+-- alimentado por transformaciones no tiene desglose por producto, solo total
+-- en kg — ver stock_lote_total().
+create table public.transformacion_salida_detalle (
+  id                uuid        primary key default gen_random_uuid(),
+  transformacion_id uuid        not null references public.transformaciones(id) on delete cascade,
+  lote_destino_id   uuid        not null references public.lotes(id),
+  peso_bruto        numeric     not null,
+  tara              numeric     not null default 0,
+  peso_neto         numeric     generated always as (peso_bruto - tara) stored,
+  created_at        timestamptz not null default now(),
+  check (peso_bruto > tara)
+);
+
+alter table public.transformacion_salida_detalle disable row level security;
+
+create index idx_transf_salida_detalle_transformacion on public.transformacion_salida_detalle (transformacion_id);
+create index idx_transf_salida_detalle_lote_destino on public.transformacion_salida_detalle (lote_destino_id);
+
+-- Composición conocida por producto de un lote-pool (MPP, BGPP, o cualquier
+-- lote que reciba material directo de compra): compras directas (+), ventas
+-- directas (−), retiros de transformaciones que lo usaron como origen (−).
+-- Es la base para repartir un nuevo retiro por promedio ponderado. Mismo
+-- estilo que stock_almacen(): UNION ALL de fuentes con entrada/salida,
+-- agrupado al final.
+create or replace function public.stock_lote_por_producto(p_lote_id uuid)
+returns table(producto_id uuid, stock numeric)
+language sql
+stable
+as $$
+  select producto_id, sum(entrada) - sum(salida) as stock
+  from (
+    select d.producto_id, coalesce(d.peso_neto, 0) as entrada, 0::numeric as salida
+    from public.detalle_tickets_pesaje d
+    join public.tickets_pesaje tp on tp.id = d.ticket_id
+    where d.destino_tipo = 'lote' and d.lote_id = p_lote_id and tp.tipo = 'compra'
+    union all
+    select d.producto_id, 0::numeric, coalesce(d.peso_neto, 0)
+    from public.detalle_tickets_pesaje d
+    join public.tickets_pesaje tp on tp.id = d.ticket_id
+    where d.destino_tipo = 'lote' and d.lote_id = p_lote_id and tp.tipo = 'venta'
+    union all
+    select ted.producto_id, 0::numeric, coalesce(ted.peso_kg, 0)
+    from public.transformacion_entrada_detalle ted
+    join public.transformaciones t on t.id = ted.transformacion_id
+    where t.lote_origen_id = p_lote_id
+  ) x
+  where producto_id is not null
+  group by producto_id;
+$$;
+
+-- Kg totales reales en un lote ahora mismo: la parte conocida por producto
+-- (arriba) más los kg que entraron como salida de transformaciones (esos no
+-- tienen producto_id, se suman aparte). Es lo que se muestra en UI para
+-- "cuánto hay en este lote". NOTA: crear_transformacion() NO usa esta
+-- función como tope de retiro — usa solo stock_lote_por_producto(), porque
+-- ese es el único monto que se puede repartir por producto de forma
+-- confiable (si un pool recibió kg de otra transformación en cascada, esa
+-- porción no tiene producto asociado y no se puede repartir — límite conocido
+-- de esta fase, no se resuelve aquí porque el cliente no describió cascadas
+-- pool→pool en su proceso real).
+create or replace function public.stock_lote_total(p_lote_id uuid)
+returns numeric
+language sql
+stable
+as $$
+  select coalesce((select sum(stock) from public.stock_lote_por_producto(p_lote_id)), 0)
+       + coalesce((
+           select sum(tsd.peso_neto)
+           from public.transformacion_salida_detalle tsd
+           where tsd.lote_destino_id = p_lote_id
+         ), 0);
+$$;
+
+-- Retira peso_neto de un lote-pool y lo reparte por promedio ponderado entre
+-- los productos que hoy lo componen (stock_lote_por_producto). Bloquea el
+-- lote origen para serializar transformaciones concurrentes sobre el mismo
+-- pool — un solo lote, nunca dos, así que no hace falta el orden estable que
+-- sí usa registrar_pago_proveedor_multi_banca.
+create or replace function public.crear_transformacion(
+  p_lote_origen_id uuid,
+  p_peso_bruto     numeric,
+  p_tara           numeric,
+  p_fecha          date,
+  p_notas          text,
+  p_registrado_por uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id              uuid;
+  v_neto            numeric;
+  v_total_conocido  numeric;
+  v_prod            record;
+  v_nombre_lote     text;
+begin
+  select nombre into v_nombre_lote from public.lotes where id = p_lote_origen_id for update;
+  if v_nombre_lote is null then
+    raise exception 'Lote origen % no encontrado.', p_lote_origen_id;
+  end if;
+
+  v_neto := coalesce(p_peso_bruto, 0) - coalesce(p_tara, 0);
+  if v_neto <= 0 then
+    raise exception 'El peso neto debe ser mayor a 0.';
+  end if;
+
+  select coalesce(sum(stock), 0) into v_total_conocido
+    from public.stock_lote_por_producto(p_lote_origen_id)
+   where stock > 0;
+
+  if v_neto > v_total_conocido + 0.01 then
+    raise exception 'Solo hay % kg disponibles en %.', round(v_total_conocido, 2), v_nombre_lote;
+  end if;
+
+  insert into public.transformaciones
+    (lote_origen_id, peso_bruto, tara, fecha, estado, notas, registrado_por)
+  values
+    (p_lote_origen_id, p_peso_bruto, coalesce(p_tara, 0), coalesce(p_fecha, current_date),
+     'bruto', nullif(p_notas, ''), p_registrado_por)
+  returning id into v_id;
+
+  if v_total_conocido > 0 then
+    for v_prod in
+      select producto_id, stock from public.stock_lote_por_producto(p_lote_origen_id) where stock > 0
+    loop
+      insert into public.transformacion_entrada_detalle (transformacion_id, producto_id, peso_kg)
+      values (v_id, v_prod.producto_id, round(v_neto * v_prod.stock / v_total_conocido, 4));
+    end loop;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+-- Completa una transformación 'bruto' con sus salidas reales pesadas.
+-- Permite merma (suma de salidas < entrada) pero no ganancia de masa.
+create or replace function public.completar_transformacion(
+  p_transformacion_id uuid,
+  p_salidas           jsonb,   -- [{ "lote_destino_id": uuid, "peso_bruto": numeric, "tara": numeric }, ...]
+  p_completado_por    uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_estado             text;
+  v_lote_origen_id     uuid;
+  v_peso_neto_entrada  numeric;
+  v_item               jsonb;
+  v_suma_salidas       numeric := 0;
+  v_peso_bruto         numeric;
+  v_tara               numeric;
+  v_neto               numeric;
+  v_lote_destino       uuid;
+begin
+  select estado, lote_origen_id, peso_neto
+    into v_estado, v_lote_origen_id, v_peso_neto_entrada
+    from public.transformaciones
+   where id = p_transformacion_id
+     for update;
+
+  if v_estado is null then
+    raise exception 'Transformación % no encontrada.', p_transformacion_id;
+  end if;
+  if v_estado <> 'bruto' then
+    raise exception 'Esta transformación ya fue completada.';
+  end if;
+
+  if p_salidas is null or jsonb_typeof(p_salidas) <> 'array' or jsonb_array_length(p_salidas) = 0 then
+    raise exception 'Debe indicar al menos una salida.';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_salidas) as elems(value)
+  loop
+    v_lote_destino := (v_item->>'lote_destino_id')::uuid;
+    v_peso_bruto := (v_item->>'peso_bruto')::numeric;
+    v_tara := coalesce((v_item->>'tara')::numeric, 0);
+    v_neto := v_peso_bruto - v_tara;
+
+    if v_lote_destino = v_lote_origen_id then
+      raise exception 'El lote destino debe ser distinto del lote origen.';
+    end if;
+    if v_neto <= 0 then
+      raise exception 'El peso neto de cada salida debe ser mayor a 0.';
+    end if;
+    if not exists (select 1 from public.lotes where id = v_lote_destino and activo) then
+      raise exception 'Lote destino % no encontrado o archivado.', v_lote_destino;
+    end if;
+
+    v_suma_salidas := v_suma_salidas + v_neto;
+  end loop;
+
+  if v_suma_salidas > v_peso_neto_entrada + 0.01 then
+    raise exception 'La suma de las salidas (%) supera el peso neto de entrada (%).',
+      round(v_suma_salidas, 2), round(v_peso_neto_entrada, 2);
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_salidas) as elems(value)
+  loop
+    insert into public.transformacion_salida_detalle (transformacion_id, lote_destino_id, peso_bruto, tara)
+    values (
+      p_transformacion_id,
+      (v_item->>'lote_destino_id')::uuid,
+      (v_item->>'peso_bruto')::numeric,
+      coalesce((v_item->>'tara')::numeric, 0)
+    );
+  end loop;
+
+  update public.transformaciones
+     set estado = 'completa', completado_por = p_completado_por, completado_en = now()
+   where id = p_transformacion_id;
+
+  return p_transformacion_id;
+end;
+$$;
