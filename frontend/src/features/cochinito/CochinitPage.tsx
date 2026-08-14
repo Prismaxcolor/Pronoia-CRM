@@ -466,6 +466,12 @@ function CochinitPage() {
                       {mov.moneda === 'USD' ? '$' : 'Bs '}
                       {mov.monto.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </p>
+                    {mov.tipo === 'transferencia' && mov.montoDestino != null && bancaDestino && (
+                      <p className="text-xs text-text-muted">
+                        → {bancaDestino.moneda === 'USD' ? '$' : 'Bs '}
+                        {mov.montoDestino.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    )}
                     <p className="text-xs text-text-muted capitalize">{mov.tipo}</p>
                   </div>
                 </div>

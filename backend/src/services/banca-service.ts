@@ -33,6 +33,8 @@ export interface Movimiento {
   proveedorId: string | null;
   clienteId: string | null;
   montoUsd: number | null;
+  /** Solo transferencias entre monedas distintas: lo que entra a la banca destino. */
+  montoDestino: number | null;
   creadoEn: string;
   subtipo: 'pago' | 'adelanto' | null;
   numero: number | null;
@@ -66,6 +68,7 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
     proveedorId: (row.proveedor_id as string) ?? null,
     clienteId: (row.cliente_id as string) ?? null,
     montoUsd: row.monto_usd != null ? Number(row.monto_usd) : null,
+    montoDestino: row.monto_destino != null ? Number(row.monto_destino) : null,
     creadoEn: row.creado_en as string,
     subtipo: (row.subtipo as 'pago' | 'adelanto' | null) ?? null,
     numero: row.numero != null ? Number(row.numero) : null,
@@ -173,20 +176,22 @@ export async function desarchivarBanca(id: string): Promise<boolean> {
   return !error;
 }
 
-/** Crea un movimiento de ingreso o egreso. El trigger SQL ajusta el saldo. */
+/** Crea un movimiento de ingreso, egreso o transferencia. El trigger SQL ajusta el saldo. */
 export async function crearMovimiento(
   input: CrearMovimientoInput,
   registradoPor: string
 ): Promise<{ movimiento: Movimiento } | { error: string }> {
+  const esTransferencia = input.tipo === 'transferencia';
   const { data, error } = await supabaseAdmin
     .from('movimientos')
     .insert({
       tipo: input.tipo,
       monto: input.monto,
+      monto_destino: esTransferencia ? (input.montoDestino ?? null) : null,
       moneda: input.moneda,
       descripcion: input.descripcion,
       banca_origen_id: input.bancaId,
-      banca_destino_id: null,
+      banca_destino_id: esTransferencia ? input.bancaDestinoId : null,
       fecha: input.fecha,
       referencia: input.referencia,
       registrado_por: registradoPor,

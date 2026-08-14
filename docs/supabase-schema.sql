@@ -40,10 +40,14 @@ create index if not exists idx_tasas_cambio_fecha
 --   ingreso        → banca_origen_id  +=  monto
 --   egreso         → banca_origen_id  -=  monto
 --   transferencia  → banca_origen_id  -=  monto
---                    banca_destino_id +=  monto
+--                    banca_destino_id += coalesce(monto_destino, monto)
 --
--- Nota fase B: la transferencia entre monedas distintas (Bs↔USD)
--- requerirá conversión vía tasa de cambio. De momento asume misma moneda.
+-- monto_destino (columna agregada después, ver movimientos.monto_destino):
+-- cuando la transferencia es entre bancas de monedas distintas (Bs↔USD),
+-- `monto` es lo que sale de la banca origen (en su moneda) y `monto_destino`
+-- es lo que entra a la banca destino (en la suya), aplicando la tasa elegida
+-- al momento de la transferencia. Si es null (transferencia misma moneda),
+-- se usa `monto` para ambos lados.
 -- ============================================================================
 
 create or replace function public.aplicar_movimiento_a_saldo()
@@ -67,7 +71,7 @@ begin
      where id = new.banca_origen_id;
 
     update public.bancas
-       set saldo = saldo + new.monto
+       set saldo = saldo + coalesce(new.monto_destino, new.monto)
      where id = new.banca_destino_id;
   end if;
 
@@ -81,6 +85,11 @@ create trigger trg_aplicar_movimiento
 after insert on public.movimientos
 for each row
 execute function public.aplicar_movimiento_a_saldo();
+
+-- monto_destino: solo se llena en transferencias entre bancas de monedas
+-- distintas (lo que entra a la banca destino, en su propia moneda).
+alter table public.movimientos
+  add column if not exists monto_destino numeric null;
 
 
 -- ============================================================================
@@ -102,7 +111,7 @@ begin
            when tipo = 'ingreso'       and banca_origen_id  = p_banca_id then  monto
            when tipo = 'egreso'        and banca_origen_id  = p_banca_id then -monto
            when tipo = 'transferencia' and banca_origen_id  = p_banca_id then -monto
-           when tipo = 'transferencia' and banca_destino_id = p_banca_id then  monto
+           when tipo = 'transferencia' and banca_destino_id = p_banca_id then  coalesce(monto_destino, monto)
            else 0
          end), 0)
     into v_saldo

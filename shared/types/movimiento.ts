@@ -22,6 +22,13 @@ export interface Movimiento {
    * bolívares). Null en movimientos que no lo necesitan (ya están en USD).
    */
   montoUsd: number | null;
+  /**
+   * Solo transferencias entre bancas de monedas distintas: lo que entra a la
+   * banca destino, en su propia moneda, aplicando la tasa elegida al
+   * momento de transferir. Null si es transferencia misma moneda (se usa
+   * `monto` para ambos lados) o si el movimiento no es una transferencia.
+   */
+  montoDestino: number | null;
   creadoEn: string;
   /** Solo egresos a proveedor: distingue pago de adelanto (Bloque 38). */
   subtipo: 'pago' | 'adelanto' | null;
