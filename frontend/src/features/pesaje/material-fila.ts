@@ -1,7 +1,8 @@
 import type { Tara } from '@shared/types/index.js';
 
-/** Valor del selector de destino: 'mpp' o el id de un lote. */
-export type DestinoValor = 'mpp' | string;
+/** Valor del selector de destino: 'mpp', el id de un lote, o '' si el
+ *  usuario todavía no eligió nada (sin preselección por defecto). */
+export type DestinoValor = 'mpp' | '' | string;
 
 /** Modo de captura de la tara de una fila: preconfigurada (tara × cantidad) o un kg manual. */
 export type TaraModo = 'preconfigurada' | 'manual';
@@ -33,7 +34,7 @@ export function filaVacia(): MaterialFila {
     taraId: '',
     taraCantidad: '',
     taraManual: '',
-    destino: 'mpp',
+    destino: '',
   };
 }
 

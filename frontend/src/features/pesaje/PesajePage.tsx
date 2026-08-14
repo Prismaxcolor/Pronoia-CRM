@@ -194,6 +194,7 @@ function PesajePage() {
     if (!pesoGlobal || Number(pesoGlobal) <= 0) { setError('Registra el peso global de la pesada.'); return; }
     if (estado === 'completo') {
       if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
+      if (materiales.some(f => !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
       if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
         setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
         return;
@@ -466,7 +467,8 @@ function PesajePage() {
                     {tipo !== 'traslado' && (
                     <div>
                       <label className={labelClass}>{tipo === 'venta' ? 'Origen (inventario) *' : 'Destino (inventario) *'}</label>
-                      <select value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
+                      <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
+                        <option value="" disabled>-Selecciona-</option>
                         <option value="mpp">MPP (Material Por Procesar)</option>
                         {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                       </select>

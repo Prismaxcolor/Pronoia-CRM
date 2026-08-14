@@ -36,7 +36,7 @@ interface LineaFila {
 
 let UID = 0;
 function lineaVacia(): LineaFila {
-  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false, destino: 'mpp' };
+  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false, destino: '' };
 }
 
 interface Props {
@@ -124,7 +124,7 @@ function FacturaFormPage({ tipo }: Props) {
             precioUnitario: ex?.precioUnitario || precioDeLista(m.productoId ?? ''),
             desdeTicket: true,
             materialId: m.id,
-            destino: 'mpp',
+            destino: '',
           };
         })
       );
@@ -181,6 +181,7 @@ function FacturaFormPage({ tipo }: Props) {
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
     if (modoPeso === 'ticket' && ticketIds.length === 0) { setError('Selecciona al menos un ticket de pesaje o cambia a peso manual.'); return; }
     if (lineas.some(l => !l.productoId)) { setError('Selecciona un material en cada fila.'); return; }
+    if (modoPeso === 'manual' && lineas.some(l => !l.destino)) { setError('Selecciona el destino de inventario en cada fila.'); return; }
     if (lineas.some(l => (Number(l.peso) || 0) <= 0)) { setError('Cada material debe tener un peso mayor a 0.'); return; }
     if (lineas.some(l => (Number(l.precioUnitario) || 0) <= 0)) { setError('Cada material debe tener un precio unitario mayor a 0.'); return; }
 
@@ -354,7 +355,8 @@ function FacturaFormPage({ tipo }: Props) {
                 {modoPeso === 'manual' && (
                   <div>
                     <label className={labelClass}>{esCompra ? 'Destino (inventario) *' : 'Origen (inventario) *'}</label>
-                    <select value={l.destino} onChange={e => setLinea(l.uid, 'destino', e.target.value)} className={inputClass}>
+                    <select required value={l.destino} onChange={e => setLinea(l.uid, 'destino', e.target.value)} className={inputClass}>
+                      <option value="" disabled>-Selecciona-</option>
                       <option value="mpp">MPP (Material Por Procesar)</option>
                       {lotes.map(lo => <option key={lo.id} value={lo.id}>{lo.nombre}</option>)}
                     </select>
