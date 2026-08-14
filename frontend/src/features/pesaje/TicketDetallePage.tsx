@@ -30,7 +30,7 @@ function filasDesdeTicket(t: TicketPesaje): MaterialFila[] {
     taraId: '',
     taraCantidad: '',
     taraManual: String(m.tara),
-    destino: m.destinoTipo === 'lote' && m.loteId ? m.loteId : 'mpp',
+    destino: m.loteId ?? '',
   }));
 }
 
@@ -122,8 +122,8 @@ function TicketDetallePage() {
         subcategoria: f.subcategoria.trim() || null,
         pesoBruto: Number(f.pesoBruto) || 0,
         tara: taraKgFila(f, taras),
-        destinoTipo: f.destino === 'mpp' ? ('mpp' as const) : ('lote' as const),
-        loteId: f.destino === 'mpp' ? null : f.destino,
+        destinoTipo: 'lote' as const,
+        loteId: f.destino,
       })),
     });
     setGuardando(false);
@@ -296,7 +296,6 @@ function TicketDetallePage() {
                     <label className={labelClass}>Destino (inventario) *</label>
                     <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
                       <option value="" disabled>-Selecciona-</option>
-                      <option value="mpp">MPP (Material Por Procesar)</option>
                       {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                     </select>
                   </div>

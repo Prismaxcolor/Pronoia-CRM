@@ -47,8 +47,8 @@ function LotesPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Lotes</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Destinos de inventario para el material pesado. Junto con MPP (Material Por Procesar),
-          definen dónde se acumula el stock de cada material.
+          Destinos de inventario para el material pesado. Definen dónde se acumula el
+          stock de cada material.
         </p>
       </div>
 

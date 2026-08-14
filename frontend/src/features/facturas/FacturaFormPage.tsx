@@ -30,7 +30,7 @@ interface LineaFila {
   desdeTicket: boolean;
   /** id del material del ticket (detalle), para conservar precios al re-seleccionar. */
   materialId?: string;
-  /** Solo modo manual: 'mpp' o el id del lote destino, para el ticket que se genera. */
+  /** Solo modo manual: id del lote destino, para el ticket que se genera. */
   destino: DestinoValor;
 }
 
@@ -206,8 +206,8 @@ function FacturaFormPage({ tipo }: Props) {
           productoId: l.productoId,
           pesoBruto: Number(l.peso) || 0,
           tara: 0,
-          destinoTipo: l.destino === 'mpp' ? 'mpp' : 'lote',
-          loteId: l.destino === 'mpp' ? null : l.destino,
+          destinoTipo: 'lote' as const,
+          loteId: l.destino,
         })),
         fotos: [],
       });
@@ -357,11 +357,10 @@ function FacturaFormPage({ tipo }: Props) {
                     <label className={labelClass}>{esCompra ? 'Destino (inventario) *' : 'Origen (inventario) *'}</label>
                     <select required value={l.destino} onChange={e => setLinea(l.uid, 'destino', e.target.value)} className={inputClass}>
                       <option value="" disabled>-Selecciona-</option>
-                      <option value="mpp">MPP (Material Por Procesar)</option>
                       {lotes.map(lo => <option key={lo.id} value={lo.id}>{lo.nombre}</option>)}
                     </select>
                     <p className="text-xs text-text-muted mt-1">
-                      {esCompra ? 'A qué lote (o MPP) entra este material comprado.' : 'De qué lote (o MPP) sale este material vendido.'}
+                      {esCompra ? 'A qué lote entra este material comprado.' : 'De qué lote sale este material vendido.'}
                     </p>
                   </div>
                 )}

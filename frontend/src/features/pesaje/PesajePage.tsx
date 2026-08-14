@@ -228,8 +228,8 @@ function PesajePage() {
         subcategoria: f.subcategoria.trim() || null,
         pesoBruto: Number(f.pesoBruto) || 0,
         tara: taraKgFila(f, taras),
-        destinoTipo: f.destino === 'mpp' ? ('mpp' as const) : ('lote' as const),
-        loteId: f.destino === 'mpp' ? null : f.destino,
+        destinoTipo: 'lote' as const,
+        loteId: f.destino,
       })),
       fotos: urls,
       observaciones: observaciones.trim() || null,
@@ -469,11 +469,10 @@ function PesajePage() {
                       <label className={labelClass}>{tipo === 'venta' ? 'Origen (inventario) *' : 'Destino (inventario) *'}</label>
                       <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
                         <option value="" disabled>-Selecciona-</option>
-                        <option value="mpp">MPP (Material Por Procesar)</option>
                         {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                       </select>
                       <p className="text-xs text-text-muted mt-1">
-                        {tipo === 'venta' ? 'De qué lote (o MPP) sale este material vendido.' : 'A qué lote (o MPP) entra este material comprado.'}
+                        {tipo === 'venta' ? 'De qué lote sale este material vendido.' : 'A qué lote entra este material comprado.'}
                       </p>
                     </div>
                     )}
