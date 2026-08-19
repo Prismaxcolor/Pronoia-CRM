@@ -5,6 +5,9 @@ export const crearNotaAjusteSchema = z.object({
   tipo: z.enum(['credito', 'debito']),
   monto: z.number().positive('El monto debe ser mayor a 0.'),
   motivo: z.string().trim().min(1, 'El motivo es obligatorio.').max(300),
+  /** Factura de compra a la que se asocia la nota — opcional: las notas
+   *  también se usan como ajuste general de saldo sin factura de por medio. */
+  facturaId: z.string().uuid().nullable().optional(),
 });
 
 /** Anula una nota existente (no se borra: se reversa con una nota contraria). */

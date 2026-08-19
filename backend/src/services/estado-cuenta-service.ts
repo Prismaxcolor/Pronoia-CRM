@@ -36,6 +36,11 @@ export interface EntradaEstadoCuenta {
   anulada?: boolean;
   /** Solo notas de débito: ya se liquidó en un pago combinado ("Registrar pago"). */
   pagada?: boolean;
+  /** Solo notas: id de la factura de compra a la que está asociada (ajuste ligado a
+   *  una factura puntual). Null si es un ajuste general sin factura de por medio. */
+  facturaAsociadaId?: string | null;
+  /** Solo notas: código de esa factura (C-0007), ya resuelto. */
+  facturaAsociadaCodigo?: string | null;
 }
 
 export interface EstadoCuenta {
@@ -62,7 +67,13 @@ export interface PagoCrudo {
   numero?: number | null;
   grupoId?: string | null;
 }
-export interface NotaCruda { id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; pagada: boolean; fecha: string; numero?: number | null }
+export interface NotaCruda {
+  id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; pagada: boolean; fecha: string; numero?: number | null;
+  /** Ya resueltos por obtenerEstadoCuenta (segunda query a facturas_compra + Map), no se
+   *  vuelven a resolver acá — mismo patrón que FacturaCruda.codigo. */
+  facturaAsociadaId?: string | null;
+  facturaAsociadaCodigo?: string | null;
+}
 
 /** Formatea el correlativo de un movimiento de pago/adelanto según subtipo. */
 function formatCodigoPago(subtipo: 'pago' | 'adelanto' | null | undefined, numero: number | null | undefined): string | null {
@@ -148,6 +159,8 @@ export function construirEstadoCuenta(
       notaId: n.id,
       anulada: n.anulada,
       pagada: n.pagada,
+      facturaAsociadaId: n.facturaAsociadaId ?? null,
+      facturaAsociadaCodigo: n.facturaAsociadaCodigo ?? null,
     });
   }
 
@@ -233,13 +246,43 @@ export async function obtenerEstadoCuenta(
   if (esProveedor) {
     let qNotas = supabaseAdmin
       .from('notas_ajuste_proveedor')
-      .select('id, tipo, monto, motivo, anulada, pagada, created_at, numero')
+      .select('id, tipo, monto, motivo, anulada, pagada, created_at, numero, factura_id')
       .eq('proveedor_id', id);
     if (desde) qNotas = qNotas.gte('created_at', desde);
     if (hasta) qNotas = qNotas.lte('created_at', `${hasta}T23:59:59`);
     const { data: notasData } = await qNotas;
-    notas = ((notasData as Array<{ id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; pagada: boolean; created_at: string; numero: number | null }> | null) ?? [])
-      .map(n => ({ id: n.id, tipo: n.tipo, monto: Number(n.monto), motivo: n.motivo, anulada: n.anulada, pagada: n.pagada, fecha: n.created_at, numero: n.numero }));
+    const notasCrudas = (notasData as Array<{
+      id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean;
+      pagada: boolean; created_at: string; numero: number | null; factura_id: string | null;
+    }> | null) ?? [];
+
+    // Selects planos, no embedding anidado de PostgREST — mismo estilo que
+    // nota-ajuste-service.ts: se resuelve el código de cada factura asociada
+    // con una segunda query + Map en vez de select('*, facturas_compra(numero)').
+    const facturaIds = [...new Set(notasCrudas.map(n => n.factura_id).filter((x): x is string => x != null))];
+    const codigoPorFacturaId = new Map<string, string | null>();
+    if (facturaIds.length > 0) {
+      const { data: facturasData } = await supabaseAdmin
+        .from('facturas_compra')
+        .select('id, numero')
+        .in('id', facturaIds);
+      for (const f of (facturasData as Array<{ id: string; numero: number | null }> | null) ?? []) {
+        codigoPorFacturaId.set(f.id, f.numero != null ? formatCodigo('proveedor', f.numero) : null);
+      }
+    }
+
+    notas = notasCrudas.map(n => ({
+      id: n.id,
+      tipo: n.tipo,
+      monto: Number(n.monto),
+      motivo: n.motivo,
+      anulada: n.anulada,
+      pagada: n.pagada,
+      fecha: n.created_at,
+      numero: n.numero,
+      facturaAsociadaId: n.factura_id,
+      facturaAsociadaCodigo: n.factura_id ? (codigoPorFacturaId.get(n.factura_id) ?? null) : null,
+    }));
   }
 
   return construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos, notas);

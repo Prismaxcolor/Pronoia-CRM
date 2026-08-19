@@ -39,6 +39,18 @@ const BADGE_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   nota_debito: 'bg-purple-100 text-purple-700',
 };
 
+/** Ruta destino del detalle imprimible de una entrada del estado de cuenta,
+ *  o null si esa fila no tiene detalle propio (pago, adelanto). */
+function rutaDetalle(tipo: TipoEntidad, entidadId: string, e: EntradaEstadoCuenta): string | null {
+  if (e.tipo === 'factura' && e.facturaId) {
+    return `${tipo === 'proveedor' ? '/compras' : '/ventas'}/${e.facturaId}`;
+  }
+  if ((e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && e.notaId) {
+    return `/proveedores/${entidadId}/notas/${e.notaId}`;
+  }
+  return null;
+}
+
 function formatCodigoPago(numero: number | null): string {
   return numero != null ? `PG-${String(numero).padStart(4, '0')}` : '';
 }
@@ -224,21 +236,26 @@ function EstadoCuentaPage({ tipo }: Props) {
                   <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
                   {e.anulada && <span className="text-xs text-text-muted ml-2">(anulada)</span>}
                   {e.pagada && !e.anulada && <span className="text-xs text-text-muted ml-2">(pagada)</span>}
+                  {e.facturaAsociadaCodigo && (
+                    <span className="block text-xs text-text-muted mt-0.5">→ {e.facturaAsociadaCodigo}</span>
+                  )}
                 </td>
                 <td className="px-5 py-3 text-text-muted">
-                  {e.tipo === 'factura' && e.facturaId ? (
-                    <button
-                      type="button"
-                      onClick={() => navigate(`${tipo === 'proveedor' ? '/compras' : '/ventas'}/${e.facturaId}`, {
-                        state: { volverA: `/${tipo === 'proveedor' ? 'proveedores' : 'clientes'}/${id}/estado-cuenta`, volverALabel: 'Estado de cuenta' },
-                      })}
-                      className="text-brand-600 hover:underline print:text-inherit print:no-underline"
-                    >
-                      {e.referencia ?? '—'}
-                    </button>
-                  ) : (
-                    e.referencia ?? '—'
-                  )}
+                  {(() => {
+                    const destino = rutaDetalle(tipo, id, e);
+                    if (!destino) return e.referencia ?? '—';
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => navigate(destino, {
+                          state: { volverA: `/${tipo === 'proveedor' ? 'proveedores' : 'clientes'}/${id}/estado-cuenta`, volverALabel: 'Estado de cuenta' },
+                        })}
+                        className="text-brand-600 hover:underline print:text-inherit print:no-underline"
+                      >
+                        {e.referencia ?? '—'}
+                      </button>
+                    );
+                  })()}
                   {e.referenciaExterna && (
                     <span className="block text-xs text-text-muted">{e.referenciaExterna}</span>
                   )}

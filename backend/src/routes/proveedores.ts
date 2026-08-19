@@ -12,7 +12,7 @@ import { validateBody } from '../middlewares/validate.js';
 import { crearProveedorSchema, actualizarProveedorSchema } from '../schemas/proveedores.js';
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { generarLinkTelegram } from '../services/telegram-link-service.js';
-import { crearNotaAjuste, anularNotaAjuste } from '../services/nota-ajuste-service.js';
+import { crearNotaAjuste, anularNotaAjuste, obtenerNotaAjuste } from '../services/nota-ajuste-service.js';
 import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-ajuste.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -38,6 +38,19 @@ router.get('/:id/estado-cuenta', requirePermiso('proveedores', 'ver'), async (re
     return;
   }
   res.json(estado);
+});
+
+// Detalle de una nota (vista tipo "ticket" con impresión) — mismo permiso
+// que el estado de cuenta, solo lectura.
+router.get('/:id/notas-ajuste/:notaId', requirePermiso('proveedores', 'ver'), async (req, res) => {
+  const proveedorId = String(req.params.id);
+  const notaId = String(req.params.notaId);
+  const result = await obtenerNotaAjuste(proveedorId, notaId);
+  if ('error' in result) {
+    res.status(404).json(result);
+    return;
+  }
+  res.json({ nota: result });
 });
 
 // Ajuste manual del saldo (sin factura ni pago real) → mismo permiso que editar

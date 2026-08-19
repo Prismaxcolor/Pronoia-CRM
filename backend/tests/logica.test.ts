@@ -4,6 +4,7 @@ import {
   type ProductoInventario,
 } from '../src/services/inventario-service.js';
 import { construirEstadoCuenta, agruparPagos } from '../src/services/estado-cuenta-service.js';
+import { construirNotaAjusteDetalle } from '../src/services/nota-ajuste-service.js';
 
 describe('construirGruposInventario', () => {
   const productos: ProductoInventario[] = [
@@ -202,6 +203,31 @@ describe('construirEstadoCuenta', () => {
     );
     expect(ec.entradas[0].referencia).toBe('ND-0005');
   });
+
+  it('nota con facturaAsociada resuelta muestra su código en la entrada', () => {
+    const ec = construirEstadoCuenta(
+      entidad,
+      [],
+      [],
+      [{
+        id: 'n1', tipo: 'debito', monto: 30, motivo: 'Comisión', anulada: false, pagada: false,
+        fecha: '2026-06-02', numero: 5, facturaAsociadaId: 'f1', facturaAsociadaCodigo: 'C-0007',
+      }]
+    );
+    expect(ec.entradas[0].facturaAsociadaId).toBe('f1');
+    expect(ec.entradas[0].facturaAsociadaCodigo).toBe('C-0007');
+  });
+
+  it('nota sin factura asociada deja esos campos en null', () => {
+    const ec = construirEstadoCuenta(
+      entidad,
+      [],
+      [],
+      [{ id: 'n1', tipo: 'credito', monto: 10, motivo: 'Descuento', anulada: false, pagada: false, fecha: '2026-06-02', numero: 1 }]
+    );
+    expect(ec.entradas[0].facturaAsociadaId).toBeNull();
+    expect(ec.entradas[0].facturaAsociadaCodigo).toBeNull();
+  });
 });
 
 describe('agruparPagos', () => {
@@ -233,5 +259,55 @@ describe('agruparPagos', () => {
     ];
     const agrupado = agruparPagos(filas);
     expect(agrupado).toHaveLength(2);
+  });
+});
+
+describe('construirNotaAjusteDetalle', () => {
+  const rowBase = {
+    id: 'n1',
+    proveedor_id: 'prov-1',
+    tipo: 'credito' as const,
+    monto: 30,
+    motivo: 'Descuento por flete',
+    anulada: false,
+    pagada: false,
+    numero: 4,
+    created_at: '2026-06-02T10:00:00Z',
+    registrado_por: 'user-1',
+    anula_nota_id: null,
+  };
+
+  it('formatea el correlativo NC- para notas de crédito', () => {
+    const dto = construirNotaAjusteDetalle(rowBase, 'Reciclados', 'Julio');
+    expect(dto.codigo).toBe('NC-0004');
+    expect(dto.tipo).toBe('credito');
+    expect(dto.nombreProveedor).toBe('Reciclados');
+    expect(dto.registradoPor).toBe('Julio');
+  });
+
+  it('formatea el correlativo ND- para notas de débito', () => {
+    const dto = construirNotaAjusteDetalle({ ...rowBase, tipo: 'debito', numero: 2 }, 'Reciclados', 'Julio');
+    expect(dto.codigo).toBe('ND-0002');
+  });
+
+  it('codigo es null cuando la nota todavía no tiene numero asignado', () => {
+    const dto = construirNotaAjusteDetalle({ ...rowBase, numero: null }, 'Reciclados', 'Julio');
+    expect(dto.codigo).toBeNull();
+  });
+
+  it('registradoPor es null cuando no se pudo resolver el nombre del usuario', () => {
+    const dto = construirNotaAjusteDetalle(rowBase, 'Reciclados', null);
+    expect(dto.registradoPor).toBeNull();
+  });
+
+  it('conserva anulada, pagada y anulaNotaId tal cual vienen en la fila', () => {
+    const dto = construirNotaAjusteDetalle(
+      { ...rowBase, anulada: true, pagada: true, anula_nota_id: 'n0' },
+      'Reciclados',
+      'Julio'
+    );
+    expect(dto.anulada).toBe(true);
+    expect(dto.pagada).toBe(true);
+    expect(dto.anulaNotaId).toBe('n0');
   });
 });

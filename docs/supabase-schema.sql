@@ -3342,3 +3342,78 @@ begin
   return p_transformacion_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 41 · nota de crédito/débito asociada a una factura de compra
+--
+-- Las notas de crédito/débito de un proveedor podían usarse solo como ajuste
+-- general de saldo (Bloque 28). Se agrega la posibilidad de asociarlas a una
+-- factura de compra puntual, para dejar trazado a qué documento corrige el
+-- ajuste (ej. descuento de flete de una factura específica). Sigue siendo
+-- OPCIONAL — las notas también se usan sin factura de por medio (decisión
+-- confirmada por el negocio), y se puede asociar a una factura ya pagada
+-- (no se bloquea ese caso).
+-- ============================================================================
+
+alter table public.notas_ajuste_proveedor
+  add column if not exists factura_id uuid references public.facturas_compra(id);
+
+create index if not exists idx_notas_ajuste_proveedor_factura
+  on public.notas_ajuste_proveedor (factura_id);
+
+-- Redefinición de anular_nota_ajuste_proveedor (última definida en el Bloque
+-- 37) para que la nota contraria que genera la anulación copie también
+-- factura_id de la nota original. Si no se hiciera, al anular una nota
+-- asociada a una factura la reversa quedaría huérfana de esa relación —el
+-- Estado de Cuenta mostraría la nota original con su factura pero la
+-- contraria sin ninguna, rompiendo la trazabilidad que este bloque agrega.
+create or replace function public.anular_nota_ajuste_proveedor(
+  p_nota_id        uuid,
+  p_motivo         text,
+  p_registrado_por uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_proveedor_id uuid;
+  v_tipo         text;
+  v_monto        numeric;
+  v_anulada      boolean;
+  v_pagada       boolean;
+  v_factura_id   uuid;
+  v_nueva_id     uuid;
+begin
+  select proveedor_id, tipo, monto, anulada, pagada, factura_id
+    into v_proveedor_id, v_tipo, v_monto, v_anulada, v_pagada, v_factura_id
+    from public.notas_ajuste_proveedor
+   where id = p_nota_id;
+
+  if v_proveedor_id is null then
+    raise exception 'Nota no encontrada.';
+  end if;
+  if v_anulada then
+    raise exception 'Esta nota ya fue anulada.';
+  end if;
+  if v_pagada then
+    raise exception 'Esta nota ya fue pagada — no se puede anular sin reversar antes el pago.';
+  end if;
+
+  insert into public.notas_ajuste_proveedor
+    (proveedor_id, tipo, monto, motivo, anula_nota_id, registrado_por, factura_id)
+  values (
+    v_proveedor_id,
+    case when v_tipo = 'credito' then 'debito' else 'credito' end,
+    v_monto,
+    p_motivo,
+    p_nota_id,
+    p_registrado_por,
+    v_factura_id
+  )
+  returning id into v_nueva_id;
+
+  update public.notas_ajuste_proveedor set anulada = true where id = p_nota_id;
+
+  return v_nueva_id;
+end;
+$$;

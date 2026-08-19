@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { crearNotaAjuste } from '../../services/nota-ajuste-service';
+import { obtenerFacturas, type FacturaCV } from '../../services/factura-cv-service';
 
 interface Props {
   proveedorId: string;
@@ -10,8 +11,14 @@ interface Props {
 
 type Tipo = 'credito' | 'debito';
 
+function fmt(n: number): string {
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
   const [tipo, setTipo] = useState<Tipo>('credito');
+  const [facturaId, setFacturaId] = useState('');
+  const [facturas, setFacturas] = useState<FacturaCV[]>([]);
   const [monto, setMonto] = useState('');
   const [motivo, setMotivo] = useState('');
 
@@ -20,6 +27,15 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
 
   const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
+
+  // La factura asociada es opcional (ajuste general de saldo) — se puede
+  // elegir cualquier factura del proveedor, incluso ya pagada (no se filtra
+  // por estado, a diferencia de PagarTodoModal que solo lista pendientes).
+  useEffect(() => {
+    obtenerFacturas('compra', { entidadId: proveedorId }).then(lista =>
+      setFacturas([...lista].sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
+    );
+  }, [proveedorId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +46,12 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
     if (!motivo.trim()) { setError('El motivo es obligatorio.'); return; }
 
     setGuardando(true);
-    const result = await crearNotaAjuste(proveedorId, { tipo, monto: montoNum, motivo: motivo.trim() });
+    const result = await crearNotaAjuste(proveedorId, {
+      tipo,
+      monto: montoNum,
+      motivo: motivo.trim(),
+      facturaId: facturaId || null,
+    });
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -63,6 +84,18 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
                 ? 'Resta del saldo que le debemos al proveedor (ej. descuento de flete).'
                 : 'Suma al saldo que le debemos al proveedor (ej. comisión o servicio adicional).'}
             </p>
+          </div>
+
+          <div>
+            <label className={labelClass}>Factura asociada <span className="text-text-muted">(opcional)</span></label>
+            <select value={facturaId} onChange={e => setFacturaId(e.target.value)} className={inputClass}>
+              <option value="">Sin factura asociada (ajuste general)</option>
+              {facturas.map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.codigo ?? f.id.slice(0, 8)} · {f.createdAt.slice(0, 10)} · ${fmt(f.total)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>

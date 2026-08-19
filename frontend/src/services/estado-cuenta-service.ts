@@ -20,6 +20,10 @@ export interface EntradaEstadoCuenta {
   pagada?: boolean;
   /** Solo facturas: id para abrir el detalle. Ausente para pagos/notas. */
   facturaId?: string;
+  /** Solo notas: id de la factura de compra a la que está asociada, ya resuelto. */
+  facturaAsociadaId?: string | null;
+  /** Solo notas: código de esa factura (C-0007). */
+  facturaAsociadaCodigo?: string | null;
 }
 
 export interface EstadoCuenta {

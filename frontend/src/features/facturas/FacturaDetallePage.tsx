@@ -7,6 +7,7 @@ import { obtenerTicket } from '../../services/ticket-pesaje-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
+import FilaDocumento from '../../components/FilaDocumento';
 import { destinoLabel, type TicketPesaje } from '@shared/types/index.js';
 
 const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
@@ -131,10 +132,10 @@ function FacturaDetallePage({ tipo }: Props) {
       </div>
 
       <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
-        <Fila label={labelEntidad} valor={factura.nombreEntidad ?? '—'} />
-        <Fila label="Origen del peso" valor={origenPeso(factura, tickets)} />
-        {factura.descripcion && <Fila label="Descripción" valor={factura.descripcion} />}
-        {factura.observaciones && <Fila label="Observaciones" valor={factura.observaciones} />}
+        <FilaDocumento label={labelEntidad} valor={factura.nombreEntidad ?? '—'} />
+        <FilaDocumento label="Origen del peso" valor={origenPeso(factura, tickets)} />
+        {factura.descripcion && <FilaDocumento label="Descripción" valor={factura.descripcion} />}
+        {factura.observaciones && <FilaDocumento label="Observaciones" valor={factura.observaciones} />}
 
         <div className="overflow-x-auto mt-4">
           <table className="w-full text-sm print:border-collapse">
@@ -252,15 +253,6 @@ function origenPeso(factura: FacturaCV, tickets: TicketPesaje[]): string {
   if (factura.ticketIds.length === 0) return 'Peso manual';
   if (tickets.length > 0) return `${tickets.length} ticket${tickets.length === 1 ? '' : 's'} · ${tickets.map(t => t.codigo).join(', ')}`;
   return `${factura.ticketIds.length} ticket(s) de pesaje`;
-}
-
-function Fila({ label, valor }: { label: string; valor: string }) {
-  return (
-    <div className="flex justify-between py-2 border-b border-border last:border-b-0 print:border-black">
-      <span className="text-text-secondary text-sm">{label}</span>
-      <span className="text-text-primary text-sm font-medium text-right">{valor}</span>
-    </div>
-  );
 }
 
 export default FacturaDetallePage;
