@@ -64,6 +64,7 @@ function PesajePage() {
   const [almacenDestinoId, setAlmacenDestinoId] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
   const [pesoGlobal, setPesoGlobal] = useState('');
+  const [pesajeExterior, setPesajeExterior] = useState(false);
   const [devolucion, setDevolucion] = useState('');
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [observaciones, setObservaciones] = useState('');
@@ -152,6 +153,7 @@ function PesajePage() {
     setAlmacenDestinoId('');
     setFecha(hoyISO());
     setPesoGlobal('');
+    setPesajeExterior(false);
     setDevolucion('');
     setMateriales([filaVacia()]);
     setObservaciones('');
@@ -191,7 +193,10 @@ function PesajePage() {
     setError(null);
 
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
-    if (!pesoGlobal || Number(pesoGlobal) <= 0) { setError('Registra el peso global de la pesada.'); return; }
+    if (!pesajeExterior && (!pesoGlobal || Number(pesoGlobal) <= 0)) {
+      setError('Registra el peso global de la pesada (o marca "Pesaje exterior").');
+      return;
+    }
     if (estado === 'completo') {
       if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
       if (materiales.some(f => !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
@@ -220,7 +225,8 @@ function PesajePage() {
       tipo: tipo === 'venta' ? 'venta' : 'compra',
       entidadId,
       fecha,
-      pesoGlobal: Number(pesoGlobal) || 0,
+      pesoGlobal: pesajeExterior ? null : (Number(pesoGlobal) || 0),
+      pesajeExterior,
       devolucion: Number(devolucion) || 0,
       estado,
       materiales: estado === 'bruto' ? [] : materiales.map(f => ({
@@ -269,7 +275,7 @@ function PesajePage() {
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
-  const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 
   const filaActiva = materiales.find(f => f.uid === filaActivaUid) ?? materiales[0];
 
@@ -416,9 +422,28 @@ function PesajePage() {
 
             {tipo !== 'traslado' && (
             <div>
-              <label className={labelClass}>Peso global (kg) *</label>
-              <input type="number" step="0.01" min="0" value={pesoGlobal} onChange={e => setPesoGlobal(e.target.value)} className={inputClass} placeholder="0.00" />
-              <p className="text-xs text-text-muted mt-1">Pesaje único de todos los materiales juntos, al llegar el proveedor.</p>
+              <div className="flex items-center justify-between">
+                <label className={labelClass}>Peso global (kg) {!pesajeExterior && '*'}</label>
+                <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none mb-1">
+                  <input
+                    type="checkbox"
+                    checked={pesajeExterior}
+                    onChange={e => { setPesajeExterior(e.target.checked); if (e.target.checked) setPesoGlobal(''); }}
+                    className="rounded border-border"
+                  />
+                  Pesaje exterior
+                </label>
+              </div>
+              {pesajeExterior ? (
+                <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                  El camión se pesó en una báscula externa — este ticket queda marcado como "Pesaje exterior", sin peso global propio.
+                </p>
+              ) : (
+                <>
+                  <input type="number" step="0.001" min="0" value={pesoGlobal} onChange={e => setPesoGlobal(e.target.value)} className={inputClass} placeholder="0.00" />
+                  <p className="text-xs text-text-muted mt-1">Pesaje único de todos los materiales juntos, al llegar el proveedor.</p>
+                </>
+              )}
             </div>
             )}
 
@@ -496,7 +521,7 @@ function PesajePage() {
                         </div>
                       </div>
 
-                      <input type="number" step="0.01" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass + ' self-start'} placeholder="0.00" />
+                      <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass + ' self-start'} placeholder="0.00" />
                       <div className="self-start">
                         {f.taraModo === 'preconfigurada' ? (
                           <div>
@@ -516,7 +541,7 @@ function PesajePage() {
                             <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                           </div>
                         ) : (
-                          <input type="number" step="0.01" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
+                          <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
                         )}
                       </div>
                     </div>
@@ -570,7 +595,7 @@ function PesajePage() {
                 <input
                   id="devolucion"
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   min="0"
                   value={devolucion}
                   onChange={e => setDevolucion(e.target.value)}

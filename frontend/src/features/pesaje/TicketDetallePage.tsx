@@ -13,7 +13,7 @@ import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-f
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
 
 function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
 /** Convierte los materiales ya guardados de un ticket en filas editables. La
@@ -175,6 +175,11 @@ function TicketDetallePage() {
             <span className={`px-2 py-0.5 rounded-full text-xs ${ticket.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} print:border print:border-black print:bg-transparent`}>
               {ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}
             </span>
+            {ticket.pesajeExterior && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 print:border print:border-black print:bg-transparent">
+                Pesaje exterior
+              </span>
+            )}
           </div>
           <p className="text-sm text-text-muted mt-1">{esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
         </div>
@@ -226,24 +231,20 @@ function TicketDetallePage() {
             </table>
           </div>
 
-          <div className="flex justify-between pt-3 mt-1">
-            <span className="font-semibold text-text-primary">Peso global</span>
-            <span className="text-text-primary font-medium">{fmt(ticket.pesoGlobal)} kg</span>
-          </div>
-          <div className="flex justify-between pt-1">
-            <span className="font-semibold text-text-primary">Suma de materiales</span>
-            <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoNetoMateriales)} kg</span>
-          </div>
+          {ticket.pesajeExterior ? (
+            <p className="text-xs text-text-muted pt-3 mt-1">Pesaje exterior — sin peso global propio.</p>
+          ) : (
+            <div className="flex justify-between pt-3 mt-1">
+              <span className="font-semibold text-text-primary">Peso global</span>
+              <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
+            </div>
+          )}
           {ticket.devolucion > 0 && (
             <div className="flex justify-between pt-1 text-sm">
               <span className="text-text-secondary">Devolución</span>
               <span className="text-text-primary font-medium">{fmt(ticket.devolucion)} kg</span>
             </div>
           )}
-          <div className="flex justify-between pt-1 text-sm">
-            <span className="text-text-secondary">Diferencia (global vs. neto + devolución)</span>
-            <span className={`font-medium ${Math.abs(ticket.diferencia) > 0.01 ? 'text-amber-600' : 'text-text-primary'}`}>{fmt(ticket.diferencia)} kg</span>
-          </div>
 
           {ticket.fotos && ticket.fotos.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-4 print:hidden">
@@ -257,10 +258,16 @@ function TicketDetallePage() {
         </div>
       ) : (
         <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
-          <div className="flex items-center justify-between text-sm bg-surface-alt border border-border rounded-lg px-4 py-2.5">
-            <span className="text-text-secondary">Peso global (fijado al crear el ticket)</span>
-            <span className="font-semibold text-text-primary">{fmt(ticket.pesoGlobal)} kg</span>
-          </div>
+          {ticket.pesajeExterior ? (
+            <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-4 py-2.5">
+              Pesaje exterior — sin peso global propio para reconciliar.
+            </p>
+          ) : (
+            <div className="flex items-center justify-between text-sm bg-surface-alt border border-border rounded-lg px-4 py-2.5">
+              <span className="text-text-secondary">Peso global (fijado al crear el ticket)</span>
+              <span className="font-semibold text-text-primary">{fmt(ticket.pesoGlobal)} kg</span>
+            </div>
+          )}
 
           <div className="space-y-3">
             <label className={labelClass + ' mb-0'}>Materiales</label>
@@ -303,7 +310,7 @@ function TicketDetallePage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelClass}>Peso bruto (kg)</label>
-                      <input type="number" step="0.01" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
+                      <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
                     </div>
                     <div>
                       <label className={labelClass}>Tara</label>
@@ -327,7 +334,7 @@ function TicketDetallePage() {
                           <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                         </div>
                       ) : (
-                        <input type="number" step="0.01" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
+                        <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
                       )}
                     </div>
                   </div>
@@ -359,7 +366,7 @@ function TicketDetallePage() {
               <input
                 id="devolucion-edit"
                 type="number"
-                step="0.01"
+                step="0.001"
                 min="0"
                 value={devolucionEdit}
                 onChange={e => setDevolucionEdit(e.target.value)}
@@ -367,10 +374,12 @@ function TicketDetallePage() {
                 placeholder="0.00"
               />
             </div>
-            <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
-              <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
-              <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>{fmt(diferencia)} kg</span>
-            </div>
+            {!ticket.pesajeExterior && (
+              <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
+                <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
+                <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>{fmt(diferencia)} kg</span>
+              </div>
+            )}
           </div>
 
           <div>

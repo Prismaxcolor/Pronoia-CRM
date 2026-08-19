@@ -101,7 +101,7 @@ function TaraFormModal({ tara, onClose, onGuardado }: Props) {
 
           <div>
             <label className={labelClass}>Peso (kg)</label>
-            <input type="number" step="0.01" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
+            <input type="number" step="0.001" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
           </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}

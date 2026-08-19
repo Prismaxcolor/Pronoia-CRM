@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, EyeOff, Eye, Trash2, Tags, Package } from 'lucide-react';
+import { Plus, Pencil, EyeOff, Eye, Trash2, Tags, Package, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   obtenerProductos,
   desactivarProducto,
   reactivarProducto,
   borrarProducto,
+  reordenarProductos,
 } from '../../services/producto-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
@@ -105,6 +106,25 @@ function ProductosPage() {
     }
     toast.exito(`"${p.nombre}" eliminado.`);
     cargar();
+  };
+
+  // Mueve contra el arreglo completo (no el filtrado) — así el orden real
+  // no se corrompe si hay una búsqueda o filtro activo mientras se reordena.
+  const mover = (id: string, direccion: 'arriba' | 'abajo') => {
+    const idx = productos.findIndex(p => p.id === id);
+    const destino = direccion === 'arriba' ? idx - 1 : idx + 1;
+    if (idx === -1 || destino < 0 || destino >= productos.length) return;
+
+    const reordenados = [...productos];
+    [reordenados[idx], reordenados[destino]] = [reordenados[destino], reordenados[idx]];
+    setProductos(reordenados);
+
+    reordenarProductos(reordenados.map(p => p.id)).then(result => {
+      if ('error' in result) {
+        toast.errorMsg(result.error);
+        cargar();
+      }
+    });
   };
 
   if (cargando) {
@@ -210,6 +230,28 @@ function ProductosPage() {
               {/* Acciones (top-right, hover) */}
               {(puedeEditar || puedeBorrar) && (
                 <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {puedeEditar && (
+                    <button
+                      type="button"
+                      onClick={() => mover(p.id, 'arriba')}
+                      disabled={productos[0]?.id === p.id}
+                      className="p-1.5 rounded-md bg-surface-alt hover:bg-brand-50 text-text-muted hover:text-brand-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                      title="Mover arriba"
+                    >
+                      <ArrowUp size={13} />
+                    </button>
+                  )}
+                  {puedeEditar && (
+                    <button
+                      type="button"
+                      onClick={() => mover(p.id, 'abajo')}
+                      disabled={productos[productos.length - 1]?.id === p.id}
+                      className="p-1.5 rounded-md bg-surface-alt hover:bg-brand-50 text-text-muted hover:text-brand-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                      title="Mover abajo"
+                    >
+                      <ArrowDown size={13} />
+                    </button>
+                  )}
                   {puedeEditar && (
                     <button
                       type="button"

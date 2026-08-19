@@ -368,7 +368,7 @@ function FacturaFormPage({ tipo }: Props) {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Peso (kg) {l.desdeTicket && <span className="text-text-muted">· del ticket</span>}</label>
-                    <input type="number" step="0.01" min="0" value={l.peso} onChange={e => setLinea(l.uid, 'peso', e.target.value)} className={inputClass} placeholder="0.00" disabled={l.desdeTicket} />
+                    <input type="number" step="0.001" min="0" value={l.peso} onChange={e => setLinea(l.uid, 'peso', e.target.value)} className={inputClass} placeholder="0.00" disabled={l.desdeTicket} />
                   </div>
                   <div>
                     <label className={labelClass}>Precio (kg) *</label>

@@ -15,7 +15,7 @@ function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
 function TransformacionesPage() {
@@ -129,7 +129,7 @@ function TransformacionesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Peso bruto (kg) *</label>
-                  <input type="number" step="0.01" min="0.01" required value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+                  <input type="number" step="0.001" min="0.01" required value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
                 </div>
                 <div>
                   <label className={labelClass}>Tara (kg)</label>

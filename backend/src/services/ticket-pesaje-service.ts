@@ -38,6 +38,7 @@ interface TicketRow {
   facturado: boolean;
   created_at: string;
   peso_global: number | null;
+  pesaje_exterior: boolean;
   devolucion: number | null;
   estado: 'bruto' | 'completo';
   pesado_por: string | null;
@@ -76,6 +77,8 @@ export interface TicketPublico {
    *  distinguirlo de un neto "ajustado" en el futuro. */
   pesoNetoMateriales: number;
   pesoGlobal: number;
+  /** true si el camión se pesó en una báscula externa — no hay peso global propio. */
+  pesajeExterior: boolean;
   /** Kg de devolución del ticket completo (no por material). Se suma a
    *  pesoNetoMateriales para reconciliar contra pesoGlobal — no afecta
    *  inventario ni factura. */
@@ -124,6 +127,7 @@ function toPublico(row: TicketRow): TicketPublico {
     pesoNetoTotal,
     pesoNetoMateriales: pesoNetoTotal,
     pesoGlobal,
+    pesajeExterior: row.pesaje_exterior ?? false,
     devolucion,
     diferencia: pesoGlobal - pesoNetoTotal - devolucion,
     fotos: row.fotos ?? [],
@@ -212,8 +216,9 @@ export async function crearTicket(
     p_materiales: materialesARpc(input.materiales),
     p_estado: input.estado,
     p_pesado_por: pesadoPor,
-    p_peso_global: input.pesoGlobal,
+    p_peso_global: input.pesajeExterior ? null : input.pesoGlobal,
     p_devolucion: input.devolucion,
+    p_pesaje_exterior: input.pesajeExterior,
   });
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };

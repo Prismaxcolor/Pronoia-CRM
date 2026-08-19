@@ -3417,3 +3417,112 @@ begin
   return v_nueva_id;
 end;
 $$;
+
+-- ============================================================================
+-- Bloque 42 · orden manual del catálogo de productos
+--
+-- El catálogo se mostraba siempre en orden de creación (más nuevo primero).
+-- Se agrega una columna orden para que el negocio pueda reorganizar los
+-- materiales manualmente, y ese orden se refleja en todos los selectores que
+-- usan listarProductos() (pesaje, facturas, transformaciones, listas de
+-- precios). Se backfillea preservando el orden visual que ya tenían (más
+-- nuevo = orden 0) para no reordenar nada de golpe al desplegar esto.
+-- ============================================================================
+
+alter table public.productos add column if not exists orden integer not null default 0;
+
+update public.productos p
+set orden = sub.rn
+from (
+  select id, row_number() over (order by creado_en desc) - 1 as rn
+  from public.productos
+) sub
+where p.id = sub.id;
+
+create index if not exists idx_productos_orden on public.productos (orden);
+
+-- ============================================================================
+-- Bloque 43 · pesaje exterior (sin peso global obligatorio)
+--
+-- Algunos camiones se pesan en una báscula externa a la que Pronoia no tiene
+-- acceso — para esos casos, el peso global deja de ser obligatorio y el
+-- ticket queda marcado como "pesaje exterior" para dejarlo trazado.
+--
+-- crear_ticket_pesaje ya tenía DOS sobrecargas viviendo en la BD (9 y 10
+-- parámetros — la de 9 quedó huérfana de un cambio anterior que agregó
+-- p_devolucion sin dropear la firma vieja). Se dropean ambas antes de crear
+-- la versión de 11 parámetros para no sumar una tercera sobrecarga ambigua.
+-- ============================================================================
+
+alter table public.tickets_pesaje
+  add column if not exists pesaje_exterior boolean not null default false;
+
+drop function if exists public.crear_ticket_pesaje(
+  text, uuid, date, text[], text, jsonb, text, uuid, numeric
+);
+drop function if exists public.crear_ticket_pesaje(
+  text, uuid, date, text[], text, jsonb, text, uuid, numeric, numeric
+);
+
+create function public.crear_ticket_pesaje(
+  p_tipo            text,
+  p_entidad_id      uuid,
+  p_fecha           date,
+  p_fotos           text[],
+  p_observaciones   text,
+  p_materiales      jsonb,
+  p_estado          text,
+  p_pesado_por      uuid,
+  p_peso_global     numeric,
+  p_devolucion      numeric default 0,
+  p_pesaje_exterior boolean default false
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_id         uuid;
+  v_item       jsonb;
+  v_almacen_id uuid;
+  v_numero     integer;
+begin
+  select id into v_almacen_id
+    from public.almacenes
+   where es_predeterminado and activo
+   limit 1;
+
+  if p_tipo = 'compra' then
+    v_numero := nextval('public.tickets_pesaje_numero_compra_seq');
+  else
+    v_numero := nextval('public.tickets_pesaje_numero_venta_seq');
+  end if;
+
+  insert into public.tickets_pesaje
+    (tipo, entidad_id, fecha, fotos, observaciones, estado, pesado_por,
+     peso_global, devolucion, almacen_id, numero, pesaje_exterior)
+  values (
+    p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''),
+    coalesce(p_estado, 'completo'), p_pesado_por, p_peso_global,
+    coalesce(p_devolucion, 0), v_almacen_id, v_numero,
+    coalesce(p_pesaje_exterior, false)
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;

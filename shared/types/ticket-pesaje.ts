@@ -57,8 +57,11 @@ export interface TicketPesaje {
   /** Mismo valor que pesoNetoTotal, nombre explícito para distinguirlo de la
    *  devolución (que se suma aparte, no está incluida acá). */
   pesoNetoMateriales: number;
-  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
+  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor.
+   *  0 cuando pesajeExterior es true (no hay lectura propia de báscula). */
   pesoGlobal: number;
+  /** true si el camión se pesó en una báscula externa a la que Pronoia no tiene acceso. */
+  pesajeExterior: boolean;
   /**
    * Kg de devolución del ticket completo (no atada a ningún material). Se
    * suma a pesoNetoMateriales para reconciliar contra pesoGlobal — NO resta

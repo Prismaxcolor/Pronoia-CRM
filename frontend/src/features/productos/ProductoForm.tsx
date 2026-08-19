@@ -283,7 +283,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
             <div className="grid grid-cols-2 gap-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
               <div>
                 <label className={labelClass}>Peso (kg)</label>
-                <input type="number" step="0.01" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
+                <input type="number" step="0.001" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
               </div>
             </div>
           )}

@@ -65,3 +65,10 @@ export const actualizarProductoSchema = crearProductoSchema;
 
 export type CrearProductoInput = z.infer<typeof crearProductoSchema>;
 export type ActualizarProductoInput = z.infer<typeof actualizarProductoSchema>;
+
+/** ids de TODOS los productos, en el orden deseado de arriba a abajo. */
+export const reordenarProductosSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, 'La lista de productos no puede estar vacía.'),
+});
+
+export type ReordenarProductosInput = z.infer<typeof reordenarProductosSchema>;

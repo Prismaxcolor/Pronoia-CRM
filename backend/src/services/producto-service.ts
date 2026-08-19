@@ -94,7 +94,7 @@ export async function listarProductos(): Promise<ProductoPublico[]> {
   const { data, error } = await supabaseAdmin
     .from('productos')
     .select('*, tipos_material(nombre)')
-    .order('creado_en', { ascending: false });
+    .order('orden', { ascending: true });
 
   if (error || !data) return [];
   return (data as unknown as ProductoRow[]).map(toPublico);
@@ -106,6 +106,17 @@ export async function crearProducto(
 ): Promise<{ producto: ProductoPublico } | { error: string }> {
   const row = inputToRow(input, creadoPor);
 
+  // Los productos nuevos aparecen primero (orden más bajo), igual que antes
+  // cuando el catálogo se mostraba por fecha de creación descendente. El
+  // usuario puede reordenarlo manualmente después con reordenarProductos.
+  const { data: primero } = await supabaseAdmin
+    .from('productos')
+    .select('orden')
+    .order('orden', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  row.orden = ((primero as { orden: number } | null)?.orden ?? 0) - 1;
+
   const { data, error } = await supabaseAdmin
     .from('productos')
     .insert(row)
@@ -114,6 +125,20 @@ export async function crearProducto(
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el producto.' };
   return { producto: toPublico(data as unknown as ProductoRow) };
+}
+
+/** Persiste el nuevo orden manual del catálogo: ids en el orden deseado,
+ *  de arriba a abajo. Asigna orden = índice en el arreglo recibido. */
+export async function reordenarProductos(ids: string[]): Promise<{ ok: true } | { error: string }> {
+  const resultados = await Promise.all(
+    ids.map((id, indice) =>
+      supabaseAdmin.from('productos').update({ orden: indice }).eq('id', id)
+    )
+  );
+
+  const fallo = resultados.find(r => r.error);
+  if (fallo?.error) return { error: fallo.error.message };
+  return { ok: true };
 }
 
 export async function actualizarProducto(

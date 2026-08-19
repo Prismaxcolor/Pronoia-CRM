@@ -6,10 +6,11 @@ import {
   desactivarProducto,
   reactivarProducto,
   borrarProducto,
+  reordenarProductos,
 } from '../services/producto-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearProductoSchema, actualizarProductoSchema } from '../schemas/productos.js';
+import { crearProductoSchema, actualizarProductoSchema, reordenarProductosSchema } from '../schemas/productos.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -39,6 +40,27 @@ router.post(
       tipo: result.producto.tipo,
     });
     res.status(201).json(result);
+  }
+);
+
+// Declarada antes de '/:id' — si no, Express toma "reordenar" como el :id.
+router.patch(
+  '/reordenar',
+  requirePermiso('productos', 'editar'),
+  validateBody(reordenarProductosSchema),
+  async (req, res) => {
+    const result = await reordenarProductos(req.body.ids);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'productos_reordenados',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      cantidad: req.body.ids.length,
+    });
+    res.json(result);
   }
 );
 

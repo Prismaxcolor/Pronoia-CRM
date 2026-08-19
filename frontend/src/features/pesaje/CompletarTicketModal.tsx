@@ -15,7 +15,7 @@ interface Props {
 }
 
 function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
 function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onCompletado }: Props) {
@@ -129,7 +129,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Peso bruto (kg)</label>
-                    <input type="number" step="0.01" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
+                    <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
                   </div>
                   <div>
                     <label className={labelClass}>Tara</label>
@@ -153,7 +153,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                         <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                       </div>
                     ) : (
-                      <input type="number" step="0.01" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
+                      <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
                     )}
                   </div>
                 </div>
@@ -172,10 +172,14 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
           </button>
 
           <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-brand-800">Peso global (de este pesaje)</span>
-              <span className="font-semibold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
-            </div>
+            {ticket.pesajeExterior ? (
+              <p className="text-xs text-brand-800">Pesaje exterior — sin peso global propio para reconciliar.</p>
+            ) : (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-brand-800">Peso global (de este pesaje)</span>
+                <span className="font-semibold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
                 <Scale size={16} />
@@ -190,7 +194,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
               <input
                 id="devolucion-completar"
                 type="number"
-                step="0.01"
+                step="0.001"
                 min="0"
                 value={devolucion}
                 onChange={e => setDevolucion(e.target.value)}
@@ -198,12 +202,14 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                 placeholder="0.00"
               />
             </div>
-            <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
-              <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
-              <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
-                {fmt(diferencia)} kg
-              </span>
-            </div>
+            {!ticket.pesajeExterior && (
+              <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
+                <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
+                <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
+                  {fmt(diferencia)} kg
+                </span>
+              </div>
+            )}
           </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}

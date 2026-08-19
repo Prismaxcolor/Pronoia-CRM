@@ -5,8 +5,6 @@ import { obtenerFactura, consolidarItems, type FacturaCV, type TipoFactura } fro
 import { descargarFacturaPDF, descargarFacturaWord } from '../../services/factura-export';
 import { obtenerTicket } from '../../services/ticket-pesaje-service';
 import { useAuth } from '../../hooks/use-auth-context';
-import { useToast } from '../../hooks/use-toast-context';
-import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
 import FilaDocumento from '../../components/FilaDocumento';
 import { destinoLabel, type TicketPesaje } from '@shared/types/index.js';
 
@@ -29,7 +27,6 @@ function FacturaDetallePage({ tipo }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const { tienePermiso } = useAuth();
-  const toast = useToast();
 
   // Si se llegó desde Estado de Cuenta, "volver" debe regresar ahí directo en
   // vez de al listado completo de compras/ventas — de lo contrario hacen
@@ -45,7 +42,6 @@ function FacturaDetallePage({ tipo }: Props) {
   const [factura, setFactura] = useState<FacturaCV | null>(null);
   const [tickets, setTickets] = useState<TicketPesaje[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [pagoAbierto, setPagoAbierto] = useState(false);
 
   const cargarFactura = () => {
     obtenerFactura(tipo, id)
@@ -63,12 +59,6 @@ function FacturaDetallePage({ tipo }: Props) {
    * como dep dispararía el efecto en cada render. */
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { cargarFactura(); }, [tipo, id]);
-
-  const handlePagoRegistrado = () => {
-    setPagoAbierto(false);
-    toast.exito('Pago registrado.');
-    cargarFactura();
-  };
 
   if (cargando) {
     return (
@@ -111,9 +101,16 @@ function FacturaDetallePage({ tipo }: Props) {
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
           {esCompra && puedePagar && factura.estado !== 'pagada' && factura.entidadId && (
-            <button type="button" onClick={() => setPagoAbierto(true)} className="flex items-center gap-2 px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors" title="Registrar pago">
+            <button
+              type="button"
+              onClick={() => navigate(`/proveedores/${factura.entidadId}/estado-cuenta`, {
+                state: { volverA: ruta, volverALabel: etiquetaLista },
+              })}
+              className="flex items-center gap-2 px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+              title="Ir a pagar"
+            >
               <DollarSign size={16} />
-              Registrar pago
+              IR A PAGAR
             </button>
           )}
           <button type="button" onClick={() => descargarFacturaPDF(factura, tickets)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
@@ -213,12 +210,6 @@ function FacturaDetallePage({ tipo }: Props) {
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-border">
-                      <td colSpan={5} className="py-2 text-right font-semibold text-text-secondary">Total del ticket</td>
-                      <td className="py-2 text-right font-bold text-text-primary">{fmt(ticket.pesoNetoTotal)} kg</td>
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
               {ticket.fotos && ticket.fotos.length > 0 && (
@@ -233,16 +224,6 @@ function FacturaDetallePage({ tipo }: Props) {
             </div>
           ))}
         </div>
-      )}
-
-      {pagoAbierto && factura.entidadId && (
-        <RegistrarPagoModal
-          proveedorId={factura.entidadId}
-          facturaId={factura.id}
-          saldoPendiente={factura.total - factura.montoPagado}
-          onClose={() => setPagoAbierto(false)}
-          onRegistrado={handlePagoRegistrado}
-        />
       )}
     </div>
   );

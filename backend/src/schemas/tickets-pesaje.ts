@@ -36,8 +36,12 @@ export const crearTicketSchema = z
       .optional()
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),
-    /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
-    pesoGlobal: z.number().nonnegative('El peso global no puede ser negativo.'),
+    /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor.
+     *  Obligatorio salvo que sea un pesaje exterior (báscula externa a la que
+     *  Pronoia no tiene acceso). */
+    pesoGlobal: z.number().nonnegative('El peso global no puede ser negativo.').optional().nullable(),
+    /** true si el camión se pesó en una báscula externa — no hay peso global propio. */
+    pesajeExterior: z.boolean().default(false),
     /** Kg de devolución del ticket completo (no por material). Se suma a la
      *  suma de materiales para reconciliar contra el peso global. */
     devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
@@ -63,6 +67,10 @@ export const crearTicketSchema = z
   .refine(d => d.estado === 'bruto' ? d.tipo === 'compra' : true, {
     message: 'El pesaje en bruto solo aplica para compras (proveedor).',
     path: ['estado'],
+  })
+  .refine(d => d.pesajeExterior || (d.pesoGlobal != null && d.pesoGlobal > 0), {
+    message: 'Registra el peso global de la pesada (o marca "Pesaje exterior").',
+    path: ['pesoGlobal'],
   });
 
 /** Completa un ticket que se guardó en bruto: agrega los materiales/destinos definitivos. */

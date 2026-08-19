@@ -120,3 +120,13 @@ export async function borrarProducto(id: string): Promise<{ ok: true } | { error
     return { error: err instanceof Error ? err.message : 'No se pudo borrar el producto.' };
   }
 }
+
+/** Persiste el nuevo orden del catálogo: ids en el orden deseado, de arriba a abajo. */
+export async function reordenarProductos(ids: string[]): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch('/api/productos/reordenar', { method: 'PATCH', body: { ids } });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo reordenar el catálogo.' };
+  }
+}

@@ -14,7 +14,10 @@ export interface CrearTicketInput {
   tipo?: 'compra' | 'venta';
   entidadId: string;
   fecha?: string | null;
-  pesoGlobal: number;
+  /** Obligatorio salvo pesajeExterior=true (báscula externa, sin lectura propia). */
+  pesoGlobal?: number | null;
+  /** true si el camión se pesó en una báscula externa a la que Pronoia no tiene acceso. */
+  pesajeExterior?: boolean;
   /** Kg de devolución del ticket completo. Se suma a la suma de materiales
    *  para reconciliar contra pesoGlobal — no afecta inventario ni factura. */
   devolucion?: number;

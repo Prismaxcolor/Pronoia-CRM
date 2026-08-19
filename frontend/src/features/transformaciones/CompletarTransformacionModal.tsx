@@ -12,7 +12,7 @@ function salidaVacia(): SalidaForm {
 }
 
 function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
 interface Props {
@@ -108,7 +108,7 @@ function CompletarTransformacionModal({ transformacion, lotes, onClose, onComple
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className={labelClass}>Peso bruto (kg)</label>
-                    <input type="number" step="0.01" min="0.01" value={s.pesoBruto} onChange={e => setSalida(s.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
+                    <input type="number" step="0.001" min="0.01" value={s.pesoBruto} onChange={e => setSalida(s.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
                   </div>
                   <div>
                     <label className={labelClass}>Tara (kg)</label>
