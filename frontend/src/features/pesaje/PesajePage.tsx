@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen, Search, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Scale, Loader2, Plus, Trash2, PackageOpen, Search, ChevronDown, AlertTriangle } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
@@ -9,7 +9,6 @@ import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
 import { obtenerAlmacenes, obtenerStockAlmacen } from '../../services/almacen-service';
 import { crearTraslado, obtenerTraslados } from '../../services/traslado-service';
-import { subirFotoTicket } from '../../services/storage-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
@@ -17,7 +16,8 @@ import CompletarTicketModal from './CompletarTicketModal';
 import CompletarTrasladoModal from '../inventario/CompletarTrasladoModal';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
-import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
+import FotoMaterialPicker from './FotoMaterialPicker';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, type MaterialFila } from './material-fila';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado } from '@shared/types/index.js';
 
 /** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
@@ -27,7 +27,6 @@ type FilaListado =
   | { kind: 'pesaje'; ticket: TicketPesaje }
   | { kind: 'traslado'; traslado: Traslado };
 
-interface FotoLocal { file: File; preview: string }
 interface Entidad { id: string; nombre: string; activo: boolean }
 type TipoPesaje = 'compra' | 'venta' | 'traslado';
 
@@ -68,8 +67,6 @@ function PesajePage() {
   const [devolucion, setDevolucion] = useState('');
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [observaciones, setObservaciones] = useState('');
-  const [fotos, setFotos] = useState<FotoLocal[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,13 +136,12 @@ function PesajePage() {
   const quitarMaterial = (uid: number) =>
     setMateriales(prev => (prev.length > 1 ? prev.filter(f => f.uid !== uid) : prev));
 
-  const handleFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    setFotos(prev => [...prev, ...files.map(file => ({ file, preview: URL.createObjectURL(file) }))]);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
+  const agregarFotosFila = (uid: number, files: File[]) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid
+      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      : f)));
+  const quitarFotoFila = (uid: number, idx: number) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
 
   const limpiar = () => {
     setEntidadId('');
@@ -157,7 +153,6 @@ function PesajePage() {
     setDevolucion('');
     setMateriales([filaVacia()]);
     setObservaciones('');
-    setFotos([]);
   };
 
   const guardarTraslado = async () => {
@@ -210,15 +205,19 @@ function PesajePage() {
 
     setGuardando(true);
 
-    const urls: string[] = [];
-    for (const f of fotos) {
-      const url = await subirFotoTicket(f.file);
-      if (!url) {
-        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
-        setGuardando(false);
-        return;
+    // Fotos por material — cada línea sube las suyas (Bloque 46), en vez de
+    // una sola galería general al final del ticket.
+    const materialesConFotos: Array<ReturnType<typeof materialAPayload> & { fotos: string[] }> = [];
+    if (estado !== 'bruto') {
+      for (const f of materiales) {
+        const urls = await subirFotosFila(f.fotos);
+        if (!urls) {
+          setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+          setGuardando(false);
+          return;
+        }
+        materialesConFotos.push({ ...materialAPayload(f, taras), fotos: urls });
       }
-      urls.push(url);
     }
 
     const result = await crearTicket({
@@ -229,15 +228,8 @@ function PesajePage() {
       pesajeExterior,
       devolucion: Number(devolucion) || 0,
       estado,
-      materiales: estado === 'bruto' ? [] : materiales.map(f => ({
-        productoId: f.productoId,
-        subcategoria: f.subcategoria.trim() || null,
-        pesoBruto: Number(f.pesoBruto) || 0,
-        tara: taraKgFila(f, taras),
-        destinoTipo: 'lote' as const,
-        loteId: f.destino,
-      })),
-      fotos: urls,
+      materiales: materialesConFotos,
+      fotos: [],
       observaciones: observaciones.trim() || null,
     });
 
@@ -551,6 +543,14 @@ function PesajePage() {
                       <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                     </div>
 
+                    {tipo !== 'traslado' && (
+                      <FotoMaterialPicker
+                        fotos={f.fotos}
+                        onAgregar={files => agregarFotosFila(f.uid, files)}
+                        onQuitar={idx => quitarFotoFila(f.uid, idx)}
+                      />
+                    )}
+
                     {tipo === 'traslado' && f.productoId && (() => {
                       const disponible = stockOrigen.get(f.productoId) ?? 0;
                       if (neto <= disponible) return null;
@@ -616,27 +616,6 @@ function PesajePage() {
               </>
               )}
             </div>
-
-            {tipo !== 'traslado' && (
-            <div>
-              <label className={labelClass}>Fotos de evidencia</label>
-              <div className="flex flex-wrap gap-2">
-                {fotos.map((f, idx) => (
-                  <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-border">
-                    <img src={f.preview} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
-                    <button type="button" onClick={() => quitarFoto(idx)} className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full p-0.5 hover:bg-black/80">
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-                <button type="button" onClick={() => fileInputRef.current?.click()} className="w-20 h-20 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-600 transition-colors">
-                  <ImagePlus size={20} />
-                  <span className="text-[10px] mt-1">Agregar</span>
-                </button>
-              </div>
-              <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFotos} className="hidden" />
-            </div>
-            )}
 
             <div>
               <label className={labelClass}>Observaciones</label>

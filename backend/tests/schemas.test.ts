@@ -128,6 +128,21 @@ describe('crearTicketSchema', () => {
     }
   });
 
+  it('fotos de un material default a [] cuando no se mandan (Bloque 46)', () => {
+    const r = crearTicketSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.materiales[0].fotos).toEqual([]);
+  });
+
+  it('acepta fotos por material', () => {
+    const r = crearTicketSchema.safeParse({
+      ...base,
+      materiales: [{ ...material, fotos: ['https://x.com/a.jpg', 'https://x.com/b.jpg'] }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.materiales[0].fotos).toEqual(['https://x.com/a.jpg', 'https://x.com/b.jpg']);
+  });
+
   it('rechaza sin peso global', () => {
     const { pesoGlobal: _pesoGlobal, ...sinPesoGlobal } = base;
     const r = crearTicketSchema.safeParse(sinPesoGlobal);

@@ -28,6 +28,9 @@ export interface TicketPesajeMaterial {
   loteId: string | null;
   /** Nombre del lote, resuelto vía join. Solo lectura. */
   nombreLote?: string | null;
+  /** URLs de fotos de este material — cada material tiene las suyas, en vez
+   *  de una sola foto general para todo el ticket (Bloque 46). */
+  fotos: string[];
 }
 
 /**
@@ -74,7 +77,10 @@ export interface TicketPesaje {
    * material + devolución. Solo lectura, derivado (no se guarda en BD).
    */
   diferencia: number;
-  /** URLs o paths de fotos del material/pesada. */
+  /** URLs de fotos generales del ticket completo — campo legacy, anterior al
+   *  Bloque 46. Ya no se llena desde el formulario (las fotos ahora se
+   *  cargan por material, ver TicketPesajeMaterial.fotos), pero se conserva
+   *  para no perder las fotos de tickets creados antes de ese cambio. */
   fotos: string[] | null;
   observaciones: string | null;
   /** true cuando ya existe una factura (compra o venta) asociada. */

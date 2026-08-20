@@ -16,6 +16,9 @@ export const materialSchema = z
     devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
     destinoTipo: z.enum(['mpp', 'lote']).default('mpp'),
     loteId: z.string().uuid('Lote inválido.').optional().nullable(),
+    /** Fotos de este material específico (Bloque 46) — cada material lleva
+     *  las suyas, ya no hay una sola foto general para todo el ticket. */
+    fotos: z.array(z.string()).default([]),
   })
   .refine(m => m.pesoBruto - m.tara - m.devolucion >= 0, {
     message: 'El peso neto de un material no puede ser negativo.',

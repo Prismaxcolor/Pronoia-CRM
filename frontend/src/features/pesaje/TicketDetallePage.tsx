@@ -9,7 +9,8 @@ import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, type MaterialFila } from './material-fila';
+import FotoMaterialPicker from './FotoMaterialPicker';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -31,6 +32,7 @@ function filasDesdeTicket(t: TicketPesaje): MaterialFila[] {
     taraCantidad: '',
     taraManual: String(m.tara),
     destino: m.loteId ?? '',
+    fotos: m.fotos.map(url => ({ tipo: 'existente' as const, url })),
   }));
 }
 
@@ -100,6 +102,13 @@ function TicketDetallePage() {
   const quitarMaterial = (uid: number) =>
     setMateriales(prev => (prev.length > 1 ? prev.filter(f => f.uid !== uid) : prev));
 
+  const agregarFotosFila = (uid: number, files: File[]) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid
+      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      : f)));
+  const quitarFotoFila = (uid: number, idx: number) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
   const guardarEdicion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ticket) return;
@@ -114,17 +123,22 @@ function TicketDetallePage() {
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
 
     setGuardando(true);
+
+    const materialesConFotos = [];
+    for (const f of materiales) {
+      const urls = await subirFotosFila(f.fotos);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      materialesConFotos.push({ ...materialAPayload(f, taras), fotos: urls });
+    }
+
     const result = await editarTicket(ticket.id, {
       observaciones: observacionesEdit.trim() || null,
       devolucion: Number(devolucionEdit) || 0,
-      materiales: materiales.map(f => ({
-        productoId: f.productoId,
-        subcategoria: f.subcategoria.trim() || null,
-        pesoBruto: Number(f.pesoBruto) || 0,
-        tara: taraKgFila(f, taras),
-        destinoTipo: 'lote' as const,
-        loteId: f.destino,
-      })),
+      materiales: materialesConFotos,
     });
     setGuardando(false);
 
@@ -231,6 +245,23 @@ function TicketDetallePage() {
             </table>
           </div>
 
+          {ticket.materiales.some(m => m.fotos.length > 0) && (
+            <div className="mt-4 space-y-2 print:hidden">
+              {ticket.materiales.filter(m => m.fotos.length > 0).map(m => (
+                <div key={m.id}>
+                  <p className="text-xs text-text-muted mb-1">{m.nombreProducto ?? m.subcategoria ?? 'Material'}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {m.fotos.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-20 h-20 rounded-lg overflow-hidden border border-border">
+                        <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {ticket.pesajeExterior ? (
             <p className="text-xs text-text-muted pt-3 mt-1">Pesaje exterior — sin peso global propio.</p>
           ) : (
@@ -247,12 +278,15 @@ function TicketDetallePage() {
           )}
 
           {ticket.fotos && ticket.fotos.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-4 print:hidden">
+            <div className="mt-4 print:hidden">
+              <p className="text-xs text-text-muted mb-1">Fotos generales del ticket</p>
+              <div className="flex flex-wrap gap-2">
               {ticket.fotos.map((url, i) => (
                 <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
                   <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
                 </a>
               ))}
+              </div>
             </div>
           )}
         </div>
@@ -343,6 +377,12 @@ function TicketDetallePage() {
                     <span className="text-text-muted">Neto del material</span>
                     <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                   </div>
+
+                  <FotoMaterialPicker
+                    fotos={f.fotos}
+                    onAgregar={files => agregarFotosFila(f.uid, files)}
+                    onQuitar={idx => quitarFotoFila(f.uid, idx)}
+                  />
                 </div>
               );
             })}

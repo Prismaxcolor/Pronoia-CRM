@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale } from 'lucide-react';
 import { completarTicket } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, type MaterialFila } from './material-fila';
+import FotoMaterialPicker from './FotoMaterialPicker';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
 interface Props {
@@ -32,6 +33,13 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const quitarMaterial = (uid: number) =>
     setMateriales(prev => (prev.length > 1 ? prev.filter(f => f.uid !== uid) : prev));
 
+  const agregarFotosFila = (uid: number, files: File[]) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid
+      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      : f)));
+  const quitarFotoFila = (uid: number, idx: number) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
   const pesoNetoTotal = useMemo(
     () => materiales.reduce((acc, f) => acc + netoFila(f, taras), 0),
     [materiales, taras]
@@ -60,14 +68,19 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
 
     setGuardando(true);
-    const result = await completarTicket(ticket.id, materiales.map(f => ({
-      productoId: f.productoId,
-      subcategoria: f.subcategoria.trim() || null,
-      pesoBruto: Number(f.pesoBruto) || 0,
-      tara: taraKgFila(f, taras),
-      destinoTipo: 'lote' as const,
-      loteId: f.destino,
-    })), Number(devolucion) || 0);
+
+    const materialesConFotos = [];
+    for (const f of materiales) {
+      const urls = await subirFotosFila(f.fotos);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      materialesConFotos.push({ ...materialAPayload(f, taras), fotos: urls });
+    }
+
+    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -162,6 +175,12 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                   <span className="text-text-muted">Neto del material</span>
                   <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                 </div>
+
+                <FotoMaterialPicker
+                  fotos={f.fotos}
+                  onAgregar={files => agregarFotosFila(f.uid, files)}
+                  onQuitar={idx => quitarFotoFila(f.uid, idx)}
+                />
               </div>
             );
           })}

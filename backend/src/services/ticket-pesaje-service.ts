@@ -23,6 +23,7 @@ interface DetalleRow {
   peso_neto: number | null;
   destino_tipo: 'mpp' | 'lote';
   lote_id: string | null;
+  fotos: string[] | null;
   productos?: { nombre: string } | null;
   lotes?: { nombre: string } | null;
 }
@@ -59,6 +60,7 @@ export interface MaterialPublico {
   destinoTipo: 'mpp' | 'lote';
   loteId: string | null;
   nombreLote: string | null;
+  fotos: string[];
 }
 
 export interface TicketPublico {
@@ -108,6 +110,7 @@ function detalleToPublico(d: DetalleRow): MaterialPublico {
     destinoTipo: d.destino_tipo,
     loteId: d.lote_id,
     nombreLote: d.lotes?.nombre ?? null,
+    fotos: d.fotos ?? [],
   };
 }
 
@@ -199,6 +202,7 @@ function materialesARpc(materiales: CrearTicketInput['materiales']) {
     devolucion: m.devolucion,
     destino_tipo: m.destinoTipo,
     lote_id: m.destinoTipo === 'lote' ? m.loteId : null,
+    fotos: m.fotos,
   }));
 }
 

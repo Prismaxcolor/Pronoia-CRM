@@ -4168,3 +4168,180 @@ begin
   );
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 46 · Foto por material en pesaje (en vez de una foto general del ticket)
+--
+-- Antes: tickets_pesaje.fotos era una sola galería para todo el pesaje,
+-- cargada al final del formulario. Julio pidió que cada material tenga sus
+-- propias fotos, cargadas al agregarlo — más útil para verificar qué se
+-- pesó exactamente en cada línea quand hay varios materiales en un mismo
+-- ticket.
+--
+-- tickets_pesaje.fotos (a nivel de ticket) se conserva sin tocar: campo
+-- legacy que ya no se llena desde el formulario, pero sigue mostrando las
+-- fotos de tickets creados antes de este bloque.
+-- ============================================================================
+
+alter table public.detalle_tickets_pesaje add column if not exists fotos text[] not null default '{}';
+
+create or replace function public.crear_ticket_pesaje(
+  p_tipo text, p_entidad_id uuid, p_fecha date, p_fotos text[], p_observaciones text,
+  p_materiales jsonb, p_estado text, p_pesado_por uuid, p_peso_global numeric,
+  p_devolucion numeric default 0, p_pesaje_exterior boolean default false
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_id         uuid;
+  v_item       jsonb;
+  v_almacen_id uuid;
+  v_numero     integer;
+begin
+  select id into v_almacen_id
+    from public.almacenes
+   where es_predeterminado and activo
+   limit 1;
+
+  if p_tipo = 'compra' then
+    v_numero := nextval('public.tickets_pesaje_numero_compra_seq');
+  else
+    v_numero := nextval('public.tickets_pesaje_numero_venta_seq');
+  end if;
+
+  insert into public.tickets_pesaje
+    (tipo, entidad_id, fecha, fotos, observaciones, estado, pesado_por,
+     peso_global, devolucion, almacen_id, numero, pesaje_exterior)
+  values (
+    p_tipo, p_entidad_id, p_fecha, p_fotos, nullif(p_observaciones, ''),
+    coalesce(p_estado, 'completo'), p_pesado_por, p_peso_global,
+    coalesce(p_devolucion, 0), v_almacen_id, v_numero,
+    coalesce(p_pesaje_exterior, false)
+  )
+  returning id into v_id;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id, fotos)
+    values (
+      v_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid,
+      coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(v_item->'fotos', '[]'::jsonb)) as x), '{}')
+    );
+  end loop;
+
+  return v_id;
+end;
+$$;
+
+create or replace function public.completar_ticket_pesaje(
+  p_ticket_id uuid, p_materiales jsonb, p_completado_por uuid
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_estado text;
+  v_item   jsonb;
+begin
+  select estado into v_estado from public.tickets_pesaje where id = p_ticket_id;
+
+  if v_estado is null then
+    raise exception 'Ticket no encontrado.';
+  end if;
+  if v_estado <> 'bruto' then
+    raise exception 'El ticket ya está completo.';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id, fotos)
+    values (
+      p_ticket_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid,
+      coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(v_item->'fotos', '[]'::jsonb)) as x), '{}')
+    );
+  end loop;
+
+  update public.tickets_pesaje
+     set estado = 'completo',
+         completado_por = p_completado_por,
+         completado_en = now()
+   where id = p_ticket_id;
+
+  return p_ticket_id;
+end;
+$$;
+
+-- Redefine específicamente la sobrecarga de 5 parámetros (la que usa el
+-- backend, con p_devolucion) — la de 4 parámetros queda huérfana, sin
+-- caller, no se toca.
+create or replace function public.editar_ticket_pesaje(
+  p_ticket_id uuid, p_materiales jsonb, p_peso_global numeric default null,
+  p_observaciones text default null, p_devolucion numeric default null
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_estado    text;
+  v_facturado boolean;
+  v_item      jsonb;
+begin
+  select estado, facturado into v_estado, v_facturado
+    from public.tickets_pesaje where id = p_ticket_id;
+
+  if v_estado is null then
+    raise exception 'Ticket no encontrado.';
+  end if;
+  if v_estado <> 'completo' then
+    raise exception 'Solo se pueden editar tickets completos (usa completar_ticket_pesaje para uno en bruto).';
+  end if;
+  if v_facturado then
+    raise exception 'No se puede editar un ticket ya facturado.';
+  end if;
+
+  update public.tickets_pesaje
+     set peso_global   = coalesce(p_peso_global, peso_global),
+         observaciones = coalesce(nullif(p_observaciones, ''), observaciones),
+         devolucion    = coalesce(p_devolucion, devolucion)
+   where id = p_ticket_id;
+
+  delete from public.detalle_tickets_pesaje where ticket_id = p_ticket_id;
+
+  for v_item in select value from jsonb_array_elements(p_materiales) as elems(value)
+  loop
+    insert into public.detalle_tickets_pesaje
+      (ticket_id, producto_id, subcategoria, peso_bruto, tara, devolucion, destino_tipo, lote_id, fotos)
+    values (
+      p_ticket_id,
+      (v_item->>'producto_id')::uuid,
+      nullif(v_item->>'subcategoria', ''),
+      (v_item->>'peso_bruto')::numeric,
+      (v_item->>'tara')::numeric,
+      coalesce((v_item->>'devolucion')::numeric, 0),
+      coalesce(nullif(v_item->>'destino_tipo', ''), 'mpp'),
+      nullif(v_item->>'lote_id', '')::uuid,
+      coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(v_item->'fotos', '[]'::jsonb)) as x), '{}')
+    );
+  end loop;
+
+  return p_ticket_id;
+end;
+$$;
