@@ -29,6 +29,10 @@ export interface ProductoBase {
   tipoMaterialId: string | null;
   /** Nombre de la categoría, resuelto vía join. Solo lectura (no se envía). */
   tipoMaterialNombre?: string | null;
+  /** true si la categoría de este producto es "sin lote" (ej. No Ferroso) —
+   *  al pesarlo no se pide lote, va directo a inventario general (MPP).
+   *  Resuelto vía join. Solo lectura (no se envía). */
+  tipoMaterialSinLote?: boolean | null;
   creadoPor: string;
   creadoEn: string;
 }

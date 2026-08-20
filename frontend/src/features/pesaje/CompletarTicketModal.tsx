@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale } from 'lucide-react';
 import { completarTicket } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, type MaterialFila } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
@@ -60,7 +60,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
     setError(null);
 
     if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
-    if (materiales.some(f => !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
+    if (materiales.some(f => !esFilaSinLote(f, productos) && !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
     if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
       setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
       return;
@@ -77,7 +77,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
         setGuardando(false);
         return;
       }
-      materialesConFotos.push({ ...materialAPayload(f, taras), fotos: urls });
+      materialesConFotos.push({ ...materialAPayload(f, taras, productos), fotos: urls });
     }
 
     const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0);
@@ -131,13 +131,19 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                   </div>
                 </div>
 
-                <div>
-                  <label className={labelClass}>Destino (inventario) *</label>
-                  <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
-                    <option value="" disabled>-Selecciona-</option>
-                    {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                  </select>
-                </div>
+                {esFilaSinLote(f, productos) ? (
+                  <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                    "{productos.find(p => p.id === f.productoId)?.tipoMaterialNombre}" es una categoría sin lote — este material va directo a inventario general, no pide lote.
+                  </p>
+                ) : (
+                  <div>
+                    <label className={labelClass}>Destino (inventario) *</label>
+                    <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
+                      <option value="" disabled>-Selecciona-</option>
+                      {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                    </select>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>

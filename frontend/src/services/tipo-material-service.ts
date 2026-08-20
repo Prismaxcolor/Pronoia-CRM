@@ -4,6 +4,9 @@ import type { TipoMaterial } from '@shared/types/index.js';
 export interface TipoMaterialInput {
   nombre: string;
   descripcion?: string | null;
+  /** true si esta categoría nunca va a un lote específico al pesarla — va
+   *  directo a inventario general (MPP). Ej. "No Ferroso". */
+  sinLote?: boolean;
 }
 
 export async function obtenerTiposMaterial(): Promise<TipoMaterial[]> {

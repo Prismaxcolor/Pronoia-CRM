@@ -1,4 +1,4 @@
-import type { Tara } from '@shared/types/index.js';
+import type { Producto, Tara } from '@shared/types/index.js';
 import { subirFotoTicket } from '../../services/storage-service';
 
 /** Valor del selector de destino: el id de un lote real, o '' si el
@@ -80,23 +80,32 @@ export function netoFila(f: MaterialFila, taras: Tara[]): number {
   return (Number(f.pesoBruto) || 0) - taraKgFila(f, taras);
 }
 
+/** true si el material elegido en esta fila pertenece a una categoría "sin
+ *  lote" (ej. No Ferroso, Bloque 47) — no se pide lote al pesarlo, va
+ *  directo a inventario general (MPP). */
+export function esFilaSinLote(f: MaterialFila, productos: Producto[]): boolean {
+  return productos.find(p => p.id === f.productoId)?.tipoMaterialSinLote === true;
+}
+
 /** Campos de una fila (sin fotos, sin uid) en el formato que espera el
- *  backend para un material con destino a lote — usado por crearTicket,
- *  completarTicket y editarTicket. */
-export function materialAPayload(f: MaterialFila, taras: Tara[]): {
+ *  backend — usado por crearTicket, completarTicket y editarTicket. Un
+ *  material de categoría "sin lote" va a MPP sin loteId; el resto va al
+ *  lote que el usuario eligió. */
+export function materialAPayload(f: MaterialFila, taras: Tara[], productos: Producto[]): {
   productoId: string;
   subcategoria: string | null;
   pesoBruto: number;
   tara: number;
-  destinoTipo: 'lote';
-  loteId: string;
+  destinoTipo: 'mpp' | 'lote';
+  loteId: string | null;
 } {
+  const sinLote = esFilaSinLote(f, productos);
   return {
     productoId: f.productoId,
     subcategoria: f.subcategoria.trim() || null,
     pesoBruto: Number(f.pesoBruto) || 0,
     tara: taraKgFila(f, taras),
-    destinoTipo: 'lote',
-    loteId: f.destino,
+    destinoTipo: sinLote ? 'mpp' : 'lote',
+    loteId: sinLote ? null : f.destino,
   };
 }

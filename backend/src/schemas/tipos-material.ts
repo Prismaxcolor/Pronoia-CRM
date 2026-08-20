@@ -11,6 +11,9 @@ const descripcionOpcional = z
 export const crearTipoMaterialSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(80),
   descripcion: descripcionOpcional,
+  /** true si esta categoría nunca va a un lote específico al pesarla — va
+   *  directo a inventario general (MPP). Ej. "No Ferroso". */
+  sinLote: z.boolean().default(false),
 });
 
 export const actualizarTipoMaterialSchema = crearTipoMaterialSchema

@@ -17,8 +17,8 @@ interface ProductoRow {
   peso: number | null;
   variantes: unknown;
   sub_productos: unknown;
-  // join con tipos_material(nombre)
-  tipos_material?: { nombre: string } | null;
+  // join con tipos_material(nombre, sin_lote)
+  tipos_material?: { nombre: string; sin_lote: boolean } | null;
 }
 
 export interface ProductoPublico {
@@ -27,6 +27,7 @@ export interface ProductoPublico {
   descripcion: string;
   tipoMaterialId: string | null;
   tipoMaterialNombre: string | null;
+  tipoMaterialSinLote: boolean | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
@@ -45,6 +46,7 @@ function toPublico(row: ProductoRow): ProductoPublico {
     descripcion: row.descripcion ?? '',
     tipoMaterialId: row.tipo_material_id,
     tipoMaterialNombre: row.tipos_material?.nombre ?? null,
+    tipoMaterialSinLote: row.tipos_material?.sin_lote ?? null,
     moneda: row.moneda,
     activo: row.activo,
     tipo: row.tipo,
@@ -93,7 +95,7 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
 export async function listarProductos(): Promise<ProductoPublico[]> {
   const { data, error } = await supabaseAdmin
     .from('productos')
-    .select('*, tipos_material(nombre)')
+    .select('*, tipos_material(nombre, sin_lote)')
     .order('orden', { ascending: true });
 
   if (error || !data) return [];
@@ -120,7 +122,7 @@ export async function crearProducto(
   const { data, error } = await supabaseAdmin
     .from('productos')
     .insert(row)
-    .select('*, tipos_material(nombre)')
+    .select('*, tipos_material(nombre, sin_lote)')
     .single();
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el producto.' };
@@ -164,7 +166,7 @@ export async function actualizarProducto(
     .from('productos')
     .update(row)
     .eq('id', id)
-    .select('*, tipos_material(nombre)')
+    .select('*, tipos_material(nombre, sin_lote)')
     .maybeSingle();
 
   if (error) return { error: error.message };

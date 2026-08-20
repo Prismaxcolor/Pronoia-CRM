@@ -9,6 +9,7 @@ interface TipoMaterialRow {
   nombre: string;
   descripcion: string | null;
   activo: boolean;
+  sin_lote: boolean;
   created_at: string;
 }
 
@@ -17,6 +18,7 @@ export interface TipoMaterialPublico {
   nombre: string;
   descripcion: string | null;
   activo: boolean;
+  sinLote: boolean;
   createdAt: string;
 }
 
@@ -26,6 +28,7 @@ function toPublico(row: TipoMaterialRow): TipoMaterialPublico {
     nombre: row.nombre,
     descripcion: row.descripcion,
     activo: row.activo,
+    sinLote: row.sin_lote,
     createdAt: row.created_at,
   };
 }
@@ -50,7 +53,7 @@ export async function crearTipoMaterial(
 ): Promise<{ tipo: TipoMaterialPublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('tipos_material')
-    .insert({ nombre: input.nombre, descripcion: input.descripcion })
+    .insert({ nombre: input.nombre, descripcion: input.descripcion, sin_lote: input.sinLote })
     .select('*')
     .single();
 
@@ -69,6 +72,7 @@ export async function actualizarTipoMaterial(
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.descripcion !== undefined) update.descripcion = cambios.descripcion;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
+  if (cambios.sinLote !== undefined) update.sin_lote = cambios.sinLote;
 
   const { data, error } = await supabaseAdmin
     .from('tipos_material')

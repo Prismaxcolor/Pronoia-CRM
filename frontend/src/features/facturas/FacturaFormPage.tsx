@@ -174,6 +174,11 @@ function FacturaFormPage({ tipo }: Props) {
   const subtotalLinea = (l: LineaFila) => (Number(l.peso) || 0) * (Number(l.precioUnitario) || 0);
   const total = useMemo(() => lineas.reduce((acc, l) => acc + subtotalLinea(l), 0), [lineas]);
 
+  /** true si el material pertenece a una categoría "sin lote" (ej. No
+   *  Ferroso, Bloque 47) — no pide lote, va directo a inventario general. */
+  const esSinLote = (productoId: string): boolean =>
+    productos.find(p => p.id === productoId)?.tipoMaterialSinLote === true;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -181,7 +186,7 @@ function FacturaFormPage({ tipo }: Props) {
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
     if (modoPeso === 'ticket' && ticketIds.length === 0) { setError('Selecciona al menos un ticket de pesaje o cambia a peso manual.'); return; }
     if (lineas.some(l => !l.productoId)) { setError('Selecciona un material en cada fila.'); return; }
-    if (modoPeso === 'manual' && lineas.some(l => !l.destino)) { setError('Selecciona el destino de inventario en cada fila.'); return; }
+    if (modoPeso === 'manual' && lineas.some(l => !esSinLote(l.productoId) && !l.destino)) { setError('Selecciona el destino de inventario en cada fila.'); return; }
     if (lineas.some(l => (Number(l.peso) || 0) <= 0)) { setError('Cada material debe tener un peso mayor a 0.'); return; }
     if (lineas.some(l => (Number(l.precioUnitario) || 0) <= 0)) { setError('Cada material debe tener un precio unitario mayor a 0.'); return; }
 
@@ -206,8 +211,8 @@ function FacturaFormPage({ tipo }: Props) {
           productoId: l.productoId,
           pesoBruto: Number(l.peso) || 0,
           tara: 0,
-          destinoTipo: 'lote' as const,
-          loteId: l.destino,
+          destinoTipo: esSinLote(l.productoId) ? ('mpp' as const) : ('lote' as const),
+          loteId: esSinLote(l.productoId) ? null : l.destino,
         })),
         fotos: [],
       });
@@ -353,16 +358,22 @@ function FacturaFormPage({ tipo }: Props) {
                 )}
 
                 {modoPeso === 'manual' && (
-                  <div>
-                    <label className={labelClass}>{esCompra ? 'Destino (inventario) *' : 'Origen (inventario) *'}</label>
-                    <select required value={l.destino} onChange={e => setLinea(l.uid, 'destino', e.target.value)} className={inputClass}>
-                      <option value="" disabled>-Selecciona-</option>
-                      {lotes.map(lo => <option key={lo.id} value={lo.id}>{lo.nombre}</option>)}
-                    </select>
-                    <p className="text-xs text-text-muted mt-1">
-                      {esCompra ? 'A qué lote entra este material comprado.' : 'De qué lote sale este material vendido.'}
+                  esSinLote(l.productoId) ? (
+                    <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                      "{productos.find(p => p.id === l.productoId)?.tipoMaterialNombre}" es una categoría sin lote — este material va directo a inventario general, no pide lote.
                     </p>
-                  </div>
+                  ) : (
+                    <div>
+                      <label className={labelClass}>{esCompra ? 'Destino (inventario) *' : 'Origen (inventario) *'}</label>
+                      <select required value={l.destino} onChange={e => setLinea(l.uid, 'destino', e.target.value)} className={inputClass}>
+                        <option value="" disabled>-Selecciona-</option>
+                        {lotes.map(lo => <option key={lo.id} value={lo.id}>{lo.nombre}</option>)}
+                      </select>
+                      <p className="text-xs text-text-muted mt-1">
+                        {esCompra ? 'A qué lote entra este material comprado.' : 'De qué lote sale este material vendido.'}
+                      </p>
+                    </div>
+                  )
                 )}
 
                 <div className="grid grid-cols-2 gap-3">

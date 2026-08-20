@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Pencil, Check, EyeOff, Eye, Trash2 } from 'lucide-react';
+import { X, Plus, Pencil, Check, EyeOff, Eye, Trash2, PackageX } from 'lucide-react';
 import {
   obtenerTiposMaterial,
   crearTipoMaterial,
@@ -82,6 +82,18 @@ function CategoriasModal({ onClose, onCambios }: Props) {
       : await reactivarTipoMaterial(c.id);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     toast.exito(c.activo ? `"${c.nombre}" desactivada.` : `"${c.nombre}" reactivada.`);
+    marcarCambio();
+    cargar();
+  };
+
+  const toggleSinLote = async (c: TipoMaterial) => {
+    const result = await actualizarTipoMaterial(c.id, { sinLote: !c.sinLote });
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito(
+      c.sinLote
+        ? `"${c.nombre}" vuelve a pedir lote al pesar.`
+        : `"${c.nombre}" ya no pide lote al pesar — va directo a inventario general.`
+    );
     marcarCambio();
     cargar();
   };
@@ -177,9 +189,20 @@ function CategoriasModal({ onClose, onCambios }: Props) {
                       <span className="flex-1 text-sm text-text-primary truncate">
                         {c.nombre}
                         {!c.activo && <span className="ml-2 text-xs text-red-500">(inactiva)</span>}
+                        {c.sinLote && <span className="ml-2 text-xs text-brand-600">(sin lote)</span>}
                       </span>
                       {puedeEditar && (
                         <>
+                          <button
+                            type="button"
+                            onClick={() => toggleSinLote(c)}
+                            className={`p-1.5 rounded-md transition-colors ${
+                              c.sinLote ? 'bg-brand-50 text-brand-600 hover:bg-brand-100' : 'text-text-muted hover:bg-brand-50 hover:text-brand-600'
+                            }`}
+                            title={c.sinLote ? 'Vuelve a pedir lote al pesar' : 'No pedir lote al pesar (va directo a inventario general)'}
+                          >
+                            <PackageX size={14} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => empezarEdicion(c)}
@@ -220,6 +243,11 @@ function CategoriasModal({ onClose, onCambios }: Props) {
           <p className="text-xs text-text-muted">
             Desactivar una categoría la oculta del selector de productos, pero conserva los que ya la usan.
             Solo se pueden eliminar categorías que ningún producto esté usando.
+          </p>
+          <p className="text-xs text-text-muted">
+            <PackageX size={12} className="inline -mt-0.5 mr-1" />
+            "Sin lote" (ej. No Ferroso): al pesar un material de esa categoría no se pide elegir lote —
+            va directo a inventario general.
           </p>
         </div>
       </div>

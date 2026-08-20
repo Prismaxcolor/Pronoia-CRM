@@ -4345,3 +4345,18 @@ begin
   return p_ticket_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 47 · Categorías "sin lote" (ej. No Ferroso) — se pesan sin pedir
+-- lote, van directo a inventario general (MPP)
+--
+-- Julio pidió que los materiales de la categoría "No Ferroso" nunca vayan a
+-- un lote específico. En vez de hardcodear ese nombre en el código, se
+-- agrega un flag por categoría (editable desde el modal de Categorías) para
+-- que cualquier categoría futura pueda marcarse igual sin tocar código.
+-- ============================================================================
+
+alter table public.tipos_material add column if not exists sin_lote boolean not null default false;
+
+update public.tipos_material set sin_lote = true where nombre = 'No Ferroso';
