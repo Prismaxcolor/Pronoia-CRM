@@ -9,10 +9,10 @@ import {
 } from '../../services/estado-cuenta-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import PagarTodoModal from '../proveedores/PagarTodoModal';
-import NotaAjusteModal from '../proveedores/NotaAjusteModal';
-import AnularNotaModal from '../proveedores/AnularNotaModal';
-import type { ResultadoPagoMultiple } from '../../services/pago-service';
+import PagoCobroModal from './PagoCobroModal';
+import NotaAjusteModal from './NotaAjusteModal';
+import AnularNotaModal from './AnularNotaModal';
+import type { ResultadoCobroMultiple } from '../../services/cobro-service';
 
 interface Props {
   /** Define de dónde se jalan los datos. La pantalla es idéntica para ambos. */
@@ -46,16 +46,24 @@ function rutaDetalle(tipo: TipoEntidad, entidadId: string, e: EntradaEstadoCuent
     return `${tipo === 'proveedor' ? '/compras' : '/ventas'}/${e.facturaId}`;
   }
   if ((e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && e.notaId) {
-    return `/proveedores/${entidadId}/notas/${e.notaId}`;
+    return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/notas/${e.notaId}`;
   }
   return null;
 }
 
-function formatCodigoPago(numero: number | null): string {
-  return numero != null ? `PG-${String(numero).padStart(4, '0')}` : '';
+/** Correlativo del pago/adelanto (proveedor, PG-/AD-) o cobro/anticipo
+ *  (cliente, CB-/AC-) — solo para el mensaje del toast tras registrar. */
+function formatCodigoPago(tipo: TipoEntidad, numero: number | null): string {
+  if (numero == null) return '';
+  return tipo === 'proveedor'
+    ? `PG-${String(numero).padStart(4, '0')}`
+    : `CB-${String(numero).padStart(4, '0')}`;
 }
-function formatCodigoAdelanto(numero: number | null): string {
-  return numero != null ? `AD-${String(numero).padStart(4, '0')}` : '';
+function formatCodigoAdelanto(tipo: TipoEntidad, numero: number | null): string {
+  if (numero == null) return '';
+  return tipo === 'proveedor'
+    ? `AD-${String(numero).padStart(4, '0')}`
+    : `AC-${String(numero).padStart(4, '0')}`;
 }
 
 function EstadoCuentaPage({ tipo }: Props) {
@@ -74,8 +82,13 @@ function EstadoCuentaPage({ tipo }: Props) {
 
   const volverA = tipo === 'proveedor' ? '/proveedores' : '/clientes';
   const etiquetaEntidad = tipo === 'proveedor' ? 'Proveedores' : 'Clientes';
-  const puedePagar = tipo === 'proveedor' && tienePermiso('cochinito', 'crear');
-  const puedeAjustar = tipo === 'proveedor' && tienePermiso('proveedores', 'editar');
+  const recursoEntidad = tipo === 'proveedor' ? 'proveedores' : 'clientes';
+  const etiquetaAccionPago = tipo === 'proveedor' ? 'Registrar pago' : 'Registrar cobro';
+  // Un pago/cobro mueve dinero de/hacia una banca (Cochinito) → mismo
+  // permiso para ambos tipos de entidad, igual que un ajuste de saldo usa el
+  // permiso de editar la entidad correspondiente (proveedores o clientes).
+  const puedePagar = tienePermiso('cochinito', 'crear');
+  const puedeAjustar = tienePermiso(recursoEntidad, 'editar');
 
   const recargar = () =>
     obtenerEstadoCuenta(tipo, id, desde || undefined, hasta || undefined)
@@ -98,13 +111,15 @@ function EstadoCuentaPage({ tipo }: Props) {
     [estado]
   );
 
-  const handlePagoRegistrado = (resultado: ResultadoPagoMultiple) => {
+  const handlePagoRegistrado = (resultado: ResultadoCobroMultiple) => {
     setPagoAbierto(false);
+    const etiquetaDoc = tipo === 'proveedor' ? 'Pago' : 'Cobro';
+    const etiquetaAdel = tipo === 'proveedor' ? 'adelanto' : 'anticipo';
     const partes = [
-      resultado.numeroPago != null ? `Pago ${formatCodigoPago(resultado.numeroPago)}` : null,
-      resultado.numeroAdelanto != null ? `adelanto ${formatCodigoAdelanto(resultado.numeroAdelanto)}` : null,
+      resultado.numeroCobro != null ? `${etiquetaDoc} ${formatCodigoPago(tipo, resultado.numeroCobro)}` : null,
+      resultado.numeroAnticipo != null ? `${etiquetaAdel} ${formatCodigoAdelanto(tipo, resultado.numeroAnticipo)}` : null,
     ].filter(Boolean);
-    toast.exito(partes.length > 0 ? `${partes.join(' y ')} registrados.` : 'Pago registrado.');
+    toast.exito(partes.length > 0 ? `${partes.join(' y ')} registrados.` : `${etiquetaDoc} registrado.`);
     cargar();
   };
 
@@ -181,7 +196,7 @@ function EstadoCuentaPage({ tipo }: Props) {
               title="Selecciona una o varias facturas y/o notas de débito, o regístralo como adelanto"
             >
               <DollarSign size={16} />
-              Registrar pago
+              {etiquetaAccionPago}
             </button>
           )}
           <button
@@ -311,9 +326,10 @@ function EstadoCuentaPage({ tipo }: Props) {
         </div>
       </div>
 
-      {pagoAbierto && tipo === 'proveedor' && (
-        <PagarTodoModal
-          proveedorId={estado.entidad.id}
+      {pagoAbierto && (
+        <PagoCobroModal
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
           notasDebitoPendientes={notasDebitoPendientes}
           notasCreditoPendientes={notasCreditoPendientes}
           onClose={() => setPagoAbierto(false)}
@@ -321,17 +337,19 @@ function EstadoCuentaPage({ tipo }: Props) {
         />
       )}
 
-      {notaAbierta && tipo === 'proveedor' && (
+      {notaAbierta && (
         <NotaAjusteModal
-          proveedorId={estado.entidad.id}
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
           onClose={() => setNotaAbierta(false)}
           onCreada={handleNotaCreada}
         />
       )}
 
-      {notaAAnular && tipo === 'proveedor' && (
+      {notaAAnular && (
         <AnularNotaModal
-          proveedorId={estado.entidad.id}
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
           nota={notaAAnular}
           onClose={() => setNotaAAnular(null)}
           onAnulada={handleNotaAnulada}

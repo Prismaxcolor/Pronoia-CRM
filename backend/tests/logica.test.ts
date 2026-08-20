@@ -228,6 +228,53 @@ describe('construirEstadoCuenta', () => {
     expect(ec.entradas[0].facturaAsociadaId).toBeNull();
     expect(ec.entradas[0].facturaAsociadaCodigo).toBeNull();
   });
+
+  // Bloque 45 — cliente usa numeración propia (CB-/AC-/NCV-/NDV-), separada
+  // de la de proveedor (PG-/AD-/NC-/ND-), aunque la lógica de armado es la
+  // misma función para ambos tipos de entidad.
+  describe('con entidad cliente', () => {
+    const entidadCliente = { id: 'cli-1', tipo: 'cliente' as const, nombre: 'Julillo Pillo' };
+
+    it('subtipo cobro se muestra como "pago" con correlativo CB-', () => {
+      const ec = construirEstadoCuenta(
+        entidadCliente,
+        [],
+        [{ id: 'm1', monto: 200, descripcion: null, referencia: null, fecha: '2026-06-02', subtipo: 'cobro', numero: 4 }]
+      );
+      expect(ec.entradas[0].tipo).toBe('pago');
+      expect(ec.entradas[0].referencia).toBe('CB-0004');
+    });
+
+    it('subtipo anticipo se muestra como "adelanto" con correlativo AC-', () => {
+      const ec = construirEstadoCuenta(
+        entidadCliente,
+        [],
+        [{ id: 'm1', monto: 50, descripcion: null, referencia: null, fecha: '2026-06-02', subtipo: 'anticipo', numero: 2 }]
+      );
+      expect(ec.entradas[0].tipo).toBe('adelanto');
+      expect(ec.entradas[0].referencia).toBe('AC-0002');
+    });
+
+    it('nota de crédito de cliente usa correlativo NCV- (no NC-, el de proveedor)', () => {
+      const ec = construirEstadoCuenta(
+        entidadCliente,
+        [],
+        [],
+        [{ id: 'n1', tipo: 'credito', monto: 15, motivo: 'Descuento cliente', anulada: false, pagada: false, fecha: '2026-06-02', numero: 1 }]
+      );
+      expect(ec.entradas[0].referencia).toBe('NCV-0001');
+    });
+
+    it('nota de débito de cliente usa correlativo NDV- (no ND-, el de proveedor)', () => {
+      const ec = construirEstadoCuenta(
+        entidadCliente,
+        [],
+        [],
+        [{ id: 'n1', tipo: 'debito', monto: 15, motivo: 'Cargo cliente', anulada: false, pagada: false, fecha: '2026-06-02', numero: 1 }]
+      );
+      expect(ec.entradas[0].referencia).toBe('NDV-0001');
+    });
+  });
 });
 
 describe('agruparPagos', () => {

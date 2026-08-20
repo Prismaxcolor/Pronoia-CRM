@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { obtenerNotaAjuste, type NotaAjusteDetalle } from '../../services/nota-ajuste-service';
+import { obtenerNotaAjusteCliente, type NotaAjusteClienteDetalle } from '../../services/nota-ajuste-cliente-service';
+import type { TipoEntidad } from '../../services/estado-cuenta-service';
 import FilaDocumento from '../../components/FilaDocumento';
+
+interface Props {
+  tipoEntidad: TipoEntidad;
+}
 
 // Mismos colores que EstadoCuentaPage.tsx (BADGE_POR_TIPO) — no inventar otros.
 const BADGE_POR_TIPO: Record<'credito' | 'debito', string> = {
@@ -15,36 +21,32 @@ const TITULO_POR_TIPO: Record<'credito' | 'debito', string> = {
   debito: 'Nota de débito',
 };
 
-// Mismo texto que NotaAjusteModal.tsx (líneas ~62-64).
-const LEYENDA_SALDO_POR_TIPO: Record<'credito' | 'debito', string> = {
-  credito: 'Resta del saldo a pagar al proveedor.',
-  debito: 'Suma al saldo a pagar al proveedor.',
-};
-
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function NotaDetallePage() {
-  const { proveedorId = '', notaId = '' } = useParams();
+/** Detalle imprimible de una nota, compartido entre proveedor y cliente
+ *  (Bloque 45) — misma pantalla, solo cambia de qué servicio/ruta se lee. */
+function NotaDetallePage({ tipoEntidad }: Props) {
+  const esProveedor = tipoEntidad === 'proveedor';
+  const { entidadId = '', notaId = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
 
   // Mismo patrón que FacturaDetallePage: si se llegó desde Estado de Cuenta,
-  // "volver" regresa ahí directo en vez del listado de proveedores.
+  // "volver" regresa ahí directo en vez del listado de proveedores/clientes.
   const navState = location.state as { volverA?: string; volverALabel?: string } | null;
-  const ruta = navState?.volverA ?? `/proveedores/${proveedorId}/estado-cuenta`;
+  const ruta = navState?.volverA ?? `/${esProveedor ? 'proveedores' : 'clientes'}/${entidadId}/estado-cuenta`;
   const etiquetaVolver = navState?.volverALabel ?? 'Estado de cuenta';
 
-  const [nota, setNota] = useState<NotaAjusteDetalle | null>(null);
+  const [nota, setNota] = useState<NotaAjusteDetalle | NotaAjusteClienteDetalle | null>(null);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
     setCargando(true);
-    obtenerNotaAjuste(proveedorId, notaId)
-      .then(setNota)
-      .finally(() => setCargando(false));
-  }, [proveedorId, notaId]);
+    const promesa = esProveedor ? obtenerNotaAjuste(entidadId, notaId) : obtenerNotaAjusteCliente(entidadId, notaId);
+    promesa.then(setNota).finally(() => setCargando(false));
+  }, [esProveedor, entidadId, notaId]);
 
   if (cargando) {
     return (
@@ -66,6 +68,10 @@ function NotaDetallePage() {
   }
 
   const titulo = TITULO_POR_TIPO[nota.tipo];
+  const nombreEntidad = 'nombreProveedor' in nota ? nota.nombreProveedor : nota.nombreCliente;
+  const leyendaSaldo = nota.tipo === 'credito'
+    ? `Resta del saldo que ${esProveedor ? 'le debemos al proveedor' : 'nos debe el cliente'}.`
+    : `Suma al saldo que ${esProveedor ? 'le debemos al proveedor' : 'nos debe el cliente'}.`;
 
   return (
     <div className="max-w-2xl print-documento print:max-w-none">
@@ -90,7 +96,7 @@ function NotaDetallePage() {
             )}
             {nota.pagada && !nota.anulada && (
               <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 print:border print:border-black print:bg-transparent">
-                Pagada
+                {esProveedor ? 'Pagada' : 'Cobrada'}
               </span>
             )}
           </div>
@@ -105,14 +111,14 @@ function NotaDetallePage() {
       </div>
 
       <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
-        <FilaDocumento label="Proveedor" valor={nota.nombreProveedor} />
+        <FilaDocumento label={esProveedor ? 'Proveedor' : 'Cliente'} valor={nombreEntidad} />
         <FilaDocumento label="Fecha" valor={nota.fecha.slice(0, 10)} />
         <FilaDocumento label="Correlativo" valor={nota.codigo ?? '—'} />
         {nota.facturaAsociada && (
           <FilaDocumento
             label="Factura asociada"
             valor={nota.facturaAsociada.codigo ?? `N.º ${nota.facturaAsociada.id.slice(0, 8)}`}
-            onClick={() => navigate(`/compras/${nota.facturaAsociada!.id}`, {
+            onClick={() => navigate(`${esProveedor ? '/compras' : '/ventas'}/${nota.facturaAsociada!.id}`, {
               state: { volverA: ruta, volverALabel: etiquetaVolver },
             })}
           />
@@ -127,7 +133,7 @@ function NotaDetallePage() {
           </span>
         </div>
 
-        <p className="text-xs text-text-muted mt-3">{LEYENDA_SALDO_POR_TIPO[nota.tipo]}</p>
+        <p className="text-xs text-text-muted mt-3">{leyendaSaldo}</p>
       </div>
     </div>
   );

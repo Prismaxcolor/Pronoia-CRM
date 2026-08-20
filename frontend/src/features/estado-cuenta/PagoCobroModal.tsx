@@ -3,21 +3,23 @@ import { X, Paperclip, Plus, Trash2 } from 'lucide-react';
 import { obtenerBancas } from '../../services/banca-service';
 import { obtenerTasaOficial } from '../../services/tasa-service';
 import { obtenerFacturas } from '../../services/factura-cv-service';
-import { registrarPagoMultiple, type BancaPago, type ItemPagoMultiple, type ResultadoPagoMultiple } from '../../services/pago-service';
+import { registrarPagoMultiple, type BancaPago, type ItemPagoMultiple } from '../../services/pago-service';
+import { registrarCobroMultiple, type ResultadoCobroMultiple } from '../../services/cobro-service';
 import { subirComprobantePago } from '../../services/storage-service';
 import type { Banca } from '@shared/types/index.js';
 import type { FacturaCV } from '../../services/factura-cv-service';
-import type { EntradaEstadoCuenta } from '../../services/estado-cuenta-service';
+import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
 
 interface Props {
-  proveedorId: string;
+  tipoEntidad: TipoEntidad;
+  entidadId: string;
   /** Notas de débito pendientes (sin anular, sin pagar) — filtradas por el padre. */
   notasDebitoPendientes: EntradaEstadoCuenta[];
   /** Notas de crédito disponibles (sin anular, sin aplicar) — se pueden usar
-   *  como método de pago: reducen lo que hace falta cubrir con banca. */
+   *  como método de pago/cobro: reducen lo que hace falta cubrir con banca. */
   notasCreditoPendientes: EntradaEstadoCuenta[];
   onClose: () => void;
-  onRegistrado: (resultado: ResultadoPagoMultiple) => void;
+  onRegistrado: (resultado: ResultadoCobroMultiple) => void;
 }
 
 interface LineaBanca {
@@ -33,7 +35,17 @@ function fmt(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
-function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendientes, onClose, onRegistrado }: Props) {
+/** "Registrar pago" (proveedor) / "Registrar cobro" (cliente) — misma
+ *  pantalla (Bloque 45), la única diferencia real es el sentido del dinero
+ *  (sale de una banca vs entra a una banca) y a qué RPC/tabla apunta. */
+function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCreditoPendientes, onClose, onRegistrado }: Props) {
+  const esProveedor = tipoEntidad === 'proveedor';
+  const verbo = esProveedor ? 'pagar' : 'cobrar';
+  const etiquetaAccion = esProveedor ? 'Registrar pago' : 'Registrar cobro';
+  const etiquetaBanca = esProveedor ? 'Banca(s) de origen' : 'Banca(s) de destino';
+  const etiquetaAdelanto = esProveedor ? 'adelanto' : 'anticipo';
+  const codigoAdelanto = esProveedor ? 'AD-…' : 'AC-…';
+
   const [bancas, setBancas] = useState<Banca[]>([]);
   const [tasa, setTasa] = useState<number | null>(null);
   const [facturasPendientes, setFacturasPendientes] = useState<FacturaCV[]>([]);
@@ -43,10 +55,10 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
   const [notaIdsSel, setNotaIdsSel] = useState<string[]>([]);
   const [notaCreditoIdsSel, setNotaCreditoIdsSel] = useState<string[]>([]);
 
-  /** Total a pagar (USD): mientras sea null, se deriva de lo seleccionado en
-   *  cada render (cero clics extra en el caso común). Al tipear a mano queda
-   *  fijo en ese valor hasta "restablecer". Si supera lo seleccionado, el
-   *  excedente es el adelanto. */
+  /** Total a pagar/cobrar (USD): mientras sea null, se deriva de lo
+   *  seleccionado en cada render (cero clics extra en el caso común). Al
+   *  tipear a mano queda fijo en ese valor hasta "restablecer". Si supera lo
+   *  seleccionado, el excedente es el adelanto/anticipo. */
   const [totalEditadoManual, setTotalEditadoManual] = useState<string | null>(null);
 
   const nextLineaId = useRef(0);
@@ -68,10 +80,10 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
       setLineasBanca([{ id: nextLineaId.current++, bancaId: lista[0]?.id ?? '', montoUsd: '', referencia: '' }]);
     });
     obtenerTasaOficial().then(t => setTasa(t?.tasa ?? null));
-    obtenerFacturas('compra', { entidadId: proveedorId }).then(lista =>
+    obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista =>
       setFacturasPendientes(lista.filter(f => f.estado !== 'pagada'))
     );
-  }, [proveedorId]);
+  }, [esProveedor, entidadId]);
 
   const toggleFactura = (f: FacturaCV) =>
     setMontosFactura(prev => {
@@ -103,8 +115,8 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
   const totalFacturas = facturasSel.reduce((acc, f) => acc + (parseFloat(montosFactura[f.id]) || 0), 0);
   const totalNotas = notasSel.reduce((acc, n) => acc + n.cargo, 0);
   const totalCargos = totalFacturas + totalNotas;
-  // Las notas de crédito se usan como método de pago: reducen lo que hace
-  // falta cubrir con banca, en vez de sumar (al revés de las de débito).
+  // Las notas de crédito se usan como método de pago/cobro: reducen lo que
+  // hace falta cubrir con banca, en vez de sumar (al revés de las de débito).
   const totalCreditos = notasCreditoSel.reduce((acc, n) => acc + n.abono, 0);
   const totalItems = totalCargos - totalCreditos;
 
@@ -151,21 +163,21 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
     facturasSel.forEach(f => partes.push(f.codigo ?? f.id.slice(0, 8)));
     if (notasSel.length > 0) partes.push(`${notasSel.length} nota${notasSel.length === 1 ? '' : 's'} débito`);
     if (notasCreditoSel.length > 0) partes.push(`${notasCreditoSel.length} nota${notasCreditoSel.length === 1 ? '' : 's'} crédito aplicada${notasCreditoSel.length === 1 ? '' : 's'}`);
-    if (adelantoCalculado > 0.01) partes.push(`adelanto $${fmt(adelantoCalculado)}`);
-    return partes.length > 0 ? `Pago combinado: ${partes.join(', ')}` : '';
-  }, [facturasSel, notasSel, notasCreditoSel, adelantoCalculado]);
+    if (adelantoCalculado > 0.01) partes.push(`${etiquetaAdelanto} $${fmt(adelantoCalculado)}`);
+    return partes.length > 0 ? `${esProveedor ? 'Pago' : 'Cobro'} combinado: ${partes.join(', ')}` : '';
+  }, [facturasSel, notasSel, notasCreditoSel, adelantoCalculado, etiquetaAdelanto, esProveedor]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (totalCreditos > totalCargos + 0.01) {
-      setError(`Las notas de crédito seleccionadas ($${fmt(totalCreditos)}) superan lo que se está pagando ($${fmt(totalCargos)}). Desmarcá alguna o agregá más facturas.`);
+      setError(`Las notas de crédito seleccionadas ($${fmt(totalCreditos)}) superan lo que se está ${esProveedor ? 'pagando' : 'cobrando'} ($${fmt(totalCargos)}). Desmarcá alguna o agregá más facturas.`);
       return;
     }
-    if (totalEditadoNum <= 0) { setError('El total a pagar debe ser mayor a 0.'); return; }
+    if (totalEditadoNum <= 0) { setError(`El total a ${verbo} debe ser mayor a 0.`); return; }
     if (adelantoCalculado < -0.01) {
-      setError(`El total a pagar ($${fmt(totalEditadoNum)}) es menor a lo seleccionado ($${fmt(totalItems)}). Bajá el monto de alguna factura o desmarcala.`);
+      setError(`El total a ${verbo} ($${fmt(totalEditadoNum)}) es menor a lo seleccionado ($${fmt(totalItems)}). Bajá el monto de alguna factura o desmarcala.`);
       return;
     }
 
@@ -186,7 +198,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
     }
     const idsBanca = lineasEfectivas.map(l => l.bancaId);
     if (new Set(idsBanca).size !== idsBanca.length) {
-      setError('No podés repetir la misma banca en un pago.');
+      setError(`No podés repetir la misma banca en un ${esProveedor ? 'pago' : 'cobro'}.`);
       return;
     }
 
@@ -199,8 +211,10 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
       const esBsLinea = banca.moneda === 'VES';
       if (esBsLinea && !tasa) { setError('No hay tasa de cambio disponible para convertir a bolívares.'); return; }
       const montoBanca = esBsLinea && tasa ? montoUsdLinea * tasa : montoUsdLinea;
-      // No se bloquea si supera el saldo disponible — la cuenta puede quedar
-      // en negativo (decisión del negocio).
+      // Un pago a proveedor no bloquea si supera el saldo disponible (puede
+      // quedar en negativo); un cobro de cliente nunca podría dejar una
+      // banca en negativo (siempre suma), así que no aplica ninguno de los
+      // dos casos acá.
       bancasPayload.push({
         bancaId: banca.id,
         monto: montoBanca,
@@ -211,7 +225,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
     }
 
     if (!sumaBancasCuadra) {
-      setError(`La suma de las bancas ($${fmt(sumaBancasUsd)}) no coincide con el total a pagar ($${fmt(totalEditadoNum)}).`);
+      setError(`La suma de las bancas ($${fmt(sumaBancasUsd)}) no coincide con el total a ${verbo} ($${fmt(totalEditadoNum)}).`);
       return;
     }
 
@@ -233,17 +247,31 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
       }
     }
 
-    const result = await registrarPagoMultiple({
-      proveedorId,
+    const datosComunes = {
       bancas: bancasPayload,
       montoUsd: totalEditadoNum,
       descripcion: (descripcion.trim() || descripcionSugerida) || null,
       fecha,
       items,
       comprobanteUrl,
-    });
-    setGuardando(false);
+    };
 
+    if (esProveedor) {
+      const result = await registrarPagoMultiple({ proveedorId: entidadId, ...datosComunes });
+      setGuardando(false);
+      if ('error' in result) { setError(result.error); return; }
+      onRegistrado({
+        movimientoPrincipalId: result.movimientoPrincipalId,
+        movimientoIds: result.movimientoIds,
+        grupoId: result.grupoId,
+        numeroCobro: result.numeroPago,
+        numeroAnticipo: result.numeroAdelanto,
+      });
+      return;
+    }
+
+    const result = await registrarCobroMultiple({ clienteId: entidadId, ...datosComunes });
+    setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     onRegistrado(result);
   };
@@ -256,8 +284,8 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
       <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
           <div>
-            <h2 className="text-lg font-bold text-text-primary">Registrar pago</h2>
-            <p className="text-sm text-text-secondary">Selecciona una o varias facturas y/o notas de débito, o regístralo como adelanto.</p>
+            <h2 className="text-lg font-bold text-text-primary">{etiquetaAccion}</h2>
+            <p className="text-sm text-text-secondary">Selecciona una o varias facturas y/o notas de débito, o regístralo como {etiquetaAdelanto}.</p>
           </div>
           <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
@@ -304,7 +332,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
                 })}
               </div>
               <p className="text-xs text-text-muted mt-1">
-                Al marcar una factura se aplica su saldo completo por defecto — el monto es editable para un pago parcial.
+                Al marcar una factura se aplica su saldo completo por defecto — el monto es editable para un {esProveedor ? 'pago' : 'cobro'} parcial.
               </p>
               </>
             )}
@@ -335,7 +363,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
           </div>
 
           <div>
-            <label className={labelClass}>Notas de crédito disponibles <span className="text-text-muted">(se aplican como método de pago)</span></label>
+            <label className={labelClass}>Notas de crédito disponibles <span className="text-text-muted">(se aplican como método de {esProveedor ? 'pago' : 'cobro'})</span></label>
             {notasCreditoPendientes.length === 0 ? (
               <p className="text-xs text-text-muted">Sin notas de crédito disponibles.</p>
             ) : (
@@ -365,7 +393,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
 
           <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-brand-800 shrink-0">Total a pagar</span>
+              <span className="text-sm text-brand-800 shrink-0">Total a {verbo}</span>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-700 text-sm">$</span>
                 <input
@@ -390,21 +418,21 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
           {adelantoCalculado > 0.01 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
               <p className="text-sm text-amber-800">
-                Se registrará un <strong>adelanto de ${fmt(adelantoCalculado)}</strong> como ticket aparte (correlativo AD-…).
+                Se registrará un <strong>{etiquetaAdelanto} de ${fmt(adelantoCalculado)}</strong> como ticket aparte (correlativo {codigoAdelanto}).
               </p>
             </div>
           )}
           {adelantoCalculado < -0.01 && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
               <p className="text-sm text-red-600">
-                El total a pagar (${fmt(totalEditadoNum)}) es menor a lo seleccionado (${fmt(totalItems)}). Bajá el monto de alguna factura o desmarcala.
+                El total a {verbo} (${fmt(totalEditadoNum)}) es menor a lo seleccionado (${fmt(totalItems)}). Bajá el monto de alguna factura o desmarcala.
               </p>
             </div>
           )}
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className={labelClass}>Banca(s) de origen *</label>
+              <label className={labelClass}>{etiquetaBanca} *</label>
               {lineasBanca.length < bancas.length && (
                 <button
                   type="button"
@@ -499,12 +527,12 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
               value={descripcion}
               onChange={e => setDescripcion(e.target.value)}
               className={inputClass}
-              placeholder={descripcionSugerida || 'Ej: Pago combinado de facturas'}
+              placeholder={descripcionSugerida || `Ej: ${esProveedor ? 'Pago' : 'Cobro'} combinado de facturas`}
             />
           </div>
 
           <div>
-            <label className={labelClass}>Comprobante de pago <span className="text-text-muted">(opcional)</span></label>
+            <label className={labelClass}>Comprobante de {esProveedor ? 'pago' : 'cobro'} <span className="text-text-muted">(opcional)</span></label>
             <label className="flex items-center gap-2 px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm cursor-pointer hover:bg-surface-hover transition-colors">
               <Paperclip size={16} className="text-text-muted shrink-0" />
               <span className="truncate text-text-secondary">
@@ -530,7 +558,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Registrando...' : 'Registrar pago'}
+              {guardando ? 'Registrando...' : etiquetaAccion}
             </button>
           </div>
         </form>
@@ -539,4 +567,4 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendie
   );
 }
 
-export default PagarTodoModal;
+export default PagoCobroModal;

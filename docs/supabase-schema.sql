@@ -3789,3 +3789,382 @@ begin
   );
 end;
 $$;
+
+
+-- ============================================================================
+-- Bloque 45 · Ventas: espejo de Compras (estado de cuenta escribible)
+--
+-- Compras ya tenía estado de cuenta + notas de crédito/débito + "Registrar
+-- pago" con RPC multi-banca. Ventas solo tenía el lado de lectura (facturas +
+-- estado de cuenta de solo consulta). Este bloque agrega el lado de
+-- escritura para clientes, en espejo pero NO mezclado con lo de proveedor:
+--
+-- 1) facturas_venta gana monto_pagado (no existía — a diferencia de
+--    facturas_compra, nunca se rastreaban pagos parciales de una venta).
+-- 2) notas_ajuste_cliente: tabla nueva, mismas columnas que
+--    notas_ajuste_proveedor, pero con numeración PROPIA (secuencias
+--    separadas) — decisión explícita de Julio para no mezclar el correlativo
+--    de notas a clientes con el de notas a proveedores.
+-- 3) anular_nota_ajuste_cliente: espejo de anular_nota_ajuste_proveedor.
+-- 4) movimientos.subtipo gana 'cobro'/'anticipo' (antes solo 'pago'/
+--    'adelanto') — mismo mecanismo, numeración propia también.
+-- 5) registrar_cobro_cliente_multi_banca: espejo de
+--    registrar_pago_proveedor_multi_banca, pero tipo='ingreso' (entra plata,
+--    no sale) — por eso NO tiene bloqueo de saldo (un ingreso nunca deja a
+--    una banca en negativo, ni falta que lo tuviera antes: el bloqueo de
+--    saldo insuficiente de Compras nunca aplicó acá).
+-- ============================================================================
+
+alter table public.facturas_venta add column if not exists monto_pagado numeric not null default 0;
+
+create table if not exists public.notas_ajuste_cliente (
+  id              uuid        primary key default gen_random_uuid(),
+  cliente_id      uuid        not null references public.clientes(id),
+  tipo            text        not null check (tipo in ('credito', 'debito')),
+  monto           numeric     not null check (monto > 0),
+  motivo          text        not null,
+  anulada         boolean     not null default false,
+  anula_nota_id   uuid        references public.notas_ajuste_cliente(id),
+  registrado_por  uuid        references public.users(id),
+  created_at      timestamptz not null default now(),
+  pagada          boolean     not null default false,
+  movimiento_id   uuid        references public.movimientos(id),
+  numero          bigint,
+  factura_id      uuid        references public.facturas_venta(id),
+  fecha           date        not null default current_date
+);
+
+alter table public.notas_ajuste_cliente disable row level security;
+
+create index if not exists idx_notas_ajuste_cliente_cliente
+  on public.notas_ajuste_cliente (cliente_id);
+create index if not exists idx_notas_ajuste_cliente_factura
+  on public.notas_ajuste_cliente (factura_id);
+
+-- Numeración propia para notas de cliente — nunca comparte contador con
+-- notas_credito_numero_seq / notas_debito_numero_seq (esas son de proveedor).
+create sequence if not exists public.notas_credito_cliente_numero_seq;
+create sequence if not exists public.notas_debito_cliente_numero_seq;
+
+create unique index if not exists idx_notas_ajuste_cliente_tipo_numero
+  on public.notas_ajuste_cliente (tipo, numero);
+
+create or replace function public.asignar_correlativo_nota_ajuste_cliente()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.numero is null then
+    if new.tipo = 'credito' then
+      new.numero := nextval('public.notas_credito_cliente_numero_seq');
+    elsif new.tipo = 'debito' then
+      new.numero := nextval('public.notas_debito_cliente_numero_seq');
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_asignar_correlativo_nota_ajuste_cliente on public.notas_ajuste_cliente;
+
+create trigger trg_asignar_correlativo_nota_ajuste_cliente
+before insert on public.notas_ajuste_cliente
+for each row
+execute function public.asignar_correlativo_nota_ajuste_cliente();
+
+-- Espejo exacto de anular_nota_ajuste_proveedor: no borra, inserta la nota
+-- contraria y marca la original como anulada.
+create or replace function public.anular_nota_ajuste_cliente(
+  p_nota_id uuid,
+  p_motivo text,
+  p_registrado_por uuid
+) returns uuid
+language plpgsql
+as $$
+declare
+  v_cliente_id   uuid;
+  v_tipo         text;
+  v_monto        numeric;
+  v_anulada      boolean;
+  v_pagada       boolean;
+  v_factura_id   uuid;
+  v_nueva_id     uuid;
+begin
+  select cliente_id, tipo, monto, anulada, pagada, factura_id
+    into v_cliente_id, v_tipo, v_monto, v_anulada, v_pagada, v_factura_id
+    from public.notas_ajuste_cliente
+   where id = p_nota_id;
+
+  if v_cliente_id is null then
+    raise exception 'Nota no encontrada.';
+  end if;
+  if v_anulada then
+    raise exception 'Esta nota ya fue anulada.';
+  end if;
+  if v_pagada then
+    raise exception 'Esta nota ya fue aplicada a un cobro — no se puede anular sin reversar antes el cobro.';
+  end if;
+
+  insert into public.notas_ajuste_cliente
+    (cliente_id, tipo, monto, motivo, anula_nota_id, registrado_por, factura_id)
+  values (
+    v_cliente_id,
+    case when v_tipo = 'credito' then 'debito' else 'credito' end,
+    v_monto,
+    p_motivo,
+    p_nota_id,
+    p_registrado_por,
+    v_factura_id
+  )
+  returning id into v_nueva_id;
+
+  update public.notas_ajuste_cliente set anulada = true where id = p_nota_id;
+
+  return v_nueva_id;
+end;
+$$;
+
+-- 'cobro'/'anticipo' son el espejo de 'pago'/'adelanto' para movimientos de
+-- tipo 'ingreso' (cliente) en vez de 'egreso' (proveedor).
+alter table public.movimientos drop constraint if exists movimientos_subtipo_check;
+alter table public.movimientos add constraint movimientos_subtipo_check
+  check (subtipo is null or subtipo = any (array['pago', 'adelanto', 'cobro', 'anticipo']));
+
+create sequence if not exists public.movimientos_cobro_numero_seq;
+create sequence if not exists public.movimientos_anticipo_cliente_numero_seq;
+
+-- Espejo de registrar_pago_proveedor_multi_banca: mismo reparto entre varias
+-- bancas, misma separación cobro/anticipo, mismo criterio nota_credito resta
+-- / nota_debito suma. Diferencias: tipo='ingreso' (banca_origen_id recibe,
+-- ver aplicar_movimiento_a_saldo del Bloque 2 — en un ingreso la plata entra
+-- por banca_origen_id, no banca_destino_id), sin bloqueo de saldo (un
+-- ingreso nunca dejaría una banca en negativo), numeración y tabla de notas
+-- propias de cliente.
+create or replace function public.registrar_cobro_cliente_multi_banca(
+  p_cliente_id     uuid,
+  p_bancas         jsonb,     -- [{ "bancaId": uuid, "monto": numeric, "montoUsd": numeric, "moneda": "USD"|"VES", "referencia": text|null }]
+  p_monto_usd      numeric,   -- total declarado por el usuario ("Total a cobrar")
+  p_descripcion    text,
+  p_referencia     text,
+  p_fecha          date,
+  p_registrado_por uuid,
+  p_items          jsonb      -- [{ "tipo": "factura"|"nota_debito"|"nota_credito", "id": uuid, "montoUsd": numeric }]
+) returns jsonb
+language plpgsql
+as $$
+declare
+  v_item              jsonb;
+  v_banca             jsonb;
+  v_tipo               text;
+  v_id                 uuid;
+  v_monto              numeric;
+  v_total              numeric;
+  v_pagado             numeric;
+  v_filas              int;
+  v_total_cargos        numeric;
+  v_total_creditos      numeric;
+  v_total_items        numeric;
+  v_total_bancas       numeric;
+  v_adelanto           numeric;
+  v_nombre             text;
+  v_archivada          boolean;
+  v_num_cobro          bigint;
+  v_num_anticipo       bigint;
+  v_grupo_id           uuid;
+  v_restante_pago      numeric;
+  v_banca_id           uuid;
+  v_banca_monto        numeric;
+  v_banca_monto_usd    numeric;
+  v_banca_moneda       text;
+  v_banca_referencia   text;
+  v_ap_pago_usd        numeric;
+  v_ap_adel_usd        numeric;
+  v_monto_pago         numeric;
+  v_monto_adel         numeric;
+  v_mov_id             uuid;
+  v_mov_cobro_principal    uuid;
+  v_mov_anticipo_principal uuid;
+  v_ids                uuid[] := '{}';
+begin
+  if p_bancas is null or jsonb_typeof(p_bancas) <> 'array' or jsonb_array_length(p_bancas) = 0 then
+    raise exception 'Debe indicar al menos una banca de destino.';
+  end if;
+
+  if (select count(*) from jsonb_array_elements(p_bancas)) <>
+     (select count(distinct (value->>'bancaId')) from jsonb_array_elements(p_bancas)) then
+    raise exception 'No se puede repetir la misma banca en un cobro.';
+  end if;
+
+  select coalesce(sum(case when value->>'tipo' = 'nota_credito' then 0 else (value->>'montoUsd')::numeric end), 0) into v_total_cargos
+    from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) as elems(value);
+
+  select coalesce(sum(case when value->>'tipo' = 'nota_credito' then (value->>'montoUsd')::numeric else 0 end), 0) into v_total_creditos
+    from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) as elems(value);
+
+  if v_total_creditos > v_total_cargos + 0.01 then
+    raise exception 'Las notas de crédito seleccionadas (%) superan lo que se está cobrando (%).', v_total_creditos, v_total_cargos;
+  end if;
+
+  v_total_items := v_total_cargos - v_total_creditos;
+
+  select coalesce(sum((value->>'montoUsd')::numeric), 0) into v_total_bancas
+    from jsonb_array_elements(p_bancas) as elems(value);
+
+  if abs(v_total_bancas - p_monto_usd) > 0.01 then
+    raise exception 'La suma de las bancas (%) no coincide con el total a cobrar (%).', v_total_bancas, p_monto_usd;
+  end if;
+
+  v_adelanto := round(p_monto_usd - v_total_items, 2);
+  if v_adelanto < -0.01 then
+    raise exception 'El total a cobrar (%) es menor a la suma de lo seleccionado (%).', p_monto_usd, v_total_items;
+  end if;
+  if abs(v_adelanto) <= 0.01 then
+    v_adelanto := 0;
+  end if;
+
+  -- Bloquea todas las bancas involucradas en orden estable (por id) antes de
+  -- tocar ninguna, mismo criterio anti-deadlock que el pago a proveedor. No
+  -- valida saldo — un ingreso nunca puede dejar una banca en negativo.
+  for v_banca in
+    select value from jsonb_array_elements(p_bancas) as elems(value)
+    order by (value->>'bancaId')
+  loop
+    select nombre, archivada into v_nombre, v_archivada
+      from public.bancas where id = (v_banca->>'bancaId')::uuid
+      for update;
+
+    if v_nombre is null then
+      raise exception 'Banca % no encontrada.', v_banca->>'bancaId';
+    end if;
+    if v_archivada then
+      raise exception 'La banca % está archivada.', v_nombre;
+    end if;
+  end loop;
+
+  v_grupo_id := gen_random_uuid();
+  if v_total_items > 0 then
+    v_num_cobro := nextval('public.movimientos_cobro_numero_seq');
+  end if;
+  if v_adelanto > 0 then
+    v_num_anticipo := nextval('public.movimientos_anticipo_cliente_numero_seq');
+  end if;
+
+  v_restante_pago := v_total_items;
+
+  for v_banca in select value from jsonb_array_elements(p_bancas) as elems(value)
+  loop
+    v_banca_id := (v_banca->>'bancaId')::uuid;
+    v_banca_monto := (v_banca->>'monto')::numeric;
+    v_banca_monto_usd := (v_banca->>'montoUsd')::numeric;
+    v_banca_moneda := v_banca->>'moneda';
+    v_banca_referencia := coalesce(nullif(v_banca->>'referencia', ''), nullif(p_referencia, ''));
+
+    if v_banca_monto_usd <= 0 then
+      continue;
+    end if;
+
+    v_ap_pago_usd := least(v_banca_monto_usd, v_restante_pago);
+    v_ap_adel_usd := v_banca_monto_usd - v_ap_pago_usd;
+    v_restante_pago := v_restante_pago - v_ap_pago_usd;
+    v_monto_pago := 0;
+
+    if v_ap_pago_usd > 0.01 then
+      v_monto_pago := round(v_banca_monto * v_ap_pago_usd / v_banca_monto_usd, 2);
+
+      -- tipo='ingreso': banca_origen_id es la que RECIBE la plata (ver
+      -- aplicar_movimiento_a_saldo, Bloque 2) — no banca_destino_id.
+      insert into public.movimientos
+        (tipo, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion,
+         banca_origen_id, banca_destino_id, fecha, referencia, registrado_por, cliente_id)
+      values
+        ('ingreso', 'cobro', v_num_cobro, v_grupo_id, v_monto_pago, v_banca_moneda, v_ap_pago_usd,
+         nullif(p_descripcion, ''), v_banca_id, null, p_fecha, v_banca_referencia,
+         p_registrado_por, p_cliente_id)
+      returning id into v_mov_id;
+
+      v_ids := v_ids || v_mov_id;
+      if v_mov_cobro_principal is null then v_mov_cobro_principal := v_mov_id; end if;
+    end if;
+
+    if v_ap_adel_usd > 0.01 then
+      v_monto_adel := v_banca_monto - v_monto_pago;
+
+      insert into public.movimientos
+        (tipo, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion,
+         banca_origen_id, banca_destino_id, fecha, referencia, registrado_por, cliente_id)
+      values
+        ('ingreso', 'anticipo', v_num_anticipo, v_grupo_id, v_monto_adel, v_banca_moneda, v_ap_adel_usd,
+         nullif(case when v_total_items > 0 then 'Anticipo' else p_descripcion end, ''),
+         v_banca_id, null, p_fecha, v_banca_referencia, p_registrado_por, p_cliente_id)
+      returning id into v_mov_id;
+
+      v_ids := v_ids || v_mov_id;
+      if v_mov_anticipo_principal is null then v_mov_anticipo_principal := v_mov_id; end if;
+    end if;
+  end loop;
+
+  for v_item in select value from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) as elems(value)
+  loop
+    v_tipo  := v_item->>'tipo';
+    v_id    := (v_item->>'id')::uuid;
+    v_monto := (v_item->>'montoUsd')::numeric;
+
+    if v_tipo = 'factura' then
+      select total, monto_pagado into v_total, v_pagado
+        from public.facturas_venta where id = v_id and cliente_id = p_cliente_id;
+
+      if v_total is null then
+        raise exception 'Factura % no encontrada para este cliente.', v_id;
+      end if;
+
+      v_pagado := coalesce(v_pagado, 0) + v_monto;
+
+      update public.facturas_venta
+         set monto_pagado = v_pagado,
+             estado = case when v_pagado >= v_total - 0.01 then 'pagada' else estado end
+       where id = v_id;
+
+    elsif v_tipo = 'nota_debito' then
+      update public.notas_ajuste_cliente
+         set pagada = true,
+             movimiento_id = v_mov_cobro_principal
+       where id = v_id
+         and cliente_id = p_cliente_id
+         and tipo = 'debito'
+         and anulada = false
+         and pagada = false;
+
+      get diagnostics v_filas = row_count;
+      if v_filas = 0 then
+        raise exception 'Nota de débito % no encontrada, ya aplicada o anulada.', v_id;
+      end if;
+
+    elsif v_tipo = 'nota_credito' then
+      update public.notas_ajuste_cliente
+         set pagada = true,
+             movimiento_id = v_mov_cobro_principal
+       where id = v_id
+         and cliente_id = p_cliente_id
+         and tipo = 'credito'
+         and anulada = false
+         and pagada = false;
+
+      get diagnostics v_filas = row_count;
+      if v_filas = 0 then
+        raise exception 'Nota de crédito % no encontrada, ya aplicada o anulada.', v_id;
+      end if;
+
+    else
+      raise exception 'Tipo de ítem desconocido: %', v_tipo;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'movimientoPrincipalId', coalesce(v_mov_cobro_principal, v_mov_anticipo_principal),
+    'movimientoIds', to_jsonb(v_ids),
+    'grupoId', v_grupo_id,
+    'numeroCobro', v_num_cobro,
+    'numeroAnticipo', v_num_anticipo
+  );
+end;
+$$;

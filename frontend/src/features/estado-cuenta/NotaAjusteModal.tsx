@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { crearNotaAjuste } from '../../services/nota-ajuste-service';
+import { crearNotaAjusteCliente } from '../../services/nota-ajuste-cliente-service';
 import { obtenerFacturas, type FacturaCV } from '../../services/factura-cv-service';
+import type { TipoEntidad } from '../../services/estado-cuenta-service';
 
 interface Props {
-  proveedorId: string;
+  tipoEntidad: TipoEntidad;
+  entidadId: string;
   onClose: () => void;
   onCreada: (codigo?: string | null) => void;
 }
@@ -15,7 +18,10 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
+/** Nota de crédito/débito, compartida entre proveedor y cliente (Bloque 45)
+ *  — la pantalla es idéntica, solo cambia el endpoint según tipoEntidad. */
+function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
+  const esProveedor = tipoEntidad === 'proveedor';
   const [tipo, setTipo] = useState<Tipo>('credito');
   const [facturaId, setFacturaId] = useState('');
   const [facturas, setFacturas] = useState<FacturaCV[]>([]);
@@ -30,13 +36,13 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   // La factura asociada es opcional (ajuste general de saldo) — se puede
-  // elegir cualquier factura del proveedor, incluso ya pagada (no se filtra
-  // por estado, a diferencia de PagarTodoModal que solo lista pendientes).
+  // elegir cualquier factura de la entidad, incluso ya pagada (no se filtra
+  // por estado, a diferencia de PagoCobroModal que solo lista pendientes).
   useEffect(() => {
-    obtenerFacturas('compra', { entidadId: proveedorId }).then(lista =>
+    obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista =>
       setFacturas([...lista].sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
     );
-  }, [proveedorId]);
+  }, [esProveedor, entidadId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,13 +53,10 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
     if (!motivo.trim()) { setError('El motivo es obligatorio.'); return; }
 
     setGuardando(true);
-    const result = await crearNotaAjuste(proveedorId, {
-      tipo,
-      monto: montoNum,
-      motivo: motivo.trim(),
-      facturaId: facturaId || null,
-      fecha,
-    });
+    const input = { tipo, monto: montoNum, motivo: motivo.trim(), facturaId: facturaId || null, fecha };
+    const result = esProveedor
+      ? await crearNotaAjuste(entidadId, input)
+      : await crearNotaAjusteCliente(entidadId, input);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -82,9 +85,13 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
               </button>
             </div>
             <p className="text-xs text-text-muted mt-1">
-              {tipo === 'credito'
-                ? 'Resta del saldo que le debemos al proveedor (ej. descuento de flete).'
-                : 'Suma al saldo que le debemos al proveedor (ej. comisión o servicio adicional).'}
+              {esProveedor
+                ? (tipo === 'credito'
+                    ? 'Resta del saldo que le debemos al proveedor (ej. descuento de flete).'
+                    : 'Suma al saldo que le debemos al proveedor (ej. comisión o servicio adicional).')
+                : (tipo === 'credito'
+                    ? 'Resta del saldo que nos debe el cliente (ej. descuento comercial).'
+                    : 'Suma al saldo que nos debe el cliente (ej. cargo adicional por flete).')}
             </p>
           </div>
 
@@ -128,7 +135,7 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
               className={`${inputClass} resize-none`}
               rows={3}
               maxLength={300}
-              placeholder="Ej: Descuento por flete no realizado por el proveedor"
+              placeholder={esProveedor ? 'Ej: Descuento por flete no realizado por el proveedor' : 'Ej: Descuento comercial por pronto pago'}
             />
           </div>
 

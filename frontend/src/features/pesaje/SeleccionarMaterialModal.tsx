@@ -14,9 +14,20 @@ interface Props {
  *  escribiría el <select>. */
 function SeleccionarMaterialModal({ productos, onClose, onSeleccionar }: Props) {
   const [busqueda, setBusqueda] = useState('');
+  const [categoriaId, setCategoriaId] = useState<string | null>(null);
+
+  const categorias = Array.from(
+    productos.reduce((map, p) => {
+      if (p.tipoMaterialId && p.tipoMaterialNombre && !map.has(p.tipoMaterialId)) {
+        map.set(p.tipoMaterialId, p.tipoMaterialNombre);
+      }
+      return map;
+    }, new Map<string, string>())
+  ).sort((a, b) => a[1].localeCompare(b[1]));
 
   const filtrados = productos.filter(p =>
-    p.nombre.toLowerCase().includes(busqueda.trim().toLowerCase())
+    p.nombre.toLowerCase().includes(busqueda.trim().toLowerCase()) &&
+    (categoriaId === null || p.tipoMaterialId === categoriaId)
   );
 
   return (
@@ -41,6 +52,36 @@ function SeleccionarMaterialModal({ productos, onClose, onSeleccionar }: Props) 
               className="w-full pl-9 pr-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
             />
           </div>
+
+          {categorias.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              <button
+                type="button"
+                onClick={() => setCategoriaId(null)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  categoriaId === null
+                    ? 'bg-brand-500 border-brand-500 text-white'
+                    : 'bg-surface-alt border-border text-text-muted hover:text-text-primary'
+                }`}
+              >
+                Todas
+              </button>
+              {categorias.map(([id, nombre]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setCategoriaId(id)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    categoriaId === id
+                      ? 'bg-brand-500 border-brand-500 text-white'
+                      : 'bg-surface-alt border-border text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  {nombre}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="p-4 overflow-y-auto">

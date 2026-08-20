@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { anularNotaAjuste } from '../../services/nota-ajuste-service';
-import type { EntradaEstadoCuenta } from '../../services/estado-cuenta-service';
+import { anularNotaAjusteCliente } from '../../services/nota-ajuste-cliente-service';
+import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
 
 interface Props {
-  proveedorId: string;
+  tipoEntidad: TipoEntidad;
+  entidadId: string;
   nota: EntradaEstadoCuenta;
   onClose: () => void;
   onAnulada: () => void;
@@ -14,7 +16,8 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function AnularNotaModal({ proveedorId, nota, onClose, onAnulada }: Props) {
+/** Anular nota, compartida entre proveedor y cliente (Bloque 45). */
+function AnularNotaModal({ tipoEntidad, entidadId, nota, onClose, onAnulada }: Props) {
   const [motivo, setMotivo] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +32,9 @@ function AnularNotaModal({ proveedorId, nota, onClose, onAnulada }: Props) {
     if (!nota.notaId) { setError('Nota inválida.'); return; }
 
     setGuardando(true);
-    const result = await anularNotaAjuste(proveedorId, nota.notaId, motivo.trim());
+    const result = tipoEntidad === 'proveedor'
+      ? await anularNotaAjuste(entidadId, nota.notaId, motivo.trim())
+      : await anularNotaAjusteCliente(entidadId, nota.notaId, motivo.trim());
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }

@@ -12,6 +12,8 @@ import { validateBody } from '../middlewares/validate.js';
 import { crearClienteSchema, actualizarClienteSchema } from '../schemas/clientes.js';
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { generarLinkTelegram } from '../services/telegram-link-service.js';
+import { crearNotaAjusteCliente, anularNotaAjusteCliente, obtenerNotaAjusteCliente } from '../services/nota-ajuste-cliente-service.js';
+import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-ajuste.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -37,6 +39,69 @@ router.get('/:id/estado-cuenta', requirePermiso('clientes', 'ver'), async (req, 
   }
   res.json(estado);
 });
+
+// Detalle de una nota (vista tipo "ticket" con impresión) — espejo de
+// proveedores.ts, mismo permiso que el estado de cuenta, solo lectura.
+router.get('/:id/notas-ajuste/:notaId', requirePermiso('clientes', 'ver'), async (req, res) => {
+  const clienteId = String(req.params.id);
+  const notaId = String(req.params.notaId);
+  const result = await obtenerNotaAjusteCliente(clienteId, notaId);
+  if ('error' in result) {
+    res.status(404).json(result);
+    return;
+  }
+  res.json({ nota: result });
+});
+
+// Ajuste manual del saldo (sin factura ni cobro real) → mismo permiso que
+// editar el cliente, no 'cochinito' porque no mueve dinero de ninguna banca.
+router.post(
+  '/:id/notas-ajuste',
+  requirePermiso('clientes', 'editar'),
+  validateBody(crearNotaAjusteSchema),
+  async (req, res) => {
+    const clienteId = String(req.params.id);
+    const result = await crearNotaAjusteCliente(clienteId, req.body, req.user!.sub);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'nota_ajuste_cliente_creada',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      clienteId,
+      notaId: result.id,
+      tipo: req.body.tipo,
+    });
+    res.status(201).json(result);
+  }
+);
+
+router.post(
+  '/:id/notas-ajuste/:notaId/anular',
+  requirePermiso('clientes', 'editar'),
+  validateBody(anularNotaAjusteSchema),
+  async (req, res) => {
+    const clienteId = String(req.params.id);
+    const notaId = String(req.params.notaId);
+    const result = await anularNotaAjusteCliente(clienteId, notaId, req.body.motivo, req.user!.sub);
+    if ('error' in result) {
+      const status = result.error.includes('no encontrada') ? 404 : 400;
+      res.status(status).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'nota_ajuste_cliente_anulada',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      clienteId,
+      notaOriginalId: notaId,
+      notaNuevaId: result.id,
+    });
+    res.status(201).json(result);
+  }
+);
 
 router.post(
   '/',

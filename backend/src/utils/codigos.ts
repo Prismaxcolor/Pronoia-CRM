@@ -17,3 +17,27 @@ export function formatCodigoNotaCredito(numero: number): string {
 export function formatCodigoNotaDebito(numero: number): string {
   return `ND-${String(numero).padStart(4, '0')}`;
 }
+
+/** Formatea el correlativo de un cobro a cliente: 1 → "CB-0001". Numeración
+ *  propia, separada de PG- (pago a proveedor) — decisión de Julio. */
+export function formatCodigoCobroCliente(numero: number): string {
+  return `CB-${String(numero).padStart(4, '0')}`;
+}
+
+/** Formatea el correlativo de un anticipo de cliente: 1 → "AC-0001". Numeración
+ *  propia, separada de AD- (adelanto a proveedor). */
+export function formatCodigoAnticipoCliente(numero: number): string {
+  return `AC-${String(numero).padStart(4, '0')}`;
+}
+
+/** Formatea el correlativo de una nota de crédito a cliente: 1 → "NCV-0001".
+ *  Numeración propia, separada de NC- (nota de crédito a proveedor). */
+export function formatCodigoNotaCreditoCliente(numero: number): string {
+  return `NCV-${String(numero).padStart(4, '0')}`;
+}
+
+/** Formatea el correlativo de una nota de débito a cliente: 1 → "NDV-0001".
+ *  Numeración propia, separada de ND- (nota de débito a proveedor). */
+export function formatCodigoNotaDebitoCliente(numero: number): string {
+  return `NDV-${String(numero).padStart(4, '0')}`;
+}

@@ -4,6 +4,10 @@ import {
   formatCodigoAdelanto,
   formatCodigoNotaCredito,
   formatCodigoNotaDebito,
+  formatCodigoCobroCliente,
+  formatCodigoAnticipoCliente,
+  formatCodigoNotaCreditoCliente,
+  formatCodigoNotaDebitoCliente,
 } from '../utils/codigos.js';
 
 export type TipoEntidad = 'proveedor' | 'cliente';
@@ -63,7 +67,7 @@ export interface PagoCrudo {
   /** Texto libre que el usuario tipeó (ej. "TRF-432"), no el correlativo. */
   referencia: string | null;
   fecha: string;
-  subtipo?: 'pago' | 'adelanto' | null;
+  subtipo?: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
   numero?: number | null;
   grupoId?: string | null;
 }
@@ -75,10 +79,27 @@ export interface NotaCruda {
   facturaAsociadaCodigo?: string | null;
 }
 
-/** Formatea el correlativo de un movimiento de pago/adelanto según subtipo. */
-function formatCodigoPago(subtipo: 'pago' | 'adelanto' | null | undefined, numero: number | null | undefined): string | null {
+/** Formatea el correlativo de un movimiento de pago/cobro según entidad y
+ *  subtipo: proveedor → PG-/AD-, cliente → CB-/AC- (numeración propia). */
+function formatCodigoPago(
+  tipoEntidad: TipoEntidad,
+  subtipo: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null | undefined,
+  numero: number | null | undefined
+): string | null {
   if (numero == null) return null;
-  return subtipo === 'adelanto' ? formatCodigoAdelanto(numero) : formatCodigoPagoProveedor(numero);
+  if (tipoEntidad === 'proveedor') {
+    return subtipo === 'adelanto' ? formatCodigoAdelanto(numero) : formatCodigoPagoProveedor(numero);
+  }
+  return subtipo === 'anticipo' ? formatCodigoAnticipoCliente(numero) : formatCodigoCobroCliente(numero);
+}
+
+/** Formatea el correlativo de una nota según entidad: proveedor → NC-/ND-,
+ *  cliente → NCV-/NDV- (numeración propia). */
+function formatCodigoNota(tipoEntidad: TipoEntidad, tipo: 'credito' | 'debito', numero: number): string {
+  if (tipoEntidad === 'proveedor') {
+    return tipo === 'credito' ? formatCodigoNotaCredito(numero) : formatCodigoNotaDebito(numero);
+  }
+  return tipo === 'credito' ? formatCodigoNotaCreditoCliente(numero) : formatCodigoNotaDebitoCliente(numero);
 }
 
 /**
@@ -131,29 +152,29 @@ export function construirEstadoCuenta(
     });
   }
   for (const p of pagos) {
-    const codigo = formatCodigoPago(p.subtipo, p.numero);
+    const codigo = formatCodigoPago(entidad.tipo, p.subtipo, p.numero);
+    const esAnticipo = p.subtipo === 'adelanto' || p.subtipo === 'anticipo';
     entradas.push({
       fecha: soloFecha(p.fecha),
-      tipo: p.subtipo === 'adelanto' ? 'adelanto' : 'pago',
-      descripcion: p.descripcion ?? (p.subtipo === 'adelanto' ? 'Adelanto' : 'Pago'),
+      tipo: esAnticipo ? 'adelanto' : 'pago',
+      descripcion: p.descripcion ?? (esAnticipo ? 'Adelanto' : 'Pago'),
       referencia: codigo ?? p.referencia,
       referenciaExterna: codigo ? p.referencia : null,
       cargo: 0,
       abono: Number(p.monto),
     });
   }
-  // Nota de crédito: descuento a favor de la empresa, resta del saldo (abono).
-  // Nota de débito: monto a favor del proveedor, suma al saldo (cargo). Una
-  // nota anulada sigue sumando/restando junto con su contraria: el efecto neto
-  // se cancela solo, sin borrar ninguna de las dos (auditoría).
+  // Nota de crédito: descuento a favor de la empresa (proveedor) o del
+  // cliente, resta del saldo (abono). Nota de débito: monto a favor de la
+  // entidad, suma al saldo (cargo). Una nota anulada sigue sumando/restando
+  // junto con su contraria: el efecto neto se cancela solo, sin borrar
+  // ninguna de las dos (auditoría).
   for (const n of notas) {
     entradas.push({
       fecha: soloFecha(n.fecha),
       tipo: n.tipo === 'credito' ? 'nota_credito' : 'nota_debito',
       descripcion: n.motivo,
-      referencia: n.numero != null
-        ? (n.tipo === 'credito' ? formatCodigoNotaCredito(n.numero) : formatCodigoNotaDebito(n.numero))
-        : null,
+      referencia: n.numero != null ? formatCodigoNota(entidad.tipo, n.tipo, n.numero) : null,
       cargo: n.tipo === 'debito' ? Number(n.monto) : 0,
       abono: n.tipo === 'credito' ? Number(n.monto) : 0,
       notaId: n.id,
@@ -220,7 +241,7 @@ export async function obtenerEstadoCuenta(
   const { data: pagosData } = await qPagos;
   const pagosCrudos: PagoCrudo[] = ((pagosData as Array<{
     id: string; monto: number; monto_usd: number | null; descripcion: string | null;
-    referencia: string | null; fecha: string; subtipo: 'pago' | 'adelanto' | null;
+    referencia: string | null; fecha: string; subtipo: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
     numero: number | null; grupo_id: string | null;
   }> | null) ?? [])
     // El estado de cuenta se lleva en USD (facturas_compra/venta.total está en USD).
@@ -241,49 +262,50 @@ export async function obtenerEstadoCuenta(
   // por documento antes de armar el estado de cuenta (ver agruparPagos).
   const pagos = agruparPagos(pagosCrudos);
 
-  // Notas de crédito/débito: solo existen para proveedores (Tarea de notas de ajuste).
-  let notas: NotaCruda[] = [];
-  if (esProveedor) {
-    let qNotas = supabaseAdmin
-      .from('notas_ajuste_proveedor')
-      .select('id, tipo, monto, motivo, anulada, pagada, fecha, numero, factura_id')
-      .eq('proveedor_id', id);
-    if (desde) qNotas = qNotas.gte('fecha', desde);
-    if (hasta) qNotas = qNotas.lte('fecha', hasta);
-    const { data: notasData } = await qNotas;
-    const notasCrudas = (notasData as Array<{
-      id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean;
-      pagada: boolean; fecha: string; numero: number | null; factura_id: string | null;
-    }> | null) ?? [];
+  // Notas de crédito/débito: notas_ajuste_proveedor / notas_ajuste_cliente
+  // son tablas separadas (numeración propia cada una, Bloque 45), pero se
+  // leen con la misma forma acá — solo cambia tabla/columna/tabla-de-facturas.
+  const tablaNotas = esProveedor ? 'notas_ajuste_proveedor' : 'notas_ajuste_cliente';
 
-    // Selects planos, no embedding anidado de PostgREST — mismo estilo que
-    // nota-ajuste-service.ts: se resuelve el código de cada factura asociada
-    // con una segunda query + Map en vez de select('*, facturas_compra(numero)').
-    const facturaIds = [...new Set(notasCrudas.map(n => n.factura_id).filter((x): x is string => x != null))];
-    const codigoPorFacturaId = new Map<string, string | null>();
-    if (facturaIds.length > 0) {
-      const { data: facturasData } = await supabaseAdmin
-        .from('facturas_compra')
-        .select('id, numero')
-        .in('id', facturaIds);
-      for (const f of (facturasData as Array<{ id: string; numero: number | null }> | null) ?? []) {
-        codigoPorFacturaId.set(f.id, f.numero != null ? formatCodigo('proveedor', f.numero) : null);
-      }
+  let qNotas = supabaseAdmin
+    .from(tablaNotas)
+    .select('id, tipo, monto, motivo, anulada, pagada, fecha, numero, factura_id')
+    .eq(columnaEntidad, id);
+  if (desde) qNotas = qNotas.gte('fecha', desde);
+  if (hasta) qNotas = qNotas.lte('fecha', hasta);
+  const { data: notasData } = await qNotas;
+  const notasCrudas = (notasData as Array<{
+    id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean;
+    pagada: boolean; fecha: string; numero: number | null; factura_id: string | null;
+  }> | null) ?? [];
+
+  // Selects planos, no embedding anidado de PostgREST — mismo estilo que
+  // nota-ajuste-service.ts: se resuelve el código de cada factura asociada
+  // con una segunda query + Map en vez de select('*, facturas_compra(numero)').
+  const facturaIds = [...new Set(notasCrudas.map(n => n.factura_id).filter((x): x is string => x != null))];
+  const codigoPorFacturaId = new Map<string, string | null>();
+  if (facturaIds.length > 0) {
+    const { data: facturasData } = await supabaseAdmin
+      .from(tablaFacturas)
+      .select('id, numero')
+      .in('id', facturaIds);
+    for (const f of (facturasData as Array<{ id: string; numero: number | null }> | null) ?? []) {
+      codigoPorFacturaId.set(f.id, f.numero != null ? formatCodigo(tipoEntidad, f.numero) : null);
     }
-
-    notas = notasCrudas.map(n => ({
-      id: n.id,
-      tipo: n.tipo,
-      monto: Number(n.monto),
-      motivo: n.motivo,
-      anulada: n.anulada,
-      pagada: n.pagada,
-      fecha: n.fecha,
-      numero: n.numero,
-      facturaAsociadaId: n.factura_id,
-      facturaAsociadaCodigo: n.factura_id ? (codigoPorFacturaId.get(n.factura_id) ?? null) : null,
-    }));
   }
+
+  const notas: NotaCruda[] = notasCrudas.map(n => ({
+    id: n.id,
+    tipo: n.tipo,
+    monto: Number(n.monto),
+    motivo: n.motivo,
+    anulada: n.anulada,
+    pagada: n.pagada,
+    fecha: n.fecha,
+    numero: n.numero,
+    facturaAsociadaId: n.factura_id,
+    facturaAsociadaCodigo: n.factura_id ? (codigoPorFacturaId.get(n.factura_id) ?? null) : null,
+  }));
 
   return construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos, notas);
 }

@@ -100,9 +100,10 @@ function AppRoutes() {
         <Route path="/cochinito" element={<ProtectedRoute recurso="cochinito"><CochinitPage /></ProtectedRoute>} />
         <Route path="/clientes" element={<ProtectedRoute recurso="clientes"><ClientesPage /></ProtectedRoute>} />
         <Route path="/clientes/:id/estado-cuenta" element={<ProtectedRoute recurso="clientes"><EstadoCuentaPage tipo="cliente" /></ProtectedRoute>} />
+        <Route path="/clientes/:entidadId/notas/:notaId" element={<ProtectedRoute recurso="clientes"><NotaDetallePage tipoEntidad="cliente" /></ProtectedRoute>} />
         <Route path="/proveedores" element={<ProtectedRoute recurso="proveedores"><ProveedoresPage /></ProtectedRoute>} />
         <Route path="/proveedores/:id/estado-cuenta" element={<ProtectedRoute recurso="proveedores"><EstadoCuentaPage tipo="proveedor" /></ProtectedRoute>} />
-        <Route path="/proveedores/:proveedorId/notas/:notaId" element={<ProtectedRoute recurso="proveedores"><NotaDetallePage /></ProtectedRoute>} />
+        <Route path="/proveedores/:entidadId/notas/:notaId" element={<ProtectedRoute recurso="proveedores"><NotaDetallePage tipoEntidad="proveedor" /></ProtectedRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute recurso="usuarios"><UsuariosPage /></ProtectedRoute>} />
         <Route path="/citas" element={<ProtectedRoute recurso="despachos"><CitasPage /></ProtectedRoute>} />
       </Route>
