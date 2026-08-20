@@ -100,17 +100,17 @@ function FacturaDetallePage({ tipo }: Props) {
           <p className="text-sm text-text-muted mt-1">{factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
-          {esCompra && puedePagar && factura.estado !== 'pagada' && factura.entidadId && (
+          {puedePagar && factura.estado !== 'pagada' && factura.entidadId && (
             <button
               type="button"
-              onClick={() => navigate(`/proveedores/${factura.entidadId}/estado-cuenta`, {
+              onClick={() => navigate(`/${esCompra ? 'proveedores' : 'clientes'}/${factura.entidadId}/estado-cuenta`, {
                 state: { volverA: ruta, volverALabel: etiquetaLista },
               })}
               className="flex items-center gap-2 px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-              title="Ir a pagar"
+              title={esCompra ? 'Ir a pagar' : 'Ir a cobrar'}
             >
               <DollarSign size={16} />
-              IR A PAGAR
+              {esCompra ? 'IR A PAGAR' : 'IR A COBRAR'}
             </button>
           )}
           <button type="button" onClick={() => descargarFacturaPDF(factura, tickets)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
