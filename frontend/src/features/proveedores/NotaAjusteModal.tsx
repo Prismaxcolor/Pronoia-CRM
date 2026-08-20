@@ -21,6 +21,7 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
   const [facturas, setFacturas] = useState<FacturaCV[]>([]);
   const [monto, setMonto] = useState('');
   const [motivo, setMotivo] = useState('');
+  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +52,7 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
       monto: montoNum,
       motivo: motivo.trim(),
       facturaId: facturaId || null,
+      fecha,
     });
     setGuardando(false);
 
@@ -110,6 +112,11 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
                 placeholder="0.00"
               />
             </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Fecha *</label>
+            <input type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
           </div>
 
           <div>

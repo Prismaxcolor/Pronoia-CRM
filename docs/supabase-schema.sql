@@ -3526,3 +3526,266 @@ begin
   return v_id;
 end;
 $$;
+
+-- ============================================================================
+-- Bloque 44 · fecha editable en notas + nota de crédito como pago + sin
+-- bloqueo de saldo insuficiente
+--
+-- 1) notas_ajuste_proveedor gana una fecha de negocio editable (antes solo
+--    existía created_at, el instante de inserción — mismo patrón que
+--    tickets_pesaje.fecha vs created_at). Se backfillea con la fecha real de
+--    creación de cada nota antes de fijar el default y el not null.
+-- 2) registrar_pago_proveedor_multi_banca acepta 'nota_credito' como tercer
+--    tipo de ítem del pago combinado: reduce lo que hace falta cubrir con
+--    banca (al revés de nota_debito, que suma). Se marca pagada=true igual
+--    que las notas de débito, ligada al movimiento principal del pago.
+-- 3) Se quita el chequeo "Saldo insuficiente en <banca>" — Julio confirmó
+--    que la cuenta puede quedar en negativo, no debe bloquear el pago.
+-- ============================================================================
+
+alter table public.notas_ajuste_proveedor add column if not exists fecha date;
+update public.notas_ajuste_proveedor set fecha = created_at::date where fecha is null;
+alter table public.notas_ajuste_proveedor alter column fecha set default current_date;
+alter table public.notas_ajuste_proveedor alter column fecha set not null;
+
+create or replace function public.registrar_pago_proveedor_multi_banca(
+  p_proveedor_id   uuid,
+  p_bancas         jsonb,     -- [{ "bancaId": uuid, "monto": numeric, "montoUsd": numeric, "moneda": "USD"|"VES", "referencia": text|null }]
+  p_monto_usd      numeric,   -- total declarado por el usuario ("Total a pagar")
+  p_descripcion    text,
+  p_referencia     text,
+  p_fecha          date,
+  p_registrado_por uuid,
+  p_items          jsonb      -- [{ "tipo": "factura"|"nota_debito"|"nota_credito", "id": uuid, "montoUsd": numeric }]
+) returns jsonb
+language plpgsql
+as $$
+declare
+  v_item              jsonb;
+  v_banca             jsonb;
+  v_tipo               text;
+  v_id                 uuid;
+  v_monto              numeric;
+  v_total              numeric;
+  v_pagado             numeric;
+  v_filas              int;
+  v_total_cargos        numeric;
+  v_total_creditos      numeric;
+  v_total_items        numeric;
+  v_total_bancas       numeric;
+  v_adelanto           numeric;
+  v_saldo              numeric;
+  v_nombre             text;
+  v_archivada          boolean;
+  v_num_pago           bigint;
+  v_num_adel           bigint;
+  v_grupo_id           uuid;
+  v_restante_pago      numeric;
+  v_banca_id           uuid;
+  v_banca_monto        numeric;
+  v_banca_monto_usd    numeric;
+  v_banca_moneda       text;
+  v_banca_referencia   text;
+  v_ap_pago_usd        numeric;
+  v_ap_adel_usd        numeric;
+  v_monto_pago         numeric;
+  v_monto_adel         numeric;
+  v_mov_id             uuid;
+  v_mov_pago_principal uuid;
+  v_mov_adel_principal uuid;
+  v_ids                uuid[] := '{}';
+begin
+  if p_bancas is null or jsonb_typeof(p_bancas) <> 'array' or jsonb_array_length(p_bancas) = 0 then
+    raise exception 'Debe indicar al menos una banca de origen.';
+  end if;
+
+  if (select count(*) from jsonb_array_elements(p_bancas)) <>
+     (select count(distinct (value->>'bancaId')) from jsonb_array_elements(p_bancas)) then
+    raise exception 'No se puede repetir la misma banca en un pago.';
+  end if;
+
+  select coalesce(sum(case when value->>'tipo' = 'nota_credito' then 0 else (value->>'montoUsd')::numeric end), 0) into v_total_cargos
+    from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) as elems(value);
+
+  select coalesce(sum(case when value->>'tipo' = 'nota_credito' then (value->>'montoUsd')::numeric else 0 end), 0) into v_total_creditos
+    from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) as elems(value);
+
+  if v_total_creditos > v_total_cargos + 0.01 then
+    raise exception 'Las notas de crédito seleccionadas (%) superan lo que se está pagando (%).', v_total_creditos, v_total_cargos;
+  end if;
+
+  v_total_items := v_total_cargos - v_total_creditos;
+
+  select coalesce(sum((value->>'montoUsd')::numeric), 0) into v_total_bancas
+    from jsonb_array_elements(p_bancas) as elems(value);
+
+  if abs(v_total_bancas - p_monto_usd) > 0.01 then
+    raise exception 'La suma de las bancas (%) no coincide con el total a pagar (%).', v_total_bancas, p_monto_usd;
+  end if;
+
+  v_adelanto := round(p_monto_usd - v_total_items, 2);
+  if v_adelanto < -0.01 then
+    raise exception 'El total a pagar (%) es menor a la suma de lo seleccionado (%).', p_monto_usd, v_total_items;
+  end if;
+  if abs(v_adelanto) <= 0.01 then
+    v_adelanto := 0;
+  end if;
+
+  -- Bloquea todas las bancas involucradas en orden estable (por id) antes de
+  -- tocar ninguna, para no generar deadlocks con otro pago concurrente que
+  -- use el mismo conjunto de bancas en distinto orden. Ya NO valida saldo
+  -- suficiente — la cuenta puede quedar en negativo (decisión del negocio).
+  for v_banca in
+    select value from jsonb_array_elements(p_bancas) as elems(value)
+    order by (value->>'bancaId')
+  loop
+    select saldo, nombre, archivada into v_saldo, v_nombre, v_archivada
+      from public.bancas where id = (v_banca->>'bancaId')::uuid
+      for update;
+
+    if v_saldo is null then
+      raise exception 'Banca % no encontrada.', v_banca->>'bancaId';
+    end if;
+    if v_archivada then
+      raise exception 'La banca % está archivada.', v_nombre;
+    end if;
+  end loop;
+
+  v_grupo_id := gen_random_uuid();
+  if v_total_items > 0 then
+    v_num_pago := nextval('public.movimientos_pago_numero_seq');
+  end if;
+  if v_adelanto > 0 then
+    v_num_adel := nextval('public.movimientos_adelanto_numero_seq');
+  end if;
+
+  -- Reparte cada banca entre pago/adelanto en el orden en que el usuario las
+  -- cargó (no el orden de bloqueo de arriba, que es solo para evitar
+  -- deadlocks): llena primero el pago hasta agotar v_total_items, el resto
+  -- de cada banca es adelanto.
+  v_restante_pago := v_total_items;
+
+  for v_banca in select value from jsonb_array_elements(p_bancas) as elems(value)
+  loop
+    v_banca_id := (v_banca->>'bancaId')::uuid;
+    v_banca_monto := (v_banca->>'monto')::numeric;
+    v_banca_monto_usd := (v_banca->>'montoUsd')::numeric;
+    v_banca_moneda := v_banca->>'moneda';
+    -- Referencia propia de esta banca; si viene vacía, cae a la referencia
+    -- global del pago (compatibilidad con llamadas que no manden por línea).
+    v_banca_referencia := coalesce(nullif(v_banca->>'referencia', ''), nullif(p_referencia, ''));
+
+    if v_banca_monto_usd <= 0 then
+      continue;
+    end if;
+
+    v_ap_pago_usd := least(v_banca_monto_usd, v_restante_pago);
+    v_ap_adel_usd := v_banca_monto_usd - v_ap_pago_usd;
+    v_restante_pago := v_restante_pago - v_ap_pago_usd;
+    v_monto_pago := 0;
+
+    if v_ap_pago_usd > 0.01 then
+      v_monto_pago := round(v_banca_monto * v_ap_pago_usd / v_banca_monto_usd, 2);
+
+      insert into public.movimientos
+        (tipo, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion,
+         banca_origen_id, banca_destino_id, fecha, referencia, registrado_por, proveedor_id)
+      values
+        ('egreso', 'pago', v_num_pago, v_grupo_id, v_monto_pago, v_banca_moneda, v_ap_pago_usd,
+         nullif(p_descripcion, ''), v_banca_id, null, p_fecha, v_banca_referencia,
+         p_registrado_por, p_proveedor_id)
+      returning id into v_mov_id;
+
+      v_ids := v_ids || v_mov_id;
+      if v_mov_pago_principal is null then v_mov_pago_principal := v_mov_id; end if;
+    end if;
+
+    if v_ap_adel_usd > 0.01 then
+      -- Residuo exacto del monto en moneda local (no se recalcula por
+      -- separado) para que la suma pago+adelanto de esta banca sea
+      -- exactamente v_banca_monto, sin drift de centavos.
+      v_monto_adel := v_banca_monto - v_monto_pago;
+
+      insert into public.movimientos
+        (tipo, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion,
+         banca_origen_id, banca_destino_id, fecha, referencia, registrado_por, proveedor_id)
+      values
+        ('egreso', 'adelanto', v_num_adel, v_grupo_id, v_monto_adel, v_banca_moneda, v_ap_adel_usd,
+         nullif(case when v_total_items > 0 then 'Adelanto' else p_descripcion end, ''),
+         v_banca_id, null, p_fecha, v_banca_referencia, p_registrado_por, p_proveedor_id)
+      returning id into v_mov_id;
+
+      v_ids := v_ids || v_mov_id;
+      if v_mov_adel_principal is null then v_mov_adel_principal := v_mov_id; end if;
+    end if;
+  end loop;
+
+  -- Aplica los ítems: factura acumula monto_pagado, nota_debito se marca
+  -- pagada (suma al pago), nota_credito también se marca pagada (resta del
+  -- pago, ya se descontó de v_total_items arriba) — ambas ligadas a la fila
+  -- principal del pago (no a la del adelanto).
+  for v_item in select value from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) as elems(value)
+  loop
+    v_tipo  := v_item->>'tipo';
+    v_id    := (v_item->>'id')::uuid;
+    v_monto := (v_item->>'montoUsd')::numeric;
+
+    if v_tipo = 'factura' then
+      select total, monto_pagado into v_total, v_pagado
+        from public.facturas_compra where id = v_id and proveedor_id = p_proveedor_id;
+
+      if v_total is null then
+        raise exception 'Factura % no encontrada para este proveedor.', v_id;
+      end if;
+
+      v_pagado := coalesce(v_pagado, 0) + v_monto;
+
+      update public.facturas_compra
+         set monto_pagado = v_pagado,
+             estado = case when v_pagado >= v_total - 0.01 then 'pagada' else estado end
+       where id = v_id;
+
+    elsif v_tipo = 'nota_debito' then
+      update public.notas_ajuste_proveedor
+         set pagada = true,
+             movimiento_id = v_mov_pago_principal
+       where id = v_id
+         and proveedor_id = p_proveedor_id
+         and tipo = 'debito'
+         and anulada = false
+         and pagada = false;
+
+      get diagnostics v_filas = row_count;
+      if v_filas = 0 then
+        raise exception 'Nota de débito % no encontrada, ya pagada o anulada.', v_id;
+      end if;
+
+    elsif v_tipo = 'nota_credito' then
+      update public.notas_ajuste_proveedor
+         set pagada = true,
+             movimiento_id = v_mov_pago_principal
+       where id = v_id
+         and proveedor_id = p_proveedor_id
+         and tipo = 'credito'
+         and anulada = false
+         and pagada = false;
+
+      get diagnostics v_filas = row_count;
+      if v_filas = 0 then
+        raise exception 'Nota de crédito % no encontrada, ya aplicada o anulada.', v_id;
+      end if;
+
+    else
+      raise exception 'Tipo de ítem desconocido: %', v_tipo;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'movimientoPrincipalId', coalesce(v_mov_pago_principal, v_mov_adel_principal),
+    'movimientoIds', to_jsonb(v_ids),
+    'grupoId', v_grupo_id,
+    'numeroPago', v_num_pago,
+    'numeroAdelanto', v_num_adel
+  );
+end;
+$$;

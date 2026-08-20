@@ -93,6 +93,10 @@ function EstadoCuentaPage({ tipo }: Props) {
     () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_debito' && !e.anulada && !e.pagada),
     [estado]
   );
+  const notasCreditoPendientes = useMemo(
+    () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_credito' && !e.anulada && !e.pagada),
+    [estado]
+  );
 
   const handlePagoRegistrado = (resultado: ResultadoPagoMultiple) => {
     setPagoAbierto(false);
@@ -311,6 +315,7 @@ function EstadoCuentaPage({ tipo }: Props) {
         <PagarTodoModal
           proveedorId={estado.entidad.id}
           notasDebitoPendientes={notasDebitoPendientes}
+          notasCreditoPendientes={notasCreditoPendientes}
           onClose={() => setPagoAbierto(false)}
           onRegistrado={handlePagoRegistrado}
         />

@@ -28,10 +28,11 @@ export const registrarPagoSchema = z.object({
 
 export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
 
-/** Un ítem del pago combinado: factura o nota de débito a liquidar, con el
- *  monto (USD) que se le aplica de este pago. */
+/** Un ítem del pago combinado: factura o nota de débito a liquidar (suman al
+ *  total a cubrir con banca), o nota de crédito aplicada como método de pago
+ *  (resta del total a cubrir con banca) — con el monto (USD) que le corresponde. */
 export const itemPagoMultipleSchema = z.object({
-  tipo: z.enum(['factura', 'nota_debito']),
+  tipo: z.enum(['factura', 'nota_debito', 'nota_credito']),
   id: z.string().uuid('Ítem inválido.'),
   montoUsd: z.number().positive('El monto de cada ítem debe ser mayor a 0.'),
 });
@@ -79,7 +80,20 @@ export const registrarPagoMultipleSchema = z.object({
     });
   }
 
-  const sumaItems = data.items.reduce((acc, i) => acc + i.montoUsd, 0);
+  // Las notas de crédito restan del total a cubrir con banca (al revés de
+  // facturas/notas de débito, que suman) — mismo criterio que la RPC.
+  const sumaCargos = data.items.filter(i => i.tipo !== 'nota_credito').reduce((acc, i) => acc + i.montoUsd, 0);
+  const sumaCreditos = data.items.filter(i => i.tipo === 'nota_credito').reduce((acc, i) => acc + i.montoUsd, 0);
+
+  if (sumaCreditos > sumaCargos + 0.01) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['items'],
+      message: `Las notas de crédito seleccionadas ($${sumaCreditos.toFixed(2)}) superan lo que se está pagando ($${sumaCargos.toFixed(2)}).`,
+    });
+  }
+
+  const sumaItems = sumaCargos - sumaCreditos;
   if (data.montoUsd < sumaItems - 0.01) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

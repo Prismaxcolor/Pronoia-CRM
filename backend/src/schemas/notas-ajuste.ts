@@ -8,6 +8,8 @@ export const crearNotaAjusteSchema = z.object({
   /** Factura de compra a la que se asocia la nota — opcional: las notas
    *  también se usan como ajuste general de saldo sin factura de por medio. */
   facturaId: z.string().uuid().nullable().optional(),
+  /** Fecha de negocio de la nota. Si se omite, la BD usa current_date. */
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).').optional().nullable(),
 });
 
 /** Anula una nota existente (no se borra: se reversa con una nota contraria). */

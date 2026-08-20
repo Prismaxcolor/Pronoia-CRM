@@ -272,7 +272,7 @@ describe('construirNotaAjusteDetalle', () => {
     anulada: false,
     pagada: false,
     numero: 4,
-    created_at: '2026-06-02T10:00:00Z',
+    fecha: '2026-06-02T10:00:00Z',
     registrado_por: 'user-1',
     anula_nota_id: null,
   };

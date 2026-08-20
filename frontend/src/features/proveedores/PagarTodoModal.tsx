@@ -13,6 +13,9 @@ interface Props {
   proveedorId: string;
   /** Notas de débito pendientes (sin anular, sin pagar) — filtradas por el padre. */
   notasDebitoPendientes: EntradaEstadoCuenta[];
+  /** Notas de crédito disponibles (sin anular, sin aplicar) — se pueden usar
+   *  como método de pago: reducen lo que hace falta cubrir con banca. */
+  notasCreditoPendientes: EntradaEstadoCuenta[];
   onClose: () => void;
   onRegistrado: (resultado: ResultadoPagoMultiple) => void;
 }
@@ -27,10 +30,10 @@ interface LineaBanca {
 }
 
 function fmt(n: number): string {
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
-function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistrado }: Props) {
+function PagarTodoModal({ proveedorId, notasDebitoPendientes, notasCreditoPendientes, onClose, onRegistrado }: Props) {
   const [bancas, setBancas] = useState<Banca[]>([]);
   const [tasa, setTasa] = useState<number | null>(null);
   const [facturasPendientes, setFacturasPendientes] = useState<FacturaCV[]>([]);
@@ -38,6 +41,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
    *  Por defecto el saldo pendiente completo, pero se puede bajar para un pago parcial. */
   const [montosFactura, setMontosFactura] = useState<Record<string, string>>({});
   const [notaIdsSel, setNotaIdsSel] = useState<string[]>([]);
+  const [notaCreditoIdsSel, setNotaCreditoIdsSel] = useState<string[]>([]);
 
   /** Total a pagar (USD): mientras sea null, se deriva de lo seleccionado en
    *  cada render (cero clics extra en el caso común). Al tipear a mano queda
@@ -80,6 +84,8 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
     setMontosFactura(prev => ({ ...prev, [id]: value }));
   const toggleNota = (id: string) =>
     setNotaIdsSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const toggleNotaCredito = (id: string) =>
+    setNotaCreditoIdsSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
 
   const facturasSel = useMemo(
     () => facturasPendientes.filter(f => f.id in montosFactura),
@@ -89,10 +95,18 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
     () => notasDebitoPendientes.filter(n => n.notaId && notaIdsSel.includes(n.notaId)),
     [notasDebitoPendientes, notaIdsSel]
   );
+  const notasCreditoSel = useMemo(
+    () => notasCreditoPendientes.filter(n => n.notaId && notaCreditoIdsSel.includes(n.notaId)),
+    [notasCreditoPendientes, notaCreditoIdsSel]
+  );
 
   const totalFacturas = facturasSel.reduce((acc, f) => acc + (parseFloat(montosFactura[f.id]) || 0), 0);
   const totalNotas = notasSel.reduce((acc, n) => acc + n.cargo, 0);
-  const totalItems = totalFacturas + totalNotas;
+  const totalCargos = totalFacturas + totalNotas;
+  // Las notas de crédito se usan como método de pago: reducen lo que hace
+  // falta cubrir con banca, en vez de sumar (al revés de las de débito).
+  const totalCreditos = notasCreditoSel.reduce((acc, n) => acc + n.abono, 0);
+  const totalItems = totalCargos - totalCreditos;
 
   const totalTocado = totalEditadoManual !== null;
   const totalEditado = totalEditadoManual ?? (totalItems > 0 ? totalItems.toFixed(2) : '');
@@ -136,14 +150,19 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
     const partes: string[] = [];
     facturasSel.forEach(f => partes.push(f.codigo ?? f.id.slice(0, 8)));
     if (notasSel.length > 0) partes.push(`${notasSel.length} nota${notasSel.length === 1 ? '' : 's'} débito`);
+    if (notasCreditoSel.length > 0) partes.push(`${notasCreditoSel.length} nota${notasCreditoSel.length === 1 ? '' : 's'} crédito aplicada${notasCreditoSel.length === 1 ? '' : 's'}`);
     if (adelantoCalculado > 0.01) partes.push(`adelanto $${fmt(adelantoCalculado)}`);
     return partes.length > 0 ? `Pago combinado: ${partes.join(', ')}` : '';
-  }, [facturasSel, notasSel, adelantoCalculado]);
+  }, [facturasSel, notasSel, notasCreditoSel, adelantoCalculado]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
+    if (totalCreditos > totalCargos + 0.01) {
+      setError(`Las notas de crédito seleccionadas ($${fmt(totalCreditos)}) superan lo que se está pagando ($${fmt(totalCargos)}). Desmarcá alguna o agregá más facturas.`);
+      return;
+    }
     if (totalEditadoNum <= 0) { setError('El total a pagar debe ser mayor a 0.'); return; }
     if (adelantoCalculado < -0.01) {
       setError(`El total a pagar ($${fmt(totalEditadoNum)}) es menor a lo seleccionado ($${fmt(totalItems)}). Bajá el monto de alguna factura o desmarcala.`);
@@ -180,10 +199,8 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
       const esBsLinea = banca.moneda === 'VES';
       if (esBsLinea && !tasa) { setError('No hay tasa de cambio disponible para convertir a bolívares.'); return; }
       const montoBanca = esBsLinea && tasa ? montoUsdLinea * tasa : montoUsdLinea;
-      if (montoBanca > banca.saldo) {
-        setError(`Saldo insuficiente en ${banca.nombre}. Disponible: ${banca.moneda === 'USD' ? '$' : 'Bs '}${banca.saldo.toLocaleString()}`);
-        return;
-      }
+      // No se bloquea si supera el saldo disponible — la cuenta puede quedar
+      // en negativo (decisión del negocio).
       bancasPayload.push({
         bancaId: banca.id,
         monto: montoBanca,
@@ -201,6 +218,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
     const items: ItemPagoMultiple[] = [
       ...facturasSel.map(f => ({ tipo: 'factura' as const, id: f.id, montoUsd: parseFloat(montosFactura[f.id]) || 0 })),
       ...notasSel.map(n => ({ tipo: 'nota_debito' as const, id: n.notaId!, montoUsd: n.cargo })),
+      ...notasCreditoSel.map(n => ({ tipo: 'nota_credito' as const, id: n.notaId!, montoUsd: n.abono })),
     ];
 
     setGuardando(true);
@@ -272,7 +290,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
                         <div className="relative shrink-0">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-xs">$</span>
                           <input
-                            type="number" step="0.01" min="0.01" max={saldoFactura}
+                            type="number" step="0.001" min="0.01" max={saldoFactura}
                             value={montosFactura[f.id]}
                             onChange={e => setMontoFactura(f.id, e.target.value)}
                             className="w-24 pl-5 pr-2 py-1 text-right text-xs bg-surface border border-border rounded focus:outline-none focus:ring-2 focus:ring-brand-400"
@@ -316,13 +334,42 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
             )}
           </div>
 
+          <div>
+            <label className={labelClass}>Notas de crédito disponibles <span className="text-text-muted">(se aplican como método de pago)</span></label>
+            {notasCreditoPendientes.length === 0 ? (
+              <p className="text-xs text-text-muted">Sin notas de crédito disponibles.</p>
+            ) : (
+              <div className="border border-border rounded-lg divide-y divide-border max-h-48 overflow-y-auto">
+                {notasCreditoPendientes.map(n => (
+                  <label key={n.notaId} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-alt transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={!!n.notaId && notaCreditoIdsSel.includes(n.notaId)}
+                      onChange={() => n.notaId && toggleNotaCredito(n.notaId)}
+                      className="w-4 h-4 accent-brand-600 shrink-0"
+                    />
+                    <span className="text-sm text-text-primary flex-1 flex items-center justify-between gap-2">
+                      <span className="truncate">{n.descripcion}</span>
+                      <span className="text-green-600 shrink-0">-${fmt(n.abono)}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {totalCreditos > 0 && (
+              <p className="text-xs text-green-600 mt-1">
+                Se descuentan ${fmt(totalCreditos)} de lo que hay que cubrir con banca.
+              </p>
+            )}
+          </div>
+
           <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-brand-800 shrink-0">Total a pagar</span>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-700 text-sm">$</span>
                 <input
-                  type="number" step="0.01" min="0"
+                  type="number" step="0.001" min="0"
                   value={totalEditado}
                   onChange={e => setTotalEditadoManual(e.target.value)}
                   className="w-32 pl-6 pr-2 py-1.5 text-right text-lg font-bold text-brand-700 bg-surface border border-brand-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400"
@@ -396,7 +443,7 @@ function PagarTodoModal({ proveedorId, notasDebitoPendientes, onClose, onRegistr
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">$</span>
                           <input
-                            type="number" step="0.01" min="0.01"
+                            type="number" step="0.001" min="0.01"
                             value={linea.montoUsd}
                             onChange={e => setLineaMonto(linea.id, e.target.value)}
                             className={`${inputClass} w-28 pl-6`}

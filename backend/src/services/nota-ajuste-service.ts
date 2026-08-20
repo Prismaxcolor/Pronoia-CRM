@@ -61,16 +61,21 @@ export async function crearNotaAjuste(
     }
   }
 
+  const insertRow: Record<string, unknown> = {
+    proveedor_id: proveedorId,
+    tipo: input.tipo,
+    monto: input.monto,
+    motivo: input.motivo,
+    registrado_por: registradoPor,
+    factura_id: input.facturaId ?? null,
+  };
+  // Si no se elige fecha, la BD usa su default (current_date) — no mandar
+  // null explícito, la columna es not null.
+  if (input.fecha) insertRow.fecha = input.fecha;
+
   const { data, error } = await supabaseAdmin
     .from('notas_ajuste_proveedor')
-    .insert({
-      proveedor_id: proveedorId,
-      tipo: input.tipo,
-      monto: input.monto,
-      motivo: input.motivo,
-      registrado_por: registradoPor,
-      factura_id: input.facturaId ?? null,
-    })
+    .insert(insertRow)
     .select('id, tipo, numero')
     .single();
 
@@ -92,7 +97,8 @@ export interface NotaAjusteDetalle {
   motivo: string;
   anulada: boolean;
   pagada: boolean;
-  /** created_at de la nota, sin recortar (la vista de detalle decide el formato). */
+  /** Fecha de negocio de la nota (YYYY-MM-DD), editable al crearla — no el
+   *  created_at (instante de inserción). */
   fecha: string;
   proveedorId: string;
   nombreProveedor: string;
@@ -113,7 +119,7 @@ interface NotaDetalleRow {
   anulada: boolean;
   pagada: boolean;
   numero: number | null;
-  created_at: string;
+  fecha: string;
   registrado_por: string | null;
   anula_nota_id: string | null;
   factura_id: string | null;
@@ -145,7 +151,7 @@ export function construirNotaAjusteDetalle(
     motivo: row.motivo,
     anulada: row.anulada,
     pagada: row.pagada,
-    fecha: row.created_at,
+    fecha: row.fecha,
     proveedorId: row.proveedor_id,
     nombreProveedor,
     registradoPor: nombreRegistradoPor,
@@ -166,7 +172,7 @@ export async function obtenerNotaAjuste(
 ): Promise<NotaAjusteDetalle | { error: string }> {
   const { data: nota, error: errNota } = await supabaseAdmin
     .from('notas_ajuste_proveedor')
-    .select('id, proveedor_id, tipo, monto, motivo, anulada, pagada, numero, created_at, registrado_por, anula_nota_id, factura_id')
+    .select('id, proveedor_id, tipo, monto, motivo, anulada, pagada, numero, fecha, registrado_por, anula_nota_id, factura_id')
     .eq('id', notaId)
     .eq('proveedor_id', proveedorId)
     .maybeSingle();

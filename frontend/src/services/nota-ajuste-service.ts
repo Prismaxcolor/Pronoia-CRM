@@ -7,6 +7,8 @@ export interface CrearNotaAjusteInput {
   /** Factura de compra a la que se asocia la nota — opcional: las notas también se
    *  usan como ajuste general de saldo sin factura de por medio. */
   facturaId?: string | null;
+  /** Fecha de negocio de la nota (YYYY-MM-DD). Si se omite, la BD usa hoy. */
+  fecha?: string;
 }
 
 export interface NotaAjusteDetalle {

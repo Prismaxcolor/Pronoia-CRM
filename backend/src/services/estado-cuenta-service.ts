@@ -246,14 +246,14 @@ export async function obtenerEstadoCuenta(
   if (esProveedor) {
     let qNotas = supabaseAdmin
       .from('notas_ajuste_proveedor')
-      .select('id, tipo, monto, motivo, anulada, pagada, created_at, numero, factura_id')
+      .select('id, tipo, monto, motivo, anulada, pagada, fecha, numero, factura_id')
       .eq('proveedor_id', id);
-    if (desde) qNotas = qNotas.gte('created_at', desde);
-    if (hasta) qNotas = qNotas.lte('created_at', `${hasta}T23:59:59`);
+    if (desde) qNotas = qNotas.gte('fecha', desde);
+    if (hasta) qNotas = qNotas.lte('fecha', hasta);
     const { data: notasData } = await qNotas;
     const notasCrudas = (notasData as Array<{
       id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean;
-      pagada: boolean; created_at: string; numero: number | null; factura_id: string | null;
+      pagada: boolean; fecha: string; numero: number | null; factura_id: string | null;
     }> | null) ?? [];
 
     // Selects planos, no embedding anidado de PostgREST — mismo estilo que
@@ -278,7 +278,7 @@ export async function obtenerEstadoCuenta(
       motivo: n.motivo,
       anulada: n.anulada,
       pagada: n.pagada,
-      fecha: n.created_at,
+      fecha: n.fecha,
       numero: n.numero,
       facturaAsociadaId: n.factura_id,
       facturaAsociadaCodigo: n.factura_id ? (codigoPorFacturaId.get(n.factura_id) ?? null) : null,

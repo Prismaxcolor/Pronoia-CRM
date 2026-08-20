@@ -32,7 +32,7 @@ export async function registrarPago(
 }
 
 export interface ItemPagoMultiple {
-  tipo: 'factura' | 'nota_debito';
+  tipo: 'factura' | 'nota_debito' | 'nota_credito';
   id: string;
   /** Monto (USD) que se le aplica de este pago a este ítem. */
   montoUsd: number;
