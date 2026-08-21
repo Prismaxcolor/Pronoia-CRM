@@ -319,6 +319,16 @@ function MetricasPage() {
   const resumen = useMemo(() => resumenDe(lineas), [lineas]);
   const resumenAnterior = useMemo(() => resumenDe(lineasAnterior), [lineasAnterior]);
 
+  // Si la compra más vieja del período es más reciente que "desde", el
+  // filtro de fecha no tiene nada más viejo que recortar — se lo decimos
+  // explícito para que no parezca que las tarjetas/listas no reaccionan al
+  // cambiar de período (son iguales porque no hay más historial, no por un bug).
+  const fechaMasAntigua = useMemo(
+    () => lineas.reduce<string | null>((min, l) => (min === null || l.fecha < min ? l.fecha : min), null),
+    [lineas]
+  );
+  const sinHistorialAnterior = fechaMasAntigua !== null && fechaMasAntigua > desde;
+
   const porMaterial = useMemo(() => porMaterialDe(lineas), [lineas]);
   const porProveedor = useMemo(() => porProveedorDe(lineas), [lineas]);
 
@@ -395,6 +405,11 @@ function MetricasPage() {
           <p className="text-sm text-text-secondary mt-1">
             Del {desde} al {hasta} — kilos y costos comprados a proveedores, por material y por proveedor.
           </p>
+          {sinHistorialAnterior && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1 mt-2 w-fit">
+              No hay compras registradas antes del {fmtFechaCorta(fechaMasAntigua!)} — por eso este período coincide con uno más corto.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
