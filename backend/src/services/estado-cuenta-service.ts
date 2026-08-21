@@ -36,6 +36,10 @@ export interface EntradaEstadoCuenta {
   notaId?: string;
   /** Solo facturas: id para abrir el detalle. Ausente para pagos/notas. */
   facturaId?: string;
+  /** Solo pagos/adelantos: id para abrir el comprobante imprimible — es el
+   *  grupo_id de la operación, o el id del movimiento si es una fila legacy
+   *  sin grupo_id (mismo criterio que agruparPagos). Ausente para facturas/notas. */
+  pagoId?: string;
   /** Solo notas: ya fue reversada con una nota contraria. */
   anulada?: boolean;
   /** Solo notas de débito: ya se liquidó en un pago combinado ("Registrar pago"). */
@@ -162,6 +166,7 @@ export function construirEstadoCuenta(
       referenciaExterna: codigo ? p.referencia : null,
       cargo: 0,
       abono: Number(p.monto),
+      pagoId: p.grupoId ?? p.id,
     });
   }
   // Nota de crédito: descuento a favor de la empresa (proveedor) o del

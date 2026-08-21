@@ -14,6 +14,7 @@ import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { generarLinkTelegram } from '../services/telegram-link-service.js';
 import { crearNotaAjusteCliente, anularNotaAjusteCliente, obtenerNotaAjusteCliente } from '../services/nota-ajuste-cliente-service.js';
 import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-ajuste.js';
+import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -51,6 +52,19 @@ router.get('/:id/notas-ajuste/:notaId', requirePermiso('clientes', 'ver'), async
     return;
   }
   res.json({ nota: result });
+});
+
+// Comprobante imprimible de un cobro/anticipo (Bloque 48) — espejo de
+// proveedores.ts, mismo permiso que el estado de cuenta, solo lectura.
+router.get('/:id/pagos/:grupoId', requirePermiso('clientes', 'ver'), async (req, res) => {
+  const clienteId = String(req.params.id);
+  const grupoId = String(req.params.grupoId);
+  const result = await obtenerPagoDetalle('cliente', clienteId, grupoId);
+  if ('error' in result) {
+    res.status(404).json(result);
+    return;
+  }
+  res.json({ pago: result });
 });
 
 // Ajuste manual del saldo (sin factura ni cobro real) → mismo permiso que

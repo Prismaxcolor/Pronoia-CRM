@@ -48,6 +48,9 @@ function rutaDetalle(tipo: TipoEntidad, entidadId: string, e: EntradaEstadoCuent
   if ((e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && e.notaId) {
     return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/notas/${e.notaId}`;
   }
+  if ((e.tipo === 'pago' || e.tipo === 'adelanto') && e.pagoId) {
+    return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/pagos/${e.pagoId}`;
+  }
   return null;
 }
 

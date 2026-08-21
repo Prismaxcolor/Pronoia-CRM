@@ -36,6 +36,7 @@ import FacturaHistorialPage from './features/facturas/FacturaHistorialPage';
 import FacturaFormPage from './features/facturas/FacturaFormPage';
 import FacturaDetallePage from './features/facturas/FacturaDetallePage';
 import NotaDetallePage from './features/notas/NotaDetallePage';
+import PagoDetallePage from './features/estado-cuenta/PagoDetallePage';
 
 // Rutas del portal de proveedores/clientes — sesión completamente separada de la
 // del staff (usePortalAuth, no useAuth), por eso vive en su propio subárbol.
@@ -101,9 +102,11 @@ function AppRoutes() {
         <Route path="/clientes" element={<ProtectedRoute recurso="clientes"><ClientesPage /></ProtectedRoute>} />
         <Route path="/clientes/:id/estado-cuenta" element={<ProtectedRoute recurso="clientes"><EstadoCuentaPage tipo="cliente" /></ProtectedRoute>} />
         <Route path="/clientes/:entidadId/notas/:notaId" element={<ProtectedRoute recurso="clientes"><NotaDetallePage tipoEntidad="cliente" /></ProtectedRoute>} />
+        <Route path="/clientes/:entidadId/pagos/:grupoId" element={<ProtectedRoute recurso="clientes"><PagoDetallePage tipoEntidad="cliente" /></ProtectedRoute>} />
         <Route path="/proveedores" element={<ProtectedRoute recurso="proveedores"><ProveedoresPage /></ProtectedRoute>} />
         <Route path="/proveedores/:id/estado-cuenta" element={<ProtectedRoute recurso="proveedores"><EstadoCuentaPage tipo="proveedor" /></ProtectedRoute>} />
         <Route path="/proveedores/:entidadId/notas/:notaId" element={<ProtectedRoute recurso="proveedores"><NotaDetallePage tipoEntidad="proveedor" /></ProtectedRoute>} />
+        <Route path="/proveedores/:entidadId/pagos/:grupoId" element={<ProtectedRoute recurso="proveedores"><PagoDetallePage tipoEntidad="proveedor" /></ProtectedRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute recurso="usuarios"><UsuariosPage /></ProtectedRoute>} />
         <Route path="/citas" element={<ProtectedRoute recurso="despachos"><CitasPage /></ProtectedRoute>} />
       </Route>
