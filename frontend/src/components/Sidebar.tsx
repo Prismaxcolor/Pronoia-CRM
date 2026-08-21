@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight, CalendarClock } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight, CalendarClock, BarChart3 } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import type { Recurso } from '@shared/types/index.js';
 
@@ -20,6 +20,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     items: [
       { label: 'Dashboard', to: '/', icon: <LayoutDashboard size={20} />, recurso: 'dashboard' },
+      { label: 'Métricas', to: '/metricas', icon: <BarChart3 size={20} />, recurso: 'dashboard' },
     ],
   },
   {

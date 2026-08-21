@@ -19,6 +19,7 @@ import PortalAgendarPage from './features/portal/PortalAgendarPage';
 import PortalGuiasPage from './features/portal/PortalGuiasPage';
 import CitasPage from './features/citas/CitasPage';
 import DashboardPage from './features/dashboard/DashboardPage';
+import MetricasPage from './features/metricas/MetricasPage';
 import ProductosPage from './features/productos/ProductosPage';
 import InventarioPage from './features/inventario/InventarioPage';
 import TransformacionesPage from './features/transformaciones/TransformacionesPage';
@@ -84,6 +85,7 @@ function AppRoutes() {
       <Route path="/auth" element={usuario ? <Navigate to="/" replace /> : <AuthPage />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<ProtectedRoute recurso="dashboard"><DashboardPage /></ProtectedRoute>} />
+        <Route path="/metricas" element={<ProtectedRoute recurso="dashboard"><MetricasPage /></ProtectedRoute>} />
         <Route path="/productos" element={<ProtectedRoute recurso="productos"><ProductosPage /></ProtectedRoute>} />
         <Route path="/listas-precios" element={<ProtectedRoute recurso="listas_precios"><ListasPreciosPage /></ProtectedRoute>} />
         <Route path="/listas-precios/:id" element={<ProtectedRoute recurso="listas_precios"><ListaDetallePage /></ProtectedRoute>} />

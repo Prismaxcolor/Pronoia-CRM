@@ -27,6 +27,7 @@ import portalRouter from './routes/portal.js';
 import citasRouter from './routes/citas.js';
 import almacenesRouter from './routes/almacenes.js';
 import trasladosRouter from './routes/traslados.js';
+import metricasRouter from './routes/metricas.js';
 
 const app = express();
 
@@ -85,5 +86,6 @@ app.use('/api/portal', portalRouter);
 app.use('/api/citas', citasRouter);
 app.use('/api/almacenes', almacenesRouter);
 app.use('/api/traslados', trasladosRouter);
+app.use('/api/metricas', metricasRouter);
 
 export default app;
