@@ -45,7 +45,6 @@ function SeleccionarMaterialModal({ productos, onClose, onSeleccionar }: Props) 
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
               type="search"
-              autoFocus
               value={busqueda}
               onChange={e => setBusqueda(e.target.value)}
               placeholder="Buscar material..."
