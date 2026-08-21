@@ -123,14 +123,18 @@ function PagoDetallePage({ tipoEntidad }: Props) {
             {pago.bancas.length > 1 ? 'Bancas' : 'Banca'}
           </p>
           {pago.bancas.map((b, i) => (
-            <div key={i} className="flex justify-between items-center py-1.5 text-sm">
-              <div>
+            <div key={i} className="py-1.5">
+              <div className="flex justify-between items-center text-sm">
                 <span className="text-text-primary font-medium">{b.bancaNombre ?? '—'}</span>
-                {b.referencia && <span className="text-text-muted"> · Ref. {b.referencia}</span>}
+                <span className="text-text-primary">
+                  {fmt(b.monto)} {b.moneda}
+                </span>
               </div>
-              <span className="text-text-primary">
-                {fmt(b.monto)} {b.moneda}
-              </span>
+              {b.referencia && (
+                <p className="text-xs text-text-secondary mt-0.5">
+                  Referencia: <span className="font-medium text-text-primary">{b.referencia}</span>
+                </p>
+              )}
             </div>
           ))}
         </div>
