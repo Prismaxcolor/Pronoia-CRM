@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 /**
  * 5 intentos de login por IP por minuto. Usa la combinación IP + email del body
@@ -12,7 +12,7 @@ export const loginLimiter = rateLimit({
   message: { error: 'Demasiados intentos de login. Espera un minuto y reintenta.' },
   keyGenerator: (req) => {
     const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : '';
-    return `${req.ip ?? 'na'}::${email}`;
+    return `${ipKeyGenerator(req.ip ?? 'na')}::${email}`;
   },
 });
 
@@ -34,6 +34,6 @@ export const portalLoginLimiter = rateLimit({
   message: { error: 'Demasiados intentos. Espera un minuto y reintenta.' },
   keyGenerator: (req) => {
     const identificador = typeof req.body?.identificador === 'string' ? req.body.identificador : '';
-    return `${req.ip ?? 'na'}::${identificador}`;
+    return `${ipKeyGenerator(req.ip ?? 'na')}::${identificador}`;
   },
 });
