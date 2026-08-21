@@ -1,3 +1,13 @@
+/** Formatea el correlativo de una factura de compra: 1 → "C-0001". */
+export function formatCodigoCompra(numero: number): string {
+  return `C-${String(numero).padStart(4, '0')}`;
+}
+
+/** Formatea el correlativo de una factura de venta: 1 → "V-0001". */
+export function formatCodigoVenta(numero: number): string {
+  return `V-${String(numero).padStart(4, '0')}`;
+}
+
 /** Formatea el correlativo de un pago a proveedor: 1 → "PG-0001". */
 export function formatCodigoPagoProveedor(numero: number): string {
   return `PG-${String(numero).padStart(4, '0')}`;

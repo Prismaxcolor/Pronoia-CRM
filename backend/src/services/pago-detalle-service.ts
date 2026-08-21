@@ -5,9 +5,22 @@ import {
   formatCodigoAdelanto,
   formatCodigoCobroCliente,
   formatCodigoAnticipoCliente,
+  formatCodigoCompra,
+  formatCodigoVenta,
+  formatCodigoNotaDebito,
+  formatCodigoNotaCredito,
+  formatCodigoNotaDebitoCliente,
+  formatCodigoNotaCreditoCliente,
 } from '../utils/codigos.js';
 
 type Subtipo = 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
+type TipoItemAplicacion = 'factura' | 'nota_debito' | 'nota_credito';
+
+interface AplicacionRow {
+  tipo: TipoItemAplicacion;
+  item_id: string;
+  monto_usd: number;
+}
 
 interface MovimientoRow {
   id: string;
@@ -34,6 +47,15 @@ export interface BancaPagoDetalle {
   referencia: string | null;
 }
 
+export interface ItemPagoDetalle {
+  tipo: TipoItemAplicacion;
+  /** Código de control del documento aplicado (C-/V-/ND-/NC-/NDV-/NCV-).
+   *  Null si el documento referenciado ya no tiene numero (no debería pasar
+   *  en finanzas, pero no bloquea el resto del comprobante). */
+  codigo: string | null;
+  montoUsd: number;
+}
+
 export interface PagoDetalle {
   grupoId: string;
   entidadTipo: TipoEntidad;
@@ -49,6 +71,10 @@ export interface PagoDetalle {
   codigoPago: string | null;
   /** Correlativo del adelanto/anticipo (AD-/AC-), null si esta operación no tuvo esa parte. */
   codigoAdelanto: string | null;
+  /** Desglose por factura/nota aplicada, con el monto exacto de cada una
+   *  (Bloque 49). Vacío en pagos registrados antes de ese bloque — esa data
+   *  nunca se guardó, el comprobante sigue mostrando solo `descripcion`. */
+  items: ItemPagoDetalle[];
 }
 
 function formatCodigoPago(tipoEntidad: TipoEntidad, subtipo: Subtipo, numero: number | null): string | null {
@@ -127,6 +153,48 @@ export async function obtenerPagoDetalle(
   const filaComprobante = propias.find(f => f.comprobante_url) ?? null;
   const filaDescripcion = propias.find(f => f.descripcion) ?? propias[0];
 
+  // Desglose por ítem (Bloque 49) — grupo_id ya viene validado contra esta
+  // entidad arriba (mismo id que agrupa las filas de `propias`), así que no
+  // hace falta revalidar pertenencia acá.
+  const { data: aplicacionesData } = await supabaseAdmin
+    .from('pago_aplicaciones')
+    .select('tipo, item_id, monto_usd')
+    .eq('grupo_id', grupoId)
+    .order('created_at', { ascending: true });
+  const aplicaciones = (aplicacionesData as AplicacionRow[] | null) ?? [];
+
+  const facturaIds = aplicaciones.filter(a => a.tipo === 'factura').map(a => a.item_id);
+  const notaIds = aplicaciones.filter(a => a.tipo !== 'factura').map(a => a.item_id);
+
+  const codigoPorFacturaId = new Map<string, string>();
+  if (facturaIds.length > 0) {
+    const tablaFactura = esProveedor ? 'facturas_compra' : 'facturas_venta';
+    const { data: facturasData } = await supabaseAdmin.from(tablaFactura).select('id, numero').in('id', facturaIds);
+    for (const f of (facturasData as Array<{ id: string; numero: number | null }> | null) ?? []) {
+      if (f.numero == null) continue;
+      codigoPorFacturaId.set(f.id, esProveedor ? formatCodigoCompra(f.numero) : formatCodigoVenta(f.numero));
+    }
+  }
+
+  const codigoPorNotaId = new Map<string, string>();
+  if (notaIds.length > 0) {
+    const tablaNota = esProveedor ? 'notas_ajuste_proveedor' : 'notas_ajuste_cliente';
+    const { data: notasData } = await supabaseAdmin.from(tablaNota).select('id, tipo, numero').in('id', notaIds);
+    for (const n of (notasData as Array<{ id: string; tipo: 'credito' | 'debito'; numero: number | null }> | null) ?? []) {
+      if (n.numero == null) continue;
+      const codigo = esProveedor
+        ? (n.tipo === 'credito' ? formatCodigoNotaCredito(n.numero) : formatCodigoNotaDebito(n.numero))
+        : (n.tipo === 'credito' ? formatCodigoNotaCreditoCliente(n.numero) : formatCodigoNotaDebitoCliente(n.numero));
+      codigoPorNotaId.set(n.id, codigo);
+    }
+  }
+
+  const items: ItemPagoDetalle[] = aplicaciones.map(a => ({
+    tipo: a.tipo,
+    codigo: a.tipo === 'factura' ? (codigoPorFacturaId.get(a.item_id) ?? null) : (codigoPorNotaId.get(a.item_id) ?? null),
+    montoUsd: Number(a.monto_usd),
+  }));
+
   return {
     grupoId,
     entidadTipo: tipoEntidad,
@@ -147,5 +215,6 @@ export async function obtenerPagoDetalle(
     totalUsd: propias.reduce((s, f) => s + Number(f.monto_usd ?? f.monto), 0),
     codigoPago: filaPago ? formatCodigoPago(tipoEntidad, filaPago.subtipo, filaPago.numero) : null,
     codigoAdelanto: filaAdelanto ? formatCodigoPago(tipoEntidad, filaAdelanto.subtipo, filaAdelanto.numero) : null,
+    items,
   };
 }

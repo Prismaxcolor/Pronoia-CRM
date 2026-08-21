@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearFacturaInput } from '../schemas/facturas.js';
 import { notificarDocumento } from './telegram-notify-service.js';
 import { generarFacturaPdf, nombreArchivoFactura } from './document-generator.js';
+import { formatCodigoCompra, formatCodigoVenta } from '../utils/codigos.js';
 
 export type TipoFactura = 'compra' | 'venta';
 
@@ -35,16 +36,6 @@ const CONFIG: Record<TipoFactura, Config> = {
     rpcEntidadParam: 'p_cliente_id',
   },
 };
-
-/** Formatea el correlativo de una factura de compra: 1 → "C-0001". */
-function formatCodigoCompra(numero: number): string {
-  return `C-${String(numero).padStart(4, '0')}`;
-}
-
-/** Formatea el correlativo de una factura de venta: 1 → "V-0001". */
-function formatCodigoVenta(numero: number): string {
-  return `V-${String(numero).padStart(4, '0')}`;
-}
 
 interface DetalleRow {
   id: string;

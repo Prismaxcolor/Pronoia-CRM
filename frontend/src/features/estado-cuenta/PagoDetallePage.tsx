@@ -13,6 +13,12 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const ETIQUETA_ITEM: Record<string, string> = {
+  factura: 'Factura',
+  nota_debito: 'Nota de débito',
+  nota_credito: 'Nota de crédito',
+};
+
 /** Comprobante imprimible de un pago (proveedor) o cobro (cliente) — mismo
  *  patrón que NotaDetallePage: una pantalla compartida entre ambos tipos de
  *  entidad, solo cambia de qué ruta se lee (Bloque 48). */
@@ -92,8 +98,25 @@ function PagoDetallePage({ tipoEntidad }: Props) {
       <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
         <FilaDocumento label={esProveedor ? 'Proveedor' : 'Cliente'} valor={pago.nombreEntidad} />
         <FilaDocumento label="Fecha" valor={pago.fecha} />
-        {pago.descripcion && <FilaDocumento label="Descripción" valor={pago.descripcion} />}
+        {pago.items.length === 0 && pago.descripcion && <FilaDocumento label="Descripción" valor={pago.descripcion} />}
         <FilaDocumento label="Registrado por" valor={pago.registradoPor ?? '—'} />
+
+        {pago.items.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-border print:border-black">
+            <p className="text-xs font-medium text-text-secondary mb-2">Desglose</p>
+            {pago.items.map((item, i) => (
+              <div key={i} className="flex justify-between items-center py-1.5 text-sm">
+                <div>
+                  <span className="text-text-primary font-medium">{item.codigo ?? '—'}</span>
+                  <span className="text-text-muted"> · {ETIQUETA_ITEM[item.tipo]}</span>
+                </div>
+                <span className={item.tipo === 'nota_credito' ? 'text-green-600' : 'text-text-primary'}>
+                  {item.tipo === 'nota_credito' ? '-' : ''}${fmt(item.montoUsd)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="mt-4 pt-3 border-t border-border print:border-black">
           <p className="text-xs font-medium text-text-secondary mb-2">
