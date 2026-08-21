@@ -13,6 +13,7 @@ interface ProductoApi {
   descripcion: string;
   tipoMaterialId: string | null;
   tipoMaterialNombre: string | null;
+  tipoMaterialSinLote: boolean | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
@@ -31,6 +32,7 @@ function mapApi(api: ProductoApi): Producto {
     descripcion: api.descripcion,
     tipoMaterialId: api.tipoMaterialId,
     tipoMaterialNombre: api.tipoMaterialNombre,
+    tipoMaterialSinLote: api.tipoMaterialSinLote,
     moneda: api.moneda,
     activo: api.activo,
     imagenUrl: api.imagenUrl,

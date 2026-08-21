@@ -45,7 +45,7 @@ export function filaVacia(): MaterialFila {
     productoId: '',
     subcategoria: '',
     pesoBruto: '',
-    taraModo: 'manual',
+    taraModo: 'preconfigurada',
     taraId: '',
     taraCantidad: '',
     taraManual: '',
