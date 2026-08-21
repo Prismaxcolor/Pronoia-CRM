@@ -140,32 +140,55 @@ function FilaBarra({ item, maxKg, rango, etiquetaContraparte, seleccionada, onCl
       }`}
     >
       <div className="flex items-center justify-between gap-3 mb-1.5">
-        <span className="text-sm font-medium text-text-primary truncate flex items-center gap-1.5">
+        <span className="text-sm font-medium text-text-primary truncate flex items-center gap-1.5 min-w-0">
           {esTop3 && <span className="w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0" />}
-          {item.nombre}
-          {item.categoria && <span className="text-xs text-text-muted font-normal">· {item.categoria}</span>}
+          <span className="truncate">{item.nombre}</span>
+          {item.categoria && <span className="text-xs text-text-muted font-normal shrink-0">· {item.categoria}</span>}
         </span>
-        <span className="text-sm font-semibold text-text-primary shrink-0">{fmtKg(item.kg)} kg</span>
+        <div className="flex items-baseline gap-3 shrink-0">
+          <span className="text-sm font-semibold text-text-primary">{fmtKg(item.kg)} kg</span>
+          <span className="text-sm font-semibold text-brand-700">${fmtUsd(costoPromedio)}<span className="text-xs font-normal text-text-muted">/kg</span></span>
+        </div>
       </div>
       <div className="h-2 bg-surface-alt rounded-full overflow-hidden mb-1.5">
         <div className={`h-full rounded-full ${esTop3 ? 'bg-brand-500' : 'bg-brand-300'}`} style={{ width: `${anchoPct}%` }} />
       </div>
       <div className="flex items-center justify-between text-xs text-text-muted">
         <span>{item.comprasCount} compra{item.comprasCount === 1 ? '' : 's'} · {item.contraparteCount} {etiquetaContraparte}{item.contraparteCount === 1 ? '' : 's'}</span>
-        <span>
-          ${fmtUsd(costoPromedio)}/kg
-          {item.precioMaxKg > item.precioMinKg && ` (${fmtUsd(item.precioMinKg)}–${fmtUsd(item.precioMaxKg)})`}
-        </span>
+        {item.precioMaxKg > item.precioMinKg && (
+          <span>rango ${fmtUsd(item.precioMinKg)}–${fmtUsd(item.precioMaxKg)}/kg</span>
+        )}
       </div>
     </button>
   );
 }
 
+/** Redondea hacia arriba a un número "limpio" (1/2/5 × potencia de 10) para
+ *  usar como tope de eje — mismo criterio que cualquier librería de gráficos
+ *  usaría para los ticks del eje Y. */
+function techoLimpio(n: number): number {
+  if (n <= 0) return 1;
+  const magnitud = 10 ** Math.floor(Math.log10(n));
+  const norm = n / magnitud;
+  const paso = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return paso * magnitud;
+}
+
+/** Formatea una fecha ISO como "19 ago" para las etiquetas del eje X. */
+function fmtFechaCorta(iso: string): string {
+  const [, m, d] = iso.split('-').map(Number);
+  const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  return `${d} ${MESES[m - 1]}`;
+}
+
 /** Tendencia de kg comprados por día (o por semana si el rango es largo) —
- *  barras verticales simples, sin librería de gráficos. */
+ *  columnas con líneas de referencia y tooltip propio, sin librería de
+ *  gráficos (barras simples con Tailwind, ver dataviz skill: marcas finas,
+ *  tope redondeado, etiqueta solo en el pico, tooltip en vez de title). */
 function TendenciaChart({ lineas, desde, hasta }: { lineas: MetricaCompraLinea[]; desde: string; hasta: string }) {
   const totalDias = diasEntre(desde, hasta);
   const porSemana = totalDias > 35;
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const buckets = useMemo(() => {
     const mapa = new Map<string, number>();
@@ -185,27 +208,61 @@ function TendenciaChart({ lineas, desde, hasta }: { lineas: MetricaCompraLinea[]
   }, [lineas, porSemana]);
 
   if (buckets.length === 0) return null;
-  const max = Math.max(...buckets.map(b => b.kg));
+  const maxReal = Math.max(...buckets.map(b => b.kg));
+  const techo = techoLimpio(maxReal);
+  const idxPico = buckets.reduce((mejor, b, i) => (b.kg > buckets[mejor].kg ? i : mejor), 0);
+  const ALTURA_PX = 140;
 
   return (
     <div className="bg-surface rounded-xl border border-border p-4 mb-6">
-      <h2 className="text-sm font-semibold text-text-primary mb-3">
+      <h2 className="text-sm font-semibold text-text-primary mb-4">
         Tendencia de kilos comprados {porSemana ? '(por semana)' : '(por día)'}
       </h2>
-      <div className="flex items-end gap-1 h-32">
-        {buckets.map(b => (
-          <div key={b.fecha} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-            <div
-              className="w-full bg-brand-400 group-hover:bg-brand-600 rounded-t transition-colors"
-              style={{ height: `${max > 0 ? Math.max((b.kg / max) * 100, 2) : 0}%` }}
-              title={`${b.fecha}: ${fmtKg(b.kg)} kg`}
-            />
+      <div className="flex gap-3">
+        {/* Eje Y: 3 referencias redondeadas (0, mitad, techo). */}
+        <div className="flex flex-col justify-between text-xs text-text-muted shrink-0 text-right" style={{ height: ALTURA_PX }}>
+          <span>{fmtKg(techo)}</span>
+          <span>{fmtKg(techo / 2)}</span>
+          <span>0</span>
+        </div>
+        <div className="flex-1 relative">
+          {/* Líneas de referencia (hairline, recesivas). */}
+          <div className="absolute inset-0 flex flex-col justify-between pointer-events-none" style={{ height: ALTURA_PX }}>
+            <div className="border-t border-border" />
+            <div className="border-t border-border" />
+            <div className="border-t border-border" />
           </div>
-        ))}
+          <div className="flex items-end justify-center gap-1.5" style={{ height: ALTURA_PX }}>
+            {buckets.map((b, i) => (
+              <div
+                key={b.fecha}
+                className="relative flex flex-col items-center justify-end h-full"
+                style={{ maxWidth: 28, flex: '1 1 0' }}
+                onMouseEnter={() => setHoverIdx(i)}
+                onMouseLeave={() => setHoverIdx(null)}
+              >
+                {hoverIdx === i && (
+                  <div className="absolute bottom-full mb-1.5 z-10 px-2 py-1 rounded-md bg-text-primary text-surface text-xs whitespace-nowrap shadow-lg">
+                    <span className="font-semibold">{fmtKg(b.kg)} kg</span>
+                    <span className="opacity-70"> · {fmtFechaCorta(b.fecha)}</span>
+                  </div>
+                )}
+                {i === idxPico && hoverIdx !== i && (
+                  <span className="text-[11px] font-semibold text-text-primary mb-1 whitespace-nowrap">{fmtKg(b.kg)}</span>
+                )}
+                <div
+                  className={`w-full rounded-t-[4px] transition-colors ${hoverIdx === i ? 'bg-brand-600' : i === idxPico ? 'bg-brand-500' : 'bg-brand-300'}`}
+                  style={{ height: `${techo > 0 ? Math.max((b.kg / techo) * 100, b.kg > 0 ? 2 : 0) : 0}%` }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-      <div className="flex justify-between text-xs text-text-muted mt-2">
-        <span>{buckets[0].fecha}</span>
-        <span>{buckets[buckets.length - 1].fecha}</span>
+      <div className="flex justify-between text-xs text-text-muted mt-2 pl-8">
+        <span>{fmtFechaCorta(buckets[0].fecha)}</span>
+        {buckets.length > 2 && <span>{fmtFechaCorta(buckets[Math.floor(buckets.length / 2)].fecha)}</span>}
+        <span>{fmtFechaCorta(buckets[buckets.length - 1].fecha)}</span>
       </div>
     </div>
   );
@@ -386,6 +443,10 @@ function MetricasPage() {
         </div>
       )}
 
+      {/* El contenido dependiente de datos mantiene el render anterior a
+          opacidad reducida mientras recarga (cambio de período) — sin
+          spinner ni salto de layout, solo en la primera carga de la página. */}
+      <div className={`transition-opacity duration-150 ${cargando ? 'opacity-50 pointer-events-none' : ''}`}>
       {/* Resumen */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {stats.map(stat => (
@@ -528,6 +589,7 @@ function MetricasPage() {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }
