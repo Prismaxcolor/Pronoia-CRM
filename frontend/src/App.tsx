@@ -5,6 +5,7 @@ import { PortalAuthProvider } from './hooks/use-portal-auth';
 import { usePortalAuth } from './hooks/use-portal-auth-context';
 import { ToastProvider } from './hooks/use-toast';
 import { ConfirmProvider } from './hooks/use-confirm';
+import { PesajeBorradorProvider } from './hooks/use-pesaje-borrador';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import AuthPage from './features/auth/AuthPage';
@@ -122,7 +123,9 @@ function App() {
         <ConfirmProvider>
           <AuthProvider>
             <PortalAuthProvider>
-              <AppRoutes />
+              <PesajeBorradorProvider>
+                <AppRoutes />
+              </PesajeBorradorProvider>
             </PortalAuthProvider>
           </AuthProvider>
         </ConfirmProvider>

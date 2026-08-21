@@ -12,6 +12,7 @@ import { crearTraslado, obtenerTraslados } from '../../services/traslado-service
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
+import { usePesajeBorrador } from '../../hooks/use-pesaje-borrador-context';
 import CompletarTicketModal from './CompletarTicketModal';
 import CompletarTrasladoModal from '../inventario/CompletarTrasladoModal';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
@@ -28,11 +29,6 @@ type FilaListado =
   | { kind: 'traslado'; traslado: Traslado };
 
 interface Entidad { id: string; nombre: string; activo: boolean }
-type TipoPesaje = 'compra' | 'venta' | 'traslado';
-
-function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 type Pestana = 'nuevo' | 'tickets';
 
@@ -57,16 +53,15 @@ function PesajePage() {
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [stockOrigen, setStockOrigen] = useState<Map<string, number>>(new Map());
 
-  const [tipo, setTipo] = useState<TipoPesaje>('compra');
-  const [entidadId, setEntidadId] = useState('');
-  const [almacenOrigenId, setAlmacenOrigenId] = useState('');
-  const [almacenDestinoId, setAlmacenDestinoId] = useState('');
-  const [fecha, setFecha] = useState(hoyISO());
-  const [pesoGlobal, setPesoGlobal] = useState('');
-  const [pesajeExterior, setPesajeExterior] = useState(false);
-  const [devolucion, setDevolucion] = useState('');
-  const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
-  const [observaciones, setObservaciones] = useState('');
+  // Campos del formulario "Nuevo pesaje" — viven en un Provider por encima de
+  // las rutas (usePesajeBorrador), no en useState local, para no perderse si
+  // el usuario navega a otra pantalla (Dashboard, Cochinito, etc.) y vuelve.
+  const {
+    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesoGlobal, pesajeExterior, devolucion, materiales, observaciones },
+    setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
+    setPesoGlobal, setPesajeExterior, setDevolucion, setMateriales, setObservaciones,
+    limpiarBorrador,
+  } = usePesajeBorrador();
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,17 +138,7 @@ function PesajePage() {
   const quitarFotoFila = (uid: number, idx: number) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
 
-  const limpiar = () => {
-    setEntidadId('');
-    setAlmacenOrigenId('');
-    setAlmacenDestinoId('');
-    setFecha(hoyISO());
-    setPesoGlobal('');
-    setPesajeExterior(false);
-    setDevolucion('');
-    setMateriales([filaVacia()]);
-    setObservaciones('');
-  };
+  const limpiar = () => limpiarBorrador();
 
   const guardarTraslado = async () => {
     setError(null);
