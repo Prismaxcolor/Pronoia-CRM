@@ -69,6 +69,14 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
 
   const handleRolChange = (nuevoRol: RolUsuario) => {
     setRol(nuevoRol);
+    // El superadmin tiene acceso total siempre (el backend lo bypassea) —
+    // permisos personalizados no tiene sentido acá y es justo lo que dejaba
+    // arrays viejos pegados que confundían el conteo en la tabla de Usuarios.
+    if (nuevoRol === 'superadmin') {
+      setUseCustom(false);
+      setPermisos(PERMISOS_POR_ROL.superadmin);
+      return;
+    }
     if (!useCustom) {
       setPermisos(PERMISOS_POR_ROL[nuevoRol]);
     }
@@ -83,7 +91,11 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
 
   const handleGuardar = async () => {
     setGuardando(true);
-    const permisosGuardar = useCustom ? permisos : [];
+    // rol === 'superadmin' manda siempre, incluso si useCustom quedó en true
+    // por un array de permisos personalizados viejo con el que se abrió el
+    // modal (el caso que dejaba superadmins con un conteo de permisos
+    // corrupto) — así este guardado lo limpia en vez de reescribirlo.
+    const permisosGuardar = rol === 'superadmin' ? [] : (useCustom ? permisos : []);
     const result = await actualizarUsuario(usuario.id, { rol, permisos: permisosGuardar });
     setGuardando(false);
     if ('usuario' in result) {
@@ -129,17 +141,24 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
             </div>
           </div>
 
-          {/* Toggle permisos custom */}
-          <div className="flex items-center justify-between p-3 bg-surface-alt rounded-lg border border-border">
-            <div>
-              <p className="text-sm font-medium text-text-primary">Permisos personalizados</p>
-              <p className="text-xs text-text-muted">Sobreescribe los permisos por defecto del rol</p>
+          {/* Toggle permisos custom — no aplica a superadmin, que siempre tiene acceso total */}
+          {rol === 'superadmin' ? (
+            <div className="p-3 bg-brand-50 rounded-lg border border-brand-200">
+              <p className="text-sm font-medium text-brand-700">Acceso total</p>
+              <p className="text-xs text-brand-600">El superadministrador siempre puede ver y hacer todo — no admite permisos personalizados.</p>
             </div>
-            <Switch checked={useCustom} onChange={handleCustomToggle} />
-          </div>
+          ) : (
+            <div className="flex items-center justify-between p-3 bg-surface-alt rounded-lg border border-border">
+              <div>
+                <p className="text-sm font-medium text-text-primary">Permisos personalizados</p>
+                <p className="text-xs text-text-muted">Sobreescribe los permisos por defecto del rol</p>
+              </div>
+              <Switch checked={useCustom} onChange={handleCustomToggle} />
+            </div>
+          )}
 
           {/* Matriz de permisos */}
-          {useCustom && (
+          {useCustom && rol !== 'superadmin' && (
             <div className="border border-border rounded-lg overflow-hidden">
               <div className="overflow-x-auto"><table className="w-full text-xs">
                 <thead>

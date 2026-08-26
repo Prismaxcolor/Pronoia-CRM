@@ -8,24 +8,36 @@
  * Si se actualiza shared/types/usuario.ts, actualizar también este archivo.
  */
 
-export type RolUsuario = 'superadmin' | 'administracion' | 'trabajador';
-export type Recurso =
-  | 'dashboard'
-  | 'productos'
-  | 'categorias'
-  | 'taras'
-  | 'almacenes'
-  | 'listas_precios'
-  | 'cochinito'
-  | 'facturacion'
-  | 'usuarios'
-  | 'clientes'
-  | 'proveedores'
-  | 'pesaje'
-  | 'traslados'
-  | 'transformaciones'
-  | 'despachos';
-export type Accion = 'ver' | 'crear' | 'editar' | 'eliminar';
+export const ROLES = ['superadmin', 'administracion', 'trabajador'] as const;
+export type RolUsuario = (typeof ROLES)[number];
+
+/** Única fuente de verdad en runtime para qué páginas existen — de acá se
+ *  derivan tanto el tipo Recurso como el enum de validación de
+ *  schemas/usuarios.ts. Antes había una tercera lista hardcodeada en el
+ *  schema que quedó vieja (le faltaban 7 recursos) y tiraba "Datos
+ *  inválidos" al guardar permisos personalizados que los tocaran — con esto
+ *  ya no puede volver a desincronizarse dentro del backend. */
+export const RECURSOS = [
+  'dashboard',
+  'productos',
+  'categorias',
+  'taras',
+  'almacenes',
+  'listas_precios',
+  'cochinito',
+  'facturacion',
+  'usuarios',
+  'clientes',
+  'proveedores',
+  'pesaje',
+  'traslados',
+  'transformaciones',
+  'despachos',
+] as const;
+export type Recurso = (typeof RECURSOS)[number];
+
+export const ACCIONES = ['ver', 'crear', 'editar', 'eliminar'] as const;
+export type Accion = (typeof ACCIONES)[number];
 
 export interface Permiso {
   recurso: Recurso;

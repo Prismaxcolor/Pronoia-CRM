@@ -75,13 +75,28 @@ export async function crearUsuarioAdmin(
   return { usuario: toPublico(data as UsuarioRow) };
 }
 
+/**
+ * Un superadmin tiene acceso total sin importar lo que diga permisos (el
+ * middleware lo bypassea siempre) — pero si al usuario le quedó un array de
+ * permisos personalizados de cuando tenía otro rol (ej. trabajador con solo
+ * 5 permisos), la tabla de Usuarios muestra ese conteo viejo y da la
+ * impresión de que un superadmin tiene MENOS permisos que un trabajador con
+ * permisos personalizados amplios. Se limpia acá, al promoverlo, para que
+ * nunca quede un array viejo pegado. Función pura: no toca la BD, así se
+ * puede testear sin mocks.
+ */
+export function normalizarCambiosRol(cambios: ActualizarUsuarioInput): ActualizarUsuarioInput {
+  if (cambios.rol !== 'superadmin') return cambios;
+  return { ...cambios, permisos: [] };
+}
+
 export async function actualizarUsuarioAdmin(
   id: string,
   cambios: ActualizarUsuarioInput
 ): Promise<{ usuario: UsuarioPublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('users')
-    .update(cambios)
+    .update(normalizarCambiosRol(cambios))
     .eq('id', id)
     .select('id, email, nombre, rol, permisos, activo, creado_en')
     .maybeSingle();

@@ -1,4 +1,5 @@
-export type RolUsuario = 'superadmin' | 'administracion' | 'trabajador';
+export const ROLES = ['superadmin', 'administracion', 'trabajador'] as const;
+export type RolUsuario = (typeof ROLES)[number];
 
 export interface Usuario {
   id: string;
@@ -11,23 +12,29 @@ export interface Usuario {
   creadoEn: string;
 }
 
-export type Recurso =
-  | 'dashboard'
-  | 'productos'
-  | 'categorias'
-  | 'taras'
-  | 'almacenes'
-  | 'listas_precios'
-  | 'cochinito'
-  | 'facturacion'
-  | 'usuarios'
-  | 'clientes'
-  | 'proveedores'
-  | 'pesaje'
-  | 'traslados'
-  | 'transformaciones'
-  | 'despachos';
-export type Accion = 'ver' | 'crear' | 'editar' | 'eliminar';
+/** Espejo de backend/src/utils/permisos.ts (ver el comentario ahí sobre por
+ *  qué esta lista está duplicada en vez de importada). */
+export const RECURSOS = [
+  'dashboard',
+  'productos',
+  'categorias',
+  'taras',
+  'almacenes',
+  'listas_precios',
+  'cochinito',
+  'facturacion',
+  'usuarios',
+  'clientes',
+  'proveedores',
+  'pesaje',
+  'traslados',
+  'transformaciones',
+  'despachos',
+] as const;
+export type Recurso = (typeof RECURSOS)[number];
+
+export const ACCIONES = ['ver', 'crear', 'editar', 'eliminar'] as const;
+export type Accion = (typeof ACCIONES)[number];
 
 export interface Permiso {
   recurso: Recurso;

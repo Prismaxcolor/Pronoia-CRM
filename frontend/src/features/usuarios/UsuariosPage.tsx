@@ -149,7 +149,9 @@ function UsuariosPage() {
                   </td>
                   <td className="p-4">
                     <span className="text-xs text-text-secondary">
-                      {u.permisos.length} permiso{u.permisos.length !== 1 ? 's' : ''}
+                      {u.rol === 'superadmin'
+                        ? 'Todos (acceso total)'
+                        : `${u.permisos.length} permiso${u.permisos.length !== 1 ? 's' : ''}`}
                     </span>
                   </td>
                   <td className="p-4">

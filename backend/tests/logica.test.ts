@@ -5,6 +5,7 @@ import {
 } from '../src/services/inventario-service.js';
 import { construirEstadoCuenta, agruparPagos } from '../src/services/estado-cuenta-service.js';
 import { construirNotaAjusteDetalle } from '../src/services/nota-ajuste-service.js';
+import { normalizarCambiosRol } from '../src/services/usuario-service.js';
 
 describe('construirGruposInventario', () => {
   const productos: ProductoInventario[] = [
@@ -356,5 +357,29 @@ describe('construirNotaAjusteDetalle', () => {
     expect(dto.anulada).toBe(true);
     expect(dto.pagada).toBe(true);
     expect(dto.anulaNotaId).toBe('n0');
+  });
+});
+
+// Regresión: promover a alguien a superadmin sin apagar antes "permisos
+// personalizados" dejaba pegado su array custom viejo (ej. 5 permisos de
+// cuando era trabajador) — el superadmin tiene acceso total igual (el
+// middleware lo bypassea), pero la tabla de Usuarios mostraba ese conteo
+// viejo y chico, dando la impresión de que un trabajador con permisos
+// personalizados amplios tenía MÁS permisos que un superadmin.
+describe('normalizarCambiosRol', () => {
+  it('limpia permisos al promover a superadmin, aunque vengan permisos custom en el mismo request', () => {
+    const cambios = normalizarCambiosRol({ rol: 'superadmin', permisos: [{ recurso: 'pesaje', accion: 'ver' }] });
+    expect(cambios.permisos).toEqual([]);
+  });
+
+  it('no toca permisos para otros roles', () => {
+    const permisos = [{ recurso: 'pesaje', accion: 'ver' as const }];
+    const cambios = normalizarCambiosRol({ rol: 'trabajador', permisos });
+    expect(cambios.permisos).toBe(permisos);
+  });
+
+  it('no toca nada si el cambio no incluye rol', () => {
+    const cambios = normalizarCambiosRol({ activo: false });
+    expect(cambios).toEqual({ activo: false });
   });
 });

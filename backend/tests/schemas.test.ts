@@ -6,6 +6,8 @@ import { crearListaSchema, actualizarListaSchema, upsertPrecioSchema } from '../
 import { crearProveedorSchema } from '../src/schemas/proveedores.js';
 import { crearTaraSchema, actualizarTaraSchema } from '../src/schemas/tara.js';
 import { registrarPagoSchema, registrarPagoMultipleSchema } from '../src/schemas/pagos.js';
+import { actualizarUsuarioSchema } from '../src/schemas/usuarios.js';
+import { RECURSOS, ACCIONES } from '../src/utils/permisos.js';
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const UUID2 = '22222222-2222-4222-8222-222222222222';
@@ -381,5 +383,27 @@ describe('registrarPagoMultipleSchema', () => {
       items: [{ tipo: 'factura' as const, id: UUID3, montoUsd: 400 }],
     });
     expect(r.success).toBe(true);
+  });
+});
+
+// Regresión: schemas/usuarios.ts tenía su propia lista de recursos hardcodeada
+// y desincronizada (8 de 15) — guardar permisos personalizados de cualquiera de
+// los 7 recursos faltantes (categorias, taras, almacenes, listas_precios,
+// traslados, transformaciones, despachos) tiraba "Datos inválidos" con un error
+// por cada uno. Ahora el schema deriva el enum de utils/permisos.ts, así que
+// cualquier recurso/acción real de la matriz tiene que pasar.
+describe('actualizarUsuarioSchema — permisos personalizados', () => {
+  it('acepta un permiso para cada recurso y acción reales de la matriz', () => {
+    for (const recurso of RECURSOS) {
+      for (const accion of ACCIONES) {
+        const r = actualizarUsuarioSchema.safeParse({ permisos: [{ recurso, accion }] });
+        expect(r.success, `${recurso}:${accion} debería ser válido`).toBe(true);
+      }
+    }
+  });
+
+  it('rechaza un recurso que no existe en la matriz', () => {
+    const r = actualizarUsuarioSchema.safeParse({ permisos: [{ recurso: 'no_existe', accion: 'ver' }] });
+    expect(r.success).toBe(false);
   });
 });
