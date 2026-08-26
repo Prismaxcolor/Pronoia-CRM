@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { filaVacia, type MaterialFila, type FotoMaterial } from '../features/pesaje/material-fila';
+import { pesajeGlobalVacio, type PesajeGlobalFila } from '../features/pesaje/pesaje-global-fila';
 import {
   PesajeBorradorContext,
   type PesajeBorrador,
@@ -17,7 +18,7 @@ function borradorInicial(): PesajeBorrador {
     almacenOrigenId: '',
     almacenDestinoId: '',
     fecha: hoyISO(),
-    pesoGlobal: '',
+    pesajesGlobales: [pesajeGlobalVacio()],
     pesajeExterior: false,
     devolucion: '',
     fotosDevolucion: [],
@@ -32,7 +33,7 @@ export function PesajeBorradorProvider({ children }: { children: ReactNode }) {
   const [almacenOrigenId, setAlmacenOrigenId] = useState('');
   const [almacenDestinoId, setAlmacenDestinoId] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
-  const [pesoGlobal, setPesoGlobal] = useState('');
+  const [pesajesGlobales, setPesajesGlobales] = useState<PesajeGlobalFila[]>([pesajeGlobalVacio()]);
   const [pesajeExterior, setPesajeExterior] = useState(false);
   const [devolucion, setDevolucion] = useState('');
   const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
@@ -46,7 +47,7 @@ export function PesajeBorradorProvider({ children }: { children: ReactNode }) {
     setAlmacenOrigenId(inicial.almacenOrigenId);
     setAlmacenDestinoId(inicial.almacenDestinoId);
     setFecha(inicial.fecha);
-    setPesoGlobal(inicial.pesoGlobal);
+    setPesajesGlobales(inicial.pesajesGlobales);
     setPesajeExterior(inicial.pesajeExterior);
     setDevolucion(inicial.devolucion);
     setFotosDevolucion(inicial.fotosDevolucion);
@@ -56,14 +57,14 @@ export function PesajeBorradorProvider({ children }: { children: ReactNode }) {
 
   const borrador: PesajeBorrador = {
     tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha,
-    pesoGlobal, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones,
+    pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones,
   };
 
   return (
     <PesajeBorradorContext.Provider value={{
       borrador,
       setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
-      setPesoGlobal, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones,
+      setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones,
       limpiarBorrador,
     }}>
       {children}

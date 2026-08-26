@@ -33,6 +33,16 @@ export interface TicketPesajeMaterial {
   fotos: string[];
 }
 
+/** Una pesada individual que compone el peso global — el camión puede pasar
+ *  varias veces por la báscula, cada una con su propia tara y foto. Solo se
+ *  carga al crear el ticket, no se edita después (como el peso global mismo). */
+export interface PesajeGlobal {
+  id: string;
+  peso: number;
+  tara: number;
+  foto: string | null;
+}
+
 /**
  * Ticket de pesaje — registro de una pesada física, con uno o varios materiales.
  */
@@ -63,6 +73,8 @@ export interface TicketPesaje {
   /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor.
    *  0 cuando pesajeExterior es true (no hay lectura propia de báscula). */
   pesoGlobal: number;
+  /** Desglose de pesadas individuales que suman pesoGlobal. */
+  pesajesGlobales: PesajeGlobal[];
   /** true si el camión se pesó en una báscula externa a la que Pronoia no tiene acceso. */
   pesajeExterior: boolean;
   /**

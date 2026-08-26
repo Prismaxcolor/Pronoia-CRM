@@ -1,5 +1,6 @@
 import { createContext, useContext, type Dispatch, type SetStateAction } from 'react';
 import type { MaterialFila, FotoMaterial } from '../features/pesaje/material-fila';
+import type { PesajeGlobalFila } from '../features/pesaje/pesaje-global-fila';
 
 export type TipoPesajeBorrador = 'compra' | 'venta' | 'traslado';
 
@@ -13,7 +14,9 @@ export interface PesajeBorrador {
   almacenOrigenId: string;
   almacenDestinoId: string;
   fecha: string;
-  pesoGlobal: string;
+  /** Desglose de pesadas individuales — el peso global final es la suma de
+   *  (peso - tara) de todas. Vacío cuando pesajeExterior es true. */
+  pesajesGlobales: PesajeGlobalFila[];
   pesajeExterior: boolean;
   devolucion: string;
   fotosDevolucion: FotoMaterial[];
@@ -28,7 +31,7 @@ export interface PesajeBorradorContextType {
   setAlmacenOrigenId: Dispatch<SetStateAction<string>>;
   setAlmacenDestinoId: Dispatch<SetStateAction<string>>;
   setFecha: Dispatch<SetStateAction<string>>;
-  setPesoGlobal: Dispatch<SetStateAction<string>>;
+  setPesajesGlobales: Dispatch<SetStateAction<PesajeGlobalFila[]>>;
   setPesajeExterior: Dispatch<SetStateAction<boolean>>;
   setDevolucion: Dispatch<SetStateAction<string>>;
   setFotosDevolucion: Dispatch<SetStateAction<FotoMaterial[]>>;

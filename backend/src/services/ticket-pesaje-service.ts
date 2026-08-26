@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput } from '../schemas/tickets-pesaje.js';
+import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput, PesajeGlobalInput } from '../schemas/tickets-pesaje.js';
 import { notificarDocumento } from './telegram-notify-service.js';
 import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
 
@@ -28,6 +28,14 @@ interface DetalleRow {
   lotes?: { nombre: string } | null;
 }
 
+interface PesajeGlobalRow {
+  id: string;
+  orden: number;
+  peso: number;
+  tara: number;
+  foto: string | null;
+}
+
 interface TicketRow {
   id: string;
   numero: number;
@@ -47,6 +55,7 @@ interface TicketRow {
   completado_por: string | null;
   completado_en: string | null;
   detalle_tickets_pesaje?: DetalleRow[] | null;
+  pesajes_globales?: PesajeGlobalRow[] | null;
 }
 
 export interface MaterialPublico {
@@ -62,6 +71,13 @@ export interface MaterialPublico {
   loteId: string | null;
   nombreLote: string | null;
   fotos: string[];
+}
+
+export interface PesajeGlobalPublico {
+  id: string;
+  peso: number;
+  tara: number;
+  foto: string | null;
 }
 
 export interface TicketPublico {
@@ -80,6 +96,9 @@ export interface TicketPublico {
    *  distinguirlo de un neto "ajustado" en el futuro. */
   pesoNetoMateriales: number;
   pesoGlobal: number;
+  /** Desglose de pesadas individuales que suman pesoGlobal — solo se carga
+   *  al crear el ticket, no se edita después. */
+  pesajesGlobales: PesajeGlobalPublico[];
   /** true si el camión se pesó en una báscula externa — no hay peso global propio. */
   pesajeExterior: boolean;
   /** Kg de devolución del ticket completo (no por material). Se suma a
@@ -133,6 +152,10 @@ function toPublico(row: TicketRow): TicketPublico {
     pesoNetoTotal,
     pesoNetoMateriales: pesoNetoTotal,
     pesoGlobal,
+    pesajesGlobales: (row.pesajes_globales ?? [])
+      .slice()
+      .sort((a, b) => a.orden - b.orden)
+      .map(p => ({ id: p.id, peso: Number(p.peso), tara: Number(p.tara), foto: p.foto })),
     pesajeExterior: row.pesaje_exterior ?? false,
     devolucion,
     fotosDevolucion: row.fotos_devolucion ?? [],
@@ -148,7 +171,7 @@ function toPublico(row: TicketRow): TicketPublico {
   };
 }
 
-const SELECT_TICKET = '*, detalle_tickets_pesaje(*, productos(nombre), lotes(nombre))';
+const SELECT_TICKET = '*, detalle_tickets_pesaje(*, productos(nombre), lotes(nombre)), pesajes_globales(*)';
 
 export interface ListarTicketsOpts {
   /** Solo tickets sin facturar (para el selector de la factura). */
@@ -197,6 +220,10 @@ function notificarTicketSiCorresponde(ticket: TicketPublico): void {
   });
 }
 
+function pesajesGlobalesARpc(pesajes: PesajeGlobalInput[]) {
+  return pesajes.map(p => ({ peso: p.peso, tara: p.tara, foto: p.foto ?? null }));
+}
+
 function materialesARpc(materiales: CrearTicketInput['materiales']) {
   return materiales.map(m => ({
     producto_id: m.productoId,
@@ -228,6 +255,7 @@ export async function crearTicket(
     p_devolucion: input.devolucion,
     p_pesaje_exterior: input.pesajeExterior,
     p_fotos_devolucion: input.fotosDevolucion,
+    p_pesajes_globales: pesajesGlobalesARpc(input.pesajesGlobales),
   });
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };

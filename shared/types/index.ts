@@ -8,7 +8,7 @@ export type { Cliente } from './cliente.js';
 export type { TipoMaterial } from './tipos-material.js';
 export type { ListaPrecios, PrecioLista, TipoListaPrecios } from './lista-precios.js';
 export type { Proveedor } from './proveedor.js';
-export type { TicketPesaje, TicketPesajeMaterial, TipoTicketPesaje } from './ticket-pesaje.js';
+export type { TicketPesaje, TicketPesajeMaterial, TipoTicketPesaje, PesajeGlobal } from './ticket-pesaje.js';
 export type { Lote, DestinoTipo } from './lote.js';
 export { destinoLabel } from './lote.js';
 export { formatCodigoPesaje } from './ticket-pesaje.js';

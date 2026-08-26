@@ -10,12 +10,20 @@ export interface CrearTicketMaterialInput {
   loteId?: string | null;
 }
 
+export interface PesajeGlobalInput {
+  peso: number;
+  tara?: number;
+  foto?: string | null;
+}
+
 export interface CrearTicketInput {
   tipo?: 'compra' | 'venta';
   entidadId: string;
   fecha?: string | null;
   /** Obligatorio salvo pesajeExterior=true (báscula externa, sin lectura propia). */
   pesoGlobal?: number | null;
+  /** Desglose de pesadas individuales que suman pesoGlobal. */
+  pesajesGlobales?: PesajeGlobalInput[];
   /** true si el camión se pesó en una báscula externa a la que Pronoia no tiene acceso. */
   pesajeExterior?: boolean;
   /** Kg de devolución del ticket completo. Se suma a la suma de materiales

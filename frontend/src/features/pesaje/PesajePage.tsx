@@ -19,6 +19,7 @@ import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
+import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotoPesajeGlobal } from './pesaje-global-fila';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado } from '@shared/types/index.js';
 
 /** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
@@ -57,9 +58,9 @@ function PesajePage() {
   // las rutas (usePesajeBorrador), no en useState local, para no perderse si
   // el usuario navega a otra pantalla (Dashboard, Cochinito, etc.) y vuelve.
   const {
-    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesoGlobal, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones },
+    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones },
     setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
-    setPesoGlobal, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones,
+    setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones,
     limpiarBorrador,
   } = usePesajeBorrador();
 
@@ -120,8 +121,8 @@ function PesajePage() {
 
   // Diferencia = Peso Global - suma de materiales netos - devolución.
   const diferencia = useMemo(
-    () => (Number(pesoGlobal) || 0) - pesoNetoTotal - (Number(devolucion) || 0),
-    [pesoGlobal, pesoNetoTotal, devolucion]
+    () => sumaPesajesGlobales(pesajesGlobales) - pesoNetoTotal - (Number(devolucion) || 0),
+    [pesajesGlobales, pesoNetoTotal, devolucion]
   );
 
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
@@ -178,8 +179,8 @@ function PesajePage() {
     setError(null);
 
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
-    if (!pesajeExterior && (!pesoGlobal || Number(pesoGlobal) <= 0)) {
-      setError('Registra el peso global de la pesada (o marca "Pesaje exterior").');
+    if (!pesajeExterior && sumaPesajesGlobales(pesajesGlobales) <= 0) {
+      setError('Registra al menos un pesaje global con peso mayor a 0 (o marca "Pesaje exterior").');
       return;
     }
     if (estado === 'completo') {
@@ -221,11 +222,29 @@ function PesajePage() {
       urlsDevolucion = urls;
     }
 
+    const pesajesGlobalesPayload: Array<{ peso: number; tara?: number; foto?: string | null }> = [];
+    if (!pesajeExterior) {
+      for (const f of pesajesGlobales) {
+        let fotoUrl: string | null = null;
+        if (estado !== 'bruto' && f.foto) {
+          const uploaded = await subirFotoPesajeGlobal(f);
+          if (uploaded === undefined) {
+            setError('No se pudo subir una foto del pesaje global. Revisa que el bucket "tickets" exista en Supabase Storage.');
+            setGuardando(false);
+            return;
+          }
+          fotoUrl = uploaded;
+        }
+        pesajesGlobalesPayload.push({ peso: Number(f.peso) || 0, tara: Number(f.tara) || 0, foto: fotoUrl });
+      }
+    }
+
     const result = await crearTicket({
       tipo: tipo === 'venta' ? 'venta' : 'compra',
       entidadId,
       fecha,
-      pesoGlobal: pesajeExterior ? null : (Number(pesoGlobal) || 0),
+      pesoGlobal: pesajeExterior ? null : sumaPesajesGlobales(pesajesGlobales),
+      pesajesGlobales: pesajesGlobalesPayload,
       pesajeExterior,
       devolucion: Number(devolucion) || 0,
       fotosDevolucion: urlsDevolucion,
@@ -416,13 +435,13 @@ function PesajePage() {
 
             {tipo !== 'traslado' && (
             <div>
-              <div className="flex items-center justify-between">
-                <label className={labelClass}>Peso global (kg) {!pesajeExterior && '*'}</label>
-                <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none mb-1">
+              <div className="flex items-center justify-between mb-2">
+                <label className={labelClass + ' mb-0'}>Pesaje global {!pesajeExterior && '*'}</label>
+                <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={pesajeExterior}
-                    onChange={e => { setPesajeExterior(e.target.checked); if (e.target.checked) setPesoGlobal(''); }}
+                    onChange={e => setPesajeExterior(e.target.checked)}
                     className="rounded border-border"
                   />
                   Pesaje exterior
@@ -433,10 +452,82 @@ function PesajePage() {
                   El camión se pesó en una báscula externa — este ticket queda marcado como "Pesaje exterior", sin peso global propio.
                 </p>
               ) : (
-                <>
-                  <input type="number" step="0.001" min="0" value={pesoGlobal} onChange={e => setPesoGlobal(e.target.value)} className={inputClass} placeholder="0.00" />
-                  <p className="text-xs text-text-muted mt-1">Pesaje único de todos los materiales juntos, al llegar el proveedor.</p>
-                </>
+                <div className="space-y-2">
+                  {pesajesGlobales.map((f, idx) => {
+                    const neto = netoPesajeGlobalFila(f);
+                    return (
+                      <div key={f.uid} className="border border-border rounded-lg p-3 space-y-2 bg-surface-alt/40">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-text-secondary">Pesaje {idx + 1}</span>
+                          {pesajesGlobales.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setPesajesGlobales(prev => prev.filter(p => p.uid !== f.uid))}
+                              className="text-text-muted hover:text-red-600 transition-colors"
+                              title="Quitar pesaje"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelClass}>Peso bruto (kg)</label>
+                            <input
+                              type="number" step="0.001" min="0"
+                              value={f.peso}
+                              onChange={e => setPesajesGlobales(prev => prev.map(p => p.uid === f.uid ? { ...p, peso: e.target.value } : p))}
+                              className={inputClass}
+                              placeholder="0.000"
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Tara (kg)</label>
+                            <input
+                              type="number" step="0.001" min="0"
+                              value={f.tara}
+                              onChange={e => setPesajesGlobales(prev => prev.map(p => p.uid === f.uid ? { ...p, tara: e.target.value } : p))}
+                              className={inputClass}
+                              placeholder="0.000"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 text-sm">
+                          <span className="text-text-muted">Neto</span>
+                          <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
+                        </div>
+                        <FotoMaterialPicker
+                          label="Foto del pesaje"
+                          fotos={f.foto ? [f.foto] : []}
+                          onAgregar={files => {
+                            if (!files[0]) return;
+                            const file = files[0];
+                            setPesajesGlobales(prev => prev.map(p => p.uid === f.uid
+                              ? { ...p, foto: { tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) } }
+                              : p
+                            ));
+                          }}
+                          onQuitar={() => setPesajesGlobales(prev => prev.map(p => p.uid === f.uid ? { ...p, foto: null } : p))}
+                        />
+                      </div>
+                    );
+                  })}
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setPesajesGlobales(prev => [...prev, pesajeGlobalVacio()])}
+                      className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors"
+                    >
+                      <Plus size={16} />
+                      Agregar pesaje
+                    </button>
+                    {pesajesGlobales.length > 1 && (
+                      <span className="text-xs text-text-secondary">
+                        Total: <span className="font-semibold text-text-primary">{fmt(sumaPesajesGlobales(pesajesGlobales))} kg</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
             )}

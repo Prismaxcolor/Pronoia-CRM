@@ -29,6 +29,18 @@ export const materialSchema = z
     path: ['loteId'],
   });
 
+/** Una pesada individual que compone el peso global (el camión puede pasar
+ *  varias veces por la báscula). El total es la suma de (peso - tara) de
+ *  cada una — el frontend calcula la suma y la manda también en pesoGlobal;
+ *  esta lista es el desglose para trazabilidad (foto + tara por pesada), no
+ *  se recalcula ni se valida contra pesoGlobal en el backend. Solo se carga
+ *  al crear el ticket, no se edita después (como el peso global mismo). */
+export const pesajeGlobalSchema = z.object({
+  peso: z.number().nonnegative('El peso no puede ser negativo.'),
+  tara: z.number().nonnegative('La tara no puede ser negativa.').default(0),
+  foto: z.string().optional().nullable(),
+});
+
 export const crearTicketSchema = z
   .object({
     tipo: z.enum(['compra', 'venta']).default('compra'),
@@ -43,6 +55,8 @@ export const crearTicketSchema = z
      *  Obligatorio salvo que sea un pesaje exterior (báscula externa a la que
      *  Pronoia no tiene acceso). */
     pesoGlobal: z.number().nonnegative('El peso global no puede ser negativo.').optional().nullable(),
+    /** Desglose de pesadas individuales que suman pesoGlobal. */
+    pesajesGlobales: z.array(pesajeGlobalSchema).default([]),
     /** true si el camión se pesó en una báscula externa — no hay peso global propio. */
     pesajeExterior: z.boolean().default(false),
     /** Kg de devolución del ticket completo (no por material). Se suma a la
@@ -101,5 +115,6 @@ export const editarTicketSchema = z.object({
 
 export type CrearTicketInput = z.infer<typeof crearTicketSchema>;
 export type CrearTicketMaterialInput = z.infer<typeof materialSchema>;
+export type PesajeGlobalInput = z.infer<typeof pesajeGlobalSchema>;
 export type CompletarTicketInput = z.infer<typeof completarTicketSchema>;
 export type EditarTicketInput = z.infer<typeof editarTicketSchema>;
