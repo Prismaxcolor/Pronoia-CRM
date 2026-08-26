@@ -85,13 +85,6 @@ function CompletarFerrosoModal({
     setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
   };
 
-  const productosSorted = (id?: string): Producto[] => {
-    const comunes = productos.filter(p => comunesIds.includes(p.id));
-    const resto = productos.filter(p => !comunesIds.includes(p.id));
-    if (id && comunesIds.includes(id)) return [productos.find(p => p.id === id)!, ...comunes.filter(p => p.id !== id), ...resto];
-    return [...comunes, ...resto];
-  };
-
   const totalSalidas = filas.reduce((acc, f) => acc + (Number(f.pesoBruto) - Number(f.tara || 0)), 0);
   const merma = transformacion.pesoNeto - totalSalidas;
 
@@ -559,7 +552,13 @@ function TransformacionesPage() {
   useEffect(() => { void cargar(); }, [cargar]);
 
   const cancelar = async (t: Transformacion) => {
-    const ok = await confirm(`¿Cancelar la transformación de ${fmt(t.pesoNeto)} kg de ${t.nombreProductoEntrada ?? t.nombreLoteOrigen}?`);
+    const nombre = t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '?';
+    const ok = await confirm({
+      titulo: 'Cancelar transformación',
+      mensaje: `¿Cancelar la transformación de ${fmt(t.pesoNeto)} kg de ${nombre}? Esta acción no se puede deshacer.`,
+      confirmarLabel: 'Cancelar transformación',
+      variante: 'danger',
+    });
     if (!ok) return;
     const result = await borrarTransformacion(t.id);
     if ('error' in result) { toast.errorMsg(result.error); return; }
