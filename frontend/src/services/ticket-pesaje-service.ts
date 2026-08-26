@@ -21,6 +21,8 @@ export interface CrearTicketInput {
   /** Kg de devolución del ticket completo. Se suma a la suma de materiales
    *  para reconciliar contra pesoGlobal — no afecta inventario ni factura. */
   devolucion?: number;
+  /** URLs de fotos de la devolución del ticket completo (no por material). */
+  fotosDevolucion?: string[];
   /** 'bruto' guarda el ticket sin materiales/destinos, para completar después. */
   estado?: 'bruto' | 'completo';
   materiales: CrearTicketMaterialInput[];
@@ -76,12 +78,13 @@ export async function crearTicket(
 export async function completarTicket(
   id: string,
   materiales: CrearTicketMaterialInput[],
-  devolucion = 0
+  devolucion = 0,
+  fotosDevolucion: string[] = []
 ): Promise<{ ticket: TicketPesaje } | { error: string }> {
   try {
     const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}/completar`, {
       method: 'PATCH',
-      body: { materiales, devolucion },
+      body: { materiales, devolucion, fotosDevolucion },
     });
     return { ticket };
   } catch (err) {
@@ -92,6 +95,7 @@ export async function completarTicket(
 export interface EditarTicketInput {
   materiales: CrearTicketMaterialInput[];
   devolucion?: number;
+  fotosDevolucion?: string[];
   observaciones?: string | null;
 }
 

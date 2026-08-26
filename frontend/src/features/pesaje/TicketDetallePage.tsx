@@ -9,7 +9,7 @@ import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, type MaterialFila, type FotoMaterial } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
 
@@ -54,6 +54,7 @@ function TicketDetallePage() {
   const [editando, setEditando] = useState(false);
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [devolucionEdit, setDevolucionEdit] = useState('');
+  const [fotosDevolucionEdit, setFotosDevolucionEdit] = useState<FotoMaterial[]>([]);
   const [observacionesEdit, setObservacionesEdit] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +91,7 @@ function TicketDetallePage() {
     if (!ticket) return;
     setMateriales(filasDesdeTicket(ticket));
     setDevolucionEdit(ticket.devolucion ? String(ticket.devolucion) : '');
+    setFotosDevolucionEdit(ticket.fotosDevolucion.map(url => ({ tipo: 'existente' as const, url })));
     setObservacionesEdit(ticket.observaciones ?? '');
     setError(null);
     setEditando(true);
@@ -110,6 +112,11 @@ function TicketDetallePage() {
       : f)));
   const quitarFotoFila = (uid: number, idx: number) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
+  const agregarFotosDevolucion = (files: File[]) =>
+    setFotosDevolucionEdit(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+  const quitarFotoDevolucion = (idx: number) =>
+    setFotosDevolucionEdit(prev => prev.filter((_, i) => i !== idx));
 
   const guardarEdicion = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,9 +144,17 @@ function TicketDetallePage() {
       materialesConFotos.push({ ...materialAPayload(f, taras, productos), fotos: urls });
     }
 
+    const urlsDevolucion = await subirFotosFila(fotosDevolucionEdit);
+    if (!urlsDevolucion) {
+      setError('No se pudo subir una de las fotos de la devolución. Revisa que el bucket "tickets" exista en Supabase Storage.');
+      setGuardando(false);
+      return;
+    }
+
     const result = await editarTicket(ticket.id, {
       observaciones: observacionesEdit.trim() || null,
       devolucion: Number(devolucionEdit) || 0,
+      fotosDevolucion: urlsDevolucion,
       materiales: materialesConFotos,
     });
     setGuardando(false);
@@ -180,8 +195,9 @@ function TicketDetallePage() {
   // (se veía como una lista infinita de fotos, una por fila).
   const fotosGaleria = [
     ...ticket.materiales.flatMap(m =>
-      m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? m.subcategoria ?? 'Material' }))
+      m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? 'Material' }))
     ),
+    ...ticket.fotosDevolucion.map((url, i) => ({ key: `d-${i}`, url, label: 'Devolución' })),
     ...(ticket.fotos ?? []).map((url, i) => ({ key: `g-${i}`, url, label: 'General' })),
   ];
 
@@ -266,7 +282,7 @@ function TicketDetallePage() {
               <tbody>
                 {ticket.materiales.map(m => (
                   <tr key={m.id} className="border-b border-border last:border-b-0 print:border-black">
-                    <td className="py-2 text-text-primary print:border print:border-black print:px-2">{m.nombreProducto ?? m.subcategoria ?? '—'}</td>
+                    <td className="py-2 text-text-primary print:border print:border-black print:px-2">{m.nombreProducto ?? '—'}</td>
                     {!ocultarDestino && <td className="py-2 text-text-secondary print:border print:border-black print:px-2">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
                     <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.pesoBruto)}</td>
                     <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.tara)}</td>
@@ -332,18 +348,12 @@ function TicketDetallePage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={labelClass}>Material *</label>
-                      <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
-                        <option value="">— Selecciona —</option>
-                        {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelClass}>Subcategoría / detalle</label>
-                      <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
-                    </div>
+                  <div>
+                    <label className={labelClass}>Material *</label>
+                    <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
+                      <option value="">— Selecciona —</option>
+                      {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                    </select>
                   </div>
 
                   {esFilaSinLote(f, productos) ? (
@@ -392,7 +402,7 @@ function TicketDetallePage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center justify-end gap-2 text-sm">
                     <span className="text-text-muted">Neto del material</span>
                     <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                   </div>
@@ -433,6 +443,12 @@ function TicketDetallePage() {
                 placeholder="0.00"
               />
             </div>
+            <FotoMaterialPicker
+              label="Fotos de la devolución"
+              fotos={fotosDevolucionEdit}
+              onAgregar={agregarFotosDevolucion}
+              onQuitar={quitarFotoDevolucion}
+            />
             {!ticket.pesajeExterior && (
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>

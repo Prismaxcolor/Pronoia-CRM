@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale } from 'lucide-react';
 import { completarTicket } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
@@ -23,6 +23,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const toast = useToast();
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [devolucion, setDevolucion] = useState('');
+  const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +40,11 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       : f)));
   const quitarFotoFila = (uid: number, idx: number) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
+  const agregarFotosDevolucion = (files: File[]) =>
+    setFotosDevolucion(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+  const quitarFotoDevolucion = (idx: number) =>
+    setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
 
   const pesoNetoTotal = useMemo(
     () => materiales.reduce((acc, f) => acc + netoFila(f, taras), 0),
@@ -80,7 +86,14 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       materialesConFotos.push({ ...materialAPayload(f, taras, productos), fotos: urls });
     }
 
-    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0);
+    const urlsDevolucion = await subirFotosFila(fotosDevolucion);
+    if (!urlsDevolucion) {
+      setError('No se pudo subir una de las fotos de la devolución. Revisa que el bucket "tickets" exista en Supabase Storage.');
+      setGuardando(false);
+      return;
+    }
+
+    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -145,11 +158,6 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                   </div>
                 </div>
 
-                <div>
-                  <label className={labelClass}>Subcategoría / detalle</label>
-                  <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
-                </div>
-
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Tara</label>
@@ -189,7 +197,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center justify-end gap-2 text-sm">
                   <span className="text-text-muted">Neto del material</span>
                   <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                 </div>
@@ -239,6 +247,12 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                 placeholder="0.00"
               />
             </div>
+            <FotoMaterialPicker
+              label="Fotos de la devolución"
+              fotos={fotosDevolucion}
+              onAgregar={agregarFotosDevolucion}
+              onQuitar={quitarFotoDevolucion}
+            />
             {!ticket.pesajeExterior && (
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>

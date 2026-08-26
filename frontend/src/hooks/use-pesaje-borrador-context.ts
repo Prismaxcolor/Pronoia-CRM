@@ -1,5 +1,5 @@
 import { createContext, useContext, type Dispatch, type SetStateAction } from 'react';
-import type { MaterialFila } from '../features/pesaje/material-fila';
+import type { MaterialFila, FotoMaterial } from '../features/pesaje/material-fila';
 
 export type TipoPesajeBorrador = 'compra' | 'venta' | 'traslado';
 
@@ -16,6 +16,7 @@ export interface PesajeBorrador {
   pesoGlobal: string;
   pesajeExterior: boolean;
   devolucion: string;
+  fotosDevolucion: FotoMaterial[];
   materiales: MaterialFila[];
   observaciones: string;
 }
@@ -30,6 +31,7 @@ export interface PesajeBorradorContextType {
   setPesoGlobal: Dispatch<SetStateAction<string>>;
   setPesajeExterior: Dispatch<SetStateAction<boolean>>;
   setDevolucion: Dispatch<SetStateAction<string>>;
+  setFotosDevolucion: Dispatch<SetStateAction<FotoMaterial[]>>;
   setMateriales: Dispatch<SetStateAction<MaterialFila[]>>;
   setObservaciones: Dispatch<SetStateAction<string>>;
   /** Vuelve el borrador a su estado inicial — se llama tras guardar con éxito. */

@@ -57,9 +57,9 @@ function PesajePage() {
   // las rutas (usePesajeBorrador), no en useState local, para no perderse si
   // el usuario navega a otra pantalla (Dashboard, Cochinito, etc.) y vuelve.
   const {
-    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesoGlobal, pesajeExterior, devolucion, materiales, observaciones },
+    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesoGlobal, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones },
     setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
-    setPesoGlobal, setPesajeExterior, setDevolucion, setMateriales, setObservaciones,
+    setPesoGlobal, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones,
     limpiarBorrador,
   } = usePesajeBorrador();
 
@@ -138,6 +138,11 @@ function PesajePage() {
   const quitarFotoFila = (uid: number, idx: number) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
 
+  const agregarFotosDevolucion = (files: File[]) =>
+    setFotosDevolucion(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+  const quitarFotoDevolucion = (idx: number) =>
+    setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
+
   const limpiar = () => limpiarBorrador();
 
   const guardarTraslado = async () => {
@@ -205,6 +210,17 @@ function PesajePage() {
       }
     }
 
+    let urlsDevolucion: string[] = [];
+    if (estado !== 'bruto') {
+      const urls = await subirFotosFila(fotosDevolucion);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos de la devolución. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      urlsDevolucion = urls;
+    }
+
     const result = await crearTicket({
       tipo: tipo === 'venta' ? 'venta' : 'compra',
       entidadId,
@@ -212,6 +228,7 @@ function PesajePage() {
       pesoGlobal: pesajeExterior ? null : (Number(pesoGlobal) || 0),
       pesajeExterior,
       devolucion: Number(devolucion) || 0,
+      fotosDevolucion: urlsDevolucion,
       estado,
       materiales: materialesConFotos,
       fotos: [],
@@ -482,11 +499,6 @@ function PesajePage() {
                       )}
                     </div>
 
-                    <div>
-                      <label className={labelClass}>Subcategoría / detalle</label>
-                      <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
-                    </div>
-
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 items-center">
                       {/* Las 4 celdas son hermanas directas del grid (no divs anidados por
                           columna) a propósito: así CSS Grid iguala la altura de la fila 1
@@ -532,7 +544,7 @@ function PesajePage() {
                       <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass + ' self-start'} placeholder="0.00" />
                     </div>
 
-                    <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center justify-end gap-2 text-sm">
                       <span className="text-text-muted">Neto del material</span>
                       <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                     </div>
@@ -601,6 +613,12 @@ function PesajePage() {
                 Kg que el proveedor se lleva de vuelta. Se suma al peso de los materiales para que
                 encuadre contra el peso global — no afecta el inventario ni la factura.
               </p>
+              <FotoMaterialPicker
+                label="Fotos de la devolución"
+                fotos={fotosDevolucion}
+                onAgregar={agregarFotosDevolucion}
+                onQuitar={quitarFotoDevolucion}
+              />
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
                 <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
@@ -727,6 +745,7 @@ function PesajePage() {
       {mostrarSelectorTara && (
         <SeleccionarTaraModal
           taras={taras}
+          taraSeleccionada={filaActiva?.taraId}
           onClose={() => setMostrarSelectorTara(false)}
           onSeleccionar={taraId => {
             const uid = filaActiva?.uid ?? materiales[0].uid;

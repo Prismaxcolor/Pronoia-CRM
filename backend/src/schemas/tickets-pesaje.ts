@@ -48,6 +48,8 @@ export const crearTicketSchema = z
     /** Kg de devolución del ticket completo (no por material). Se suma a la
      *  suma de materiales para reconciliar contra el peso global. */
     devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
+    /** Fotos de la devolución del ticket completo (no por material). */
+    fotosDevolucion: z.array(z.string()).default([]),
     /**
      * 'bruto': se guarda sin materiales/destinos (pesaje pendiente de completar).
      * No mueve inventario ni se puede facturar hasta pasar a 'completo'.
@@ -80,12 +82,14 @@ export const crearTicketSchema = z
 export const completarTicketSchema = z.object({
   materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
   devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
+  fotosDevolucion: z.array(z.string()).default([]),
 });
 
 /** Edita un ticket ya completo (corrección de errores). Solo mientras no esté facturado. */
 export const editarTicketSchema = z.object({
   materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
   devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
+  fotosDevolucion: z.array(z.string()).default([]),
   observaciones: z
     .string()
     .trim()

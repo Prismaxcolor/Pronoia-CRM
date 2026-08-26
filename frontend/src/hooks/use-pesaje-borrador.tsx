@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { filaVacia, type MaterialFila } from '../features/pesaje/material-fila';
+import { filaVacia, type MaterialFila, type FotoMaterial } from '../features/pesaje/material-fila';
 import {
   PesajeBorradorContext,
   type PesajeBorrador,
@@ -20,6 +20,7 @@ function borradorInicial(): PesajeBorrador {
     pesoGlobal: '',
     pesajeExterior: false,
     devolucion: '',
+    fotosDevolucion: [],
     materiales: [filaVacia()],
     observaciones: '',
   };
@@ -34,6 +35,7 @@ export function PesajeBorradorProvider({ children }: { children: ReactNode }) {
   const [pesoGlobal, setPesoGlobal] = useState('');
   const [pesajeExterior, setPesajeExterior] = useState(false);
   const [devolucion, setDevolucion] = useState('');
+  const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [observaciones, setObservaciones] = useState('');
 
@@ -47,20 +49,21 @@ export function PesajeBorradorProvider({ children }: { children: ReactNode }) {
     setPesoGlobal(inicial.pesoGlobal);
     setPesajeExterior(inicial.pesajeExterior);
     setDevolucion(inicial.devolucion);
+    setFotosDevolucion(inicial.fotosDevolucion);
     setMateriales(inicial.materiales);
     setObservaciones(inicial.observaciones);
   };
 
   const borrador: PesajeBorrador = {
     tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha,
-    pesoGlobal, pesajeExterior, devolucion, materiales, observaciones,
+    pesoGlobal, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones,
   };
 
   return (
     <PesajeBorradorContext.Provider value={{
       borrador,
       setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
-      setPesoGlobal, setPesajeExterior, setDevolucion, setMateriales, setObservaciones,
+      setPesoGlobal, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones,
       limpiarBorrador,
     }}>
       {children}

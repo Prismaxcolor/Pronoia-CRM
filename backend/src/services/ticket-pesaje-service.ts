@@ -41,6 +41,7 @@ interface TicketRow {
   peso_global: number | null;
   pesaje_exterior: boolean;
   devolucion: number | null;
+  fotos_devolucion: string[] | null;
   estado: 'bruto' | 'completo';
   pesado_por: string | null;
   completado_por: string | null;
@@ -85,6 +86,8 @@ export interface TicketPublico {
    *  pesoNetoMateriales para reconciliar contra pesoGlobal — no afecta
    *  inventario ni factura. */
   devolucion: number;
+  /** Fotos de la devolución del ticket completo (no por material). */
+  fotosDevolucion: string[];
   /** peso_global - suma de netos - devolución. Solo lectura, derivado. */
   diferencia: number;
   fotos: string[];
@@ -132,6 +135,7 @@ function toPublico(row: TicketRow): TicketPublico {
     pesoGlobal,
     pesajeExterior: row.pesaje_exterior ?? false,
     devolucion,
+    fotosDevolucion: row.fotos_devolucion ?? [],
     diferencia: pesoGlobal - pesoNetoTotal - devolucion,
     fotos: row.fotos ?? [],
     observaciones: row.observaciones,
@@ -223,6 +227,7 @@ export async function crearTicket(
     p_peso_global: input.pesajeExterior ? null : input.pesoGlobal,
     p_devolucion: input.devolucion,
     p_pesaje_exterior: input.pesajeExterior,
+    p_fotos_devolucion: input.fotosDevolucion,
   });
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };
@@ -244,6 +249,7 @@ export async function completarTicket(
     p_materiales: materialesARpc(input.materiales),
     p_completado_por: completadoPor,
     p_devolucion: input.devolucion,
+    p_fotos_devolucion: input.fotosDevolucion,
   });
 
   if (error) return { error: error.message };
@@ -268,6 +274,7 @@ export async function editarTicket(
     p_peso_global: null,
     p_observaciones: input.observaciones,
     p_devolucion: input.devolucion,
+    p_fotos_devolucion: input.fotosDevolucion,
   });
 
   if (error) return { error: error.message };

@@ -71,6 +71,8 @@ export interface TicketPesaje {
    * del inventario ni de la factura, es solo un campo de conciliación.
    */
   devolucion: number;
+  /** URLs de fotos de la devolución del ticket completo (no por material). */
+  fotosDevolucion: string[];
   /**
    * pesoGlobal - pesoNetoMateriales - devolucion. Mide la merma/discrepancia
    * entre el pesaje global de entrada y lo que terminó contabilizado por

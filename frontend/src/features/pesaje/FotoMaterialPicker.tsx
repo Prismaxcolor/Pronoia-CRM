@@ -6,13 +6,16 @@ interface Props {
   fotos: FotoMaterial[];
   onAgregar: (files: File[]) => void;
   onQuitar: (idx: number) => void;
+  /** Reutilizado también para las fotos de la devolución (no atadas a un
+   *  material) — el texto del label se ajusta a cada caso. */
+  label?: string;
 }
 
 /** Selector de fotos de un material — compacto, para vivir dentro de la
  *  tarjeta de cada material en vez de un único bloque general al final del
  *  formulario (Bloque 46). Cada miniatura se puede ampliar en un visor a
  *  pantalla completa (click en la lupa o en la imagen). */
-function FotoMaterialPicker({ fotos, onAgregar, onQuitar }: Props) {
+function FotoMaterialPicker({ fotos, onAgregar, onQuitar, label = 'Fotos de este material' }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<number | null>(null);
 
@@ -24,7 +27,7 @@ function FotoMaterialPicker({ fotos, onAgregar, onQuitar }: Props) {
 
   return (
     <div>
-      <label className="block text-xs font-medium text-text-secondary mb-1">Fotos de este material</label>
+      <label className="block text-xs font-medium text-text-secondary mb-1">{label}</label>
       <div className="flex flex-wrap gap-2">
         {fotos.map((f, idx) => (
           <div key={idx} className="group relative w-14 h-14 rounded-lg overflow-hidden border border-border">
