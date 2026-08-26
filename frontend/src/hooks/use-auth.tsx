@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { apiFetch, setToken, clearToken, getToken, ApiError } from '../services/api-client';
+import { limpiarUltimasRutas } from '../services/nav-memory';
 import { PERMISOS_POR_ROL, tienePermiso as checkPermiso } from '@shared/types/index.js';
 import type { Usuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
 import { AuthContext } from './use-auth-context';
@@ -90,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     clearToken();
+    limpiarUltimasRutas();
     setUsuario(null);
   };
 

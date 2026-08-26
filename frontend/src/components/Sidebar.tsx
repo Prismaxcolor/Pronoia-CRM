@@ -1,6 +1,8 @@
-import { NavLink } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight, CalendarClock, BarChart3 } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
+import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
 import type { Recurso } from '@shared/types/index.js';
 
 interface NavItem {
@@ -8,6 +10,9 @@ interface NavItem {
   to: string;
   icon: React.ReactNode;
   recurso: Recurso;
+  /** Si es true, el link vuelve a la última ruta de detalle visitada dentro de
+   *  esta sección (ej. "/pesaje/<id>") en vez de siempre a la lista. */
+  recordable?: boolean;
 }
 
 interface NavSection {
@@ -35,7 +40,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     header: 'Pesaje',
     items: [
-      { label: 'Pesaje', to: '/pesaje', icon: <Scale size={20} />, recurso: 'pesaje' },
+      { label: 'Pesaje', to: '/pesaje', icon: <Scale size={20} />, recurso: 'pesaje', recordable: true },
       { label: 'Taras', to: '/taras', icon: <Weight size={20} />, recurso: 'taras' },
       { label: 'Despachos', to: '/citas', icon: <CalendarClock size={20} />, recurso: 'despachos' },
     ],
@@ -43,15 +48,15 @@ const NAV_SECTIONS: NavSection[] = [
   {
     header: 'Compras',
     items: [
-      { label: 'Proveedores', to: '/proveedores', icon: <Truck size={20} />, recurso: 'proveedores' },
-      { label: 'Compras', to: '/compras', icon: <ShoppingCart size={20} />, recurso: 'facturacion' },
+      { label: 'Proveedores', to: '/proveedores', icon: <Truck size={20} />, recurso: 'proveedores', recordable: true },
+      { label: 'Compras', to: '/compras', icon: <ShoppingCart size={20} />, recurso: 'facturacion', recordable: true },
     ],
   },
   {
     header: 'Ventas',
     items: [
-      { label: 'Clientes', to: '/clientes', icon: <Contact size={20} />, recurso: 'clientes' },
-      { label: 'Ventas', to: '/ventas', icon: <ShoppingBag size={20} />, recurso: 'facturacion' },
+      { label: 'Clientes', to: '/clientes', icon: <Contact size={20} />, recurso: 'clientes', recordable: true },
+      { label: 'Ventas', to: '/ventas', icon: <ShoppingBag size={20} />, recurso: 'facturacion', recordable: true },
     ],
   },
   {
@@ -63,14 +68,38 @@ const NAV_SECTIONS: NavSection[] = [
   {
     header: 'Configuración',
     items: [
-      { label: 'Listas de precios', to: '/listas-precios', icon: <Tag size={20} />, recurso: 'listas_precios' },
+      { label: 'Listas de precios', to: '/listas-precios', icon: <Tag size={20} />, recurso: 'listas_precios', recordable: true },
       { label: 'Usuarios', to: '/usuarios', icon: <Users size={20} />, recurso: 'usuarios' },
     ],
   },
 ];
 
+/** Un item "recordable" es "dueño" de pathname si es el prefijo de sección más
+ *  específico que matchea — evita que, ej., "/compras" reclame "/compras/nueva"
+ *  como propio de otra sección por error de orden. No hay solapes reales hoy
+ *  (cada sección recordable tiene su propio prefijo), pero se resuelve por
+ *  longitud de prefijo para que siga siendo correcto si se agregan más. */
+function seccionActual(pathname: string): NavItem | undefined {
+  const candidatos = NAV_SECTIONS.flatMap(s => s.items).filter(
+    item => item.recordable && (pathname === item.to || pathname.startsWith(`${item.to}/`))
+  );
+  return candidatos.sort((a, b) => b.to.length - a.to.length)[0];
+}
+
 function Sidebar() {
   const { usuario, logout, tienePermiso } = useAuth();
+  const location = useLocation();
+  const [ultimasRutas, setUltimasRutas] = useState(leerUltimasRutas);
+
+  // Cada vez que se navega dentro de una sección "recordable", guarda la ruta
+  // completa (con el id de detalle si lo hay) como "última visitada" de esa
+  // sección, para que el link del sidebar vuelva ahí la próxima vez.
+  useEffect(() => {
+    const item = seccionActual(location.pathname);
+    if (!item) return;
+    guardarUltimaRuta(item.to, location.pathname);
+    setUltimasRutas(prev => (prev[item.to] === location.pathname ? prev : { ...prev, [item.to]: location.pathname }));
+  }, [location.pathname]);
 
   // Filtra items por permiso y descarta secciones que queden sin items visibles.
   const seccionesVisibles = NAV_SECTIONS
@@ -97,23 +126,29 @@ function Sidebar() {
                 {sec.header}
               </p>
             )}
-            {sec.items.map(item => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === '/'}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors
-                   ${isActive
-                     ? 'bg-brand-700 text-white border-r-3 border-brand-300'
-                     : 'text-brand-200 hover:bg-brand-800 hover:text-white'
-                   }`
-                }
-              >
-                {item.icon}
-                {item.label}
-              </NavLink>
-            ))}
+            {sec.items.map(item => {
+              const destino = item.recordable ? (ultimasRutas[item.to] ?? item.to) : item.to;
+              const activo = item.to === '/'
+                ? location.pathname === '/'
+                : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+              return (
+                <Link
+                  key={item.to}
+                  to={destino}
+                  aria-current={activo ? 'page' : undefined}
+                  className={
+                    `flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors
+                     ${activo
+                       ? 'bg-brand-700 text-white border-r-3 border-brand-300'
+                       : 'text-brand-200 hover:bg-brand-800 hover:text-white'
+                     }`
+                  }
+                >
+                  {item.icon}
+                  {item.label}
+                </Link>
+              );
+            })}
           </div>
         ))}
       </nav>
