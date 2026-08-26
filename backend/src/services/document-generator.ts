@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { FacturaPublica, ItemPublico } from './factura-service.js';
-import type { TicketPublico, MaterialPublico } from './ticket-pesaje-service.js';
+import type { TicketPublico } from './ticket-pesaje-service.js';
 import { LOGO_PRONOIA_BASE64 } from '../assets/logo-pronoia.js';
 
 // Réplica server-side de frontend/src/services/factura-export.ts (descargarFacturaPDF):
@@ -159,12 +159,12 @@ export function generarFacturaPdf(f: FacturaPublica): Buffer {
   return Buffer.from(doc.output('arraybuffer'));
 }
 
-function destinoLabelPdf(m: MaterialPublico): string {
-  return m.destinoTipo === 'lote' ? (m.nombreLote ?? 'Lote') : 'MPP';
-}
-
 /** Ticket de pesaje: mismo estilo visual que la factura, sin precios (el ticket
- *  nunca lleva el monto a pagar — esa es justamente la diferencia con la factura). */
+ *  nunca lleva el monto a pagar — esa es justamente la diferencia con la factura).
+ *  Sin columna Destino a propósito: este PDF es siempre externo (envío automático
+ *  por Telegram al proveedor/cliente cuando el ticket queda "completo", y descarga
+ *  desde el portal de proveedores/clientes) — el destino en inventario (lote/MPP)
+ *  es información interna que no debe salir de la empresa. */
 export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffer {
   const esCompra = t.tipo === 'compra';
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -192,10 +192,9 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   y += 10;
   autoTable(doc, {
     startY: y,
-    head: [['Material', 'Destino', 'Bruto', 'Tara', 'Devol.', 'Neto (kg)']],
+    head: [['Material', 'Bruto', 'Tara', 'Devol.', 'Neto (kg)']],
     body: t.materiales.map(m => [
       sanitizarPdf(m.nombreProducto ?? m.subcategoria ?? '—'),
-      sanitizarPdf(destinoLabelPdf(m)),
       fmt(m.pesoBruto),
       fmt(m.tara),
       fmt(m.devolucion),
@@ -204,7 +203,7 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
     margin: { left: 56, right: 56 },
     styles: { font: 'helvetica', fontSize: 10, cellPadding: 6 },
     headStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
-    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
     theme: 'grid',
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

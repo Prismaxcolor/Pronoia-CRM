@@ -41,6 +41,22 @@ function SeleccionarTaraModal({ taras, onClose, onSeleccionar }: Props) {
         </div>
 
         <div className="p-4 overflow-y-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3 pb-3 border-b border-border">
+            <button
+              type="button"
+              onClick={() => onSeleccionar('')}
+              className="text-left rounded-xl border border-dashed border-border overflow-hidden hover:border-red-400 hover:ring-2 hover:ring-red-100 transition-all"
+            >
+              <div className="w-full aspect-square bg-surface-alt flex items-center justify-center text-text-muted">
+                <X size={28} />
+              </div>
+              <div className="p-2">
+                <p className="text-xs text-text-primary truncate">Sin tara</p>
+                <p className="text-[11px] text-text-muted">Pesaje sin tara</p>
+              </div>
+            </button>
+          </div>
+
           {filtradas.length === 0 ? (
             <p className="text-center text-text-muted text-sm py-8">Ninguna tara coincide con la búsqueda.</p>
           ) : (

@@ -80,6 +80,17 @@ export function netoFila(f: MaterialFila, taras: Tara[]): number {
   return (Number(f.pesoBruto) || 0) - taraKgFila(f, taras);
 }
 
+/** Campos a actualizar en una fila al elegir (o quitar) una tara preconfigurada:
+ *  al elegir una tara con cantidad vacía, arranca en 1 unidad; al quitarla
+ *  (taraId vacío) también limpia la cantidad, para poder dejar la fila sin
+ *  tara y pesar sin tara. */
+export function seleccionarTaraFila(f: MaterialFila, taraId: string): Pick<MaterialFila, 'taraId' | 'taraCantidad'> {
+  return {
+    taraId,
+    taraCantidad: taraId ? (f.taraCantidad || '1') : '',
+  };
+}
+
 /** true si el material elegido en esta fila pertenece a una categoría "sin
  *  lote" (ej. No Ferroso, Bloque 47) — no se pide lote al pesarlo, va
  *  directo a inventario general (MPP). */

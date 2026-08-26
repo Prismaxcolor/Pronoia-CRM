@@ -18,7 +18,7 @@ import CompletarTrasladoModal from '../inventario/CompletarTrasladoModal';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado } from '@shared/types/index.js';
 
 /** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
@@ -447,7 +447,7 @@ function PesajePage() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
+                      <div className={tipo === 'traslado' ? 'col-span-2' : ''}>
                         <label className={labelClass}>Material *</label>
                         <button
                           type="button"
@@ -460,38 +460,40 @@ function PesajePage() {
                           <ChevronDown size={14} className="text-text-muted shrink-0" />
                         </button>
                       </div>
-                      <div>
-                        <label className={labelClass}>Subcategoría / detalle</label>
-                        <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
-                      </div>
+                      {tipo !== 'traslado' && (
+                        <div>
+                          {esFilaSinLote(f, productos) ? (
+                            <>
+                              <label className={labelClass}>&nbsp;</label>
+                              <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                                Categoría sin lote — va directo a inventario general.
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <label className={labelClass}>{tipo === 'venta' ? 'Origen (inventario) *' : 'Destino (inventario) *'}</label>
+                              <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
+                                <option value="" disabled>-Selecciona-</option>
+                                {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                              </select>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {tipo !== 'traslado' && (
-                      esFilaSinLote(f, productos) ? (
-                        <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
-                          "{productos.find(p => p.id === f.productoId)?.tipoMaterialNombre}" es una categoría sin lote — este material va directo a inventario general, no pide lote.
-                        </p>
-                      ) : (
-                        <div>
-                          <label className={labelClass}>{tipo === 'venta' ? 'Origen (inventario) *' : 'Destino (inventario) *'}</label>
-                          <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
-                            <option value="" disabled>-Selecciona-</option>
-                            {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                          </select>
-                          <p className="text-xs text-text-muted mt-1">
-                            {tipo === 'venta' ? 'De qué lote sale este material vendido.' : 'A qué lote entra este material comprado.'}
-                          </p>
-                        </div>
-                      )
-                    )}
+                    <div>
+                      <label className={labelClass}>Subcategoría / detalle</label>
+                      <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
+                    </div>
 
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 items-center">
                       {/* Las 4 celdas son hermanas directas del grid (no divs anidados por
                           columna) a propósito: así CSS Grid iguala la altura de la fila 1
                           (labels) entre ambas columnas automáticamente, sin importar que la
                           de Tara traiga el toggle Preconfigurada/Manual y la de Peso bruto
-                          no — evita que los inputs de la fila 2 queden a distinta altura. */}
-                      <label className="text-xs font-medium text-text-secondary">Peso bruto (kg)</label>
+                          no — evita que los inputs de la fila 2 queden a distinta altura.
+                          Orden: Tara queda debajo de Material, Peso bruto debajo de Destino. */}
                       <div className="flex items-center justify-between gap-2">
                         <label className="text-xs font-medium text-text-secondary">Tara</label>
                         <div className="flex rounded-md overflow-hidden border border-border text-[11px] shrink-0">
@@ -503,8 +505,8 @@ function PesajePage() {
                           </button>
                         </div>
                       </div>
+                      <label className="text-xs font-medium text-text-secondary">Peso bruto (kg)</label>
 
-                      <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass + ' self-start'} placeholder="0.00" />
                       <div className="self-start">
                         {f.taraModo === 'preconfigurada' ? (
                           <div>
@@ -527,6 +529,7 @@ function PesajePage() {
                           <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
                         )}
                       </div>
+                      <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass + ' self-start'} placeholder="0.00" />
                     </div>
 
                     <div className="flex items-center justify-between text-sm">
@@ -727,7 +730,7 @@ function PesajePage() {
           onClose={() => setMostrarSelectorTara(false)}
           onSeleccionar={taraId => {
             const uid = filaActiva?.uid ?? materiales[0].uid;
-            setFila(uid, 'taraId', taraId);
+            setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, ...seleccionarTaraFila(f, taraId) } : f)));
             setMostrarSelectorTara(false);
           }}
         />

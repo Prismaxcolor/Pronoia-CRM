@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale } from 'lucide-react';
 import { completarTicket } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
@@ -126,30 +126,31 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                     </select>
                   </div>
                   <div>
-                    <label className={labelClass}>Subcategoría / detalle</label>
-                    <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
+                    {esFilaSinLote(f, productos) ? (
+                      <>
+                        <label className={labelClass}>&nbsp;</label>
+                        <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                          Categoría sin lote — va directo a inventario general.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <label className={labelClass}>Destino (inventario) *</label>
+                        <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
+                          <option value="" disabled>-Selecciona-</option>
+                          {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                        </select>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {esFilaSinLote(f, productos) ? (
-                  <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
-                    "{productos.find(p => p.id === f.productoId)?.tipoMaterialNombre}" es una categoría sin lote — este material va directo a inventario general, no pide lote.
-                  </p>
-                ) : (
-                  <div>
-                    <label className={labelClass}>Destino (inventario) *</label>
-                    <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
-                      <option value="" disabled>-Selecciona-</option>
-                      {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                    </select>
-                  </div>
-                )}
+                <div>
+                  <label className={labelClass}>Subcategoría / detalle</label>
+                  <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelClass}>Peso bruto (kg)</label>
-                    <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
-                  </div>
                   <div>
                     <label className={labelClass}>Tara</label>
                     <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
@@ -163,8 +164,15 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                     {f.taraModo === 'preconfigurada' ? (
                       <div>
                         <div className="grid grid-cols-2 gap-2">
-                          <select value={f.taraId} onChange={e => setFila(f.uid, 'taraId', e.target.value)} className={inputClass}>
-                            <option value="">— Tara —</option>
+                          <select
+                            value={f.taraId}
+                            onChange={e => {
+                              const taraId = e.target.value;
+                              setMateriales(prev => prev.map(x => (x.uid === f.uid ? { ...x, ...seleccionarTaraFila(x, taraId) } : x)));
+                            }}
+                            className={inputClass}
+                          >
+                            <option value="">— Sin tara —</option>
                             {taras.map(t => <option key={t.id} value={t.id}>{t.nombre} ({t.peso} kg)</option>)}
                           </select>
                           <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
@@ -174,6 +182,10 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                     ) : (
                       <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
                     )}
+                  </div>
+                  <div>
+                    <label className={labelClass}>Peso bruto (kg)</label>
+                    <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
                   </div>
                 </div>
 

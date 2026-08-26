@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Pencil, Loader2, Plus, Trash2, Scale } from 'lucide-react';
+import { ArrowLeft, Printer, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, X } from 'lucide-react';
 import { obtenerTicket, editarTicket } from '../../services/ticket-pesaje-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
@@ -57,6 +57,8 @@ function TicketDetallePage() {
   const [observacionesEdit, setObservacionesEdit] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ocultarDestino, setOcultarDestino] = useState(false);
+  const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
 
   const cargarTicket = () => {
     obtenerTicket(id).then(t => { setTicket(t); setCargando(false); });
@@ -173,6 +175,16 @@ function TicketDetallePage() {
   const esCompra = ticket.tipo === 'compra';
   const puedeEditarEsteTicket = puedeEditar && !ticket.facturado;
 
+  // Todas las fotos del ticket (por material + generales) en una sola galería
+  // con etiqueta de material, en vez de un bloque apilado por material
+  // (se veía como una lista infinita de fotos, una por fila).
+  const fotosGaleria = [
+    ...ticket.materiales.flatMap(m =>
+      m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? m.subcategoria ?? 'Material' }))
+    ),
+    ...(ticket.fotos ?? []).map((url, i) => ({ key: `g-${i}`, url, label: 'General' })),
+  ];
+
   return (
     <div className="max-w-2xl print-documento print:max-w-none">
       <div className="print:hidden">
@@ -216,14 +228,35 @@ function TicketDetallePage() {
       {!editando ? (
         <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
           <Fila label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
+
+          {ticket.pesajeExterior ? (
+            <p className="text-xs text-text-muted py-3 border-b border-border print:border-black">Pesaje exterior — sin peso global propio.</p>
+          ) : (
+            <div className="flex justify-between items-center py-3 border-b border-border print:border-black">
+              <span className="font-semibold text-text-primary">Peso global</span>
+              <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
+            </div>
+          )}
+          {ticket.devolucion > 0 && (
+            <div className="flex justify-between py-2 border-b border-border print:border-black text-sm">
+              <span className="text-text-secondary">Devolución</span>
+              <span className="text-text-primary font-medium">{fmt(ticket.devolucion)} kg</span>
+            </div>
+          )}
+
           {ticket.observaciones && <Fila label="Observaciones" valor={ticket.observaciones} />}
 
-          <div className="overflow-x-auto mt-4">
+          <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none w-fit mt-4 print:hidden">
+            <input type="checkbox" checked={ocultarDestino} onChange={e => setOcultarDestino(e.target.checked)} className="rounded border-border" />
+            Ocultar destino al imprimir (versión para el proveedor)
+          </label>
+
+          <div className="overflow-x-auto mt-2">
             <table className="w-full text-sm print:border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-text-muted print:border-black">
                   <th className="py-2 font-medium print:border print:border-black print:px-2">Material</th>
-                  <th className="py-2 font-medium print:border print:border-black print:px-2">Destino</th>
+                  {!ocultarDestino && <th className="py-2 font-medium print:border print:border-black print:px-2">Destino</th>}
                   <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Bruto</th>
                   <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Tara</th>
                   <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Devol.</th>
@@ -234,7 +267,7 @@ function TicketDetallePage() {
                 {ticket.materiales.map(m => (
                   <tr key={m.id} className="border-b border-border last:border-b-0 print:border-black">
                     <td className="py-2 text-text-primary print:border print:border-black print:px-2">{m.nombreProducto ?? m.subcategoria ?? '—'}</td>
-                    <td className="py-2 text-text-secondary print:border print:border-black print:px-2">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>
+                    {!ocultarDestino && <td className="py-2 text-text-secondary print:border print:border-black print:px-2">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
                     <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.pesoBruto)}</td>
                     <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.tara)}</td>
                     <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.devolucion)}</td>
@@ -245,47 +278,27 @@ function TicketDetallePage() {
             </table>
           </div>
 
-          {ticket.materiales.some(m => m.fotos.length > 0) && (
-            <div className="mt-4 space-y-2 print:hidden">
-              {ticket.materiales.filter(m => m.fotos.length > 0).map(m => (
-                <div key={m.id}>
-                  <p className="text-xs text-text-muted mb-1">{m.nombreProducto ?? m.subcategoria ?? 'Material'}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {m.fotos.map((url, i) => (
-                      <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-20 h-20 rounded-lg overflow-hidden border border-border">
-                        <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {ticket.pesajeExterior ? (
-            <p className="text-xs text-text-muted pt-3 mt-1">Pesaje exterior — sin peso global propio.</p>
-          ) : (
-            <div className="flex justify-between pt-3 mt-1">
-              <span className="font-semibold text-text-primary">Peso global</span>
-              <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
-            </div>
-          )}
-          {ticket.devolucion > 0 && (
-            <div className="flex justify-between pt-1 text-sm">
-              <span className="text-text-secondary">Devolución</span>
-              <span className="text-text-primary font-medium">{fmt(ticket.devolucion)} kg</span>
-            </div>
-          )}
-
-          {ticket.fotos && ticket.fotos.length > 0 && (
+          {fotosGaleria.length > 0 && (
             <div className="mt-4 print:hidden">
-              <p className="text-xs text-text-muted mb-1">Fotos generales del ticket</p>
-              <div className="flex flex-wrap gap-2">
-              {ticket.fotos.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
-                  <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
-                </a>
-              ))}
+              <p className="text-xs font-medium text-text-secondary mb-2">Fotos ({fotosGaleria.length})</p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                {fotosGaleria.map(({ key, url, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setFotoAmpliada(url)}
+                    className="group relative aspect-square rounded-lg overflow-hidden border border-border"
+                    title="Ver foto en grande"
+                  >
+                    <img src={url} alt={label} loading="lazy" className="w-full h-full object-cover" />
+                    <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] leading-tight px-1.5 py-1 truncate text-left">
+                      {label}
+                    </span>
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                      <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -444,6 +457,28 @@ function TicketDetallePage() {
             </button>
           </div>
         </form>
+      )}
+
+      {fotoAmpliada && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4 print:hidden"
+          onClick={() => setFotoAmpliada(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setFotoAmpliada(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white"
+            title="Cerrar"
+          >
+            <X size={24} />
+          </button>
+          <img
+            src={fotoAmpliada}
+            alt="Foto ampliada"
+            className="max-w-full max-h-full object-contain rounded-lg"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
       )}
     </div>
   );
