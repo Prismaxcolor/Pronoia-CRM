@@ -18,8 +18,10 @@ export { normalizarCodigo, coincideCodigo } from './codigo.js';
 export type {
   Transformacion,
   EstadoTransformacion,
+  CategoriaTransformacion,
   EntradaDetalleTransformacion,
   SalidaTransformacion,
+  SalidaComun,
 } from './transformacion.js';
 export type { Tara } from './tara.js';
 export type { Almacen } from './almacen.js';

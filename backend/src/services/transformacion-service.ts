@@ -1,5 +1,10 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import type { CrearTransformacionInput, CompletarTransformacionInput } from '../schemas/transformaciones.js';
+import type {
+  CrearTransformacionInput,
+  CompletarTransformacionInput,
+  CrearTransformacionFerrosoInput,
+  CompletarTransformacionFerrosoInput,
+} from '../schemas/transformaciones.js';
 
 interface EntradaDetalleRow {
   producto_id: string;
@@ -9,19 +14,26 @@ interface EntradaDetalleRow {
 
 interface SalidaDetalleRow {
   id: string;
-  lote_destino_id: string;
+  producto_id: string | null;
+  lote_destino_id: string | null;
   peso_bruto: number;
   tara: number;
   peso_neto: number;
+  fotos: string[] | null;
+  productos?: { nombre: string } | null;
   lotes?: { nombre: string } | null;
 }
 
 interface TransformacionRow {
   id: string;
-  lote_origen_id: string;
+  categoria: string;
+  producto_entrada_id: string | null;
+  almacen_id: string | null;
+  lote_origen_id: string | null;
   peso_bruto: number;
   tara: number;
   peso_neto: number;
+  fotos_entrada: string[] | null;
   fecha: string;
   estado: 'bruto' | 'completa';
   notas: string | null;
@@ -29,33 +41,24 @@ interface TransformacionRow {
   completado_por: string | null;
   completado_en: string | null;
   created_at: string;
+  productos?: { nombre: string } | null;
   lotes?: { nombre: string } | null;
   transformacion_entrada_detalle?: EntradaDetalleRow[] | null;
   transformacion_salida_detalle?: SalidaDetalleRow[] | null;
 }
 
-export interface EntradaDetallePublico {
-  productoId: string;
-  nombreProducto: string;
-  pesoKg: number;
-}
-
-export interface SalidaDetallePublico {
-  id: string;
-  loteDestinoId: string;
-  nombreLoteDestino: string;
-  pesoBruto: number;
-  tara: number;
-  pesoNeto: number;
-}
-
 export interface TransformacionPublica {
   id: string;
-  loteOrigenId: string;
-  nombreLoteOrigen: string;
+  categoria: string;
+  productoEntradaId: string | null;
+  nombreProductoEntrada: string | null;
+  almacenId: string | null;
+  loteOrigenId: string | null;
+  nombreLoteOrigen: string | null;
   pesoBruto: number;
   tara: number;
   pesoNeto: number;
+  fotosEntrada: string[];
   fecha: string;
   estado: 'bruto' | 'completa';
   notas: string | null;
@@ -63,20 +66,33 @@ export interface TransformacionPublica {
   completadoPor: string | null;
   completadoEn: string | null;
   createdAt: string;
-  /** Reparto proporcional (promedio ponderado) calculado al retirar — snapshot, no cambia. */
-  entradaDetalle: EntradaDetallePublico[];
-  /** Salidas reales pesadas al completar. Vacío mientras estado='bruto'. */
-  salidas: SalidaDetallePublico[];
+  entradaDetalle: Array<{ productoId: string; nombreProducto: string; pesoKg: number }>;
+  salidas: Array<{
+    id: string;
+    productoId: string | null;
+    nombreProducto: string | null;
+    loteDestinoId: string | null;
+    nombreLoteDestino: string | null;
+    pesoBruto: number;
+    tara: number;
+    pesoNeto: number;
+    fotos: string[];
+  }>;
 }
 
 function toPublico(row: TransformacionRow): TransformacionPublica {
   return {
     id: row.id,
+    categoria: row.categoria ?? 'ferroso_no_ferroso',
+    productoEntradaId: row.producto_entrada_id,
+    nombreProductoEntrada: row.productos?.nombre ?? null,
+    almacenId: row.almacen_id,
     loteOrigenId: row.lote_origen_id,
-    nombreLoteOrigen: row.lotes?.nombre ?? '—',
+    nombreLoteOrigen: row.lotes?.nombre ?? null,
     pesoBruto: Number(row.peso_bruto),
     tara: Number(row.tara),
     pesoNeto: Number(row.peso_neto),
+    fotosEntrada: row.fotos_entrada ?? [],
     fecha: row.fecha,
     estado: row.estado,
     notas: row.notas,
@@ -91,19 +107,24 @@ function toPublico(row: TransformacionRow): TransformacionPublica {
     })),
     salidas: (row.transformacion_salida_detalle ?? []).map(d => ({
       id: d.id,
+      productoId: d.producto_id,
+      nombreProducto: d.productos?.nombre ?? null,
       loteDestinoId: d.lote_destino_id,
-      nombreLoteDestino: d.lotes?.nombre ?? '—',
+      nombreLoteDestino: d.lotes?.nombre ?? null,
       pesoBruto: Number(d.peso_bruto),
       tara: Number(d.tara),
       pesoNeto: Number(d.peso_neto),
+      fotos: d.fotos ?? [],
     })),
   };
 }
 
 const SELECT_TRANSFORMACION =
-  '*, lotes(nombre), ' +
+  '*, ' +
+  'productos(nombre), ' +
+  'lotes(nombre), ' +
   'transformacion_entrada_detalle(producto_id, peso_kg, productos(nombre)), ' +
-  'transformacion_salida_detalle(id, lote_destino_id, peso_bruto, tara, peso_neto, lotes(nombre))';
+  'transformacion_salida_detalle(id, producto_id, lote_destino_id, peso_bruto, tara, peso_neto, fotos, productos(nombre), lotes(nombre))';
 
 export async function obtenerTransformacion(id: string): Promise<TransformacionPublica | null> {
   const { data, error } = await supabaseAdmin
@@ -120,6 +141,7 @@ export interface ListarTransformacionesOpts {
   desde?: string;
   hasta?: string;
   estado?: 'bruto' | 'completa';
+  categoria?: string;
 }
 
 export async function listarTransformaciones(
@@ -133,15 +155,14 @@ export async function listarTransformaciones(
   if (opts.desde) query = query.gte('fecha', opts.desde);
   if (opts.hasta) query = query.lte('fecha', opts.hasta);
   if (opts.estado) query = query.eq('estado', opts.estado);
+  if (opts.categoria) query = query.eq('categoria', opts.categoria);
 
   const { data, error } = await query;
   if (error || !data) return [];
   return (data as unknown as TransformacionRow[]).map(toPublico);
 }
 
-/** Retira material de un lote-pool en 'bruto'. La RPC calcula y persiste el
- *  reparto proporcional (promedio ponderado) contra la composición actual
- *  del lote origen. */
+/** Legacy: retira de lote-pool. */
 export async function crearTransformacion(
   input: CrearTransformacionInput,
   registradoPor: string
@@ -156,13 +177,34 @@ export async function crearTransformacion(
   });
 
   if (error || !id) return { error: error?.message ?? 'No se pudo registrar la transformación.' };
-
   const transformacion = await obtenerTransformacion(id as string);
   if (!transformacion) return { error: 'La transformación se creó pero no se pudo leer de vuelta.' };
   return { transformacion };
 }
 
-/** Completa una transformación 'bruto' con sus salidas reales pesadas. */
+/** Ferroso/No Ferroso: retira producto sin lote de un almacén. */
+export async function crearTransformacionFerroso(
+  input: CrearTransformacionFerrosoInput,
+  registradoPor: string
+): Promise<{ transformacion: TransformacionPublica } | { error: string }> {
+  const { data: id, error } = await supabaseAdmin.rpc('crear_transformacion_ferroso', {
+    p_producto_entrada_id: input.productoEntradaId,
+    p_almacen_id: input.almacenId,
+    p_peso_bruto: input.pesoBruto,
+    p_tara: input.tara,
+    p_fecha: input.fecha,
+    p_notas: input.notas ?? null,
+    p_fotos_entrada: input.fotosEntrada,
+    p_registrado_por: registradoPor,
+  });
+
+  if (error || !id) return { error: error?.message ?? 'No se pudo registrar la transformación.' };
+  const transformacion = await obtenerTransformacion(id as string);
+  if (!transformacion) return { error: 'La transformación se creó pero no se pudo leer de vuelta.' };
+  return { transformacion };
+}
+
+/** Legacy: completa con salidas a lotes. */
 export async function completarTransformacion(
   id: string,
   input: CompletarTransformacionInput,
@@ -179,7 +221,29 @@ export async function completarTransformacion(
   });
 
   if (error) return { error: error.message };
+  const transformacion = await obtenerTransformacion(id);
+  if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer de vuelta.' };
+  return { transformacion };
+}
 
+/** Ferroso/No Ferroso: completa con materiales de salida (sin lote). */
+export async function completarTransformacionFerroso(
+  id: string,
+  input: CompletarTransformacionFerrosoInput,
+  completadoPor: string
+): Promise<{ transformacion: TransformacionPublica } | { error: string }> {
+  const { error } = await supabaseAdmin.rpc('completar_transformacion_ferroso', {
+    p_transformacion_id: id,
+    p_salidas: input.salidas.map(s => ({
+      producto_id: s.productoId,
+      peso_bruto: s.pesoBruto,
+      tara: s.tara,
+      fotos: s.fotos,
+    })),
+    p_completado_por: completadoPor,
+  });
+
+  if (error) return { error: error.message };
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer de vuelta.' };
   return { transformacion };
@@ -187,9 +251,6 @@ export async function completarTransformacion(
 
 export interface BorrarTransformacionResult { ok: boolean; razon?: string; noEncontrado?: boolean }
 
-/** Solo se puede cancelar mientras está 'bruto' — nada más depende todavía
- *  de sus datos. Una vez 'completa' es inmutable (regla de auditoría del
- *  proyecto: en finanzas/inventario nunca se borra). */
 export async function borrarTransformacion(id: string): Promise<BorrarTransformacionResult> {
   const { data: t } = await supabaseAdmin
     .from('transformaciones').select('id, estado').eq('id', id).maybeSingle();
@@ -200,5 +261,73 @@ export async function borrarTransformacion(id: string): Promise<BorrarTransforma
 
   const { error } = await supabaseAdmin.from('transformaciones').delete().eq('id', id);
   if (error) return { ok: false, razon: error.message };
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Salidas comunes (configuración)
+// ---------------------------------------------------------------------------
+
+export interface SalidaComunPublica {
+  id: string;
+  productoEntradaId: string;
+  productoSalidaId: string;
+  nombreProductoSalida: string;
+  orden: number;
+}
+
+interface SalidaComunRow {
+  id: string;
+  producto_entrada_id: string;
+  producto_salida_id: string;
+  orden: number;
+  productos?: { nombre: string } | null;
+}
+
+export async function obtenerSalidasComunes(
+  productoEntradaId?: string
+): Promise<SalidaComunPublica[]> {
+  let query = supabaseAdmin
+    .from('transformacion_salidas_comunes')
+    .select('id, producto_entrada_id, producto_salida_id, orden, productos:producto_salida_id(nombre)')
+    .order('orden');
+
+  if (productoEntradaId) query = query.eq('producto_entrada_id', productoEntradaId);
+
+  const { data } = await query;
+  return ((data as unknown as SalidaComunRow[]) ?? []).map(r => ({
+    id: r.id,
+    productoEntradaId: r.producto_entrada_id,
+    productoSalidaId: r.producto_salida_id,
+    nombreProductoSalida: r.productos?.nombre ?? '—',
+    orden: r.orden,
+  }));
+}
+
+/** Reemplaza todas las salidas comunes de un producto de entrada. */
+export async function guardarSalidasComunesProducto(
+  productoEntradaId: string,
+  productosSalidaIds: string[]
+): Promise<{ ok: true } | { error: string }> {
+  const { error: delErr } = await supabaseAdmin
+    .from('transformacion_salidas_comunes')
+    .delete()
+    .eq('producto_entrada_id', productoEntradaId);
+
+  if (delErr) return { error: delErr.message };
+
+  if (productosSalidaIds.length === 0) return { ok: true };
+
+  const rows = productosSalidaIds.map((id, idx) => ({
+    producto_entrada_id: productoEntradaId,
+    producto_salida_id: id,
+    orden: idx,
+  }));
+
+  const { error: insErr } = await supabaseAdmin
+    .from('transformacion_salidas_comunes')
+    .insert(rows);
+
+  if (insErr) return { error: insErr.message };
   return { ok: true };
 }

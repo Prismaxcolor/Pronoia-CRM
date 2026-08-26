@@ -240,7 +240,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   for (const d of (tedData as unknown as Array<{
     producto_id: string;
     peso_kg: number;
-    transformaciones?: { lote_origen_id: string; fecha: string | null; lotes?: { nombre: string } | null } | null;
+    transformaciones?: { lote_origen_id: string | null; fecha: string | null; lotes?: { nombre: string } | null } | null;
   }> | null) ?? []) {
     if (!idsPermitidos.has(d.producto_id) || !d.transformaciones) continue;
     const fecha = d.transformaciones.fecha;
@@ -248,9 +248,37 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
     retirosTransformacion.push({
       productoId: d.producto_id,
-      loteOrigenId: d.transformaciones.lote_origen_id,
-      nombreLoteOrigen: d.transformaciones.lotes?.nombre ?? 'Lote',
+      // Para ferroso lote_origen_id es null → bucket sin-lote (MPP)
+      loteOrigenId: d.transformaciones.lote_origen_id ?? '',
+      nombreLoteOrigen: d.transformaciones.lotes?.nombre ?? 'MPP',
       peso: Number(d.peso_kg),
+    });
+  }
+
+  // Salidas de transformaciones ferroso: materiales que volvieron al inventario
+  // después de la transformación (sin lote, van al bucket sin-lote/MPP).
+  const { data: salidaFerrosoData } = await supabaseAdmin
+    .from('transformacion_salida_detalle')
+    .select('producto_id, peso_neto, transformaciones!inner(fecha, categoria, estado)')
+    .not('producto_id', 'is', null)
+    .eq('transformaciones.categoria', 'ferroso_no_ferroso')
+    .eq('transformaciones.estado', 'completa');
+
+  for (const d of (salidaFerrosoData as unknown as Array<{
+    producto_id: string;
+    peso_neto: number;
+    transformaciones?: { fecha: string | null } | null;
+  }> | null) ?? []) {
+    if (!idsPermitidos.has(d.producto_id)) continue;
+    const fecha = d.transformaciones?.fecha ?? null;
+    if (filtros.desde && fecha && fecha < filtros.desde) continue;
+    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+    entradas.push({
+      productoId: d.producto_id,
+      destinoTipo: 'mpp',
+      loteId: null,
+      destinoLabel: MPP_LABEL,
+      peso: Number(d.peso_neto ?? 0),
     });
   }
 
@@ -326,6 +354,37 @@ export async function obtenerInventarioAlmacen(almacenId: string): Promise<Grupo
       if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
       salidas.push(comoMovimiento(d.producto_id, Number(d.peso_neto ?? 0)));
     }
+  }
+
+  // Retiros ferroso de este almacén (input de transformación) → salen del stock.
+  const { data: retirosFData } = await supabaseAdmin
+    .from('transformacion_entrada_detalle')
+    .select('producto_id, peso_kg, transformaciones!inner(almacen_id, categoria)')
+    .not('producto_id', 'is', null)
+    .eq('transformaciones.categoria', 'ferroso_no_ferroso')
+    .eq('transformaciones.almacen_id', almacenId);
+  for (const d of (retirosFData as unknown as Array<{
+    producto_id: string;
+    peso_kg: number;
+  }> | null) ?? []) {
+    if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
+    salidas.push(comoMovimiento(d.producto_id, Number(d.peso_kg)));
+  }
+
+  // Outputs ferroso de este almacén (salida completa de transformación) → entran al stock.
+  const { data: outputsFData } = await supabaseAdmin
+    .from('transformacion_salida_detalle')
+    .select('producto_id, peso_neto, transformaciones!inner(almacen_id, categoria, estado)')
+    .not('producto_id', 'is', null)
+    .eq('transformaciones.categoria', 'ferroso_no_ferroso')
+    .eq('transformaciones.estado', 'completa')
+    .eq('transformaciones.almacen_id', almacenId);
+  for (const d of (outputsFData as unknown as Array<{
+    producto_id: string;
+    peso_neto: number;
+  }> | null) ?? []) {
+    if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
+    entradas.push(comoMovimiento(d.producto_id, Number(d.peso_neto ?? 0)));
   }
 
   return construirGruposInventario(productos, entradas, salidas, [], { incluirSinMovimiento: false });

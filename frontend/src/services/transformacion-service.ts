@@ -1,5 +1,9 @@
 import { apiFetch } from './api-client';
-import type { Transformacion } from '@shared/types/index.js';
+import type { Transformacion, SalidaComun } from '@shared/types/index.js';
+
+// ---------------------------------------------------------------------------
+// Tipos de entrada
+// ---------------------------------------------------------------------------
 
 export interface CrearTransformacionInput {
   loteOrigenId: string;
@@ -15,11 +19,33 @@ export interface CompletarTransformacionSalidaInput {
   tara: number;
 }
 
+export interface CrearTransformacionFerrosoInput {
+  productoEntradaId: string;
+  almacenId: string;
+  pesoBruto: number;
+  tara: number;
+  fecha: string;
+  notas?: string | null;
+  fotosEntrada: string[];
+}
+
+export interface CompletarTransformacionFerrosoSalidaInput {
+  productoId: string;
+  pesoBruto: number;
+  tara: number;
+  fotos: string[];
+}
+
 export interface ObtenerTransformacionesOpts {
   desde?: string;
   hasta?: string;
   estado?: 'bruto' | 'completa';
+  categoria?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Lectura
+// ---------------------------------------------------------------------------
 
 export async function obtenerTransformaciones(
   opts: ObtenerTransformacionesOpts = {}
@@ -28,6 +54,7 @@ export async function obtenerTransformaciones(
   if (opts.desde) params.set('desde', opts.desde);
   if (opts.hasta) params.set('hasta', opts.hasta);
   if (opts.estado) params.set('estado', opts.estado);
+  if (opts.categoria) params.set('categoria', opts.categoria);
   const qs = params.toString();
   try {
     const { transformaciones } = await apiFetch<{ transformaciones: Transformacion[] }>(
@@ -48,8 +75,10 @@ export async function obtenerTransformacion(id: string): Promise<Transformacion 
   }
 }
 
-/** Retira material de un lote-pool en 'bruto'. El backend calcula y persiste
- *  el reparto proporcional por producto (promedio ponderado). */
+// ---------------------------------------------------------------------------
+// Legacy (lote-pool)
+// ---------------------------------------------------------------------------
+
 export async function crearTransformacion(
   input: CrearTransformacionInput
 ): Promise<{ transformacion: Transformacion } | { error: string }> {
@@ -64,7 +93,6 @@ export async function crearTransformacion(
   }
 }
 
-/** Completa una transformación 'bruto' con sus salidas reales pesadas. */
 export async function completarTransformacion(
   id: string,
   salidas: CompletarTransformacionSalidaInput[]
@@ -80,8 +108,72 @@ export async function completarTransformacion(
   }
 }
 
-/** Cancela una transformación que todavía está en 'bruto'. El backend
- *  rechaza si ya se completó. */
+// ---------------------------------------------------------------------------
+// Ferroso / No Ferroso
+// ---------------------------------------------------------------------------
+
+export async function crearTransformacionFerroso(
+  input: CrearTransformacionFerrosoInput
+): Promise<{ transformacion: Transformacion } | { error: string }> {
+  try {
+    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>('/api/transformaciones/ferroso', {
+      method: 'POST',
+      body: input,
+    });
+    return { transformacion };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo registrar la transformación.' };
+  }
+}
+
+export async function completarTransformacionFerroso(
+  id: string,
+  salidas: CompletarTransformacionFerrosoSalidaInput[]
+): Promise<{ transformacion: Transformacion } | { error: string }> {
+  try {
+    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
+      `/api/transformaciones/${id}/completar-ferroso`,
+      { method: 'PATCH', body: { salidas } }
+    );
+    return { transformacion };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Salidas comunes (config)
+// ---------------------------------------------------------------------------
+
+export async function obtenerSalidasComunes(productoEntradaId?: string): Promise<SalidaComun[]> {
+  const qs = productoEntradaId ? `?productoEntradaId=${productoEntradaId}` : '';
+  try {
+    const { salidas } = await apiFetch<{ salidas: SalidaComun[] }>(`/api/transformaciones/config/salidas-comunes${qs}`);
+    return salidas;
+  } catch {
+    return [];
+  }
+}
+
+export async function guardarSalidasComunes(
+  productoEntradaId: string,
+  productosSalidaIds: string[]
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/transformaciones/config/salidas-comunes/${productoEntradaId}`, {
+      method: 'PUT',
+      body: { productosSalidaIds },
+    });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo guardar la configuración.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Eliminar
+// ---------------------------------------------------------------------------
+
 export async function borrarTransformacion(id: string): Promise<{ ok: true } | { error: string }> {
   try {
     await apiFetch(`/api/transformaciones/${id}`, { method: 'DELETE' });
