@@ -74,12 +74,25 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+/** Rutas que NO deben quedar "recordadas" como la última visitada de su
+ *  sección aunque estén bajo un prefijo recordable — son páginas de acción
+ *  transitorias (formularios ligados a un estado que puede volverse inválido),
+ *  no fichas de detalle a las que tenga sentido volver. Ej. "/pesaje/conteo/:id"
+ *  deja de servir en cuanto se culmina esa toma física — si quedara recordada,
+ *  el link "Pesaje" del sidebar apuntaría ahí para siempre en esa pestaña. */
+const RUTAS_NO_RECORDABLES = [/^\/pesaje\/conteo\//];
+
+function esRutaRecordable(pathname: string): boolean {
+  return !RUTAS_NO_RECORDABLES.some(re => re.test(pathname));
+}
+
 /** Un item "recordable" es "dueño" de pathname si es el prefijo de sección más
  *  específico que matchea — evita que, ej., "/compras" reclame "/compras/nueva"
  *  como propio de otra sección por error de orden. No hay solapes reales hoy
  *  (cada sección recordable tiene su propio prefijo), pero se resuelve por
  *  longitud de prefijo para que siga siendo correcto si se agregan más. */
 function seccionActual(pathname: string): NavItem | undefined {
+  if (!esRutaRecordable(pathname)) return undefined;
   const candidatos = NAV_SECTIONS.flatMap(s => s.items).filter(
     item => item.recordable && (pathname === item.to || pathname.startsWith(`${item.to}/`))
   );
@@ -89,7 +102,21 @@ function seccionActual(pathname: string): NavItem | undefined {
 function Sidebar() {
   const { usuario, logout, tienePermiso } = useAuth();
   const location = useLocation();
-  const [ultimasRutas, setUltimasRutas] = useState(leerUltimasRutas);
+  const [ultimasRutas, setUltimasRutas] = useState(() => {
+    // Sanea sesiones que ya quedaron con una ruta no-recordable memorizada
+    // (ej. de antes de este fix) — si no, el link de esa sección seguiría
+    // atascado en esa ruta hasta cerrar la pestaña.
+    const rutas = leerUltimasRutas();
+    let cambio = false;
+    for (const [base, ruta] of Object.entries(rutas)) {
+      if (!esRutaRecordable(ruta)) {
+        rutas[base] = base;
+        guardarUltimaRuta(base, base);
+        cambio = true;
+      }
+    }
+    return cambio ? { ...rutas } : rutas;
+  });
 
   // Cada vez que se navega dentro de una sección "recordable", guarda la ruta
   // completa (con el id de detalle si lo hay) como "última visitada" de esa
