@@ -27,3 +27,11 @@ export type { Tara } from './tara.js';
 export type { Almacen } from './almacen.js';
 export type { Traslado, TrasladoMaterial } from './traslado.js';
 export { formatCodigoTraslado } from './traslado.js';
+export type {
+  TomaFisicaInventario,
+  EstadoTomaFisica,
+  DetalleTomaFisica,
+  ResumenTomaFisica,
+  ResumenTomaFisicaLinea,
+} from './toma-fisica.js';
+export { codigoTomaFisica } from './toma-fisica.js';

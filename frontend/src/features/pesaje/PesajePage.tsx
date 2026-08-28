@@ -9,6 +9,7 @@ import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
 import { obtenerAlmacenes, obtenerStockAlmacen } from '../../services/almacen-service';
 import { crearTraslado, obtenerTraslados } from '../../services/traslado-service';
+import { obtenerTomasFisicas } from '../../services/toma-fisica-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
@@ -21,7 +22,7 @@ import FotoMaterialPicker from './FotoMaterialPicker';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotoPesajeGlobal } from './pesaje-global-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
-import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado } from '@shared/types/index.js';
+import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario } from '@shared/types/index.js';
 
 /** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
  *  traslado entre almacenes, mostrados juntos porque ambos son operaciones
@@ -43,6 +44,7 @@ function PesajePage() {
   const puedeEliminarTicket = tienePermiso('pesaje', 'eliminar');
   const puedeRecepcionarTraslado = tienePermiso('traslados', 'crear');
   const puedeVerTickets = tienePermiso('pesaje', 'ver') && tienePermiso('facturacion', 'ver');
+  const puedeContarTomaFisica = tienePermiso('toma_fisica', 'ver');
 
   const [pestana, setPestana] = useState<Pestana>('nuevo');
   const [proveedores, setProveedores] = useState<Entidad[]>([]);
@@ -54,6 +56,7 @@ function PesajePage() {
   const [traslados, setTraslados] = useState<Traslado[]>([]);
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [stockOrigen, setStockOrigen] = useState<Map<string, number>>(new Map());
+  const [tomasFisicasAbiertas, setTomasFisicasAbiertas] = useState<TomaFisicaInventario[]>([]);
 
   // Campos del formulario "Nuevo pesaje" — viven en un Provider por encima de
   // las rutas (usePesajeBorrador), no en useState local, para no perderse si
@@ -87,6 +90,10 @@ function PesajePage() {
     obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
     cargarTickets();
     cargarTraslados();
+    if (puedeContarTomaFisica) {
+      obtenerTomasFisicas().then(lista => setTomasFisicasAbiertas(lista.filter(t => t.estado === 'abierta')));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Stock del almacén de origen elegido, para avisar (sin bloquear) si un
@@ -355,6 +362,21 @@ function PesajePage() {
           Registra la pesada del material antes de facturar. Genera un ticket que luego se adjunta a la factura.
         </p>
       </div>
+
+      {tomasFisicasAbiertas.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {tomasFisicasAbiertas.map(t => (
+            <div key={t.id} className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+              <span className="text-amber-800">
+                Hay una toma física abierta en <strong>{t.almacenNombre}</strong> ({t.codigo}) — ese almacén está bloqueado hasta cerrarla.
+              </span>
+              <button type="button" onClick={() => navigate(`/pesaje/conteo/${t.id}`)} className="text-amber-800 font-medium hover:underline shrink-0">
+                Registrar conteo
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {puedeVerTickets && (
         <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">

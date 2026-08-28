@@ -22,6 +22,8 @@ import DashboardPage from './features/dashboard/DashboardPage';
 import MetricasPage from './features/metricas/MetricasPage';
 import ProductosPage from './features/productos/ProductosPage';
 import InventarioPage from './features/inventario/InventarioPage';
+import TomaFisicaDetallePage from './features/inventario/TomaFisicaDetallePage';
+import ConteoTomaFisicaPage from './features/pesaje/ConteoTomaFisicaPage';
 import TransformacionesPage from './features/transformaciones/TransformacionesPage';
 import LotesPage from './features/lotes/LotesPage';
 import CochinitPage from './features/cochinito/CochinitPage';
@@ -91,10 +93,12 @@ function AppRoutes() {
         <Route path="/listas-precios/:id" element={<ProtectedRoute recurso="listas_precios"><ListaDetallePage /></ProtectedRoute>} />
         <Route path="/taras" element={<ProtectedRoute recurso="taras"><TarasPage /></ProtectedRoute>} />
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
+        <Route path="/inventario/toma-fisica/:id" element={<ProtectedRoute recurso="toma_fisica"><TomaFisicaDetallePage /></ProtectedRoute>} />
         <Route path="/transformaciones" element={<ProtectedRoute recurso="transformaciones"><TransformacionesPage /></ProtectedRoute>} />
         <Route path="/lotes" element={<ProtectedRoute recurso="productos"><LotesPage /></ProtectedRoute>} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
         <Route path="/pesaje/:id" element={<ProtectedRoute recurso="pesaje"><TicketDetallePage /></ProtectedRoute>} />
+        <Route path="/pesaje/conteo/:tomaFisicaId" element={<ProtectedRoute recurso="toma_fisica"><ConteoTomaFisicaPage /></ProtectedRoute>} />
         <Route path="/compras" element={<ProtectedRoute recurso="facturacion"><FacturaHistorialPage tipo="compra" /></ProtectedRoute>} />
         <Route path="/compras/nueva" element={<ProtectedRoute recurso="facturacion"><FacturaFormPage tipo="compra" /></ProtectedRoute>} />
         <Route path="/compras/:id" element={<ProtectedRoute recurso="facturacion"><FacturaDetallePage tipo="compra" /></ProtectedRoute>} />

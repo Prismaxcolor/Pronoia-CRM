@@ -16,18 +16,35 @@ export interface AlmacenPublico {
   detalle: string | null;
   activo: boolean;
   esPredeterminado: boolean;
+  ultimaTomaFisica: string | null;
   createdAt: string;
 }
 
-function toPublico(row: AlmacenRow): AlmacenPublico {
+function toPublico(row: AlmacenRow, ultimaTomaFisica: string | null = null): AlmacenPublico {
   return {
     id: row.id,
     nombre: row.nombre,
     detalle: row.detalle,
     activo: row.activo,
     esPredeterminado: row.es_predeterminado,
+    ultimaTomaFisica,
     createdAt: row.created_at,
   };
+}
+
+/** Última toma física cerrada por almacén — un solo query, no N+1. */
+async function ultimasTomasFisicas(): Promise<Map<string, string>> {
+  const { data } = await supabaseAdmin
+    .from('tomas_fisicas_inventario')
+    .select('almacen_id, cerrada_en')
+    .eq('estado', 'cerrada')
+    .order('cerrada_en', { ascending: false });
+
+  const mapa = new Map<string, string>();
+  for (const fila of data ?? []) {
+    if (!mapa.has(fila.almacen_id) && fila.cerrada_en) mapa.set(fila.almacen_id, fila.cerrada_en);
+  }
+  return mapa;
 }
 
 export async function listarAlmacenes(): Promise<AlmacenPublico[]> {
@@ -37,7 +54,8 @@ export async function listarAlmacenes(): Promise<AlmacenPublico[]> {
     .order('nombre', { ascending: true });
 
   if (error || !data) return [];
-  return (data as AlmacenRow[]).map(toPublico);
+  const ultimas = await ultimasTomasFisicas();
+  return (data as AlmacenRow[]).map(r => toPublico(r, ultimas.get(r.id) ?? null));
 }
 
 export async function crearAlmacen(

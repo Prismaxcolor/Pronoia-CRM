@@ -12,6 +12,7 @@ import { obtenerLotes } from '../../services/lote-service';
 import Accordion from '../../components/Accordion';
 import AlmacenesPanel from './AlmacenesPanel';
 import TrasladosPanel from './TrasladosPanel';
+import TomaFisicaPanel from './TomaFisicaPanel';
 import type { TipoMaterial, Producto, Lote } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -52,7 +53,7 @@ function agruparPorDestino(grupos: GrupoInventario[], lotes: Lote[]): GrupoDesti
 }
 
 type Agrupacion = 'categoria' | 'lote';
-type Pestana = 'inventario' | 'almacenes' | 'traslados';
+type Pestana = 'inventario' | 'almacenes' | 'traslados' | 'toma-fisica';
 
 function InventarioPage() {
   const [pestana, setPestana] = useState<Pestana>('inventario');
@@ -108,10 +109,14 @@ function InventarioPage() {
         <button type="button" onClick={() => setPestana('traslados')} className={`px-4 py-1.5 ${pestana === 'traslados' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
           Traslados
         </button>
+        <button type="button" onClick={() => setPestana('toma-fisica')} className={`px-4 py-1.5 ${pestana === 'toma-fisica' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Toma física
+        </button>
       </div>
 
       {pestana === 'almacenes' && <AlmacenesPanel />}
       {pestana === 'traslados' && <TrasladosPanel />}
+      {pestana === 'toma-fisica' && <TomaFisicaPanel />}
 
       {pestana === 'inventario' && (
       <>

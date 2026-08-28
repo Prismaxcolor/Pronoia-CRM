@@ -17,6 +17,10 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function fmtFecha(iso: string): string {
+  return new Date(iso).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 /** Inventario propio de un almacén (colapsable), agrupado por categoría →
  *  producto igual que el inventario general — a partir de compras, ventas y
  *  traslados que quedaron ligados a este almacén. Se pide bajo demanda, no en
@@ -195,6 +199,9 @@ function AlmacenesPanel() {
                     )}
                   </div>
                   {a.detalle && <p className="text-xs text-text-muted truncate">{a.detalle}</p>}
+                  <p className="text-xs text-text-muted">
+                    Última toma física: {a.ultimaTomaFisica ? fmtFecha(a.ultimaTomaFisica) : 'nunca'}
+                  </p>
                 </div>
                 {a.activo && (
                   <button

@@ -28,6 +28,7 @@ import citasRouter from './routes/citas.js';
 import almacenesRouter from './routes/almacenes.js';
 import trasladosRouter from './routes/traslados.js';
 import metricasRouter from './routes/metricas.js';
+import tomasFisicasRouter from './routes/toma-fisica.js';
 
 const app = express();
 
@@ -87,5 +88,6 @@ app.use('/api/citas', citasRouter);
 app.use('/api/almacenes', almacenesRouter);
 app.use('/api/traslados', trasladosRouter);
 app.use('/api/metricas', metricasRouter);
+app.use('/api/tomas-fisicas', tomasFisicasRouter);
 
 export default app;
