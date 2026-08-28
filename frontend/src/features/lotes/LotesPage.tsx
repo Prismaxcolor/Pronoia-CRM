@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Plus, Boxes, Loader2 } from 'lucide-react';
 import { obtenerLotes, crearLote, actualizarLote } from '../../services/lote-service';
+import { obtenerAlmacenes } from '../../services/almacen-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import type { Lote } from '@shared/types/index.js';
+import type { Lote, Almacen } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -16,21 +17,30 @@ function LotesPage() {
   const puedeEditar = tienePermiso('productos', 'editar');
 
   const [lotes, setLotes] = useState<Lote[]>([]);
+  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [cargando, setCargando] = useState(true);
   const [nombre, setNombre] = useState('');
+  const [almacenId, setAlmacenId] = useState('');
   const [guardando, setGuardando] = useState(false);
 
   const recargar = () => obtenerLotes().then(setLotes).finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { recargar(); }, []);
+  useEffect(() => {
+    recargar();
+    obtenerAlmacenes().then(lista => {
+      const activos = lista.filter(a => a.activo);
+      setAlmacenes(activos);
+      setAlmacenId(prev => prev || activos.find(a => a.esPredeterminado)?.id || activos[0]?.id || '');
+    });
+  }, []);
 
   const handleCrear = async (e: React.FormEvent) => {
     e.preventDefault();
     const limpio = nombre.trim();
-    if (!limpio) return;
+    if (!limpio || !almacenId) return;
     setGuardando(true);
-    const result = await crearLote(limpio);
+    const result = await crearLote(limpio, almacenId);
     setGuardando(false);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     toast.exito(`Lote "${result.lote.nombre}" creado.`);
@@ -40,6 +50,13 @@ function LotesPage() {
 
   const toggleActivo = async (l: Lote) => {
     const result = await actualizarLote(l.id, { activo: !l.activo });
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    cargar();
+  };
+
+  const cambiarAlmacen = async (l: Lote, nuevoAlmacenId: string) => {
+    if (nuevoAlmacenId === l.almacenId) return;
+    const result = await actualizarLote(l.id, { almacenId: nuevoAlmacenId });
     if ('error' in result) { toast.errorMsg(result.error); return; }
     cargar();
   };
@@ -68,9 +85,21 @@ function LotesPage() {
               placeholder="Ej. Lote 1"
             />
           </div>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Almacén</label>
+            <select
+              value={almacenId}
+              onChange={e => setAlmacenId(e.target.value)}
+              className={inputClass}
+            >
+              {almacenes.map(a => (
+                <option key={a.id} value={a.id}>{a.nombre}</option>
+              ))}
+            </select>
+          </div>
           <button
             type="submit"
-            disabled={guardando || !nombre.trim()}
+            disabled={guardando || !nombre.trim() || !almacenId}
             className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
           >
             {guardando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={18} />}
@@ -103,6 +132,19 @@ function LotesPage() {
                   {fmt(l.stockKg)} kg
                 </p>
               </div>
+              {puedeEditar ? (
+                <select
+                  value={l.almacenId}
+                  onChange={e => cambiarAlmacen(l, e.target.value)}
+                  className="text-xs bg-surface-alt border border-border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-400 shrink-0"
+                >
+                  {almacenes.map(a => (
+                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs text-text-muted shrink-0">{l.almacenNombre ?? '—'}</span>
+              )}
               {puedeEditar && (
                 <button
                   type="button"

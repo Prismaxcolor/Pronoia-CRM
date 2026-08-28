@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const crearLoteSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(80),
+  almacenId: z.string().uuid('Elige un almacén.'),
 });
 
 export const actualizarLoteSchema = crearLoteSchema

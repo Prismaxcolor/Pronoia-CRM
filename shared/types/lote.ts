@@ -7,6 +7,10 @@ export interface Lote {
   id: string;
   nombre: string;
   activo: boolean;
+  /** Almacén donde está físicamente este lote (Fase 0 de Toma física de inventario). */
+  almacenId: string;
+  /** Nombre del almacén, resuelto vía join. Solo lectura (no se envía). */
+  almacenNombre?: string | null;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
   /** Kg reales en este lote ahora mismo (Bloque 40: stock_lote_total). Suma

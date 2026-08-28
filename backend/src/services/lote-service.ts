@@ -5,6 +5,8 @@ interface LoteRow {
   id: string;
   nombre: string;
   activo: boolean;
+  almacen_id: string;
+  almacenes?: { nombre: string } | null;
   created_at: string;
 }
 
@@ -12,12 +14,22 @@ export interface LotePublico {
   id: string;
   nombre: string;
   activo: boolean;
+  almacenId: string;
+  almacenNombre: string | null;
   createdAt: string;
   stockKg: number;
 }
 
 function toPublico(row: LoteRow, stockKg = 0): LotePublico {
-  return { id: row.id, nombre: row.nombre, activo: row.activo, createdAt: row.created_at, stockKg };
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    activo: row.activo,
+    almacenId: row.almacen_id,
+    almacenNombre: row.almacenes?.nombre ?? null,
+    createdAt: row.created_at,
+    stockKg,
+  };
 }
 
 /** Postgres lanza 23505 al violar el índice único de nombre. */
@@ -41,7 +53,7 @@ async function stockPorLote(ids: string[]): Promise<Map<string, number>> {
 export async function listarLotes(): Promise<LotePublico[]> {
   const { data, error } = await supabaseAdmin
     .from('lotes')
-    .select('*')
+    .select('*, almacenes(nombre)')
     .order('nombre', { ascending: true });
 
   if (error || !data) return [];
@@ -55,8 +67,8 @@ export async function crearLote(
 ): Promise<{ lote: LotePublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('lotes')
-    .insert({ nombre: input.nombre })
-    .select('*')
+    .insert({ nombre: input.nombre, almacen_id: input.almacenId })
+    .select('*, almacenes(nombre)')
     .single();
 
   if (error || !data) {
@@ -73,12 +85,13 @@ export async function actualizarLote(
   const update: Record<string, unknown> = {};
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
+  if (cambios.almacenId !== undefined) update.almacen_id = cambios.almacenId;
 
   const { data, error } = await supabaseAdmin
     .from('lotes')
     .update(update)
     .eq('id', id)
-    .select('*')
+    .select('*, almacenes(nombre)')
     .maybeSingle();
 
   if (error) {
