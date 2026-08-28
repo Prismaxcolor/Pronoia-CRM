@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { X, Loader2, ImagePlus } from 'lucide-react';
+import { X, Loader2, ImagePlus, Camera } from 'lucide-react';
 import { completarTraslado } from '../../services/traslado-service';
 import { subirFotoTraslado } from '../../services/storage-service';
 import { useToast } from '../../hooks/use-toast-context';
@@ -24,13 +24,14 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
   );
   const [fotos, setFotos] = useState<FotoLocal[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const camaraRef = useRef<HTMLInputElement>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     setFotos(prev => [...prev, ...files.map(file => ({ file, preview: URL.createObjectURL(file) }))]);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    e.target.value = '';
   };
   const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
@@ -138,8 +139,13 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
                 <ImagePlus size={20} />
                 <span className="text-[10px] mt-1">Agregar</span>
               </button>
+              <button type="button" onClick={() => camaraRef.current?.click()} className="w-20 h-20 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-600 transition-colors">
+                <Camera size={20} />
+                <span className="text-[10px] mt-1">Tomar foto</span>
+              </button>
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFotos} className="hidden" />
+            <input ref={camaraRef} type="file" accept="image/*" capture="environment" onChange={handleFotos} className="hidden" />
           </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}

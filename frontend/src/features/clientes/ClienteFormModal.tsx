@@ -106,7 +106,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
                 </>
               )}
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFotoChange} className="hidden" />
+            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFotoChange} className="hidden" />
           </div>
 
           <div>

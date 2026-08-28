@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ImagePlus, X, ZoomIn } from 'lucide-react';
+import { ImagePlus, Camera, X, ZoomIn } from 'lucide-react';
 import { previewFoto, type FotoMaterial } from './material-fila';
 
 interface Props {
@@ -14,15 +14,18 @@ interface Props {
 /** Selector de fotos de un material — compacto, para vivir dentro de la
  *  tarjeta de cada material en vez de un único bloque general al final del
  *  formulario (Bloque 46). Cada miniatura se puede ampliar en un visor a
- *  pantalla completa (click en la lupa o en la imagen). */
+ *  pantalla completa (click en la lupa o en la imagen). Dos botones de
+ *  carga: uno abre la galería/archivos (multi-selección), otro abre la
+ *  cámara directo (una foto por toque, se puede repetir). */
 function FotoMaterialPicker({ fotos, onAgregar, onQuitar, label = 'Fotos de este material' }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const camaraRef = useRef<HTMLInputElement>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<number | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length > 0) onAgregar(files);
-    if (inputRef.current) inputRef.current.value = '';
+    e.target.value = '';
   };
 
   return (
@@ -56,11 +59,21 @@ function FotoMaterialPicker({ fotos, onAgregar, onQuitar, label = 'Fotos de este
           type="button"
           onClick={() => inputRef.current?.click()}
           className="w-14 h-14 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-600 transition-colors"
+          title="Elegir de archivos"
         >
           <ImagePlus size={16} />
         </button>
+        <button
+          type="button"
+          onClick={() => camaraRef.current?.click()}
+          className="w-14 h-14 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-600 transition-colors"
+          title="Tomar foto"
+        >
+          <Camera size={16} />
+        </button>
       </div>
       <input ref={inputRef} type="file" accept="image/*" multiple onChange={handleChange} className="hidden" />
+      <input ref={camaraRef} type="file" accept="image/*" capture="environment" onChange={handleChange} className="hidden" />
 
       {fotoAmpliada !== null && fotos[fotoAmpliada] && (
         <div

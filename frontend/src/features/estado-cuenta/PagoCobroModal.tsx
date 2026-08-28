@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Paperclip, Plus, Trash2 } from 'lucide-react';
+import { X, Paperclip, Plus, Trash2, Camera } from 'lucide-react';
 import { obtenerBancas } from '../../services/banca-service';
 import { obtenerTasaOficial } from '../../services/tasa-service';
 import { obtenerFacturas } from '../../services/factura-cv-service';
@@ -70,6 +70,8 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [descripcion, setDescripcion] = useState('');
   const [comprobante, setComprobante] = useState<File | null>(null);
+  const comprobanteCamaraRef = useRef<HTMLInputElement>(null);
+  const comprobantePreview = useMemo(() => comprobante ? URL.createObjectURL(comprobante) : null, [comprobante]);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -535,18 +537,48 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
 
           <div>
             <label className={labelClass}>Comprobante de {esProveedor ? 'pago' : 'cobro'} <span className="text-text-muted">(opcional)</span></label>
-            <label className="flex items-center gap-2 px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm cursor-pointer hover:bg-surface-hover transition-colors">
-              <Paperclip size={16} className="text-text-muted shrink-0" />
-              <span className="truncate text-text-secondary">
-                {comprobante ? comprobante.name : 'Subir foto (JPG, PNG o WEBP)'}
-              </span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={e => setComprobante(e.target.files?.[0] ?? null)}
-              />
-            </label>
+            {comprobantePreview ? (
+              <div className="flex items-center gap-3">
+                <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-border shrink-0">
+                  <img src={comprobantePreview} alt="Comprobante" className="w-full h-full object-cover" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-text-secondary truncate">{comprobante?.name}</p>
+                  <button type="button" onClick={() => setComprobante(null)} className="text-xs text-red-600 hover:underline mt-0.5">
+                    Quitar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <label className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm cursor-pointer hover:bg-surface-hover transition-colors">
+                  <Paperclip size={16} className="text-text-muted shrink-0" />
+                  <span className="truncate text-text-secondary">Subir foto (JPG, PNG o WEBP)</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={e => setComprobante(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => comprobanteCamaraRef.current?.click()}
+                  className="px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-text-muted hover:bg-surface-hover hover:text-brand-600 transition-colors shrink-0"
+                  title="Tomar foto"
+                >
+                  <Camera size={16} />
+                </button>
+                <input
+                  ref={comprobanteCamaraRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  capture="environment"
+                  className="hidden"
+                  onChange={e => setComprobante(e.target.files?.[0] ?? null)}
+                />
+              </div>
+            )}
           </div>
 
           {error && (

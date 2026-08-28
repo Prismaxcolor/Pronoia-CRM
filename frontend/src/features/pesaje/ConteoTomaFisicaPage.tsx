@@ -4,11 +4,13 @@ import { ArrowLeft, ChevronDown, Trash2 } from 'lucide-react';
 import { obtenerTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
-import { subirFotosFila, type FotoMaterial } from './material-fila';
+import { obtenerTaras } from '../../services/tara-service';
+import { subirFotosFila, taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { useToast } from '../../hooks/use-toast-context';
-import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote } from '@shared/types/index.js';
+import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote, Tara } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -23,23 +25,26 @@ function ConteoTomaFisicaPage() {
   const [detalle, setDetalle] = useState<DetalleTomaFisica[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
+  const [taras, setTaras] = useState<Tara[]>([]);
   const [cargando, setCargando] = useState(true);
 
   const [productoId, setProductoId] = useState('');
   const [loteId, setLoteId] = useState('');
   const [pesoBruto, setPesoBruto] = useState('');
-  const [tara, setTara] = useState('');
+  const [campoTara, setCampoTara] = useState<CampoTara>(taraVacia());
   const [fotos, setFotos] = useState<FotoMaterial[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cargar = () => {
     setCargando(true);
-    Promise.all([obtenerTomaFisica(tomaFisicaId), obtenerProductos(), obtenerLotes()]).then(([res, prods, lts]) => {
+    Promise.all([obtenerTomaFisica(tomaFisicaId), obtenerProductos(), obtenerLotes(), obtenerTaras()]).then(([res, prods, lts, tars]) => {
       if (res) { setTomaFisica(res.tomaFisica); setDetalle(res.detalle); }
       setProductos(prods);
       setLotes(lts);
+      setTaras(tars.filter(t => t.activo));
       setCargando(false);
     });
   };
@@ -76,7 +81,7 @@ function ConteoTomaFisicaPage() {
     [lotes, tomaFisica]
   );
 
-  const netoActual = (Number(pesoBruto) || 0) - (Number(tara) || 0);
+  const netoActual = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
 
   const agregarFotos = (files: File[]) =>
     setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
@@ -101,7 +106,7 @@ function ConteoTomaFisicaPage() {
       productoId,
       loteId: requiereLote ? loteId : null,
       pesoBruto: Number(pesoBruto) || 0,
-      tara: Number(tara) || 0,
+      tara: taraKgFila(campoTara, taras),
       fotos: urls,
     });
     setGuardando(false);
@@ -109,7 +114,7 @@ function ConteoTomaFisicaPage() {
 
     toast.exito('Pesaje registrado.');
     setPesoBruto('');
-    setTara('');
+    setCampoTara(taraVacia());
     setFotos([]);
     setLoteId('');
     cargar();
@@ -188,15 +193,41 @@ function ConteoTomaFisicaPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Tara (kg)</label>
-            <input type="number" step="0.001" min="0" value={tara} onChange={e => setTara(e.target.value)} className={inputClass} placeholder="0.00" />
+        <div>
+          <label className={labelClass}>Peso bruto (kg) *</label>
+          <input type="number" step="0.001" min="0" value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+        </div>
+
+        <div>
+          <label className={labelClass}>Tara</label>
+          <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
+            <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'preconfigurada' }))} className={`px-2 py-1 ${campoTara.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+              Preconfigurada
+            </button>
+            <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'manual' }))} className={`px-2 py-1 ${campoTara.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+              Manual
+            </button>
           </div>
-          <div>
-            <label className={labelClass}>Peso bruto (kg) *</label>
-            <input type="number" step="0.001" min="0" value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
-          </div>
+          {campoTara.taraModo === 'preconfigurada' ? (
+            <div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMostrarSelectorTara(true)}
+                  className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                >
+                  <span className={campoTara.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                    {taras.find(t => t.id === campoTara.taraId)?.nombre ?? '— Sin tara —'}
+                  </span>
+                  <ChevronDown size={14} className="text-text-muted shrink-0" />
+                </button>
+                <input type="number" step="1" min="0" value={campoTara.taraCantidad} onChange={e => setCampoTara(prev => ({ ...prev, taraCantidad: e.target.value }))} className={inputClass} placeholder="Cantidad" />
+              </div>
+              <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(campoTara, taras))} kg</p>
+            </div>
+          ) : (
+            <input type="number" step="0.001" min="0" value={campoTara.taraManual} onChange={e => setCampoTara(prev => ({ ...prev, taraManual: e.target.value }))} className={inputClass} placeholder="0.00" />
+          )}
         </div>
 
         {netoActual > 0 && (
@@ -241,6 +272,14 @@ function ConteoTomaFisicaPage() {
           productos={productosDisponibles}
           onClose={() => setMostrarSelectorMaterial(false)}
           onSeleccionar={id => { setProductoId(id); setLoteId(''); setMostrarSelectorMaterial(false); }}
+        />
+      )}
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={campoTara.taraId || undefined}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => { setCampoTara(prev => ({ ...prev, ...seleccionarTaraFila(prev, taraId) })); setMostrarSelectorTara(false); }}
         />
       )}
     </div>

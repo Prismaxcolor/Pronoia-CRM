@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Recycle, CheckCircle2, Clock, X, Plus, Loader2, Trash2,
-  ChevronDown, ChevronUp, Camera,
+  ChevronDown, ChevronUp, AlertTriangle,
 } from 'lucide-react';
 import {
   obtenerTransformaciones,
@@ -14,16 +14,19 @@ import {
   type CompletarTransformacionFerrosoSalidaInput,
 } from '../../services/transformacion-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { obtenerAlmacenes } from '../../services/almacen-service';
+import { obtenerAlmacenes, obtenerStockAlmacen } from '../../services/almacen-service';
+import { obtenerTaras } from '../../services/tara-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import { subirFotoTicket } from '../../services/storage-service';
 import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
-import type { Transformacion, SalidaComun } from '@shared/types/index.js';
+import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
+import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
+import { taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
+import type { Transformacion, SalidaComun, Tara } from '@shared/types/index.js';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
-import type { FotoMaterial } from '../pesaje/material-fila';
 
 type Tab = 'nueva' | 'pendientes' | 'historial' | 'config';
 type Categoria = 'ferroso_no_ferroso' | 'pcb';
@@ -39,17 +42,16 @@ async function subirFoto(foto: FotoMaterial): Promise<string | null> {
 // ---------------------------------------------------------------------------
 // Fila de salida en el formulario de completar
 // ---------------------------------------------------------------------------
-interface FilaSalida {
+interface FilaSalida extends CampoTara {
   uid: number;
   productoId: string;
   pesoBruto: string;
-  tara: string;
-  foto: FotoMaterial | null;
+  fotos: FotoMaterial[];
 }
 
 let nextUid = 1;
 function filaVacia(productoId = ''): FilaSalida {
-  return { uid: nextUid++, productoId, pesoBruto: '', tara: '', foto: null };
+  return { uid: nextUid++, productoId, pesoBruto: '', ...taraVacia(), fotos: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -58,12 +60,14 @@ function filaVacia(productoId = ''): FilaSalida {
 function CompletarFerrosoModal({
   transformacion,
   productos,
+  taras,
   salidasComunes,
   onClose,
   onCompletada,
 }: {
   transformacion: Transformacion;
   productos: Producto[];
+  taras: Tara[];
   salidasComunes: SalidaComun[];
   onClose: () => void;
   onCompletada: () => void;
@@ -83,6 +87,7 @@ function CompletarFerrosoModal({
   const [error, setError] = useState<string | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
 
   const actualizar = (uid: number, campo: Partial<FilaSalida>) => {
     setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
@@ -94,27 +99,32 @@ function CompletarFerrosoModal({
     ...productos.filter(p => !comunesIds.includes(p.id)),
   ];
 
-  const totalSalidas = filas.reduce((acc, f) => acc + (Number(f.pesoBruto) - Number(f.tara || 0)), 0);
+  const netoFila = (f: FilaSalida) => (Number(f.pesoBruto) || 0) - taraKgFila(f, taras);
+  const totalSalidas = filas.reduce((acc, f) => acc + netoFila(f), 0);
   const merma = transformacion.pesoNeto - totalSalidas;
 
   const handleCompletar = async () => {
     setError(null);
     if (filas.some(f => !f.productoId)) { setError('Todos los materiales de salida necesitan un producto.'); return; }
-    if (filas.some(f => (Number(f.pesoBruto) - Number(f.tara || 0)) <= 0)) {
+    if (filas.some(f => netoFila(f) <= 0)) {
       setError('Cada salida debe tener peso neto mayor a 0.');
       return;
     }
-    if (filas.some(f => !f.foto)) { setError('Cada salida necesita al menos una foto.'); return; }
+    if (filas.some(f => f.fotos.length === 0)) { setError('Cada salida necesita al menos una foto.'); return; }
 
     setGuardando(true);
     const salidaInputs: CompletarTransformacionFerrosoSalidaInput[] = [];
     for (const f of filas) {
-      const fotoUrl = f.foto ? await subirFoto(f.foto) : null;
+      const urls: string[] = [];
+      for (const foto of f.fotos) {
+        const url = await subirFoto(foto);
+        if (url) urls.push(url);
+      }
       salidaInputs.push({
         productoId: f.productoId,
         pesoBruto: Number(f.pesoBruto),
-        tara: Number(f.tara || 0),
-        fotos: fotoUrl ? [fotoUrl] : [],
+        tara: taraKgFila(f, taras),
+        fotos: urls,
       });
     }
 
@@ -163,32 +173,53 @@ function CompletarFerrosoModal({
                     <ChevronDown size={14} className="text-text-muted shrink-0" />
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className={labelClass}>Peso bruto (kg) *</label>
-                    <input type="number" step="0.001" min="0.001" value={f.pesoBruto}
-                      onChange={e => actualizar(f.uid, { pesoBruto: e.target.value })}
-                      className={inputClass} placeholder="0.00" />
+                <div>
+                  <label className={labelClass}>Peso bruto (kg) *</label>
+                  <input type="number" step="0.001" min="0.001" value={f.pesoBruto}
+                    onChange={e => actualizar(f.uid, { pesoBruto: e.target.value })}
+                    className={inputClass} placeholder="0.00" />
+                </div>
+                <div>
+                  <label className={labelClass}>Tara</label>
+                  <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
+                    <button type="button" onClick={() => actualizar(f.uid, { taraModo: 'preconfigurada' })} className={`px-2 py-1 ${f.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+                      Preconfigurada
+                    </button>
+                    <button type="button" onClick={() => actualizar(f.uid, { taraModo: 'manual' })} className={`px-2 py-1 ${f.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+                      Manual
+                    </button>
                   </div>
-                  <div>
-                    <label className={labelClass}>Tara (kg)</label>
-                    <input type="number" step="0.01" min="0" value={f.tara}
-                      onChange={e => actualizar(f.uid, { tara: e.target.value })}
-                      className={inputClass} placeholder="0.00" />
-                  </div>
+                  {f.taraModo === 'preconfigurada' ? (
+                    <div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorTara(true); }}
+                          className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                        >
+                          <span className={f.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                            {taras.find(t => t.id === f.taraId)?.nombre ?? '— Sin tara —'}
+                          </span>
+                          <ChevronDown size={14} className="text-text-muted shrink-0" />
+                        </button>
+                        <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => actualizar(f.uid, { taraCantidad: e.target.value })} className={inputClass} placeholder="Cantidad" />
+                      </div>
+                      <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
+                    </div>
+                  ) : (
+                    <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => actualizar(f.uid, { taraManual: e.target.value })} className={inputClass} placeholder="0.00" />
+                  )}
                 </div>
                 <p className="text-xs text-text-muted">
-                  Neto: <span className="font-semibold text-text-primary">{fmt((Number(f.pesoBruto) || 0) - (Number(f.tara) || 0))} kg</span>
+                  Neto: <span className="font-semibold text-text-primary">{fmt(netoFila(f))} kg</span>
                 </p>
-                <FotoMiniaturas
-                  fotos={f.foto ? [f.foto] : []}
-                  onAgregar={files => {
-                    if (files[0]) {
-                      const preview = URL.createObjectURL(files[0]);
-                      actualizar(f.uid, { foto: { tipo: 'nueva', file: files[0], preview } });
-                    }
-                  }}
-                  onQuitar={() => actualizar(f.uid, { foto: null })}
+                <FotoMaterialPicker
+                  label="Fotos de esta salida"
+                  fotos={f.fotos}
+                  onAgregar={files => actualizar(f.uid, {
+                    fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))],
+                  })}
+                  onQuitar={idx => actualizar(f.uid, { fotos: f.fotos.filter((_, i) => i !== idx) })}
                 />
               </div>
             </div>
@@ -230,6 +261,20 @@ function CompletarFerrosoModal({
           onSeleccionar={id => {
             if (filaActivaUid != null) actualizar(filaActivaUid, { productoId: id });
             setMostrarSelectorMaterial(false);
+          }}
+        />
+      )}
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={filas.find(f => f.uid === filaActivaUid)?.taraId || undefined}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => {
+            if (filaActivaUid != null) {
+              const fila = filas.find(f => f.uid === filaActivaUid);
+              if (fila) actualizar(filaActivaUid, seleccionarTaraFila(fila, taraId));
+            }
+            setMostrarSelectorTara(false);
           }}
         />
       )}
@@ -342,10 +387,12 @@ function ConfigSalidasComunes({
 function NuevaFerrosoForm({
   productos,
   almacenes,
+  taras,
   onCreada,
 }: {
   productos: Producto[];
   almacenes: Almacen[];
+  taras: Tara[];
   onCreada: () => void;
 }) {
   const toast = useToast();
@@ -355,15 +402,26 @@ function NuevaFerrosoForm({
   const [productoEntradaId, setProductoEntradaId] = useState('');
   const [almacenId, setAlmacenId] = useState('');
   const [pesoBruto, setPesoBruto] = useState('');
-  const [tara, setTara] = useState('');
+  const [campoTara, setCampoTara] = useState<CampoTara>(taraVacia());
   const [fotos, setFotos] = useState<FotoMaterial[]>([]);
   const [fecha, setFecha] = useState(hoyISO());
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
+  const [stockAlmacen, setStockAlmacen] = useState<Map<string, number>>(new Map());
 
-  const neto = (Number(pesoBruto) || 0) - (Number(tara) || 0);
+  const neto = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
+
+  // Aviso (sin bloquear, mismo criterio que traslados en Pesaje) si retirar
+  // este neto deja el material en negativo en el almacén elegido.
+  useEffect(() => {
+    if (!almacenId) { setStockAlmacen(new Map()); return; }
+    obtenerStockAlmacen(almacenId).then(setStockAlmacen);
+  }, [almacenId]);
+  const disponible = stockAlmacen.get(productoEntradaId) ?? 0;
+  const quedaEnNegativo = productoEntradaId && almacenId && neto > 0 && neto > disponible;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -384,7 +442,7 @@ function NuevaFerrosoForm({
       productoEntradaId,
       almacenId,
       pesoBruto: Number(pesoBruto),
-      tara: Number(tara) || 0,
+      tara: taraKgFila(campoTara, taras),
       fecha,
       notas: notas.trim() || null,
       fotosEntrada: fotosUrls,
@@ -397,7 +455,7 @@ function NuevaFerrosoForm({
     setProductoEntradaId('');
     setAlmacenId('');
     setPesoBruto('');
-    setTara('');
+    setCampoTara(taraVacia());
     setFotos([]);
     setFecha(hoyISO());
     setNotas('');
@@ -428,24 +486,58 @@ function NuevaFerrosoForm({
         </select>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={labelClass}>Peso bruto (kg) *</label>
-          <input type="number" step="0.001" min="0.001" required value={pesoBruto}
-            onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+      <div>
+        <label className={labelClass}>Peso bruto (kg) *</label>
+        <input type="number" step="0.001" min="0.001" required value={pesoBruto}
+          onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+      </div>
+
+      <div>
+        <label className={labelClass}>Tara</label>
+        <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
+          <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'preconfigurada' }))} className={`px-2 py-1 ${campoTara.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+            Preconfigurada
+          </button>
+          <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'manual' }))} className={`px-2 py-1 ${campoTara.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+            Manual
+          </button>
         </div>
-        <div>
-          <label className={labelClass}>Tara (kg)</label>
-          <input type="number" step="0.01" min="0" value={tara}
-            onChange={e => setTara(e.target.value)} className={inputClass} placeholder="0.00" />
-        </div>
+        {campoTara.taraModo === 'preconfigurada' ? (
+          <div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMostrarSelectorTara(true)}
+                className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+              >
+                <span className={campoTara.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                  {taras.find(t => t.id === campoTara.taraId)?.nombre ?? '— Sin tara —'}
+                </span>
+                <ChevronDown size={14} className="text-text-muted shrink-0" />
+              </button>
+              <input type="number" step="1" min="0" value={campoTara.taraCantidad} onChange={e => setCampoTara(prev => ({ ...prev, taraCantidad: e.target.value }))} className={inputClass} placeholder="Cantidad" />
+            </div>
+            <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(campoTara, taras))} kg</p>
+          </div>
+        ) : (
+          <input type="number" step="0.001" min="0" value={campoTara.taraManual} onChange={e => setCampoTara(prev => ({ ...prev, taraManual: e.target.value }))} className={inputClass} placeholder="0.00" />
+        )}
       </div>
 
       <p className="text-xs text-text-muted -mt-2">
         Neto a retirar: <span className="font-semibold text-text-primary">{fmt(neto)} kg</span>
       </p>
 
-      <FotoMultiplePicker fotos={fotos} setFotos={setFotos} label="Fotos de entrada *" />
+      {quedaEnNegativo && (
+        <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 -mt-2">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+          <span>
+            Ese almacén solo tiene {fmt(disponible)} kg disponibles de este material — el inventario quedará en {fmt(disponible - neto)} kg.
+          </span>
+        </div>
+      )}
+
+      <FotoMaterialPicker fotos={fotos} onAgregar={files => setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))])} onQuitar={idx => setFotos(prev => prev.filter((_, i) => i !== idx))} label="Fotos de entrada *" />
 
       <div>
         <label className={labelClass}>Fecha</label>
@@ -472,91 +564,15 @@ function NuevaFerrosoForm({
           onSeleccionar={id => { setProductoEntradaId(id); setMostrarSelectorMaterial(false); }}
         />
       )}
-    </form>
-  );
-}
-
-// Picker de una foto con miniatura (para la fila de salida del modal)
-function FotoMiniaturas({
-  fotos,
-  onAgregar,
-  onQuitar,
-}: {
-  fotos: FotoMaterial[];
-  onAgregar: (files: File[]) => void;
-  onQuitar: (idx: number) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) onAgregar([file]);
-    e.target.value = '';
-  };
-  const preview = (f: FotoMaterial) => f.tipo === 'nueva' ? f.preview : f.url;
-  return (
-    <div className="flex items-center gap-2">
-      {fotos.map((f, i) => (
-        <div key={i} className="relative w-12 h-12 rounded-lg overflow-hidden border border-border group">
-          <img src={preview(f)} alt="" className="w-full h-full object-cover" />
-          <button type="button" onClick={() => onQuitar(i)} className="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center">
-            <X size={12} className="text-white" />
-          </button>
-        </div>
-      ))}
-      {fotos.length === 0 && (
-        <button type="button" onClick={() => inputRef.current?.click()} className="w-12 h-12 rounded-lg border-2 border-dashed border-border flex items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-500 transition-colors text-xs">
-          <Camera size={14} />
-        </button>
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={campoTara.taraId || undefined}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => { setCampoTara(prev => ({ ...prev, ...seleccionarTaraFila(prev, taraId) })); setMostrarSelectorTara(false); }}
+        />
       )}
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-    </div>
-  );
-}
-
-// Picker de múltiples fotos (simple — una a la vez, lista de miniaturas)
-function FotoMultiplePicker({
-  fotos,
-  setFotos,
-  label,
-}: {
-  fotos: FotoMaterial[];
-  setFotos: React.Dispatch<React.SetStateAction<FotoMaterial[]>>;
-  label?: string;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const preview = URL.createObjectURL(file);
-    setFotos(prev => [...prev, { tipo: 'nueva', file, preview }]);
-    e.target.value = '';
-  };
-  return (
-    <div>
-      {label && <label className="block text-xs font-medium text-text-secondary mb-1">{label}</label>}
-      <div className="flex flex-wrap gap-2 mb-2">
-        {fotos.map((f, i) => (
-          <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-border group">
-            <img src={f.tipo === 'nueva' ? f.preview : f.url} alt="" className="w-full h-full object-cover" />
-            <button
-              type="button"
-              onClick={() => setFotos(prev => prev.filter((_, j) => j !== i))}
-              className="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center"
-            >
-              <X size={14} className="text-white" />
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="w-16 h-16 rounded-lg border-2 border-dashed border-border flex items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-500 transition-colors"
-        >
-          <Camera size={18} />
-        </button>
-      </div>
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-    </div>
+    </form>
   );
 }
 
@@ -576,6 +592,7 @@ function TransformacionesPage() {
   const [transformaciones, setTransformaciones] = useState<Transformacion[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
+  const [taras, setTaras] = useState<Tara[]>([]);
   const [salidasComunes, setSalidasComunes] = useState<SalidaComun[]>([]);
   const [cargando, setCargando] = useState(true);
 
@@ -583,15 +600,17 @@ function TransformacionesPage() {
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    const [txs, prods, alms, comunes] = await Promise.all([
+    const [txs, prods, alms, tars, comunes] = await Promise.all([
       obtenerTransformaciones({ categoria }),
       obtenerProductos(),
       obtenerAlmacenes(),
+      obtenerTaras(),
       obtenerSalidasComunes(),
     ]);
     setTransformaciones(txs);
     setProductos(prods.filter(p => p.activo));
     setAlmacenes(alms);
+    setTaras(tars.filter(t => t.activo));
     setSalidasComunes(comunes);
     setCargando(false);
   }, [categoria]);
@@ -671,6 +690,7 @@ function TransformacionesPage() {
               <NuevaFerrosoForm
                 productos={productos}
                 almacenes={almacenes}
+                taras={taras}
                 onCreada={() => { void cargar(); setTab('pendientes'); }}
               />
             </>
@@ -770,6 +790,7 @@ function TransformacionesPage() {
         <CompletarFerrosoModal
           transformacion={completando}
           productos={productos}
+          taras={taras}
           salidasComunes={salidasComunes.filter(s => s.productoEntradaId === completando.productoEntradaId)}
           onClose={() => setCompletando(null)}
           onCompletada={() => { setCompletando(null); void cargar(); setTab('historial'); }}

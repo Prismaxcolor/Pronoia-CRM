@@ -220,6 +220,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              capture="environment"
               onChange={handleImagenChange}
               className="hidden"
             />

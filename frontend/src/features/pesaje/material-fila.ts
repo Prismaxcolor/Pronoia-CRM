@@ -68,8 +68,23 @@ export async function subirFotosFila(fotos: FotoMaterial[]): Promise<string[] | 
   return urls;
 }
 
+/** Los 4 campos que describen cómo se captura la tara de una fila —
+ *  cualquier formulario que pese algo (pesaje, transformación, toma
+ *  física) los necesita, no solo MaterialFila. Estructural a propósito
+ *  para no acoplar cada formulario al tipo completo de MaterialFila. */
+export interface CampoTara {
+  taraModo: TaraModo;
+  taraId: string;
+  taraCantidad: string;
+  taraManual: string;
+}
+
+export function taraVacia(): CampoTara {
+  return { taraModo: 'preconfigurada', taraId: '', taraCantidad: '', taraManual: '' };
+}
+
 /** Kg de tara resultantes de una fila, según su modo (preconfigurada × cantidad, o manual). */
-export function taraKgFila(f: MaterialFila, taras: Tara[]): number {
+export function taraKgFila(f: CampoTara, taras: Tara[]): number {
   if (f.taraModo === 'manual') return Number(f.taraManual) || 0;
   const tara = taras.find(t => t.id === f.taraId);
   if (!tara) return 0;
@@ -84,7 +99,7 @@ export function netoFila(f: MaterialFila, taras: Tara[]): number {
  *  al elegir una tara con cantidad vacía, arranca en 1 unidad; al quitarla
  *  (taraId vacío) también limpia la cantidad, para poder dejar la fila sin
  *  tara y pesar sin tara. */
-export function seleccionarTaraFila(f: MaterialFila, taraId: string): Pick<MaterialFila, 'taraId' | 'taraCantidad'> {
+export function seleccionarTaraFila(f: CampoTara, taraId: string): Pick<CampoTara, 'taraId' | 'taraCantidad'> {
   return {
     taraId,
     taraCantidad: taraId ? (f.taraCantidad || '1') : '',
