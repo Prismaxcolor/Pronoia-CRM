@@ -27,18 +27,20 @@ function Layout() {
     <div className="flex h-screen bg-surface-alt print:block print:h-auto print:bg-white">
       <Sidebar abierto={menuAbierto} onCerrar={() => setMenuAbierto(false)} />
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Barra superior solo en mobile — el sidebar normal ya cumple esta función en desktop. */}
-        <header className="md:hidden flex items-center gap-3 px-4 h-14 bg-surface border-b border-border shrink-0 print:hidden">
+        {/* Barra superior solo en mobile — el sidebar normal ya cumple esta función en desktop.
+            Mismo azul oscuro que el sidebar (bg-brand-900): el logo es blanco sobre fondo
+            transparente, en una barra clara desaparecía. */}
+        <header className="md:hidden flex items-center gap-3 px-4 h-14 bg-brand-900 shrink-0 print:hidden">
           <button
             type="button"
             onClick={() => setMenuAbierto(true)}
-            className="p-2 -ml-2 text-text-secondary hover:text-text-primary"
+            className="p-2 -ml-2 text-brand-200 hover:text-white"
             aria-label="Abrir menú"
           >
             <Menu size={22} />
           </button>
           <img src="/logo-pronoia.png" alt="Pronoia" className="w-6 h-6" />
-          <span className="font-semibold text-text-primary">Pronoia</span>
+          <span className="font-semibold text-white">Pronoia</span>
         </header>
         <main ref={mainRef} className="flex-1 p-4 md:p-8 overflow-y-auto print:p-0 print:overflow-visible">
           <div key={pathname} className="animate-[content-in_0.25s_ease-out]">
