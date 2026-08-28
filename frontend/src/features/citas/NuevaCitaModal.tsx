@@ -93,7 +93,7 @@ function NuevaCitaModal({ onClose, onAgendada }: Props) {
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Fecha *</label>
               <input type="date" value={fecha} min={hoyISO()} onChange={e => setFecha(e.target.value)} className={inputClass} />

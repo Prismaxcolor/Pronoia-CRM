@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight, CalendarClock, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight, CalendarClock, BarChart3, X } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
 import type { Recurso } from '@shared/types/index.js';
@@ -99,7 +99,14 @@ function seccionActual(pathname: string): NavItem | undefined {
   return candidatos.sort((a, b) => b.to.length - a.to.length)[0];
 }
 
-function Sidebar() {
+interface Props {
+  /** Solo controla la visibilidad en mobile (drawer) — en desktop (md+) el
+   *  sidebar siempre está visible sin importar este valor. */
+  abierto: boolean;
+  onCerrar: () => void;
+}
+
+function Sidebar({ abierto, onCerrar }: Props) {
   const { usuario, logout, tienePermiso } = useAuth();
   const location = useLocation();
   const [ultimasRutas, setUltimasRutas] = useState(() => {
@@ -134,14 +141,35 @@ function Sidebar() {
     .filter(sec => sec.items.length > 0);
 
   return (
-    <aside className="w-64 bg-brand-900 text-white flex flex-col h-screen print:hidden">
+    <>
+      {/* Fondo oscuro detrás del drawer en mobile — clic afuera lo cierra. */}
+      {abierto && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={onCerrar}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`fixed md:static inset-y-0 left-0 z-40 w-64 bg-brand-900 text-white flex flex-col h-screen print:hidden
+          transform transition-transform duration-200 ease-in-out
+          ${abierto ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
+      >
       {/* Logo */}
       <div className="p-6 border-b border-brand-800 flex items-center gap-3">
         <img src="/logo-pronoia.png" alt="Pronoia" className="w-9 h-9 shrink-0" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold tracking-wide">Pronoia</h1>
           <p className="text-brand-300 text-xs mt-1">Sistema de compras</p>
         </div>
+        <button
+          type="button"
+          onClick={onCerrar}
+          className="md:hidden text-brand-300 hover:text-white p-1 shrink-0"
+          aria-label="Cerrar menú"
+        >
+          <X size={20} />
+        </button>
       </div>
 
       {/* Navegacion */}
@@ -162,6 +190,7 @@ function Sidebar() {
                 <Link
                   key={item.to}
                   to={destino}
+                  onClick={onCerrar}
                   aria-current={activo ? 'page' : undefined}
                   className={
                     `flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors
@@ -200,7 +229,8 @@ function Sidebar() {
           Cerrar sesion
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 

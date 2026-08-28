@@ -91,7 +91,7 @@ function FacturaDetallePage({ tipo }: Props) {
         </button>
       </div>
 
-      <div className="flex items-start justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
@@ -99,7 +99,7 @@ function FacturaDetallePage({ tipo }: Props) {
           </div>
           <p className="text-sm text-text-muted mt-1">{factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
         </div>
-        <div className="print:hidden flex items-center gap-2 shrink-0">
+        <div className="print:hidden flex flex-wrap items-center gap-2">
           {puedePagar && factura.estado !== 'pagada' && factura.entidadId && (
             <button
               type="button"

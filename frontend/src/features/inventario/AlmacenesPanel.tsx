@@ -149,7 +149,7 @@ function AlmacenesPanel() {
 
   return (
     <div className="max-w-2xl">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-lg font-semibold text-text-primary">Almacenes</h2>
           <p className="text-sm text-text-secondary mt-1">
@@ -187,11 +187,11 @@ function AlmacenesPanel() {
         <div className="bg-surface rounded-xl border border-border overflow-hidden">
           {almacenes.map(a => (
             <div key={a.id} className={`border-b border-border last:border-b-0 ${!a.activo ? 'opacity-60' : ''}`}>
-              <div className="flex items-center gap-4 px-5 py-3.5">
+              <div className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-3.5">
                 <div className="w-11 h-11 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
                   <Warehouse size={18} />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-[10rem]">
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-text-primary text-sm truncate">{a.nombre}</h3>
                     {!a.activo && (
@@ -203,6 +203,7 @@ function AlmacenesPanel() {
                     Última toma física: {a.ultimaTomaFisica ? fmtFecha(a.ultimaTomaFisica) : 'nunca'}
                   </p>
                 </div>
+                <div className="flex items-center gap-1 shrink-0 ml-auto">
                 {a.activo && (
                   <button
                     type="button"
@@ -257,6 +258,7 @@ function AlmacenesPanel() {
                     )}
                   </div>
                 )}
+                </div>
               </div>
               {expandido === a.id && <StockAlmacen almacenId={a.id} />}
             </div>

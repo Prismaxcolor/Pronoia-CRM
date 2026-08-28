@@ -452,12 +452,12 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
                 const montoBsLinea = esBsLinea && tasa ? montoUsdLinea * tasa : null;
                 return (
                   <div key={linea.id} className="border border-border rounded-lg p-2 space-y-2">
-                    <div className="flex items-start gap-2">
+                    <div className="flex flex-col sm:flex-row items-start gap-2">
                       <select
                         required
                         value={linea.bancaId}
                         onChange={e => setLineaBancaId(linea.id, e.target.value)}
-                        className={`${inputClass} flex-1`}
+                        className={`${inputClass} w-full sm:flex-1`}
                       >
                         {bancas
                           .filter(b => b.id === linea.bancaId || !bancasUsadas.has(b.id))
@@ -467,31 +467,33 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
                             </option>
                           ))}
                       </select>
-                      <div className="shrink-0">
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">$</span>
-                          <input
-                            type="number" step="0.001" min="0.01"
-                            value={linea.montoUsd}
-                            onChange={e => setLineaMonto(linea.id, e.target.value)}
-                            className={`${inputClass} w-28 pl-6`}
-                            placeholder="0.00"
-                          />
+                      <div className="flex items-start gap-2 w-full sm:w-auto">
+                        <div className="shrink-0">
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">$</span>
+                            <input
+                              type="number" step="0.001" min="0.01"
+                              value={linea.montoUsd}
+                              onChange={e => setLineaMonto(linea.id, e.target.value)}
+                              className={`${inputClass} w-28 pl-6`}
+                              placeholder="0.00"
+                            />
+                          </div>
+                          {montoBsLinea != null && (
+                            <p className="text-xs text-text-muted mt-1 text-right">≈ Bs {fmt(montoBsLinea)}</p>
+                          )}
                         </div>
-                        {montoBsLinea != null && (
-                          <p className="text-xs text-text-muted mt-1 text-right">≈ Bs {fmt(montoBsLinea)}</p>
+                        {lineasBanca.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => quitarLinea(linea.id)}
+                            className="p-2.5 text-text-muted hover:text-red-600 transition-colors shrink-0"
+                            title="Quitar banca"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         )}
                       </div>
-                      {lineasBanca.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => quitarLinea(linea.id)}
-                          className="p-2.5 text-text-muted hover:text-red-600 transition-colors shrink-0"
-                          title="Quitar banca"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
                     </div>
                     <input
                       type="text" maxLength={50}

@@ -175,12 +175,12 @@ function EstadoCuentaPage({ tipo }: Props) {
         </button>
       </div>
 
-      <div className="flex items-start justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Estado de cuenta</h1>
           <p className="text-sm text-text-secondary mt-1">{estado.entidad.nombre}</p>
         </div>
-        <div className="print:hidden flex items-center gap-2 shrink-0">
+        <div className="print:hidden flex flex-wrap items-center gap-2">
           {puedeAjustar && (
             <button
               type="button"

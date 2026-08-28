@@ -399,15 +399,15 @@ function PesajePage() {
             {/* Toggle compra/venta/traslado */}
             <div>
               <label className={labelClass}>Tipo de operación</label>
-              <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
-                <button type="button" onClick={() => { setTipo('compra'); setEntidadId(''); }} className={`px-4 py-1.5 ${tipo === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
-                  Compra (proveedor)
+              <div className="flex rounded-lg overflow-hidden border border-border text-sm w-full sm:w-fit">
+                <button type="button" onClick={() => { setTipo('compra'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Compra <span className="hidden sm:inline">(proveedor)</span>
                 </button>
-                <button type="button" onClick={() => { setTipo('venta'); setEntidadId(''); }} className={`px-4 py-1.5 ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
-                  Venta (cliente)
+                <button type="button" onClick={() => { setTipo('venta'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Venta <span className="hidden sm:inline">(cliente)</span>
                 </button>
-                <button type="button" onClick={() => { setTipo('traslado'); setEntidadId(''); }} className={`px-4 py-1.5 ${tipo === 'traslado' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
-                  Traslado (almacén)
+                <button type="button" onClick={() => { setTipo('traslado'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'traslado' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Traslado <span className="hidden sm:inline">(almacén)</span>
                 </button>
               </div>
             </div>
@@ -627,13 +627,13 @@ function PesajePage() {
                           de Tara traiga el toggle Preconfigurada/Manual y la de Peso bruto
                           no — evita que los inputs de la fila 2 queden a distinta altura.
                           Orden: Tara queda debajo de Material, Peso bruto debajo de Destino. */}
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="text-xs font-medium text-text-secondary">Tara</label>
-                        <div className="flex rounded-md overflow-hidden border border-border text-[11px] shrink-0">
-                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'preconfigurada')} className={`px-2 py-1 ${f.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+                      <div className="flex items-center justify-between gap-1 sm:gap-2 min-w-0">
+                        <label className="text-xs font-medium text-text-secondary shrink-0">Tara</label>
+                        <div className="flex rounded-md overflow-hidden border border-border text-[9px] sm:text-[11px] shrink-0 min-w-0">
+                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'preconfigurada')} className={`px-1 sm:px-2 py-1 truncate ${f.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
                             Preconfigurada
                           </button>
-                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'manual')} className={`px-2 py-1 ${f.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'manual')} className={`px-1 sm:px-2 py-1 truncate ${f.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
                             Manual
                           </button>
                         </div>

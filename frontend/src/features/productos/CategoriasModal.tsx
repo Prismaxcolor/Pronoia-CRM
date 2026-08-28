@@ -186,13 +186,13 @@ function CategoriasModal({ onClose, onCambios }: Props) {
                     </>
                   ) : (
                     <>
-                      <span className="flex-1 text-sm text-text-primary truncate">
+                      <span className="flex-1 min-w-0 text-sm text-text-primary truncate">
                         {c.nombre}
                         {!c.activo && <span className="ml-2 text-xs text-red-500">(inactiva)</span>}
                         {c.sinLote && <span className="ml-2 text-xs text-brand-600">(sin lote)</span>}
                       </span>
                       {puedeEditar && (
-                        <>
+                        <div className="flex items-center gap-0.5 shrink-0">
                           <button
                             type="button"
                             onClick={() => toggleSinLote(c)}
@@ -231,7 +231,7 @@ function CategoriasModal({ onClose, onCambios }: Props) {
                               <Trash2 size={14} />
                             </button>
                           )}
-                        </>
+                        </div>
                       )}
                     </>
                   )}

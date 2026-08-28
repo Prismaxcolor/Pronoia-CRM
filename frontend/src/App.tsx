@@ -8,6 +8,7 @@ import { ConfirmProvider } from './hooks/use-confirm';
 import { PesajeBorradorProvider } from './hooks/use-pesaje-borrador';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import InstallPwaBanner from './components/InstallPwaBanner';
 import AuthPage from './features/auth/AuthPage';
 import PortalLoginPage from './features/portal/PortalLoginPage';
 import PortalVerificarPage from './features/portal/PortalVerificarPage';
@@ -131,6 +132,7 @@ function App() {
             <PortalAuthProvider>
               <PesajeBorradorProvider>
                 <AppRoutes />
+                <InstallPwaBanner />
               </PesajeBorradorProvider>
             </PortalAuthProvider>
           </AuthProvider>

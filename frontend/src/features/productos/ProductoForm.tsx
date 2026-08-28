@@ -236,7 +236,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
             <label className={labelClass}>Descripcion</label>
             <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Descripcion breve" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Categoría</label>
               <select

@@ -84,7 +84,7 @@ function FacturaHistorialPage({ tipo }: Props) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
           <p className="text-sm text-text-secondary mt-1">{subtitulo}</p>

@@ -74,7 +74,7 @@ function LotesPage() {
       </div>
 
       {puedeCrear && (
-        <form onSubmit={handleCrear} className="flex items-end gap-2 mb-5">
+        <form onSubmit={handleCrear} className="flex flex-col sm:flex-row sm:items-end gap-2 mb-5">
           <div className="flex-1">
             <label className="block text-xs font-medium text-text-secondary mb-1">Nuevo lote</label>
             <input
@@ -90,7 +90,7 @@ function LotesPage() {
             <select
               value={almacenId}
               onChange={e => setAlmacenId(e.target.value)}
-              className={inputClass}
+              className={`${inputClass} w-full sm:w-auto`}
             >
               {almacenes.map(a => (
                 <option key={a.id} value={a.id}>{a.nombre}</option>
@@ -100,7 +100,7 @@ function LotesPage() {
           <button
             type="submit"
             disabled={guardando || !nombre.trim() || !almacenId}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
           >
             {guardando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={18} />}
             Agregar
@@ -117,11 +117,11 @@ function LotesPage() {
       ) : (
         <div className="bg-surface rounded-xl border border-border overflow-hidden">
           {lotes.map(l => (
-            <div key={l.id} className="flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0">
+            <div key={l.id} className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-3.5 border-b border-border last:border-b-0">
               <div className="w-9 h-9 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
                 <Boxes size={16} />
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-[8rem]">
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-text-primary text-sm truncate">{l.nombre}</h3>
                   {!l.activo && (

@@ -99,7 +99,7 @@ function InventarioPage() {
         </p>
       </div>
 
-      <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
+      <div className="flex flex-wrap rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
         <button type="button" onClick={() => setPestana('inventario')} className={`px-4 py-1.5 ${pestana === 'inventario' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
           Inventario
         </button>
@@ -149,7 +149,7 @@ function InventarioPage() {
             Limpiar
           </button>
         )}
-        <div className="ml-auto">
+        <div className="w-full sm:w-auto sm:ml-auto">
           <label className="block text-xs font-medium text-text-secondary mb-1">Agrupar por</label>
           <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
             <button type="button" onClick={() => setAgrupacion('categoria')} className={`px-3 py-2 ${agrupacion === 'categoria' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>

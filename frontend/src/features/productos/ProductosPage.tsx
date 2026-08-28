@@ -137,9 +137,9 @@ function ProductosPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Productos</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {puedeEditar && (
             <button
               type="button"
@@ -229,7 +229,7 @@ function ProductosPage() {
             >
               {/* Acciones (top-right, hover) */}
               {(puedeEditar || puedeBorrar) && (
-                <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   {puedeEditar && (
                     <button
                       type="button"
