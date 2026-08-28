@@ -19,13 +19,13 @@ function extension(url: string): string {
   return limpio.split('.').pop()?.toLowerCase() ?? 'jpg';
 }
 
-function notificarComprobanteSiCorresponde(clienteId: string, comprobanteUrl: string): void {
+function notificarComprobanteSiCorresponde(clienteId: string, comprobanteUrl: string, indice: number): void {
   const ext = extension(comprobanteUrl);
   void notificarDocumento({
     entidadTipo: 'cliente',
     entidadId: clienteId,
     tipoDocumento: 'comprobante',
-    nombreArchivo: `comprobante-cobro.${ext}`,
+    nombreArchivo: `comprobante-cobro-${indice + 1}.${ext}`,
     contentType: MIME_POR_EXTENSION[ext] ?? 'application/octet-stream',
     generarBuffer: async () => {
       const resp = await fetch(comprobanteUrl);
@@ -35,16 +35,16 @@ function notificarComprobanteSiCorresponde(clienteId: string, comprobanteUrl: st
   });
 }
 
-async function adjuntarComprobante(movimientoId: string, clienteId: string, comprobanteUrl: string): Promise<void> {
+async function adjuntarComprobante(movimientoId: string, clienteId: string, comprobantes: string[]): Promise<void> {
   const { error } = await supabaseAdmin
     .from('movimientos')
-    .update({ comprobante_url: comprobanteUrl })
+    .update({ comprobantes })
     .eq('id', movimientoId);
 
   if (error) {
     logger.error({ evento: 'cobro_comprobante_no_guardado', mensaje: error.message, movimientoId });
   } else {
-    notificarComprobanteSiCorresponde(clienteId, comprobanteUrl);
+    comprobantes.forEach((url, indice) => notificarComprobanteSiCorresponde(clienteId, url, indice));
   }
 }
 
@@ -78,8 +78,8 @@ export async function registrarCobroMultiple(
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el cobro.' };
   const resultado = data as ResultadoCobroMulti;
 
-  if (input.comprobanteUrl) {
-    await adjuntarComprobante(resultado.movimientoPrincipalId, input.clienteId, input.comprobanteUrl);
+  if (input.comprobantes.length > 0) {
+    await adjuntarComprobante(resultado.movimientoPrincipalId, input.clienteId, input.comprobantes);
   }
 
   return resultado;

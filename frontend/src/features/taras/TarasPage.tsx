@@ -71,7 +71,7 @@ function TarasPage() {
           {taras.map(t => (
             <div key={t.id} className={`flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0 ${!t.activo ? 'opacity-60' : ''}`}>
               <div className="w-11 h-11 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0 overflow-hidden">
-                {t.foto ? <img src={t.foto} alt={t.nombre} className="w-full h-full object-cover" /> : <Weight size={18} />}
+                {t.fotos[0] ? <img src={t.fotos[0]} alt={t.nombre} className="w-full h-full object-cover" /> : <Weight size={18} />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

@@ -23,7 +23,11 @@ export const crearClienteSchema = z.object({
   telefono: opcionalTrim(40),
   direccion: opcionalTrim(300),
   notas: opcionalTrim(500),
-  fotoUrl: opcionalTrim(500),
+  // .optional() en vez de .default([]) a propósito: este schema alimenta
+  // actualizarClienteSchema (.partial()), donde un default siempre deja la
+  // clave presente en el resultado — rompe el refine "algún campo enviado" y
+  // borraría las fotos existentes en cualquier PATCH que no las reenvíe.
+  fotos: z.array(z.string().trim().max(500)).optional(),
 });
 
 export const actualizarClienteSchema = crearClienteSchema

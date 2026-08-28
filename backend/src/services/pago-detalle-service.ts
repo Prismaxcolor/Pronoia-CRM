@@ -33,7 +33,7 @@ interface MovimientoRow {
   descripcion: string | null;
   referencia: string | null;
   fecha: string;
-  comprobante_url: string | null;
+  comprobantes: string[] | null;
   registrado_por: string | null;
   banca_origen_id: string | null;
 }
@@ -63,7 +63,7 @@ export interface PagoDetalle {
   nombreEntidad: string;
   fecha: string;
   descripcion: string | null;
-  comprobanteUrl: string | null;
+  comprobantes: string[];
   registradoPor: string | null;
   bancas: BancaPagoDetalle[];
   totalUsd: number;
@@ -111,7 +111,7 @@ export async function obtenerPagoDetalle(
 
   const { data, error } = await supabaseAdmin
     .from('movimientos')
-    .select('id, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion, referencia, fecha, comprobante_url, registrado_por, banca_origen_id')
+    .select('id, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion, referencia, fecha, comprobantes, registrado_por, banca_origen_id')
     .eq(columnaEntidad, entidadId)
     .eq('tipo', tipoMov)
     .or(`grupo_id.eq.${grupoId},id.eq.${grupoId}`);
@@ -150,7 +150,7 @@ export async function obtenerPagoDetalle(
 
   const filaPago = propias.find(f => f.subtipo === 'pago' || f.subtipo === 'cobro') ?? null;
   const filaAdelanto = propias.find(f => f.subtipo === 'adelanto' || f.subtipo === 'anticipo') ?? null;
-  const filaComprobante = propias.find(f => f.comprobante_url) ?? null;
+  const filaComprobante = propias.find(f => f.comprobantes && f.comprobantes.length > 0) ?? null;
   const filaDescripcion = propias.find(f => f.descripcion) ?? propias[0];
 
   // Desglose por ítem (Bloque 49) — grupo_id ya viene validado contra esta
@@ -202,7 +202,7 @@ export async function obtenerPagoDetalle(
     nombreEntidad,
     fecha: propias[0].fecha.slice(0, 10),
     descripcion: filaDescripcion.descripcion,
-    comprobanteUrl: filaComprobante?.comprobante_url ?? null,
+    comprobantes: filaComprobante?.comprobantes ?? [],
     registradoPor: nombreRegistradoPor,
     bancas: propias.map(f => ({
       bancaId: f.banca_origen_id,

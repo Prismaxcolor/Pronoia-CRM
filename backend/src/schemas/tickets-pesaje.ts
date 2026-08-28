@@ -42,7 +42,7 @@ export const materialSchema = z
 export const pesajeGlobalSchema = z.object({
   peso: z.number().nonnegative('El peso no puede ser negativo.'),
   tara: z.number().nonnegative('La tara no puede ser negativa.').default(0),
-  foto: z.string().optional().nullable(),
+  fotos: z.array(z.string()).default([]),
 });
 
 export const crearTicketSchema = z
@@ -99,8 +99,8 @@ export const crearTicketSchema = z
     message: 'Agrega al menos una foto de la devolución.',
     path: ['fotosDevolucion'],
   })
-  .refine(d => d.pesajeExterior || d.pesajesGlobales.every(g => !!g.foto), {
-    message: 'Cada pesaje global necesita una foto.',
+  .refine(d => d.pesajeExterior || d.pesajesGlobales.every(g => g.fotos.length > 0), {
+    message: 'Cada pesaje global necesita al menos una foto.',
     path: ['pesajesGlobales'],
   });
 

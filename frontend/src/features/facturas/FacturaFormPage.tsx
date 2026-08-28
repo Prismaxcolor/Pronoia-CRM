@@ -13,7 +13,7 @@ import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import type { DestinoValor } from '../pesaje/material-fila';
 import type { Producto, TicketPesaje, ListaPrecios, Lote } from '@shared/types/index.js';
 
-interface Entidad { id: string; nombre: string; activo: boolean; fotoUrl: string | null }
+interface Entidad { id: string; nombre: string; activo: boolean; fotos: string[] }
 type ModoPeso = 'ticket' | 'manual';
 
 function hoyISO(): string {

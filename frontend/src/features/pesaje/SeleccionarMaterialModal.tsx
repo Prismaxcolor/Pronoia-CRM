@@ -96,8 +96,8 @@ function SeleccionarMaterialModal({ productos, onClose, onSeleccionar }: Props) 
                   className="text-left rounded-xl border border-border overflow-hidden hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all"
                 >
                   <div className="w-full aspect-square bg-brand-100 flex items-center justify-center text-brand-700">
-                    {p.imagenUrl ? (
-                      <img src={p.imagenUrl} alt={p.nombre} loading="lazy" className="w-full h-full object-cover" />
+                    {p.fotos[0] ? (
+                      <img src={p.fotos[0]} alt={p.nombre} loading="lazy" className="w-full h-full object-cover" />
                     ) : (
                       <Package size={28} />
                     )}

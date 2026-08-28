@@ -12,7 +12,7 @@ export interface ComprobantePublico {
   id: string;
   fecha: string;
   montoUsd: number;
-  comprobanteUrl: string;
+  comprobantes: string[];
 }
 
 export interface PortalDocumentos {
@@ -27,9 +27,9 @@ async function listarComprobantes(entidadTipo: EntidadTelegram, entidadId: strin
 
   const { data, error } = await supabaseAdmin
     .from('movimientos')
-    .select('id, fecha, monto_usd, comprobante_url, grupo_id')
+    .select('id, fecha, monto_usd, comprobantes, grupo_id')
     .eq('proveedor_id', entidadId)
-    .not('comprobante_url', 'is', null)
+    .not('comprobantes', 'eq', '[]')
     .order('fecha', { ascending: false });
 
   if (error || !data) return [];
@@ -55,7 +55,7 @@ async function listarComprobantes(entidadTipo: EntidadTelegram, entidadId: strin
     id: m.id,
     fecha: m.fecha,
     montoUsd: m.grupo_id ? (totalPorGrupo.get(m.grupo_id as string) ?? Number(m.monto_usd ?? 0)) : Number(m.monto_usd ?? 0),
-    comprobanteUrl: m.comprobante_url as string,
+    comprobantes: (m.comprobantes as string[] | null) ?? [],
   }));
 }
 

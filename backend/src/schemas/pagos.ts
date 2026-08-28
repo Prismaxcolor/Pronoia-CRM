@@ -22,8 +22,8 @@ export const registrarPagoSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   /** Factura a la que se aplica el pago. Si se omite, es un adelanto. */
   facturaId: z.string().uuid('Factura inválida.').optional().nullable(),
-  /** URL del comprobante ya subido vía POST /api/uploads/comprobantes. */
-  comprobanteUrl: z.string().url('Comprobante inválido.').optional().nullable(),
+  /** URLs de los comprobantes ya subidos vía POST /api/uploads/comprobantes. */
+  comprobantes: z.array(z.string().url('Comprobante inválido.')).default([]),
 });
 
 export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
@@ -60,7 +60,7 @@ export const registrarPagoMultipleSchema = z.object({
   referencia: textoOpcional(50),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   items: z.array(itemPagoMultipleSchema).default([]),
-  comprobanteUrl: z.string().url('Comprobante inválido.').optional().nullable(),
+  comprobantes: z.array(z.string().url('Comprobante inválido.')).default([]),
 }).superRefine((data, ctx) => {
   const sumaBancas = data.bancas.reduce((acc, b) => acc + b.montoUsd, 0);
   if (Math.abs(sumaBancas - data.montoUsd) > 0.02) {

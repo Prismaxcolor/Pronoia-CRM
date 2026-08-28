@@ -74,8 +74,8 @@ function SeleccionarTaraModal({ taras, taraSeleccionada, onClose, onSeleccionar 
                   className="text-left rounded-xl border border-border overflow-hidden hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all"
                 >
                   <div className="w-full aspect-square bg-brand-100 flex items-center justify-center text-brand-700">
-                    {t.foto ? (
-                      <img src={t.foto} alt={t.nombre} loading="lazy" className="w-full h-full object-cover" />
+                    {t.fotos[0] ? (
+                      <img src={t.fotos[0]} alt={t.nombre} loading="lazy" className="w-full h-full object-cover" />
                     ) : (
                       <Weight size={28} />
                     )}

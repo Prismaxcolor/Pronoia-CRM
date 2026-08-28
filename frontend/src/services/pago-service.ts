@@ -13,8 +13,8 @@ export interface RegistrarPagoInput {
   fecha: string;
   /** Factura a la que se aplica el pago. Si se omite, es un adelanto. */
   facturaId?: string | null;
-  /** URL del comprobante ya subido vía subirComprobantePago(). */
-  comprobanteUrl?: string | null;
+  /** URLs de los comprobantes ya subidos vía subirComprobantePago(). */
+  comprobantes?: string[];
 }
 
 export async function registrarPago(
@@ -58,7 +58,7 @@ export interface RegistrarPagoMultipleInput {
   referencia?: string | null;
   fecha: string;
   items: ItemPagoMultiple[];
-  comprobanteUrl?: string | null;
+  comprobantes?: string[];
 }
 
 export interface ResultadoPagoMultiple {

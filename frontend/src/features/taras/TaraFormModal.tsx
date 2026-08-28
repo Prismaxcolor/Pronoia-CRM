@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react';
-import { X, ImagePlus } from 'lucide-react';
+import { useState } from 'react';
+import { X } from 'lucide-react';
 import { crearTara, actualizarTara } from '../../services/tara-service';
 import { subirFotoTara } from '../../services/storage-service';
 import { useToast } from '../../hooks/use-toast-context';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import type { Tara } from '@shared/types/index.js';
 
 interface Props {
@@ -17,19 +19,13 @@ function TaraFormModal({ tara, onClose, onGuardado }: Props) {
 
   const [nombre, setNombre] = useState(tara?.nombre ?? '');
   const [peso, setPeso] = useState(tara?.peso ?? 0);
-  const [fotoFile, setFotoFile] = useState<File | null>(null);
-  const [fotoPreview, setFotoPreview] = useState<string | null>(tara?.foto ?? null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(tara?.fotos ?? []));
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFotoFile(file);
-    setFotoPreview(URL.createObjectURL(file));
-  };
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,20 +36,16 @@ function TaraFormModal({ tara, onClose, onGuardado }: Props) {
 
     setGuardando(true);
 
-    let foto: string | null = tara?.foto ?? null;
-    if (fotoFile) {
-      const subida = await subirFotoTara(fotoFile);
-      if (!subida) {
-        setError('Error al subir la foto. Intenta de nuevo.');
-        setGuardando(false);
-        return;
-      }
-      foto = subida;
+    const urls = await subirFotosLocal(fotos, subirFotoTara);
+    if (!urls) {
+      setError('Error al subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
 
     const result = editando && tara
-      ? await actualizarTara(tara.id, { nombre, peso, foto })
-      : await crearTara({ nombre, peso, foto });
+      ? await actualizarTara(tara.id, { nombre, peso, fotos: urls })
+      : await crearTara({ nombre, peso, fotos: urls });
 
     setGuardando(false);
 
@@ -76,23 +68,7 @@ function TaraFormModal({ tara, onClose, onGuardado }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className={labelClass}>Foto</label>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border rounded-xl p-4 cursor-pointer hover:border-brand-400 transition-colors flex flex-col items-center justify-center min-h-[100px]"
-            >
-              {fotoPreview ? (
-                <img src={fotoPreview} alt="Preview" className="max-h-24 object-contain rounded-lg" />
-              ) : (
-                <>
-                  <ImagePlus size={28} className="text-text-muted mb-2" />
-                  <p className="text-xs text-text-muted">Click para seleccionar foto</p>
-                </>
-              )}
-            </div>
-            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFotoChange} className="hidden" />
-          </div>
+          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
 
           <div>
             <label className={labelClass}>Nombre</label>

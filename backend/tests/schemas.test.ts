@@ -118,7 +118,7 @@ describe('completarTransformacionSchema', () => {
 });
 
 describe('crearTicketSchema', () => {
-  const material = { productoId: UUID2, pesoBruto: 100, tara: 10 };
+  const material = { productoId: UUID2, pesoBruto: 100, tara: 10, fotos: ['https://x.com/foto.jpg'] };
   const base = { entidadId: UUID, pesoGlobal: 90, materiales: [material] };
 
   it('aplica tipo "compra" y devolucion 0 por defecto', () => {
@@ -130,10 +130,10 @@ describe('crearTicketSchema', () => {
     }
   });
 
-  it('fotos de un material default a [] cuando no se mandan (Bloque 46)', () => {
-    const r = crearTicketSchema.safeParse(base);
-    expect(r.success).toBe(true);
-    if (r.success) expect(r.data.materiales[0].fotos).toEqual([]);
+  it('rechaza un material sin fotos (Bloque 46)', () => {
+    const { fotos: _fotos, ...sinFotos } = material;
+    const r = crearTicketSchema.safeParse({ ...base, materiales: [sinFotos] });
+    expect(r.success).toBe(false);
   });
 
   it('acepta fotos por material', () => {
@@ -159,7 +159,7 @@ describe('crearTicketSchema', () => {
   it('acepta varios materiales', () => {
     const r = crearTicketSchema.safeParse({
       ...base,
-      materiales: [material, { productoId: UUID, pesoBruto: 50, tara: 5 }],
+      materiales: [material, { productoId: UUID, pesoBruto: 50, tara: 5, fotos: ['https://x.com/otra.jpg'] }],
     });
     expect(r.success).toBe(true);
   });
@@ -192,7 +192,7 @@ describe('crearTicketSchema', () => {
 });
 
 describe('completarTicketSchema', () => {
-  const material = { productoId: UUID2, pesoBruto: 100, tara: 10 };
+  const material = { productoId: UUID2, pesoBruto: 100, tara: 10, fotos: ['https://x.com/foto.jpg'] };
 
   it('exige al menos un material', () => {
     const r = completarTicketSchema.safeParse({ materiales: [] });
@@ -252,9 +252,10 @@ describe('crearTaraSchema', () => {
     expect(crearTaraSchema.safeParse({ nombre: 'Camión 3 ejes', peso: 8500 }).success).toBe(true);
   });
 
-  it('foto es opcional pero debe ser una URL válida si se envía', () => {
-    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, foto: 'no-es-url' }).success).toBe(false);
-    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, foto: 'https://x.test/f.jpg' }).success).toBe(true);
+  it('fotos es opcional pero cada una debe ser una URL válida si se envía', () => {
+    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, fotos: ['no-es-url'] }).success).toBe(false);
+    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, fotos: ['https://x.test/f.jpg'] }).success).toBe(true);
+    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, fotos: ['https://x.test/f1.jpg', 'https://x.test/f2.jpg'] }).success).toBe(true);
   });
 });
 
@@ -302,18 +303,18 @@ describe('registrarPagoSchema', () => {
     expect(registrarPagoSchema.safeParse({ ...base, fecha: '08/07/2026' }).success).toBe(false);
   });
 
-  it('acepta un pago con comprobanteUrl', () => {
-    const r = registrarPagoSchema.safeParse({ ...base, comprobanteUrl: 'https://x.supabase.co/storage/v1/object/public/comprobantes/abc.jpg' });
+  it('acepta un pago con comprobantes', () => {
+    const r = registrarPagoSchema.safeParse({ ...base, comprobantes: ['https://x.supabase.co/storage/v1/object/public/comprobantes/abc.jpg'] });
     expect(r.success).toBe(true);
   });
 
-  it('acepta un pago sin comprobanteUrl (opcional)', () => {
+  it('acepta un pago sin comprobantes (opcional, default vacío)', () => {
     const r = registrarPagoSchema.safeParse(base);
-    expect(r.success && (r.data.comprobanteUrl ?? null)).toBeNull();
+    expect(r.success && r.data.comprobantes).toEqual([]);
   });
 
-  it('rechaza comprobanteUrl que no es una URL válida', () => {
-    expect(registrarPagoSchema.safeParse({ ...base, comprobanteUrl: 'no-es-una-url' }).success).toBe(false);
+  it('rechaza un comprobante que no es una URL válida', () => {
+    expect(registrarPagoSchema.safeParse({ ...base, comprobantes: ['no-es-una-url'] }).success).toBe(false);
   });
 });
 

@@ -21,7 +21,10 @@ export const crearProveedorSchema = z.object({
     .optional()
     .nullable()
     .transform(v => (v && v.length > 0 ? v : null)),
-  fotoUrl: opcionalTrim(500),
+  // .optional() en vez de .default([]) a propósito: ver nota en clientes.ts —
+  // con default, este schema (usado por actualizarProveedorSchema.partial())
+  // dejaría "fotos" siempre presente y borraría fotos existentes en PATCH.
+  fotos: z.array(z.string().trim().max(500)).optional(),
 });
 
 export const actualizarProveedorSchema = crearProveedorSchema

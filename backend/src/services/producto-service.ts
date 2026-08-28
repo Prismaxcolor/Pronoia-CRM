@@ -11,7 +11,7 @@ interface ProductoRow {
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagen_url: string | null;
+  fotos: string[] | null;
   creado_por: string | null;
   creado_en: string;
   peso: number | null;
@@ -31,7 +31,7 @@ export interface ProductoPublico {
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagenUrl: string | null;
+  fotos: string[];
   creadoPor: string;
   creadoEn: string;
   peso?: number;
@@ -50,7 +50,7 @@ function toPublico(row: ProductoRow): ProductoPublico {
     moneda: row.moneda,
     activo: row.activo,
     tipo: row.tipo,
-    imagenUrl: row.imagen_url,
+    fotos: row.fotos ?? [],
     creadoPor: row.creado_por ?? '',
     creadoEn: row.creado_en,
   };
@@ -71,7 +71,7 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
     moneda: input.moneda,
     activo: input.activo,
     tipo: input.tipo,
-    imagen_url: input.imagenUrl ?? null,
+    fotos: input.fotos ?? [],
   };
   if (creadoPor !== undefined) row.creado_por = creadoPor;
 

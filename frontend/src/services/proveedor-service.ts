@@ -9,7 +9,7 @@ interface ProveedorApi {
   email: string | null;
   activo: boolean;
   createdAt: string;
-  fotoUrl: string | null;
+  fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
 }
@@ -23,7 +23,7 @@ export interface ProveedorInput {
   rfc?: string | null;
   telefono?: string | null;
   email?: string | null;
-  fotoUrl?: string | null;
+  fotos?: string[];
 }
 
 export async function obtenerProveedores(): Promise<Proveedor[]> {

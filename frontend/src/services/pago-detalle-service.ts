@@ -25,7 +25,7 @@ export interface PagoDetalle {
   nombreEntidad: string;
   fecha: string;
   descripcion: string | null;
-  comprobanteUrl: string | null;
+  comprobantes: string[];
   registradoPor: string | null;
   bancas: BancaPagoDetalle[];
   totalUsd: number;

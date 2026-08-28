@@ -137,16 +137,25 @@ function PortalDocumentosPage() {
           <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
             {datos?.comprobantes.length ? (
               datos.comprobantes.map(c => (
-                <a
-                  key={c.id}
-                  href={c.comprobanteUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between p-4 hover:bg-surface-alt transition-colors"
-                >
-                  <p className="text-xs text-text-muted">{fecha(c.fecha)}</p>
-                  <p className="text-sm font-semibold text-text-primary">${fmt(c.montoUsd)}</p>
-                </a>
+                <div key={c.id} className="flex items-center justify-between gap-3 p-4">
+                  <div>
+                    <p className="text-xs text-text-muted">{fecha(c.fecha)}</p>
+                    <p className="text-sm font-semibold text-text-primary">${fmt(c.montoUsd)}</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    {c.comprobantes.map((url, idx) => (
+                      <a
+                        key={idx}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-brand-400 transition-colors"
+                      >
+                        <img src={url} alt={`Comprobante ${idx + 1}`} className="w-full h-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
               ))
             ) : (
               <EstadoVacio texto="Todavía no tienes comprobantes de pago." />

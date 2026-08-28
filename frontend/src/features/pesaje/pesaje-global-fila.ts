@@ -1,20 +1,21 @@
 import { subirFotoTicket } from '../../services/storage-service';
+import { subirFotosLocal } from '../../lib/foto-picker';
 import type { FotoMaterial } from './material-fila';
 
 /** Una pesada individual dentro del formulario "Nuevo pesaje" — el camión
  *  puede pasar varias veces por la báscula, cada una con su propia tara y
- *  una foto. El peso global final es la suma de (peso - tara) de todas. */
+ *  sus fotos. El peso global final es la suma de (peso - tara) de todas. */
 export interface PesajeGlobalFila {
   uid: number;
   peso: string;
   tara: string;
-  foto: FotoMaterial | null;
+  fotos: FotoMaterial[];
 }
 
 let UID = 0;
 
 export function pesajeGlobalVacio(): PesajeGlobalFila {
-  return { uid: UID++, peso: '', tara: '', foto: null };
+  return { uid: UID++, peso: '', tara: '', fotos: [] };
 }
 
 export function netoPesajeGlobalFila(f: PesajeGlobalFila): number {
@@ -25,12 +26,8 @@ export function sumaPesajesGlobales(fs: PesajeGlobalFila[]): number {
   return fs.reduce((acc, f) => acc + netoPesajeGlobalFila(f), 0);
 }
 
-/** Sube la foto de una fila (si es nueva) y devuelve su URL final. `null`
- *  significa que la fila no tiene foto (no es un error); `undefined`
- *  significa que la subida falló — el caller decide qué mensaje mostrar. */
-export async function subirFotoPesajeGlobal(f: PesajeGlobalFila): Promise<string | null | undefined> {
-  if (!f.foto) return null;
-  if (f.foto.tipo === 'existente') return f.foto.url;
-  const url = await subirFotoTicket(f.foto.file);
-  return url ?? undefined;
+/** Sube las fotos nuevas de una fila y devuelve el arreglo final de URLs.
+ *  Null si alguna subida falla — el caller decide qué mensaje mostrar. */
+export function subirFotosPesajeGlobal(f: PesajeGlobalFila): Promise<string[] | null> {
+  return subirFotosLocal(f.fotos, subirFotoTicket);
 }

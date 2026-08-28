@@ -15,8 +15,8 @@ export interface Cliente {
   activo: boolean;
   creadoPor: string;
   creadoEn: string;
-  /** URL pública de la foto del cliente (bucket "clientes" en Storage). */
-  fotoUrl: string | null;
+  /** URLs públicas de las fotos del cliente (bucket "clientes" en Storage). */
+  fotos: string[];
   /** chat_id de Telegram una vez vinculado (ver integración Telegram). */
   telegramChatId: string | null;
   /** ISO timestamp de cuándo se vinculó, null si nunca se vinculó. */

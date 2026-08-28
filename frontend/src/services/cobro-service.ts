@@ -14,7 +14,7 @@ export interface RegistrarCobroMultipleInput {
   referencia?: string | null;
   fecha: string;
   items: ItemPagoMultiple[];
-  comprobanteUrl?: string | null;
+  comprobantes?: string[];
 }
 
 export interface ResultadoCobroMultiple {

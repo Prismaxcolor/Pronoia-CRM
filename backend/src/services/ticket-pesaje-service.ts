@@ -33,7 +33,7 @@ interface PesajeGlobalRow {
   orden: number;
   peso: number;
   tara: number;
-  foto: string | null;
+  fotos: string[] | null;
 }
 
 interface TicketRow {
@@ -77,7 +77,7 @@ export interface PesajeGlobalPublico {
   id: string;
   peso: number;
   tara: number;
-  foto: string | null;
+  fotos: string[];
 }
 
 export interface TicketPublico {
@@ -155,7 +155,7 @@ function toPublico(row: TicketRow): TicketPublico {
     pesajesGlobales: (row.pesajes_globales ?? [])
       .slice()
       .sort((a, b) => a.orden - b.orden)
-      .map(p => ({ id: p.id, peso: Number(p.peso), tara: Number(p.tara), foto: p.foto })),
+      .map(p => ({ id: p.id, peso: Number(p.peso), tara: Number(p.tara), fotos: p.fotos ?? [] })),
     pesajeExterior: row.pesaje_exterior ?? false,
     devolucion,
     fotosDevolucion: row.fotos_devolucion ?? [],
@@ -221,7 +221,7 @@ function notificarTicketSiCorresponde(ticket: TicketPublico): void {
 }
 
 function pesajesGlobalesARpc(pesajes: PesajeGlobalInput[]) {
-  return pesajes.map(p => ({ peso: p.peso, tara: p.tara, foto: p.foto ?? null }));
+  return pesajes.map(p => ({ peso: p.peso, tara: p.tara, fotos: p.fotos }));
 }
 
 function materialesARpc(materiales: CrearTicketInput['materiales']) {

@@ -1,10 +1,12 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { X, Plus, Trash2, ImagePlus } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, Plus, Trash2 } from 'lucide-react';
 import { crearProducto, actualizarProducto, obtenerProductos } from '../../services/producto-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { subirImagenProducto } from '../../services/storage-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial } from '@shared/types/index.js';
 
 interface Props {
@@ -42,10 +44,8 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Imagen
-  const [imagenFile, setImagenFile] = useState<File | null>(null);
-  const [imagenPreview, setImagenPreview] = useState<string | null>(producto?.imagenUrl ?? null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Fotos
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(producto?.fotos ?? []));
 
   // Amarillo
   const initialAmarillo = producto?.tipo === 'amarillo' ? producto : null;
@@ -76,12 +76,8 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     [catalogo, producto?.id]
   );
 
-  const handleImagenChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImagenFile(file);
-    setImagenPreview(URL.createObjectURL(file));
-  };
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const addVariante = () => setVariantes([...variantes, { id: crypto.randomUUID(), nombre: '', cantidad: 0, precioUnitario: 0 }]);
   const removeVariante = (idx: number) => setVariantes(variantes.filter((_, i) => i !== idx));
@@ -115,15 +111,11 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     setGuardando(true);
     setError(null);
 
-    let imagenUrl: string | null = producto?.imagenUrl ?? null;
-    if (imagenFile) {
-      const subida = await subirImagenProducto(imagenFile);
-      if (!subida) {
-        setError('Error al subir la imagen. Intenta de nuevo.');
-        setGuardando(false);
-        return;
-      }
-      imagenUrl = subida;
+    const urls = await subirFotosLocal(fotos, subirImagenProducto);
+    if (!urls) {
+      setError('Error al subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
 
     if (!tipoMaterialId) {
@@ -132,7 +124,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       return;
     }
 
-    const base = { nombre, descripcion, tipoMaterialId, moneda, activo, imagenUrl };
+    const base = { nombre, descripcion, tipoMaterialId, moneda, activo, fotos: urls };
 
     let payload;
     if (tipo === 'amarillo') {
@@ -201,33 +193,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
         )}
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className={labelClass}>Imagen del producto</label>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border rounded-xl p-4 cursor-pointer hover:border-brand-400 transition-colors flex flex-col items-center justify-center min-h-[120px]"
-            >
-              {imagenPreview ? (
-                <img src={imagenPreview} alt="Preview" className="max-h-28 object-contain rounded-lg" />
-              ) : (
-                <>
-                  <ImagePlus size={32} className="text-text-muted mb-2" />
-                  <p className="text-xs text-text-muted">Click para seleccionar imagen</p>
-                </>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handleImagenChange}
-              className="hidden"
-            />
-            {imagenFile && (
-              <p className="text-xs text-text-secondary mt-1">{imagenFile.name}</p>
-            )}
-          </div>
+          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos del producto" />
 
           <div>
             <label className={labelClass}>Nombre</label>

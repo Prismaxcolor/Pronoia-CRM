@@ -24,7 +24,7 @@ export const registrarCobroMultipleSchema = z.object({
     .transform(v => (v && v.length > 0 ? v : null)),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   items: z.array(itemPagoMultipleSchema).default([]),
-  comprobanteUrl: z.string().url('Comprobante inválido.').optional().nullable(),
+  comprobantes: z.array(z.string().url('Comprobante inválido.')).default([]),
 }).superRefine((data, ctx) => {
   const sumaBancas = data.bancas.reduce((acc, b) => acc + b.montoUsd, 0);
   if (Math.abs(sumaBancas - data.montoUsd) > 0.02) {

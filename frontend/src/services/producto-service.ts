@@ -17,7 +17,7 @@ interface ProductoApi {
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagenUrl: string | null;
+  fotos: string[];
   creadoPor: string;
   creadoEn: string;
   peso?: number;
@@ -35,7 +35,7 @@ function mapApi(api: ProductoApi): Producto {
     tipoMaterialSinLote: api.tipoMaterialSinLote,
     moneda: api.moneda,
     activo: api.activo,
-    imagenUrl: api.imagenUrl,
+    fotos: api.fotos,
     creadoPor: api.creadoPor,
     creadoEn: api.creadoEn,
   };

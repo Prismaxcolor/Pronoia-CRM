@@ -34,13 +34,13 @@ export interface TicketPesajeMaterial {
 }
 
 /** Una pesada individual que compone el peso global — el camión puede pasar
- *  varias veces por la báscula, cada una con su propia tara y foto. Solo se
- *  carga al crear el ticket, no se edita después (como el peso global mismo). */
+ *  varias veces por la báscula, cada una con sus propias tara y fotos. Solo
+ *  se carga al crear el ticket, no se edita después (como el peso global). */
 export interface PesajeGlobal {
   id: string;
   peso: number;
   tara: number;
-  foto: string | null;
+  fotos: string[];
 }
 
 /**

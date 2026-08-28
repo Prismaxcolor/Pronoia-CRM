@@ -20,7 +20,7 @@ import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
-import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotoPesajeGlobal } from './pesaje-global-fila';
+import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario } from '@shared/types/index.js';
 
@@ -202,7 +202,7 @@ function PesajePage() {
       if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
       if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
       if (Number(devolucion) > 0 && fotosDevolucion.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
-      if (!pesajeExterior && pesajesGlobales.some(g => !g.foto)) { setError('Cada pesaje global necesita una foto.'); return; }
+      if (!pesajeExterior && pesajesGlobales.some(g => g.fotos.length === 0)) { setError('Cada pesaje global necesita al menos una foto.'); return; }
       if (diferenciaFavoreceProveedor(diferencia, pesajeExterior)) {
         setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
         return;
@@ -237,20 +237,20 @@ function PesajePage() {
       urlsDevolucion = urls;
     }
 
-    const pesajesGlobalesPayload: Array<{ peso: number; tara?: number; foto?: string | null }> = [];
+    const pesajesGlobalesPayload: Array<{ peso: number; tara?: number; fotos?: string[] }> = [];
     if (!pesajeExterior) {
       for (const f of pesajesGlobales) {
-        let fotoUrl: string | null = null;
-        if (estado !== 'bruto' && f.foto) {
-          const uploaded = await subirFotoPesajeGlobal(f);
-          if (uploaded === undefined) {
+        let fotosUrls: string[] = [];
+        if (estado !== 'bruto' && f.fotos.length > 0) {
+          const uploaded = await subirFotosPesajeGlobal(f);
+          if (!uploaded) {
             setError('No se pudo subir una foto del pesaje global. Revisa que el bucket "tickets" exista en Supabase Storage.');
             setGuardando(false);
             return;
           }
-          fotoUrl = uploaded;
+          fotosUrls = uploaded;
         }
-        pesajesGlobalesPayload.push({ peso: Number(f.peso) || 0, tara: Number(f.tara) || 0, foto: fotoUrl });
+        pesajesGlobalesPayload.push({ peso: Number(f.peso) || 0, tara: Number(f.tara) || 0, fotos: fotosUrls });
       }
     }
 
@@ -527,17 +527,19 @@ function PesajePage() {
                           <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                         </div>
                         <FotoMaterialPicker
-                          label="Foto del pesaje"
-                          fotos={f.foto ? [f.foto] : []}
+                          label="Fotos del pesaje"
+                          fotos={f.fotos}
                           onAgregar={files => {
-                            if (!files[0]) return;
-                            const file = files[0];
+                            const nuevas = files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }));
                             setPesajesGlobales(prev => prev.map(p => p.uid === f.uid
-                              ? { ...p, foto: { tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) } }
+                              ? { ...p, fotos: [...p.fotos, ...nuevas] }
                               : p
                             ));
                           }}
-                          onQuitar={() => setPesajesGlobales(prev => prev.map(p => p.uid === f.uid ? { ...p, foto: null } : p))}
+                          onQuitar={idx => setPesajesGlobales(prev => prev.map(p => p.uid === f.uid
+                            ? { ...p, fotos: p.fotos.filter((_, i) => i !== idx) }
+                            : p
+                          ))}
                         />
                       </div>
                     );

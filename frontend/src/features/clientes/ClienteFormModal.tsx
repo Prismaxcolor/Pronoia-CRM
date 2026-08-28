@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react';
-import { X, ImagePlus } from 'lucide-react';
+import { useState } from 'react';
+import { X } from 'lucide-react';
 import { crearCliente, actualizarCliente } from '../../services/cliente-service';
 import { subirFotoCliente } from '../../services/storage-service';
 import { useToast } from '../../hooks/use-toast-context';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import type { Cliente } from '@shared/types/index.js';
 
 interface Props {
@@ -22,33 +24,23 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
   const [telefono, setTelefono] = useState(cliente?.telefono ?? '');
   const [direccion, setDireccion] = useState(cliente?.direccion ?? '');
   const [notas, setNotas] = useState(cliente?.notas ?? '');
-  const [fotoFile, setFotoFile] = useState<File | null>(null);
-  const [fotoPreview, setFotoPreview] = useState<string | null>(cliente?.fotoUrl ?? null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(cliente?.fotos ?? []));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFotoFile(file);
-    setFotoPreview(URL.createObjectURL(file));
-  };
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGuardando(true);
     setError(null);
 
-    let fotoUrl: string | null = cliente?.fotoUrl ?? null;
-    if (fotoFile) {
-      const subida = await subirFotoCliente(fotoFile);
-      if (!subida) {
-        setError('Error al subir la foto. Intenta de nuevo.');
-        setGuardando(false);
-        return;
-      }
-      fotoUrl = subida;
+    const urls = await subirFotosLocal(fotos, subirFotoCliente);
+    if (!urls) {
+      setError('Error al subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
 
     const payload = {
@@ -58,7 +50,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
       telefono: telefono.trim() || null,
       direccion: direccion.trim() || null,
       notas: notas.trim() || null,
-      fotoUrl,
+      fotos: urls,
     };
 
     const result = editando && cliente
@@ -91,23 +83,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className={labelClass}>Foto</label>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border rounded-xl p-4 cursor-pointer hover:border-brand-400 transition-colors flex flex-col items-center justify-center min-h-[100px]"
-            >
-              {fotoPreview ? (
-                <img src={fotoPreview} alt="Preview" className="max-h-24 object-contain rounded-lg" />
-              ) : (
-                <>
-                  <ImagePlus size={28} className="text-text-muted mb-1.5" />
-                  <p className="text-xs text-text-muted">Click para seleccionar una foto</p>
-                </>
-              )}
-            </div>
-            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFotoChange} className="hidden" />
-          </div>
+          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
 
           <div>
             <label className={labelClass}>Nombre *</label>

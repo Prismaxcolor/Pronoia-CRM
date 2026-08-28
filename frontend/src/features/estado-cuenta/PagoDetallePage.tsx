@@ -145,12 +145,18 @@ function PagoDetallePage({ tipoEntidad }: Props) {
         </div>
       </div>
 
-      {pago.comprobanteUrl && (
+      {pago.comprobantes.length > 0 && (
         <div className="mb-6">
-          <p className="text-xs font-medium text-text-secondary mb-2">Comprobante adjunto</p>
-          <a href={pago.comprobanteUrl} target="_blank" rel="noreferrer">
-            <img src={pago.comprobanteUrl} alt="Comprobante" className="max-w-full rounded-lg border border-border" />
-          </a>
+          <p className="text-xs font-medium text-text-secondary mb-2">
+            {pago.comprobantes.length === 1 ? 'Comprobante adjunto' : 'Comprobantes adjuntos'}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {pago.comprobantes.map((url, idx) => (
+              <a key={idx} href={url} target="_blank" rel="noreferrer">
+                <img src={url} alt={`Comprobante ${idx + 1}`} className="max-w-full max-h-64 rounded-lg border border-border" />
+              </a>
+            ))}
+          </div>
         </div>
       )}
     </div>

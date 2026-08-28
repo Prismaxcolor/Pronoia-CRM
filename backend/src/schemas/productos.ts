@@ -6,7 +6,7 @@ const baseSchema = z.object({
   tipoMaterialId: z.string().uuid('Debes elegir una categoría de material.'),
   moneda: z.enum(['USD', 'VES']),
   activo: z.boolean().default(true),
-  imagenUrl: z.string().url('URL de imagen inválida.').nullable().optional(),
+  fotos: z.array(z.string().url('URL de imagen inválida.')).default([]),
 });
 
 const varianteSchema = z.object({

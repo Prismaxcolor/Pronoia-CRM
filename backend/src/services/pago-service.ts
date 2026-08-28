@@ -15,16 +15,16 @@ function extension(url: string): string {
   return limpio.split('.').pop()?.toLowerCase() ?? 'jpg';
 }
 
-/** Dispara el envío del comprobante por Telegram (fire-and-forget). El archivo ya
+/** Dispara el envío de un comprobante por Telegram (fire-and-forget). El archivo ya
  *  está subido al bucket público `comprobantes` — acá se re-descarga para mandarlo
  *  por el mismo canal privado (documentos-telegram) que ya usan ticket/factura. */
-function notificarComprobanteSiCorresponde(proveedorId: string, comprobanteUrl: string): void {
+function notificarComprobanteSiCorresponde(proveedorId: string, comprobanteUrl: string, indice: number): void {
   const ext = extension(comprobanteUrl);
   void notificarDocumento({
     entidadTipo: 'proveedor',
     entidadId: proveedorId,
     tipoDocumento: 'comprobante',
-    nombreArchivo: `comprobante-pago.${ext}`,
+    nombreArchivo: `comprobante-pago-${indice + 1}.${ext}`,
     contentType: MIME_POR_EXTENSION[ext] ?? 'application/octet-stream',
     generarBuffer: async () => {
       const resp = await fetch(comprobanteUrl);
@@ -34,20 +34,20 @@ function notificarComprobanteSiCorresponde(proveedorId: string, comprobanteUrl: 
   });
 }
 
-/** Adjunta el comprobante ya subido al movimiento y notifica por Telegram. El
- *  pago ya quedó registrado antes de llamar esto — si guardar el comprobante
- *  falla, no se deshace el pago, solo se loguea. La plata ya se movió, es lo
- *  que importa. */
-async function adjuntarComprobante(movimientoId: string, proveedorId: string, comprobanteUrl: string): Promise<void> {
+/** Adjunta los comprobantes ya subidos al movimiento y notifica cada uno por
+ *  Telegram. El pago ya quedó registrado antes de llamar esto — si guardar
+ *  los comprobantes falla, no se deshace el pago, solo se loguea. La plata
+ *  ya se movió, es lo que importa. */
+async function adjuntarComprobante(movimientoId: string, proveedorId: string, comprobantes: string[]): Promise<void> {
   const { error } = await supabaseAdmin
     .from('movimientos')
-    .update({ comprobante_url: comprobanteUrl })
+    .update({ comprobantes })
     .eq('id', movimientoId);
 
   if (error) {
     logger.error({ evento: 'pago_comprobante_no_guardado', mensaje: error.message, movimientoId });
   } else {
-    notificarComprobanteSiCorresponde(proveedorId, comprobanteUrl);
+    comprobantes.forEach((url, indice) => notificarComprobanteSiCorresponde(proveedorId, url, indice));
   }
 }
 
@@ -71,7 +71,7 @@ export async function registrarPago(
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
   const movimientoId = data as string;
 
-  if (input.comprobanteUrl) await adjuntarComprobante(movimientoId, input.proveedorId, input.comprobanteUrl);
+  if (input.comprobantes.length > 0) await adjuntarComprobante(movimientoId, input.proveedorId, input.comprobantes);
 
   return { movimientoId };
 }
@@ -106,8 +106,8 @@ export async function registrarPagoMultiple(
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
   const resultado = data as ResultadoPagoMulti;
 
-  if (input.comprobanteUrl) {
-    await adjuntarComprobante(resultado.movimientoPrincipalId, input.proveedorId, input.comprobanteUrl);
+  if (input.comprobantes.length > 0) {
+    await adjuntarComprobante(resultado.movimientoPrincipalId, input.proveedorId, input.comprobantes);
   }
 
   return resultado;

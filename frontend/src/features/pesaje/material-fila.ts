@@ -1,5 +1,6 @@
 import type { Producto, Tara } from '@shared/types/index.js';
 import { subirFotoTicket } from '../../services/storage-service';
+import { previewFotoLocal, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 
 /** Valor del selector de destino: el id de un lote real, o '' si el
  *  usuario todavía no eligió nada (sin preselección por defecto). */
@@ -10,14 +11,10 @@ export type TaraModo = 'preconfigurada' | 'manual';
 
 /** Una foto ya subida (viene de un ticket existente, tiene URL) o recién
  *  elegida en este formulario (todavía solo en el navegador, sin subir). */
-export type FotoMaterial =
-  | { tipo: 'existente'; url: string }
-  | { tipo: 'nueva'; file: File; preview: string };
+export type FotoMaterial = FotoLocal;
 
 /** URL para mostrar la miniatura, sea una foto ya subida o recién elegida. */
-export function previewFoto(f: FotoMaterial): string {
-  return f.tipo === 'existente' ? f.url : f.preview;
-}
+export const previewFoto = previewFotoLocal;
 
 /** Una fila de material en los formularios de pesaje (valores como string para los inputs). */
 export interface MaterialFila {
@@ -57,15 +54,8 @@ export function filaVacia(): MaterialFila {
 /** Sube las fotos nuevas de una fila (las que ya tenían URL quedan igual) y
  *  devuelve el arreglo final de URLs a mandar al backend. Null si alguna
  *  subida falla — el caller decide qué mensaje de error mostrar. */
-export async function subirFotosFila(fotos: FotoMaterial[]): Promise<string[] | null> {
-  const urls: string[] = [];
-  for (const f of fotos) {
-    if (f.tipo === 'existente') { urls.push(f.url); continue; }
-    const url = await subirFotoTicket(f.file);
-    if (!url) return null;
-    urls.push(url);
-  }
-  return urls;
+export function subirFotosFila(fotos: FotoMaterial[]): Promise<string[] | null> {
+  return subirFotosLocal(fotos, subirFotoTicket);
 }
 
 /** Los 4 campos que describen cómo se captura la tara de una fila —

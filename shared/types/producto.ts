@@ -24,7 +24,7 @@ export interface ProductoBase {
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagenUrl: string | null;
+  fotos: string[];
   /** Categoría de material (FK a tipos_material). null si aún no asignada. */
   tipoMaterialId: string | null;
   /** Nombre de la categoría, resuelto vía join. Solo lectura (no se envía). */

@@ -9,7 +9,7 @@ interface ProveedorRow {
   email: string | null;
   activo: boolean;
   created_at: string;
-  foto_url: string | null;
+  fotos: string[] | null;
   telegram_chat_id: string | null;
   telegram_linked_at: string | null;
 }
@@ -22,7 +22,7 @@ export interface ProveedorPublico {
   email: string | null;
   activo: boolean;
   createdAt: string;
-  fotoUrl: string | null;
+  fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
 }
@@ -36,7 +36,7 @@ function toPublico(row: ProveedorRow): ProveedorPublico {
     email: row.email,
     activo: row.activo,
     createdAt: row.created_at,
-    fotoUrl: row.foto_url,
+    fotos: row.fotos ?? [],
     telegramChatId: row.telegram_chat_id,
     telegramLinkedAt: row.telegram_linked_at,
   };
@@ -62,7 +62,7 @@ export async function crearProveedor(
       rfc: input.rfc,
       telefono: input.telefono,
       email: input.email,
-      foto_url: input.fotoUrl ?? null,
+      fotos: input.fotos ?? [],
     })
     .select('*')
     .single();
@@ -80,7 +80,7 @@ export async function actualizarProveedor(
   if (cambios.rfc !== undefined) update.rfc = cambios.rfc;
   if (cambios.telefono !== undefined) update.telefono = cambios.telefono;
   if (cambios.email !== undefined) update.email = cambios.email;
-  if (cambios.fotoUrl !== undefined) update.foto_url = cambios.fotoUrl;
+  if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
 
   const { data, error } = await supabaseAdmin

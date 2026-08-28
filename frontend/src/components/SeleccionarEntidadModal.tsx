@@ -4,7 +4,7 @@ import { X, User, Search } from 'lucide-react';
 interface EntidadConFoto {
   id: string;
   nombre: string;
-  fotoUrl?: string | null;
+  fotos?: string[];
 }
 
 interface Props<T extends EntidadConFoto> {
@@ -15,7 +15,7 @@ interface Props<T extends EntidadConFoto> {
 }
 
 /** Selector visual con foto: mismo patrón que SeleccionarMaterialModal de
- *  Pesaje, generalizado a cualquier entidad con {id, nombre, fotoUrl}
+ *  Pesaje, generalizado a cualquier entidad con {id, nombre, fotos}
  *  (cliente, proveedor). No reemplaza el <select>, conviven ambos. */
 function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar }: Props<T>) {
   const [busqueda, setBusqueda] = useState('');
@@ -61,8 +61,8 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
                   className="text-left rounded-xl border border-border overflow-hidden hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all"
                 >
                   <div className="w-full aspect-square bg-brand-100 flex items-center justify-center text-brand-700">
-                    {e.fotoUrl ? (
-                      <img src={e.fotoUrl} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
+                    {e.fotos?.[0] ? (
+                      <img src={e.fotos[0]} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
                     ) : (
                       <User size={28} />
                     )}
