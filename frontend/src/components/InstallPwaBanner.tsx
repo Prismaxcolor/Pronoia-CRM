@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Download, X, Share } from 'lucide-react';
 
-const DISMISS_KEY = 'pronoia:pwa-banner-descartado';
+// v2: clave nueva a propósito — cualquier "descartado" guardado con la
+// clave vieja (de pruebas previas) queda sin efecto, el banner puede
+// volver a evaluarse en vez de quedar suprimido para siempre sin aviso.
+const DISMISS_KEY = 'pronoia:pwa-banner-descartado-v2';
+const DIAS_SNOOZE = 7;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -18,6 +22,20 @@ function esIOS(): boolean {
   return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 }
 
+/** true si el usuario cerró el banner hace menos de DIAS_SNOOZE — pasado
+ *  ese tiempo vuelve a evaluarse (no queda suprimido para siempre por un
+ *  cierre accidental o una prueba vieja). */
+function fueDescartadoRecientemente(): boolean {
+  try {
+    const guardado = localStorage.getItem(DISMISS_KEY);
+    if (!guardado) return false;
+    const dias = (Date.now() - Number(guardado)) / (1000 * 60 * 60 * 24);
+    return dias < DIAS_SNOOZE;
+  } catch {
+    return false;
+  }
+}
+
 /** Banner de instalación de la PWA — captura el evento nativo de Chrome/Android
  *  para poder disparar el prompt desde un botón propio (el navegador no lo
  *  muestra solo salvo por el ícono chico de la barra de direcciones). iOS
@@ -28,7 +46,7 @@ function InstallPwaBanner() {
   const [ios] = useState(esIOS);
 
   useEffect(() => {
-    if (estaInstalada() || localStorage.getItem(DISMISS_KEY)) return;
+    if (estaInstalada() || fueDescartadoRecientemente()) return;
 
     if (ios) {
       setVisible(true);
@@ -54,7 +72,7 @@ function InstallPwaBanner() {
   const descartar = () => {
     setVisible(false);
     try {
-      localStorage.setItem(DISMISS_KEY, '1');
+      localStorage.setItem(DISMISS_KEY, String(Date.now()));
     } catch {
       // localStorage puede fallar (modo privado) — no crítico, el banner solo vuelve a aparecer.
     }

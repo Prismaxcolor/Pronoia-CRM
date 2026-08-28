@@ -151,7 +151,7 @@ function Sidebar({ abierto, onCerrar }: Props) {
         />
       )}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-40 w-64 bg-brand-900 text-white flex flex-col h-screen print:hidden
+        className={`fixed md:static inset-y-0 left-0 z-40 w-64 bg-brand-900 text-white flex flex-col h-dvh print:hidden
           transform transition-transform duration-200 ease-in-out
           ${abierto ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
       >
@@ -173,7 +173,7 @@ function Sidebar({ abierto, onCerrar }: Props) {
       </div>
 
       {/* Navegacion */}
-      <nav className="flex-1 py-4 overflow-y-auto scrollbar-none">
+      <nav className="flex-1 py-4 overflow-y-auto overscroll-y-contain scrollbar-none">
         {seccionesVisibles.map((sec, idx) => (
           <div key={sec.header ?? `sec-${idx}`} className={idx > 0 ? 'mt-3' : ''}>
             {sec.header && (

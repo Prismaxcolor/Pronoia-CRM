@@ -17,6 +17,7 @@ export default defineConfig({
         name: 'Pronoia — Sistema de compras',
         short_name: 'Pronoia',
         description: 'Pesaje, inventario, facturación y tesorería de Pronoia Scrap.',
+        lang: 'es',
         start_url: '/',
         scope: '/',
         display: 'standalone',

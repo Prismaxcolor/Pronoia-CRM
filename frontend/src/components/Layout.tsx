@@ -24,7 +24,11 @@ function Layout() {
   }, [pathname]);
 
   return (
-    <div className="flex h-screen bg-surface-alt print:block print:h-auto print:bg-white">
+    // h-dvh (viewport dinámico), no h-screen (100vh fijo) — en mobile, 100vh
+    // no se ajusta cuando la barra de direcciones del navegador aparece o
+    // desaparece, y deja una franja sin poder scrollear antes de llegar al
+    // borde real del contenido (se siente como "topar con una pared").
+    <div className="flex h-dvh bg-surface-alt print:block print:h-auto print:bg-white">
       <Sidebar abierto={menuAbierto} onCerrar={() => setMenuAbierto(false)} />
       <div className="flex-1 flex flex-col min-w-0">
         {/* Barra superior solo en mobile — el sidebar normal ya cumple esta función en desktop.
@@ -42,7 +46,9 @@ function Layout() {
           <img src="/logo-pronoia.png" alt="Pronoia" className="w-6 h-6" />
           <span className="font-semibold text-white">Pronoia</span>
         </header>
-        <main ref={mainRef} className="flex-1 p-4 md:p-8 overflow-y-auto print:p-0 print:overflow-visible">
+        {/* overscroll-y-contain: al llegar al borde de este scroll, no
+            encadena el scroll hacia el body de atrás (rebote raro en mobile). */}
+        <main ref={mainRef} className="flex-1 p-4 md:p-8 overflow-y-auto overscroll-y-contain print:p-0 print:overflow-visible">
           <div key={pathname} className="animate-[content-in_0.25s_ease-out]">
             <Outlet />
           </div>
