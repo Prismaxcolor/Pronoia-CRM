@@ -19,6 +19,7 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import { subirFotoTicket } from '../../services/storage-service';
+import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
 import type { Transformacion, SalidaComun } from '@shared/types/index.js';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
@@ -80,10 +81,18 @@ function CompletarFerrosoModal({
   );
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
 
   const actualizar = (uid: number, campo: Partial<FilaSalida>) => {
     setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
   };
+
+  // Comunes primero para que sigan apareciendo destacados en la grilla visual.
+  const productosOrdenados = [
+    ...productos.filter(p => comunesIds.includes(p.id)),
+    ...productos.filter(p => !comunesIds.includes(p.id)),
+  ];
 
   const totalSalidas = filas.reduce((acc, f) => acc + (Number(f.pesoBruto) - Number(f.tara || 0)), 0);
   const merma = transformacion.pesoNeto - totalSalidas;
@@ -95,6 +104,7 @@ function CompletarFerrosoModal({
       setError('Cada salida debe tener peso neto mayor a 0.');
       return;
     }
+    if (filas.some(f => !f.foto)) { setError('Cada salida necesita al menos una foto.'); return; }
 
     setGuardando(true);
     const salidaInputs: CompletarTransformacionFerrosoSalidaInput[] = [];
@@ -142,21 +152,16 @@ function CompletarFerrosoModal({
               <div className="space-y-2">
                 <div>
                   <label className={labelClass}>Material *</label>
-                  <select value={f.productoId} onChange={e => actualizar(f.uid, { productoId: e.target.value })} className={inputClass}>
-                    <option value="" disabled>-Selecciona-</option>
-                    {comunesIds.length > 0 && (
-                      <optgroup label="— Comunes —">
-                        {productos.filter(p => comunesIds.includes(p.id)).map(p => (
-                          <option key={p.id} value={p.id}>{p.nombre}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                    <optgroup label="— Todos —">
-                      {productos.filter(p => !comunesIds.includes(p.id)).map(p => (
-                        <option key={p.id} value={p.id}>{p.nombre}</option>
-                      ))}
-                    </optgroup>
-                  </select>
+                  <button
+                    type="button"
+                    onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                    className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                  >
+                    <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                      {productos.find(p => p.id === f.productoId)?.nombre ?? '-Selecciona-'}
+                    </span>
+                    <ChevronDown size={14} className="text-text-muted shrink-0" />
+                  </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -217,6 +222,17 @@ function CompletarFerrosoModal({
           </button>
         </div>
       </div>
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productosOrdenados}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => {
+            if (filaActivaUid != null) actualizar(filaActivaUid, { productoId: id });
+            setMostrarSelectorMaterial(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -237,6 +253,7 @@ function ConfigSalidasComunes({
   const [productoEntradaId, setProductoEntradaId] = useState('');
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
   const [guardando, setGuardando] = useState(false);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
@@ -267,10 +284,16 @@ function ConfigSalidasComunes({
     <div className="max-w-md space-y-4">
       <div>
         <label className={labelClass}>Material de entrada</label>
-        <select value={productoEntradaId} onChange={e => setProductoEntradaId(e.target.value)} className={inputClass}>
-          <option value="" disabled>Selecciona el material que entra a la transformación</option>
-          {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-        </select>
+        <button
+          type="button"
+          onClick={() => setMostrarSelectorMaterial(true)}
+          className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+        >
+          <span className={productoEntradaId ? 'text-text-primary truncate' : 'text-text-muted'}>
+            {productos.find(p => p.id === productoEntradaId)?.nombre ?? 'Selecciona el material que entra a la transformación'}
+          </span>
+          <ChevronDown size={14} className="text-text-muted shrink-0" />
+        </button>
       </div>
 
       {productoEntradaId && (
@@ -301,6 +324,14 @@ function ConfigSalidasComunes({
           </button>
         </>
       )}
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => { setProductoEntradaId(id); setMostrarSelectorMaterial(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -330,6 +361,7 @@ function NuevaFerrosoForm({
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
 
   const neto = (Number(pesoBruto) || 0) - (Number(tara) || 0);
 
@@ -339,6 +371,7 @@ function NuevaFerrosoForm({
     if (!productoEntradaId) { setError('Selecciona el material de entrada.'); return; }
     if (!almacenId) { setError('Selecciona el almacén.'); return; }
     if (neto <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
+    if (fotos.length === 0) { setError('Agrega al menos una foto de entrada.'); return; }
 
     setGuardando(true);
     const fotosUrls: string[] = [];
@@ -375,10 +408,16 @@ function NuevaFerrosoForm({
     <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
       <div>
         <label className={labelClass}>Material de entrada *</label>
-        <select required value={productoEntradaId} onChange={e => setProductoEntradaId(e.target.value)} className={inputClass}>
-          <option value="" disabled>-Selecciona el material a transformar-</option>
-          {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-        </select>
+        <button
+          type="button"
+          onClick={() => setMostrarSelectorMaterial(true)}
+          className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+        >
+          <span className={productoEntradaId ? 'text-text-primary truncate' : 'text-text-muted'}>
+            {productos.find(p => p.id === productoEntradaId)?.nombre ?? '-Selecciona el material a transformar-'}
+          </span>
+          <ChevronDown size={14} className="text-text-muted shrink-0" />
+        </button>
       </div>
 
       <div>
@@ -406,7 +445,7 @@ function NuevaFerrosoForm({
         Neto a retirar: <span className="font-semibold text-text-primary">{fmt(neto)} kg</span>
       </p>
 
-      <FotoMultiplePicker fotos={fotos} setFotos={setFotos} label="Fotos de entrada (opcional)" />
+      <FotoMultiplePicker fotos={fotos} setFotos={setFotos} label="Fotos de entrada *" />
 
       <div>
         <label className={labelClass}>Fecha</label>
@@ -425,6 +464,14 @@ function NuevaFerrosoForm({
         className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
         {guardando ? <><Loader2 size={15} className="animate-spin" /> Registrando...</> : 'Iniciar transformación'}
       </button>
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => { setProductoEntradaId(id); setMostrarSelectorMaterial(false); }}
+        />
+      )}
     </form>
   );
 }

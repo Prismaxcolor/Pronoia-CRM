@@ -200,6 +200,9 @@ function PesajePage() {
       }
       if (materiales.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
       if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+      if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
+      if (Number(devolucion) > 0 && fotosDevolucion.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
+      if (!pesajeExterior && pesajesGlobales.some(g => !g.foto)) { setError('Cada pesaje global necesita una foto.'); return; }
       if (diferenciaFavoreceProveedor(diferencia, pesajeExterior)) {
         setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
         return;
@@ -368,7 +371,7 @@ function PesajePage() {
           {tomasFisicasAbiertas.map(t => (
             <div key={t.id} className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
               <span className="text-amber-800">
-                Hay una toma física abierta en <strong>{t.almacenNombre}</strong> ({t.codigo}) — ese almacén está bloqueado hasta cerrarla.
+                Hay una toma física abierta en <strong>{t.almacenNombre}</strong> ({t.codigo}) — {t.categoriaNombres.join(', ')} está bloqueado ahí hasta cerrarla.
               </span>
               <button type="button" onClick={() => navigate(`/pesaje/conteo/${t.id}`)} className="text-amber-800 font-medium hover:underline shrink-0">
                 Registrar conteo

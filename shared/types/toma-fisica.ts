@@ -15,6 +15,10 @@ export interface TomaFisicaInventario {
   /** Categorías (tipos_material) incluidas en este conteo. */
   categoriaIds: string[];
   categoriaNombres: string[];
+  /** Lotes específicos a contar, solo cuando alguna categoría es con lote
+   *  (ej. PCB) — null/vacío significa "todos los lotes de ese almacén". */
+  loteIds: string[];
+  loteNombres: string[];
   estado: EstadoTomaFisica;
   abiertaPor: string;
   abiertaEn: string;

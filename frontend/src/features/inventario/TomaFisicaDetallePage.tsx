@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ScanLine, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, ScanLine, CheckCircle2, Printer } from 'lucide-react';
 import {
   obtenerTomaFisica,
   obtenerResumenTomaFisica,
@@ -92,22 +92,25 @@ function TomaFisicaDetallePage() {
   }
 
   return (
-    <div className="max-w-3xl">
-      <button type="button" onClick={() => navigate('/inventario')} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
-        <ArrowLeft size={16} />
-        Inventario
-      </button>
+    <div className="max-w-3xl print-documento print:max-w-none">
+      <div className="print:hidden">
+        <button type="button" onClick={() => navigate('/inventario')} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
+          <ArrowLeft size={16} />
+          Inventario
+        </button>
+      </div>
 
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-text-primary">{tomaFisica.codigo}</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs ${tomaFisica.estado === 'abierta' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+            <span className={`px-2 py-0.5 rounded-full text-xs ${tomaFisica.estado === 'abierta' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'} print:border print:border-black print:bg-transparent`}>
               {tomaFisica.estado === 'abierta' ? 'Abierta' : 'Cerrada'}
             </span>
           </div>
           <p className="text-sm text-text-muted mt-1">
             {tomaFisica.almacenNombre} · {tomaFisica.categoriaNombres.join(', ')}
+            {tomaFisica.loteNombres.length > 0 && ` (${tomaFisica.loteNombres.join(', ')})`}
           </p>
           {tomaFisica.descripcion && <p className="text-sm text-text-secondary mt-1">{tomaFisica.descripcion}</p>}
           <p className="text-xs text-text-muted mt-1">
@@ -115,20 +118,25 @@ function TomaFisicaDetallePage() {
             {tomaFisica.estado === 'cerrada' && ` · Cerrada ${fmtFecha(tomaFisica.cerradaEn)}`}
           </p>
         </div>
-        {tomaFisica.estado === 'abierta' && puedeContar && (
-          <button
-            type="button"
-            onClick={() => navigate(`/pesaje/conteo/${tomaFisica.id}`)}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shrink-0"
-          >
-            <ScanLine size={18} />
-            Registrar conteo
+        <div className="print:hidden flex items-center gap-2 shrink-0">
+          {tomaFisica.estado === 'abierta' && puedeContar && (
+            <button
+              type="button"
+              onClick={() => navigate(`/pesaje/conteo/${tomaFisica.id}`)}
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+            >
+              <ScanLine size={18} />
+              Registrar conteo
+            </button>
+          )}
+          <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
+            <Printer size={16} />
           </button>
-        )}
+        </div>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6">
-        <div className="px-5 py-3 border-b border-border">
+      <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:border-0 print:rounded-none print:shadow-none">
+        <div className="px-5 py-3 border-b border-border print:border-black">
           <h2 className="text-sm font-semibold text-text-primary">
             Ticket de la toma física ({detalle.length} pesaje{detalle.length === 1 ? '' : 's'})
           </h2>
@@ -136,22 +144,22 @@ function TomaFisicaDetallePage() {
         {ticketPorMaterial.size === 0 ? (
           <p className="px-5 py-6 text-center text-text-muted text-sm">Todavía no se registró ningún pesaje.</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm print:border-collapse">
             <thead>
               <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="px-5 py-2 font-medium">Material</th>
-                <th className="px-4 py-2 font-medium">Lote</th>
-                <th className="px-4 py-2 font-medium text-right">Pesajes</th>
-                <th className="px-5 py-2 font-medium text-right">Peso neto (kg)</th>
+                <th className="py-2 px-5 font-medium print:border print:border-black print:px-2">Material</th>
+                <th className="py-2 px-4 font-medium print:border print:border-black print:px-2">Lote</th>
+                <th className="py-2 px-4 font-medium text-right print:border print:border-black print:px-2">Pesajes</th>
+                <th className="py-2 px-5 font-medium text-right print:border print:border-black print:px-2">Peso neto (kg)</th>
               </tr>
             </thead>
             <tbody>
               {Array.from(ticketPorMaterial.values()).map((m, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td className="px-5 py-2.5 text-text-primary">{m.nombreProducto}</td>
-                  <td className="px-4 py-2.5 text-text-secondary">{m.nombreLote ?? '—'}</td>
-                  <td className="px-4 py-2.5 text-right text-text-secondary">{m.cantidad}</td>
-                  <td className="px-5 py-2.5 text-right font-semibold text-text-primary">{fmt(m.pesoNeto)}</td>
+                <tr key={i} className="border-t border-border print:border-black">
+                  <td className="py-2.5 px-5 text-text-primary print:border print:border-black print:px-2">{m.nombreProducto}</td>
+                  <td className="py-2.5 px-4 text-text-secondary print:border print:border-black print:px-2">{m.nombreLote ?? '—'}</td>
+                  <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{m.cantidad}</td>
+                  <td className="py-2.5 px-5 text-right font-semibold text-text-primary print:border print:border-black print:px-2">{fmt(m.pesoNeto)}</td>
                 </tr>
               ))}
             </tbody>
@@ -159,39 +167,39 @@ function TomaFisicaDetallePage() {
         )}
       </div>
 
-      <div className="bg-surface rounded-xl border border-border overflow-hidden">
-        <div className="px-5 py-3 border-b border-border">
+      <div className="bg-surface rounded-xl border border-border overflow-hidden print:border-0 print:rounded-none print:shadow-none">
+        <div className="px-5 py-3 border-b border-border print:border-black">
           <h2 className="text-sm font-semibold text-text-primary">Teórico (sistema) vs. real (contado)</h2>
         </div>
         {lineas.length === 0 ? (
           <p className="px-5 py-6 text-center text-text-muted text-sm">Sin diferencias que mostrar todavía.</p>
         ) : (
           <>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm print:border-collapse">
             <thead>
               <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="px-5 py-2 font-medium">Material</th>
-                <th className="px-4 py-2 font-medium">Lote</th>
-                <th className="px-4 py-2 font-medium text-right">Teórico</th>
-                <th className="px-4 py-2 font-medium text-right">Real</th>
-                <th className="px-5 py-2 font-medium text-right">Diferencia</th>
+                <th className="py-2 px-5 font-medium print:border print:border-black print:px-2">Material</th>
+                <th className="py-2 px-4 font-medium print:border print:border-black print:px-2">Lote</th>
+                <th className="py-2 px-4 font-medium text-right print:border print:border-black print:px-2">Teórico</th>
+                <th className="py-2 px-4 font-medium text-right print:border print:border-black print:px-2">Real</th>
+                <th className="py-2 px-5 font-medium text-right print:border print:border-black print:px-2">Diferencia</th>
               </tr>
             </thead>
             <tbody>
               {lineas.map((l, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td className="px-5 py-2.5 text-text-primary">{l.productoNombre}</td>
-                  <td className="px-4 py-2.5 text-text-secondary">{l.loteNombre ?? '—'}</td>
-                  <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(l.stockTeorico)}</td>
-                  <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(l.stockReal)}</td>
-                  <td className={`px-5 py-2.5 text-right font-semibold ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
+                <tr key={i} className="border-t border-border print:border-black">
+                  <td className="py-2.5 px-5 text-text-primary print:border print:border-black print:px-2">{l.productoNombre}</td>
+                  <td className="py-2.5 px-4 text-text-secondary print:border print:border-black print:px-2">{l.loteNombre ?? '—'}</td>
+                  <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(l.stockTeorico)}</td>
+                  <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(l.stockReal)}</td>
+                  <td className={`py-2.5 px-5 text-right font-semibold print:border print:border-black print:px-2 ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
                     {l.diferencia > 0 ? '+' : ''}{fmt(l.diferencia)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-surface-alt text-sm">
+          <div className="flex items-center justify-between px-5 py-3 border-t border-border print:border-black bg-surface-alt text-sm">
             <span className="font-medium text-text-secondary">Total: {fmt(totalTeorico)} teórico → {fmt(totalReal)} real</span>
             <span className={`font-bold ${totalDiferencia < 0 ? 'text-red-600' : totalDiferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
               {totalDiferencia > 0 ? '+' : ''}{fmt(totalDiferencia)} kg
@@ -202,7 +210,7 @@ function TomaFisicaDetallePage() {
       </div>
 
       {tomaFisica.estado === 'abierta' && puedeCulminar && (
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex justify-end print:hidden">
           <button
             type="button"
             onClick={handleCulminar}

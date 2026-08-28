@@ -4,9 +4,10 @@ import { Plus, ClipboardList } from 'lucide-react';
 import { obtenerTomasFisicas, crearTomaFisica } from '../../services/toma-fisica-service';
 import { obtenerAlmacenes } from '../../services/almacen-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
+import { obtenerLotes } from '../../services/lote-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import type { TomaFisicaInventario, Almacen, TipoMaterial } from '@shared/types/index.js';
+import type { TomaFisicaInventario, Almacen, TipoMaterial, Lote } from '@shared/types/index.js';
 
 function fmtFecha(iso: string | null): string {
   if (!iso) return '—';
@@ -16,23 +17,33 @@ function fmtFecha(iso: string | null): string {
 function NuevaTomaFisicaModal({
   almacenes,
   categorias,
+  lotes,
   onClose,
   onCreada,
 }: {
   almacenes: Almacen[];
   categorias: TipoMaterial[];
+  lotes: Lote[];
   onClose: () => void;
   onCreada: (t: TomaFisicaInventario) => void;
 }) {
   const toast = useToast();
   const [almacenId, setAlmacenId] = useState(almacenes.find(a => a.activo)?.id ?? '');
   const [categoriaIds, setCategoriaIds] = useState<string[]>([]);
+  const [loteIds, setLoteIds] = useState<string[]>([]);
   const [descripcion, setDescripcion] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const toggleCategoria = (id: string) =>
     setCategoriaIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const toggleLote = (id: string) =>
+    setLoteIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+
+  // Solo pide elegir lotes cuando alguna categoría marcada es "con lote"
+  // (ej. PCB) — las categorías sin lote (Ferroso, No Ferroso) no lo necesitan.
+  const hayCategoriaConLote = categoriaIds.some(id => categorias.find(c => c.id === id)?.sinLote === false);
+  const lotesDelAlmacen = lotes.filter(l => l.activo && l.almacenId === almacenId);
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
 
@@ -43,10 +54,15 @@ function NuevaTomaFisicaModal({
     if (categoriaIds.length === 0) { setError('Elige al menos una categoría a inventariar.'); return; }
 
     setGuardando(true);
-    const result = await crearTomaFisica({ almacenId, categoriaIds, descripcion: descripcion.trim() || null });
+    const result = await crearTomaFisica({
+      almacenId,
+      categoriaIds,
+      loteIds: hayCategoriaConLote ? loteIds : [],
+      descripcion: descripcion.trim() || null,
+    });
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
-    toast.exito(`${result.tomaFisica.codigo} creada — el almacén queda bloqueado hasta culminarla.`);
+    toast.exito(`${result.tomaFisica.codigo} creada — esas categorías quedan bloqueadas hasta culminarla.`);
     onCreada(result.tomaFisica);
   };
 
@@ -56,7 +72,8 @@ function NuevaTomaFisicaModal({
         <div className="p-5 border-b border-border">
           <h2 className="text-lg font-bold text-text-primary">Nueva toma física de inventario</h2>
           <p className="text-sm text-text-secondary mt-1">
-            Mientras esté abierta, el almacén elegido queda bloqueado para pesajes, traslados y facturación.
+            Mientras esté abierta, solo se bloquean las categorías elegidas en este almacén —
+            el resto sigue operando normal.
           </p>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
@@ -84,6 +101,36 @@ function NuevaTomaFisicaModal({
               ))}
             </div>
           </div>
+
+          {hayCategoriaConLote && (
+            <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
+              <label className="block text-xs font-medium text-brand-800 mb-1">
+                ¿Qué lote vas a inventariar? *
+              </label>
+              <p className="text-xs text-brand-700/80 mb-2">
+                Elegiste una categoría con lote — marca cuáles vas a contar (podés dejar todos
+                marcados para inventariar el almacén completo en esa categoría).
+              </p>
+              {lotesDelAlmacen.length === 0 ? (
+                <p className="text-xs text-amber-700">Este almacén no tiene lotes activos todavía.</p>
+              ) : (
+                <div className="border border-brand-200 rounded-lg divide-y divide-brand-100 max-h-32 overflow-y-auto bg-surface">
+                  {lotesDelAlmacen.map(l => (
+                    <label key={l.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={loteIds.includes(l.id)}
+                        onChange={() => toggleLote(l.id)}
+                        className="w-4 h-4 accent-brand-600"
+                      />
+                      <span className="text-sm text-text-primary">{l.nombre}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">Descripción</label>
             <input
@@ -117,6 +164,7 @@ function TomaFisicaPanel() {
   const [tomasFisicas, setTomasFisicas] = useState<TomaFisicaInventario[]>([]);
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
   const [cargando, setCargando] = useState(true);
   const [modalAbierto, setModalAbierto] = useState(false);
 
@@ -129,6 +177,7 @@ function TomaFisicaPanel() {
     cargar();
     obtenerAlmacenes().then(setAlmacenes);
     obtenerTiposMaterial().then(setCategorias);
+    obtenerLotes().then(setLotes);
   }, []);
 
   return (
@@ -138,7 +187,7 @@ function TomaFisicaPanel() {
           <h2 className="text-lg font-semibold text-text-primary">Tomas físicas de inventario</h2>
           <p className="text-sm text-text-secondary mt-1">
             Conteo físico que reconcilia el stock teórico contra lo realmente contado. Mientras
-            una esté abierta, el almacén queda bloqueado para nuevos movimientos.
+            una esté abierta, quedan bloqueadas solo las categorías elegidas en ese almacén.
           </p>
         </div>
         {puedeCrear && (
@@ -180,6 +229,7 @@ function TomaFisicaPanel() {
                 </div>
                 <p className="text-xs text-text-muted truncate">
                   {t.almacenNombre} · {t.categoriaNombres.join(', ')}
+                  {t.loteNombres.length > 0 ? ` (${t.loteNombres.join(', ')})` : ''}
                   {t.descripcion ? ` · ${t.descripcion}` : ''}
                 </p>
               </div>
@@ -195,6 +245,7 @@ function TomaFisicaPanel() {
         <NuevaTomaFisicaModal
           almacenes={almacenes}
           categorias={categorias}
+          lotes={lotes}
           onClose={() => setModalAbierto(false)}
           onCreada={t => { setModalAbierto(false); cargar(); navigate(`/inventario/toma-fisica/${t.id}`); }}
         />

@@ -14,6 +14,7 @@ interface TomaFisicaRow {
   descripcion: string | null;
   almacen_id: string;
   categorias: string[];
+  lote_ids: string[] | null;
   estado: 'abierta' | 'cerrada';
   abierta_por: string;
   abierta_en: string;
@@ -32,6 +33,8 @@ export interface TomaFisicaPublica {
   almacenNombre: string | null;
   categoriaIds: string[];
   categoriaNombres: string[];
+  loteIds: string[];
+  loteNombres: string[];
   estado: 'abierta' | 'cerrada';
   abiertaPor: string;
   abiertaEn: string;
@@ -66,14 +69,18 @@ export interface ResumenTomaFisicaLinea {
   cantidadPesajes: number;
 }
 
-async function nombresCategorias(ids: string[]): Promise<Map<string, string>> {
+async function nombresDeTabla(tabla: 'tipos_material' | 'lotes', ids: string[]): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
-  const { data } = await supabaseAdmin.from('tipos_material').select('id, nombre').in('id', ids);
+  const { data } = await supabaseAdmin.from(tabla).select('id, nombre').in('id', ids);
   return new Map((data ?? []).map(r => [r.id as string, r.nombre as string]));
 }
 
 async function toPublico(row: TomaFisicaRow): Promise<TomaFisicaPublica> {
-  const nombres = await nombresCategorias(row.categorias ?? []);
+  const loteIds = row.lote_ids ?? [];
+  const [nombresCat, nombresLote] = await Promise.all([
+    nombresDeTabla('tipos_material', row.categorias ?? []),
+    nombresDeTabla('lotes', loteIds),
+  ]);
   return {
     id: row.id,
     codigo: codigoTomaFisica(row.numero),
@@ -82,7 +89,9 @@ async function toPublico(row: TomaFisicaRow): Promise<TomaFisicaPublica> {
     almacenId: row.almacen_id,
     almacenNombre: row.almacenes?.nombre ?? null,
     categoriaIds: row.categorias ?? [],
-    categoriaNombres: (row.categorias ?? []).map(id => nombres.get(id) ?? '—'),
+    categoriaNombres: (row.categorias ?? []).map(id => nombresCat.get(id) ?? '—'),
+    loteIds,
+    loteNombres: loteIds.map(id => nombresLote.get(id) ?? '—'),
     estado: row.estado,
     abiertaPor: row.abierta_por,
     abiertaEn: row.abierta_en,
@@ -122,6 +131,7 @@ export async function crearTomaFisica(
     p_categorias: input.categoriaIds,
     p_descripcion: input.descripcion,
     p_abierta_por: abiertaPor,
+    p_lote_ids: input.loteIds && input.loteIds.length > 0 ? input.loteIds : null,
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la toma física.' };

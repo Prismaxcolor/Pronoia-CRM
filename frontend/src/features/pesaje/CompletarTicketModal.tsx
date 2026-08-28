@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
-import { X, Plus, Trash2, Loader2, Scale } from 'lucide-react';
+import { X, Plus, Trash2, Loader2, Scale, ChevronDown } from 'lucide-react';
 import { completarTicket } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
+import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import SeleccionarTaraModal from './SeleccionarTaraModal';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
 interface Props {
@@ -27,6 +29,9 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
 
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
@@ -73,6 +78,8 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       return;
     }
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
+    if (Number(devolucion) > 0 && fotosDevolucion.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
     if (diferenciaFavoreceProveedor(diferencia, ticket.pesajeExterior)) {
       setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
       return;
@@ -138,10 +145,16 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Material *</label>
-                    <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
-                      <option value="">— Selecciona —</option>
-                      {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                      className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                    >
+                      <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                        {productos.find(p => p.id === f.productoId)?.nombre ?? '— Selecciona —'}
+                      </span>
+                      <ChevronDown size={14} className="text-text-muted shrink-0" />
+                    </button>
                   </div>
                   <div>
                     {esFilaSinLote(f, productos) ? (
@@ -177,17 +190,16 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                     {f.taraModo === 'preconfigurada' ? (
                       <div>
                         <div className="grid grid-cols-2 gap-2">
-                          <select
-                            value={f.taraId}
-                            onChange={e => {
-                              const taraId = e.target.value;
-                              setMateriales(prev => prev.map(x => (x.uid === f.uid ? { ...x, ...seleccionarTaraFila(x, taraId) } : x)));
-                            }}
-                            className={inputClass}
+                          <button
+                            type="button"
+                            onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorTara(true); }}
+                            className={`${inputClass} flex items-center justify-between gap-2 text-left`}
                           >
-                            <option value="">— Sin tara —</option>
-                            {taras.map(t => <option key={t.id} value={t.id}>{t.nombre} ({t.peso} kg)</option>)}
-                          </select>
+                            <span className={f.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                              {taras.find(t => t.id === f.taraId)?.nombre ?? '— Sin tara —'}
+                            </span>
+                            <ChevronDown size={14} className="text-text-muted shrink-0" />
+                          </button>
                           <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
                         </div>
                         <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
@@ -280,6 +292,30 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
           </div>
         </form>
       </div>
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => {
+            if (filaActivaUid != null) setFila(filaActivaUid, 'productoId', id);
+            setMostrarSelectorMaterial(false);
+          }}
+        />
+      )}
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={materiales.find(f => f.uid === filaActivaUid)?.taraId || undefined}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => {
+            if (filaActivaUid != null) {
+              setMateriales(prev => prev.map(x => (x.uid === filaActivaUid ? { ...x, ...seleccionarTaraFila(x, taraId) } : x)));
+            }
+            setMostrarSelectorTara(false);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ const textoOpcional = (max: number) =>
 export const crearTomaFisicaSchema = z.object({
   almacenId: z.string().uuid('Elige un almacén.'),
   categoriaIds: z.array(z.string().uuid()).min(1, 'Elige al menos una categoría a inventariar.'),
+  loteIds: z.array(z.string().uuid()).optional().default([]),
   descripcion: textoOpcional(200),
 });
 
@@ -20,7 +21,7 @@ export const registrarPesajeTomaFisicaSchema = z.object({
   loteId: z.string().uuid().optional().nullable(),
   pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
   tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
-  fotos: z.array(z.string()).default([]),
+  fotos: z.array(z.string()).min(1, 'Agrega al menos una foto.'),
 });
 
 export type CrearTomaFisicaInput = z.infer<typeof crearTomaFisicaSchema>;

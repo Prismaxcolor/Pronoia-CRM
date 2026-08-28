@@ -37,14 +37,14 @@ export const crearTransformacionFerrosoSchema = z.object({
   tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   notas: textoOpcional(500),
-  fotosEntrada: z.array(z.string()).default([]),
+  fotosEntrada: z.array(z.string()).min(1, 'Agrega al menos una foto de entrada.'),
 });
 
 const salidaFerrosoSchema = z.object({
   productoId: z.string().uuid('Selecciona el material de salida.'),
   pesoBruto: z.number().nonnegative(),
   tara: z.number().nonnegative().default(0),
-  fotos: z.array(z.string()).default([]),
+  fotos: z.array(z.string()).min(1, 'Cada salida necesita al menos una foto.'),
 });
 
 export const completarTransformacionFerrosoSchema = z.object({

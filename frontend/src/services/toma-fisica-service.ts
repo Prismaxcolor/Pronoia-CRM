@@ -32,6 +32,7 @@ export async function obtenerResumenTomaFisica(id: string): Promise<ResumenTomaF
 export async function crearTomaFisica(input: {
   almacenId: string;
   categoriaIds: string[];
+  loteIds?: string[];
   descripcion?: string | null;
 }): Promise<{ tomaFisica: TomaFisicaInventario } | { error: string }> {
   try {

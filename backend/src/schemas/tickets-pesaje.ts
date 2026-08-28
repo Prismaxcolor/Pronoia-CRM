@@ -27,6 +27,10 @@ export const materialSchema = z
   .refine(m => m.destinoTipo !== 'lote' || !!m.loteId, {
     message: 'Selecciona un lote para el material con destino Lote.',
     path: ['loteId'],
+  })
+  .refine(m => m.fotos.length >= 1, {
+    message: 'Cada material necesita al menos una foto.',
+    path: ['fotos'],
   });
 
 /** Una pesada individual que compone el peso global (el camión puede pasar
@@ -90,28 +94,46 @@ export const crearTicketSchema = z
   .refine(d => d.pesajeExterior || (d.pesoGlobal != null && d.pesoGlobal > 0), {
     message: 'Registra el peso global de la pesada (o marca "Pesaje exterior").',
     path: ['pesoGlobal'],
+  })
+  .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {
+    message: 'Agrega al menos una foto de la devolución.',
+    path: ['fotosDevolucion'],
+  })
+  .refine(d => d.pesajeExterior || d.pesajesGlobales.every(g => !!g.foto), {
+    message: 'Cada pesaje global necesita una foto.',
+    path: ['pesajesGlobales'],
   });
 
 /** Completa un ticket que se guardó en bruto: agrega los materiales/destinos definitivos. */
-export const completarTicketSchema = z.object({
-  materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
-  devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
-  fotosDevolucion: z.array(z.string()).default([]),
-});
+export const completarTicketSchema = z
+  .object({
+    materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
+    devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
+    fotosDevolucion: z.array(z.string()).default([]),
+  })
+  .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {
+    message: 'Agrega al menos una foto de la devolución.',
+    path: ['fotosDevolucion'],
+  });
 
 /** Edita un ticket ya completo (corrección de errores). Solo mientras no esté facturado. */
-export const editarTicketSchema = z.object({
-  materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
-  devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
-  fotosDevolucion: z.array(z.string()).default([]),
-  observaciones: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .nullable()
-    .transform(v => (v && v.length > 0 ? v : null)),
-});
+export const editarTicketSchema = z
+  .object({
+    materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
+    devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
+    fotosDevolucion: z.array(z.string()).default([]),
+    observaciones: z
+      .string()
+      .trim()
+      .max(500)
+      .optional()
+      .nullable()
+      .transform(v => (v && v.length > 0 ? v : null)),
+  })
+  .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {
+    message: 'Agrega al menos una foto de la devolución.',
+    path: ['fotosDevolucion'],
+  });
 
 export type CrearTicketInput = z.infer<typeof crearTicketSchema>;
 export type CrearTicketMaterialInput = z.infer<typeof materialSchema>;

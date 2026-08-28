@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, X } from 'lucide-react';
+import { ArrowLeft, Printer, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, X, ChevronDown } from 'lucide-react';
 import { obtenerTicket, editarTicket } from '../../services/ticket-pesaje-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
@@ -9,9 +9,11 @@ import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, type MaterialFila, type FotoMaterial } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
+import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -61,6 +63,9 @@ function TicketDetallePage() {
   const [error, setError] = useState<string | null>(null);
   const [ocultarDestino, setOcultarDestino] = useState(false);
   const [fotoAmpliada, setFotoAmpliada] = useState<{ url: string; label: string; peso: number | null } | null>(null);
+  const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
 
   const cargarTicket = () => {
     obtenerTicket(id).then(t => { setTicket(t); setCargando(false); });
@@ -131,6 +136,8 @@ function TicketDetallePage() {
       return;
     }
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
+    if (Number(devolucionEdit) > 0 && fotosDevolucionEdit.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
     if (diferenciaFavoreceProveedor(diferencia, ticket.pesajeExterior)) {
       setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
       return;
@@ -355,10 +362,16 @@ function TicketDetallePage() {
 
                   <div>
                     <label className={labelClass}>Material *</label>
-                    <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
-                      <option value="">— Selecciona —</option>
-                      {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                      className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                    >
+                      <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                        {productos.find(p => p.id === f.productoId)?.nombre ?? '— Selecciona —'}
+                      </span>
+                      <ChevronDown size={14} className="text-text-muted shrink-0" />
+                    </button>
                   </div>
 
                   {esFilaSinLote(f, productos) ? (
@@ -393,10 +406,16 @@ function TicketDetallePage() {
                       {f.taraModo === 'preconfigurada' ? (
                         <div>
                           <div className="grid grid-cols-2 gap-2">
-                            <select value={f.taraId} onChange={e => setFila(f.uid, 'taraId', e.target.value)} className={inputClass}>
-                              <option value="">— Tara —</option>
-                              {taras.map(t => <option key={t.id} value={t.id}>{t.nombre} ({t.peso} kg)</option>)}
-                            </select>
+                            <button
+                              type="button"
+                              onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorTara(true); }}
+                              className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                            >
+                              <span className={f.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                                {taras.find(t => t.id === f.taraId)?.nombre ?? '— Tara —'}
+                              </span>
+                              <ChevronDown size={14} className="text-text-muted shrink-0" />
+                            </button>
                             <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
                           </div>
                           <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
@@ -505,6 +524,30 @@ function TicketDetallePage() {
             </p>
           </div>
         </div>
+      )}
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => {
+            if (filaActivaUid != null) setFila(filaActivaUid, 'productoId', id);
+            setMostrarSelectorMaterial(false);
+          }}
+        />
+      )}
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={materiales.find(f => f.uid === filaActivaUid)?.taraId || undefined}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => {
+            if (filaActivaUid != null) {
+              setMateriales(prev => prev.map(x => (x.uid === filaActivaUid ? { ...x, ...seleccionarTaraFila(x, taraId) } : x)));
+            }
+            setMostrarSelectorTara(false);
+          }}
+        />
       )}
     </div>
   );

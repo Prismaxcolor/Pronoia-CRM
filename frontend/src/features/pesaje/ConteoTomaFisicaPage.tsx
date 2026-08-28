@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Trash2 } from 'lucide-react';
 import { obtenerTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { subirFotosFila, type FotoMaterial } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
+import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import { useToast } from '../../hooks/use-toast-context';
 import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote } from '@shared/types/index.js';
 
@@ -30,6 +31,7 @@ function ConteoTomaFisicaPage() {
   const [tara, setTara] = useState('');
   const [fotos, setFotos] = useState<FotoMaterial[]>([]);
   const [guardando, setGuardando] = useState(false);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cargar = () => {
@@ -44,6 +46,17 @@ function ConteoTomaFisicaPage() {
 
   useEffect(() => { cargar(); }, [tomaFisicaId]);
 
+  // Si esta toma física ya se culminó (ej. en otra pestaña, o volviendo con
+  // el botón atrás del navegador a un enlace viejo), no tiene sentido dejar
+  // al usuario en un formulario muerto — lo mandamos directo al resultado.
+  useEffect(() => {
+    if (tomaFisica && tomaFisica.estado !== 'abierta') {
+      toast.info(`${tomaFisica.codigo} ya fue culminada — te llevamos al resultado.`);
+      navigate(`/inventario/toma-fisica/${tomaFisicaId}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tomaFisica]);
+
   // Solo materiales de las categorías elegidas para esta toma física.
   const productosDisponibles = useMemo(
     () => productos.filter(p => p.activo && tomaFisica?.categoriaIds.includes(p.tipoMaterialId ?? '')),
@@ -51,10 +64,15 @@ function ConteoTomaFisicaPage() {
   );
   const productoSel = productosDisponibles.find(p => p.id === productoId);
   // Solo pide lote cuando el material es de una categoría con lote — y solo
-  // entre los lotes que ya están atados al almacén de esta toma física.
+  // entre los lotes de esta toma física (si se acotó a lotes específicos al
+  // crearla) o todos los del almacén (si no se acotó).
   const requiereLote = productoSel != null && productoSel.tipoMaterialSinLote !== true;
   const lotesDelAlmacen = useMemo(
-    () => lotes.filter(l => l.activo && l.almacenId === tomaFisica?.almacenId),
+    () => lotes.filter(l =>
+      l.activo
+      && l.almacenId === tomaFisica?.almacenId
+      && (!tomaFisica?.loteIds.length || tomaFisica.loteIds.includes(l.id))
+    ),
     [lotes, tomaFisica]
   );
 
@@ -70,6 +88,7 @@ function ConteoTomaFisicaPage() {
     if (!productoId) { setError('Elige un material.'); return; }
     if (requiereLote && !loteId) { setError('Elige el lote donde está este material.'); return; }
     if (netoActual <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
+    if (fotos.length === 0) { setError('Agrega al menos una foto.'); return; }
 
     setGuardando(true);
     const urls = await subirFotosFila(fotos);
@@ -118,12 +137,11 @@ function ConteoTomaFisicaPage() {
   }
 
   if (tomaFisica.estado !== 'abierta') {
+    // Redirigiendo (ver useEffect arriba) — spinner breve en vez de un
+    // formulario muerto o un mensaje que exige un clic para salir.
     return (
-      <div className="max-w-lg mx-auto text-center py-12">
-        <p className="text-text-secondary text-sm mb-4">Esta toma física ya está cerrada.</p>
-        <button type="button" onClick={() => navigate(`/inventario/toma-fisica/${tomaFisicaId}`)} className="text-brand-600 hover:underline text-sm">
-          Ver resultado
-        </button>
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
       </div>
     );
   }
@@ -145,10 +163,16 @@ function ConteoTomaFisicaPage() {
       <form onSubmit={handleAgregar} className="space-y-4 bg-surface rounded-xl border border-border p-5 mb-6">
         <div>
           <label className={labelClass}>Material *</label>
-          <select value={productoId} onChange={e => { setProductoId(e.target.value); setLoteId(''); }} className={inputClass}>
-            <option value="">Selecciona…</option>
-            {productosDisponibles.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-          </select>
+          <button
+            type="button"
+            onClick={() => setMostrarSelectorMaterial(true)}
+            className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+          >
+            <span className={productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+              {productosDisponibles.find(p => p.id === productoId)?.nombre ?? '— Selecciona —'}
+            </span>
+            <ChevronDown size={14} className="text-text-muted shrink-0" />
+          </button>
         </div>
 
         {requiereLote && (
@@ -211,6 +235,14 @@ function ConteoTomaFisicaPage() {
           </div>
         )}
       </div>
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productosDisponibles}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => { setProductoId(id); setLoteId(''); setMostrarSelectorMaterial(false); }}
+        />
+      )}
     </div>
   );
 }
