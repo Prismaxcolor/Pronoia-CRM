@@ -10,6 +10,7 @@ import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, type MaterialFila, type FotoMaterial } from './material-fila';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
 
@@ -59,7 +60,7 @@ function TicketDetallePage() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ocultarDestino, setOcultarDestino] = useState(false);
-  const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
+  const [fotoAmpliada, setFotoAmpliada] = useState<{ url: string; label: string; peso: number | null } | null>(null);
 
   const cargarTicket = () => {
     obtenerTicket(id).then(t => { setTicket(t); setCargando(false); });
@@ -130,6 +131,10 @@ function TicketDetallePage() {
       return;
     }
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (diferenciaFavoreceProveedor(diferencia, ticket.pesajeExterior)) {
+      setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
+      return;
+    }
 
     setGuardando(true);
 
@@ -195,10 +200,10 @@ function TicketDetallePage() {
   // (se veía como una lista infinita de fotos, una por fila).
   const fotosGaleria = [
     ...ticket.materiales.flatMap(m =>
-      m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? 'Material' }))
+      m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? 'Material', peso: m.pesoNeto as number | null }))
     ),
-    ...ticket.fotosDevolucion.map((url, i) => ({ key: `d-${i}`, url, label: 'Devolución' })),
-    ...(ticket.fotos ?? []).map((url, i) => ({ key: `g-${i}`, url, label: 'General' })),
+    ...ticket.fotosDevolucion.map((url, i) => ({ key: `d-${i}`, url, label: 'Devolución', peso: null as number | null })),
+    ...(ticket.fotos ?? []).map((url, i) => ({ key: `g-${i}`, url, label: 'General', peso: null as number | null })),
   ];
 
   return (
@@ -298,11 +303,11 @@ function TicketDetallePage() {
             <div className="mt-4 print:hidden">
               <p className="text-xs font-medium text-text-secondary mb-2">Fotos ({fotosGaleria.length})</p>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                {fotosGaleria.map(({ key, url, label }) => (
+                {fotosGaleria.map(({ key, url, label, peso }) => (
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setFotoAmpliada(url)}
+                    onClick={() => setFotoAmpliada({ url, label, peso })}
                     className="group relative aspect-square rounded-lg overflow-hidden border border-border"
                     title="Ver foto en grande"
                   >
@@ -452,7 +457,7 @@ function TicketDetallePage() {
             {!ticket.pesajeExterior && (
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
-                <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>{fmt(diferencia)} kg</span>
+                <span className={`font-semibold ${colorClaseDiferencia(diferencia, ticket?.pesoGlobal ?? 0, ticket?.pesajeExterior ?? false)}`}>{fmt(diferencia)} kg</span>
               </div>
             )}
           </div>
@@ -488,12 +493,17 @@ function TicketDetallePage() {
           >
             <X size={24} />
           </button>
-          <img
-            src={fotoAmpliada}
-            alt="Foto ampliada"
-            className="max-w-full max-h-full object-contain rounded-lg"
-            onClick={e => e.stopPropagation()}
-          />
+          <div className="flex flex-col items-center gap-2 max-w-full max-h-full" onClick={e => e.stopPropagation()}>
+            <img
+              src={fotoAmpliada.url}
+              alt="Foto ampliada"
+              className="max-w-full max-h-[80vh] object-contain rounded-lg"
+            />
+            <p className="text-white text-sm bg-black/60 px-3 py-1.5 rounded-lg">
+              {fotoAmpliada.label}
+              {fotoAmpliada.peso != null && ` — ${fmt(fotoAmpliada.peso)} kg`}
+            </p>
+          </div>
         </div>
       )}
     </div>

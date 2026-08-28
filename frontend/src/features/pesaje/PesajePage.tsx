@@ -20,6 +20,7 @@ import SeleccionarTaraModal from './SeleccionarTaraModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotoPesajeGlobal } from './pesaje-global-fila';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado } from '@shared/types/index.js';
 
 /** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
@@ -192,6 +193,10 @@ function PesajePage() {
       }
       if (materiales.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
       if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+      if (diferenciaFavoreceProveedor(diferencia, pesajeExterior)) {
+        setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
+        return;
+      }
     }
 
     setGuardando(true);
@@ -712,7 +717,7 @@ function PesajePage() {
               />
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
-                <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
+                <span className={`font-semibold ${colorClaseDiferencia(diferencia, sumaPesajesGlobales(pesajesGlobales), pesajeExterior)}`}>
                   {fmt(diferencia)} kg
                 </span>
               </div>

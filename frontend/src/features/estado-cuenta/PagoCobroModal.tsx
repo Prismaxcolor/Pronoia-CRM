@@ -318,7 +318,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
                         <div className="relative shrink-0">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-xs">$</span>
                           <input
-                            type="number" step="0.001" min="0.01" max={saldoFactura}
+                            type="number" step="0.01" min="0.01" max={saldoFactura.toFixed(2)}
                             value={montosFactura[f.id]}
                             onChange={e => setMontoFactura(f.id, e.target.value)}
                             className="w-24 pl-5 pr-2 py-1 text-right text-xs bg-surface border border-border rounded focus:outline-none focus:ring-2 focus:ring-brand-400"

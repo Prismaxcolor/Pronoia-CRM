@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Loader2, Scale } from 'lucide-react';
 import { completarTicket } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
@@ -72,6 +73,10 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       return;
     }
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (diferenciaFavoreceProveedor(diferencia, ticket.pesajeExterior)) {
+      setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
+      return;
+    }
 
     setGuardando(true);
 
@@ -256,7 +261,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
             {!ticket.pesajeExterior && (
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
-                <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
+                <span className={`font-semibold ${colorClaseDiferencia(diferencia, ticket.pesoGlobal, ticket.pesajeExterior)}`}>
                   {fmt(diferencia)} kg
                 </span>
               </div>
