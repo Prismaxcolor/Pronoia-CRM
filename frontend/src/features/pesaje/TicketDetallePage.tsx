@@ -209,6 +209,14 @@ function TicketDetallePage() {
     ...ticket.materiales.flatMap(m =>
       m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? 'Material', peso: m.pesoNeto as number | null }))
     ),
+    ...ticket.pesajesGlobales.flatMap((p, idxPesaje) =>
+      p.fotos.map((url, i) => ({
+        key: `p-${p.id}-${i}`,
+        url,
+        label: ticket.pesajesGlobales.length > 1 ? `Pesaje global ${idxPesaje + 1}` : 'Pesaje global',
+        peso: (p.peso - p.tara) as number | null,
+      }))
+    ),
     ...ticket.fotosDevolucion.map((url, i) => ({ key: `d-${i}`, url, label: 'Devolución', peso: null as number | null })),
     ...(ticket.fotos ?? []).map((url, i) => ({ key: `g-${i}`, url, label: 'General', peso: null as number | null })),
   ];
