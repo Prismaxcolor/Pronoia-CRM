@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, ChevronDown } from 'lucide-react';
+import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerHorarios, crearCitaStaff } from '../../services/citas-service';
 import { useToast } from '../../hooks/use-toast-context';
 
-interface Entidad { id: string; nombre: string; activo: boolean }
+interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
 type TipoEntidad = 'proveedor' | 'cliente';
 
 interface Props {
@@ -29,6 +30,7 @@ function NuevaCitaModal({ onClose, onAgendada }: Props) {
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
 
   useEffect(() => {
     const cargar = (): Promise<Entidad[]> => (tipo === 'proveedor' ? obtenerProveedores() : obtenerClientes());
@@ -87,10 +89,16 @@ function NuevaCitaModal({ onClose, onAgendada }: Props) {
 
           <div>
             <label className={labelClass}>{tipo === 'proveedor' ? 'Proveedor' : 'Cliente'} *</label>
-            <select value={entidadId} onChange={e => setEntidadId(e.target.value)} className={inputClass}>
-              <option value="">— Selecciona —</option>
-              {entidades.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-            </select>
+            <button
+              type="button"
+              onClick={() => setMostrarSelectorEntidad(true)}
+              className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+            >
+              <span className={entidadId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                {entidades.find(e => e.id === entidadId)?.nombre ?? '— Selecciona —'}
+              </span>
+              <ChevronDown size={14} className="text-text-muted shrink-0" />
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -124,6 +132,14 @@ function NuevaCitaModal({ onClose, onAgendada }: Props) {
           </div>
         </form>
       </div>
+      {mostrarSelectorEntidad && (
+        <SeleccionarEntidadModal
+          titulo={tipo === 'proveedor' ? 'Elegir proveedor' : 'Elegir cliente'}
+          entidades={entidades}
+          onClose={() => setMostrarSelectorEntidad(false)}
+          onSeleccionar={id => { setEntidadId(id); setMostrarSelectorEntidad(false); }}
+        />
+      )}
     </div>
   );
 }

@@ -19,6 +19,7 @@ import CompletarTicketModal from './CompletarTicketModal';
 import CompletarTrasladoModal from '../inventario/CompletarTrasladoModal';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
+import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
@@ -32,7 +33,7 @@ type FilaListado =
   | { kind: 'pesaje'; ticket: TicketPesaje }
   | { kind: 'traslado'; traslado: Traslado };
 
-interface Entidad { id: string; nombre: string; activo: boolean }
+interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
 
 type Pestana = 'nuevo' | 'tickets';
 
@@ -87,6 +88,7 @@ function PesajePage() {
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
+  const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
 
   const cargarTickets = () => { obtenerTickets().then(setTickets); };
   const cargarTraslados = () => { obtenerTraslados().then(setTraslados); };
@@ -445,10 +447,16 @@ function PesajePage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>{labelEntidad} *</label>
-                <select value={entidadId} onChange={e => setEntidadId(e.target.value)} className={inputClass}>
-                  <option value="">— Selecciona —</option>
-                  {entidades.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                </select>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSelectorEntidad(true)}
+                  className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                >
+                  <span className={entidadId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                    {entidades.find(e => e.id === entidadId)?.nombre ?? '— Selecciona —'}
+                  </span>
+                  <ChevronDown size={14} className="text-text-muted shrink-0" />
+                </button>
               </div>
               <div>
                 <label className={labelClass}>Fecha</label>
@@ -887,6 +895,14 @@ function PesajePage() {
             setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, ...seleccionarTaraFila(f, taraId) } : f)));
             setMostrarSelectorTara(false);
           }}
+        />
+      )}
+      {mostrarSelectorEntidad && (
+        <SeleccionarEntidadModal
+          titulo={labelEntidad}
+          entidades={entidades}
+          onClose={() => setMostrarSelectorEntidad(false)}
+          onSeleccionar={id => { setEntidadId(id); setMostrarSelectorEntidad(false); }}
         />
       )}
     </div>

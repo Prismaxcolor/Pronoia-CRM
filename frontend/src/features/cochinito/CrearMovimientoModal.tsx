@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { X, ArrowDownLeft, ArrowUpRight, ArrowLeftRight } from 'lucide-react';
+import { X, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, ChevronDown } from 'lucide-react';
+import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import { crearMovimiento } from '../../services/banca-service';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
@@ -14,7 +15,7 @@ interface Props {
 }
 
 type Tipo = 'ingreso' | 'egreso' | 'transferencia';
-interface Entidad { id: string; nombre: string; activo: boolean }
+interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
 
 /** Fuentes de tasa disponibles para sugerir el monto destino en una
  *  transferencia entre bancas de monedas distintas (USD↔Bs). */
@@ -43,6 +44,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
   const [proveedores, setProveedores] = useState<Entidad[]>([]);
   const [clientes, setClientes] = useState<Entidad[]>([]);
   const [entidadId, setEntidadId] = useState('');
+  const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
 
   useEffect(() => {
     obtenerProveedores().then(lista => setProveedores(lista.filter(p => p.activo)));
@@ -358,12 +360,16 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
                 {tipo === 'egreso' ? 'Pago a proveedor' : 'Cobro de cliente'}{' '}
                 <span className="text-text-muted">(opcional)</span>
               </label>
-              <select value={entidadId} onChange={e => setEntidadId(e.target.value)} className={inputClass}>
-                <option value="">— Sin atribuir —</option>
-                {(tipo === 'egreso' ? proveedores : clientes).map(ent => (
-                  <option key={ent.id} value={ent.id}>{ent.nombre}</option>
-                ))}
-              </select>
+              <button
+                type="button"
+                onClick={() => setMostrarSelectorEntidad(true)}
+                className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+              >
+                <span className={entidadId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                  {(tipo === 'egreso' ? proveedores : clientes).find(e => e.id === entidadId)?.nombre ?? '— Sin atribuir —'}
+                </span>
+                <ChevronDown size={14} className="text-text-muted shrink-0" />
+              </button>
               <p className="text-xs text-text-muted mt-1">
                 Si lo atribuyes, aparece como {tipo === 'egreso' ? 'pago' : 'cobro'} en su estado de cuenta.
               </p>
@@ -394,6 +400,14 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
           </div>
         </form>
       </div>
+      {mostrarSelectorEntidad && (
+        <SeleccionarEntidadModal
+          titulo={tipo === 'egreso' ? 'Elegir proveedor' : 'Elegir cliente'}
+          entidades={tipo === 'egreso' ? proveedores : clientes}
+          onClose={() => setMostrarSelectorEntidad(false)}
+          onSeleccionar={id => { setEntidadId(id); setMostrarSelectorEntidad(false); }}
+        />
+      )}
     </div>
   );
 }
