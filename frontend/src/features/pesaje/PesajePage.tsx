@@ -35,6 +35,20 @@ interface Entidad { id: string; nombre: string; activo: boolean }
 
 type Pestana = 'nuevo' | 'tickets';
 
+/** Recuerda la pestaña activa ("Nuevo pesaje" / "Tickets") entre visitas a esta
+ *  página dentro de la misma pestaña del navegador — sin esto, se pierde cada
+ *  vez que el componente se desmonta (navegar a otra sección, o entrar al
+ *  detalle de un ticket, y volver) porque vive solo en useState local. */
+const PESTANA_STORAGE_KEY = 'pronoia:pesaje:pestana';
+
+function leerPestanaGuardada(): Pestana {
+  try {
+    return sessionStorage.getItem(PESTANA_STORAGE_KEY) === 'tickets' ? 'tickets' : 'nuevo';
+  } catch {
+    return 'nuevo';
+  }
+}
+
 function PesajePage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
@@ -46,7 +60,14 @@ function PesajePage() {
   const puedeVerTickets = tienePermiso('pesaje', 'ver') && tienePermiso('facturacion', 'ver');
   const puedeContarTomaFisica = tienePermiso('toma_fisica', 'ver');
 
-  const [pestana, setPestana] = useState<Pestana>('nuevo');
+  // Si no tiene permiso para ver Tickets, ignora cualquier pestaña "tickets"
+  // guardada de una sesión anterior (ej. downgrade de rol) — si no, el switch
+  // de pestañas queda oculto pero el contenido también, y la página se ve en blanco.
+  const [pestana, setPestanaState] = useState<Pestana>(() => (puedeVerTickets ? leerPestanaGuardada() : 'nuevo'));
+  const setPestana = (p: Pestana) => {
+    setPestanaState(p);
+    try { sessionStorage.setItem(PESTANA_STORAGE_KEY, p); } catch { /* no crítico — solo se pierde la memoria de pestaña */ }
+  };
   const [proveedores, setProveedores] = useState<Entidad[]>([]);
   const [clientes, setClientes] = useState<Entidad[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
