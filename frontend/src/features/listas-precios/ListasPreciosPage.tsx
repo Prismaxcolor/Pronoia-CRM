@@ -8,13 +8,18 @@ import {
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import ListaFormModal from './ListaFormModal';
 import type { ListaPrecios } from '@shared/types/index.js';
 
 function ListasPreciosPage() {
   const [listas, setListas] = useState<ListaPrecios[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [tipoVisible, setTipoVisible] = useState<'compra' | 'venta'>('compra');
+  const [tipoVisible, setTipoVisible] = usePestanaRecordada<'compra' | 'venta'>(
+    'pronoia:listas-precios:tipo',
+    ['compra', 'venta'],
+    'compra',
+  );
   const [formAbierto, setFormAbierto] = useState<
     { abierto: true; lista: ListaPrecios | null } | { abierto: false }
   >({ abierto: false });

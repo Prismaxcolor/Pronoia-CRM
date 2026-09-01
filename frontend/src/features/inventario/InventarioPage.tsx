@@ -9,6 +9,7 @@ import {
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import Accordion from '../../components/Accordion';
 import AlmacenesPanel from './AlmacenesPanel';
 import TrasladosPanel from './TrasladosPanel';
@@ -56,7 +57,11 @@ type Agrupacion = 'categoria' | 'lote';
 type Pestana = 'inventario' | 'almacenes' | 'traslados' | 'toma-fisica';
 
 function InventarioPage() {
-  const [pestana, setPestana] = useState<Pestana>('inventario');
+  const [pestana, setPestana] = usePestanaRecordada<Pestana>(
+    'pronoia:inventario:pestana',
+    ['inventario', 'almacenes', 'traslados', 'toma-fisica'],
+    'inventario',
+  );
   const [grupos, setGrupos] = useState<GrupoInventario[]>([]);
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);

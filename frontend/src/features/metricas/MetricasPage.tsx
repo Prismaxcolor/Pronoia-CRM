@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Scale, DollarSign, TrendingUp, Receipt, Printer, Search, X } from 'lucide-react';
 import { obtenerMetricasCompras, type MetricaCompraLinea } from '../../services/metricas-service';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 
 type Vista = 'material' | 'proveedor';
 type Preset = 7 | 15 | 30 | 60 | 90 | 'custom';
@@ -278,7 +279,7 @@ function MetricasPage() {
   const [desde, setDesde] = useState(fechaMenosDias(hoyISO(), 29));
   const [mostrarPersonalizado, setMostrarPersonalizado] = useState(false);
 
-  const [vista, setVista] = useState<Vista>('material');
+  const [vista, setVista] = usePestanaRecordada<Vista>('pronoia:metricas:vista', ['material', 'proveedor'], 'material');
   const [materialSel, setMaterialSel] = useState<string | null>(null);
   const [proveedorSel, setProveedorSel] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');

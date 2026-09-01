@@ -3,6 +3,7 @@ import { Check, X, CheckCheck, Truck, Contact, Plus } from 'lucide-react';
 import { listarCitas, actualizarEstadoCita, obtenerHorarios, type Cita, type EstadoCita } from '../../services/citas-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import AgendaSemana from './AgendaSemana';
 import NuevaCitaModal from './NuevaCitaModal';
 
@@ -39,7 +40,7 @@ function CitasPage() {
   const puedeEditar = tienePermiso('despachos', 'editar');
   const puedeCrear = tienePermiso('despachos', 'crear');
 
-  const [vista, setVista] = useState<Vista>('lista');
+  const [vista, setVista] = usePestanaRecordada<Vista>('pronoia:citas:vista', ['lista', 'semana'], 'lista');
   const [citas, setCitas] = useState<Cita[]>([]);
   const [cargando, setCargando] = useState(true);
   const [horarios, setHorarios] = useState<string[]>([]);

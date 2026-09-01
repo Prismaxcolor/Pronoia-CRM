@@ -19,6 +19,7 @@ import { obtenerTaras } from '../../services/tara-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import { subirFotoTicket } from '../../services/storage-service';
 import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
 import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
@@ -586,7 +587,11 @@ function TransformacionesPage() {
   const puedeCrear = tienePermiso('transformaciones', 'crear');
   const puedeEliminar = tienePermiso('transformaciones', 'eliminar');
 
-  const [tab, setTab] = useState<Tab>('nueva');
+  const [tab, setTab] = usePestanaRecordada<Tab>(
+    'pronoia:transformaciones:tab',
+    ['nueva', 'pendientes', 'historial', 'config'],
+    'nueva',
+  );
   const [categoria, setCategoria] = useState<Categoria>('ferroso_no_ferroso');
 
   const [transformaciones, setTransformaciones] = useState<Transformacion[]>([]);
