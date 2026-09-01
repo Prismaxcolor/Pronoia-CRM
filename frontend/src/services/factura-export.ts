@@ -80,8 +80,8 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
   let y = 56;
-  doc.setFontSize(20).setFont('helvetica', 'bold').text('Pronoia', 56, y);
-  doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', 56, y + 15);
+  doc.setFontSize(20).setFont('helvetica', 'bold').setTextColor(0).text('Pronoia', 539, y, { align: 'right' });
+  doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', 539, y + 15, { align: 'right' });
   doc.setTextColor(0);
 
   y += 52;
@@ -89,7 +89,7 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
 
   y += 20;
   doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(refFactura(f), 56, y);
+  doc.text(`Ref. ${refFactura(f)}`, 56, y);
   doc.text(`Fecha: ${f.createdAt.slice(0, 10)}`, 250, y);
   doc.text(`Estado: ${f.estado}`, 420, y);
 
@@ -126,8 +126,8 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   y = (doc as any).lastAutoTable.finalY;
 
-  y += 26;
-  doc.setFontSize(14).setFont('helvetica', 'bold').text('Total', 56, y);
+  y += 30;
+  doc.setFontSize(20).setFont('helvetica', 'bold').text('Total', 56, y);
   doc.text(fmt(f.total), 539, y, { align: 'right' });
 
   if (esCompra && f.montoPagado > 0) {
@@ -141,36 +141,41 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   }
 
   const totalPeso = consolidarItems(f.items).reduce((acc, it) => acc + it.peso, 0);
-  y += 26;
+  y += 30;
   doc.setDrawColor(0).setLineWidth(1).line(56, y, 539, y);
-  y += 20;
-  doc.setFontSize(12).setFont('helvetica', 'bold').text('Total de kilos facturados', 56, y);
+  y += 22;
+  doc.setFontSize(15).setFont('helvetica', 'bold').text('Total de kilos facturados', 56, y);
   doc.text(`${fmt(totalPeso)} kg`, 539, y, { align: 'right' });
 
   const pageHeight = doc.internal.pageSize.getHeight();
   for (const ticket of tickets) {
-    y += 30;
+    y += 36;
     if (y > pageHeight - 100) { doc.addPage(); y = 56; }
-    doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(0);
+    doc.setFontSize(15).setFont('helvetica', 'bold').setTextColor(0);
     doc.text(sanitizarPdf(`Ticket de pesaje - ${ticket.codigo}`), 56, y);
-    y += 10;
+    y += 12;
+    const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
+    const footRows = totalDevolucion > 0
+      ? [
+          ['Total del ticket', '', '', `${fmt(ticket.pesoNetoTotal)} kg`],
+          ['Devolución', '', '', `${fmt(totalDevolucion)} kg`],
+        ]
+      : [['Total del ticket', '', '', `${fmt(ticket.pesoNetoTotal)} kg`]];
     autoTable(doc, {
       startY: y,
-      head: [['Material', 'Destino', 'Bruto', 'Tara', 'Devol.', 'Neto (kg)']],
+      head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
       body: ticket.materiales.map(m => [
         sanitizarPdf(m.nombreProducto ?? '-'),
-        sanitizarPdf(destinoLabel(m.destinoTipo, m.nombreLote)),
         fmt(m.pesoBruto),
         fmt(m.tara),
-        fmt(m.devolucion),
         fmt(m.pesoNeto),
       ]),
-      foot: [['Total del ticket', '', '', '', '', `${fmt(ticket.pesoNetoTotal)} kg`]],
+      foot: footRows,
       margin: { left: 56, right: 56 },
-      styles: { font: 'helvetica', fontSize: 9, cellPadding: 5 },
+      styles: { font: 'helvetica', fontSize: 10, cellPadding: 6 },
       headStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
       footStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
-      columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
       theme: 'grid',
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
