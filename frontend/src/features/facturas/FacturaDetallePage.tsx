@@ -183,46 +183,51 @@ function FacturaDetallePage({ tipo }: Props) {
 
       {tickets.length > 0 && (
         <div className="space-y-4">
-          {tickets.map(ticket => (
-            <div key={ticket.id} className="bg-surface rounded-xl border border-border p-5">
-              <h2 className="text-sm font-semibold text-text-secondary mb-3">Ticket de pesaje · {ticket.codigo}</h2>
-              <div className="overflow-x-auto mb-4">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs text-text-muted">
-                      <th className="py-2 font-medium">Material</th>
-                      <th className="py-2 font-medium">Destino</th>
-                      <th className="py-2 font-medium text-right">Bruto</th>
-                      <th className="py-2 font-medium text-right">Tara</th>
-                      <th className="py-2 font-medium text-right">Devol.</th>
-                      <th className="py-2 font-medium text-right">Neto (kg)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ticket.materiales.map(m => (
-                      <tr key={m.id} className="border-b border-border last:border-b-0">
-                        <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
-                        <td className="py-2 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>
-                        <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
-                        <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
-                        <td className="py-2 text-right text-text-secondary">{fmt(m.devolucion)}</td>
-                        <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
+          {tickets.map(ticket => {
+            const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
+            return (
+              <div key={ticket.id} className="bg-surface rounded-xl border border-border p-5">
+                <h2 className="text-sm font-semibold text-text-secondary mb-3">Ticket de pesaje · {ticket.codigo}</h2>
+                <div className="overflow-x-auto mb-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-xs">
+                        <th className="py-2 font-bold text-text-primary">Material</th>
+                        <th className="py-2 font-bold text-text-primary text-right">Bruto</th>
+                        <th className="py-2 font-bold text-text-primary text-right">Tara</th>
+                        <th className="py-2 font-bold text-text-primary text-right">Neto (kg)</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {ticket.fotos && ticket.fotos.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {ticket.fotos.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
-                      <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
-                    </a>
-                  ))}
+                    </thead>
+                    <tbody>
+                      {ticket.materiales.map(m => (
+                        <tr key={m.id} className="border-b border-border last:border-b-0">
+                          <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                          <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
+                          <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
+                          <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </div>
-          ))}
+                {totalDevolucion > 0 && (
+                  <div className="flex justify-between items-center text-sm pt-2 border-t border-border">
+                    <span className="text-text-secondary">Devolución</span>
+                    <span className="font-medium text-text-primary">{fmt(totalDevolucion)} kg</span>
+                  </div>
+                )}
+                {ticket.fotos && ticket.fotos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {ticket.fotos.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
+                        <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
