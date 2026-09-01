@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Plus, Boxes, Loader2 } from 'lucide-react';
 import { obtenerLotes, crearLote, actualizarLote } from '../../services/lote-service';
 import { obtenerAlmacenes } from '../../services/almacen-service';
+import { subirFotoLote } from '../../services/storage-service';
+import { fotoLocalDeFile, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Lote, Almacen } from '@shared/types/index.js';
@@ -21,6 +24,7 @@ function LotesPage() {
   const [cargando, setCargando] = useState(true);
   const [nombre, setNombre] = useState('');
   const [almacenId, setAlmacenId] = useState('');
+  const [fotosNuevoLote, setFotosNuevoLote] = useState<FotoLocal[]>([]);
   const [guardando, setGuardando] = useState(false);
 
   const recargar = () => obtenerLotes().then(setLotes).finally(() => setCargando(false));
@@ -40,11 +44,14 @@ function LotesPage() {
     const limpio = nombre.trim();
     if (!limpio || !almacenId) return;
     setGuardando(true);
-    const result = await crearLote(limpio, almacenId);
+    const urls = await subirFotosLocal(fotosNuevoLote, subirFotoLote);
+    if (!urls) { toast.errorMsg('Error al subir una de las fotos.'); setGuardando(false); return; }
+    const result = await crearLote(limpio, almacenId, urls);
     setGuardando(false);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     toast.exito(`Lote "${result.lote.nombre}" creado.`);
     setNombre('');
+    setFotosNuevoLote([]);
     cargar();
   };
 
@@ -74,37 +81,45 @@ function LotesPage() {
       </div>
 
       {puedeCrear && (
-        <form onSubmit={handleCrear} className="flex flex-col sm:flex-row sm:items-end gap-2 mb-5">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-text-secondary mb-1">Nuevo lote</label>
-            <input
-              type="text"
-              value={nombre}
-              onChange={e => setNombre(e.target.value)}
-              className={`${inputClass} w-full`}
-              placeholder="Ej. Lote 1"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Almacén</label>
-            <select
-              value={almacenId}
-              onChange={e => setAlmacenId(e.target.value)}
-              className={`${inputClass} w-full sm:w-auto`}
+        <form onSubmit={handleCrear} className="flex flex-col gap-3 mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-text-secondary mb-1">Nuevo lote</label>
+              <input
+                type="text"
+                value={nombre}
+                onChange={e => setNombre(e.target.value)}
+                className={`${inputClass} w-full`}
+                placeholder="Ej. Lote 1"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Almacén</label>
+              <select
+                value={almacenId}
+                onChange={e => setAlmacenId(e.target.value)}
+                className={`${inputClass} w-full sm:w-auto`}
+              >
+                {almacenes.map(a => (
+                  <option key={a.id} value={a.id}>{a.nombre}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={guardando || !nombre.trim() || !almacenId}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
             >
-              {almacenes.map(a => (
-                <option key={a.id} value={a.id}>{a.nombre}</option>
-              ))}
-            </select>
+              {guardando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={18} />}
+              Agregar
+            </button>
           </div>
-          <button
-            type="submit"
-            disabled={guardando || !nombre.trim() || !almacenId}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
-          >
-            {guardando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={18} />}
-            Agregar
-          </button>
+          <FotoMultiplePicker
+            fotos={fotosNuevoLote}
+            onAgregar={files => setFotosNuevoLote(prev => [...prev, ...files.map(fotoLocalDeFile)])}
+            onQuitar={idx => setFotosNuevoLote(prev => prev.filter((_, i) => i !== idx))}
+            label="Fotos del lote"
+          />
         </form>
       )}
 

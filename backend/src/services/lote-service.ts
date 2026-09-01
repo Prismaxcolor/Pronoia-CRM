@@ -7,6 +7,7 @@ interface LoteRow {
   activo: boolean;
   almacen_id: string;
   almacenes?: { nombre: string } | null;
+  fotos: string[];
   created_at: string;
 }
 
@@ -16,6 +17,7 @@ export interface LotePublico {
   activo: boolean;
   almacenId: string;
   almacenNombre: string | null;
+  fotos: string[];
   createdAt: string;
   stockKg: number;
 }
@@ -27,6 +29,7 @@ function toPublico(row: LoteRow, stockKg = 0): LotePublico {
     activo: row.activo,
     almacenId: row.almacen_id,
     almacenNombre: row.almacenes?.nombre ?? null,
+    fotos: row.fotos ?? [],
     createdAt: row.created_at,
     stockKg,
   };
@@ -67,7 +70,7 @@ export async function crearLote(
 ): Promise<{ lote: LotePublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('lotes')
-    .insert({ nombre: input.nombre, almacen_id: input.almacenId })
+    .insert({ nombre: input.nombre, almacen_id: input.almacenId, fotos: input.fotos ?? [] })
     .select('*, almacenes(nombre)')
     .single();
 
@@ -86,6 +89,7 @@ export async function actualizarLote(
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
   if (cambios.almacenId !== undefined) update.almacen_id = cambios.almacenId;
+  if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
 
   const { data, error } = await supabaseAdmin
     .from('lotes')

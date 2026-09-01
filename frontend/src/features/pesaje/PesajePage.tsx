@@ -89,6 +89,10 @@ function PesajePage() {
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
+  const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
+  const [filaLoteActivaUid, setFilaLoteActivaUid] = useState<number | null>(null);
+  const [mostrarSelectorAlmacenOrigen, setMostrarSelectorAlmacenOrigen] = useState(false);
+  const [mostrarSelectorAlmacenDestino, setMostrarSelectorAlmacenDestino] = useState(false);
 
   const cargarTickets = () => { obtenerTickets().then(setTickets); };
   const cargarTraslados = () => { obtenerTraslados().then(setTraslados); };
@@ -430,17 +434,21 @@ function PesajePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Almacén origen *</label>
-                  <select value={almacenOrigenId} onChange={e => setAlmacenOrigenId(e.target.value)} className={inputClass}>
-                    <option value="">— Selecciona —</option>
-                    {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                  </select>
+                  <button type="button" onClick={() => setMostrarSelectorAlmacenOrigen(true)} className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
+                    <span className={almacenOrigenId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                      {almacenes.find(a => a.id === almacenOrigenId)?.nombre ?? '— Selecciona —'}
+                    </span>
+                    <ChevronDown size={14} className="text-text-muted shrink-0" />
+                  </button>
                 </div>
                 <div>
                   <label className={labelClass}>Almacén destino *</label>
-                  <select value={almacenDestinoId} onChange={e => setAlmacenDestinoId(e.target.value)} className={inputClass}>
-                    <option value="">— Selecciona —</option>
-                    {almacenes.filter(a => a.id !== almacenOrigenId).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                  </select>
+                  <button type="button" onClick={() => setMostrarSelectorAlmacenDestino(true)} className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
+                    <span className={almacenDestinoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                      {almacenes.find(a => a.id === almacenDestinoId)?.nombre ?? '— Selecciona —'}
+                    </span>
+                    <ChevronDown size={14} className="text-text-muted shrink-0" />
+                  </button>
                 </div>
               </div>
             ) : (
@@ -632,10 +640,16 @@ function PesajePage() {
                           ) : (
                             <>
                               <label className={labelClass}>{tipo === 'venta' ? 'Origen (inventario) *' : 'Destino (inventario) *'}</label>
-                              <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
-                                <option value="" disabled>-Selecciona-</option>
-                                {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                              </select>
+                              <button
+                                type="button"
+                                onClick={() => { setFilaLoteActivaUid(f.uid); setMostrarSelectorLote(true); }}
+                                className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                              >
+                                <span className={f.destino ? 'text-text-primary truncate' : 'text-text-muted'}>
+                                  {lotes.find(l => l.id === f.destino)?.nombre ?? '— Selecciona —'}
+                                </span>
+                                <ChevronDown size={14} className="text-text-muted shrink-0" />
+                              </button>
                             </>
                           )}
                         </div>
@@ -903,6 +917,33 @@ function PesajePage() {
           entidades={entidades}
           onClose={() => setMostrarSelectorEntidad(false)}
           onSeleccionar={id => { setEntidadId(id); setMostrarSelectorEntidad(false); }}
+        />
+      )}
+      {mostrarSelectorLote && (
+        <SeleccionarEntidadModal
+          titulo={tipo === 'venta' ? 'Origen (inventario)' : 'Destino (inventario)'}
+          entidades={lotes.map(l => ({ id: l.id, nombre: l.nombre, activo: l.activo, fotos: l.fotos }))}
+          onClose={() => setMostrarSelectorLote(false)}
+          onSeleccionar={id => {
+            if (filaLoteActivaUid !== null) setFila(filaLoteActivaUid, 'destino', id);
+            setMostrarSelectorLote(false);
+          }}
+        />
+      )}
+      {mostrarSelectorAlmacenOrigen && (
+        <SeleccionarEntidadModal
+          titulo="Almacén origen"
+          entidades={almacenes.map(a => ({ id: a.id, nombre: a.nombre, activo: a.activo, fotos: a.fotos }))}
+          onClose={() => setMostrarSelectorAlmacenOrigen(false)}
+          onSeleccionar={id => { setAlmacenOrigenId(id); setMostrarSelectorAlmacenOrigen(false); }}
+        />
+      )}
+      {mostrarSelectorAlmacenDestino && (
+        <SeleccionarEntidadModal
+          titulo="Almacén destino"
+          entidades={almacenes.filter(a => a.id !== almacenOrigenId).map(a => ({ id: a.id, nombre: a.nombre, activo: a.activo, fotos: a.fotos }))}
+          onClose={() => setMostrarSelectorAlmacenDestino(false)}
+          onSeleccionar={id => { setAlmacenDestinoId(id); setMostrarSelectorAlmacenDestino(false); }}
         />
       )}
     </div>

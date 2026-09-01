@@ -10,11 +10,11 @@ export async function obtenerLotes(): Promise<Lote[]> {
   }
 }
 
-export async function crearLote(nombre: string, almacenId: string): Promise<{ lote: Lote } | { error: string }> {
+export async function crearLote(nombre: string, almacenId: string, fotos: string[] = []): Promise<{ lote: Lote } | { error: string }> {
   try {
     const { lote } = await apiFetch<{ lote: Lote }>('/api/lotes', {
       method: 'POST',
-      body: { nombre, almacenId },
+      body: { nombre, almacenId, fotos },
     });
     return { lote };
   } catch (err) {
@@ -24,7 +24,7 @@ export async function crearLote(nombre: string, almacenId: string): Promise<{ lo
 
 export async function actualizarLote(
   id: string,
-  cambios: { nombre?: string; activo?: boolean; almacenId?: string }
+  cambios: { nombre?: string; activo?: boolean; almacenId?: string; fotos?: string[] }
 ): Promise<{ lote: Lote } | { error: string }> {
   try {
     const { lote } = await apiFetch<{ lote: Lote }>(`/api/lotes/${id}`, {

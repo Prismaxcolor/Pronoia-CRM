@@ -5,6 +5,7 @@ import type { GrupoInventario } from './inventario-service';
 export interface AlmacenInput {
   nombre: string;
   detalle?: string | null;
+  fotos?: string[];
 }
 
 export async function obtenerAlmacenes(): Promise<Almacen[]> {

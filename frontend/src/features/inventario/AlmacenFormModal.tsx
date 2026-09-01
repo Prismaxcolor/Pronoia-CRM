@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearAlmacen, actualizarAlmacen } from '../../services/almacen-service';
+import { subirFotoAlmacen } from '../../services/storage-service';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Almacen } from '@shared/types/index.js';
 
@@ -16,8 +19,12 @@ function AlmacenFormModal({ almacen, onClose, onGuardado }: Props) {
 
   const [nombre, setNombre] = useState(almacen?.nombre ?? '');
   const [detalle, setDetalle] = useState(almacen?.detalle ?? '');
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(almacen?.fotos ?? []));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,9 +34,12 @@ function AlmacenFormModal({ almacen, onClose, onGuardado }: Props) {
 
     setGuardando(true);
 
+    const urls = await subirFotosLocal(fotos, subirFotoAlmacen);
+    if (!urls) { setError('Error al subir una de las fotos.'); setGuardando(false); return; }
+
     const result = editando && almacen
-      ? await actualizarAlmacen(almacen.id, { nombre, detalle: detalle.trim() || null })
-      : await crearAlmacen({ nombre, detalle: detalle.trim() || null });
+      ? await actualizarAlmacen(almacen.id, { nombre, detalle: detalle.trim() || null, fotos: urls })
+      : await crearAlmacen({ nombre, detalle: detalle.trim() || null, fotos: urls });
 
     setGuardando(false);
 
@@ -61,6 +71,8 @@ function AlmacenFormModal({ almacen, onClose, onGuardado }: Props) {
             <label className={labelClass}>Dirección / detalle</label>
             <textarea value={detalle} onChange={e => setDetalle(e.target.value)} className={`${inputClass} resize-none`} rows={3} placeholder="Ej. Zona industrial, galpón 4" />
           </div>
+
+          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 

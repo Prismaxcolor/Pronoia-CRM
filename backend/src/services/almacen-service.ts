@@ -7,6 +7,7 @@ interface AlmacenRow {
   detalle: string | null;
   activo: boolean;
   es_predeterminado: boolean;
+  fotos: string[];
   created_at: string;
 }
 
@@ -17,6 +18,7 @@ export interface AlmacenPublico {
   activo: boolean;
   esPredeterminado: boolean;
   ultimaTomaFisica: string | null;
+  fotos: string[];
   createdAt: string;
 }
 
@@ -28,6 +30,7 @@ function toPublico(row: AlmacenRow, ultimaTomaFisica: string | null = null): Alm
     activo: row.activo,
     esPredeterminado: row.es_predeterminado,
     ultimaTomaFisica,
+    fotos: row.fotos ?? [],
     createdAt: row.created_at,
   };
 }
@@ -63,7 +66,7 @@ export async function crearAlmacen(
 ): Promise<{ almacen: AlmacenPublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('almacenes')
-    .insert({ nombre: input.nombre, detalle: input.detalle ?? null })
+    .insert({ nombre: input.nombre, detalle: input.detalle ?? null, fotos: input.fotos ?? [] })
     .select('*')
     .single();
 
@@ -129,6 +132,7 @@ export async function actualizarAlmacen(
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.detalle !== undefined) update.detalle = cambios.detalle;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
+  if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
 
   const { data, error } = await supabaseAdmin
     .from('almacenes')

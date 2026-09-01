@@ -32,6 +32,8 @@ const TIPOS: Record<string, { bucket: string; recurso: Recurso; accion: Accion }
   comprobantes: { bucket: 'comprobantes', recurso: 'cochinito', accion: 'crear' },
   clientes: { bucket: 'clientes', recurso: 'clientes', accion: 'crear' },
   proveedores: { bucket: 'proveedores', recurso: 'proveedores', accion: 'crear' },
+  almacenes: { bucket: 'almacenes', recurso: 'almacenes', accion: 'crear' },
+  lotes: { bucket: 'lotes', recurso: 'productos', accion: 'crear' },
 };
 
 declare global {
