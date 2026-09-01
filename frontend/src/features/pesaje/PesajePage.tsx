@@ -200,6 +200,10 @@ function PesajePage() {
       setError('Registra al menos un pesaje global con peso mayor a 0 (o marca "Pesaje exterior").');
       return;
     }
+    if (!pesajeExterior && pesajesGlobales.some(g => g.fotos.length === 0)) {
+      setError('Cada pesaje global necesita al menos una foto.');
+      return;
+    }
     if (estado === 'completo') {
       if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
       if (materiales.some(f => !esFilaSinLote(f, productos) && !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
@@ -211,7 +215,6 @@ function PesajePage() {
       if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
       if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
       if (Number(devolucion) > 0 && fotosDevolucion.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
-      if (!pesajeExterior && pesajesGlobales.some(g => g.fotos.length === 0)) { setError('Cada pesaje global necesita al menos una foto.'); return; }
       if (diferenciaFavoreceProveedor(diferencia, pesajeExterior)) {
         setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
         return;
@@ -250,7 +253,7 @@ function PesajePage() {
     if (!pesajeExterior) {
       for (const f of pesajesGlobales) {
         let fotosUrls: string[] = [];
-        if (estado !== 'bruto' && f.fotos.length > 0) {
+        if (f.fotos.length > 0) {
           const uploaded = await subirFotosPesajeGlobal(f);
           if (!uploaded) {
             setError('No se pudo subir una foto del pesaje global. Revisa que el bucket "tickets" exista en Supabase Storage.');
