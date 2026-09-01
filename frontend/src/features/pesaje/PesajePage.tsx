@@ -1136,8 +1136,8 @@ function FilaTicketPesaje({
 }) {
   return (
     <tr
-      onClick={modo === 'completo' ? () => onVerDetalle(t.id) : undefined}
-      className={`border-b border-border last:border-b-0 ${modo === 'completo' ? 'cursor-pointer hover:bg-surface-alt/60 transition-colors' : ''}`}
+      onClick={() => onVerDetalle(t.id)}
+      className="border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-alt/60 transition-colors"
     >
       <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">
         <span

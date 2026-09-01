@@ -200,7 +200,7 @@ function TicketDetallePage() {
   }
 
   const esCompra = ticket.tipo === 'compra';
-  const puedeEditarEsteTicket = puedeEditar && !ticket.facturado;
+  const puedeEditarEsteTicket = puedeEditar && !ticket.facturado && ticket.estado !== 'bruto';
 
   // Todas las fotos del ticket (por material + generales) en una sola galería
   // con etiqueta de material, en vez de un bloque apilado por material
@@ -234,9 +234,15 @@ function TicketDetallePage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-text-primary">{ticket.codigo}</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs ${ticket.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} print:border print:border-black print:bg-transparent`}>
-              {ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}
-            </span>
+            {ticket.estado === 'bruto' ? (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 print:border print:border-black print:bg-transparent">
+                En bruto (borrador)
+              </span>
+            ) : (
+              <span className={`px-2 py-0.5 rounded-full text-xs ${ticket.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} print:border print:border-black print:bg-transparent`}>
+                {ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}
+              </span>
+            )}
             {ticket.pesajeExterior && (
               <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 print:border print:border-black print:bg-transparent">
                 Pesaje exterior
@@ -282,12 +288,20 @@ function TicketDetallePage() {
 
           {ticket.observaciones && <Fila label="Observaciones" valor={ticket.observaciones} />}
 
-          <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none w-fit mt-4 print:hidden">
-            <input type="checkbox" checked={ocultarDestino} onChange={e => setOcultarDestino(e.target.checked)} className="rounded border-border" />
-            Ocultar destino al imprimir (versión para el proveedor)
-          </label>
+          {ticket.estado === 'bruto' && (
+            <p className="mt-3 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 print:border print:border-black print:bg-transparent print:text-black">
+              Ticket en borrador — materiales pendientes de registro. No contabilizado en inventario.
+            </p>
+          )}
 
-          <div className="overflow-x-auto mt-2">
+          {ticket.estado !== 'bruto' && (
+            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none w-fit mt-4 print:hidden">
+              <input type="checkbox" checked={ocultarDestino} onChange={e => setOcultarDestino(e.target.checked)} className="rounded border-border" />
+              Ocultar destino al imprimir (versión para el proveedor)
+            </label>
+          )}
+
+          {ticket.estado !== 'bruto' && <div className="overflow-x-auto mt-2">
             <table className="w-full text-sm print:border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-text-muted print:border-black">
@@ -312,7 +326,7 @@ function TicketDetallePage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
 
           {fotosGaleria.length > 0 && (
             <div className="mt-4 print:hidden">
