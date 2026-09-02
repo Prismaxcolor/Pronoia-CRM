@@ -330,51 +330,13 @@ export async function completarTransformacionPCB(
     .eq('id', id);
   if (updErr) return { error: updErr.message };
 
-  if (tx.loteOrigenId) {
-    await recalcularComposicionDestino(tx.loteOrigenId, input.loteDestinoId, pesoNetoEntrada);
-  }
+  // La composición del lote destino ya no se recalcula ni se guarda a mano:
+  // se deriva siempre en vivo a partir del stock real por producto
+  // (composicion_lote() en SQL) — ver lote-service.ts.
 
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer.' };
   return { transformacion };
-}
-
-/** Recalcula la composición del lote destino como promedio ponderado. */
-async function recalcularComposicionDestino(
-  loteOrigenId: string,
-  loteDestinoId: string,
-  pesoEntrada: number
-): Promise<void> {
-  const { data: origen } = await supabaseAdmin
-    .from('lotes').select('composicion').eq('id', loteOrigenId).maybeSingle();
-  const composOrigen: Array<{ item: string; porcentaje: number }> = (origen as { composicion?: Array<{ item: string; porcentaje: number }> } | null)?.composicion ?? [];
-  if (composOrigen.length === 0) return;
-
-  const { data: destino } = await supabaseAdmin
-    .from('lotes').select('composicion').eq('id', loteDestinoId).maybeSingle();
-  const composDestino: Array<{ item: string; porcentaje: number }> = (destino as { composicion?: Array<{ item: string; porcentaje: number }> } | null)?.composicion ?? [];
-
-  const { data: stockData } = await supabaseAdmin.rpc('stock_lote_total', { p_lote_id: loteDestinoId });
-  const stockPrevio = Math.max((Number(stockData ?? 0)) - pesoEntrada, 0);
-  const stockTotal = stockPrevio + pesoEntrada;
-  if (stockTotal <= 0) return;
-
-  const todosItems = Array.from(new Set([
-    ...composOrigen.map(x => x.item),
-    ...composDestino.map(x => x.item),
-  ]));
-
-  const nuevaCompos = todosItems.map(item => {
-    const pctOrigen = composOrigen.find(x => x.item === item)?.porcentaje ?? 0;
-    const pctDestino = composDestino.find(x => x.item === item)?.porcentaje ?? 0;
-    const nuevoPct = (stockPrevio * pctDestino + pesoEntrada * pctOrigen) / stockTotal;
-    return { item, porcentaje: Math.round(nuevoPct * 100) / 100 };
-  }).filter(x => x.porcentaje > 0);
-
-  await supabaseAdmin
-    .from('lotes')
-    .update({ composicion: nuevaCompos })
-    .eq('id', loteDestinoId);
 }
 
 // ---------------------------------------------------------------------------

@@ -26,7 +26,9 @@ export interface Lote {
    *  lo alimentaron, menos ventas directas y retiros de transformaciones que
    *  lo usaron como origen. */
   stockKg: number;
-  /** Composición estimada del lote por tipo de ítem PCB. Suma ~100% cuando está definida. */
+  /** Composición real del lote por producto — SIEMPRE derivada del stock
+   *  realmente pesado dentro del lote (regla de tres), nunca declarada a
+   *  mano. Solo lectura. Suma ~100% cuando el lote tiene stock. */
   composicion: ComposicionPCBItem[];
 }
 

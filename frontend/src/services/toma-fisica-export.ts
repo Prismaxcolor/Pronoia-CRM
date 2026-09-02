@@ -37,14 +37,14 @@ export async function descargarTomaFisicaPDF(
     if (actual) { actual.pesoNeto += d.pesoNeto; actual.cantidad += 1; }
     else mapa.set(clave, { nombreProducto: d.nombreProducto, nombreLote: d.nombreLote, pesoNeto: d.pesoNeto, cantidad: 1 });
     return mapa;
-  }, new Map<string, { nombreProducto: string; nombreLote: string | null; pesoNeto: number; cantidad: number }>());
+  }, new Map<string, { nombreProducto: string | null; nombreLote: string | null; pesoNeto: number; cantidad: number }>());
 
   if (ticketPorMaterial.size > 0) {
     doc.setFontSize(13).setFont('helvetica', 'bold').setTextColor(0)
       .text(`Ticket de la toma física (${detalle.length} pesaje${detalle.length === 1 ? '' : 's'})`, 56, y);
     y += 14;
     const body = Array.from(ticketPorMaterial.values()).map(m => [
-      sanitizarPdf(m.nombreProducto),
+      sanitizarPdf(m.nombreProducto ?? 'Lote completo'),
       sanitizarPdf(m.nombreLote ?? '—'),
       String(m.cantidad),
       fmt(m.pesoNeto),
@@ -66,7 +66,7 @@ export async function descargarTomaFisicaPDF(
       .text('Teórico (sistema) vs. real (contado)', 56, y);
     y += 14;
     const body = lineas.map(l => [
-      sanitizarPdf(l.productoNombre),
+      sanitizarPdf(l.productoNombre ?? 'Lote completo'),
       sanitizarPdf(l.loteNombre ?? '—'),
       fmt(l.stockTeorico),
       fmt(l.stockReal),

@@ -5,12 +5,13 @@ import { obtenerTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica 
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
+import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { subirFotosFila, taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { useToast } from '../../hooks/use-toast-context';
-import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote, Tara } from '@shared/types/index.js';
+import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote, Tara, TipoMaterial } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,6 +27,7 @@ function ConteoTomaFisicaPage() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
+  const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [cargando, setCargando] = useState(true);
 
   const [productoId, setProductoId] = useState('');
@@ -40,11 +42,18 @@ function ConteoTomaFisicaPage() {
 
   const cargar = () => {
     setCargando(true);
-    Promise.all([obtenerTomaFisica(tomaFisicaId), obtenerProductos(), obtenerLotes(), obtenerTaras()]).then(([res, prods, lts, tars]) => {
+    Promise.all([
+      obtenerTomaFisica(tomaFisicaId),
+      obtenerProductos(),
+      obtenerLotes(),
+      obtenerTaras(),
+      obtenerTiposMaterial(),
+    ]).then(([res, prods, lts, tars, cats]) => {
       if (res) { setTomaFisica(res.tomaFisica); setDetalle(res.detalle); }
       setProductos(prods);
       setLotes(lts);
       setTaras(tars.filter(t => t.activo));
+      setCategorias(cats);
       setCargando(false);
     });
   };
@@ -62,7 +71,16 @@ function ConteoTomaFisicaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tomaFisica]);
 
-  // Solo materiales de las categorías elegidas para esta toma física.
+  // Categorías "con lote" (PCB): un lote mezclado no se puede desarmar
+  // material por material al contarlo físicamente — se pesa el lote
+  // completo, sin elegir material.
+  const esConLote = useMemo(
+    () => categorias.some(c => tomaFisica?.categoriaIds.includes(c.id) && !c.sinLote),
+    [categorias, tomaFisica]
+  );
+
+  // Solo materiales de las categorías elegidas para esta toma física
+  // (categorías "sin lote" — Ferroso/No Ferroso).
   const productosDisponibles = useMemo(
     () => productos.filter(p => p.activo && tomaFisica?.categoriaIds.includes(p.tipoMaterialId ?? '')),
     [productos, tomaFisica]
@@ -91,8 +109,12 @@ function ConteoTomaFisicaPage() {
   const handleAgregar = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!productoId) { setError('Elige un material.'); return; }
-    if (requiereLote && !loteId) { setError('Elige el lote donde está este material.'); return; }
+    if (esConLote) {
+      if (!loteId) { setError('Elige el lote a contar.'); return; }
+    } else {
+      if (!productoId) { setError('Elige un material.'); return; }
+      if (requiereLote && !loteId) { setError('Elige el lote donde está este material.'); return; }
+    }
     if (netoActual <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
     if (fotos.length === 0) { setError('Agrega al menos una foto.'); return; }
 
@@ -104,8 +126,8 @@ function ConteoTomaFisicaPage() {
       return;
     }
     const result = await registrarPesajeTomaFisica(tomaFisicaId, {
-      productoId,
-      loteId: requiereLote ? loteId : null,
+      productoId: esConLote ? null : productoId,
+      loteId: esConLote ? loteId : (requiereLote ? loteId : null),
       pesoBruto: Number(pesoBruto) || 0,
       tara: taraKgFila(campoTara, taras),
       fotos: urls,
@@ -162,11 +184,41 @@ function ConteoTomaFisicaPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Conteo físico</h1>
         <p className="text-sm text-text-secondary mt-1">
-          {tomaFisica.almacenNombre} · {tomaFisica.categoriaNombres.join(', ')} — pesaje simple, sin destino ni pesaje global.
+          {tomaFisica.almacenNombre} · {tomaFisica.categoriaNombres.join(', ')}
+          {esConLote
+            ? ' — se pesa el lote completo, no un material puntual.'
+            : ' — pesaje simple, sin destino ni pesaje global.'}
         </p>
       </div>
 
       <form onSubmit={handleAgregar} className="space-y-4 bg-surface rounded-xl border border-border p-5 mb-6">
+        {esConLote ? (
+          <div>
+            <label className={labelClass}>Lote *</label>
+            <select value={loteId} onChange={e => setLoteId(e.target.value)} className={inputClass}>
+              <option value="">Selecciona…</option>
+              {lotesDelAlmacen.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+            </select>
+            {lotesDelAlmacen.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">Este almacén no tiene lotes activos todavía.</p>
+            )}
+            {loteSeleccionado && loteSeleccionado.composicion.length > 0 && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <p className="text-[11px] font-medium text-amber-800 mb-1.5">
+                  Composición real de este lote, calculada por el sistema:
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {loteSeleccionado.composicion.map(c => (
+                    <span key={c.item} className="text-[11px] bg-white text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                      {c.item} · {c.porcentaje}% · ~{fmt(loteSeleccionado.stockKg * c.porcentaje / 100)} kg
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
         <div>
           <label className={labelClass}>Material *</label>
           <button
@@ -194,7 +246,7 @@ function ConteoTomaFisicaPage() {
             {loteSeleccionado && loteSeleccionado.composicion.length > 0 && (
               <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
                 <p className="text-[11px] font-medium text-amber-800 mb-1.5">
-                  Composición estimada de este lote (referencial — no se altera al contar):
+                  Composición real de este lote, calculada por el sistema:
                 </p>
                 <div className="flex flex-wrap gap-1">
                   {loteSeleccionado.composicion.map(c => (
@@ -206,6 +258,8 @@ function ConteoTomaFisicaPage() {
               </div>
             )}
           </div>
+        )}
+          </>
         )}
 
         <div>
@@ -269,8 +323,14 @@ function ConteoTomaFisicaPage() {
             {detalle.map(d => (
               <div key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
                 <div className="flex-1 min-w-0">
-                  <span className="text-text-primary">{d.nombreProducto}</span>
-                  {d.nombreLote && <span className="text-text-muted"> · {d.nombreLote}</span>}
+                  {d.nombreProducto ? (
+                    <>
+                      <span className="text-text-primary">{d.nombreProducto}</span>
+                      {d.nombreLote && <span className="text-text-muted"> · {d.nombreLote}</span>}
+                    </>
+                  ) : (
+                    <span className="text-text-primary">{d.nombreLote ?? '—'} (lote completo)</span>
+                  )}
                 </div>
                 <span className="font-semibold text-text-primary shrink-0">{fmt(d.pesoNeto)} kg</span>
                 <button type="button" onClick={() => handleQuitar(d.id)} className="text-text-muted hover:text-red-600 transition-colors shrink-0" title="Quitar">

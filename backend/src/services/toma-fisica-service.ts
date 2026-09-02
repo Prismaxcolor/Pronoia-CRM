@@ -46,8 +46,9 @@ export interface TomaFisicaPublica {
 export interface DetalleTomaFisicaPublico {
   id: string;
   tomaFisicaId: string;
-  productoId: string;
-  nombreProducto: string;
+  /** null cuando se pesó un lote PCB completo (sin desglose por material). */
+  productoId: string | null;
+  nombreProducto: string | null;
   loteId: string | null;
   nombreLote: string | null;
   pesoBruto: number;
@@ -59,8 +60,9 @@ export interface DetalleTomaFisicaPublico {
 }
 
 export interface ResumenTomaFisicaLinea {
-  productoId: string;
-  productoNombre: string;
+  /** null en líneas "por lote completo" (PCB) — ver loteId/loteNombre. */
+  productoId: string | null;
+  productoNombre: string | null;
   loteId: string | null;
   loteNombre: string | null;
   stockTeorico: number;
@@ -151,8 +153,8 @@ export async function listarDetalleTomaFisica(tomaFisicaId: string): Promise<Det
   return (data as Array<Record<string, unknown>>).map(row => ({
     id: row.id as string,
     tomaFisicaId: row.toma_fisica_id as string,
-    productoId: row.producto_id as string,
-    nombreProducto: (row.productos as { nombre: string } | null)?.nombre ?? '—',
+    productoId: row.producto_id as string | null,
+    nombreProducto: (row.productos as { nombre: string } | null)?.nombre ?? null,
     loteId: row.lote_id as string | null,
     nombreLote: (row.lotes as { nombre: string } | null)?.nombre ?? null,
     pesoBruto: Number(row.peso_bruto),
@@ -171,7 +173,7 @@ export async function registrarPesajeTomaFisica(
 ): Promise<{ id: string } | { error: string }> {
   const { data, error } = await supabaseAdmin.rpc('registrar_pesaje_toma_fisica', {
     p_toma_fisica_id: tomaFisicaId,
-    p_producto_id: input.productoId,
+    p_producto_id: input.productoId ?? null,
     p_lote_id: input.loteId ?? null,
     p_peso_bruto: input.pesoBruto,
     p_tara: input.tara,
@@ -193,8 +195,8 @@ export async function resumenTomaFisica(tomaFisicaId: string): Promise<ResumenTo
   const { data, error } = await supabaseAdmin.rpc('resumen_toma_fisica', { p_toma_fisica_id: tomaFisicaId });
   if (error || !data) return [];
   return (data as Array<Record<string, unknown>>).map(row => ({
-    productoId: row.producto_id as string,
-    productoNombre: row.producto_nombre as string,
+    productoId: row.producto_id as string | null,
+    productoNombre: row.producto_nombre as string | null,
     loteId: row.lote_id as string | null,
     loteNombre: row.lote_nombre as string | null,
     stockTeorico: Number(row.stock_teorico),

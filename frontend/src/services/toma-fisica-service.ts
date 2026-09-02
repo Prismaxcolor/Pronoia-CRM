@@ -48,7 +48,7 @@ export async function crearTomaFisica(input: {
 
 export async function registrarPesajeTomaFisica(
   tomaFisicaId: string,
-  input: { productoId: string; loteId?: string | null; pesoBruto: number; tara: number; fotos: string[] }
+  input: { productoId?: string | null; loteId?: string | null; pesoBruto: number; tara: number; fotos: string[] }
 ): Promise<{ id: string } | { error: string }> {
   try {
     return await apiFetch<{ id: string }>(`/api/tomas-fisicas/${tomaFisicaId}/pesajes`, {

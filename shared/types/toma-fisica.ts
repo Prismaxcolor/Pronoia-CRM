@@ -28,12 +28,15 @@ export interface TomaFisicaInventario {
 }
 
 /** Un pesaje individual de conteo dentro de una toma física — sin destino,
- *  sin pesaje global, sin devolución: solo material + tara + bruto + foto. */
+ *  sin pesaje global, sin devolución: solo material + tara + bruto + foto.
+ *  En categorías "con lote" (PCB) se pesa el LOTE completo (productoId
+ *  null) — un lote mezclado no se puede desarmar material por material al
+ *  contarlo físicamente. */
 export interface DetalleTomaFisica {
   id: string;
   tomaFisicaId: string;
-  productoId: string;
-  nombreProducto: string;
+  productoId: string | null;
+  nombreProducto: string | null;
   loteId: string | null;
   nombreLote: string | null;
   pesoBruto: number;
@@ -44,11 +47,14 @@ export interface DetalleTomaFisica {
   createdAt: string;
 }
 
-/** Una línea del resumen: stock teórico (sistema) vs. real (contado) para
- *  un producto (y lote, si la categoría lo requiere). */
+/** Una línea del resumen: stock teórico (sistema) vs. real (contado).
+ *  Para categorías sin lote se compara por producto (productoId set,
+ *  loteId null). Para categorías con lote (PCB) se compara por LOTE
+ *  completo (loteId set, productoId null) — la composición por material
+ *  se deriva aparte, ver ComposicionPCBItem. */
 export interface ResumenTomaFisicaLinea {
-  productoId: string;
-  productoNombre: string;
+  productoId: string | null;
+  productoNombre: string | null;
   loteId: string | null;
   loteNombre: string | null;
   stockTeorico: number;

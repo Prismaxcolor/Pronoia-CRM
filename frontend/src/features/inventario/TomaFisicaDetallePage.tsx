@@ -83,7 +83,7 @@ function TomaFisicaDetallePage() {
       mapa.set(clave, { nombreProducto: d.nombreProducto, nombreLote: d.nombreLote, loteId: d.loteId, pesoNeto: d.pesoNeto, cantidad: 1 });
     }
     return mapa;
-  }, new Map<string, { nombreProducto: string; nombreLote: string | null; loteId: string | null; pesoNeto: number; cantidad: number }>());
+  }, new Map<string, { nombreProducto: string | null; nombreLote: string | null; loteId: string | null; pesoNeto: number; cantidad: number }>());
 
   const handleCulminar = async () => {
     const ok = await confirmar({
@@ -192,7 +192,9 @@ function TomaFisicaDetallePage() {
             <tbody>
               {Array.from(ticketPorMaterial.values()).map((m, i) => (
                 <tr key={i} className="border-t border-border">
-                  <td className="py-2.5 px-5 text-text-primary">{m.nombreProducto}</td>
+                  <td className="py-2.5 px-5 text-text-primary">
+                    {m.nombreProducto ?? <span className="text-text-muted">Lote completo</span>}
+                  </td>
                   <td className="py-2.5 px-4 text-text-secondary">
                     {m.nombreLote ?? '—'}
                     <BadgesComposicion loteId={m.loteId} lotes={lotes} />
@@ -227,7 +229,9 @@ function TomaFisicaDetallePage() {
             <tbody>
               {lineas.map((l, i) => (
                 <tr key={i} className="border-t border-border">
-                  <td className="py-2.5 px-5 text-text-primary">{l.productoNombre}</td>
+                  <td className="py-2.5 px-5 text-text-primary">
+                    {l.productoNombre ?? <span className="text-text-muted">Lote completo</span>}
+                  </td>
                   <td className="py-2.5 px-4 text-text-secondary">
                     {l.loteNombre ?? '—'}
                     <BadgesComposicion loteId={l.loteId} lotes={lotes} />

@@ -16,13 +16,21 @@ export const crearTomaFisicaSchema = z.object({
   descripcion: textoOpcional(200),
 });
 
-export const registrarPesajeTomaFisicaSchema = z.object({
-  productoId: z.string().uuid('Selecciona el material.'),
-  loteId: z.string().uuid().optional().nullable(),
-  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
-  tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
-  fotos: z.array(z.string()).min(1, 'Agrega al menos una foto.'),
-});
+export const registrarPesajeTomaFisicaSchema = z
+  .object({
+    // Categorías "sin lote" (Ferroso/No Ferroso) pesan un producto puntual.
+    // Categorías "con lote" (PCB) pesan el lote completo — no se puede
+    // desarmar un lote mezclado material por material al contarlo, así que
+    // ahí no se elige producto, solo el lote.
+    productoId: z.string().uuid().optional().nullable(),
+    loteId: z.string().uuid().optional().nullable(),
+    pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+    tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
+    fotos: z.array(z.string()).min(1, 'Agrega al menos una foto.'),
+  })
+  .refine(data => data.productoId || data.loteId, {
+    message: 'Elige un material o un lote.',
+  });
 
 export type CrearTomaFisicaInput = z.infer<typeof crearTomaFisicaSchema>;
 export type RegistrarPesajeTomaFisicaInput = z.infer<typeof registrarPesajeTomaFisicaSchema>;
