@@ -695,6 +695,17 @@ function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void
 // ---------------------------------------------------------------------------
 // Modal: Completar transformación PCB
 // ---------------------------------------------------------------------------
+interface FilaSalidaPCB {
+  uid: number;
+  loteDestinoId: string;
+  pesoBruto: string;
+  tara: string;
+  fotos: FotoMaterial[];
+}
+function filaSalidaPCBVacia(): FilaSalidaPCB {
+  return { uid: nextUid++, loteDestinoId: '', pesoBruto: '', tara: '', fotos: [] };
+}
+
 function CompletarPCBModal({
   transformacion,
   lotes,
@@ -710,33 +721,50 @@ function CompletarPCBModal({
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
-  const [loteDestinoId, setLoteDestinoId] = useState('');
-  const [pesoBruto, setPesoBruto] = useState('');
-  const [tara, setTara] = useState('');
-  const [fotos, setFotos] = useState<FotoMaterial[]>([]);
+  const [filas, setFilas] = useState<FilaSalidaPCB[]>(() => [filaSalidaPCBVacia()]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
 
-  const loteDestino = lotes.find(l => l.id === loteDestinoId);
-  const neto = (Number(pesoBruto) || 0) - (Number(tara) || 0);
+  const actualizar = (uid: number, campo: Partial<FilaSalidaPCB>) => {
+    setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
+  };
+
+  const netoFila = (f: FilaSalidaPCB) => (Number(f.pesoBruto) || 0) - (Number(f.tara) || 0);
+  const totalSalidas = filas.reduce((acc, f) => acc + netoFila(f), 0);
+  const restante = transformacion.pesoNeto - totalSalidas;
 
   const handleCompletar = async () => {
     setError(null);
-    if (!loteDestinoId) { setError('Selecciona el lote de destino.'); return; }
-    if (neto <= 0) { setError('El peso neto de la salida debe ser mayor a 0.'); return; }
-    setGuardando(true);
-    const fotosUrls: string[] = [];
-    for (const foto of fotos) {
-      const url = await subirFoto(foto);
-      if (url) fotosUrls.push(url);
+    if (filas.some(f => !f.loteDestinoId)) { setError('Selecciona el lote de destino en cada fila.'); return; }
+    if (filas.some(f => netoFila(f) <= 0)) { setError('Cada salida debe tener un peso neto mayor a 0.'); return; }
+    if (filas.some(f => f.loteDestinoId === transformacion.loteOrigenId)) {
+      setError('El lote destino debe ser distinto del lote origen.');
+      return;
     }
-    const result = await completarTransformacionPCB(transformacion.id, {
-      loteDestinoId,
-      pesoBruto: Number(pesoBruto),
-      tara: Number(tara) || 0,
-      fotos: fotosUrls,
-    });
+    if (totalSalidas > transformacion.pesoNeto + 0.01) {
+      setError(`La suma de las salidas (${fmt(totalSalidas)} kg) supera lo que entró (${fmt(transformacion.pesoNeto)} kg).`);
+      return;
+    }
+
+    setGuardando(true);
+    const salidas = [];
+    for (const f of filas) {
+      const urls: string[] = [];
+      for (const foto of f.fotos) {
+        const url = await subirFoto(foto);
+        if (url) urls.push(url);
+      }
+      salidas.push({
+        loteDestinoId: f.loteDestinoId,
+        pesoBruto: Number(f.pesoBruto),
+        tara: Number(f.tara) || 0,
+        fotos: urls,
+      });
+    }
+
+    const result = await completarTransformacionPCB(transformacion.id, salidas);
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     toast.exito('Transformación PCB completada.');
@@ -745,7 +773,7 @@ function CompletarPCBModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-surface rounded-xl border border-border w-full max-w-md my-8 p-5">
+      <div className="bg-surface rounded-xl border border-border w-full max-w-xl my-8 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-base font-semibold text-text-primary">Completar transformación PCB</h2>
@@ -756,48 +784,82 @@ function CompletarPCBModal({
           <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X size={18} /></button>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className={labelClass}>Lote de destino *</label>
-            <button type="button" onClick={() => setMostrarSelectorLote(true)}
-              className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
-              <span className={loteDestinoId ? 'text-text-primary truncate' : 'text-text-muted'}>
-                {loteDestino?.nombre ?? '-Selecciona el lote de destino-'}
-              </span>
-              <ChevronDown size={14} className="text-text-muted shrink-0" />
-            </button>
-            {loteDestino && loteDestino.composicion.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                <span className="text-[10px] text-text-muted w-full mb-0.5">Composición actual del destino:</span>
-                {loteDestino.composicion.map(c => (
-                  <span key={c.item} className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
-                    {c.item}: {c.porcentaje}%
-                  </span>
-                ))}
+        <div className="space-y-3 mb-4">
+          {filas.map((f, idx) => {
+            const loteDestino = lotes.find(l => l.id === f.loteDestinoId);
+            return (
+              <div key={f.uid} className="bg-surface-alt rounded-lg p-3 border border-border">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-text-secondary">Salida {idx + 1}</span>
+                  {filas.length > 1 && (
+                    <button type="button" onClick={() => setFilas(prev => prev.filter(x => x.uid !== f.uid))} className="text-text-muted hover:text-red-500">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <label className={labelClass}>Lote de destino *</label>
+                    <button type="button" onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorLote(true); }}
+                      className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
+                      <span className={f.loteDestinoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                        {loteDestino?.nombre ?? '-Selecciona el lote de destino-'}
+                      </span>
+                      <ChevronDown size={14} className="text-text-muted shrink-0" />
+                    </button>
+                    {loteDestino && loteDestino.composicion.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <span className="text-[10px] text-text-muted w-full mb-0.5">Composición actual del destino:</span>
+                        {loteDestino.composicion.map(c => (
+                          <span key={c.item} className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
+                            {c.item}: {c.porcentaje}%
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className={labelClass}>Peso bruto de salida (kg) *</label>
+                    <input type="number" step="0.001" min="0.001" value={f.pesoBruto}
+                      onChange={e => actualizar(f.uid, { pesoBruto: e.target.value })} className={inputClass} placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Tara (kg)</label>
+                    <input type="number" step="0.001" min="0" value={f.tara}
+                      onChange={e => actualizar(f.uid, { tara: e.target.value })} className={inputClass} placeholder="0.00" />
+                  </div>
+                  <p className="text-xs text-text-muted">Neto: <span className="font-semibold text-text-primary">{fmt(netoFila(f))} kg</span></p>
+                  <FotoMaterialPicker
+                    label="Fotos de esta salida (opcional)"
+                    fotos={f.fotos}
+                    onAgregar={files => actualizar(f.uid, { fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] })}
+                    onQuitar={idx2 => actualizar(f.uid, { fotos: f.fotos.filter((_, i) => i !== idx2) })}
+                  />
+                </div>
               </div>
-            )}
-          </div>
-
-          <div>
-            <label className={labelClass}>Peso bruto de salida (kg) *</label>
-            <input type="number" step="0.001" min="0.001" value={pesoBruto}
-              onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
-          </div>
-          <div>
-            <label className={labelClass}>Tara (kg)</label>
-            <input type="number" step="0.001" min="0" value={tara}
-              onChange={e => setTara(e.target.value)} className={inputClass} placeholder="0.00" />
-          </div>
-          <p className="text-xs text-text-muted">Neto de salida: <span className="font-semibold text-text-primary">{fmt(neto)} kg</span></p>
-
-          <FotoMaterialPicker fotos={fotos}
-            onAgregar={files => setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))])}
-            onQuitar={idx => setFotos(prev => prev.filter((_, i) => i !== idx))} label="Fotos de salida (opcional)" />
+            );
+          })}
         </div>
 
-        {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
+        <button
+          type="button"
+          onClick={() => setFilas(prev => [...prev, filaSalidaPCBVacia()])}
+          className="w-full flex items-center justify-center gap-1.5 py-2 border border-dashed border-border rounded-lg text-sm text-text-muted hover:text-text-secondary hover:border-brand-400 transition-colors mb-4"
+        >
+          <Plus size={14} /> Agregar lote de destino
+        </button>
 
-        <div className="flex gap-3 mt-5">
+        <div className="bg-surface-alt rounded-lg p-3 mb-4 text-xs space-y-1 border border-border">
+          <div className="flex justify-between text-text-secondary"><span>Entrada total</span><span className="font-medium">{fmt(transformacion.pesoNeto)} kg</span></div>
+          <div className="flex justify-between text-text-secondary"><span>Salidas totales</span><span className="font-medium">{fmt(totalSalidas)} kg</span></div>
+          <div className={`flex justify-between font-medium ${restante < 0 ? 'text-red-600' : 'text-text-muted'}`}>
+            <span>{restante < 0 ? 'Excedente' : 'Restante'}</span><span>{fmt(Math.abs(restante))} kg</span>
+          </div>
+        </div>
+
+        {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+
+        <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
             Cancelar
           </button>
@@ -810,9 +872,9 @@ function CompletarPCBModal({
         {mostrarSelectorLote && (
           <SeleccionarEntidadModal
             titulo="Selecciona el lote de destino"
-            entidades={lotes.filter(l => l.activo).map(l => ({ id: l.id, nombre: `${l.nombre} — ${fmt(l.stockKg)} kg`, fotos: l.fotos }))}
+            entidades={lotes.filter(l => l.activo && l.id !== transformacion.loteOrigenId).map(l => ({ id: l.id, nombre: `${l.nombre} — ${fmt(l.stockKg)} kg`, fotos: l.fotos }))}
             onClose={() => setMostrarSelectorLote(false)}
-            onSeleccionar={id => { setLoteDestinoId(id); setMostrarSelectorLote(false); }}
+            onSeleccionar={id => { if (filaActivaUid != null) actualizar(filaActivaUid, { loteDestinoId: id }); setMostrarSelectorLote(false); }}
           />
         )}
       </div>

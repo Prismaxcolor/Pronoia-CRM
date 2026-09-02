@@ -294,42 +294,28 @@ export async function crearTransformacionPCB(
   return { transformacion };
 }
 
-/** PCB: completa la transformación a un lote destino y recalcula la composición del destino. */
+/** PCB: completa la transformación repartiendo la salida entre uno o varios
+ *  lotes de destino (igual que ferroso/no ferroso permite varios materiales
+ *  de salida). La composición de cada destino ya no se recalcula ni se
+ *  guarda a mano: se deriva siempre en vivo a partir del stock real por
+ *  producto (composicion_lote() en SQL) — ver lote-service.ts. */
 export async function completarTransformacionPCB(
   id: string,
   input: CompletarTransformacionPCBInput,
   completadoPor: string
 ): Promise<{ transformacion: TransformacionPublica } | { error: string }> {
-  const tx = await obtenerTransformacion(id);
-  if (!tx) return { error: 'Transformación no encontrada.' };
-  if (tx.estado !== 'bruto') return { error: 'Esta transformación ya fue completada.' };
+  const { error } = await supabaseAdmin.rpc('completar_transformacion_pcb', {
+    p_transformacion_id: id,
+    p_salidas: input.salidas.map(s => ({
+      lote_destino_id: s.loteDestinoId,
+      peso_bruto: s.pesoBruto,
+      tara: s.tara,
+      fotos: s.fotos,
+    })),
+    p_completado_por: completadoPor,
+  });
 
-  const pesoNetoEntrada = input.pesoBruto - input.tara;
-  if (pesoNetoEntrada <= 0) return { error: 'El peso neto de la salida debe ser mayor a 0.' };
-
-  // peso_neto es una columna generada (peso_bruto - tara) — no se envía.
-  const { error: salidaErr } = await supabaseAdmin
-    .from('transformacion_salida_detalle')
-    .insert({
-      transformacion_id: id,
-      lote_destino_id: input.loteDestinoId,
-      peso_bruto: input.pesoBruto,
-      tara: input.tara,
-      fotos: input.fotos,
-    });
-  if (salidaErr) return { error: salidaErr.message };
-
-  const ahora = new Date().toISOString();
-  const { error: updErr } = await supabaseAdmin
-    .from('transformaciones')
-    .update({ estado: 'completa', completado_por: completadoPor, completado_en: ahora })
-    .eq('id', id);
-  if (updErr) return { error: updErr.message };
-
-  // La composición del lote destino ya no se recalcula ni se guarda a mano:
-  // se deriva siempre en vivo a partir del stock real por producto
-  // (composicion_lote() en SQL) — ver lote-service.ts.
-
+  if (error) return { error: error.message };
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer.' };
   return { transformacion };

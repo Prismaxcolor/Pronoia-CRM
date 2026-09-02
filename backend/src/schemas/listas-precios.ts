@@ -27,10 +27,11 @@ export const actualizarListaSchema = crearListaSchema
     { message: 'Debes enviar al menos un campo a actualizar.' }
   );
 
-/** Upsert de un precio (material) dentro de una lista. */
+/** Upsert de un precio (material) dentro de una lista. Permite 0 (material
+ *  sin valor comercial que igual se quiere dejar registrado en la lista). */
 export const upsertPrecioSchema = z.object({
   productoId: z.string().uuid('productoId inválido.'),
-  precio: z.number().positive('El precio debe ser mayor a 0.'),
+  precio: z.number().nonnegative('El precio no puede ser negativo.'),
 });
 
 export type CrearListaInput = z.infer<typeof crearListaSchema>;

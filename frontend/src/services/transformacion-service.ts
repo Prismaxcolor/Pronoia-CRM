@@ -183,7 +183,7 @@ export interface CrearTransformacionPCBInput {
   fotosEntrada: string[];
 }
 
-export interface CompletarTransformacionPCBInput {
+export interface CompletarTransformacionPCBSalidaInput {
   loteDestinoId: string;
   pesoBruto: number;
   tara: number;
@@ -206,12 +206,12 @@ export async function crearTransformacionPCB(
 
 export async function completarTransformacionPCB(
   id: string,
-  input: CompletarTransformacionPCBInput
+  salidas: CompletarTransformacionPCBSalidaInput[]
 ): Promise<{ transformacion: Transformacion } | { error: string }> {
   try {
     const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
       `/api/transformaciones/${id}/completar-pcb`,
-      { method: 'PATCH', body: input }
+      { method: 'PATCH', body: { salidas } }
     );
     return { transformacion };
   } catch (err) {

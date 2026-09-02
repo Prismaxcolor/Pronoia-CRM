@@ -71,11 +71,15 @@ export const crearTransformacionPCBSchema = z.object({
   fotosEntrada: z.array(z.string()).min(1, 'Agrega al menos una foto de entrada.'),
 });
 
-export const completarTransformacionPCBSchema = z.object({
+const salidaPCBSchema = z.object({
   loteDestinoId: z.string().uuid('Selecciona el lote de destino.'),
   pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
   tara: z.number().min(0).default(0),
   fotos: z.array(z.string()).default([]),
+});
+
+export const completarTransformacionPCBSchema = z.object({
+  salidas: z.array(salidaPCBSchema).min(1, 'Agrega al menos un lote de destino.'),
 });
 
 export type CrearTransformacionPCBInput = z.infer<typeof crearTransformacionPCBSchema>;

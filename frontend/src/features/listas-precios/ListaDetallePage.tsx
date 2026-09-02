@@ -55,8 +55,8 @@ function ListaDetallePage() {
 
   const guardarPrecio = async (productoId: string, valorCrudo: string) => {
     const valor = Number(valorCrudo);
-    if (!Number.isFinite(valor) || valor <= 0) {
-      toast.errorMsg('El precio debe ser un número mayor a 0.');
+    if (!Number.isFinite(valor) || valor < 0) {
+      toast.errorMsg('El precio no puede ser negativo.');
       return;
     }
     const result = await upsertPrecioEnLista(id, productoId, valor);
@@ -70,7 +70,7 @@ function ListaDetallePage() {
     e.preventDefault();
     const valor = Number(nuevoPrecio);
     if (!nuevoProductoId) { toast.errorMsg('Elige un material.'); return; }
-    if (!Number.isFinite(valor) || valor <= 0) { toast.errorMsg('El precio debe ser mayor a 0.'); return; }
+    if (!Number.isFinite(valor) || valor < 0) { toast.errorMsg('El precio no puede ser negativo.'); return; }
     const result = await upsertPrecioEnLista(id, nuevoProductoId, valor);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     setPrecios(prev => [...prev, result.precio]);
