@@ -270,30 +270,26 @@ export async function borrarTransformacion(id: string): Promise<BorrarTransforma
 // PCB
 // ---------------------------------------------------------------------------
 
-/** PCB: retira peso de un lote de origen. Crea la transformación en estado 'bruto'. */
+/** PCB: retira peso de un lote de origen. Crea la transformación en estado
+ *  'bruto' y reparte el retiro proporcionalmente entre los materiales que
+ *  realmente componen el lote (regla de tres, vía crear_transformacion_pcb),
+ *  para que el stock del lote origen quede correctamente descontado. */
 export async function crearTransformacionPCB(
   input: CrearTransformacionPCBInput,
   registradoPor: string
 ): Promise<{ transformacion: TransformacionPublica } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('transformaciones')
-    .insert({
-      categoria: 'pcb',
-      lote_origen_id: input.loteOrigenId,
-      peso_bruto: input.pesoBruto,
-      tara: input.tara,
-      peso_neto: input.pesoBruto - input.tara,
-      fecha: input.fecha,
-      notas: input.notas,
-      fotos_entrada: input.fotosEntrada,
-      registrado_por: registradoPor,
-      estado: 'bruto',
-    })
-    .select('id')
-    .single();
+  const { data, error } = await supabaseAdmin.rpc('crear_transformacion_pcb', {
+    p_lote_origen_id: input.loteOrigenId,
+    p_peso_bruto: input.pesoBruto,
+    p_tara: input.tara,
+    p_fecha: input.fecha,
+    p_notas: input.notas,
+    p_fotos_entrada: input.fotosEntrada,
+    p_registrado_por: registradoPor,
+  });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar la transformación.' };
-  const transformacion = await obtenerTransformacion((data as { id: string }).id);
+  const transformacion = await obtenerTransformacion(data as string);
   if (!transformacion) return { error: 'La transformación se creó pero no se pudo leer.' };
   return { transformacion };
 }
@@ -311,6 +307,7 @@ export async function completarTransformacionPCB(
   const pesoNetoEntrada = input.pesoBruto - input.tara;
   if (pesoNetoEntrada <= 0) return { error: 'El peso neto de la salida debe ser mayor a 0.' };
 
+  // peso_neto es una columna generada (peso_bruto - tara) — no se envía.
   const { error: salidaErr } = await supabaseAdmin
     .from('transformacion_salida_detalle')
     .insert({
@@ -318,7 +315,6 @@ export async function completarTransformacionPCB(
       lote_destino_id: input.loteDestinoId,
       peso_bruto: input.pesoBruto,
       tara: input.tara,
-      peso_neto: pesoNetoEntrada,
       fotos: input.fotos,
     });
   if (salidaErr) return { error: salidaErr.message };
