@@ -48,6 +48,51 @@ function tomaFisicaBloqueaLote(lote: Lote, t: TomaFisicaInventario, categorias: 
   return t.loteIds.length === 0 || t.loteIds.includes(lote.id);
 }
 
+interface EstadoArticulo {
+  tomaFisica?: TomaFisicaInventario;
+  transformacionKg?: number;
+}
+
+/** Estado de un artículo (producto + destino) en la vista por categoría:
+ *  ¿hay una toma física abierta que lo afecte, o una transformación
+ *  creada pero sin completar que ya le retiró peso? Para destino "lote"
+ *  (PCB) se puede precisar el almacén y el lote exactos. Para destino MPP
+ *  (Ferroso/No Ferroso) esta vista general no distingue almacén, así que
+ *  el indicativo es "sí hay alguna en curso", sin precisar dónde. */
+function estadoArticulo(
+  a: ArticuloInventario,
+  productos: Producto[],
+  lotes: Lote[],
+  tomasFisicas: TomaFisicaInventario[],
+  transformacionesPendientes: Transformacion[],
+  categorias: TipoMaterial[]
+): EstadoArticulo {
+  const kgDeProducto = (t: Transformacion) =>
+    t.entradaDetalle.filter(d => d.productoId === a.productoId).reduce((acc, d) => acc + d.pesoKg, 0);
+
+  if (a.destinoTipo === 'lote' && a.loteId) {
+    const lote = lotes.find(l => l.id === a.loteId);
+    const tomaFisica = lote ? tomasFisicas.find(t => tomaFisicaBloqueaLote(lote, t, categorias)) : undefined;
+    const pendientes = transformacionesPendientes.filter(
+      t => t.categoria === 'pcb' && t.loteOrigenId === a.loteId && kgDeProducto(t) > 0
+    );
+    return {
+      tomaFisica,
+      transformacionKg: pendientes.length > 0 ? pendientes.reduce((acc, t) => acc + kgDeProducto(t), 0) : undefined,
+    };
+  }
+
+  const producto = productos.find(p => p.id === a.productoId);
+  const tomaFisica = producto?.tipoMaterialId
+    ? tomasFisicas.find(t => t.estado === 'abierta' && t.categoriaIds.includes(producto.tipoMaterialId!))
+    : undefined;
+  const pendientes = transformacionesPendientes.filter(t => t.categoria === 'ferroso_no_ferroso' && kgDeProducto(t) > 0);
+  return {
+    tomaFisica,
+    transformacionKg: pendientes.length > 0 ? pendientes.reduce((acc, t) => acc + kgDeProducto(t), 0) : undefined,
+  };
+}
+
 /** Regrupa los mismos artículos ya cargados por destino (MPP, lote o "sin
  *  movimiento") en vez de por categoría. Además incluye los lotes activos
  *  que todavía no tienen ningún producto pesado adentro, como grupo vacío —
@@ -125,7 +170,7 @@ function InventarioPage() {
     obtenerProductos().then(setProductos);
     obtenerLotes().then(setLotes);
     obtenerTomasFisicas().then(lista => setTomasFisicas(lista.filter(t => t.estado === 'abierta')));
-    obtenerTransformaciones({ estado: 'bruto', categoria: 'pcb' }).then(setTransformaciones);
+    obtenerTransformaciones({ estado: 'bruto' }).then(setTransformaciones);
   }, []);
 
   useEffect(() => {
@@ -256,9 +301,31 @@ function InventarioPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {g.articulos.map(a => (
+                    {g.articulos.map(a => {
+                      const estado = estadoArticulo(a, productos, lotes, tomasFisicas, transformaciones, categorias);
+                      return (
                       <tr key={`${a.productoId}-${a.loteId ?? 'mpp'}`} className="border-t border-border">
-                        <td className="px-5 py-2.5 text-text-primary">{a.nombre}</td>
+                        <td className="px-5 py-2.5 text-text-primary">
+                          <div className="flex items-center gap-1.5">
+                            <span>{a.nombre}</span>
+                            {estado.tomaFisica && (
+                              <span
+                                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-700 shrink-0"
+                                title={`Bloqueado por la toma física ${estado.tomaFisica.codigo}, abierta`}
+                              >
+                                <Lock size={9} /> {estado.tomaFisica.codigo}
+                              </span>
+                            )}
+                            {estado.transformacionKg != null && (
+                              <span
+                                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-700 shrink-0"
+                                title="Kg retirados por una transformación creada pero todavía sin completar"
+                              >
+                                <RefreshCw size={9} /> {fmt(estado.transformacionKg)} kg
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-2.5">
                           <span className={`px-2 py-0.5 rounded-full text-xs ${a.destinoTipo === 'lote' ? 'bg-brand-100 text-brand-700' : 'bg-surface-alt text-text-secondary'}`}>
                             {a.destinoLabel}
@@ -271,7 +338,8 @@ function InventarioPage() {
                           {fmt(a.stock)}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table></div>
               </Accordion>
