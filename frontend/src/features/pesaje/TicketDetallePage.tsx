@@ -316,30 +316,33 @@ function TicketDetallePage() {
             </label>
           )}
 
-          {/* Tabla de pesaje: caja redondeada — este documento es 100% pesaje. */}
+          {/* Tabla de pesaje: caja redondeada — este documento es 100% pesaje.
+           *  Padding en cada celda (no en el contenedor) — mismo patrón que
+           *  TomaFisicaDetallePage, para que nada quede pegado al borde si la
+           *  tabla desborda y hace scroll horizontal. */}
           {ticket.estado !== 'bruto' && (
-            <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none">
+            <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm print:border-collapse">
                   <thead>
-                    <tr className="border-b border-border text-left text-xs text-text-muted">
-                      <th className="py-2 font-medium">Material</th>
-                      {!ocultarDestino && <th className="py-2 font-medium">Destino</th>}
-                      <th className="py-2 font-medium text-right">Bruto</th>
-                      <th className="py-2 font-medium text-right">Tara</th>
-                      <th className="py-2 font-medium text-right">Devol.</th>
-                      <th className="py-2 font-medium text-right">Neto (kg)</th>
+                    <tr className="text-left text-xs text-text-muted bg-surface-alt">
+                      <th className="py-2 px-5 font-medium">Material</th>
+                      {!ocultarDestino && <th className="py-2 px-4 font-medium">Destino</th>}
+                      <th className="py-2 px-4 font-medium text-right">Bruto</th>
+                      <th className="py-2 px-4 font-medium text-right">Tara</th>
+                      <th className="py-2 px-4 font-medium text-right">Devol.</th>
+                      <th className="py-2 px-5 font-medium text-right">Neto (kg)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {ticket.materiales.map(m => (
-                      <tr key={m.id} className="border-b border-border last:border-b-0">
-                        <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
-                        {!ocultarDestino && <td className="py-2 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
-                        <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
-                        <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
-                        <td className="py-2 text-right text-text-secondary">{fmt(m.devolucion)}</td>
-                        <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
+                      <tr key={m.id} className="border-t border-border">
+                        <td className="py-2.5 px-5 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                        {!ocultarDestino && <td className="py-2.5 px-4 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
+                        <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
+                        <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.tara)}</td>
+                        <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.devolucion)}</td>
+                        <td className="py-2.5 px-5 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
                       </tr>
                     ))}
                   </tbody>
