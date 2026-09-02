@@ -135,7 +135,7 @@ function TomaFisicaDetallePage() {
         </div>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:border-0 print:rounded-none print:shadow-none">
+      <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
         <div className="px-5 py-3 border-b border-border print:border-black">
           <h2 className="text-sm font-semibold text-text-primary">
             Ticket de la toma física ({detalle.length} pesaje{detalle.length === 1 ? '' : 's'})
@@ -167,7 +167,7 @@ function TomaFisicaDetallePage() {
         )}
       </div>
 
-      <div className="bg-surface rounded-xl border border-border overflow-hidden print:border-0 print:rounded-none print:shadow-none">
+      <div className="bg-surface rounded-xl border border-border overflow-hidden print:shadow-none">
         <div className="px-5 py-3 border-b border-border print:border-black">
           <h2 className="text-sm font-semibold text-text-primary">Teórico (sistema) vs. real (contado)</h2>
         </div>

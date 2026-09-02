@@ -97,7 +97,7 @@ function FacturaDetallePage({ tipo }: Props) {
             <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
             <span className={`px-2 py-0.5 rounded-full text-xs ${cfg.clase} print:border print:border-black print:bg-transparent`}>{cfg.label}</span>
           </div>
-          <p className="text-sm text-text-muted mt-1">{factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
+          <p className="text-sm text-text-muted mt-1">Ref. {factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
         </div>
         <div className="print:hidden flex flex-wrap items-center gap-2">
           {puedePagar && factura.estado !== 'pagada' && factura.entidadId && (
@@ -128,7 +128,7 @@ function FacturaDetallePage({ tipo }: Props) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
+      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none print:p-0 print:mb-4">
         <FilaDocumento label={labelEntidad} valor={factura.nombreEntidad ?? '—'} />
         <FilaDocumento label="Origen del peso" valor={origenPeso(factura, tickets)} />
         {factura.descripcion && <FilaDocumento label="Descripción" valor={factura.descripcion} />}

@@ -100,7 +100,7 @@ function NotaDetallePage({ tipoEntidad }: Props) {
               </span>
             )}
           </div>
-          <p className="text-sm text-text-muted mt-1">{nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`} · {nota.fecha.slice(0, 10)}</p>
+          <p className="text-sm text-text-muted mt-1">Ref. {nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`} · {nota.fecha.slice(0, 10)}</p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
           <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
@@ -110,7 +110,7 @@ function NotaDetallePage({ tipoEntidad }: Props) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
+      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none print:p-0 print:mb-4">
         <FilaDocumento label={esProveedor ? 'Proveedor' : 'Cliente'} valor={nombreEntidad} />
         <FilaDocumento label="Fecha" valor={nota.fecha.slice(0, 10)} />
         <FilaDocumento label="Correlativo" valor={nota.codigo ?? '—'} />

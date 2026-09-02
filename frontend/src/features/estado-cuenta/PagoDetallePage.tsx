@@ -95,7 +95,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
+      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none print:p-0 print:mb-4">
         <FilaDocumento label={esProveedor ? 'Proveedor' : 'Cliente'} valor={pago.nombreEntidad} />
         <FilaDocumento label="Fecha" valor={pago.fecha} />
         {pago.items.length === 0 && pago.descripcion && <FilaDocumento label="Descripción" valor={pago.descripcion} />}

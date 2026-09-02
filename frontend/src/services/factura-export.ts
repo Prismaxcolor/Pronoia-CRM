@@ -62,6 +62,17 @@ function lineaTexto(it: FacturaCV['items'][number]): string {
   return `${it.nombreProducto ?? 'material'} · ${fmt(it.peso)} kg × ${fmt(it.precioUnitario)} = ${fmt(it.subtotal)}`;
 }
 
+const ANCHO_TABLA = 539 - 56;
+
+/** Alto aproximado de una tabla autoTable (fuente 10pt, cellPadding 6) — usado
+ *  para enmarcarla con un roundedRect antes de dibujarla, ya que autoTable no
+ *  soporta esquinas redondeadas nativamente. */
+function altoEstimadoTabla(filasBody: number, filasPie = 0): number {
+  const ALTO_HEADER = 26;
+  const ALTO_FILA = 22;
+  return ALTO_HEADER + filasBody * ALTO_FILA + filasPie * ALTO_FILA + 8;
+}
+
 function descargarBlob(blob: Blob, nombre: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -108,20 +119,23 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   }
 
   y += 10;
+  const itemsBody = consolidarItems(f.items).map(it => [
+    sanitizarPdf(it.nombreProducto ?? '—'),
+    fmt(it.peso),
+    fmt(it.precioUnitario),
+    fmt(it.subtotal),
+  ]);
+  doc.setDrawColor(210).setLineWidth(1)
+    .roundedRect(52, y - 4, ANCHO_TABLA + 8, altoEstimadoTabla(itemsBody.length), 6, 6, 'S');
   autoTable(doc, {
     startY: y,
     head: [['Ítem', 'Cantidad (kg)', 'Precio unitario', 'Monto total']],
-    body: consolidarItems(f.items).map(it => [
-      sanitizarPdf(it.nombreProducto ?? '—'),
-      fmt(it.peso),
-      fmt(it.precioUnitario),
-      fmt(it.subtotal),
-    ]),
+    body: itemsBody,
     margin: { left: 56, right: 56 },
-    styles: { font: 'helvetica', fontSize: 10, cellPadding: 6 },
-    headStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
+    styles: { font: 'helvetica', fontSize: 10, cellPadding: 6, lineWidth: { bottom: 0.5 }, lineColor: [225, 225, 225] },
+    headStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { bottom: 1 }, lineColor: [0, 0, 0] },
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-    theme: 'grid',
+    theme: 'plain',
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   y = (doc as any).lastAutoTable.finalY;
@@ -161,22 +175,25 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
           ['Devolución', '', '', `${fmt(totalDevolucion)} kg`],
         ]
       : [['Total del ticket', '', '', `${fmt(ticket.pesoNetoTotal)} kg`]];
+    const materialesBody = ticket.materiales.map(m => [
+      sanitizarPdf(m.nombreProducto ?? '-'),
+      fmt(m.pesoBruto),
+      fmt(m.tara),
+      fmt(m.pesoNeto),
+    ]);
+    doc.setDrawColor(210).setLineWidth(1)
+      .roundedRect(52, y - 4, ANCHO_TABLA + 8, altoEstimadoTabla(materialesBody.length, footRows.length), 6, 6, 'S');
     autoTable(doc, {
       startY: y,
       head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
-      body: ticket.materiales.map(m => [
-        sanitizarPdf(m.nombreProducto ?? '-'),
-        fmt(m.pesoBruto),
-        fmt(m.tara),
-        fmt(m.pesoNeto),
-      ]),
+      body: materialesBody,
       foot: footRows,
       margin: { left: 56, right: 56 },
-      styles: { font: 'helvetica', fontSize: 10, cellPadding: 6 },
-      headStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
-      footStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
+      styles: { font: 'helvetica', fontSize: 10, cellPadding: 6, lineWidth: { bottom: 0.5 }, lineColor: [225, 225, 225] },
+      headStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { bottom: 1 }, lineColor: [0, 0, 0] },
+      footStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { top: 1 }, lineColor: [0, 0, 0] },
       columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-      theme: 'grid',
+      theme: 'plain',
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     y = (doc as any).lastAutoTable.finalY;

@@ -251,7 +251,7 @@ function TicketDetallePage() {
               </span>
             )}
           </div>
-          <p className="text-sm text-text-muted mt-1">{ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
+          <p className="text-sm text-text-muted mt-1">Ref. {ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
         </div>
         {!editando && (
           <div className="print:hidden flex items-center gap-2 shrink-0">
@@ -270,7 +270,7 @@ function TicketDetallePage() {
       </div>
 
       {!editando ? (
-        <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
+        <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none print:p-0 print:mb-4">
           <Fila label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
 
           {ticket.pesajeExterior ? (
