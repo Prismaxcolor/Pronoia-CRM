@@ -62,15 +62,43 @@ function lineaTexto(it: FacturaCV['items'][number]): string {
   return `${it.nombreProducto ?? 'material'} · ${fmt(it.peso)} kg × ${fmt(it.precioUnitario)} = ${fmt(it.subtotal)}`;
 }
 
-const ANCHO_TABLA = 539 - 56;
+const BOX_LEFT = 56;
+const BOX_RIGHT = 539;
+const BOX_PAD = 16;
+const GRIS_BORDE_CAJA: [number, number, number] = [205, 205, 205];
+const GRIS_LINEA_HEAD: [number, number, number] = [190, 190, 190];
+const GRIS_LINEA_FILA: [number, number, number] = [232, 232, 232];
 
-/** Alto aproximado de una tabla autoTable (fuente 10pt, cellPadding 6) — usado
- *  para enmarcarla con un roundedRect antes de dibujarla, ya que autoTable no
- *  soporta esquinas redondeadas nativamente. */
-function altoEstimadoTabla(filasBody: number, filasPie = 0): number {
-  const ALTO_HEADER = 26;
-  const ALTO_FILA = 22;
-  return ALTO_HEADER + filasBody * ALTO_FILA + filasPie * ALTO_FILA + 8;
+/**
+ * Dibuja una tabla autoTable enmarcada en una caja de esquinas redondeadas.
+ * El tamaño de la caja se mide DESPUÉS de renderizar la tabla (nunca se
+ * estima) — así calza siempre con el contenido real sin importar cuántas
+ * filas ocupe. El contenido va separado del borde por BOX_PAD para que el
+ * texto nunca toque la curva, y todas las líneas internas usan el mismo tono
+ * de gris (nunca negro puro) para no chocar visualmente con el borde
+ * redondeado. Devuelve el Y donde continúa el documento.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function tablaEnCaja(doc: any, autoTable: any, opts: { startY: number; head: string[][]; body: string[][]; foot?: string[][] }): number {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = { left: BOX_LEFT + BOX_PAD, right: pageWidth - (BOX_RIGHT - BOX_PAD) };
+  autoTable(doc, {
+    startY: opts.startY + 10,
+    head: opts.head,
+    body: opts.body,
+    foot: opts.foot,
+    margin,
+    styles: { font: 'helvetica', fontSize: 10, cellPadding: 7, lineWidth: { bottom: 0.5 }, lineColor: GRIS_LINEA_FILA },
+    headStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { bottom: 1 }, lineColor: GRIS_LINEA_HEAD },
+    footStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { top: 1 }, lineColor: GRIS_LINEA_HEAD },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    theme: 'plain',
+  });
+  const finalY = doc.lastAutoTable.finalY;
+  const rectHeight = finalY - opts.startY + 10;
+  doc.setDrawColor(...GRIS_BORDE_CAJA).setLineWidth(1)
+    .roundedRect(BOX_LEFT, opts.startY, BOX_RIGHT - BOX_LEFT, rectHeight, 8, 8, 'S');
+  return finalY + 10;
 }
 
 function descargarBlob(blob: Blob, nombre: string): void {
@@ -118,29 +146,20 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
     y += 20 + (lineas.length - 1) * 13;
   }
 
-  y += 10;
+  y += 14;
   const itemsBody = consolidarItems(f.items).map(it => [
     sanitizarPdf(it.nombreProducto ?? '—'),
     fmt(it.peso),
     fmt(it.precioUnitario),
     fmt(it.subtotal),
   ]);
-  doc.setDrawColor(210).setLineWidth(1)
-    .roundedRect(52, y - 4, ANCHO_TABLA + 8, altoEstimadoTabla(itemsBody.length), 6, 6, 'S');
-  autoTable(doc, {
+  y = tablaEnCaja(doc, autoTable, {
     startY: y,
     head: [['Ítem', 'Cantidad (kg)', 'Precio unitario', 'Monto total']],
     body: itemsBody,
-    margin: { left: 56, right: 56 },
-    styles: { font: 'helvetica', fontSize: 10, cellPadding: 6, lineWidth: { bottom: 0.5 }, lineColor: [225, 225, 225] },
-    headStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { bottom: 1 }, lineColor: [0, 0, 0] },
-    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-    theme: 'plain',
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  y = (doc as any).lastAutoTable.finalY;
 
-  y += 30;
+  y += 26;
   doc.setFontSize(20).setFont('helvetica', 'bold').text('Total', 56, y);
   doc.text(fmt(f.total), 539, y, { align: 'right' });
 
@@ -155,19 +174,19 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   }
 
   const totalPeso = consolidarItems(f.items).reduce((acc, it) => acc + it.peso, 0);
-  y += 30;
-  doc.setDrawColor(0).setLineWidth(1).line(56, y, 539, y);
-  y += 22;
+  y += 26;
+  doc.setDrawColor(120).setLineWidth(1.5).line(56, y, 539, y);
+  y += 24;
   doc.setFontSize(15).setFont('helvetica', 'bold').text('Total de kilos facturados', 56, y);
   doc.text(`${fmt(totalPeso)} kg`, 539, y, { align: 'right' });
 
   const pageHeight = doc.internal.pageSize.getHeight();
   for (const ticket of tickets) {
-    y += 36;
-    if (y > pageHeight - 100) { doc.addPage(); y = 56; }
+    y += 34;
+    if (y > pageHeight - 120) { doc.addPage(); y = 56; }
     doc.setFontSize(15).setFont('helvetica', 'bold').setTextColor(0);
     doc.text(sanitizarPdf(`Ticket de pesaje - ${ticket.codigo}`), 56, y);
-    y += 12;
+    y += 14;
     const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
     const footRows = totalDevolucion > 0
       ? [
@@ -181,22 +200,12 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
       fmt(m.tara),
       fmt(m.pesoNeto),
     ]);
-    doc.setDrawColor(210).setLineWidth(1)
-      .roundedRect(52, y - 4, ANCHO_TABLA + 8, altoEstimadoTabla(materialesBody.length, footRows.length), 6, 6, 'S');
-    autoTable(doc, {
+    y = tablaEnCaja(doc, autoTable, {
       startY: y,
       head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
       body: materialesBody,
       foot: footRows,
-      margin: { left: 56, right: 56 },
-      styles: { font: 'helvetica', fontSize: 10, cellPadding: 6, lineWidth: { bottom: 0.5 }, lineColor: [225, 225, 225] },
-      headStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { bottom: 1 }, lineColor: [0, 0, 0] },
-      footStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { top: 1 }, lineColor: [0, 0, 0] },
-      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-      theme: 'plain',
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    y = (doc as any).lastAutoTable.finalY;
   }
 
   doc.save(nombreArchivo(f, 'pdf'));
