@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Printer } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown } from 'lucide-react';
 import { obtenerPagoDetalle, type PagoDetalle } from '../../services/pago-detalle-service';
 import type { TipoEntidad } from '../../services/estado-cuenta-service';
+import { descargarPagoPDF } from '../../services/pago-export';
 import FilaDocumento from '../../components/FilaDocumento';
 
 interface Props {
@@ -97,6 +98,10 @@ function PagoDetallePage({ tipoEntidad }: Props) {
           <p className="text-sm text-text-muted mt-1">{pago.fecha}</p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
+          <button type="button" onClick={() => descargarPagoPDF(pago, esProveedor)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
+            <FileDown size={16} />
+            PDF
+          </button>
           <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
             <Printer size={16} />
             Imprimir

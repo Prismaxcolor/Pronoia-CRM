@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Printer } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown } from 'lucide-react';
 import { obtenerNotaAjuste, type NotaAjusteDetalle } from '../../services/nota-ajuste-service';
 import { obtenerNotaAjusteCliente, type NotaAjusteClienteDetalle } from '../../services/nota-ajuste-cliente-service';
 import type { TipoEntidad } from '../../services/estado-cuenta-service';
+import { descargarNotaPDF } from '../../services/nota-export';
 import FilaDocumento from '../../components/FilaDocumento';
 
 interface Props {
@@ -112,6 +113,10 @@ function NotaDetallePage({ tipoEntidad }: Props) {
           <p className="text-sm text-text-muted mt-1">Ref. {nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`} · {nota.fecha.slice(0, 10)}</p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
+          <button type="button" onClick={() => descargarNotaPDF(nota, esProveedor)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
+            <FileDown size={16} />
+            PDF
+          </button>
           <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
             <Printer size={16} />
             Imprimir

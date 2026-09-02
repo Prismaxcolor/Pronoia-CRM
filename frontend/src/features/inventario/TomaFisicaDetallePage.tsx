@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ScanLine, CheckCircle2, Printer } from 'lucide-react';
+import { ArrowLeft, ScanLine, CheckCircle2, Printer, FileDown } from 'lucide-react';
 import {
   obtenerTomaFisica,
   obtenerResumenTomaFisica,
@@ -10,6 +10,7 @@ import { obtenerLotes } from '../../services/lote-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
+import { descargarTomaFisicaPDF } from '../../services/toma-fisica-export';
 import FilaDocumento from '../../components/FilaDocumento';
 import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea, Lote } from '@shared/types/index.js';
 
@@ -148,6 +149,9 @@ function TomaFisicaDetallePage() {
               Registrar conteo
             </button>
           )}
+          <button type="button" onClick={() => descargarTomaFisicaPDF(tomaFisica, detalle, lineas)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
+            <FileDown size={16} />
+          </button>
           <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
             <Printer size={16} />
           </button>

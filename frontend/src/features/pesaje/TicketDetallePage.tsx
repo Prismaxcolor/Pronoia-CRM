@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, X, ChevronDown } from 'lucide-react';
 import { obtenerTicket, editarTicket } from '../../services/ticket-pesaje-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
@@ -15,6 +15,7 @@ import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
+import { descargarTicketPDF } from '../../services/ticket-export';
 import FilaDocumento from '../../components/FilaDocumento';
 
 function fmt(n: number): string {
@@ -271,6 +272,10 @@ function TicketDetallePage() {
                 Editar
               </button>
             )}
+            <button type="button" onClick={() => descargarTicketPDF(ticket, ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—', esCompra)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
+              <FileDown size={16} />
+              PDF
+            </button>
             <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
               <Printer size={16} />
               Imprimir
