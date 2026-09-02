@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Package } from 'lucide-react';
+import { Package, Lock, RefreshCw } from 'lucide-react';
 import {
   obtenerInventario,
   type ArticuloInventario,
@@ -9,12 +9,14 @@ import {
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
+import { obtenerTomasFisicas } from '../../services/toma-fisica-service';
+import { obtenerTransformaciones } from '../../services/transformacion-service';
 import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import Accordion from '../../components/Accordion';
 import AlmacenesPanel from './AlmacenesPanel';
 import TrasladosPanel from './TrasladosPanel';
 import TomaFisicaPanel from './TomaFisicaPanel';
-import type { TipoMaterial, Producto, Lote, ComposicionPCBItem } from '@shared/types/index.js';
+import type { TipoMaterial, Producto, Lote, ComposicionPCBItem, TomaFisicaInventario, Transformacion } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -28,13 +30,35 @@ interface GrupoDestino {
   articulos: ArticuloConCategoria[];
   composicion?: ComposicionPCBItem[];
   stockLote?: number;
+  /** Toma física abierta que bloquea este lote ahora mismo, si hay. */
+  tomaFisicaBloqueando?: TomaFisicaInventario;
+  /** Kg retirados de este lote por transformaciones PCB creadas pero
+   *  todavía sin completar — "en limbo", ya salieron pero no llegaron
+   *  a ningún destino todavía. */
+  transformacionPendienteKg?: number;
+}
+
+/** ¿Esta toma física abierta bloquea este lote ahora mismo? Bloquea si es
+ *  del mismo almacén, incluye alguna categoría "con lote" (PCB), y — si se
+ *  acotó a lotes específicos al crearla — este lote es uno de ellos. */
+function tomaFisicaBloqueaLote(lote: Lote, t: TomaFisicaInventario, categorias: TipoMaterial[]): boolean {
+  if (t.estado !== 'abierta' || t.almacenId !== lote.almacenId) return false;
+  const tieneCategoriaConLote = t.categoriaIds.some(id => categorias.find(c => c.id === id)?.sinLote === false);
+  if (!tieneCategoriaConLote) return false;
+  return t.loteIds.length === 0 || t.loteIds.includes(lote.id);
 }
 
 /** Regrupa los mismos artículos ya cargados por destino (MPP, lote o "sin
  *  movimiento") en vez de por categoría. Además incluye los lotes activos
  *  que todavía no tienen ningún producto pesado adentro, como grupo vacío —
  *  si no, un lote recién creado desaparece de esta vista hasta su primer pesaje. */
-function agruparPorDestino(grupos: GrupoInventario[], lotes: Lote[]): GrupoDestino[] {
+function agruparPorDestino(
+  grupos: GrupoInventario[],
+  lotes: Lote[],
+  tomasFisicas: TomaFisicaInventario[],
+  transformaciones: Transformacion[],
+  categorias: TipoMaterial[]
+): GrupoDestino[] {
   const mapa = new Map<string, GrupoDestino>();
   for (const g of grupos) {
     for (const a of g.articulos) {
@@ -52,13 +76,20 @@ function agruparPorDestino(grupos: GrupoInventario[], lotes: Lote[]): GrupoDesti
       mapa.set(l.id, { clave: l.id, label: l.nombre, totalKg: 0, articulos: [] });
     }
   }
-  // Adjunta composición y stock real del lote (Bloque PCB) a cada grupo que
-  // corresponda a un lote real — los grupos MPP/sin-lote no tienen lote asociado.
+  // Adjunta composición, stock real, y estado de bloqueo/transformación
+  // pendiente a cada grupo que corresponda a un lote real — los grupos
+  // MPP/sin-lote no tienen lote asociado.
   for (const grupo of mapa.values()) {
     const lote = lotes.find(l => l.id === grupo.clave);
-    if (lote) {
-      grupo.composicion = lote.composicion;
-      grupo.stockLote = lote.stockKg;
+    if (!lote) continue;
+    grupo.composicion = lote.composicion;
+    grupo.stockLote = lote.stockKg;
+    grupo.tomaFisicaBloqueando = tomasFisicas.find(t => tomaFisicaBloqueaLote(lote, t, categorias));
+    const pendientesDeEsteLote = transformaciones.filter(
+      t => t.categoria === 'pcb' && t.estado === 'bruto' && t.loteOrigenId === lote.id
+    );
+    if (pendientesDeEsteLote.length > 0) {
+      grupo.transformacionPendienteKg = pendientesDeEsteLote.reduce((acc, t) => acc + t.pesoNeto, 0);
     }
   }
   return Array.from(mapa.values()).sort((a, b) => a.label.localeCompare(b.label));
@@ -77,17 +108,24 @@ function InventarioPage() {
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
+  const [tomasFisicas, setTomasFisicas] = useState<TomaFisicaInventario[]>([]);
+  const [transformaciones, setTransformaciones] = useState<Transformacion[]>([]);
   const [cargando, setCargando] = useState(true);
   const [filtros, setFiltros] = useState<FiltrosInventario>({});
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [agrupacion, setAgrupacion] = useState<Agrupacion>('categoria');
 
-  const gruposPorDestino = useMemo(() => agruparPorDestino(grupos, lotes), [grupos, lotes]);
+  const gruposPorDestino = useMemo(
+    () => agruparPorDestino(grupos, lotes, tomasFisicas, transformaciones, categorias),
+    [grupos, lotes, tomasFisicas, transformaciones, categorias]
+  );
 
   useEffect(() => {
     obtenerTiposMaterial().then(setCategorias);
     obtenerProductos().then(setProductos);
     obtenerLotes().then(setLotes);
+    obtenerTomasFisicas().then(lista => setTomasFisicas(lista.filter(t => t.estado === 'abierta')));
+    obtenerTransformaciones({ estado: 'bruto', categoria: 'pcb' }).then(setTransformaciones);
   }, []);
 
   useEffect(() => {
@@ -252,7 +290,23 @@ function InventarioPage() {
                   <div className="w-9 h-9 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
                     <Package size={16} />
                   </div>
-                  <span className="font-semibold text-text-primary text-sm flex-1 text-left">{g.label}</span>
+                  <span className="font-semibold text-text-primary text-sm flex-1 text-left truncate">{g.label}</span>
+                  {g.tomaFisicaBloqueando && (
+                    <span
+                      className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 shrink-0"
+                      title={`Bloqueado por la toma física ${g.tomaFisicaBloqueando.codigo}, abierta`}
+                    >
+                      <Lock size={11} /> Toma física {g.tomaFisicaBloqueando.codigo}
+                    </span>
+                  )}
+                  {g.transformacionPendienteKg != null && (
+                    <span
+                      className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 shrink-0"
+                      title="Peso retirado por una transformación PCB creada pero todavía sin completar"
+                    >
+                      <RefreshCw size={11} /> En transformación: {fmt(g.transformacionPendienteKg)} kg
+                    </span>
+                  )}
                   <span className="text-xs text-text-muted mr-2">{g.articulos.length} art.</span>
                   <span className={`text-base font-bold ${g.totalKg < 0 ? 'text-red-600' : 'text-text-primary'}`}>
                     {fmt(g.totalKg)} kg
