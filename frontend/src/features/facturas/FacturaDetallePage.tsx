@@ -91,6 +91,15 @@ function FacturaDetallePage({ tipo }: Props) {
         </button>
       </div>
 
+      {/* Encabezado de marca — ícono + "Pronoia", estándar en todo documento impreso. */}
+      <div className="hidden print:flex items-center justify-end gap-2 mb-6">
+        <div className="text-right leading-tight">
+          <p className="text-lg font-bold text-black">Pronoia</p>
+          <p className="text-[10px] text-gray-500">Sistema de compras</p>
+        </div>
+        <img src="/pronoia-icon.png" alt="" className="w-6 h-6" />
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
@@ -128,38 +137,43 @@ function FacturaDetallePage({ tipo }: Props) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none print:p-0 print:mb-4">
+      <div className="mb-6">
         <FilaDocumento label={labelEntidad} valor={factura.nombreEntidad ?? '—'} />
         <FilaDocumento label="Origen del peso" valor={origenPeso(factura, tickets)} />
         {factura.descripcion && <FilaDocumento label="Descripción" valor={factura.descripcion} />}
         {factura.observaciones && <FilaDocumento label="Observaciones" valor={factura.observaciones} />}
+      </div>
 
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full text-sm print:border-collapse">
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-text-muted print:border-black">
-                <th className="py-2 font-medium print:border print:border-black print:px-2">Ítem</th>
-                <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Cantidad (kg)</th>
-                <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Precio unitario</th>
-                <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Monto total</th>
+      {/* Bloque monetario: tabla de grid completo, esquinas cuadradas — a
+       *  diferencia de los tickets de pesaje (redondeados), lo financiero
+       *  se presenta siempre así en todo el sistema. */}
+      <div className="overflow-x-auto mb-4">
+        <table className="w-full text-sm border border-border print:border-black">
+          <thead>
+            <tr className="bg-surface-alt text-left text-xs text-text-secondary">
+              <th className="py-2.5 px-3 font-semibold border border-border print:border-black">Ítem</th>
+              <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Cantidad (kg)</th>
+              <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Precio unitario</th>
+              <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Monto total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {consolidarItems(factura.items).map(it => (
+              <tr key={it.id}>
+                <td className="py-2.5 px-3 text-text-primary border border-border print:border-black">{it.nombreProducto ?? '—'}</td>
+                <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.peso)}</td>
+                <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.precioUnitario)}</td>
+                <td className="py-2.5 px-3 text-right font-medium text-text-primary border border-border print:border-black">{fmt(it.subtotal)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {consolidarItems(factura.items).map(it => (
-                <tr key={it.id} className="border-b border-border last:border-b-0 print:border-black">
-                  <td className="py-2 text-text-primary print:border print:border-black print:px-2">{it.nombreProducto ?? '—'}</td>
-                  <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(it.peso)}</td>
-                  <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(it.precioUnitario)}</td>
-                  <td className="py-2 text-right font-medium text-text-primary print:border print:border-black print:px-2">{fmt(it.subtotal)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-        <div className="flex justify-between pt-3 mt-1">
-          <span className="font-semibold text-text-primary">Total</span>
-          <span className="text-xl font-bold text-brand-700">{fmt(factura.total)}</span>
+      <div className="mb-6">
+        <div className="flex justify-between items-baseline pt-3">
+          <span className="font-semibold text-text-primary text-lg">Total</span>
+          <span className="text-2xl font-bold text-brand-700">{fmt(factura.total)}</span>
         </div>
 
         {esCompra && factura.montoPagado > 0 && (
@@ -176,8 +190,8 @@ function FacturaDetallePage({ tipo }: Props) {
         )}
 
         <div className="flex justify-between items-center mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
-          <span className="font-bold text-text-primary">Total de kilos facturados</span>
-          <span className="text-xl font-bold text-brand-700">{fmt(totalPesoFacturado)} kg</span>
+          <span className="font-bold text-text-primary text-base">Total de kilos facturados</span>
+          <span className="text-lg font-bold text-brand-700">{fmt(totalPesoFacturado)} kg</span>
         </div>
       </div>
 
@@ -187,7 +201,7 @@ function FacturaDetallePage({ tipo }: Props) {
             const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
             return (
               <div key={ticket.id} className="bg-surface rounded-xl border border-border p-5">
-                <h2 className="text-sm font-semibold text-text-secondary mb-3">Ticket de pesaje · {ticket.codigo}</h2>
+                <h2 className="text-lg font-bold text-text-primary mb-3">Ticket de pesaje · {ticket.codigo}</h2>
                 <div className="overflow-x-auto mb-4">
                   <table className="w-full text-sm">
                     <thead>

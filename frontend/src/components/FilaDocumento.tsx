@@ -11,7 +11,7 @@ interface Props {
  *  y NotaDetallePage. */
 function FilaDocumento({ label, valor, onClick }: Props) {
   return (
-    <div className="flex justify-between py-2 border-b border-border last:border-b-0 print:border-black">
+    <div className="flex justify-between py-2.5 border-b border-border print:border-black">
       <span className="text-text-secondary text-sm">{label}</span>
       {onClick ? (
         <button

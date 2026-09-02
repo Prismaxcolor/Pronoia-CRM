@@ -230,6 +230,15 @@ function TicketDetallePage() {
         </button>
       </div>
 
+      {/* Encabezado de marca — ícono + "Pronoia", estándar en todo documento impreso. */}
+      <div className="hidden print:flex items-center justify-end gap-2 mb-6">
+        <div className="text-right leading-tight">
+          <p className="text-lg font-bold text-black">Pronoia</p>
+          <p className="text-[10px] text-gray-500">Sistema de compras</p>
+        </div>
+        <img src="/pronoia-icon.png" alt="" className="w-6 h-6" />
+      </div>
+
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">

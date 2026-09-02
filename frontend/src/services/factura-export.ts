@@ -1,5 +1,6 @@
 import { consolidarItems, type FacturaCV } from './factura-cv-service';
 import { type TicketPesaje } from '@shared/types/index.js';
+import { PRONOIA_LOGO_ICON_PNG_BASE64 } from '../assets/pronoia-logo-icon';
 
 // jspdf y docx se cargan bajo demanda (dynamic import) para no inflar el bundle
 // inicial: solo pesan cuando el usuario descarga una factura.
@@ -68,18 +69,99 @@ const BOX_PAD = 16;
 const GRIS_BORDE_CAJA: [number, number, number] = [205, 205, 205];
 const GRIS_LINEA_HEAD: [number, number, number] = [190, 190, 190];
 const GRIS_LINEA_FILA: [number, number, number] = [232, 232, 232];
+const GRIS_DIVISOR: [number, number, number] = [215, 215, 215];
+const GRIS_GRID: [number, number, number] = [70, 70, 70];
+
+/** Color del texto/borde del badge de estado — mismo criterio de color que
+ *  ESTADO_CFG en FacturaDetallePage.tsx (gris/azul/verde). */
+const BADGE_COLOR: Record<string, [number, number, number]> = {
+  borrador: [90, 95, 105],
+  emitida: [29, 78, 175],
+  pagada: [21, 128, 61],
+};
 
 /**
- * Dibuja una tabla autoTable enmarcada en una caja de esquinas redondeadas.
- * El tamaño de la caja se mide DESPUÉS de renderizar la tabla (nunca se
- * estima) — así calza siempre con el contenido real sin importar cuántas
- * filas ocupe. El contenido va separado del borde por BOX_PAD para que el
- * texto nunca toque la curva, y todas las líneas internas usan el mismo tono
- * de gris (nunca negro puro) para no chocar visualmente con el borde
+ * Encabezado de marca — ícono + "Pronoia" arriba a la derecha. Estándar en
+ * TODOS los documentos que emite el sistema.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function encabezadoMarca(doc: any): void {
+  const y = 56;
+  const iconSize = 22;
+  const iconX = BOX_RIGHT - iconSize;
+  doc.addImage(PRONOIA_LOGO_ICON_PNG_BASE64, 'PNG', iconX, y - 16, iconSize, iconSize * (164 / 160));
+  doc.setFontSize(16).setFont('helvetica', 'bold').setTextColor(20, 30, 40).text('Pronoia', iconX - 8, y, { align: 'right' });
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', iconX - 8, y + 14, { align: 'right' });
+  doc.setTextColor(0);
+}
+
+/** Título del documento + badge de estado (siempre en píldora redonda, sea
+ *  cual sea el tipo de documento — el redondeado del badge es constante). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function tituloConBadge(doc: any, y: number, titulo: string, badgeTexto?: string | null): void {
+  doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(0).text(titulo, BOX_LEFT, y);
+  if (badgeTexto) {
+    const color = BADGE_COLOR[badgeTexto.toLowerCase()] ?? [90, 95, 105];
+    const anchoTitulo = doc.getTextWidth(titulo);
+    const bx = BOX_LEFT + anchoTitulo + 12;
+    doc.setFontSize(9).setFont('helvetica', 'bold');
+    const bw = doc.getTextWidth(badgeTexto.toUpperCase()) + 18;
+    doc.setDrawColor(...color).setLineWidth(1).roundedRect(bx, y - 13, bw, 18, 9, 9, 'S');
+    doc.setTextColor(...color).text(badgeTexto.toUpperCase(), bx + bw / 2, y - 1, { align: 'center' });
+  }
+  doc.setTextColor(0);
+}
+
+/**
+ * Fila etiqueta/valor con línea divisoria completa debajo — el patrón
+ * estándar de encabezado en TODOS los documentos (factura, ticket, nota,
+ * pago, toma física...). Devuelve el Y donde continúa el documento.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function filaEncabezado(doc: any, y: number, label: string, valor: string): number {
+  doc.setFontSize(11).setFont('helvetica', 'normal').setTextColor(90);
+  doc.text(sanitizarPdf(label), BOX_LEFT, y);
+  doc.setTextColor(15);
+  const lineas = doc.splitTextToSize(sanitizarPdf(valor), 320);
+  doc.text(lineas, BOX_RIGHT, y, { align: 'right' });
+  const yLinea = y + 8 + (lineas.length - 1) * 13;
+  doc.setDrawColor(...GRIS_DIVISOR).setLineWidth(0.75).line(BOX_LEFT, yLinea, BOX_RIGHT, yLinea);
+  doc.setTextColor(0);
+  return yLinea + 20;
+}
+
+/**
+ * Tabla MONETARIA (montos, dinero): grid completo, esquinas cuadradas — como
+ * una hoja de cálculo. Para ítems de factura, notas de crédito/débito, pagos.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function tablaMonetaria(doc: any, autoTable: any, opts: { startY: number; head: string[][]; body: string[][]; foot?: string[][] }): number {
+  autoTable(doc, {
+    startY: opts.startY,
+    head: opts.head,
+    body: opts.body,
+    foot: opts.foot,
+    margin: { left: BOX_LEFT, right: 595.28 - BOX_RIGHT },
+    styles: { font: 'helvetica', fontSize: 10, cellPadding: 7, lineWidth: 0.75, lineColor: GRIS_GRID },
+    headStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold', lineWidth: 0.75, lineColor: GRIS_GRID },
+    footStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold', lineWidth: 0.75, lineColor: GRIS_GRID },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    theme: 'grid',
+  });
+  return doc.lastAutoTable.finalY;
+}
+
+/**
+ * Tabla de PESAJE (kilos, materiales): caja de esquinas redondeadas. El
+ * tamaño de la caja se mide DESPUÉS de renderizar la tabla (nunca se estima)
+ * — así calza siempre con el contenido real sin importar cuántas filas
+ * ocupe. El contenido va separado del borde por BOX_PAD para que el texto
+ * nunca toque la curva, y todas las líneas internas usan el mismo tono de
+ * gris (nunca negro puro) para no chocar visualmente con el borde
  * redondeado. Devuelve el Y donde continúa el documento.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function tablaEnCaja(doc: any, autoTable: any, opts: { startY: number; head: string[][]; body: string[][]; foot?: string[][] }): number {
+function tablaPesaje(doc: any, autoTable: any, opts: { startY: number; head: string[][]; body: string[][]; foot?: string[][] }): number {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = { left: BOX_LEFT + BOX_PAD, right: pageWidth - (BOX_RIGHT - BOX_PAD) };
   autoTable(doc, {
@@ -118,48 +200,33 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   const esCompra = f.tipo === 'compra';
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-  let y = 56;
-  doc.setFontSize(20).setFont('helvetica', 'bold').setTextColor(0).text('Pronoia', 539, y, { align: 'right' });
-  doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', 539, y + 15, { align: 'right' });
-  doc.setTextColor(0);
+  encabezadoMarca(doc);
 
-  y += 52;
-  doc.setFontSize(15).setFont('helvetica', 'bold').text(`Factura de ${esCompra ? 'compra' : 'venta'}`, 56, y);
+  let y = 56 + 52;
+  tituloConBadge(doc, y, `Factura de ${esCompra ? 'compra' : 'venta'}`, f.estado);
 
-  y += 20;
-  doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(`Ref. ${refFactura(f)}`, 56, y);
-  doc.text(`Fecha: ${f.createdAt.slice(0, 10)}`, 250, y);
-  doc.text(`Estado: ${f.estado}`, 420, y);
-
-  y += 30;
-  doc.setFontSize(11);
-  const filas: Array<[string, string]> = [
-    [esCompra ? 'Proveedor' : 'Cliente', f.nombreEntidad ?? '—'],
-    ['Origen del peso', origenPeso(f, tickets)],
-    ...filasFactura(f).slice(1),
-  ];
-  for (const [k, v] of filas) {
-    const lineas = doc.splitTextToSize(sanitizarPdf(v), 289); // 539 - 250
-    doc.setFont('helvetica', 'bold').text(k, 56, y);
-    doc.setFont('helvetica', 'normal').text(lineas, 250, y);
-    y += 20 + (lineas.length - 1) * 13;
+  y += 22;
+  y = filaEncabezado(doc, y, 'Ref.', `${refFactura(f)}  ·  ${f.createdAt.slice(0, 10)}`);
+  y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', f.nombreEntidad ?? '—');
+  y = filaEncabezado(doc, y, 'Origen del peso', origenPeso(f, tickets));
+  for (const [k, v] of filasFactura(f).slice(1)) {
+    y = filaEncabezado(doc, y, k, v);
   }
 
-  y += 14;
+  y += 6;
   const itemsBody = consolidarItems(f.items).map(it => [
     sanitizarPdf(it.nombreProducto ?? '—'),
     fmt(it.peso),
     fmt(it.precioUnitario),
     fmt(it.subtotal),
   ]);
-  y = tablaEnCaja(doc, autoTable, {
+  y = tablaMonetaria(doc, autoTable, {
     startY: y,
     head: [['Ítem', 'Cantidad (kg)', 'Precio unitario', 'Monto total']],
     body: itemsBody,
   });
 
-  y += 26;
+  y += 30;
   doc.setFontSize(20).setFont('helvetica', 'bold').text('Total', 56, y);
   doc.text(fmt(f.total), 539, y, { align: 'right' });
 
@@ -200,7 +267,7 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
       fmt(m.tara),
       fmt(m.pesoNeto),
     ]);
-    y = tablaEnCaja(doc, autoTable, {
+    y = tablaPesaje(doc, autoTable, {
       startY: y,
       head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
       body: materialesBody,

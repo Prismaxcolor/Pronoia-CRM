@@ -70,6 +70,15 @@ function PagoDetallePage({ tipoEntidad }: Props) {
         </button>
       </div>
 
+      {/* Encabezado de marca — ícono + "Pronoia", estándar en todo documento impreso. */}
+      <div className="hidden print:flex items-center justify-end gap-2 mb-6">
+        <div className="text-right leading-tight">
+          <p className="text-lg font-bold text-black">Pronoia</p>
+          <p className="text-[10px] text-gray-500">Sistema de compras</p>
+        </div>
+        <img src="/pronoia-icon.png" alt="" className="w-6 h-6" />
+      </div>
+
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -95,7 +104,9 @@ function PagoDetallePage({ tipoEntidad }: Props) {
         </div>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none print:p-0 print:mb-4">
+      {/* Documento puramente monetario: sin tarjeta redondeada, solo filas
+       *  con divisor — el mismo patrón de encabezado de todo el sistema. */}
+      <div className="mb-6">
         <FilaDocumento label={esProveedor ? 'Proveedor' : 'Cliente'} valor={pago.nombreEntidad} />
         <FilaDocumento label="Fecha" valor={pago.fecha} />
         {pago.items.length === 0 && pago.descripcion && <FilaDocumento label="Descripción" valor={pago.descripcion} />}
@@ -139,9 +150,9 @@ function PagoDetallePage({ tipoEntidad }: Props) {
           ))}
         </div>
 
-        <div className="flex justify-between items-center mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
-          <span className="font-bold text-text-primary">Total</span>
-          <span className="text-xl font-bold text-brand-700">${fmt(pago.totalUsd)}</span>
+        <div className="flex justify-between items-baseline mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
+          <span className="font-semibold text-text-primary text-lg">Total</span>
+          <span className="text-2xl font-bold text-brand-700">${fmt(pago.totalUsd)}</span>
         </div>
       </div>
 
