@@ -15,6 +15,7 @@ import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
+import FilaDocumento from '../../components/FilaDocumento';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -279,68 +280,76 @@ function TicketDetallePage() {
       </div>
 
       {!editando ? (
-        <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none print:p-0 print:mb-4">
-          <Fila label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
+        <>
+          {/* Encabezado universal: filas etiqueta-valor con línea divisoria,
+           *  sin tarjeta — mismo patrón que factura/nota/pago. */}
+          <div className="mb-6">
+            <FilaDocumento label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
+            {ticket.observaciones && <FilaDocumento label="Observaciones" valor={ticket.observaciones} />}
+          </div>
 
           {ticket.pesajeExterior ? (
-            <p className="text-xs text-text-muted py-3 border-b border-border">Pesaje exterior — sin peso global propio.</p>
+            <p className="text-xs text-text-muted mb-4">Pesaje exterior — sin peso global propio.</p>
           ) : (
-            <div className="flex justify-between items-center py-3 border-b border-border">
-              <span className="font-semibold text-text-primary">Peso global</span>
-              <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
+            <div className="flex justify-between items-baseline pt-3 mb-2">
+              <span className="font-semibold text-text-primary text-lg">Peso global</span>
+              <span className="text-2xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
             </div>
           )}
           {ticket.devolucion > 0 && (
-            <div className="flex justify-between py-2 border-b border-border text-sm">
+            <div className="flex justify-between py-2 border-b border-border text-sm mb-4">
               <span className="text-text-secondary">Devolución</span>
               <span className="text-text-primary font-medium">{fmt(ticket.devolucion)} kg</span>
             </div>
           )}
 
-          {ticket.observaciones && <Fila label="Observaciones" valor={ticket.observaciones} />}
-
           {ticket.estado === 'bruto' && (
-            <p className="mt-3 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 print:border print:border-black print:bg-transparent print:text-black">
+            <p className="mb-4 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 print:border print:border-black print:bg-transparent print:text-black">
               Ticket en borrador — materiales pendientes de registro. No contabilizado en inventario.
             </p>
           )}
 
           {ticket.estado !== 'bruto' && (
-            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none w-fit mt-4 print:hidden">
+            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none w-fit mb-2 print:hidden">
               <input type="checkbox" checked={ocultarDestino} onChange={e => setOcultarDestino(e.target.checked)} className="rounded border-border" />
               Ocultar destino al imprimir (versión para el proveedor)
             </label>
           )}
 
-          {ticket.estado !== 'bruto' && <div className="overflow-x-auto mt-2">
-            <table className="w-full text-sm print:border-collapse">
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-text-muted">
-                  <th className="py-2 font-medium">Material</th>
-                  {!ocultarDestino && <th className="py-2 font-medium">Destino</th>}
-                  <th className="py-2 font-medium text-right">Bruto</th>
-                  <th className="py-2 font-medium text-right">Tara</th>
-                  <th className="py-2 font-medium text-right">Devol.</th>
-                  <th className="py-2 font-medium text-right">Neto (kg)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ticket.materiales.map(m => (
-                  <tr key={m.id} className="border-b border-border last:border-b-0">
-                    <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
-                    {!ocultarDestino && <td className="py-2 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
-                    <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
-                    <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
-                    <td className="py-2 text-right text-text-secondary">{fmt(m.devolucion)}</td>
-                    <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>}
+          {/* Tabla de pesaje: caja redondeada — este documento es 100% pesaje. */}
+          {ticket.estado !== 'bruto' && (
+            <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:shadow-none">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm print:border-collapse">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-text-muted">
+                      <th className="py-2 font-medium">Material</th>
+                      {!ocultarDestino && <th className="py-2 font-medium">Destino</th>}
+                      <th className="py-2 font-medium text-right">Bruto</th>
+                      <th className="py-2 font-medium text-right">Tara</th>
+                      <th className="py-2 font-medium text-right">Devol.</th>
+                      <th className="py-2 font-medium text-right">Neto (kg)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ticket.materiales.map(m => (
+                      <tr key={m.id} className="border-b border-border last:border-b-0">
+                        <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                        {!ocultarDestino && <td className="py-2 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
+                        <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
+                        <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
+                        <td className="py-2 text-right text-text-secondary">{fmt(m.devolucion)}</td>
+                        <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {fotosGaleria.length > 0 && (
-            <div className="mt-4 print:hidden">
+            <div className="mb-4 print:hidden">
               <p className="text-xs font-medium text-text-secondary mb-2">Fotos ({fotosGaleria.length})</p>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                 {fotosGaleria.map(({ key, url, label, peso }) => (
@@ -363,7 +372,7 @@ function TicketDetallePage() {
               </div>
             </div>
           )}
-        </div>
+        </>
       ) : (
         <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
           {ticket.pesajeExterior ? (
@@ -582,15 +591,6 @@ function TicketDetallePage() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function Fila({ label, valor }: { label: string; valor: string }) {
-  return (
-    <div className="flex justify-between py-2 border-b border-border last:border-b-0">
-      <span className="text-text-secondary text-sm">{label}</span>
-      <span className="text-text-primary text-sm font-medium text-right">{valor}</span>
     </div>
   );
 }

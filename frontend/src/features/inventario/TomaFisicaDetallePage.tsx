@@ -10,6 +10,7 @@ import { obtenerLotes } from '../../services/lote-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
+import FilaDocumento from '../../components/FilaDocumento';
 import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea, Lote } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -135,15 +136,6 @@ function TomaFisicaDetallePage() {
               {tomaFisica.estado === 'abierta' ? 'Abierta' : 'Cerrada'}
             </span>
           </div>
-          <p className="text-sm text-text-muted mt-1">
-            {tomaFisica.almacenNombre} · {tomaFisica.categoriaNombres.join(', ')}
-            {tomaFisica.loteNombres.length > 0 && ` (${tomaFisica.loteNombres.join(', ')})`}
-          </p>
-          {tomaFisica.descripcion && <p className="text-sm text-text-secondary mt-1">{tomaFisica.descripcion}</p>}
-          <p className="text-xs text-text-muted mt-1">
-            Abierta {fmtFecha(tomaFisica.abiertaEn)}
-            {tomaFisica.estado === 'cerrada' && ` · Cerrada ${fmtFecha(tomaFisica.cerradaEn)}`}
-          </p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
           {tomaFisica.estado === 'abierta' && puedeContar && (
@@ -160,6 +152,19 @@ function TomaFisicaDetallePage() {
             <Printer size={16} />
           </button>
         </div>
+      </div>
+
+      {/* Encabezado universal: filas etiqueta-valor con línea divisoria,
+       *  sin tarjeta — mismo patrón que factura/nota/pago/ticket. */}
+      <div className="mb-6">
+        <FilaDocumento label="Almacén" valor={tomaFisica.almacenNombre ?? '—'} />
+        <FilaDocumento label="Categorías" valor={tomaFisica.categoriaNombres.join(', ')} />
+        {tomaFisica.loteNombres.length > 0 && (
+          <FilaDocumento label="Lote(s)" valor={tomaFisica.loteNombres.join(', ')} />
+        )}
+        {tomaFisica.descripcion && <FilaDocumento label="Descripción" valor={tomaFisica.descripcion} />}
+        <FilaDocumento label="Abierta" valor={fmtFecha(tomaFisica.abiertaEn)} />
+        {tomaFisica.estado === 'cerrada' && <FilaDocumento label="Cerrada" valor={fmtFecha(tomaFisica.cerradaEn)} />}
       </div>
 
       <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
