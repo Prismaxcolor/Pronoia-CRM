@@ -81,6 +81,7 @@ function ConteoTomaFisicaPage() {
     [lotes, tomaFisica]
   );
 
+  const loteSeleccionado = loteId ? lotes.find(l => l.id === loteId) ?? null : null;
   const netoActual = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
 
   const agregarFotos = (files: File[]) =>
@@ -189,6 +190,20 @@ function ConteoTomaFisicaPage() {
             </select>
             {lotesDelAlmacen.length === 0 && (
               <p className="text-xs text-amber-600 mt-1">Este almacén no tiene lotes activos todavía.</p>
+            )}
+            {loteSeleccionado && loteSeleccionado.composicion.length > 0 && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <p className="text-[11px] font-medium text-amber-800 mb-1.5">
+                  Composición estimada de este lote (referencial — no se altera al contar):
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {loteSeleccionado.composicion.map(c => (
+                    <span key={c.item} className="text-[11px] bg-white text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                      {c.item} · {c.porcentaje}% · ~{fmt(loteSeleccionado.stockKg * c.porcentaje / 100)} kg
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}

@@ -6,13 +6,29 @@ import {
   obtenerResumenTomaFisica,
   culminarTomaFisica,
 } from '../../services/toma-fisica-service';
+import { obtenerLotes } from '../../services/lote-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
-import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea } from '@shared/types/index.js';
+import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea, Lote } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Badges de composición PCB de un lote — mismo estilo que LotesPage.tsx. */
+function BadgesComposicion({ loteId, lotes }: { loteId: string | null; lotes: Lote[] }) {
+  const lote = loteId ? lotes.find(l => l.id === loteId) : null;
+  if (!lote || lote.composicion.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1 print:hidden">
+      {lote.composicion.map(c => (
+        <span key={c.item} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-0.5">
+          {c.item} {c.porcentaje}%
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function fmtFecha(iso: string | null): string {
@@ -33,6 +49,7 @@ function TomaFisicaDetallePage() {
   const [tomaFisica, setTomaFisica] = useState<TomaFisicaInventario | null>(null);
   const [detalle, setDetalle] = useState<DetalleTomaFisica[]>([]);
   const [lineas, setLineas] = useState<ResumenTomaFisicaLinea[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
   const [cargando, setCargando] = useState(true);
   const [culminando, setCulminando] = useState(false);
 
@@ -46,6 +63,7 @@ function TomaFisicaDetallePage() {
   };
 
   useEffect(() => { cargar(); }, [id]);
+  useEffect(() => { obtenerLotes().then(setLotes); }, []);
 
   const totalTeorico = lineas.reduce((acc, l) => acc + l.stockTeorico, 0);
   const totalReal = lineas.reduce((acc, l) => acc + l.stockReal, 0);
@@ -60,10 +78,10 @@ function TomaFisicaDetallePage() {
       actual.pesoNeto += d.pesoNeto;
       actual.cantidad += 1;
     } else {
-      mapa.set(clave, { nombreProducto: d.nombreProducto, nombreLote: d.nombreLote, pesoNeto: d.pesoNeto, cantidad: 1 });
+      mapa.set(clave, { nombreProducto: d.nombreProducto, nombreLote: d.nombreLote, loteId: d.loteId, pesoNeto: d.pesoNeto, cantidad: 1 });
     }
     return mapa;
-  }, new Map<string, { nombreProducto: string; nombreLote: string | null; pesoNeto: number; cantidad: number }>());
+  }, new Map<string, { nombreProducto: string; nombreLote: string | null; loteId: string | null; pesoNeto: number; cantidad: number }>());
 
   const handleCulminar = async () => {
     const ok = await confirmar({
@@ -157,7 +175,10 @@ function TomaFisicaDetallePage() {
               {Array.from(ticketPorMaterial.values()).map((m, i) => (
                 <tr key={i} className="border-t border-border print:border-black">
                   <td className="py-2.5 px-5 text-text-primary print:border print:border-black print:px-2">{m.nombreProducto}</td>
-                  <td className="py-2.5 px-4 text-text-secondary print:border print:border-black print:px-2">{m.nombreLote ?? '—'}</td>
+                  <td className="py-2.5 px-4 text-text-secondary print:border print:border-black print:px-2">
+                    {m.nombreLote ?? '—'}
+                    <BadgesComposicion loteId={m.loteId} lotes={lotes} />
+                  </td>
                   <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{m.cantidad}</td>
                   <td className="py-2.5 px-5 text-right font-semibold text-text-primary print:border print:border-black print:px-2">{fmt(m.pesoNeto)}</td>
                 </tr>
@@ -189,7 +210,10 @@ function TomaFisicaDetallePage() {
               {lineas.map((l, i) => (
                 <tr key={i} className="border-t border-border print:border-black">
                   <td className="py-2.5 px-5 text-text-primary print:border print:border-black print:px-2">{l.productoNombre}</td>
-                  <td className="py-2.5 px-4 text-text-secondary print:border print:border-black print:px-2">{l.loteNombre ?? '—'}</td>
+                  <td className="py-2.5 px-4 text-text-secondary print:border print:border-black print:px-2">
+                    {l.loteNombre ?? '—'}
+                    <BadgesComposicion loteId={l.loteId} lotes={lotes} />
+                  </td>
                   <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(l.stockTeorico)}</td>
                   <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(l.stockReal)}</td>
                   <td className={`py-2.5 px-5 text-right font-semibold print:border print:border-black print:px-2 ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
