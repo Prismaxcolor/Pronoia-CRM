@@ -14,7 +14,7 @@ import Accordion from '../../components/Accordion';
 import AlmacenesPanel from './AlmacenesPanel';
 import TrasladosPanel from './TrasladosPanel';
 import TomaFisicaPanel from './TomaFisicaPanel';
-import type { TipoMaterial, Producto, Lote } from '@shared/types/index.js';
+import type { TipoMaterial, Producto, Lote, ComposicionPCBItem } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,6 +26,8 @@ interface GrupoDestino {
   label: string;
   totalKg: number;
   articulos: ArticuloConCategoria[];
+  composicion?: ComposicionPCBItem[];
+  stockLote?: number;
 }
 
 /** Regrupa los mismos artículos ya cargados por destino (MPP, lote o "sin
@@ -48,6 +50,15 @@ function agruparPorDestino(grupos: GrupoInventario[], lotes: Lote[]): GrupoDesti
   for (const l of lotes) {
     if (l.activo && !mapa.has(l.id)) {
       mapa.set(l.id, { clave: l.id, label: l.nombre, totalKg: 0, articulos: [] });
+    }
+  }
+  // Adjunta composición y stock real del lote (Bloque PCB) a cada grupo que
+  // corresponda a un lote real — los grupos MPP/sin-lote no tienen lote asociado.
+  for (const grupo of mapa.values()) {
+    const lote = lotes.find(l => l.id === grupo.clave);
+    if (lote) {
+      grupo.composicion = lote.composicion;
+      grupo.stockLote = lote.stockKg;
     }
   }
   return Array.from(mapa.values()).sort((a, b) => a.label.localeCompare(b.label));
@@ -249,6 +260,18 @@ function InventarioPage() {
                 </>
               }
             >
+              {g.composicion && g.composicion.length > 0 && (
+                <div className="px-5 pt-3 pb-1 bg-surface-alt border-b border-border">
+                  <p className="text-[11px] font-medium text-text-secondary mb-1.5">Composición estimada</p>
+                  <div className="flex flex-wrap gap-1 pb-2">
+                    {g.composicion.map(c => (
+                      <span key={c.item} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                        {c.item}: {c.porcentaje}% · ~{fmt((g.stockLote ?? g.totalKg) * (c.porcentaje / 100))} kg
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-text-muted bg-surface-alt">
