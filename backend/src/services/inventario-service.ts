@@ -14,6 +14,7 @@ export interface ArticuloInventario {
   entradas: number;        // kg que entraron por pesaje de compra
   salidas: number;         // kg que salieron por pesaje de venta
   transformaciones: number; // neto por transformaciones (salidas - entradas)
+  ajustes: number;         // neto de ajustes de toma física (culminar_toma_fisica_inventario)
   stock: number;
 }
 
@@ -65,20 +66,32 @@ export interface RetiroTransformacion {
   peso: number;
 }
 
+/** Un ajuste de inventario generado al culminar una toma física — ya viene
+ *  con signo (positivo = sobrante, negativo = faltante), a diferencia de
+ *  entradas/salidas que son siempre positivas. */
+export interface AjusteTomaInventario {
+  productoId: string;
+  loteId: string | null;
+  nombreLote: string | null;
+  diferencia: number;
+}
+
 /**
  * Calcula el stock por (material, destino) y lo agrupa por categoría.
  * stock = entradas (pesaje compra) − salidas (pesaje venta) − retiros hacia
- * transformaciones. Las salidas de una transformación (a qué lote fueron a
- * parar) no participan de este cálculo por producto — no tienen producto_id
- * (ver transformacion_salida_detalle) y se consultan aparte por lote
- * (stock_lote_total). Función pura: recibe los datos ya cargados, no toca la BD.
+ * transformaciones + ajustes de toma física. Las salidas de una
+ * transformación (a qué lote fueron a parar) no participan de este cálculo
+ * por producto — no tienen producto_id (ver transformacion_salida_detalle) y
+ * se consultan aparte por lote (stock_lote_total). Función pura: recibe los
+ * datos ya cargados, no toca la BD.
  */
 export function construirGruposInventario(
   productos: ProductoInventario[],
   entradas: MovimientoInventario[],
   salidas: MovimientoInventario[],
   retirosTransformacion: RetiroTransformacion[],
-  opciones: { incluirSinMovimiento?: boolean } = {}
+  opciones: { incluirSinMovimiento?: boolean } = {},
+  ajustesToma: AjusteTomaInventario[] = []
 ): GrupoInventario[] {
   const meta = new Map<string, ProductoInventario>();
   for (const p of productos) meta.set(p.id, p);
@@ -107,6 +120,7 @@ export function construirGruposInventario(
         entradas: 0,
         salidas: 0,
         transformaciones: 0,
+        ajustes: 0,
         stock: 0,
       };
       buckets.set(k, b);
@@ -118,6 +132,11 @@ export function construirGruposInventario(
   for (const s of salidas) obtenerBucket(s.productoId, s.destinoTipo, s.loteId, s.destinoLabel).salidas += s.peso;
   for (const r of retirosTransformacion) {
     obtenerBucket(r.productoId, 'lote', r.loteOrigenId, r.nombreLoteOrigen).transformaciones -= r.peso;
+  }
+  for (const a of ajustesToma) {
+    const destinoTipo = a.loteId ? 'lote' : 'mpp';
+    const destinoLabel = a.loteId ? (a.nombreLote ?? 'Lote') : MPP_LABEL;
+    obtenerBucket(a.productoId, destinoTipo, a.loteId, destinoLabel).ajustes += a.diferencia;
   }
 
   // Productos sin ningún movimiento → fila "Sin movimiento" en cero (para
@@ -133,7 +152,7 @@ export function construirGruposInventario(
     }
   }
 
-  for (const b of buckets.values()) b.stock = b.entradas - b.salidas + b.transformaciones;
+  for (const b of buckets.values()) b.stock = b.entradas - b.salidas + b.transformaciones + b.ajustes;
 
   const grupos = new Map<string, GrupoInventario>();
   for (const b of buckets.values()) {
@@ -282,7 +301,32 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     });
   }
 
-  return construirGruposInventario(productos, entradas, salidas, retirosTransformacion);
+  // Ajustes de toma física (culminar_toma_fisica_inventario): faltantes o
+  // sobrantes encontrados al contar físicamente. Sin fecha propia — se
+  // toman siempre, sin filtrar por desde/hasta (igual que un ajuste de
+  // inventario no es un "movimiento" con fecha de operación).
+  const { data: ajustesData } = await supabaseAdmin
+    .from('ajustes_inventario')
+    .select('producto_id, lote_id, diferencia, lotes(nombre)')
+    .not('producto_id', 'is', null);
+
+  const ajustesToma: AjusteTomaInventario[] = [];
+  for (const d of (ajustesData as unknown as Array<{
+    producto_id: string;
+    lote_id: string | null;
+    diferencia: number;
+    lotes?: { nombre: string } | null;
+  }> | null) ?? []) {
+    if (!idsPermitidos.has(d.producto_id)) continue;
+    ajustesToma.push({
+      productoId: d.producto_id,
+      loteId: d.lote_id,
+      nombreLote: d.lotes?.nombre ?? null,
+      diferencia: Number(d.diferencia),
+    });
+  }
+
+  return construirGruposInventario(productos, entradas, salidas, retirosTransformacion, {}, ajustesToma);
 }
 
 interface TrasladoDetalleRow {

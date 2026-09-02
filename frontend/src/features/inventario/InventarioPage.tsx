@@ -297,6 +297,7 @@ function InventarioPage() {
                       <th className="px-4 py-2 font-medium text-right">Entradas</th>
                       <th className="px-4 py-2 font-medium text-right">Salidas</th>
                       <th className="px-4 py-2 font-medium text-right">Transf.</th>
+                      <th className="px-4 py-2 font-medium text-right">Ajuste</th>
                       <th className="px-5 py-2 font-medium text-right">Stock (kg)</th>
                     </tr>
                   </thead>
@@ -334,6 +335,9 @@ function InventarioPage() {
                         <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
                         <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
                         <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.transformaciones)}</td>
+                        <td className={`px-4 py-2.5 text-right ${a.ajustes !== 0 ? 'font-semibold text-purple-700' : 'text-text-secondary'}`}>
+                          {a.ajustes > 0 ? '+' : ''}{fmt(a.ajustes)}
+                        </td>
                         <td className={`px-5 py-2.5 text-right font-semibold ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
                           {fmt(a.stock)}
                         </td>
@@ -402,13 +406,14 @@ function InventarioPage() {
                     <th className="px-4 py-2 font-medium text-right">Entradas</th>
                     <th className="px-4 py-2 font-medium text-right">Salidas</th>
                     <th className="px-4 py-2 font-medium text-right">Transf.</th>
+                    <th className="px-4 py-2 font-medium text-right">Ajuste</th>
                     <th className="px-5 py-2 font-medium text-right">Stock (kg)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {g.articulos.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-5 py-3 text-text-muted text-xs">
+                      <td colSpan={7} className="px-5 py-3 text-text-muted text-xs">
                         Todavía no se pesó ningún artículo hacia este lote.
                       </td>
                     </tr>
@@ -419,6 +424,9 @@ function InventarioPage() {
                       <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
                       <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
                       <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.transformaciones)}</td>
+                      <td className={`px-4 py-2.5 text-right ${a.ajustes !== 0 ? 'font-semibold text-purple-700' : 'text-text-secondary'}`}>
+                        {a.ajustes > 0 ? '+' : ''}{fmt(a.ajustes)}
+                      </td>
                       <td className={`px-5 py-2.5 text-right font-semibold ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
                         {fmt(a.stock)}
                       </td>

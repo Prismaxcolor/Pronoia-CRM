@@ -9,6 +9,7 @@ export interface ArticuloInventario {
   entradas: number;
   salidas: number;
   transformaciones: number;
+  ajustes: number;
   stock: number;
 }
 
