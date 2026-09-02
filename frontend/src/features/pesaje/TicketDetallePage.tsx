@@ -233,10 +233,12 @@ function TicketDetallePage() {
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-text-primary">{ticket.codigo}</h1>
+            <h1 className="text-2xl font-bold text-text-primary">
+              {ticket.estado === 'bruto' ? 'Ticket de pesaje en bruto' : 'Ticket de pesaje'}
+            </h1>
             {ticket.estado === 'bruto' ? (
               <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 print:border print:border-black print:bg-transparent">
-                En bruto (borrador)
+                Borrador
               </span>
             ) : (
               <span className={`px-2 py-0.5 rounded-full text-xs ${ticket.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} print:border print:border-black print:bg-transparent`}>
@@ -249,7 +251,7 @@ function TicketDetallePage() {
               </span>
             )}
           </div>
-          <p className="text-sm text-text-muted mt-1">{esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
+          <p className="text-sm text-text-muted mt-1">{ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
         </div>
         {!editando && (
           <div className="print:hidden flex items-center gap-2 shrink-0">

@@ -1208,7 +1208,7 @@ function FilaTicketPesaje({
         {t.codigo}
       </td>
       <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
-      <td className="px-4 py-2.5 text-text-secondary capitalize">{t.tipo}</td>
+      <td className="px-4 py-2.5 text-text-secondary">{t.tipo === 'compra' ? 'Ticket de compra' : 'Ticket de venta'}</td>
       <td className="px-4 py-2.5 text-text-primary">{t.entidadId ? (nombrePorEntidad.get(t.entidadId) ?? '—') : '—'}</td>
       <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
       <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(modo === 'bruto' ? t.pesoGlobal : t.pesoNetoTotal)}</td>
