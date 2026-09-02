@@ -706,6 +706,35 @@ function filaSalidaPCBVacia(): FilaSalidaPCB {
   return { uid: nextUid++, loteDestinoId: '', pesoBruto: '', tara: '', fotos: [] };
 }
 
+interface ComposicionProyectada { item: string; porcentaje: number; esNuevo: boolean }
+
+/** Estima cómo quedaría la composición del lote destino si esta salida se
+ *  completa tal cual está ahora — mezclando lo que ya tiene el destino con
+ *  lo que entra (con la composición actual del lote origen, en la misma
+ *  proporción). Solo referencial: la composición real, una vez completada
+ *  la transformación, se recalcula sola a partir del stock real. */
+function proyectarComposicion(loteDestino: Lote | undefined, loteOrigen: Lote | undefined, netoEntrante: number): ComposicionProyectada[] {
+  if (!loteDestino || netoEntrante <= 0) return [];
+  const stockDestino = loteDestino.stockKg;
+  const stockTotalNuevo = stockDestino + netoEntrante;
+  if (stockTotalNuevo <= 0) return [];
+
+  const compDestino = loteDestino.composicion;
+  const compOrigen = loteOrigen?.composicion ?? [];
+  const itemsDestino = new Set(compDestino.map(c => c.item));
+  const todosItems = Array.from(new Set([...compDestino.map(c => c.item), ...compOrigen.map(c => c.item)]));
+
+  return todosItems
+    .map(item => {
+      const pctDestino = compDestino.find(c => c.item === item)?.porcentaje ?? 0;
+      const pctOrigen = compOrigen.find(c => c.item === item)?.porcentaje ?? 0;
+      const kg = (stockDestino * pctDestino) / 100 + (netoEntrante * pctOrigen) / 100;
+      return { item, porcentaje: Math.round((kg / stockTotalNuevo) * 10000) / 100, esNuevo: !itemsDestino.has(item) };
+    })
+    .filter(c => c.porcentaje > 0)
+    .sort((a, b) => b.porcentaje - a.porcentaje);
+}
+
 function CompletarPCBModal({
   transformacion,
   lotes,
@@ -817,6 +846,27 @@ function CompletarPCBModal({
                         ))}
                       </div>
                     )}
+                    {(() => {
+                      const loteOrigen = lotes.find(l => l.id === transformacion.loteOrigenId);
+                      const proyeccion = proyectarComposicion(loteDestino, loteOrigen, netoFila(f));
+                      if (proyeccion.length === 0) return null;
+                      return (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <span className="text-[10px] text-text-muted w-full mb-0.5">Composición estimada después de esta transformación:</span>
+                          {proyeccion.map(c => (
+                            <span
+                              key={c.item}
+                              className={`text-[11px] border rounded-full px-2 py-0.5 ${
+                                c.esNuevo ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+                              }`}
+                              title={c.esNuevo ? 'Material nuevo en este lote' : undefined}
+                            >
+                              {c.esNuevo && '★ '}{c.item}: {c.porcentaje}%
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className={labelClass}>Peso bruto de salida (kg) *</label>
