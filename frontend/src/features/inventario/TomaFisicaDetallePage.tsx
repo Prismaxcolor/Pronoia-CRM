@@ -163,7 +163,7 @@ function TomaFisicaDetallePage() {
       </div>
 
       <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
-        <div className="px-5 py-3 border-b border-border print:border-black">
+        <div className="px-5 py-3 border-b border-border">
           <h2 className="text-sm font-semibold text-text-primary">
             Ticket de la toma física ({detalle.length} pesaje{detalle.length === 1 ? '' : 's'})
           </h2>
@@ -174,22 +174,22 @@ function TomaFisicaDetallePage() {
           <table className="w-full text-sm print:border-collapse">
             <thead>
               <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="py-2 px-5 font-medium print:border print:border-black print:px-2">Material</th>
-                <th className="py-2 px-4 font-medium print:border print:border-black print:px-2">Lote</th>
-                <th className="py-2 px-4 font-medium text-right print:border print:border-black print:px-2">Pesajes</th>
-                <th className="py-2 px-5 font-medium text-right print:border print:border-black print:px-2">Peso neto (kg)</th>
+                <th className="py-2 px-5 font-medium">Material</th>
+                <th className="py-2 px-4 font-medium">Lote</th>
+                <th className="py-2 px-4 font-medium text-right">Pesajes</th>
+                <th className="py-2 px-5 font-medium text-right">Peso neto (kg)</th>
               </tr>
             </thead>
             <tbody>
               {Array.from(ticketPorMaterial.values()).map((m, i) => (
-                <tr key={i} className="border-t border-border print:border-black">
-                  <td className="py-2.5 px-5 text-text-primary print:border print:border-black print:px-2">{m.nombreProducto}</td>
-                  <td className="py-2.5 px-4 text-text-secondary print:border print:border-black print:px-2">
+                <tr key={i} className="border-t border-border">
+                  <td className="py-2.5 px-5 text-text-primary">{m.nombreProducto}</td>
+                  <td className="py-2.5 px-4 text-text-secondary">
                     {m.nombreLote ?? '—'}
                     <BadgesComposicion loteId={m.loteId} lotes={lotes} />
                   </td>
-                  <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{m.cantidad}</td>
-                  <td className="py-2.5 px-5 text-right font-semibold text-text-primary print:border print:border-black print:px-2">{fmt(m.pesoNeto)}</td>
+                  <td className="py-2.5 px-4 text-right text-text-secondary">{m.cantidad}</td>
+                  <td className="py-2.5 px-5 text-right font-semibold text-text-primary">{fmt(m.pesoNeto)}</td>
                 </tr>
               ))}
             </tbody>
@@ -198,7 +198,7 @@ function TomaFisicaDetallePage() {
       </div>
 
       <div className="bg-surface rounded-xl border border-border overflow-hidden print:shadow-none">
-        <div className="px-5 py-3 border-b border-border print:border-black">
+        <div className="px-5 py-3 border-b border-border">
           <h2 className="text-sm font-semibold text-text-primary">Teórico (sistema) vs. real (contado)</h2>
         </div>
         {lineas.length === 0 ? (
@@ -208,31 +208,31 @@ function TomaFisicaDetallePage() {
           <table className="w-full text-sm print:border-collapse">
             <thead>
               <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="py-2 px-5 font-medium print:border print:border-black print:px-2">Material</th>
-                <th className="py-2 px-4 font-medium print:border print:border-black print:px-2">Lote</th>
-                <th className="py-2 px-4 font-medium text-right print:border print:border-black print:px-2">Teórico</th>
-                <th className="py-2 px-4 font-medium text-right print:border print:border-black print:px-2">Real</th>
-                <th className="py-2 px-5 font-medium text-right print:border print:border-black print:px-2">Diferencia</th>
+                <th className="py-2 px-5 font-medium">Material</th>
+                <th className="py-2 px-4 font-medium">Lote</th>
+                <th className="py-2 px-4 font-medium text-right">Teórico</th>
+                <th className="py-2 px-4 font-medium text-right">Real</th>
+                <th className="py-2 px-5 font-medium text-right">Diferencia</th>
               </tr>
             </thead>
             <tbody>
               {lineas.map((l, i) => (
-                <tr key={i} className="border-t border-border print:border-black">
-                  <td className="py-2.5 px-5 text-text-primary print:border print:border-black print:px-2">{l.productoNombre}</td>
-                  <td className="py-2.5 px-4 text-text-secondary print:border print:border-black print:px-2">
+                <tr key={i} className="border-t border-border">
+                  <td className="py-2.5 px-5 text-text-primary">{l.productoNombre}</td>
+                  <td className="py-2.5 px-4 text-text-secondary">
                     {l.loteNombre ?? '—'}
                     <BadgesComposicion loteId={l.loteId} lotes={lotes} />
                   </td>
-                  <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(l.stockTeorico)}</td>
-                  <td className="py-2.5 px-4 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(l.stockReal)}</td>
-                  <td className={`py-2.5 px-5 text-right font-semibold print:border print:border-black print:px-2 ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
+                  <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockTeorico)}</td>
+                  <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockReal)}</td>
+                  <td className={`py-2.5 px-5 text-right font-semibold ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
                     {l.diferencia > 0 ? '+' : ''}{fmt(l.diferencia)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="flex items-center justify-between px-5 py-3 border-t border-border print:border-black bg-surface-alt text-sm">
+          <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-surface-alt text-sm">
             <span className="font-medium text-text-secondary">Total: {fmt(totalTeorico)} teórico → {fmt(totalReal)} real</span>
             <span className={`font-bold ${totalDiferencia < 0 ? 'text-red-600' : totalDiferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
               {totalDiferencia > 0 ? '+' : ''}{fmt(totalDiferencia)} kg

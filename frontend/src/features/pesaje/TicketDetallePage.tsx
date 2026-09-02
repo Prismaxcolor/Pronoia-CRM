@@ -283,15 +283,15 @@ function TicketDetallePage() {
           <Fila label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
 
           {ticket.pesajeExterior ? (
-            <p className="text-xs text-text-muted py-3 border-b border-border print:border-black">Pesaje exterior — sin peso global propio.</p>
+            <p className="text-xs text-text-muted py-3 border-b border-border">Pesaje exterior — sin peso global propio.</p>
           ) : (
-            <div className="flex justify-between items-center py-3 border-b border-border print:border-black">
+            <div className="flex justify-between items-center py-3 border-b border-border">
               <span className="font-semibold text-text-primary">Peso global</span>
               <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
             </div>
           )}
           {ticket.devolucion > 0 && (
-            <div className="flex justify-between py-2 border-b border-border print:border-black text-sm">
+            <div className="flex justify-between py-2 border-b border-border text-sm">
               <span className="text-text-secondary">Devolución</span>
               <span className="text-text-primary font-medium">{fmt(ticket.devolucion)} kg</span>
             </div>
@@ -315,24 +315,24 @@ function TicketDetallePage() {
           {ticket.estado !== 'bruto' && <div className="overflow-x-auto mt-2">
             <table className="w-full text-sm print:border-collapse">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-text-muted print:border-black">
-                  <th className="py-2 font-medium print:border print:border-black print:px-2">Material</th>
-                  {!ocultarDestino && <th className="py-2 font-medium print:border print:border-black print:px-2">Destino</th>}
-                  <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Bruto</th>
-                  <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Tara</th>
-                  <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Devol.</th>
-                  <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Neto (kg)</th>
+                <tr className="border-b border-border text-left text-xs text-text-muted">
+                  <th className="py-2 font-medium">Material</th>
+                  {!ocultarDestino && <th className="py-2 font-medium">Destino</th>}
+                  <th className="py-2 font-medium text-right">Bruto</th>
+                  <th className="py-2 font-medium text-right">Tara</th>
+                  <th className="py-2 font-medium text-right">Devol.</th>
+                  <th className="py-2 font-medium text-right">Neto (kg)</th>
                 </tr>
               </thead>
               <tbody>
                 {ticket.materiales.map(m => (
-                  <tr key={m.id} className="border-b border-border last:border-b-0 print:border-black">
-                    <td className="py-2 text-text-primary print:border print:border-black print:px-2">{m.nombreProducto ?? '—'}</td>
-                    {!ocultarDestino && <td className="py-2 text-text-secondary print:border print:border-black print:px-2">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
-                    <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.pesoBruto)}</td>
-                    <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.tara)}</td>
-                    <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.devolucion)}</td>
-                    <td className="py-2 text-right font-medium text-text-primary print:border print:border-black print:px-2">{fmt(m.pesoNeto)}</td>
+                  <tr key={m.id} className="border-b border-border last:border-b-0">
+                    <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                    {!ocultarDestino && <td className="py-2 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
+                    <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
+                    <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
+                    <td className="py-2 text-right text-text-secondary">{fmt(m.devolucion)}</td>
+                    <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -588,7 +588,7 @@ function TicketDetallePage() {
 
 function Fila({ label, valor }: { label: string; valor: string }) {
   return (
-    <div className="flex justify-between py-2 border-b border-border last:border-b-0 print:border-black">
+    <div className="flex justify-between py-2 border-b border-border last:border-b-0">
       <span className="text-text-secondary text-sm">{label}</span>
       <span className="text-text-primary text-sm font-medium text-right">{valor}</span>
     </div>
