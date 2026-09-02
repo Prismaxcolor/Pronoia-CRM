@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearLoteInput, ActualizarLoteInput } from '../schemas/lotes.js';
+import type { ComposicionPCBItem } from '../../../shared/types/lote.js';
 
 interface LoteRow {
   id: string;
@@ -8,6 +9,7 @@ interface LoteRow {
   almacen_id: string;
   almacenes?: { nombre: string } | null;
   fotos: string[];
+  composicion: ComposicionPCBItem[];
   created_at: string;
 }
 
@@ -18,6 +20,7 @@ export interface LotePublico {
   almacenId: string;
   almacenNombre: string | null;
   fotos: string[];
+  composicion: ComposicionPCBItem[];
   createdAt: string;
   stockKg: number;
 }
@@ -30,6 +33,7 @@ function toPublico(row: LoteRow, stockKg = 0): LotePublico {
     almacenId: row.almacen_id,
     almacenNombre: row.almacenes?.nombre ?? null,
     fotos: row.fotos ?? [],
+    composicion: (row.composicion as ComposicionPCBItem[]) ?? [],
     createdAt: row.created_at,
     stockKg,
   };
@@ -70,7 +74,7 @@ export async function crearLote(
 ): Promise<{ lote: LotePublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('lotes')
-    .insert({ nombre: input.nombre, almacen_id: input.almacenId, fotos: input.fotos ?? [] })
+    .insert({ nombre: input.nombre, almacen_id: input.almacenId, fotos: input.fotos ?? [], composicion: input.composicion ?? [] })
     .select('*, almacenes(nombre)')
     .single();
 
@@ -90,6 +94,7 @@ export async function actualizarLote(
   if (cambios.activo !== undefined) update.activo = cambios.activo;
   if (cambios.almacenId !== undefined) update.almacen_id = cambios.almacenId;
   if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
+  if (cambios.composicion !== undefined) update.composicion = cambios.composicion;
 
   const { data, error } = await supabaseAdmin
     .from('lotes')

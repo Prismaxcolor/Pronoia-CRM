@@ -171,6 +171,55 @@ export async function guardarSalidasComunes(
 }
 
 // ---------------------------------------------------------------------------
+// PCB
+// ---------------------------------------------------------------------------
+
+export interface CrearTransformacionPCBInput {
+  loteOrigenId: string;
+  pesoBruto: number;
+  tara: number;
+  fecha: string;
+  notas?: string | null;
+  fotosEntrada: string[];
+}
+
+export interface CompletarTransformacionPCBInput {
+  loteDestinoId: string;
+  pesoBruto: number;
+  tara: number;
+  fotos: string[];
+}
+
+export async function crearTransformacionPCB(
+  input: CrearTransformacionPCBInput
+): Promise<{ transformacion: Transformacion } | { error: string }> {
+  try {
+    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>('/api/transformaciones/pcb', {
+      method: 'POST',
+      body: input,
+    });
+    return { transformacion };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo registrar la transformación PCB.' };
+  }
+}
+
+export async function completarTransformacionPCB(
+  id: string,
+  input: CompletarTransformacionPCBInput
+): Promise<{ transformacion: Transformacion } | { error: string }> {
+  try {
+    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
+      `/api/transformaciones/${id}/completar-pcb`,
+      { method: 'PATCH', body: input }
+    );
+    return { transformacion };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación PCB.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Eliminar
 // ---------------------------------------------------------------------------
 

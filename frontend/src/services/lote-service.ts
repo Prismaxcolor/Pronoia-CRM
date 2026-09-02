@@ -24,7 +24,7 @@ export async function crearLote(nombre: string, almacenId: string, fotos: string
 
 export async function actualizarLote(
   id: string,
-  cambios: { nombre?: string; activo?: boolean; almacenId?: string; fotos?: string[] }
+  cambios: { nombre?: string; activo?: boolean; almacenId?: string; fotos?: string[]; composicion?: { item: string; porcentaje: number }[] }
 ): Promise<{ lote: Lote } | { error: string }> {
   try {
     const { lote } = await apiFetch<{ lote: Lote }>(`/api/lotes/${id}`, {

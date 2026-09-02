@@ -9,6 +9,8 @@ import {
   completarTransformacionFerroso,
   obtenerSalidasComunes,
   guardarSalidasComunesProducto,
+  crearTransformacionPCB,
+  completarTransformacionPCB,
 } from '../services/transformacion-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -18,6 +20,8 @@ import {
   crearTransformacionFerrosoSchema,
   completarTransformacionFerrosoSchema,
   guardarSalidasComunesSchema,
+  crearTransformacionPCBSchema,
+  completarTransformacionPCBSchema,
 } from '../schemas/transformaciones.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -138,6 +142,40 @@ router.patch(
       return;
     }
     logger.info({ evento: 'transformacion_ferroso_completada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
+    res.json(result);
+  }
+);
+
+// ---------------------------------------------------------------------------
+// PCB
+// ---------------------------------------------------------------------------
+
+router.post(
+  '/pcb',
+  requirePermiso('transformaciones', 'crear'),
+  validateBody(crearTransformacionPCBSchema),
+  async (req, res) => {
+    const result = await crearTransformacionPCB(req.body, req.user!.sub);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({ evento: 'transformacion_pcb_creada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
+    res.status(201).json(result);
+  }
+);
+
+router.patch(
+  '/:id/completar-pcb',
+  requirePermiso('transformaciones', 'crear'),
+  validateBody(completarTransformacionPCBSchema),
+  async (req, res) => {
+    const result = await completarTransformacionPCB(String(req.params.id), req.body, req.user!.sub);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({ evento: 'transformacion_pcb_completada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
     res.json(result);
   }
 );

@@ -60,3 +60,23 @@ export type CrearTransformacionInput = z.infer<typeof crearTransformacionSchema>
 export type CompletarTransformacionInput = z.infer<typeof completarTransformacionSchema>;
 export type CrearTransformacionFerrosoInput = z.infer<typeof crearTransformacionFerrosoSchema>;
 export type CompletarTransformacionFerrosoInput = z.infer<typeof completarTransformacionFerrosoSchema>;
+
+/** PCB: retira de un lote de origen hacia un lote de destino. */
+export const crearTransformacionPCBSchema = z.object({
+  loteOrigenId: z.string().uuid('Selecciona el lote de origen.'),
+  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+  tara: z.number().min(0).default(0),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
+  notas: textoOpcional(500),
+  fotosEntrada: z.array(z.string()).min(1, 'Agrega al menos una foto de entrada.'),
+});
+
+export const completarTransformacionPCBSchema = z.object({
+  loteDestinoId: z.string().uuid('Selecciona el lote de destino.'),
+  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+  tara: z.number().min(0).default(0),
+  fotos: z.array(z.string()).default([]),
+});
+
+export type CrearTransformacionPCBInput = z.infer<typeof crearTransformacionPCBSchema>;
+export type CompletarTransformacionPCBInput = z.infer<typeof completarTransformacionPCBSchema>;

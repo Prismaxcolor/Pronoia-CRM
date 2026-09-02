@@ -1,3 +1,9 @@
+/** Un ítem dentro de la composición estimada de un lote PCB. */
+export interface ComposicionPCBItem {
+  item: string;
+  porcentaje: number;
+}
+
 /**
  * Lote — destino de inventario gestionado (Lote 1, Lote 2, ...). Junto con MPP
  * (Material Por Procesar), define dónde se acumula el stock de cada material
@@ -20,6 +26,8 @@ export interface Lote {
    *  lo alimentaron, menos ventas directas y retiros de transformaciones que
    *  lo usaron como origen. */
   stockKg: number;
+  /** Composición estimada del lote por tipo de ítem PCB. Suma ~100% cuando está definida. */
+  composicion: ComposicionPCBItem[];
 }
 
 /** Destino de inventario de una línea de pesaje: MPP o un lote concreto. */

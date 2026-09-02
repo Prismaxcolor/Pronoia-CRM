@@ -10,12 +10,15 @@ import {
   completarTransformacionFerroso,
   obtenerSalidasComunes,
   guardarSalidasComunes,
+  crearTransformacionPCB,
+  completarTransformacionPCB,
   type CrearTransformacionFerrosoInput,
   type CompletarTransformacionFerrosoSalidaInput,
 } from '../../services/transformacion-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerAlmacenes, obtenerStockAlmacen } from '../../services/almacen-service';
 import { obtenerTaras } from '../../services/tara-service';
+import { obtenerLotes } from '../../services/lote-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
@@ -23,9 +26,10 @@ import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import { subirFotoTicket } from '../../services/storage-service';
 import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
 import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
+import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
 import { taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
-import type { Transformacion, SalidaComun, Tara } from '@shared/types/index.js';
+import type { Transformacion, SalidaComun, Tara, Lote } from '@shared/types/index.js';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
 
@@ -578,6 +582,245 @@ function NuevaFerrosoForm({
 }
 
 // ---------------------------------------------------------------------------
+// Formulario: Nueva transformación PCB
+// ---------------------------------------------------------------------------
+function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void }) {
+  const toast = useToast();
+  const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
+  const labelClass = "block text-xs font-medium text-text-secondary mb-1";
+
+  const [loteOrigenId, setLoteOrigenId] = useState('');
+  const [pesoBruto, setPesoBruto] = useState('');
+  const [tara, setTara] = useState('');
+  const [fecha, setFecha] = useState(hoyISO());
+  const [notas, setNotas] = useState('');
+  const [fotos, setFotos] = useState<FotoMaterial[]>([]);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
+
+  const loteOrigen = lotes.find(l => l.id === loteOrigenId);
+  const neto = (Number(pesoBruto) || 0) - (Number(tara) || 0);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!loteOrigenId) { setError('Selecciona el lote de origen.'); return; }
+    if (neto <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
+    if (fotos.length === 0) { setError('Agrega al menos una foto de entrada.'); return; }
+    setGuardando(true);
+    const fotosUrls: string[] = [];
+    for (const foto of fotos) {
+      const url = await subirFoto(foto);
+      if (url) fotosUrls.push(url);
+    }
+    const result = await crearTransformacionPCB({
+      loteOrigenId,
+      pesoBruto: Number(pesoBruto),
+      tara: Number(tara) || 0,
+      fecha,
+      notas: notas.trim() || null,
+      fotosEntrada: fotosUrls,
+    });
+    setGuardando(false);
+    if ('error' in result) { setError(result.error); return; }
+    toast.exito('Transformación PCB iniciada. Complétala cuando tengas las salidas pesadas.');
+    setLoteOrigenId(''); setPesoBruto(''); setTara(''); setFotos([]); setFecha(hoyISO()); setNotas('');
+    onCreada();
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+      <div>
+        <label className={labelClass}>Lote de origen *</label>
+        <button type="button" onClick={() => setMostrarSelectorLote(true)}
+          className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
+          <span className={loteOrigenId ? 'text-text-primary truncate' : 'text-text-muted'}>
+            {loteOrigen?.nombre ?? '-Selecciona el lote-'}
+          </span>
+          <ChevronDown size={14} className="text-text-muted shrink-0" />
+        </button>
+        {loteOrigen && (
+          <p className="text-xs text-text-muted mt-1">Stock actual: <span className="font-medium">{fmt(loteOrigen.stockKg)} kg</span></p>
+        )}
+        {loteOrigen && loteOrigen.composicion.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {loteOrigen.composicion.map(c => (
+              <span key={c.item} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                {c.item}: {c.porcentaje}%
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <label className={labelClass}>Peso bruto a retirar (kg) *</label>
+        <input type="number" step="0.001" min="0.001" required value={pesoBruto}
+          onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+      </div>
+      <div>
+        <label className={labelClass}>Tara (kg)</label>
+        <input type="number" step="0.001" min="0" value={tara}
+          onChange={e => setTara(e.target.value)} className={inputClass} placeholder="0.00" />
+      </div>
+      <p className="text-xs text-text-muted -mt-2">Neto a retirar: <span className="font-semibold text-text-primary">{fmt(neto)} kg</span></p>
+      <FotoMaterialPicker fotos={fotos}
+        onAgregar={files => setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))])}
+        onQuitar={idx => setFotos(prev => prev.filter((_, i) => i !== idx))} label="Fotos de entrada *" />
+      <div>
+        <label className={labelClass}>Fecha</label>
+        <input type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
+      </div>
+      <div>
+        <label className={labelClass}>Notas <span className="text-text-muted">(opcional)</span></label>
+        <textarea value={notas} onChange={e => setNotas(e.target.value)} className={`${inputClass} resize-none`} rows={2} />
+      </div>
+      {error && <p className="text-red-500 text-sm">{error}</p>}
+      <button type="submit" disabled={guardando}
+        className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+        {guardando ? <><Loader2 size={15} className="animate-spin" /> Registrando...</> : 'Iniciar transformación PCB'}
+      </button>
+      {mostrarSelectorLote && (
+        <SeleccionarEntidadModal
+          titulo="Selecciona el lote de origen"
+          entidades={lotes.filter(l => l.activo).map(l => ({ id: l.id, nombre: `${l.nombre} — ${fmt(l.stockKg)} kg`, fotos: l.fotos }))}
+          onClose={() => setMostrarSelectorLote(false)}
+          onSeleccionar={id => { setLoteOrigenId(id); setMostrarSelectorLote(false); }}
+        />
+      )}
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Modal: Completar transformación PCB
+// ---------------------------------------------------------------------------
+function CompletarPCBModal({
+  transformacion,
+  lotes,
+  onClose,
+  onCompletada,
+}: {
+  transformacion: Transformacion;
+  lotes: Lote[];
+  onClose: () => void;
+  onCompletada: () => void;
+}) {
+  const toast = useToast();
+  const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
+  const labelClass = "block text-xs font-medium text-text-secondary mb-1";
+
+  const [loteDestinoId, setLoteDestinoId] = useState('');
+  const [pesoBruto, setPesoBruto] = useState('');
+  const [tara, setTara] = useState('');
+  const [fotos, setFotos] = useState<FotoMaterial[]>([]);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
+
+  const loteDestino = lotes.find(l => l.id === loteDestinoId);
+  const neto = (Number(pesoBruto) || 0) - (Number(tara) || 0);
+
+  const handleCompletar = async () => {
+    setError(null);
+    if (!loteDestinoId) { setError('Selecciona el lote de destino.'); return; }
+    if (neto <= 0) { setError('El peso neto de la salida debe ser mayor a 0.'); return; }
+    setGuardando(true);
+    const fotosUrls: string[] = [];
+    for (const foto of fotos) {
+      const url = await subirFoto(foto);
+      if (url) fotosUrls.push(url);
+    }
+    const result = await completarTransformacionPCB(transformacion.id, {
+      loteDestinoId,
+      pesoBruto: Number(pesoBruto),
+      tara: Number(tara) || 0,
+      fotos: fotosUrls,
+    });
+    setGuardando(false);
+    if ('error' in result) { setError(result.error); return; }
+    toast.exito('Transformación PCB completada.');
+    onCompletada();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-surface rounded-xl border border-border w-full max-w-md my-8 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-text-primary">Completar transformación PCB</h2>
+            <p className="text-xs text-text-muted mt-0.5">
+              Origen: <span className="font-medium">{transformacion.nombreLoteOrigen ?? '—'}</span> — {fmt(transformacion.pesoNeto)} kg
+            </p>
+          </div>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X size={18} /></button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className={labelClass}>Lote de destino *</label>
+            <button type="button" onClick={() => setMostrarSelectorLote(true)}
+              className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
+              <span className={loteDestinoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                {loteDestino?.nombre ?? '-Selecciona el lote de destino-'}
+              </span>
+              <ChevronDown size={14} className="text-text-muted shrink-0" />
+            </button>
+            {loteDestino && loteDestino.composicion.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="text-[10px] text-text-muted w-full mb-0.5">Composición actual del destino:</span>
+                {loteDestino.composicion.map(c => (
+                  <span key={c.item} className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
+                    {c.item}: {c.porcentaje}%
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className={labelClass}>Peso bruto de salida (kg) *</label>
+            <input type="number" step="0.001" min="0.001" value={pesoBruto}
+              onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+          </div>
+          <div>
+            <label className={labelClass}>Tara (kg)</label>
+            <input type="number" step="0.001" min="0" value={tara}
+              onChange={e => setTara(e.target.value)} className={inputClass} placeholder="0.00" />
+          </div>
+          <p className="text-xs text-text-muted">Neto de salida: <span className="font-semibold text-text-primary">{fmt(neto)} kg</span></p>
+
+          <FotoMaterialPicker fotos={fotos}
+            onAgregar={files => setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))])}
+            onQuitar={idx => setFotos(prev => prev.filter((_, i) => i !== idx))} label="Fotos de salida (opcional)" />
+        </div>
+
+        {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
+
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
+            Cancelar
+          </button>
+          <button onClick={handleCompletar} disabled={guardando}
+            className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {guardando ? <><Loader2 size={15} className="animate-spin" /> Guardando...</> : 'Completar'}
+          </button>
+        </div>
+
+        {mostrarSelectorLote && (
+          <SeleccionarEntidadModal
+            titulo="Selecciona el lote de destino"
+            entidades={lotes.filter(l => l.activo).map(l => ({ id: l.id, nombre: `${l.nombre} — ${fmt(l.stockKg)} kg`, fotos: l.fotos }))}
+            onClose={() => setMostrarSelectorLote(false)}
+            onSeleccionar={id => { setLoteDestinoId(id); setMostrarSelectorLote(false); }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
 function TransformacionesPage() {
@@ -599,24 +842,27 @@ function TransformacionesPage() {
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
   const [salidasComunes, setSalidasComunes] = useState<SalidaComun[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
   const [cargando, setCargando] = useState(true);
 
   const [completando, setCompletando] = useState<Transformacion | null>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    const [txs, prods, alms, tars, comunes] = await Promise.all([
+    const [txs, prods, alms, tars, comunes, lots] = await Promise.all([
       obtenerTransformaciones({ categoria }),
       obtenerProductos(),
       obtenerAlmacenes(),
       obtenerTaras(),
       obtenerSalidasComunes(),
+      obtenerLotes(),
     ]);
     setTransformaciones(txs);
     setProductos(prods.filter(p => p.activo));
     setAlmacenes(alms);
     setTaras(tars.filter(t => t.activo));
     setSalidasComunes(comunes);
+    setLotes(lots);
     setCargando(false);
   }, [categoria]);
 
@@ -668,11 +914,10 @@ function TransformacionesPage() {
         </button>
         <button
           type="button"
-          onClick={() => { setCategoria('pcb'); toast.errorMsg('PCB: próximamente'); }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-text-muted bg-surface cursor-not-allowed"
-          disabled
+          onClick={() => setCategoria('pcb')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${categoria === 'pcb' ? 'bg-brand-600 text-white border-brand-600' : 'border-border text-text-secondary hover:border-brand-400 bg-surface'}`}
         >
-          PCB <span className="text-xs bg-surface-alt px-1.5 py-0.5 rounded text-text-muted">Próximamente</span>
+          PCB
         </button>
       </div>
 
@@ -690,14 +935,21 @@ function TransformacionesPage() {
           {puedeCrear ? (
             <>
               <h2 className="text-sm font-semibold text-text-secondary mb-4">
-                Nueva transformación — Ferroso / No Ferroso
+                Nueva transformación — {categoria === 'pcb' ? 'PCB' : 'Ferroso / No Ferroso'}
               </h2>
-              <NuevaFerrosoForm
-                productos={productos}
-                almacenes={almacenes}
-                taras={taras}
-                onCreada={() => { void cargar(); setTab('pendientes'); }}
-              />
+              {categoria === 'pcb' ? (
+                <NuevaPCBForm
+                  lotes={lotes}
+                  onCreada={() => { void cargar(); setTab('pendientes'); }}
+                />
+              ) : (
+                <NuevaFerrosoForm
+                  productos={productos}
+                  almacenes={almacenes}
+                  taras={taras}
+                  onCreada={() => { void cargar(); setTab('pendientes'); }}
+                />
+              )}
             </>
           ) : (
             <p className="text-text-muted text-sm">No tienes permiso para registrar transformaciones.</p>
@@ -791,7 +1043,15 @@ function TransformacionesPage() {
       )}
 
       {/* Modal completar */}
-      {completando && (
+      {completando && completando.categoria === 'pcb' && (
+        <CompletarPCBModal
+          transformacion={completando}
+          lotes={lotes}
+          onClose={() => setCompletando(null)}
+          onCompletada={() => { setCompletando(null); void cargar(); setTab('historial'); }}
+        />
+      )}
+      {completando && completando.categoria !== 'pcb' && (
         <CompletarFerrosoModal
           transformacion={completando}
           productos={productos}
