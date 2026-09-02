@@ -1,5 +1,5 @@
 import { consolidarItems, type FacturaCV } from './factura-cv-service';
-import { destinoLabel, type TicketPesaje } from '@shared/types/index.js';
+import { type TicketPesaje } from '@shared/types/index.js';
 
 // jspdf y docx se cargan bajo demanda (dynamic import) para no inflar el bundle
 // inicial: solo pesan cuando el usuario descarga una factura.

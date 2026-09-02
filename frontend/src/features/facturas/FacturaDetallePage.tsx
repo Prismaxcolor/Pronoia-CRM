@@ -6,7 +6,7 @@ import { descargarFacturaPDF, descargarFacturaWord } from '../../services/factur
 import { obtenerTicket } from '../../services/ticket-pesaje-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import FilaDocumento from '../../components/FilaDocumento';
-import { destinoLabel, type TicketPesaje } from '@shared/types/index.js';
+import { type TicketPesaje } from '@shared/types/index.js';
 
 const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
   borrador: { label: 'Borrador', clase: 'bg-gray-100 text-gray-600' },
