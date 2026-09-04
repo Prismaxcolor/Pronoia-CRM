@@ -141,6 +141,10 @@ export function tablaMonetaria(
     footStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold', lineWidth: 0.75, lineColor: GRIS_GRID },
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
     theme: 'grid',
+    // Sin foot en ningún llamador actual, pero si algún día se agrega un
+    // total acá, que no se repita en cada página — mismo criterio que
+    // tablaPesaje (ver nota ahí).
+    showFoot: 'lastPage',
   });
   return doc.lastAutoTable.finalY;
 }
@@ -166,6 +170,12 @@ const MARGIN_TOP_CONTINUACION = 40;
  * caja mezclando esos dos Y de páginas distintas produce una caja vacía mal
  * ubicada en la página final (bug real, visto en un ticket de 20
  * materiales — Compra-0053, 04-sep-2026).
+ *
+ * `showFoot: 'lastPage'` — sin esto, "Total del ticket"/"Devolución" se
+ * repiten al final de CADA página (comportamiento por defecto de
+ * autoTable), y como no son subtotales por página sino el total del
+ * documento completo, verlos dos veces confunde (mismo ticket
+ * Compra-0053).
  */
 export function tablaPesaje(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -188,6 +198,7 @@ export function tablaPesaje(
     footStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { top: 1 }, lineColor: GRIS_LINEA_HEAD },
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
     theme: 'plain',
+    showFoot: 'lastPage',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     didDrawPage: (data: any) => {
       const finY = data.cursor?.y ?? inicioSegmento;
