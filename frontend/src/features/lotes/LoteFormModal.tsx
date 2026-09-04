@@ -14,7 +14,7 @@ interface Props {
 }
 
 /** Editar un lote existente — nombre y fotos. El almacén y el estado
- *  activo/inactivo se editan inline desde LotesPage, no acá, para no tener
+ *  activo/inactivo se editan inline desde LotesPanel, no acá, para no tener
  *  dos lugares distintos editando el mismo campo. */
 function LoteFormModal({ lote, onClose, onGuardado }: Props) {
   const toast = useToast();

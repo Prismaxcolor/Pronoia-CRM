@@ -26,7 +26,6 @@ import InventarioPage from './features/inventario/InventarioPage';
 import TomaFisicaDetallePage from './features/inventario/TomaFisicaDetallePage';
 import ConteoTomaFisicaPage from './features/pesaje/ConteoTomaFisicaPage';
 import TransformacionesPage from './features/transformaciones/TransformacionesPage';
-import LotesPage from './features/lotes/LotesPage';
 import CochinitPage from './features/cochinito/CochinitPage';
 import UsuariosPage from './features/usuarios/UsuariosPage';
 import ClientesPage from './features/clientes/ClientesPage';
@@ -96,7 +95,9 @@ function AppRoutes() {
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
         <Route path="/inventario/toma-fisica/:id" element={<ProtectedRoute recurso="toma_fisica"><TomaFisicaDetallePage /></ProtectedRoute>} />
         <Route path="/transformaciones" element={<ProtectedRoute recurso="transformaciones"><TransformacionesPage /></ProtectedRoute>} />
-        <Route path="/lotes" element={<ProtectedRoute recurso="productos"><LotesPage /></ProtectedRoute>} />
+        {/* "Lotes" pasó a ser una pestaña dentro de Inventario — se mantiene el
+         *  redirect por si alguien tiene el link viejo guardado. */}
+        <Route path="/lotes" element={<Navigate to="/inventario" replace />} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
         <Route path="/pesaje/:id" element={<ProtectedRoute recurso="pesaje"><TicketDetallePage /></ProtectedRoute>} />
         <Route path="/pesaje/conteo/:tomaFisicaId" element={<ProtectedRoute recurso="toma_fisica"><ConteoTomaFisicaPage /></ProtectedRoute>} />

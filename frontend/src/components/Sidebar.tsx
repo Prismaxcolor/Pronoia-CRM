@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Layers, Weight, CalendarClock, BarChart3, X } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Weight, CalendarClock, BarChart3, X } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
 import type { Recurso } from '@shared/types/index.js';
@@ -33,7 +33,6 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Productos', to: '/productos', icon: <Package size={20} />, recurso: 'productos' },
       { label: 'Inventario', to: '/inventario', icon: <Boxes size={20} />, recurso: 'productos' },
-      { label: 'Lotes', to: '/lotes', icon: <Layers size={20} />, recurso: 'productos' },
       { label: 'Transformaciones', to: '/transformaciones', icon: <Recycle size={20} />, recurso: 'transformaciones' },
     ],
   },

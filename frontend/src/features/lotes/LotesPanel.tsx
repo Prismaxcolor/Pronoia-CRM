@@ -14,7 +14,7 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function LotesPage() {
+function LotesPanel() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const puedeCrear = tienePermiso('productos', 'crear');
@@ -72,10 +72,18 @@ function LotesPage() {
 
   const inputClass = "px-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
 
+  if (cargando) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">Lotes</h1>
+    <div className="max-w-2xl">
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold text-text-primary">Lotes</h2>
         <p className="text-sm text-text-secondary mt-1">
           Destinos de inventario para el material pesado. Definen dónde se acumula el
           stock de cada material.
@@ -125,11 +133,7 @@ function LotesPage() {
         </form>
       )}
 
-      {cargando ? (
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
-        </div>
-      ) : lotes.length === 0 ? (
+      {lotes.length === 0 ? (
         <p className="text-center text-text-muted py-12 text-sm">No hay lotes todavía.</p>
       ) : (
         <div className="bg-surface rounded-xl border border-border overflow-hidden">
@@ -210,4 +214,4 @@ function LotesPage() {
   );
 }
 
-export default LotesPage;
+export default LotesPanel;

@@ -18,7 +18,7 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Badges de composición PCB de un lote — mismo estilo que LotesPage.tsx. */
+/** Badges de composición PCB de un lote — mismo estilo que LotesPanel.tsx. */
 function BadgesComposicion({ loteId, lotes }: { loteId: string | null; lotes: Lote[] }) {
   const lote = loteId ? lotes.find(l => l.id === loteId) : null;
   if (!lote || lote.composicion.length === 0) return null;

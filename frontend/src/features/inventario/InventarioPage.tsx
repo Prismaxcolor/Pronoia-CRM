@@ -16,6 +16,7 @@ import Accordion from '../../components/Accordion';
 import AlmacenesPanel from './AlmacenesPanel';
 import TrasladosPanel from './TrasladosPanel';
 import TomaFisicaPanel from './TomaFisicaPanel';
+import LotesPanel from '../lotes/LotesPanel';
 import type { TipoMaterial, Producto, Lote, ComposicionPCBItem, TomaFisicaInventario, Transformacion } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -145,12 +146,12 @@ function agruparPorDestino(
 }
 
 type Agrupacion = 'categoria' | 'lote';
-type Pestana = 'inventario' | 'almacenes' | 'traslados' | 'toma-fisica';
+type Pestana = 'inventario' | 'almacenes' | 'lotes' | 'traslados' | 'toma-fisica';
 
 function InventarioPage() {
   const [pestana, setPestana] = usePestanaRecordada<Pestana>(
     'pronoia:inventario:pestana',
-    ['inventario', 'almacenes', 'traslados', 'toma-fisica'],
+    ['inventario', 'almacenes', 'lotes', 'traslados', 'toma-fisica'],
     'inventario',
   );
   const [grupos, setGrupos] = useState<GrupoInventario[]>([]);
@@ -209,6 +210,9 @@ function InventarioPage() {
         <button type="button" onClick={() => setPestana('almacenes')} className={`px-4 py-1.5 ${pestana === 'almacenes' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
           Almacenes
         </button>
+        <button type="button" onClick={() => setPestana('lotes')} className={`px-4 py-1.5 ${pestana === 'lotes' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Lotes
+        </button>
         <button type="button" onClick={() => setPestana('traslados')} className={`px-4 py-1.5 ${pestana === 'traslados' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
           Traslados
         </button>
@@ -218,6 +222,7 @@ function InventarioPage() {
       </div>
 
       {pestana === 'almacenes' && <AlmacenesPanel />}
+      {pestana === 'lotes' && <LotesPanel />}
       {pestana === 'traslados' && <TrasladosPanel />}
       {pestana === 'toma-fisica' && <TomaFisicaPanel />}
 
