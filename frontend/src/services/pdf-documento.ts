@@ -145,6 +145,11 @@ export function tablaMonetaria(
   return doc.lastAutoTable.finalY;
 }
 
+/** Y donde arranca la tabla en una página de CONTINUACIÓN (cuando la tabla
+ *  de pesaje no cabe entera en una sola página) — separado de BOX_PAD para
+ *  mantener el mismo margen visual que tiene la primera página. */
+const MARGIN_TOP_CONTINUACION = 40;
+
 /**
  * Tabla de PESAJE (kilos, materiales): caja de esquinas redondeadas. El
  * tamaño de la caja se mide DESPUÉS de renderizar la tabla (nunca se estima)
@@ -153,6 +158,14 @@ export function tablaMonetaria(
  * nunca toque la curva, y todas las líneas internas usan el mismo tono de
  * gris (nunca negro puro) para no chocar visualmente con el borde
  * redondeado. Devuelve el Y donde continúa el documento.
+ *
+ * La caja se dibuja UNA VEZ POR PÁGINA (hook `didDrawPage` de autoTable),
+ * no una sola vez al final: cuando la tabla no entra en una página y
+ * autoTable la parte sola, `doc.lastAutoTable.finalY` queda en la ÚLTIMA
+ * página pero `opts.startY` sigue apuntando a la PRIMERA — dibujar una sola
+ * caja mezclando esos dos Y de páginas distintas produce una caja vacía mal
+ * ubicada en la página final (bug real, visto en un ticket de 20
+ * materiales — Compra-0053, 04-sep-2026).
  */
 export function tablaPesaje(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -162,7 +175,8 @@ export function tablaPesaje(
   opts: { startY: number; head: string[][]; body: string[][]; foot?: string[][] }
 ): number {
   const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = { left: BOX_LEFT + BOX_PAD, right: pageWidth - (BOX_RIGHT - BOX_PAD) };
+  const margin = { left: BOX_LEFT + BOX_PAD, right: pageWidth - (BOX_RIGHT - BOX_PAD), top: MARGIN_TOP_CONTINUACION };
+  let inicioSegmento = opts.startY;
   autoTable(doc, {
     startY: opts.startY + 10,
     head: opts.head,
@@ -174,10 +188,13 @@ export function tablaPesaje(
     footStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { top: 1 }, lineColor: GRIS_LINEA_HEAD },
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
     theme: 'plain',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    didDrawPage: (data: any) => {
+      const finY = data.cursor?.y ?? inicioSegmento;
+      doc.setDrawColor(...GRIS_BORDE_CAJA).setLineWidth(1)
+        .roundedRect(BOX_LEFT, inicioSegmento, BOX_RIGHT - BOX_LEFT, finY - inicioSegmento + 10, 8, 8, 'S');
+      inicioSegmento = MARGIN_TOP_CONTINUACION - 10;
+    },
   });
-  const finalY = doc.lastAutoTable.finalY;
-  const rectHeight = finalY - opts.startY + 10;
-  doc.setDrawColor(...GRIS_BORDE_CAJA).setLineWidth(1)
-    .roundedRect(BOX_LEFT, opts.startY, BOX_RIGHT - BOX_LEFT, rectHeight, 8, 8, 'S');
-  return finalY + 10;
+  return (doc.lastAutoTable.finalY as number) + 10;
 }
