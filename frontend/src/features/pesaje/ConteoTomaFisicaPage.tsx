@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, Trash2, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Trash2, CheckCircle2, Circle, Images, ZoomIn, X } from 'lucide-react';
 import { obtenerTomaFisica, obtenerResumenTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
@@ -42,6 +42,8 @@ function ConteoTomaFisicaPage() {
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [galeriaAbierta, setGaleriaAbierta] = useState<{ label: string; fotos: string[] } | null>(null);
+  const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
 
   const cargar = () => {
     setCargando(true);
@@ -378,24 +380,40 @@ function ConteoTomaFisicaPage() {
           <p className="px-5 py-6 text-center text-text-muted text-sm">Todavía no registraste ningún pesaje.</p>
         ) : (
           <div className="divide-y divide-border">
-            {detalle.map(d => (
-              <div key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
-                <div className="flex-1 min-w-0">
-                  {d.nombreProducto ? (
-                    <>
-                      <span className="text-text-primary">{d.nombreProducto}</span>
-                      {d.nombreLote && <span className="text-text-muted"> · {d.nombreLote}</span>}
-                    </>
-                  ) : (
-                    <span className="text-text-primary">{d.nombreLote ?? '—'} (lote completo)</span>
+            {detalle.map(d => {
+              const label = d.nombreProducto
+                ? `${d.nombreProducto}${d.nombreLote ? ` · ${d.nombreLote}` : ''}`
+                : `${d.nombreLote ?? '—'} (lote completo)`;
+              return (
+                <div key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                  <div className="flex-1 min-w-0">
+                    {d.nombreProducto ? (
+                      <>
+                        <span className="text-text-primary">{d.nombreProducto}</span>
+                        {d.nombreLote && <span className="text-text-muted"> · {d.nombreLote}</span>}
+                      </>
+                    ) : (
+                      <span className="text-text-primary">{d.nombreLote ?? '—'} (lote completo)</span>
+                    )}
+                  </div>
+                  <span className="font-semibold text-text-primary shrink-0">{fmt(d.pesoNeto)} kg</span>
+                  {d.fotos.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setGaleriaAbierta({ label, fotos: d.fotos })}
+                      className="flex items-center gap-1 text-text-muted hover:text-brand-600 transition-colors shrink-0"
+                      title="Ver fotos"
+                    >
+                      <Images size={14} />
+                      <span className="text-xs">{d.fotos.length}</span>
+                    </button>
                   )}
+                  <button type="button" onClick={() => handleQuitar(d.id)} className="text-text-muted hover:text-red-600 transition-colors shrink-0" title="Quitar">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <span className="font-semibold text-text-primary shrink-0">{fmt(d.pesoNeto)} kg</span>
-                <button type="button" onClick={() => handleQuitar(d.id)} className="text-text-muted hover:text-red-600 transition-colors shrink-0" title="Quitar">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -414,6 +432,44 @@ function ConteoTomaFisicaPage() {
           onClose={() => setMostrarSelectorTara(false)}
           onSeleccionar={taraId => { setCampoTara(prev => ({ ...prev, ...seleccionarTaraFila(prev, taraId) })); setMostrarSelectorTara(false); }}
         />
+      )}
+
+      {galeriaAbierta && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setGaleriaAbierta(null)}>
+          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-sm font-semibold text-text-primary truncate">{galeriaAbierta.label}</h2>
+              <button type="button" onClick={() => setGaleriaAbierta(null)} className="text-text-muted hover:text-text-primary transition-colors shrink-0">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 grid grid-cols-3 gap-2">
+              {galeriaAbierta.fotos.map((url, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setFotoAmpliada(url)}
+                  className="group relative aspect-square rounded-lg overflow-hidden border border-border"
+                  title="Ver foto en grande"
+                >
+                  <img src={url} alt={`Foto ${i + 1}`} loading="lazy" className="w-full h-full object-cover" />
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                    <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fotoAmpliada && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4" onClick={() => setFotoAmpliada(null)}>
+          <button type="button" onClick={() => setFotoAmpliada(null)} className="absolute top-4 right-4 text-white/80 hover:text-white" title="Cerrar">
+            <X size={24} />
+          </button>
+          <img src={fotoAmpliada} alt="Foto ampliada" className="max-w-full max-h-[85vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
+        </div>
       )}
     </div>
   );

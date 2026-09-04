@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ScanLine, CheckCircle2, Circle, Printer, FileDown } from 'lucide-react';
+import { ArrowLeft, ScanLine, CheckCircle2, Circle, Printer, FileDown, Images, ZoomIn, X } from 'lucide-react';
 import {
   obtenerTomaFisica,
   obtenerResumenTomaFisica,
@@ -54,6 +54,8 @@ function TomaFisicaDetallePage() {
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [cargando, setCargando] = useState(true);
   const [culminando, setCulminando] = useState(false);
+  const [galeriaAbierta, setGaleriaAbierta] = useState<{ label: string; fotos: string[] } | null>(null);
+  const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
 
   const cargar = () => {
     setCargando(true);
@@ -79,11 +81,12 @@ function TomaFisicaDetallePage() {
     if (actual) {
       actual.pesoNeto += d.pesoNeto;
       actual.cantidad += 1;
+      actual.fotos.push(...d.fotos);
     } else {
-      mapa.set(clave, { nombreProducto: d.nombreProducto, nombreLote: d.nombreLote, loteId: d.loteId, pesoNeto: d.pesoNeto, cantidad: 1 });
+      mapa.set(clave, { nombreProducto: d.nombreProducto, nombreLote: d.nombreLote, loteId: d.loteId, pesoNeto: d.pesoNeto, cantidad: 1, fotos: [...d.fotos] });
     }
     return mapa;
-  }, new Map<string, { nombreProducto: string | null; nombreLote: string | null; loteId: string | null; pesoNeto: number; cantidad: number }>());
+  }, new Map<string, { nombreProducto: string | null; nombreLote: string | null; loteId: string | null; pesoNeto: number; cantidad: number; fotos: string[] }>());
 
   const handleCulminar = async () => {
     const ok = await confirmar({
@@ -186,23 +189,42 @@ function TomaFisicaDetallePage() {
                 <th className="py-2 px-5 font-medium">Material</th>
                 <th className="py-2 px-4 font-medium">Lote</th>
                 <th className="py-2 px-4 font-medium text-right">Pesajes</th>
+                <th className="py-2 px-4 font-medium text-right print:hidden">Fotos</th>
                 <th className="py-2 px-5 font-medium text-right">Peso neto (kg)</th>
               </tr>
             </thead>
             <tbody>
-              {Array.from(ticketPorMaterial.values()).map((m, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td className="py-2.5 px-5 text-text-primary">
-                    {m.nombreProducto ?? <span className="text-text-muted">Lote completo</span>}
-                  </td>
-                  <td className="py-2.5 px-4 text-text-secondary">
-                    {m.nombreLote ?? '—'}
-                    <BadgesComposicion loteId={m.loteId} lotes={lotes} />
-                  </td>
-                  <td className="py-2.5 px-4 text-right text-text-secondary">{m.cantidad}</td>
-                  <td className="py-2.5 px-5 text-right font-semibold text-text-primary">{fmt(m.pesoNeto)}</td>
-                </tr>
-              ))}
+              {Array.from(ticketPorMaterial.values()).map((m, i) => {
+                const label = m.nombreProducto
+                  ? `${m.nombreProducto}${m.nombreLote ? ` · ${m.nombreLote}` : ''}`
+                  : `${m.nombreLote ?? '—'} (lote completo)`;
+                return (
+                  <tr key={i} className="border-t border-border">
+                    <td className="py-2.5 px-5 text-text-primary">
+                      {m.nombreProducto ?? <span className="text-text-muted">Lote completo</span>}
+                    </td>
+                    <td className="py-2.5 px-4 text-text-secondary">
+                      {m.nombreLote ?? '—'}
+                      <BadgesComposicion loteId={m.loteId} lotes={lotes} />
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-text-secondary">{m.cantidad}</td>
+                    <td className="py-2.5 px-4 text-right print:hidden">
+                      {m.fotos.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setGaleriaAbierta({ label, fotos: m.fotos })}
+                          className="inline-flex items-center gap-1 text-text-muted hover:text-brand-600 transition-colors"
+                          title="Ver fotos"
+                        >
+                          <Images size={14} />
+                          <span className="text-xs">{m.fotos.length}</span>
+                        </button>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-5 text-right font-semibold text-text-primary">{fmt(m.pesoNeto)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -283,6 +305,44 @@ function TomaFisicaDetallePage() {
             <CheckCircle2 size={18} />
             {culminando ? 'Culminando…' : 'Culminar inventario'}
           </button>
+        </div>
+      )}
+
+      {galeriaAbierta && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden" onClick={() => setGaleriaAbierta(null)}>
+          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-sm font-semibold text-text-primary truncate">{galeriaAbierta.label}</h2>
+              <button type="button" onClick={() => setGaleriaAbierta(null)} className="text-text-muted hover:text-text-primary transition-colors shrink-0">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 grid grid-cols-3 gap-2">
+              {galeriaAbierta.fotos.map((url, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setFotoAmpliada(url)}
+                  className="group relative aspect-square rounded-lg overflow-hidden border border-border"
+                  title="Ver foto en grande"
+                >
+                  <img src={url} alt={`Foto ${i + 1}`} loading="lazy" className="w-full h-full object-cover" />
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                    <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fotoAmpliada && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4 print:hidden" onClick={() => setFotoAmpliada(null)}>
+          <button type="button" onClick={() => setFotoAmpliada(null)} className="absolute top-4 right-4 text-white/80 hover:text-white" title="Cerrar">
+            <X size={24} />
+          </button>
+          <img src={fotoAmpliada} alt="Foto ampliada" className="max-w-full max-h-[85vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
         </div>
       )}
     </div>
