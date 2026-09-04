@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, Trash2, CheckCircle2, Circle } from 'lucide-react';
 import { obtenerTomaFisica, obtenerResumenTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
 import { obtenerProductos } from '../../services/producto-service';
@@ -20,7 +20,9 @@ function fmt(n: number): string {
 function ConteoTomaFisicaPage() {
   const { tomaFisicaId = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const toast = useToast();
+  const preseleccionAplicada = useRef(false);
 
   const [tomaFisica, setTomaFisica] = useState<TomaFisicaInventario | null>(null);
   const [detalle, setDetalle] = useState<DetalleTomaFisica[]>([]);
@@ -101,6 +103,23 @@ function ConteoTomaFisicaPage() {
     ),
     [lotes, tomaFisica]
   );
+
+  // Preselección desde el link "Teórico vs. real" de la toma física
+  // (?producto=<id> o ?lote=<id>) — solo una vez, para no pisar la
+  // selección del usuario cada vez que cargar() trae listas nuevas.
+  useEffect(() => {
+    if (preseleccionAplicada.current) return;
+    const productoParam = searchParams.get('producto');
+    const loteParam = searchParams.get('lote');
+    if (!productoParam && !loteParam) return;
+    if (productoParam && productosDisponibles.some(p => p.id === productoParam)) {
+      setProductoId(productoParam);
+      preseleccionAplicada.current = true;
+    } else if (loteParam && lotesDelAlmacen.some(l => l.id === loteParam)) {
+      setLoteId(loteParam);
+      preseleccionAplicada.current = true;
+    }
+  }, [productosDisponibles, lotesDelAlmacen, searchParams]);
 
   const loteSeleccionado = loteId ? lotes.find(l => l.id === loteId) ?? null : null;
   const netoActual = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);

@@ -230,8 +230,16 @@ function TomaFisicaDetallePage() {
             <tbody>
               {lineas.map((l, i) => {
                 const contado = l.cantidadPesajes > 0;
+                const puedeIrAContar = tomaFisica.estado === 'abierta' && puedeContar && (l.productoId || l.loteId);
                 return (
-                  <tr key={i} className={`border-t border-border ${contado ? '' : 'opacity-60'}`}>
+                  <tr
+                    key={i}
+                    onClick={puedeIrAContar ? () => {
+                      const param = l.productoId ? `producto=${l.productoId}` : `lote=${l.loteId}`;
+                      navigate(`/pesaje/conteo/${tomaFisica.id}?${param}`);
+                    } : undefined}
+                    className={`border-t border-border ${contado ? '' : 'opacity-60'} ${puedeIrAContar ? 'cursor-pointer hover:bg-surface-alt transition-colors print:cursor-auto print:hover:bg-transparent' : ''}`}
+                  >
                     <td className="py-2.5 pl-5 pr-2">
                       {contado
                         ? <CheckCircle2 size={16} className="text-green-600" />
