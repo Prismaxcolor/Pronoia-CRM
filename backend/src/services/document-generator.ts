@@ -192,18 +192,22 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   y += 10;
   autoTable(doc, {
     startY: y,
-    head: [['Material', 'Bruto', 'Tara', 'Devol.', 'Neto (kg)']],
-    body: t.materiales.map(m => [
-      sanitizarPdf(m.nombreProducto ?? m.subcategoria ?? '—'),
-      fmt(m.pesoBruto),
-      fmt(m.tara),
-      fmt(m.devolucion),
-      fmt(m.pesoNeto),
-    ]),
+    head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
+    body: [
+      ...t.materiales.map(m => [
+        sanitizarPdf(m.nombreProducto ?? m.subcategoria ?? '—'),
+        fmt(m.pesoBruto),
+        fmt(m.tara),
+        fmt(m.pesoNeto),
+      ]),
+      // Devolución es del ticket completo, no por material — se muestra como
+      // una fila más de la misma tabla en vez de una columna por material.
+      ...(t.devolucion > 0 ? [['Devolución', '', '', fmt(t.devolucion)]] : []),
+    ],
     margin: { left: 56, right: 56 },
     styles: { font: 'helvetica', fontSize: 10, cellPadding: 6 },
     headStyles: { fillColor: false, textColor: 0, lineWidth: 0.5, fontStyle: 'bold' },
-    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
     theme: 'grid',
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -212,13 +216,6 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   y += 26;
   doc.setFontSize(14).setFont('helvetica', 'bold').text('Peso neto total', 56, y);
   doc.text(`${fmt(t.pesoNetoTotal)} kg`, 539, y, { align: 'right' });
-
-  if (t.devolucion > 0) {
-    y += 20;
-    doc.setFontSize(10).setFont('helvetica', 'normal');
-    doc.text('Devolución', 56, y);
-    doc.text(`${fmt(t.devolucion)} kg`, 539, y, { align: 'right' });
-  }
 
   return Buffer.from(doc.output('arraybuffer'));
 }

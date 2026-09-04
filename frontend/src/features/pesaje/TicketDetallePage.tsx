@@ -296,16 +296,16 @@ function TicketDetallePage() {
           {ticket.pesajeExterior ? (
             <p className="text-xs text-text-muted mb-4">Pesaje exterior — sin peso global propio.</p>
           ) : (
-            <div className="flex justify-between items-baseline pt-3 mb-2">
-              <span className="font-semibold text-text-primary text-lg">Peso global</span>
-              <span className="text-2xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
-            </div>
-          )}
-          {ticket.devolucion > 0 && (
-            <div className="flex justify-between py-2 border-b border-border text-sm mb-4">
-              <span className="text-text-secondary">Devolución</span>
-              <span className="text-text-primary font-medium">{fmt(ticket.devolucion)} kg</span>
-            </div>
+            <>
+              <div className="flex justify-between items-baseline pt-3 mb-1">
+                <span className="font-semibold text-text-primary text-lg">Peso global</span>
+                <span className="text-2xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
+              </div>
+              <div className="flex justify-between items-baseline mb-4 text-sm">
+                <span className="text-text-secondary">Peso neto</span>
+                <span className="font-semibold text-text-primary">{fmt(ticket.pesoNetoTotal)} kg</span>
+              </div>
+            </>
           )}
 
           {ticket.estado === 'bruto' && (
@@ -335,7 +335,6 @@ function TicketDetallePage() {
                       {!ocultarDestino && <th className="py-2 px-4 font-medium">Destino</th>}
                       <th className="py-2 px-4 font-medium text-right">Bruto</th>
                       <th className="py-2 px-4 font-medium text-right">Tara</th>
-                      <th className="py-2 px-4 font-medium text-right">Devol.</th>
                       <th className="py-2 px-5 font-medium text-right">Neto (kg)</th>
                     </tr>
                   </thead>
@@ -346,10 +345,17 @@ function TicketDetallePage() {
                         {!ocultarDestino && <td className="py-2.5 px-4 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
                         <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
                         <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.tara)}</td>
-                        <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.devolucion)}</td>
                         <td className="py-2.5 px-5 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
                       </tr>
                     ))}
+                    {ticket.devolucion > 0 && (
+                      <tr className="border-t border-border bg-surface-alt/40">
+                        <td className="py-2.5 px-5 text-text-primary font-medium" colSpan={ocultarDestino ? 3 : 4}>
+                          Devolución
+                        </td>
+                        <td className="py-2.5 px-5 text-right font-medium text-text-primary">{fmt(ticket.devolucion)}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

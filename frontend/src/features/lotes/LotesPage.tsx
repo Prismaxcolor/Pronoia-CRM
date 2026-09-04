@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Plus, Boxes, Loader2 } from 'lucide-react';
+import { Plus, Boxes, Loader2, Pencil } from 'lucide-react';
 import { obtenerLotes, crearLote, actualizarLote } from '../../services/lote-service';
 import { obtenerAlmacenes } from '../../services/almacen-service';
 import { subirFotoLote } from '../../services/storage-service';
 import { fotoLocalDeFile, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import LoteFormModal from './LoteFormModal';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Lote, Almacen } from '@shared/types/index.js';
@@ -26,6 +27,7 @@ function LotesPage() {
   const [almacenId, setAlmacenId] = useState('');
   const [fotosNuevoLote, setFotosNuevoLote] = useState<FotoLocal[]>([]);
   const [guardando, setGuardando] = useState(false);
+  const [loteEditando, setLoteEditando] = useState<Lote | null>(null);
 
   const recargar = () => obtenerLotes().then(setLotes).finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };
@@ -164,6 +166,16 @@ function LotesPage() {
                 {puedeEditar && (
                   <button
                     type="button"
+                    onClick={() => setLoteEditando(l)}
+                    className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-brand-600 transition-colors shrink-0"
+                    title="Editar lote"
+                  >
+                    <Pencil size={15} />
+                  </button>
+                )}
+                {puedeEditar && (
+                  <button
+                    type="button"
                     onClick={() => toggleActivo(l)}
                     className="text-xs font-medium text-text-muted hover:text-brand-600 transition-colors"
                   >
@@ -185,6 +197,14 @@ function LotesPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {loteEditando && (
+        <LoteFormModal
+          lote={loteEditando}
+          onClose={() => setLoteEditando(null)}
+          onGuardado={() => { setLoteEditando(null); cargar(); }}
+        />
       )}
     </div>
   );
