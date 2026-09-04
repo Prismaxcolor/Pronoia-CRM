@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ScanLine, CheckCircle2, Printer, FileDown } from 'lucide-react';
+import { ArrowLeft, ScanLine, CheckCircle2, Circle, Printer, FileDown } from 'lucide-react';
 import {
   obtenerTomaFisica,
   obtenerResumenTomaFisica,
@@ -219,7 +219,8 @@ function TomaFisicaDetallePage() {
           <table className="w-full text-sm print:border-collapse">
             <thead>
               <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="py-2 px-5 font-medium">Material</th>
+                <th className="py-2 pl-5 pr-2 font-medium w-8"></th>
+                <th className="py-2 px-2 font-medium">Material</th>
                 <th className="py-2 px-4 font-medium">Lote</th>
                 <th className="py-2 px-4 font-medium text-right">Teórico</th>
                 <th className="py-2 px-4 font-medium text-right">Real</th>
@@ -227,22 +228,30 @@ function TomaFisicaDetallePage() {
               </tr>
             </thead>
             <tbody>
-              {lineas.map((l, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td className="py-2.5 px-5 text-text-primary">
-                    {l.productoNombre ?? <span className="text-text-muted">Lote completo</span>}
-                  </td>
-                  <td className="py-2.5 px-4 text-text-secondary">
-                    {l.loteNombre ?? '—'}
-                    <BadgesComposicion loteId={l.loteId} lotes={lotes} />
-                  </td>
-                  <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockTeorico)}</td>
-                  <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockReal)}</td>
-                  <td className={`py-2.5 px-5 text-right font-semibold ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
-                    {l.diferencia > 0 ? '+' : ''}{fmt(l.diferencia)}
-                  </td>
-                </tr>
-              ))}
+              {lineas.map((l, i) => {
+                const contado = l.cantidadPesajes > 0;
+                return (
+                  <tr key={i} className={`border-t border-border ${contado ? '' : 'opacity-60'}`}>
+                    <td className="py-2.5 pl-5 pr-2">
+                      {contado
+                        ? <CheckCircle2 size={16} className="text-green-600" />
+                        : <Circle size={16} className="text-text-muted" />}
+                    </td>
+                    <td className="py-2.5 px-2 text-text-primary">
+                      {l.productoNombre ?? <span className="text-text-muted">Lote completo</span>}
+                    </td>
+                    <td className="py-2.5 px-4 text-text-secondary">
+                      {l.loteNombre ?? '—'}
+                      <BadgesComposicion loteId={l.loteId} lotes={lotes} />
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockTeorico)}</td>
+                    <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockReal)}</td>
+                    <td className={`py-2.5 px-5 text-right font-semibold ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
+                      {l.diferencia > 0 ? '+' : ''}{fmt(l.diferencia)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-surface-alt text-sm">

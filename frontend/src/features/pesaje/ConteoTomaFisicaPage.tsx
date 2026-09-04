@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, Trash2 } from 'lucide-react';
-import { obtenerTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
+import { ArrowLeft, ChevronDown, Trash2, CheckCircle2, Circle } from 'lucide-react';
+import { obtenerTomaFisica, obtenerResumenTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
@@ -11,7 +11,7 @@ import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { useToast } from '../../hooks/use-toast-context';
-import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote, Tara, TipoMaterial } from '@shared/types/index.js';
+import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote, Tara, TipoMaterial, ResumenTomaFisicaLinea } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -24,6 +24,7 @@ function ConteoTomaFisicaPage() {
 
   const [tomaFisica, setTomaFisica] = useState<TomaFisicaInventario | null>(null);
   const [detalle, setDetalle] = useState<DetalleTomaFisica[]>([]);
+  const [lineas, setLineas] = useState<ResumenTomaFisicaLinea[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
@@ -44,12 +45,14 @@ function ConteoTomaFisicaPage() {
     setCargando(true);
     Promise.all([
       obtenerTomaFisica(tomaFisicaId),
+      obtenerResumenTomaFisica(tomaFisicaId),
       obtenerProductos(),
       obtenerLotes(),
       obtenerTaras(),
       obtenerTiposMaterial(),
-    ]).then(([res, prods, lts, tars, cats]) => {
+    ]).then(([res, resumen, prods, lts, tars, cats]) => {
       if (res) { setTomaFisica(res.tomaFisica); setDetalle(res.detalle); }
+      setLineas(resumen);
       setProductos(prods);
       setLotes(lts);
       setTaras(tars.filter(t => t.activo));
@@ -115,7 +118,8 @@ function ConteoTomaFisicaPage() {
       if (!productoId) { setError('Elige un material.'); return; }
       if (requiereLote && !loteId) { setError('Elige el lote donde está este material.'); return; }
     }
-    if (netoActual <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
+    if (pesoBruto === '') { setError('Ingresa el peso bruto (puede ser 0 si no había material).'); return; }
+    if (netoActual < 0) { setError('El peso neto no puede ser negativo.'); return; }
     if (fotos.length === 0) { setError('Agrega al menos una foto.'); return; }
 
     setGuardando(true);
@@ -190,6 +194,41 @@ function ConteoTomaFisicaPage() {
             : ' — pesaje simple, sin destino ni pesaje global.'}
         </p>
       </div>
+
+      {!esConLote && lineas.length > 0 && (
+        <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-border">
+            <h2 className="text-sm font-semibold text-text-primary">
+              Checklist de productos ({lineas.filter(l => l.cantidadPesajes > 0).length}/{lineas.length})
+            </h2>
+            <p className="text-xs text-text-muted mt-0.5">Toca un producto para cargarlo en el formulario.</p>
+          </div>
+          <div className="divide-y divide-border max-h-72 overflow-y-auto">
+            {lineas.map(l => {
+              const contado = l.cantidadPesajes > 0;
+              return (
+                <button
+                  key={l.productoId}
+                  type="button"
+                  onClick={() => { setProductoId(l.productoId ?? ''); setLoteId(''); }}
+                  className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors ${productoId === l.productoId ? 'bg-brand-50' : ''}`}
+                >
+                  {contado
+                    ? <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+                    : <Circle size={16} className="text-text-muted shrink-0" />}
+                  <span className={`flex-1 min-w-0 truncate ${contado ? 'text-text-primary' : 'text-text-secondary'}`}>
+                    {l.productoNombre}
+                  </span>
+                  <span className="text-xs text-text-muted shrink-0">Teórico: {fmt(l.stockTeorico)} kg</span>
+                  {contado && (
+                    <span className="text-xs font-semibold text-text-primary shrink-0">Real: {fmt(l.stockReal)} kg</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleAgregar} className="space-y-4 bg-surface rounded-xl border border-border p-5 mb-6">
         {esConLote ? (
@@ -299,7 +338,7 @@ function ConteoTomaFisicaPage() {
           )}
         </div>
 
-        {netoActual > 0 && (
+        {pesoBruto !== '' && netoActual >= 0 && (
           <p className="text-sm text-text-secondary">Neto: <span className="font-semibold text-text-primary">{fmt(netoActual)} kg</span></p>
         )}
 

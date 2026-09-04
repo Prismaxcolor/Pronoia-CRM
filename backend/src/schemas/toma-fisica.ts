@@ -24,7 +24,7 @@ export const registrarPesajeTomaFisicaSchema = z
     // ahí no se elige producto, solo el lote.
     productoId: z.string().uuid().optional().nullable(),
     loteId: z.string().uuid().optional().nullable(),
-    pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+    pesoBruto: z.number().nonnegative('El peso bruto no puede ser negativo.'),
     tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
     fotos: z.array(z.string()).min(1, 'Agrega al menos una foto.'),
   })
