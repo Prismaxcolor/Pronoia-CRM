@@ -68,9 +68,11 @@ export interface RetiroTransformacion {
 
 /** Un ajuste de inventario generado al culminar una toma física — ya viene
  *  con signo (positivo = sobrante, negativo = faltante), a diferencia de
- *  entradas/salidas que son siempre positivas. */
+ *  entradas/salidas que son siempre positivas.
+ *  Cuando productoId es null, es un ajuste global de lote (PCB u otro sin
+ *  desglose por producto) — se muestra como una línea sintética en inventario. */
 export interface AjusteTomaInventario {
-  productoId: string;
+  productoId: string | null;
   loteId: string | null;
   nombreLote: string | null;
   diferencia: number;
@@ -134,9 +136,33 @@ export function construirGruposInventario(
     obtenerBucket(r.productoId, 'lote', r.loteOrigenId, r.nombreLoteOrigen).transformaciones -= r.peso;
   }
   for (const a of ajustesToma) {
-    const destinoTipo = a.loteId ? 'lote' : 'mpp';
-    const destinoLabel = a.loteId ? (a.nombreLote ?? 'Lote') : MPP_LABEL;
-    obtenerBucket(a.productoId, destinoTipo, a.loteId, destinoLabel).ajustes += a.diferencia;
+    if (a.productoId !== null) {
+      const destinoTipo = a.loteId ? 'lote' : 'mpp';
+      const destinoLabel = a.loteId ? (a.nombreLote ?? 'Lote') : MPP_LABEL;
+      obtenerBucket(a.productoId, destinoTipo, a.loteId, destinoLabel).ajustes += a.diferencia;
+    } else if (a.loteId) {
+      // Ajuste global de lote (toma física sin desglose por producto): muestra
+      // como fila sintética con el nombre del lote para no perderlo del inventario.
+      const syntheticId = `__lote_adj__${a.loteId}`;
+      const k = `${syntheticId}::${a.loteId}`;
+      let b = buckets.get(k);
+      if (!b) {
+        b = {
+          productoId: syntheticId,
+          nombre: `${a.nombreLote ?? 'Lote'} — ajuste de inventario`,
+          destinoTipo: 'lote',
+          loteId: a.loteId,
+          destinoLabel: a.nombreLote ?? 'Lote',
+          entradas: 0,
+          salidas: 0,
+          transformaciones: 0,
+          ajustes: 0,
+          stock: 0,
+        };
+        buckets.set(k, b);
+      }
+      b.ajustes += a.diferencia;
+    }
   }
 
   // Productos sin ningún movimiento → fila "Sin movimiento" en cero (para
@@ -154,14 +180,28 @@ export function construirGruposInventario(
 
   for (const b of buckets.values()) b.stock = b.entradas - b.salidas + b.transformaciones + b.ajustes;
 
+  const LOTE_ADJ_CLAVE = '__lote_adj__';
+  const LOTE_ADJ_CATEGORIA = 'Ajustes de inventario';
+
   const grupos = new Map<string, GrupoInventario>();
   for (const b of buckets.values()) {
-    const m = meta.get(b.productoId);
-    const clave = m?.tipoMaterialId ?? '__sin__';
+    let clave: string;
+    let tipoMaterialId: string | null;
+    let nombreCategoria: string;
+    if (b.productoId.startsWith(LOTE_ADJ_CLAVE)) {
+      clave = LOTE_ADJ_CLAVE;
+      tipoMaterialId = null;
+      nombreCategoria = LOTE_ADJ_CATEGORIA;
+    } else {
+      const m = meta.get(b.productoId);
+      clave = m?.tipoMaterialId ?? '__sin__';
+      tipoMaterialId = m?.tipoMaterialId ?? null;
+      nombreCategoria = m?.nombreCategoria ?? SIN_CATEGORIA;
+    }
     if (!grupos.has(clave)) {
       grupos.set(clave, {
-        tipoMaterialId: m?.tipoMaterialId ?? null,
-        nombreCategoria: m?.nombreCategoria ?? SIN_CATEGORIA,
+        tipoMaterialId,
+        nombreCategoria,
         totalKg: 0,
         articulos: [],
       });
@@ -301,10 +341,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     });
   }
 
-  // Ajustes de toma física (culminar_toma_fisica_inventario): faltantes o
-  // sobrantes encontrados al contar físicamente. Sin fecha propia — se
-  // toman siempre, sin filtrar por desde/hasta (igual que un ajuste de
-  // inventario no es un "movimiento" con fecha de operación).
+  // Ajustes de toma física con producto conocido (culminar_toma_fisica_inventario).
   const { data: ajustesData } = await supabaseAdmin
     .from('ajustes_inventario')
     .select('producto_id, lote_id, diferencia, lotes(nombre)')
@@ -324,6 +361,53 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
       nombreLote: d.lotes?.nombre ?? null,
       diferencia: Number(d.diferencia),
     });
+  }
+
+  // Ajustes de toma física sin producto (lotes PCB contados como un todo).
+  // Se muestran como línea sintética de lote para que el inventario cuadre.
+  const { data: ajustesLoteData } = await supabaseAdmin
+    .from('ajustes_inventario')
+    .select('lote_id, diferencia, lotes(nombre)')
+    .is('producto_id', null)
+    .not('lote_id', 'is', null);
+
+  // Retiros de transformación sin producto (masa de ajuste de lote retirada a PCB).
+  const { data: retirosSinProducto } = await supabaseAdmin
+    .from('transformacion_entrada_detalle')
+    .select('peso_kg, transformaciones(lote_origen_id)')
+    .is('producto_id', null);
+
+  const retirosPorLote = new Map<string, number>();
+  for (const r of (retirosSinProducto as unknown as Array<{
+    peso_kg: number;
+    transformaciones?: { lote_origen_id: string | null } | null;
+  }> | null) ?? []) {
+    const loteId = r.transformaciones?.lote_origen_id;
+    if (!loteId) continue;
+    retirosPorLote.set(loteId, (retirosPorLote.get(loteId) ?? 0) + Number(r.peso_kg));
+  }
+
+  const ajusteNeto = new Map<string, { nombreLote: string | null; neto: number }>();
+  for (const a of (ajustesLoteData as unknown as Array<{
+    lote_id: string;
+    diferencia: number;
+    lotes?: { nombre: string } | null;
+  }> | null) ?? []) {
+    const existing = ajusteNeto.get(a.lote_id);
+    if (existing) {
+      existing.neto += Number(a.diferencia);
+    } else {
+      ajusteNeto.set(a.lote_id, { nombreLote: a.lotes?.nombre ?? null, neto: Number(a.diferencia) });
+    }
+  }
+  for (const [loteId, retirado] of retirosPorLote) {
+    const existing = ajusteNeto.get(loteId);
+    if (existing) existing.neto -= retirado;
+  }
+  for (const [loteId, info] of ajusteNeto) {
+    if (Math.abs(info.neto) > 0.001) {
+      ajustesToma.push({ productoId: null, loteId, nombreLote: info.nombreLote, diferencia: info.neto });
+    }
   }
 
   return construirGruposInventario(productos, entradas, salidas, retirosTransformacion, {}, ajustesToma);
