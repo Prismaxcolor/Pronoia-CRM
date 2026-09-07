@@ -8,6 +8,7 @@ import {
   eliminarPesajeTomaFisica,
   resumenTomaFisica,
   culminarTomaFisica,
+  cancelarTomaFisica,
 } from '../services/toma-fisica-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -80,6 +81,17 @@ router.post('/:id/culminar', requirePermiso('toma_fisica', 'editar'), async (req
     return;
   }
   logger.info({ evento: 'toma_fisica_culminada', ip: clienteIp(req), userId: req.user!.sub, tomaFisicaId: id });
+  res.json(result);
+});
+
+router.post('/:id/cancelar', requirePermiso('toma_fisica', 'editar'), async (req, res) => {
+  const id = String(req.params.id);
+  const result = await cancelarTomaFisica(id, req.user!.sub);
+  if ('error' in result) {
+    res.status(400).json(result);
+    return;
+  }
+  logger.info({ evento: 'toma_fisica_cancelada', ip: clienteIp(req), userId: req.user!.sub, tomaFisicaId: id });
   res.json(result);
 });
 

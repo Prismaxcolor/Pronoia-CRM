@@ -223,8 +223,8 @@ function TomaFisicaPanel() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-text-primary text-sm">{t.codigo}</h3>
-                  <span className={`px-2 py-0.5 rounded-full text-xs shrink-0 ${t.estado === 'abierta' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                    {t.estado === 'abierta' ? 'Abierta' : 'Cerrada'}
+                  <span className={`px-2 py-0.5 rounded-full text-xs shrink-0 ${t.estado === 'abierta' ? 'bg-amber-100 text-amber-700' : t.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                    {t.estado === 'abierta' ? 'Abierta' : t.estado === 'cancelada' ? 'Cancelada' : 'Cerrada'}
                   </span>
                 </div>
                 <p className="text-xs text-text-muted truncate">
@@ -234,7 +234,7 @@ function TomaFisicaPanel() {
                 </p>
               </div>
               <span className="text-xs text-text-muted shrink-0">
-                {t.estado === 'abierta' ? `Abierta ${fmtFecha(t.abiertaEn)}` : `Cerrada ${fmtFecha(t.cerradaEn)}`}
+                {t.estado === 'abierta' ? `Abierta ${fmtFecha(t.abiertaEn)}` : t.estado === 'cancelada' ? `Cancelada ${fmtFecha(t.cerradaEn)}` : `Cerrada ${fmtFecha(t.cerradaEn)}`}
               </span>
             </button>
           ))}

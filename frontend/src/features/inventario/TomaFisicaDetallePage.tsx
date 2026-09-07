@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ScanLine, CheckCircle2, Circle, Printer, FileDown, Images, ZoomIn, X } from 'lucide-react';
+import { ArrowLeft, ScanLine, CheckCircle2, Circle, Printer, FileDown, Images, ZoomIn, X, XCircle } from 'lucide-react';
 import {
   obtenerTomaFisica,
   obtenerResumenTomaFisica,
   culminarTomaFisica,
+  cancelarTomaFisica,
 } from '../../services/toma-fisica-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -54,6 +55,7 @@ function TomaFisicaDetallePage() {
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [cargando, setCargando] = useState(true);
   const [culminando, setCulminando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
   const [galeriaAbierta, setGaleriaAbierta] = useState<{ label: string; fotos: string[] } | null>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
 
@@ -102,6 +104,20 @@ function TomaFisicaDetallePage() {
     cargar();
   };
 
+  const handleCancelar = async () => {
+    const ok = await confirmar({
+      titulo: 'Cancelar toma física',
+      mensaje: `Se cerrará ${tomaFisica?.codigo} sin aplicar ningún ajuste de inventario. Los pesajes registrados se descartan. ¿Continuar?`,
+    });
+    if (!ok) return;
+    setCancelando(true);
+    const result = await cancelarTomaFisica(id);
+    setCancelando(false);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.info('Toma física cancelada — sin cambios en el inventario.');
+    cargar();
+  };
+
   if (cargando) {
     return (
       <div className="flex justify-center py-12">
@@ -132,8 +148,8 @@ function TomaFisicaDetallePage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-text-primary">{tomaFisica.codigo}</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs ${tomaFisica.estado === 'abierta' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'} print:border print:border-black print:bg-transparent`}>
-              {tomaFisica.estado === 'abierta' ? 'Abierta' : 'Cerrada'}
+            <span className={`px-2 py-0.5 rounded-full text-xs print:border print:border-black print:bg-transparent ${tomaFisica.estado === 'abierta' ? 'bg-amber-100 text-amber-700' : tomaFisica.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+              {tomaFisica.estado === 'abierta' ? 'Abierta' : tomaFisica.estado === 'cancelada' ? 'Cancelada' : 'Cerrada'}
             </span>
           </div>
         </div>
@@ -168,6 +184,7 @@ function TomaFisicaDetallePage() {
         {tomaFisica.descripcion && <FilaDocumento label="Descripción" valor={tomaFisica.descripcion} />}
         <FilaDocumento label="Abierta" valor={fmtFecha(tomaFisica.abiertaEn)} />
         {tomaFisica.estado === 'cerrada' && <FilaDocumento label="Cerrada" valor={fmtFecha(tomaFisica.cerradaEn)} />}
+        {tomaFisica.estado === 'cancelada' && <FilaDocumento label="Cancelada" valor={fmtFecha(tomaFisica.cerradaEn)} />}
       </div>
 
       <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
@@ -291,11 +308,20 @@ function TomaFisicaDetallePage() {
       </div>
 
       {tomaFisica.estado === 'abierta' && puedeCulminar && (
-        <div className="mt-6 flex justify-end print:hidden">
+        <div className="mt-6 flex items-center justify-end gap-3 print:hidden">
+          <button
+            type="button"
+            onClick={handleCancelar}
+            disabled={cancelando || culminando}
+            className="flex items-center gap-2 px-4 py-2.5 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
+          >
+            <XCircle size={16} />
+            {cancelando ? 'Cancelando…' : 'Cancelar toma física'}
+          </button>
           <button
             type="button"
             onClick={handleCulminar}
-            disabled={culminando}
+            disabled={culminando || cancelando}
             className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
           >
             <CheckCircle2 size={18} />

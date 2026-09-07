@@ -20,7 +20,8 @@ export async function descargarTomaFisicaPDF(
   encabezadoMarca(doc);
 
   let y = 56 + 52;
-  tituloConBadge(doc, y, tomaFisica.codigo, tomaFisica.estado === 'abierta' ? 'Abierta' : 'Cerrada');
+  const badgeEstado = tomaFisica.estado === 'abierta' ? 'Abierta' : tomaFisica.estado === 'cancelada' ? { texto: 'Cancelada', color: [185, 28, 28] as [number, number, number] } : 'Cerrada';
+  tituloConBadge(doc, y, tomaFisica.codigo, badgeEstado);
 
   y += 22;
   y = filaEncabezado(doc, y, 'Almacén', tomaFisica.almacenNombre ?? '—');

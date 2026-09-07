@@ -77,3 +77,12 @@ export async function culminarTomaFisica(id: string): Promise<{ ok: true } | { e
     return { error: err instanceof Error ? err.message : 'No se pudo culminar la toma física.' };
   }
 }
+
+export async function cancelarTomaFisica(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/tomas-fisicas/${id}/cancelar`, { method: 'POST' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo cancelar la toma física.' };
+  }
+}

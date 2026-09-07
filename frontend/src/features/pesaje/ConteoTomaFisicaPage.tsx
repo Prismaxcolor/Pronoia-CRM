@@ -72,7 +72,10 @@ function ConteoTomaFisicaPage() {
   // al usuario en un formulario muerto — lo mandamos directo al resultado.
   useEffect(() => {
     if (tomaFisica && tomaFisica.estado !== 'abierta') {
-      toast.info(`${tomaFisica.codigo} ya fue culminada — te llevamos al resultado.`);
+      const msg = tomaFisica.estado === 'cancelada'
+        ? `${tomaFisica.codigo} fue cancelada.`
+        : `${tomaFisica.codigo} ya fue culminada — te llevamos al resultado.`;
+      toast.info(msg);
       navigate(`/inventario/toma-fisica/${tomaFisicaId}`, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,6 +128,20 @@ function ConteoTomaFisicaPage() {
 
   const loteSeleccionado = loteId ? lotes.find(l => l.id === loteId) ?? null : null;
   const netoActual = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
+
+  // Composición estimada del lote DESPUÉS de registrar este pesaje.
+  // Misma lógica proporcional que transformaciones: el stock nuevo es
+  // stockActual + pesoNeto, y cada material mantiene su porcentaje histórico.
+  // Items que quedarían ≤ 0 kg se omiten (no deberían ocurrir en práctica).
+  const composicionProyectada = useMemo(() => {
+    if (!loteSeleccionado || loteSeleccionado.composicion.length === 0) return null;
+    if (pesoBruto === '' || netoActual < 0) return null;
+    const nuevoStock = loteSeleccionado.stockKg + netoActual;
+    const items = loteSeleccionado.composicion
+      .map(c => ({ item: c.item, kg: (c.porcentaje / 100) * nuevoStock }))
+      .filter(c => c.kg > 0);
+    return items.length > 0 ? items : null;
+  }, [loteSeleccionado, netoActual, pesoBruto]);
 
   const agregarFotos = (files: File[]) =>
     setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
@@ -361,6 +378,21 @@ function ConteoTomaFisicaPage() {
 
         {pesoBruto !== '' && netoActual >= 0 && (
           <p className="text-sm text-text-secondary">Neto: <span className="font-semibold text-text-primary">{fmt(netoActual)} kg</span></p>
+        )}
+
+        {composicionProyectada && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5">
+            <p className="text-[11px] font-medium text-blue-800 mb-1.5">
+              Composición estimada del lote después de registrar este pesaje:
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {composicionProyectada.map(c => (
+                <span key={c.item} className="text-[11px] bg-white text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
+                  {c.item} · ~{fmt(c.kg)} kg
+                </span>
+              ))}
+            </div>
+          </div>
         )}
 
         <FotoMaterialPicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />

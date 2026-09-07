@@ -1,4 +1,4 @@
-export type EstadoTomaFisica = 'abierta' | 'cerrada';
+export type EstadoTomaFisica = 'abierta' | 'cerrada' | 'cancelada';
 
 /** Una toma física de inventario: conteo físico periódico de un almacén
  *  que reconcilia el stock teórico del sistema contra lo realmente
@@ -25,6 +25,7 @@ export interface TomaFisicaInventario {
   cerradaPor: string | null;
   cerradaEn: string | null;
   createdAt: string;
+  snapshotResumen?: ResumenTomaFisicaLinea[] | null;
 }
 
 /** Un pesaje individual de conteo dentro de una toma física — sin destino,

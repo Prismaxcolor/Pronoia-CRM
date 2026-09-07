@@ -15,12 +15,13 @@ interface TomaFisicaRow {
   almacen_id: string;
   categorias: string[];
   lote_ids: string[] | null;
-  estado: 'abierta' | 'cerrada';
+  estado: 'abierta' | 'cerrada' | 'cancelada';
   abierta_por: string;
   abierta_en: string;
   cerrada_por: string | null;
   cerrada_en: string | null;
   created_at: string;
+  snapshot_resumen: Array<Record<string, unknown>> | null;
   almacenes?: { nombre: string } | null;
 }
 
@@ -35,12 +36,13 @@ export interface TomaFisicaPublica {
   categoriaNombres: string[];
   loteIds: string[];
   loteNombres: string[];
-  estado: 'abierta' | 'cerrada';
+  estado: 'abierta' | 'cerrada' | 'cancelada';
   abiertaPor: string;
   abiertaEn: string;
   cerradaPor: string | null;
   cerradaEn: string | null;
   createdAt: string;
+  snapshotResumen: ResumenTomaFisicaLinea[] | null;
 }
 
 export interface DetalleTomaFisicaPublico {
@@ -100,13 +102,28 @@ async function toPublico(row: TomaFisicaRow): Promise<TomaFisicaPublica> {
     cerradaPor: row.cerrada_por,
     cerradaEn: row.cerrada_en,
     createdAt: row.created_at,
+    snapshotResumen: parseSnapshot(row.snapshot_resumen),
   };
+}
+
+function parseSnapshot(raw: Array<Record<string, unknown>> | null): ResumenTomaFisicaLinea[] | null {
+  if (!raw || raw.length === 0) return null;
+  return raw.map(r => ({
+    productoId: r.producto_id as string | null,
+    productoNombre: r.producto_nombre as string | null,
+    loteId: r.lote_id as string | null,
+    loteNombre: r.lote_nombre as string | null,
+    stockTeorico: Number(r.stock_teorico),
+    stockReal: Number(r.stock_real),
+    diferencia: Number(r.diferencia),
+    cantidadPesajes: Number(r.cantidad_pesajes),
+  }));
 }
 
 export async function listarTomasFisicas(): Promise<TomaFisicaPublica[]> {
   const { data, error } = await supabaseAdmin
     .from('tomas_fisicas_inventario')
-    .select('*, almacenes(nombre)')
+    .select('*, almacenes(nombre), snapshot_resumen')
     .order('numero', { ascending: false });
 
   if (error || !data) return [];
@@ -116,7 +133,7 @@ export async function listarTomasFisicas(): Promise<TomaFisicaPublica[]> {
 export async function obtenerTomaFisica(id: string): Promise<TomaFisicaPublica | null> {
   const { data, error } = await supabaseAdmin
     .from('tomas_fisicas_inventario')
-    .select('*, almacenes(nombre)')
+    .select('*, almacenes(nombre), snapshot_resumen')
     .eq('id', id)
     .maybeSingle();
 
@@ -192,18 +209,43 @@ export async function eliminarPesajeTomaFisica(detalleId: string): Promise<{ ok:
 }
 
 export async function resumenTomaFisica(tomaFisicaId: string): Promise<ResumenTomaFisicaLinea[]> {
+  // Para tomas físicas cerradas o canceladas devolvemos el snapshot guardado
+  // al momento de culminar — resumen_toma_fisica es una vista en vivo que
+  // mostraría 0/0/0 de diferencia una vez ajustado el stock.
+  const { data: row } = await supabaseAdmin
+    .from('tomas_fisicas_inventario')
+    .select('estado, snapshot_resumen')
+    .eq('id', tomaFisicaId)
+    .maybeSingle();
+
+  if (row && row.estado !== 'abierta' && row.snapshot_resumen) {
+    return parseSnapshot(row.snapshot_resumen as Array<Record<string, unknown>>) ?? [];
+  }
+
   const { data, error } = await supabaseAdmin.rpc('resumen_toma_fisica', { p_toma_fisica_id: tomaFisicaId });
   if (error || !data) return [];
-  return (data as Array<Record<string, unknown>>).map(row => ({
-    productoId: row.producto_id as string | null,
-    productoNombre: row.producto_nombre as string | null,
-    loteId: row.lote_id as string | null,
-    loteNombre: row.lote_nombre as string | null,
-    stockTeorico: Number(row.stock_teorico),
-    stockReal: Number(row.stock_real),
-    diferencia: Number(row.diferencia),
-    cantidadPesajes: Number(row.cantidad_pesajes),
+  return (data as Array<Record<string, unknown>>).map(r => ({
+    productoId: r.producto_id as string | null,
+    productoNombre: r.producto_nombre as string | null,
+    loteId: r.lote_id as string | null,
+    loteNombre: r.lote_nombre as string | null,
+    stockTeorico: Number(r.stock_teorico),
+    stockReal: Number(r.stock_real),
+    diferencia: Number(r.diferencia),
+    cantidadPesajes: Number(r.cantidad_pesajes),
   }));
+}
+
+export async function cancelarTomaFisica(
+  tomaFisicaId: string,
+  canceladaPor: string
+): Promise<{ ok: true } | { error: string }> {
+  const { error } = await supabaseAdmin.rpc('cancelar_toma_fisica_inventario', {
+    p_toma_fisica_id: tomaFisicaId,
+    p_cancelada_por: canceladaPor,
+  });
+  if (error) return { error: error.message };
+  return { ok: true };
 }
 
 export async function culminarTomaFisica(
