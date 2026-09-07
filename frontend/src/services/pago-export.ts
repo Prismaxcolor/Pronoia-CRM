@@ -19,13 +19,13 @@ export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean):
   const titulo = esProveedor ? 'Comprobante de pago' : 'Comprobante de cobro';
   // Código de pago (verde) o de adelanto (verde azulado) como píldora junto
   // al título — igual que en el preview en pantalla. Ninguno de los dos es
-  // un "estado", por eso necesitan colorOverride en vez del lookup normal.
+  // un "estado", por eso necesitan color explícito en vez del lookup normal.
   const codigo = pago.codigoPago ?? pago.codigoAdelanto ?? null;
   const colorCodigo: [number, number, number] | undefined = pago.codigoPago
     ? [21, 128, 61]
     : pago.codigoAdelanto ? [15, 118, 110] : undefined;
   let y = 56 + 52;
-  tituloConBadge(doc, y, titulo, codigo, colorCodigo);
+  tituloConBadge(doc, y, titulo, codigo ? { texto: codigo, color: colorCodigo } : null);
 
   y += 16;
   subtitulo(doc, y, pago.fecha);

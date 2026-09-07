@@ -39,10 +39,10 @@ export async function descargarTomaFisicaPDF(
     return mapa;
   }, new Map<string, { nombreProducto: string | null; nombreLote: string | null; pesoNeto: number; cantidad: number }>());
 
+  doc.setFontSize(13).setFont('helvetica', 'bold').setTextColor(0)
+    .text(`Ticket de la toma física (${detalle.length} pesaje${detalle.length === 1 ? '' : 's'})`, 56, y);
+  y += 14;
   if (ticketPorMaterial.size > 0) {
-    doc.setFontSize(13).setFont('helvetica', 'bold').setTextColor(0)
-      .text(`Ticket de la toma física (${detalle.length} pesaje${detalle.length === 1 ? '' : 's'})`, 56, y);
-    y += 14;
     const body = Array.from(ticketPorMaterial.values()).map(m => [
       sanitizarPdf(m.nombreProducto ?? 'Lote completo'),
       sanitizarPdf(m.nombreLote ?? '—'),
@@ -55,16 +55,21 @@ export async function descargarTomaFisicaPDF(
       body,
     });
     y += 20;
+  } else {
+    doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130)
+      .text('Todavía no se registró ningún pesaje.', 56, y);
+    doc.setTextColor(0);
+    y += 24;
   }
 
+  doc.setFontSize(13).setFont('helvetica', 'bold').setTextColor(0)
+    .text('Teórico (sistema) vs. real (contado)', 56, y);
+  y += 14;
   if (lineas.length > 0) {
     const totalTeorico = lineas.reduce((acc, l) => acc + l.stockTeorico, 0);
     const totalReal = lineas.reduce((acc, l) => acc + l.stockReal, 0);
     const totalDiferencia = totalReal - totalTeorico;
 
-    doc.setFontSize(13).setFont('helvetica', 'bold').setTextColor(0)
-      .text('Teórico (sistema) vs. real (contado)', 56, y);
-    y += 14;
     const body = lineas.map(l => [
       sanitizarPdf(l.productoNombre ?? 'Lote completo'),
       sanitizarPdf(l.loteNombre ?? '—'),
@@ -79,6 +84,10 @@ export async function descargarTomaFisicaPDF(
       body,
       foot,
     });
+  } else {
+    doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130)
+      .text('Sin diferencias que mostrar todavía.', 56, y);
+    doc.setTextColor(0);
   }
 
   doc.save(`toma-fisica-${tomaFisica.codigo.replace(/\s+/g, '-').toLowerCase()}.pdf`);

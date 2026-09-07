@@ -1,10 +1,18 @@
 import type { TicketPesaje } from '@shared/types/index.js';
 import { destinoLabel } from '@shared/types/index.js';
-import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje } from './pdf-documento';
+import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
 
-function badgeTexto(ticket: TicketPesaje): string {
-  if (ticket.estado === 'bruto') return 'Borrador';
-  return ticket.facturado ? 'Facturado' : 'Pendiente por facturar';
+/** "Borrador" es naranja en el ticket (no gris, que es lo que le tocaría
+ *  por la clave compartida 'borrador' que usa factura) — por eso lleva
+ *  color explícito. El preview también puede mostrar "Pesaje exterior"
+ *  como segundo badge, a la vez que el de estado. */
+function badges(ticket: TicketPesaje): Badge[] {
+  const estado: Badge = ticket.estado === 'bruto'
+    ? { texto: 'Borrador', color: [194, 65, 12] }
+    : { texto: ticket.facturado ? 'Facturado' : 'Pendiente por facturar' };
+  const lista = [estado];
+  if (ticket.pesajeExterior) lista.push({ texto: 'Pesaje exterior', color: [126, 34, 206] });
+  return lista;
 }
 
 /** Documento 100% de pesaje: encabezado universal + tabla en caja
@@ -20,7 +28,7 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
 
   const titulo = ticket.estado === 'bruto' ? 'Ticket de pesaje en bruto' : 'Ticket de pesaje';
   let y = 56 + 52;
-  tituloConBadge(doc, y, titulo, badgeTexto(ticket));
+  tituloConBadge(doc, y, titulo, badges(ticket));
 
   y += 16;
   subtitulo(doc, y, `Ref. ${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${ticket.fecha ?? ticket.createdAt.slice(0, 10)}`);

@@ -1,6 +1,6 @@
 import type { NotaAjusteDetalle } from './nota-ajuste-service';
 import type { NotaAjusteClienteDetalle } from './nota-ajuste-cliente-service';
-import { fmt, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado } from './pdf-documento';
+import { fmt, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, type Badge } from './pdf-documento';
 
 type Nota = NotaAjusteDetalle | NotaAjusteClienteDetalle;
 
@@ -8,10 +8,16 @@ function nombreEntidad(nota: Nota): string {
   return 'nombreProveedor' in nota ? nota.nombreProveedor : nota.nombreCliente;
 }
 
-function badgeTexto(nota: Nota, esProveedor: boolean): string {
-  if (nota.anulada) return 'Anulada';
-  if (nota.pagada) return esProveedor ? 'Pagada' : 'Cobrada';
-  return nota.tipo === 'credito' ? 'Crédito' : 'Débito';
+/** El preview siempre muestra el badge de tipo (con el título completo como
+ *  texto, ej. "Nota de crédito") y, además, uno de anulada/pagada si
+ *  aplica — no son mutuamente excluyentes. El texto del primero no calza
+ *  con ninguna clave de BADGE_COLOR (son las palabras sueltas "crédito"/
+ *  "débito"), por eso lleva color explícito. */
+function badges(nota: Nota, esProveedor: boolean, titulo: string): Badge[] {
+  const lista: Badge[] = [{ texto: titulo, color: nota.tipo === 'credito' ? [29, 78, 175] : [109, 40, 178] }];
+  if (nota.anulada) lista.push({ texto: 'Anulada' });
+  else if (nota.pagada) lista.push({ texto: esProveedor ? 'Pagada' : 'Cobrada' });
+  return lista;
 }
 
 /** Documento puramente monetario: solo filas de encabezado + monto, sin
@@ -24,13 +30,15 @@ export async function descargarNotaPDF(nota: Nota, esProveedor: boolean): Promis
 
   const titulo = nota.tipo === 'credito' ? 'Nota de crédito' : 'Nota de débito';
   let y = 56 + 52;
-  tituloConBadge(doc, y, titulo, badgeTexto(nota, esProveedor));
+  tituloConBadge(doc, y, titulo, badges(nota, esProveedor, titulo));
 
   y += 16;
   subtitulo(doc, y, `Ref. ${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`}  ·  ${nota.fecha.slice(0, 10)}`);
 
   y += 26;
   y = filaEncabezado(doc, y, esProveedor ? 'Proveedor' : 'Cliente', nombreEntidad(nota));
+  y = filaEncabezado(doc, y, 'Fecha', nota.fecha.slice(0, 10));
+  y = filaEncabezado(doc, y, 'Correlativo', nota.codigo ?? '—');
   if (nota.facturaAsociada) {
     y = filaEncabezado(doc, y, 'Factura asociada', nota.facturaAsociada.codigo ?? `N.º ${nota.facturaAsociada.id.slice(0, 8)}`);
   }

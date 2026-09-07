@@ -81,27 +81,36 @@ export function encabezadoMarca(doc: any): void {
   doc.addImage(PRONOIA_LOGO_ICON_PNG_BASE64, 'PNG', iconX, 24, iconSize, iconSize * (164 / 160));
 }
 
-/** Título del documento + badge de estado (siempre en píldora redonda, sea
- *  cual sea el tipo de documento — el redondeado del badge es constante).
- *  `colorOverride` es para badges que no son un estado (ej. el código de un
- *  pago/adelanto) y por eso no calzan con ninguna clave de BADGE_COLOR. */
+export interface Badge {
+  texto: string;
+  /** Para badges que no son un estado (ej. el código de un pago/adelanto,
+   *  o "Borrador" de ticket que es naranja y no gris como el de factura) y
+   *  por eso no calzan con la clave que les tocaría en BADGE_COLOR. */
+  color?: [number, number, number];
+}
+
+/** Título del documento + badges (siempre en píldora redonda, sea cual sea
+ *  el tipo de documento — el redondeado es constante). Algunos documentos
+ *  muestran más de uno a la vez (ej. nota: tipo + anulada/pagada; ticket:
+ *  estado + pesaje exterior) — se dibujan en fila, uno junto al otro. */
 export function tituloConBadge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   doc: any,
   y: number,
   titulo: string,
-  badgeTexto?: string | null,
-  colorOverride?: [number, number, number]
+  badges: Badge | string | null | undefined | Array<Badge | string>
 ): void {
   doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(0).text(titulo, BOX_LEFT, y);
-  if (badgeTexto) {
-    const color = colorOverride ?? BADGE_COLOR[badgeTexto.toLowerCase()] ?? [90, 95, 105];
-    const anchoTitulo = doc.getTextWidth(titulo);
-    const bx = BOX_LEFT + anchoTitulo + 12;
+  const lista = (Array.isArray(badges) ? badges : badges ? [badges] : [])
+    .map(b => (typeof b === 'string' ? { texto: b } : b));
+  let x = BOX_LEFT + doc.getTextWidth(titulo) + 12;
+  for (const badge of lista) {
+    const color = badge.color ?? BADGE_COLOR[badge.texto.toLowerCase()] ?? [90, 95, 105];
     doc.setFontSize(9).setFont('helvetica', 'bold');
-    const bw = doc.getTextWidth(badgeTexto.toUpperCase()) + 18;
-    doc.setDrawColor(...color).setLineWidth(1).roundedRect(bx, y - 13, bw, 18, 9, 9, 'S');
-    doc.setTextColor(...color).text(badgeTexto.toUpperCase(), bx + bw / 2, y - 1, { align: 'center' });
+    const bw = doc.getTextWidth(badge.texto.toUpperCase()) + 18;
+    doc.setDrawColor(...color).setLineWidth(1).roundedRect(x, y - 13, bw, 18, 9, 9, 'S');
+    doc.setTextColor(...color).text(badge.texto.toUpperCase(), x + bw / 2, y - 1, { align: 'center' });
+    x += bw + 6;
   }
   doc.setTextColor(0);
 }
