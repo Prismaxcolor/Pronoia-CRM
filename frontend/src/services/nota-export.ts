@@ -1,6 +1,6 @@
 import type { NotaAjusteDetalle } from './nota-ajuste-service';
 import type { NotaAjusteClienteDetalle } from './nota-ajuste-cliente-service';
-import { fmt, encabezadoMarca, tituloConBadge, filaEncabezado } from './pdf-documento';
+import { fmt, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado } from './pdf-documento';
 
 type Nota = NotaAjusteDetalle | NotaAjusteClienteDetalle;
 
@@ -26,8 +26,10 @@ export async function descargarNotaPDF(nota: Nota, esProveedor: boolean): Promis
   let y = 56 + 52;
   tituloConBadge(doc, y, titulo, badgeTexto(nota, esProveedor));
 
-  y += 22;
-  y = filaEncabezado(doc, y, 'Ref.', `${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`}  ·  ${nota.fecha.slice(0, 10)}`);
+  y += 16;
+  subtitulo(doc, y, `${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`}  ·  ${nota.fecha.slice(0, 10)}`);
+
+  y += 26;
   y = filaEncabezado(doc, y, esProveedor ? 'Proveedor' : 'Cliente', nombreEntidad(nota));
   if (nota.facturaAsociada) {
     y = filaEncabezado(doc, y, 'Factura asociada', nota.facturaAsociada.codigo ?? `N.º ${nota.facturaAsociada.id.slice(0, 8)}`);

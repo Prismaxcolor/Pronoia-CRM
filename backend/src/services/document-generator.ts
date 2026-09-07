@@ -79,13 +79,10 @@ function consolidarItems(items: ItemPublico[]): ItemPublico[] {
 }
 
 function encabezado(doc: jsPDF, titulo: string): number {
-  let y = 56;
-  doc.addImage(LOGO_PRONOIA_BASE64, 'PNG', 56, 30, 36, 36);
-  doc.setFontSize(20).setFont('helvetica', 'bold').text('Pronoia', 102, y);
-  doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', 102, y + 15);
-  doc.setTextColor(0);
+  const iconSize = 40;
+  doc.addImage(LOGO_PRONOIA_BASE64, 'PNG', 539 - iconSize, 24, iconSize, iconSize);
 
-  y += 52;
+  const y = 56 + 52;
   doc.setFontSize(15).setFont('helvetica', 'bold').text(titulo, 56, y);
   return y;
 }

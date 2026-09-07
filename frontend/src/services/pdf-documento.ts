@@ -70,18 +70,14 @@ const BADGE_COLOR: Record<string, [number, number, number]> = {
 };
 
 /**
- * Encabezado de marca — ícono + "Pronoia" arriba a la derecha. Estándar en
+ * Encabezado de marca — solo el logo, arriba a la derecha. Estándar en
  * TODOS los documentos que emite el sistema.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function encabezadoMarca(doc: any): void {
-  const y = 56;
-  const iconSize = 22;
+  const iconSize = 40;
   const iconX = BOX_RIGHT - iconSize;
-  doc.addImage(PRONOIA_LOGO_ICON_PNG_BASE64, 'PNG', iconX, y - 16, iconSize, iconSize * (164 / 160));
-  doc.setFontSize(16).setFont('helvetica', 'bold').setTextColor(20, 30, 40).text('Pronoia', iconX - 8, y, { align: 'right' });
-  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', iconX - 8, y + 14, { align: 'right' });
-  doc.setTextColor(0);
+  doc.addImage(PRONOIA_LOGO_ICON_PNG_BASE64, 'PNG', iconX, 24, iconSize, iconSize * (164 / 160));
 }
 
 /** Título del documento + badge de estado (siempre en píldora redonda, sea
@@ -98,6 +94,19 @@ export function tituloConBadge(doc: any, y: number, titulo: string, badgeTexto?:
     doc.setDrawColor(...color).setLineWidth(1).roundedRect(bx, y - 13, bw, 18, 9, 9, 'S');
     doc.setTextColor(...color).text(badgeTexto.toUpperCase(), bx + bw / 2, y - 1, { align: 'center' });
   }
+  doc.setTextColor(0);
+}
+
+/**
+ * Subtítulo chico y gris pegado al título — mismo lugar y estilo que la
+ * línea "Ref. ... · fecha" del preview en pantalla (mt-1, text-muted).
+ * A diferencia de filaEncabezado, va TODO alineado a la izquierda: no es
+ * una fila etiqueta/valor con el valor a la derecha.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function subtitulo(doc: any, y: number, texto: string): void {
+  doc.setFontSize(10.5).setFont('helvetica', 'normal').setTextColor(110);
+  doc.text(sanitizarPdf(texto), BOX_LEFT, y);
   doc.setTextColor(0);
 }
 

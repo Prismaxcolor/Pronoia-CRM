@@ -1,5 +1,5 @@
 import type { TicketPesaje } from '@shared/types/index.js';
-import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, filaEncabezado, tablaPesaje } from './pdf-documento';
+import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje } from './pdf-documento';
 
 function badgeTexto(ticket: TicketPesaje): string {
   if (ticket.estado === 'bruto') return 'Borrador';
@@ -21,8 +21,10 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
   let y = 56 + 52;
   tituloConBadge(doc, y, titulo, badgeTexto(ticket));
 
-  y += 22;
-  y = filaEncabezado(doc, y, 'Ref.', `${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${ticket.fecha ?? ticket.createdAt.slice(0, 10)}`);
+  y += 16;
+  subtitulo(doc, y, `${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${ticket.fecha ?? ticket.createdAt.slice(0, 10)}`);
+
+  y += 26;
   y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', nombreEntidad);
   if (ticket.observaciones) y = filaEncabezado(doc, y, 'Observaciones', ticket.observaciones);
 

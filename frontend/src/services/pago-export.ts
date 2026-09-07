@@ -1,5 +1,5 @@
 import type { PagoDetalle } from './pago-detalle-service';
-import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, filaEncabezado, tablaMonetaria } from './pdf-documento';
+import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaMonetaria } from './pdf-documento';
 
 const ETIQUETA_ITEM: Record<string, string> = {
   factura: 'Factura',
@@ -20,9 +20,11 @@ export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean):
   let y = 56 + 52;
   tituloConBadge(doc, y, titulo, null);
 
-  y += 22;
+  y += 16;
   const ref = pago.codigoPago ?? pago.codigoAdelanto ?? `N.º ${pago.grupoId.slice(0, 8)}`;
-  y = filaEncabezado(doc, y, 'Ref.', `${ref}  ·  ${pago.fecha}`);
+  subtitulo(doc, y, `${ref}  ·  ${pago.fecha}`);
+
+  y += 26;
   y = filaEncabezado(doc, y, esProveedor ? 'Proveedor' : 'Cliente', pago.nombreEntidad);
   if (pago.items.length === 0 && pago.descripcion) {
     y = filaEncabezado(doc, y, 'Descripción', pago.descripcion);

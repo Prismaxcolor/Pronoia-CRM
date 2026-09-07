@@ -2,7 +2,7 @@ import { consolidarItems, type FacturaCV } from './factura-cv-service';
 import { type TicketPesaje } from '@shared/types/index.js';
 import {
   fmt, sanitizarPdf, descargarBlob,
-  encabezadoMarca, tituloConBadge, filaEncabezado, tablaMonetaria, tablaPesaje,
+  encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaMonetaria, tablaPesaje,
 } from './pdf-documento';
 
 // jspdf y docx se cargan bajo demanda (dynamic import) para no inflar el bundle
@@ -55,8 +55,10 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   let y = 56 + 52;
   tituloConBadge(doc, y, `Factura de ${esCompra ? 'compra' : 'venta'}`, f.estado);
 
-  y += 22;
-  y = filaEncabezado(doc, y, 'Ref.', `${refFactura(f)}  ·  ${f.createdAt.slice(0, 10)}`);
+  y += 16;
+  subtitulo(doc, y, `${refFactura(f)}  ·  ${f.createdAt.slice(0, 10)}`);
+
+  y += 26;
   y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', f.nombreEntidad ?? '—');
   y = filaEncabezado(doc, y, 'Origen del peso', origenPeso(f, tickets));
   for (const [k, v] of filasFactura(f).slice(1)) {
