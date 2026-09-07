@@ -56,7 +56,7 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   tituloConBadge(doc, y, `Factura de ${esCompra ? 'compra' : 'venta'}`, f.estado);
 
   y += 16;
-  subtitulo(doc, y, `${refFactura(f)}  ·  ${f.createdAt.slice(0, 10)}`);
+  subtitulo(doc, y, `Ref. ${refFactura(f)}  ·  ${f.createdAt.slice(0, 10)}`);
 
   y += 26;
   y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', f.nombreEntidad ?? '—');
@@ -104,15 +104,8 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
     y += 34;
     if (y > pageHeight - 120) { doc.addPage(); y = 56; }
     doc.setFontSize(15).setFont('helvetica', 'bold').setTextColor(0);
-    doc.text(sanitizarPdf(`Ticket de pesaje - ${ticket.codigo}`), 56, y);
+    doc.text(sanitizarPdf(`Ticket de pesaje · ${ticket.codigo}`), 56, y);
     y += 14;
-    const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
-    const footRows = totalDevolucion > 0
-      ? [
-          ['Total del ticket', '', '', `${fmt(ticket.pesoNetoTotal)} kg`],
-          ['Devolución', '', '', `${fmt(totalDevolucion)} kg`],
-        ]
-      : [['Total del ticket', '', '', `${fmt(ticket.pesoNetoTotal)} kg`]];
     const materialesBody = ticket.materiales.map(m => [
       sanitizarPdf(m.nombreProducto ?? '-'),
       fmt(m.pesoBruto),
@@ -123,8 +116,15 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
       startY: y,
       head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
       body: materialesBody,
-      foot: footRows,
     });
+
+    const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
+    if (totalDevolucion > 0) {
+      y += 16;
+      doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(90).text('Devolución', 56, y);
+      doc.setTextColor(15).setFont('helvetica', 'bold').text(`${fmt(totalDevolucion)} kg`, 539, y, { align: 'right' });
+      doc.setTextColor(0);
+    }
   }
 
   doc.save(nombreArchivo(f, 'pdf'));

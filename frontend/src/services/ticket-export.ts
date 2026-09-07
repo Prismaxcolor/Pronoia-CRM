@@ -1,4 +1,5 @@
 import type { TicketPesaje } from '@shared/types/index.js';
+import { destinoLabel } from '@shared/types/index.js';
 import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje } from './pdf-documento';
 
 function badgeTexto(ticket: TicketPesaje): string {
@@ -22,16 +23,25 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
   tituloConBadge(doc, y, titulo, badgeTexto(ticket));
 
   y += 16;
-  subtitulo(doc, y, `${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${ticket.fecha ?? ticket.createdAt.slice(0, 10)}`);
+  subtitulo(doc, y, `Ref. ${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${ticket.fecha ?? ticket.createdAt.slice(0, 10)}`);
 
   y += 26;
   y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', nombreEntidad);
   if (ticket.observaciones) y = filaEncabezado(doc, y, 'Observaciones', ticket.observaciones);
 
   y += 6;
-  if (!ticket.pesajeExterior) {
+  if (ticket.pesajeExterior) {
+    doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(130)
+      .text('Pesaje exterior — sin peso global propio.', 56, y);
+    doc.setTextColor(0);
+    y += 10;
+  } else {
     doc.setFontSize(15).setFont('helvetica', 'bold').setTextColor(0).text('Peso global', 56, y);
     doc.setFontSize(20).text(`${fmt(ticket.pesoGlobal)} kg`, 539, y, { align: 'right' });
+    y += 18;
+    doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(90).text('Peso neto', 56, y);
+    doc.setFont('helvetica', 'bold').setTextColor(15).text(`${fmt(ticket.pesoNetoTotal)} kg`, 539, y, { align: 'right' });
+    doc.setTextColor(0);
     y += 10;
   }
 
@@ -39,18 +49,19 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
     y += 20;
     const materialesBody = ticket.materiales.map(m => [
       sanitizarPdf(m.nombreProducto ?? '—'),
+      sanitizarPdf(destinoLabel(m.destinoTipo, m.nombreLote)),
       fmt(m.pesoBruto),
       fmt(m.tara),
       fmt(m.pesoNeto),
     ]);
-    const footRows = ticket.devolucion > 0
-      ? [['Total del ticket', '', '', `${fmt(ticket.pesoNetoTotal)} kg`], ['Devolución', '', '', `${fmt(ticket.devolucion)} kg`]]
-      : [['Total del ticket', '', '', `${fmt(ticket.pesoNetoTotal)} kg`]];
+    const foot = ticket.devolucion > 0
+      ? [[{ content: 'Devolución', colSpan: 4 }, `${fmt(ticket.devolucion)}`]]
+      : undefined;
     y = tablaPesaje(doc, autoTable, {
       startY: y,
-      head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
+      head: [['Material', 'Destino', 'Bruto', 'Tara', 'Neto (kg)']],
       body: materialesBody,
-      foot: footRows,
+      foot,
     });
   } else {
     y += 30;

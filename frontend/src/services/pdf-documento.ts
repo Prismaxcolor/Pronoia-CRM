@@ -1,3 +1,4 @@
+import type { RowInput } from 'jspdf-autotable';
 import { PRONOIA_LOGO_ICON_PNG_BASE64 } from '../assets/pronoia-logo-icon';
 
 /**
@@ -81,12 +82,20 @@ export function encabezadoMarca(doc: any): void {
 }
 
 /** Título del documento + badge de estado (siempre en píldora redonda, sea
- *  cual sea el tipo de documento — el redondeado del badge es constante). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function tituloConBadge(doc: any, y: number, titulo: string, badgeTexto?: string | null): void {
+ *  cual sea el tipo de documento — el redondeado del badge es constante).
+ *  `colorOverride` es para badges que no son un estado (ej. el código de un
+ *  pago/adelanto) y por eso no calzan con ninguna clave de BADGE_COLOR. */
+export function tituloConBadge(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  doc: any,
+  y: number,
+  titulo: string,
+  badgeTexto?: string | null,
+  colorOverride?: [number, number, number]
+): void {
   doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(0).text(titulo, BOX_LEFT, y);
   if (badgeTexto) {
-    const color = BADGE_COLOR[badgeTexto.toLowerCase()] ?? [90, 95, 105];
+    const color = colorOverride ?? BADGE_COLOR[badgeTexto.toLowerCase()] ?? [90, 95, 105];
     const anchoTitulo = doc.getTextWidth(titulo);
     const bx = BOX_LEFT + anchoTitulo + 12;
     doc.setFontSize(9).setFont('helvetica', 'bold');
@@ -137,7 +146,7 @@ export function tablaMonetaria(
   doc: any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   autoTable: any,
-  opts: { startY: number; head: string[][]; body: string[][]; foot?: string[][] }
+  opts: { startY: number; head: RowInput[]; body: RowInput[]; foot?: RowInput[] }
 ): number {
   autoTable(doc, {
     startY: opts.startY,
@@ -191,7 +200,7 @@ export function tablaPesaje(
   doc: any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   autoTable: any,
-  opts: { startY: number; head: string[][]; body: string[][]; foot?: string[][] }
+  opts: { startY: number; head: RowInput[]; body: RowInput[]; foot?: RowInput[] }
 ): number {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = { left: BOX_LEFT + BOX_PAD, right: pageWidth - (BOX_RIGHT - BOX_PAD), top: MARGIN_TOP_CONTINUACION };

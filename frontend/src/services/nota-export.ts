@@ -27,7 +27,7 @@ export async function descargarNotaPDF(nota: Nota, esProveedor: boolean): Promis
   tituloConBadge(doc, y, titulo, badgeTexto(nota, esProveedor));
 
   y += 16;
-  subtitulo(doc, y, `${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`}  ·  ${nota.fecha.slice(0, 10)}`);
+  subtitulo(doc, y, `Ref. ${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`}  ·  ${nota.fecha.slice(0, 10)}`);
 
   y += 26;
   y = filaEncabezado(doc, y, esProveedor ? 'Proveedor' : 'Cliente', nombreEntidad(nota));
