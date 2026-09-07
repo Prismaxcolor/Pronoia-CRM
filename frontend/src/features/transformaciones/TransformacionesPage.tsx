@@ -24,6 +24,7 @@ import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import { subirFotoTicket } from '../../services/storage-service';
+import { subirFotosLocal } from '../../lib/foto-picker';
 import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
 import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
@@ -38,11 +39,6 @@ type Categoria = 'ferroso_no_ferroso' | 'pcb';
 
 function hoyISO() { return new Date().toISOString().slice(0, 10); }
 function fmt(n: number) { return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 }); }
-
-async function subirFoto(foto: FotoMaterial): Promise<string | null> {
-  if (foto.tipo === 'existente') return foto.url;
-  return subirFotoTicket(foto.file);
-}
 
 // ---------------------------------------------------------------------------
 // Fila de salida en el formulario de completar
@@ -118,20 +114,18 @@ function CompletarFerrosoModal({
     if (filas.some(f => f.fotos.length === 0)) { setError('Cada salida necesita al menos una foto.'); return; }
 
     setGuardando(true);
-    const salidaInputs: CompletarTransformacionFerrosoSalidaInput[] = [];
-    for (const f of filas) {
-      const urls: string[] = [];
-      for (const foto of f.fotos) {
-        const url = await subirFoto(foto);
-        if (url) urls.push(url);
-      }
-      salidaInputs.push({
-        productoId: f.productoId,
-        pesoBruto: Number(f.pesoBruto),
-        tara: taraKgFila(f, taras),
-        fotos: urls,
-      });
+    const fotasPorFila = await Promise.all(filas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
+    if (fotasPorFila.some(urls => urls === null)) {
+      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
+    const salidaInputs: CompletarTransformacionFerrosoSalidaInput[] = filas.map((f, i) => ({
+      productoId: f.productoId,
+      pesoBruto: Number(f.pesoBruto),
+      tara: taraKgFila(f, taras),
+      fotos: fotasPorFila[i] as string[],
+    }));
 
     const result = await completarTransformacionFerroso(transformacion.id, salidaInputs);
     setGuardando(false);
@@ -437,10 +431,11 @@ function NuevaFerrosoForm({
     if (fotos.length === 0) { setError('Agrega al menos una foto de entrada.'); return; }
 
     setGuardando(true);
-    const fotosUrls: string[] = [];
-    for (const foto of fotos) {
-      const url = await subirFoto(foto);
-      if (url) fotosUrls.push(url);
+    const fotosUrls = await subirFotosLocal(fotos, subirFotoTicket);
+    if (!fotosUrls) {
+      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
 
     const input: CrearTransformacionFerrosoInput = {
@@ -609,10 +604,11 @@ function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void
     if (neto <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
     if (fotos.length === 0) { setError('Agrega al menos una foto de entrada.'); return; }
     setGuardando(true);
-    const fotosUrls: string[] = [];
-    for (const foto of fotos) {
-      const url = await subirFoto(foto);
-      if (url) fotosUrls.push(url);
+    const fotosUrls = await subirFotosLocal(fotos, subirFotoTicket);
+    if (!fotosUrls) {
+      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
     const result = await crearTransformacionPCB({
       loteOrigenId,
@@ -778,20 +774,18 @@ function CompletarPCBModal({
     }
 
     setGuardando(true);
-    const salidas = [];
-    for (const f of filas) {
-      const urls: string[] = [];
-      for (const foto of f.fotos) {
-        const url = await subirFoto(foto);
-        if (url) urls.push(url);
-      }
-      salidas.push({
-        loteDestinoId: f.loteDestinoId,
-        pesoBruto: Number(f.pesoBruto),
-        tara: Number(f.tara) || 0,
-        fotos: urls,
-      });
+    const fotasPorFila = await Promise.all(filas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
+    if (fotasPorFila.some(urls => urls === null)) {
+      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
+    const salidas = filas.map((f, i) => ({
+      loteDestinoId: f.loteDestinoId,
+      pesoBruto: Number(f.pesoBruto),
+      tara: Number(f.tara) || 0,
+      fotos: fotasPorFila[i] as string[],
+    }));
 
     const result = await completarTransformacionPCB(transformacion.id, salidas);
     setGuardando(false);

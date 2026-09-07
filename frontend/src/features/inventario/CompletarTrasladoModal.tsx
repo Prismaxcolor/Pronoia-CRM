@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { X, Loader2, ImagePlus, Camera } from 'lucide-react';
 import { completarTraslado } from '../../services/traslado-service';
 import { subirFotoTraslado } from '../../services/storage-service';
+import { comprimirImagen } from '../../lib/image-compress';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Traslado } from '@shared/types/index.js';
 
@@ -47,16 +48,15 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
 
     setGuardando(true);
 
-    const urls: string[] = [];
-    for (const f of fotos) {
-      const url = await subirFotoTraslado(f.file);
-      if (!url) {
-        setError('No se pudo subir una de las fotos. Intenta de nuevo.');
-        setGuardando(false);
-        return;
-      }
-      urls.push(url);
+    const resultados = await Promise.all(
+      fotos.map(async f => subirFotoTraslado(await comprimirImagen(f.file)))
+    );
+    if (resultados.some(url => url === null)) {
+      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
+    const urls = resultados as string[];
 
     const result = await completarTraslado(
       traslado.id,
