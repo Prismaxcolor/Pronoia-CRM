@@ -3174,6 +3174,14 @@ as $$
     from public.transformacion_entrada_detalle ted
     join public.transformaciones t on t.id = ted.transformacion_id
     where t.lote_origen_id = p_lote_id
+    union all
+    -- ajustes de toma física por producto (diferencia positiva = excedente, negativa = faltante)
+    select ai.producto_id,
+           case when ai.diferencia > 0 then ai.diferencia else 0 end,
+           case when ai.diferencia < 0 then -ai.diferencia else 0 end
+    from public.ajustes_inventario ai
+    where ai.lote_id = p_lote_id
+      and ai.producto_id is not null
   ) x
   where producto_id is not null
   group by producto_id;
@@ -3199,6 +3207,13 @@ as $$
            select sum(tsd.peso_neto)
            from public.transformacion_salida_detalle tsd
            where tsd.lote_destino_id = p_lote_id
+         ), 0)
+       + coalesce((
+           -- ajustes de toma física sin producto (lotes PCB contados como un todo)
+           select sum(ai.diferencia)
+           from public.ajustes_inventario ai
+           where ai.lote_id = p_lote_id
+             and ai.producto_id is null
          ), 0);
 $$;
 

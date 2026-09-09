@@ -130,13 +130,12 @@ function ConteoTomaFisicaPage() {
   const netoActual = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
 
   // Composición estimada del lote DESPUÉS de registrar este pesaje.
-  // Misma lógica proporcional que transformaciones: el stock nuevo es
-  // stockActual + pesoNeto, y cada material mantiene su porcentaje histórico.
-  // Items que quedarían ≤ 0 kg se omiten (no deberían ocurrir en práctica).
+  // En toma física, netoActual ES el total real contado — no se suma al
+  // stock existente. Items que quedarían ≤ 0 kg se omiten.
   const composicionProyectada = useMemo(() => {
     if (!loteSeleccionado || loteSeleccionado.composicion.length === 0) return null;
     if (pesoBruto === '' || netoActual < 0) return null;
-    const nuevoStock = loteSeleccionado.stockKg + netoActual;
+    const nuevoStock = netoActual;
     const items = loteSeleccionado.composicion
       .map(c => ({ item: c.item, kg: (c.porcentaje / 100) * nuevoStock }))
       .filter(c => c.kg > 0);
