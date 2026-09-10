@@ -649,5 +649,27 @@ export async function obtenerInventarioAlmacen(almacenId: string): Promise<Grupo
     entradas.push(comoMovimiento(d.producto_id, Number(d.peso_neto ?? 0)));
   }
 
+  // Ajustes de toma física de este almacén, sin lote (mismo criterio que
+  // stock_almacen() en SQL: almacen_id = este almacén, lote_id is null).
+  // Faltaba por completo aquí — esta vista es la única de las tres
+  // (general, por lote, por almacén) que no los tenía en cuenta, así que un
+  // producto con un ajuste real podía mostrar stock negativo o incorrecto
+  // solo en /almacenes aunque /inventario y stock_almacen() ya estuvieran bien.
+  const { data: ajustesAlmacenData } = await supabaseAdmin
+    .from('ajustes_inventario')
+    .select('producto_id, diferencia')
+    .eq('almacen_id', almacenId)
+    .is('lote_id', null)
+    .not('producto_id', 'is', null);
+  for (const d of (ajustesAlmacenData as unknown as Array<{
+    producto_id: string;
+    diferencia: number;
+  }> | null) ?? []) {
+    if (!idsPermitidos.has(d.producto_id)) continue;
+    const diferencia = Number(d.diferencia);
+    if (diferencia > 0) entradas.push(comoMovimiento(d.producto_id, diferencia));
+    else if (diferencia < 0) salidas.push(comoMovimiento(d.producto_id, -diferencia));
+  }
+
   return construirGruposInventario(productos, entradas, salidas, [], { incluirSinMovimiento: false });
 }
