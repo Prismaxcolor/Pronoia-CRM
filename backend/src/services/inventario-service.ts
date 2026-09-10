@@ -62,10 +62,13 @@ export interface MovimientoInventario {
  *  salida del (producto, lote_origen) donde se retiró, para que la
  *  composición de un pool se refleje correctamente con el tiempo. A
  *  diferencia de una venta, se acumula en `transformaciones`, no en
- *  `salidas`, para distinguir el motivo en la UI. */
+ *  `salidas`, para distinguir el motivo en la UI.
+ *  Una transformación ferroso/no-ferroso NO tiene lote de origen (retira
+ *  directo de MPP) — loteOrigenId es null en ese caso, nunca un lote
+ *  inventado. */
 export interface RetiroTransformacion {
   productoId: string;
-  loteOrigenId: string;
+  loteOrigenId: string | null;
   nombreLoteOrigen: string;
   peso: number;
 }
@@ -142,7 +145,13 @@ export function construirGruposInventario(
   for (const e of entradas) obtenerBucket(e.productoId, e.destinoTipo, e.loteId, e.destinoLabel).entradas += e.peso;
   for (const s of salidas) obtenerBucket(s.productoId, s.destinoTipo, s.loteId, s.destinoLabel).salidas += s.peso;
   for (const r of retirosTransformacion) {
-    obtenerBucket(r.productoId, 'lote', r.loteOrigenId, r.nombreLoteOrigen).transformaciones -= r.peso;
+    // Ferroso/no-ferroso retira directo de MPP (sin lote) — antes esto se
+    // etiquetaba igual como destinoTipo 'lote' con un loteId vacío, lo que
+    // generaba una fila MPP separada y duplicada frente a la fila MPP real
+    // del mismo producto (dos claves de bucket distintas para el mismo
+    // "sin lote": null vs '').
+    const esLote = r.loteOrigenId !== null;
+    obtenerBucket(r.productoId, esLote ? 'lote' : 'mpp', esLote ? r.loteOrigenId : null, r.nombreLoteOrigen).transformaciones -= r.peso;
   }
   for (const a of ajustesToma) {
     if (a.productoId !== null) {
@@ -323,7 +332,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     retirosTransformacion.push({
       productoId: d.producto_id,
       // Para ferroso lote_origen_id es null → bucket sin-lote (MPP)
-      loteOrigenId: d.transformaciones.lote_origen_id ?? '',
+      loteOrigenId: d.transformaciones.lote_origen_id ?? null,
       nombreLoteOrigen: d.transformaciones.lotes?.nombre ?? 'MPP',
       peso: Number(d.peso_kg),
     });
