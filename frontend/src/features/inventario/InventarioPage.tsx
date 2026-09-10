@@ -110,11 +110,11 @@ function agruparPorDestino(
     for (const a of g.articulos) {
       const clave = a.loteId ?? a.destinoTipo;
       if (!mapa.has(clave)) {
-        // Ferroso/No Ferroso está configurado como "sin lote" — nunca va a
-        // un lote real, por eso no aparece en /lotes. Se etiqueta "Sin
-        // lote" (no "MPP") para no confundirlo con un lote que se llame así.
-        const label = clave === 'mpp' ? 'Sin lote' : a.destinoLabel;
-        mapa.set(clave, { clave, label, totalKg: 0, articulos: [] });
+        // a.destinoLabel ya viene como "Sin lote" para destinoTipo 'mpp'
+        // (ver MPP_LABEL en inventario-service.ts) — Ferroso/No Ferroso
+        // está configurado así, nunca va a un lote real, por eso no
+        // aparece en /lotes.
+        mapa.set(clave, { clave, label: a.destinoLabel, totalKg: 0, articulos: [] });
       }
       const grupo = mapa.get(clave)!;
       grupo.articulos.push({ ...a, categoria: g.nombreCategoria });

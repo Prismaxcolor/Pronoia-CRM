@@ -35,7 +35,9 @@ export interface Lote {
 /** Destino de inventario de una línea de pesaje: MPP o un lote concreto. */
 export type DestinoTipo = 'mpp' | 'lote';
 
-/** Etiqueta legible de un destino: "MPP" o el nombre del lote. */
+/** Etiqueta legible de un destino: "Sin lote" (el material nunca se asignó
+ *  a un lote — el caso normal de Ferroso/No Ferroso, categorías que no
+ *  usan lotes) o el nombre del lote. */
 export function destinoLabel(destinoTipo: DestinoTipo, nombreLote?: string | null): string {
-  return destinoTipo === 'lote' ? (nombreLote ?? 'Lote') : 'MPP';
+  return destinoTipo === 'lote' ? (nombreLote ?? 'Lote') : 'Sin lote';
 }

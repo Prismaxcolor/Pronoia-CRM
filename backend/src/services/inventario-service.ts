@@ -4,12 +4,14 @@ export interface ArticuloInventario {
   productoId: string;
   nombre: string;
   /** Destino de inventario de esta fila. 'mpp' y 'lote' son destinos reales
-   *  elegidos al pesar; 'sin_movimiento' es sintético — el producto existe
-   *  en el catálogo pero nunca se pesó, no implica que su destino sea MPP. */
+   *  elegidos al pesar (el valor interno 'mpp' viene del modelo de datos,
+   *  pero se muestra como "Sin lote" — ver MPP_LABEL); 'sin_movimiento' es
+   *  sintético — el producto existe en el catálogo pero nunca se pesó, no
+   *  implica que su destino sea "sin lote". */
   destinoTipo: 'mpp' | 'lote' | 'sin_movimiento';
   /** Lote cuando destinoTipo === 'lote'. Null en cualquier otro caso. */
   loteId: string | null;
-  /** Etiqueta legible del destino: "MPP", "Sin movimiento" o el nombre del lote. */
+  /** Etiqueta legible del destino: "Sin lote", "Sin movimiento" o el nombre del lote. */
   destinoLabel: string;
   entradas: number;        // kg que entraron por pesaje de compra
   salidas: number;         // kg que salieron por pesaje de venta
@@ -33,7 +35,12 @@ export interface FiltrosInventario {
 }
 
 const SIN_CATEGORIA = 'Sin categoría';
-const MPP_LABEL = 'MPP';
+/** Etiqueta del destino 'mpp' (material que nunca se asignó a un lote —
+ *  el caso normal para Ferroso/No Ferroso, categorías que no usan lotes).
+ *  Antes decía "MPP" — confundía con lotes que por casualidad se llaman
+ *  parecido (ej. un lote real llamado "LOTE MPP") y no aplicaba a
+ *  categorías que ni siquiera tienen el concepto de lote. */
+const MPP_LABEL = 'Sin lote';
 /** Catálogo sin ningún pesaje todavía — no implica que su destino sea MPP,
  *  solo que nunca se movió. Ver ArticuloInventario.destinoTipo. */
 const SIN_MOVIMIENTO_LABEL = 'Sin movimiento';
@@ -333,7 +340,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
       productoId: d.producto_id,
       // Para ferroso lote_origen_id es null → bucket sin-lote (MPP)
       loteOrigenId: d.transformaciones.lote_origen_id ?? null,
-      nombreLoteOrigen: d.transformaciones.lotes?.nombre ?? 'MPP',
+      nombreLoteOrigen: d.transformaciones.lotes?.nombre ?? MPP_LABEL,
       peso: Number(d.peso_kg),
     });
   }
