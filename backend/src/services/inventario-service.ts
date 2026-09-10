@@ -396,6 +396,37 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     }
   }
 
+  // Llegadas SIN CLASIFICAR (producto_id null) a un lote destino por
+  // transformación — misma fórmula que salida_null_distribuida() en SQL.
+  // Si el lote origen no tenía composición conocida por producto (ej. un
+  // lote "MPP" cuyo stock viene solo de ajustes/toma física), la porción
+  // heredada no puede entrar a ningún producto real — no hay a cuál — así
+  // que se acumula por lote, igual que ya se hace abajo con los ajustes de
+  // toma física sin producto. Sin esto, esos kg simplemente desaparecían
+  // del inventario tras completar la transformación: se descontaban del
+  // origen pero no aparecían en ningún lado del destino.
+  const llegadasSinProductoPorLote = new Map<string, { nombreLote: string | null; monto: number }>();
+  for (const s of (salidaLoteData as unknown as Array<{
+    transformacion_id: string;
+    lote_destino_id: string;
+    peso_neto: number;
+    lotes?: { nombre: string } | null;
+    transformaciones?: { fecha: string | null } | null;
+  }> | null) ?? []) {
+    const fecha = s.transformaciones?.fecha ?? null;
+    if (filtros.desde && fecha && fecha < filtros.desde) continue;
+    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+    const entradaRows = entradaPorTransformacion.get(s.transformacion_id) ?? [];
+    const totalEntrada = entradaRows.reduce((acc, r) => acc + r.pesoKg, 0);
+    if (totalEntrada <= 0) continue;
+    const pesoKgSinProducto = entradaRows.filter(r => !r.productoId).reduce((acc, r) => acc + r.pesoKg, 0);
+    if (pesoKgSinProducto <= 0) continue;
+    const monto = (Number(s.peso_neto) * pesoKgSinProducto) / totalEntrada;
+    const existing = llegadasSinProductoPorLote.get(s.lote_destino_id);
+    if (existing) existing.monto += monto;
+    else llegadasSinProductoPorLote.set(s.lote_destino_id, { nombreLote: s.lotes?.nombre ?? null, monto });
+  }
+
   // Ajustes de toma física con producto conocido (culminar_toma_fisica_inventario).
   const { data: ajustesData } = await supabaseAdmin
     .from('ajustes_inventario')
@@ -429,17 +460,19 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   // Retiros de transformación sin producto (masa de ajuste de lote retirada a PCB).
   const { data: retirosSinProducto } = await supabaseAdmin
     .from('transformacion_entrada_detalle')
-    .select('peso_kg, transformaciones(lote_origen_id)')
+    .select('peso_kg, transformaciones(lote_origen_id, lotes(nombre))')
     .is('producto_id', null);
 
-  const retirosPorLote = new Map<string, number>();
+  const retirosPorLote = new Map<string, { nombreLote: string | null; monto: number }>();
   for (const r of (retirosSinProducto as unknown as Array<{
     peso_kg: number;
-    transformaciones?: { lote_origen_id: string | null } | null;
+    transformaciones?: { lote_origen_id: string | null; lotes?: { nombre: string } | null } | null;
   }> | null) ?? []) {
     const loteId = r.transformaciones?.lote_origen_id;
     if (!loteId) continue;
-    retirosPorLote.set(loteId, (retirosPorLote.get(loteId) ?? 0) + Number(r.peso_kg));
+    const existing = retirosPorLote.get(loteId);
+    if (existing) existing.monto += Number(r.peso_kg);
+    else retirosPorLote.set(loteId, { nombreLote: r.transformaciones?.lotes?.nombre ?? null, monto: Number(r.peso_kg) });
   }
 
   const ajusteNeto = new Map<string, { nombreLote: string | null; neto: number }>();
@@ -455,9 +488,15 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
       ajusteNeto.set(a.lote_id, { nombreLote: a.lotes?.nombre ?? null, neto: Number(a.diferencia) });
     }
   }
-  for (const [loteId, retirado] of retirosPorLote) {
+  for (const [loteId, { nombreLote, monto }] of retirosPorLote) {
     const existing = ajusteNeto.get(loteId);
-    if (existing) existing.neto -= retirado;
+    if (existing) existing.neto -= monto;
+    else ajusteNeto.set(loteId, { nombreLote, neto: -monto });
+  }
+  for (const [loteId, { nombreLote, monto }] of llegadasSinProductoPorLote) {
+    const existing = ajusteNeto.get(loteId);
+    if (existing) existing.neto += monto;
+    else ajusteNeto.set(loteId, { nombreLote, neto: monto });
   }
   for (const [loteId, info] of ajusteNeto) {
     if (Math.abs(info.neto) > 0.001) {
