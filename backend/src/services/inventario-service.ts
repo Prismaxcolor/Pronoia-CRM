@@ -341,6 +341,61 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     });
   }
 
+  // Llegadas a lotes destino por transformación PCB/legacy: el material que
+  // salió de una transformación hacia un lote destino hereda la composición
+  // de ENTRADA de esa misma transformación, repartida proporcionalmente
+  // según cuánto recibió cada destino — misma fórmula que
+  // stock_lote_por_producto() en SQL (ver
+  // docs/migration_fix_composicion_lote_destino_transformacion.sql). Se
+  // duplica aquí, igual que ya se hace arriba para la salida ferroso, porque
+  // este archivo recalcula el inventario en JS en vez de reusar la función
+  // SQL. Sin este bloque, un lote que recibió material de una transformación
+  // se veía con menos kg en /inventario que en /transformaciones o /lotes.
+  const { data: salidaLoteData } = await supabaseAdmin
+    .from('transformacion_salida_detalle')
+    .select('transformacion_id, lote_destino_id, peso_neto, lotes(nombre), transformaciones(fecha)')
+    .not('lote_destino_id', 'is', null);
+
+  const { data: entradaPorTransformacionData } = await supabaseAdmin
+    .from('transformacion_entrada_detalle')
+    .select('transformacion_id, producto_id, peso_kg');
+
+  const entradaPorTransformacion = new Map<string, Array<{ productoId: string | null; pesoKg: number }>>();
+  for (const d of (entradaPorTransformacionData as unknown as Array<{
+    transformacion_id: string;
+    producto_id: string | null;
+    peso_kg: number;
+  }> | null) ?? []) {
+    const arr = entradaPorTransformacion.get(d.transformacion_id) ?? [];
+    arr.push({ productoId: d.producto_id, pesoKg: Number(d.peso_kg) });
+    entradaPorTransformacion.set(d.transformacion_id, arr);
+  }
+
+  for (const s of (salidaLoteData as unknown as Array<{
+    transformacion_id: string;
+    lote_destino_id: string;
+    peso_neto: number;
+    lotes?: { nombre: string } | null;
+    transformaciones?: { fecha: string | null } | null;
+  }> | null) ?? []) {
+    const fecha = s.transformaciones?.fecha ?? null;
+    if (filtros.desde && fecha && fecha < filtros.desde) continue;
+    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+    const entradaRows = entradaPorTransformacion.get(s.transformacion_id) ?? [];
+    const totalEntrada = entradaRows.reduce((acc, r) => acc + r.pesoKg, 0);
+    if (totalEntrada <= 0) continue;
+    for (const r of entradaRows) {
+      if (!r.productoId || !idsPermitidos.has(r.productoId)) continue;
+      entradas.push({
+        productoId: r.productoId,
+        destinoTipo: 'lote',
+        loteId: s.lote_destino_id,
+        destinoLabel: s.lotes?.nombre ?? 'Lote',
+        peso: (Number(s.peso_neto) * r.pesoKg) / totalEntrada,
+      });
+    }
+  }
+
   // Ajustes de toma física con producto conocido (culminar_toma_fisica_inventario).
   const { data: ajustesData } = await supabaseAdmin
     .from('ajustes_inventario')
