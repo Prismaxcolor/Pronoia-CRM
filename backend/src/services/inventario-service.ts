@@ -37,6 +37,10 @@ const MPP_LABEL = 'MPP';
 /** Catálogo sin ningún pesaje todavía — no implica que su destino sea MPP,
  *  solo que nunca se movió. Ver ArticuloInventario.destinoTipo. */
 const SIN_MOVIMIENTO_LABEL = 'Sin movimiento';
+const LOTE_ADJ_CLAVE = '__lote_adj__';
+const LOTE_ADJ_CATEGORIA = 'Ajustes de inventario';
+const LOTE_TRANSFORMACION_CLAVE = '__lote_transf__';
+const LOTE_TRANSFORMACION_CATEGORIA = 'Recibido por transformación';
 
 // ---- núcleo puro (testeable sin BD) ----------------------------------------
 
@@ -70,12 +74,17 @@ export interface RetiroTransformacion {
  *  con signo (positivo = sobrante, negativo = faltante), a diferencia de
  *  entradas/salidas que son siempre positivas.
  *  Cuando productoId es null, es un ajuste global de lote (PCB u otro sin
- *  desglose por producto) — se muestra como una línea sintética en inventario. */
+ *  desglose por producto) — se muestra como una línea sintética en inventario.
+ *  `motivo` distingue esa línea sintética de un ajuste real de toma física
+ *  (motivo por defecto) de material sin clasificar movido por una
+ *  transformación — mismo mecanismo de "línea sin desglose por producto",
+ *  pero NO es un ajuste manual y no debe etiquetarse como tal. */
 export interface AjusteTomaInventario {
   productoId: string | null;
   loteId: string | null;
   nombreLote: string | null;
   diferencia: number;
+  motivo?: 'toma_fisica' | 'transformacion';
 }
 
 /**
@@ -141,15 +150,20 @@ export function construirGruposInventario(
       const destinoLabel = a.loteId ? (a.nombreLote ?? 'Lote') : MPP_LABEL;
       obtenerBucket(a.productoId, destinoTipo, a.loteId, destinoLabel).ajustes += a.diferencia;
     } else if (a.loteId) {
-      // Ajuste global de lote (toma física sin desglose por producto): muestra
-      // como fila sintética con el nombre del lote para no perderlo del inventario.
-      const syntheticId = `__lote_adj__${a.loteId}`;
+      // Línea sintética de lote sin desglose por producto — el nombre y la
+      // categoría dependen del motivo real, para no mostrar una
+      // transformación como si fuera un ajuste manual (y viceversa).
+      const esTransformacion = a.motivo === 'transformacion';
+      const prefijo = esTransformacion ? LOTE_TRANSFORMACION_CLAVE : LOTE_ADJ_CLAVE;
+      const syntheticId = `${prefijo}${a.loteId}`;
       const k = `${syntheticId}::${a.loteId}`;
       let b = buckets.get(k);
       if (!b) {
         b = {
           productoId: syntheticId,
-          nombre: `${a.nombreLote ?? 'Lote'} — ajuste de inventario`,
+          nombre: esTransformacion
+            ? `${a.nombreLote ?? 'Lote'} — recibido por transformación (sin clasificar)`
+            : `${a.nombreLote ?? 'Lote'} — ajuste de inventario`,
           destinoTipo: 'lote',
           loteId: a.loteId,
           destinoLabel: a.nombreLote ?? 'Lote',
@@ -180,15 +194,16 @@ export function construirGruposInventario(
 
   for (const b of buckets.values()) b.stock = b.entradas - b.salidas + b.transformaciones + b.ajustes;
 
-  const LOTE_ADJ_CLAVE = '__lote_adj__';
-  const LOTE_ADJ_CATEGORIA = 'Ajustes de inventario';
-
   const grupos = new Map<string, GrupoInventario>();
   for (const b of buckets.values()) {
     let clave: string;
     let tipoMaterialId: string | null;
     let nombreCategoria: string;
-    if (b.productoId.startsWith(LOTE_ADJ_CLAVE)) {
+    if (b.productoId.startsWith(LOTE_TRANSFORMACION_CLAVE)) {
+      clave = LOTE_TRANSFORMACION_CLAVE;
+      tipoMaterialId = null;
+      nombreCategoria = LOTE_TRANSFORMACION_CATEGORIA;
+    } else if (b.productoId.startsWith(LOTE_ADJ_CLAVE)) {
       clave = LOTE_ADJ_CLAVE;
       tipoMaterialId = null;
       nombreCategoria = LOTE_ADJ_CATEGORIA;
@@ -475,32 +490,48 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     else retirosPorLote.set(loteId, { nombreLote: r.transformaciones?.lotes?.nombre ?? null, monto: Number(r.peso_kg) });
   }
 
-  const ajusteNeto = new Map<string, { nombreLote: string | null; neto: number }>();
+  // Ajuste real de toma física, sin producto (motivo: 'toma_fisica') — se
+  // mantiene SEPARADO del movimiento por transformación de abajo para que
+  // nunca se muestren mezclados bajo la misma etiqueta: una transformación
+  // no es un ajuste manual, aunque ambas terminen siendo "kg de lote sin
+  // desglose por producto".
+  const ajusteTomaFisicaPorLote = new Map<string, { nombreLote: string | null; neto: number }>();
   for (const a of (ajustesLoteData as unknown as Array<{
     lote_id: string;
     diferencia: number;
     lotes?: { nombre: string } | null;
   }> | null) ?? []) {
-    const existing = ajusteNeto.get(a.lote_id);
+    const existing = ajusteTomaFisicaPorLote.get(a.lote_id);
     if (existing) {
       existing.neto += Number(a.diferencia);
     } else {
-      ajusteNeto.set(a.lote_id, { nombreLote: a.lotes?.nombre ?? null, neto: Number(a.diferencia) });
+      ajusteTomaFisicaPorLote.set(a.lote_id, { nombreLote: a.lotes?.nombre ?? null, neto: Number(a.diferencia) });
     }
   }
+  for (const [loteId, info] of ajusteTomaFisicaPorLote) {
+    if (Math.abs(info.neto) > 0.001) {
+      ajustesToma.push({ productoId: null, loteId, nombreLote: info.nombreLote, diferencia: info.neto, motivo: 'toma_fisica' });
+    }
+  }
+
+  // Movimiento neto por transformación, sin producto (motivo: 'transformacion'):
+  // lo que salió sin clasificar hacia una transformación (retiro, negativo)
+  // menos lo que llegó sin clasificar desde una transformación (llegada,
+  // positivo) — mismo lote puede tener ambos con el tiempo.
+  const transformacionNetoPorLote = new Map<string, { nombreLote: string | null; neto: number }>();
   for (const [loteId, { nombreLote, monto }] of retirosPorLote) {
-    const existing = ajusteNeto.get(loteId);
+    const existing = transformacionNetoPorLote.get(loteId);
     if (existing) existing.neto -= monto;
-    else ajusteNeto.set(loteId, { nombreLote, neto: -monto });
+    else transformacionNetoPorLote.set(loteId, { nombreLote, neto: -monto });
   }
   for (const [loteId, { nombreLote, monto }] of llegadasSinProductoPorLote) {
-    const existing = ajusteNeto.get(loteId);
+    const existing = transformacionNetoPorLote.get(loteId);
     if (existing) existing.neto += monto;
-    else ajusteNeto.set(loteId, { nombreLote, neto: monto });
+    else transformacionNetoPorLote.set(loteId, { nombreLote, neto: monto });
   }
-  for (const [loteId, info] of ajusteNeto) {
+  for (const [loteId, info] of transformacionNetoPorLote) {
     if (Math.abs(info.neto) > 0.001) {
-      ajustesToma.push({ productoId: null, loteId, nombreLote: info.nombreLote, diferencia: info.neto });
+      ajustesToma.push({ productoId: null, loteId, nombreLote: info.nombreLote, diferencia: info.neto, motivo: 'transformacion' });
     }
   }
 
