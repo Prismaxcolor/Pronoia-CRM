@@ -30,7 +30,7 @@ import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
 import { taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
-import type { Transformacion, SalidaComun, Tara, Lote } from '@shared/types/index.js';
+import type { Transformacion, SalidaComun, Tara, Lote, EntradaDetalleTransformacion } from '@shared/types/index.js';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
 
@@ -706,17 +706,28 @@ interface ComposicionProyectada { item: string; porcentaje: number; esNuevo: boo
 
 /** Estima cómo quedaría la composición del lote destino si esta salida se
  *  completa tal cual está ahora — mezclando lo que ya tiene el destino con
- *  lo que entra (con la composición actual del lote origen, en la misma
- *  proporción). Solo referencial: la composición real, una vez completada
- *  la transformación, se recalcula sola a partir del stock real. */
-function proyectarComposicion(loteDestino: Lote | undefined, loteOrigen: Lote | undefined, netoEntrante: number): ComposicionProyectada[] {
+ *  lo que entra. Solo referencial: la composición real, una vez completada
+ *  la transformación, se recalcula sola a partir del stock real.
+ *
+ *  Importante: la composición de lo que entra se calcula a partir de
+ *  `entradaDetalle` (lo que el backend ya congeló al CREAR la transformación
+ *  — la misma fórmula que usará al completarla), no de la composición
+ *  actual del lote origen. Entre crear y completar una transformación
+ *  puede pasar tiempo y el lote origen puede haber tenido otros
+ *  movimientos — usar su composición "de ahora" desincroniza esta
+ *  previsualización de lo que el backend realmente va a guardar. */
+function proyectarComposicion(loteDestino: Lote | undefined, entradaDetalle: EntradaDetalleTransformacion[], netoEntrante: number): ComposicionProyectada[] {
   if (!loteDestino || netoEntrante <= 0) return [];
   const stockDestino = loteDestino.stockKg;
   const stockTotalNuevo = stockDestino + netoEntrante;
   if (stockTotalNuevo <= 0) return [];
 
+  const totalEntrada = entradaDetalle.reduce((acc, d) => acc + d.pesoKg, 0);
+  const compOrigen = totalEntrada > 0
+    ? entradaDetalle.map(d => ({ item: d.nombreProducto, porcentaje: (d.pesoKg / totalEntrada) * 100 }))
+    : [];
+
   const compDestino = loteDestino.composicion;
-  const compOrigen = loteOrigen?.composicion ?? [];
   const itemsDestino = new Set(compDestino.map(c => c.item));
   const todosItems = Array.from(new Set([...compDestino.map(c => c.item), ...compOrigen.map(c => c.item)]));
 
@@ -841,8 +852,7 @@ function CompletarPCBModal({
                       </div>
                     )}
                     {(() => {
-                      const loteOrigen = lotes.find(l => l.id === transformacion.loteOrigenId);
-                      const proyeccion = proyectarComposicion(loteDestino, loteOrigen, netoFila(f));
+                      const proyeccion = proyectarComposicion(loteDestino, transformacion.entradaDetalle, netoFila(f));
                       if (proyeccion.length === 0) return null;
                       return (
                         <div className="mt-2 flex flex-wrap gap-1">
