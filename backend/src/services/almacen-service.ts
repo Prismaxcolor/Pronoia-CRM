@@ -182,3 +182,16 @@ export async function stockAlmacen(almacenId: string): Promise<Map<string, numbe
   }
   return mapa;
 }
+
+/** Stock total del negocio por material (kg), sin importar almacén — el
+ *  número que se muestra como disponible al vender (decisión P-3 del plan
+ *  de consolidación): informativo, nunca bloquea la operación. */
+export async function stockGlobal(): Promise<Map<string, number>> {
+  const { data, error } = await supabaseAdmin.rpc('stock_global');
+  const mapa = new Map<string, number>();
+  if (error || !data) return mapa;
+  for (const fila of data as Array<{ producto_id: string; stock: number }>) {
+    mapa.set(fila.producto_id, Number(fila.stock));
+  }
+  return mapa;
+}

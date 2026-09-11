@@ -27,6 +27,18 @@ export async function obtenerStockAlmacen(almacenId: string): Promise<Map<string
   }
 }
 
+/** Stock total del negocio (kg) por productoId, sin importar almacén — el
+ *  número que se muestra como disponible al vender. Informativo, nunca
+ *  bloquea la operación. */
+export async function obtenerStockGlobal(): Promise<Map<string, number>> {
+  try {
+    const { stock } = await apiFetch<{ stock: Record<string, number> }>('/api/almacenes/stock-global');
+    return new Map(Object.entries(stock));
+  } catch {
+    return new Map();
+  }
+}
+
 export async function crearAlmacen(input: AlmacenInput): Promise<{ almacen: Almacen } | { error: string }> {
   try {
     const { almacen } = await apiFetch<{ almacen: Almacen }>('/api/almacenes', {

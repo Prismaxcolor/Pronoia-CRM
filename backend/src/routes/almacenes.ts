@@ -6,6 +6,7 @@ import {
   desactivarAlmacen,
   reactivarAlmacen,
   stockAlmacen,
+  stockGlobal,
   marcarPredeterminado,
 } from '../services/almacen-service.js';
 import { obtenerInventarioAlmacen } from '../services/inventario-service.js';
@@ -23,6 +24,11 @@ router.use(requireAuth);
 router.get('/', requirePermiso('almacenes', 'ver'), async (_req, res) => {
   const almacenes = await listarAlmacenes();
   res.json({ almacenes });
+});
+
+router.get('/stock-global', requirePermiso('almacenes', 'ver'), async (_req, res) => {
+  const stock = await stockGlobal();
+  res.json({ stock: Object.fromEntries(stock) });
 });
 
 router.get('/:id/stock', requirePermiso('almacenes', 'ver'), async (req, res) => {

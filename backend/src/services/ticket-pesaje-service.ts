@@ -256,6 +256,7 @@ export async function crearTicket(
     p_pesaje_exterior: input.pesajeExterior,
     p_fotos_devolucion: input.fotosDevolucion,
     p_pesajes_globales: pesajesGlobalesARpc(input.pesajesGlobales),
+    p_almacen_id: input.almacenId ?? null,
   });
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };

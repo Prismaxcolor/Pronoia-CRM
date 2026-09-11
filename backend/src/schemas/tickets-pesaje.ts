@@ -49,6 +49,12 @@ export const crearTicketSchema = z
   .object({
     tipo: z.enum(['compra', 'venta']).default('compra'),
     entidadId: z.string().uuid('Proveedor/cliente inválido.'),
+    /** Almacén donde se registra el movimiento. Opcional: si no se manda,
+     *  el backend usa el almacén predeterminado (comportamiento de siempre).
+     *  Solo tiene efecto en trazabilidad y en el stock por almacén — nunca
+     *  bloquea ni limita qué se puede comprar/vender (ver
+     *  docs/PLAN_consolidacion_inventario.md, P-1). */
+    almacenId: z.string().uuid('Almacén inválido.').optional().nullable(),
     fecha: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).')

@@ -7,7 +7,7 @@ import { obtenerProductos } from '../../services/producto-service';
 import { obtenerTickets, crearTicket, borrarTicket } from '../../services/ticket-pesaje-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
-import { obtenerAlmacenes, obtenerStockAlmacen } from '../../services/almacen-service';
+import { obtenerAlmacenes, obtenerStockAlmacen, obtenerStockGlobal } from '../../services/almacen-service';
 import { crearTraslado, obtenerTraslados } from '../../services/traslado-service';
 import { obtenerTomasFisicas } from '../../services/toma-fisica-service';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -66,6 +66,7 @@ function PesajePage() {
   const [traslados, setTraslados] = useState<Traslado[]>([]);
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [stockOrigen, setStockOrigen] = useState<Map<string, number>>(new Map());
+  const [stockGlobalDisponible, setStockGlobalDisponible] = useState<Map<string, number>>(new Map());
   const [tomasFisicasAbiertas, setTomasFisicasAbiertas] = useState<TomaFisicaInventario[]>([]);
 
   // Campos del formulario "Nuevo pesaje" — viven en un Provider por encima de
@@ -119,6 +120,14 @@ function PesajePage() {
       : Promise.resolve(new Map<string, number>());
     promesa.then(setStockOrigen);
   }, [tipo, almacenOrigenId]);
+
+  // Disponible del negocio (sin importar almacén) para el aviso informativo
+  // al vender — nunca bloquea, solo avisa (decisión P-3 del plan de
+  // consolidación, docs/PLAN_consolidacion_inventario.md).
+  useEffect(() => {
+    const promesa = tipo === 'venta' ? obtenerStockGlobal() : Promise.resolve(new Map<string, number>());
+    promesa.then(setStockGlobalDisponible);
+  }, [tipo]);
 
   const entidades = tipo === 'compra' ? proveedores : clientes;
   const labelEntidad = tipo === 'compra' ? 'Proveedor' : 'Cliente';
@@ -275,6 +284,7 @@ function PesajePage() {
     const result = await crearTicket({
       tipo: tipo === 'venta' ? 'venta' : 'compra',
       entidadId,
+      almacenId: almacenes.length > 1 ? (almacenOrigenId || almacenPredeterminado?.id || null) : null,
       fecha,
       pesoGlobal: pesajeExterior ? null : sumaPesajesGlobales(pesajesGlobales),
       pesajesGlobales: pesajesGlobalesPayload,
@@ -474,7 +484,27 @@ function PesajePage() {
             )}
 
             {tipo !== 'traslado' && (
-              almacenPredeterminado ? (
+              almacenes.length > 1 ? (
+                <div>
+                  <label className={labelClass}>Almacén</label>
+                  <select
+                    value={almacenOrigenId || almacenPredeterminado?.id || ''}
+                    onChange={e => setAlmacenOrigenId(e.target.value)}
+                    className={inputClass}
+                  >
+                    {almacenes.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.nombre}{a.esPredeterminado ? ' (predeterminado)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-text-muted mt-1">
+                    {tipo === 'compra'
+                      ? 'Esta compra entra al inventario de este almacén. No limita ni bloquea nada, es solo para saber dónde quedó el material.'
+                      : 'Esta venta sale del inventario de este almacén. No limita ni bloquea nada, es solo para saber de dónde salió el material.'}
+                  </p>
+                </div>
+              ) : almacenPredeterminado ? (
                 <div className="select-none px-3 py-2 bg-surface-alt border border-border rounded-lg">
                   <p className="text-sm font-medium text-text-primary">Almacén: {almacenPredeterminado.nombre}</p>
                   <p className="text-xs text-text-muted mt-0.5">
@@ -722,6 +752,19 @@ function PesajePage() {
                           <AlertTriangle size={13} className="shrink-0 mt-0.5" />
                           <span>
                             El almacén de origen solo tiene {fmt(disponible)} kg disponibles de este material — el inventario quedará en {fmt(disponible - neto)} kg.
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {tipo === 'venta' && f.productoId && (() => {
+                      const disponible = stockGlobalDisponible.get(f.productoId) ?? 0;
+                      if (neto <= disponible) return null;
+                      return (
+                        <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5">
+                          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                          <span>
+                            El negocio tiene {fmt(disponible)} kg registrados de este material — el inventario quedará en {fmt(disponible - neto)} kg. Esto no impide la venta, es solo un aviso.
                           </span>
                         </div>
                       );

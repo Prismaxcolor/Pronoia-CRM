@@ -19,6 +19,10 @@ export interface PesajeGlobalInput {
 export interface CrearTicketInput {
   tipo?: 'compra' | 'venta';
   entidadId: string;
+  /** Almacén donde queda registrado el movimiento. Si se omite o hay un solo
+   *  almacén activo, el backend usa el predeterminado — comportamiento de
+   *  siempre. Nunca bloquea ni limita qué se puede comprar/vender. */
+  almacenId?: string | null;
   fecha?: string | null;
   /** Obligatorio salvo pesajeExterior=true (báscula externa, sin lectura propia). */
   pesoGlobal?: number | null;

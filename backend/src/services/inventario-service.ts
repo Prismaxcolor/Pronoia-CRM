@@ -459,10 +459,17 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   }
 
   // Ajustes de toma física con producto conocido (culminar_toma_fisica_inventario).
-  const { data: ajustesData } = await supabaseAdmin
+  // Filtro de fecha por created_at (RC-8 del plan de consolidación): antes
+  // esta consulta ignoraba filtros.desde/hasta mientras el resto de las
+  // fuentes sí los aplicaban — con un filtro de fechas puesto, la columna
+  // "Ajuste" mezclaba movimientos de otra ventana temporal.
+  let qAjustes = supabaseAdmin
     .from('ajustes_inventario')
-    .select('producto_id, lote_id, diferencia, lotes(nombre)')
+    .select('producto_id, lote_id, diferencia, created_at, lotes(nombre)')
     .not('producto_id', 'is', null);
+  if (filtros.desde) qAjustes = qAjustes.gte('created_at', filtros.desde);
+  if (filtros.hasta) qAjustes = qAjustes.lte('created_at', `${filtros.hasta}T23:59:59.999`);
+  const { data: ajustesData } = await qAjustes;
 
   const ajustesToma: AjusteTomaInventario[] = [];
   for (const d of (ajustesData as unknown as Array<{
@@ -482,28 +489,66 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
 
   // Ajustes de toma física sin producto (lotes PCB contados como un todo).
   // Se muestran como línea sintética de lote para que el inventario cuadre.
-  const { data: ajustesLoteData } = await supabaseAdmin
+  let qAjustesLote = supabaseAdmin
     .from('ajustes_inventario')
-    .select('lote_id, diferencia, lotes(nombre)')
+    .select('lote_id, diferencia, created_at, lotes(nombre)')
     .is('producto_id', null)
     .not('lote_id', 'is', null);
+  if (filtros.desde) qAjustesLote = qAjustesLote.gte('created_at', filtros.desde);
+  if (filtros.hasta) qAjustesLote = qAjustesLote.lte('created_at', `${filtros.hasta}T23:59:59.999`);
+  const { data: ajustesLoteData } = await qAjustesLote;
 
   // Retiros de transformación sin producto (masa de ajuste de lote retirada a PCB).
-  const { data: retirosSinProducto } = await supabaseAdmin
+  const { data: retirosSinProductoRaw } = await supabaseAdmin
     .from('transformacion_entrada_detalle')
-    .select('peso_kg, transformaciones(lote_origen_id, lotes(nombre))')
+    .select('peso_kg, transformaciones(lote_origen_id, fecha, lotes(nombre))')
     .is('producto_id', null);
 
   const retirosPorLote = new Map<string, { nombreLote: string | null; monto: number }>();
-  for (const r of (retirosSinProducto as unknown as Array<{
+  for (const r of (retirosSinProductoRaw as unknown as Array<{
     peso_kg: number;
-    transformaciones?: { lote_origen_id: string | null; lotes?: { nombre: string } | null } | null;
+    transformaciones?: { lote_origen_id: string | null; fecha: string | null; lotes?: { nombre: string } | null } | null;
   }> | null) ?? []) {
     const loteId = r.transformaciones?.lote_origen_id;
     if (!loteId) continue;
+    const fecha = r.transformaciones?.fecha ?? null;
+    if (filtros.desde && fecha && fecha < filtros.desde) continue;
+    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
     const existing = retirosPorLote.get(loteId);
     if (existing) existing.monto += Number(r.peso_kg);
     else retirosPorLote.set(loteId, { nombreLote: r.transformaciones?.lotes?.nombre ?? null, monto: Number(r.peso_kg) });
+  }
+
+  // Merma de traslados completados (RC-7 del plan): lo que salió de un
+  // almacén y llegó de menos al destino es material que ya no existe —
+  // antes desaparecía sin dejar rastro en el inventario general (solo se
+  // notaba, indirectamente, en la vista por almacén). Se refleja como una
+  // salida "sin lote" del producto, fechada por la fecha de recepción del
+  // traslado.
+  const { data: trasladosCompletosData } = await supabaseAdmin
+    .from('tickets_traslado')
+    .select('completado_en, detalle_traslado(producto_id, peso_neto, peso_recibido)')
+    .eq('estado', 'completo');
+  for (const t of (trasladosCompletosData as unknown as Array<{
+    completado_en: string | null;
+    detalle_traslado?: Array<{ producto_id: string | null; peso_neto: number | null; peso_recibido: number | null }> | null;
+  }> | null) ?? []) {
+    const fecha = t.completado_en ? t.completado_en.slice(0, 10) : null;
+    if (filtros.desde && fecha && fecha < filtros.desde) continue;
+    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+    for (const d of t.detalle_traslado ?? []) {
+      if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
+      const merma = Number(d.peso_neto ?? 0) - Number(d.peso_recibido ?? 0);
+      if (merma > 0.005) {
+        salidas.push({
+          productoId: d.producto_id,
+          destinoTipo: 'mpp',
+          loteId: null,
+          destinoLabel: MPP_LABEL,
+          peso: merma,
+        });
+      }
+    }
   }
 
   // Ajuste real de toma física, sin producto (motivo: 'toma_fisica') — se
@@ -554,129 +599,55 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   return construirGruposInventario(productos, entradas, salidas, retirosTransformacion, {}, ajustesToma);
 }
 
-interface TrasladoDetalleRow {
-  producto_id: string | null;
-  peso_neto: number | null;
-  peso_recibido: number | null;
-}
-interface TrasladoConDetalleRow {
-  detalle_traslado?: TrasladoDetalleRow[] | null;
-}
-
 /**
- * Inventario propio de UN almacén: compras/ventas cuyo ticket quedó
- * apuntando a este almacén (almacen_id) + traslados completados de/hacia él.
- * A diferencia del inventario general:
- *  - Colapsa MPP/lote — todo movimiento entra como destino 'mpp' (D-3 del
- *    plan: lo pedido es categoría → producto, no cruzarlo con destino).
- *  - No incluye transformaciones (D-4: no tienen almacén, atribuirlas al
- *    predeterminado se movería solo si cambia la estrella).
- *  - No lista productos sin movimiento (incluirSinMovimiento: false): un
- *    almacén nuevo no debe mostrar todo el catálogo del negocio en cero.
+ * Inventario propio de UN almacén — llama directamente a stock_almacen() en
+ * SQL (fuente única corregida en la Fase 3 del plan de consolidación,
+ * docs/PLAN_consolidacion_inventario.md) en vez de recalcular aparte.
+ * Antes esta función reimplementaba en TS la misma lógica que stock_almacen()
+ * en SQL, con su propio conjunto de bugs (RC-1, RC-13) que nunca se
+ * mantenían sincronizados entre sí. Ahora son literalmente el mismo cálculo.
+ *
+ * Colapsa MPP/lote — todo aparece como destino 'mpp' (D-3 del plan: lo
+ * pedido es categoría → producto, no cruzarlo con destino); stock_almacen()
+ * ya no distingue esto en su salida, así que este colapso queda implícito.
+ * No lista productos sin movimiento: un almacén nuevo no debe mostrar todo
+ * el catálogo del negocio en cero. Se muestra el stock negativo tal cual —
+ * el sistema no bloquea movimientos por falta de stock, así que un número
+ * negativo real debe verse, no ocultarse.
  */
 export async function obtenerInventarioAlmacen(almacenId: string): Promise<GrupoInventario[]> {
   const productos = await cargarProductos();
-  const idsPermitidos = new Set(productos.map(p => p.id));
+  const metaPorId = new Map(productos.map(p => [p.id, p]));
 
-  const entradas: MovimientoInventario[] = [];
-  const salidas: MovimientoInventario[] = [];
-  const comoMovimiento = (productoId: string, peso: number): MovimientoInventario => ({
-    productoId,
-    destinoTipo: 'mpp',
-    loteId: null,
-    destinoLabel: MPP_LABEL,
-    peso,
-  });
+  const { data, error } = await supabaseAdmin.rpc('stock_almacen', { p_almacen_id: almacenId });
+  if (error) throw error;
 
-  const { data: ticketsData } = await supabaseAdmin
-    .from('tickets_pesaje')
-    .select('tipo, detalle_tickets_pesaje(producto_id, peso_neto)')
-    .eq('almacen_id', almacenId);
-  for (const t of (ticketsData as unknown as TicketRow[]) ?? []) {
-    for (const d of t.detalle_tickets_pesaje ?? []) {
-      if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
-      const mov = comoMovimiento(d.producto_id, Number(d.peso_neto ?? 0));
-      if (t.tipo === 'compra') entradas.push(mov);
-      else salidas.push(mov);
+  const grupos = new Map<string, GrupoInventario>();
+  for (const row of (data as Array<{ producto_id: string; stock: number }> | null) ?? []) {
+    const stock = Number(row.stock);
+    if (Math.abs(stock) < 0.005) continue;
+    const meta = metaPorId.get(row.producto_id);
+    if (!meta) continue;
+    const clave = meta.tipoMaterialId ?? '__sin__';
+    let g = grupos.get(clave);
+    if (!g) {
+      g = { tipoMaterialId: meta.tipoMaterialId, nombreCategoria: meta.nombreCategoria, totalKg: 0, articulos: [] };
+      grupos.set(clave, g);
     }
+    g.articulos.push({
+      productoId: row.producto_id,
+      nombre: meta.nombre,
+      destinoTipo: 'mpp',
+      loteId: null,
+      destinoLabel: MPP_LABEL,
+      entradas: Math.max(stock, 0),
+      salidas: Math.max(-stock, 0),
+      transformaciones: 0,
+      ajustes: 0,
+      stock,
+    });
+    g.totalKg += stock;
   }
-
-  const { data: recibidosData } = await supabaseAdmin
-    .from('tickets_traslado')
-    .select('detalle_traslado(producto_id, peso_recibido)')
-    .eq('almacen_destino_id', almacenId)
-    .eq('estado', 'completo');
-  for (const t of (recibidosData as unknown as TrasladoConDetalleRow[]) ?? []) {
-    for (const d of t.detalle_traslado ?? []) {
-      if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
-      entradas.push(comoMovimiento(d.producto_id, Number(d.peso_recibido ?? 0)));
-    }
-  }
-
-  const { data: enviadosData } = await supabaseAdmin
-    .from('tickets_traslado')
-    .select('detalle_traslado(producto_id, peso_neto)')
-    .eq('almacen_origen_id', almacenId)
-    .eq('estado', 'completo');
-  for (const t of (enviadosData as unknown as TrasladoConDetalleRow[]) ?? []) {
-    for (const d of t.detalle_traslado ?? []) {
-      if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
-      salidas.push(comoMovimiento(d.producto_id, Number(d.peso_neto ?? 0)));
-    }
-  }
-
-  // Retiros ferroso de este almacén (input de transformación) → salen del stock.
-  const { data: retirosFData } = await supabaseAdmin
-    .from('transformacion_entrada_detalle')
-    .select('producto_id, peso_kg, transformaciones!inner(almacen_id, categoria)')
-    .not('producto_id', 'is', null)
-    .eq('transformaciones.categoria', 'ferroso_no_ferroso')
-    .eq('transformaciones.almacen_id', almacenId);
-  for (const d of (retirosFData as unknown as Array<{
-    producto_id: string;
-    peso_kg: number;
-  }> | null) ?? []) {
-    if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
-    salidas.push(comoMovimiento(d.producto_id, Number(d.peso_kg)));
-  }
-
-  // Outputs ferroso de este almacén (salida completa de transformación) → entran al stock.
-  const { data: outputsFData } = await supabaseAdmin
-    .from('transformacion_salida_detalle')
-    .select('producto_id, peso_neto, transformaciones!inner(almacen_id, categoria, estado)')
-    .not('producto_id', 'is', null)
-    .eq('transformaciones.categoria', 'ferroso_no_ferroso')
-    .eq('transformaciones.estado', 'completa')
-    .eq('transformaciones.almacen_id', almacenId);
-  for (const d of (outputsFData as unknown as Array<{
-    producto_id: string;
-    peso_neto: number;
-  }> | null) ?? []) {
-    if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
-    entradas.push(comoMovimiento(d.producto_id, Number(d.peso_neto ?? 0)));
-  }
-
-  // Ajustes de toma física de este almacén, sin lote (mismo criterio que
-  // stock_almacen() en SQL: almacen_id = este almacén, lote_id is null).
-  // Faltaba por completo aquí — esta vista es la única de las tres
-  // (general, por lote, por almacén) que no los tenía en cuenta, así que un
-  // producto con un ajuste real podía mostrar stock negativo o incorrecto
-  // solo en /almacenes aunque /inventario y stock_almacen() ya estuvieran bien.
-  const { data: ajustesAlmacenData } = await supabaseAdmin
-    .from('ajustes_inventario')
-    .select('producto_id, diferencia')
-    .eq('almacen_id', almacenId)
-    .is('lote_id', null)
-    .not('producto_id', 'is', null);
-  for (const d of (ajustesAlmacenData as unknown as Array<{
-    producto_id: string;
-    diferencia: number;
-  }> | null) ?? []) {
-    if (!idsPermitidos.has(d.producto_id)) continue;
-    const diferencia = Number(d.diferencia);
-    if (diferencia > 0) entradas.push(comoMovimiento(d.producto_id, diferencia));
-    else if (diferencia < 0) salidas.push(comoMovimiento(d.producto_id, -diferencia));
-  }
-
-  return construirGruposInventario(productos, entradas, salidas, [], { incluirSinMovimiento: false });
+  for (const g of grupos.values()) g.articulos.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  return Array.from(grupos.values()).sort((a, b) => a.nombreCategoria.localeCompare(b.nombreCategoria));
 }

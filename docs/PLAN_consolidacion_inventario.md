@@ -337,3 +337,77 @@ Las fases 0 y 1 pueden ir en paralelo — la 1 es casi gratis y puede cerrar uno
 
 - RC-3 (transformaciones PCB seguían bloqueadas después del primer fix del día) ya está corregido y verificado en producción.
 - Nada más de este plan se ha ejecutado todavía — es la base para decidir con Julio antes de tocar más código.
+
+---
+
+## Ejecución del plan (11-sep-2026, misma sesión — "última oportunidad")
+
+Julio pidió explícitamente ejecutar todo el plan sin pausar a preguntar y tomar las
+9 decisiones de negocio (P-1 a P-9) por su cuenta. Decisiones tomadas (no reabrir sin que
+Julio lo pida):
+
+- **P-1: SÍ**, se agregó selector de almacén a compras/ventas — solo trazabilidad, nunca bloquea.
+- **P-2**: histórico se deja tal cual (no se reescriben tickets pasados).
+- **P-3**: al vender se muestra el disponible GLOBAL (stock_global()), informativo, no bloquea.
+- **P-4/P-5/P-7/P-8/P-9**: sin cambios — no había evidencia de que se necesiten hoy;
+  quedan como ideas futuras, no se construyó nada nuevo para ellas.
+- **P-6: SÍ**, un lote con stock total ≤ 0 pierde su composición (no se guarda "última
+  composición" como referencia — decisión de simplicidad).
+
+### Desviación deliberada del diseño original (Fase 2/3 del plan de arriba)
+
+El diseño original proponía una vista genérica `v_movimientos_inventario` de la que se
+derivarían todas las funciones de stock. Al ponerse a construirla se encontró que
+`stock_lote_por_producto()`/`stock_lote_total()` no son una simple suma de movimientos con
+signo — reparten proporcionalmente la composición de una transformación hacia sus lotes
+destino (`peso_neto * ted.peso_kg / tt.total_entrada`), lógica que YA estaba auditada y
+verificada (0 discrepancias, 10-sep-2026). Reimplementar esa proporción dentro de una vista
+genérica, sin suite de tests, era el tipo de riesgo que causó la fatiga de Julio en primer
+lugar (arreglar algo y romper otra cosa).
+
+**Se optó por un enfoque quirúrgico en su lugar**: corregir cada función existente donde
+tenía el bug real, reutilizando `stock_lote_por_producto()` (ya correcta) como bloque de
+construcción en vez de generalizar el cálculo. Mismo resultado que buscaba el plan (una
+sola fuente de verdad), menos riesgo.
+
+### Qué se hizo, fase por fase
+
+- **Fase 0** (`docs/sql/functions/*.sql`): las 28 funciones de inventario que vivían solo en
+  Supabase quedaron extraídas y versionadas en el repo.
+- **Fase 1 / S-1**: no se encontró ninguna transformación PCB con DURO como entrada — el
+  bloqueo de RC-3 impedía que se llegara a crear. Con el bloqueo quitado, S-1 debería dejar
+  de reproducirse; pendiente que Julio lo confirme la próxima vez que transforme.
+- **Fase 2/3 → `migration_fase3_stock_almacen_fuente_unica.sql`**: `stock_almacen()`
+  reescrita para sumar, por cada almacén, (a) el material sin lote de siempre y (b) el total
+  de cada lote cuyo `lotes.almacen_id` sea ese almacén, vía `stock_lote_por_producto()`.
+  Corrige RC-5 y RC-6 de raíz. **Cambió un número real**: MIXTO I en ALMACEN G2 pasó de
+  12.500 a 10.000 kg (y MIXTO II de 2.000 a 0) — el valor viejo nunca había descontado lo
+  que salió de esos lotes por transformación PCB; el valor nuevo coincide con
+  `stock_lote_por_producto()`, ya auditada. `docs/migration_fase3b_stock_global.sql` agrega
+  `stock_global()` (no existía ninguna función de total sin importar almacén).
+- **Fase 4**: `obtenerInventarioAlmacen()` en `inventario-service.ts` ya no recalcula en TS
+  — llama directo a `stock_almacen()`. `obtenerInventario()` (vista general) se corrigió en
+  vez de reescribirse entera: se agregó la merma de traslados completados (RC-7) y el filtro
+  de fecha que faltaba en ajustes y retiros sin producto (RC-8).
+- **Fase 5 → `migration_fase5_ticket_almacen.sql`**: `crear_ticket_pesaje()` acepta
+  `p_almacen_id` opcional (default = predeterminado, retrocompatible). Selector de almacén
+  agregado en `PesajePage.tsx`, visible solo si hay más de un almacén activo.
+- **Fase 6 → `migration_fase6_composicion_lote_vacio.sql`**: `composicion_lote()` devuelve
+  vacío si `stock_lote_total(lote) <= 0.01`. Como las 7 pantallas ya leían esta función (no
+  recalculaban aparte), no hizo falta tocar el frontend — se arregla en un solo lugar.
+- **Fase 7**: no ejecutada — limpieza de convenciones (RC-9, RC-14), de bajo riesgo pero
+  también bajo impacto inmediato; queda para una sesión futura si hace falta.
+- **Fase 8 → `backend/scripts/verificar-stock.ts`** (`npm run verificar:stock` en
+  `backend/`): guardarraíl versionado que compara `stock_almacen()` (SQL) contra
+  `obtenerInventarioAlmacen()` (TS) para los almacenes activos. Corrido varias veces durante
+  esta sesión: 0 discrepancias.
+
+### Verificación aplicada en cada paso
+
+Cada migración se aplicó a producción vía Management API y se verificó antes/después con
+consultas de solo lectura o transacciones con `rollback` (mismo método que ya venía
+funcionando desde el 10-sep) — no se tocó nada a ciegas. `backend/build`/`frontend build`
+corridos limpios después de los cambios de TypeScript (nota: `backend/npm run build` tiene
+un error de `rootDir` preexistente, no causado por esta sesión — `lote-service.ts` importa
+`shared/types/lote.ts` fuera de `backend/src`; se verificó con `tsc --noEmit --rootDir ..`
+en su lugar).
