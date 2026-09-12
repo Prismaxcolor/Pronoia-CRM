@@ -96,7 +96,9 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
               const diferencia = recibidoNum - m.pesoNeto;
               return (
                 <div key={m.id} className="border border-border rounded-lg p-3 bg-surface-alt/40">
-                  <p className="text-sm font-medium text-text-primary mb-2">{m.nombreProducto ?? 'Material'}</p>
+                  <p className="text-sm font-medium text-text-primary mb-2">
+                    {m.loteId ? `${m.nombreLote ?? 'Lote'} (lote completo)` : m.nombreProducto ?? 'Material'}
+                  </p>
                   <div className="grid grid-cols-2 gap-3 items-end">
                     <div>
                       <p className="text-xs text-text-muted mb-1">Enviado</p>

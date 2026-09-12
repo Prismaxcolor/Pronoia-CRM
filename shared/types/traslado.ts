@@ -15,6 +15,10 @@ export interface TrasladoMaterial {
   pesoNeto: number;
   /** Lo que realmente llegó al almacén destino. Null hasta completar. */
   pesoRecibido: number | null;
+  /** Presente cuando esta línea es un lote (PCB) trasladado completo, no material suelto. */
+  loteId: string | null;
+  /** Nombre del lote, resuelto vía join. Solo presente cuando loteId no es null. */
+  nombreLote?: string | null;
 }
 
 /**

@@ -40,6 +40,8 @@ export interface CrearTicketInput {
   materiales: CrearTicketMaterialInput[];
   fotos: string[];
   observaciones?: string | null;
+  /** Placa/identificador del vehículo que trajo o se llevó el material. */
+  vehiculo?: string | null;
 }
 
 export interface ObtenerTicketsOpts {
@@ -109,6 +111,7 @@ export interface EditarTicketInput {
   devolucion?: number;
   fotosDevolucion?: string[];
   observaciones?: string | null;
+  vehiculo?: string | null;
 }
 
 /** Corrige un ticket ya completo (material, pesos, observaciones). El peso

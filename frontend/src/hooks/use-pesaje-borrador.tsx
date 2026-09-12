@@ -24,6 +24,8 @@ function borradorInicial(): PesajeBorrador {
     fotosDevolucion: [],
     materiales: [filaVacia()],
     observaciones: '',
+    vehiculo: '',
+    fotosTraslado: [],
   };
 }
 
@@ -39,6 +41,8 @@ export function PesajeBorradorProvider({ children }: { children: ReactNode }) {
   const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [observaciones, setObservaciones] = useState('');
+  const [vehiculo, setVehiculo] = useState('');
+  const [fotosTraslado, setFotosTraslado] = useState<FotoMaterial[]>([]);
 
   const limpiarBorrador = () => {
     const inicial = borradorInicial();
@@ -53,18 +57,20 @@ export function PesajeBorradorProvider({ children }: { children: ReactNode }) {
     setFotosDevolucion(inicial.fotosDevolucion);
     setMateriales(inicial.materiales);
     setObservaciones(inicial.observaciones);
+    setVehiculo(inicial.vehiculo);
+    setFotosTraslado(inicial.fotosTraslado);
   };
 
   const borrador: PesajeBorrador = {
     tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha,
-    pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones,
+    pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones, vehiculo, fotosTraslado,
   };
 
   return (
     <PesajeBorradorContext.Provider value={{
       borrador,
       setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
-      setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones,
+      setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones, setVehiculo, setFotosTraslado,
       limpiarBorrador,
     }}>
       {children}

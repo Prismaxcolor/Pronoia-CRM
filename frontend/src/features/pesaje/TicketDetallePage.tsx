@@ -61,6 +61,7 @@ function TicketDetallePage() {
   const [devolucionEdit, setDevolucionEdit] = useState('');
   const [fotosDevolucionEdit, setFotosDevolucionEdit] = useState<FotoMaterial[]>([]);
   const [observacionesEdit, setObservacionesEdit] = useState('');
+  const [vehiculoEdit, setVehiculoEdit] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ocultarDestino, setOcultarDestino] = useState(false);
@@ -95,12 +96,32 @@ function TicketDetallePage() {
     [ticket, pesoNetoTotal, devolucionEdit]
   );
 
+  /** Subtotal por material cuando el mismo material se pesó más de una vez
+   *  en este ticket (varias pesadas) — para no repetir el total a simple
+   *  vista sumando filas sueltas. */
+  const totalesPorMaterial = useMemo(() => {
+    if (!ticket) return [];
+    const mapa = new Map<string, { nombre: string; total: number; cantidad: number }>();
+    for (const m of ticket.materiales) {
+      const clave = m.productoId ?? m.id;
+      const existente = mapa.get(clave);
+      if (existente) {
+        existente.total += m.pesoNeto;
+        existente.cantidad += 1;
+      } else {
+        mapa.set(clave, { nombre: m.nombreProducto ?? '—', total: m.pesoNeto, cantidad: 1 });
+      }
+    }
+    return Array.from(mapa.values()).filter(t => t.cantidad > 1);
+  }, [ticket]);
+
   const iniciarEdicion = () => {
     if (!ticket) return;
     setMateriales(filasDesdeTicket(ticket));
     setDevolucionEdit(ticket.devolucion ? String(ticket.devolucion) : '');
     setFotosDevolucionEdit(ticket.fotosDevolucion.map(url => ({ tipo: 'existente' as const, url })));
     setObservacionesEdit(ticket.observaciones ?? '');
+    setVehiculoEdit(ticket.vehiculo ?? '');
     setError(null);
     setEditando(true);
   };
@@ -167,6 +188,7 @@ function TicketDetallePage() {
 
     const result = await editarTicket(ticket.id, {
       observaciones: observacionesEdit.trim() || null,
+      vehiculo: vehiculoEdit.trim() || null,
       devolucion: Number(devolucionEdit) || 0,
       fotosDevolucion: urlsDevolucion,
       materiales: materialesConFotos,
@@ -286,6 +308,7 @@ function TicketDetallePage() {
            *  sin tarjeta — mismo patrón que factura/nota/pago. */}
           <div className="mb-6">
             <FilaDocumento label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
+            {ticket.vehiculo && <FilaDocumento label="Vehículo" valor={ticket.vehiculo} />}
             {ticket.observaciones && <FilaDocumento label="Observaciones" valor={ticket.observaciones} />}
           </div>
 
@@ -355,6 +378,20 @@ function TicketDetallePage() {
                   </tbody>
                 </table>
               </div>
+              {totalesPorMaterial.length > 0 && (
+                <div className="border-t border-border px-5 py-3 bg-surface-alt/60">
+                  <p className="text-[11px] font-medium text-text-secondary mb-1.5">Total por material ({totalesPorMaterial.reduce((acc, t) => acc + t.cantidad, 0)} pesadas)</p>
+                  <div className="flex flex-wrap gap-x-6 gap-y-1">
+                    {totalesPorMaterial.map(t => (
+                      <div key={t.nombre} className="flex items-baseline gap-1.5 text-sm">
+                        <span className="text-text-secondary">{t.nombre}</span>
+                        <span className="text-text-muted text-xs">({t.cantidad}×)</span>
+                        <span className="font-semibold text-text-primary">{fmt(t.total)} kg</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -531,6 +568,11 @@ function TicketDetallePage() {
                 <span className={`font-semibold ${colorClaseDiferencia(diferencia, ticket?.pesoGlobal ?? 0, ticket?.pesajeExterior ?? false)}`}>{fmt(diferencia)} kg</span>
               </div>
             )}
+          </div>
+
+          <div>
+            <label className={labelClass}>Vehículo</label>
+            <input type="text" value={vehiculoEdit} onChange={e => setVehiculoEdit(e.target.value)} className={inputClass} placeholder="Placa o identificador" />
           </div>
 
           <div>

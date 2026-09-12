@@ -23,7 +23,11 @@ export const crearTrasladoSchema = z
   .object({
     almacenOrigenId: z.string().uuid('Almacén de origen inválido.'),
     almacenDestinoId: z.string().uuid('Almacén de destino inválido.'),
-    materiales: z.array(materialTrasladoSchema).min(1, 'Agrega al menos un material.'),
+    materiales: z.array(materialTrasladoSchema).default([]),
+    /** Lotes (PCB) a trasladar completos — no una porción, el lote entero. */
+    loteIds: z.array(z.string().uuid('Lote inválido.')).default([]),
+    /** Evidencia fotográfica del pesaje de salida — mismo criterio que compra/venta. */
+    fotos: z.array(z.string()).min(1, 'Agrega al menos una foto del traslado.'),
     observaciones: z
       .string()
       .trim()
@@ -35,6 +39,10 @@ export const crearTrasladoSchema = z
   .refine(d => d.almacenOrigenId !== d.almacenDestinoId, {
     message: 'El almacén de origen y destino no pueden ser el mismo.',
     path: ['almacenDestinoId'],
+  })
+  .refine(d => d.materiales.length + d.loteIds.length >= 1, {
+    message: 'Agrega al menos un material o lote a trasladar.',
+    path: ['materiales'],
   });
 
 /** Recepción de un traslado pendiente: cuánto llegó realmente por línea de

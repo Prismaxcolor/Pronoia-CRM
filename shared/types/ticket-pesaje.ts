@@ -110,6 +110,8 @@ export interface TicketPesaje {
   completadoPor: string | null;
   /** ISO timestamp de cuándo se completó un ticket en bruto. */
   completadoEn: string | null;
+  /** Placa/identificador del vehículo que trajo o se llevó el material. */
+  vehiculo: string | null;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
 }

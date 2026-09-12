@@ -9,6 +9,7 @@ import {
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
+import { obtenerAlmacenes } from '../../services/almacen-service';
 import { obtenerTomasFisicas } from '../../services/toma-fisica-service';
 import { obtenerTransformaciones } from '../../services/transformacion-service';
 import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
@@ -17,7 +18,7 @@ import AlmacenesPanel from './AlmacenesPanel';
 import TrasladosPanel from './TrasladosPanel';
 import TomaFisicaPanel from './TomaFisicaPanel';
 import LotesPanel from '../lotes/LotesPanel';
-import type { TipoMaterial, Producto, Lote, ComposicionPCBItem, TomaFisicaInventario, Transformacion } from '@shared/types/index.js';
+import type { TipoMaterial, Producto, Lote, Almacen, ComposicionPCBItem, TomaFisicaInventario, Transformacion } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -158,6 +159,7 @@ function InventarioPage() {
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
+  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [tomasFisicas, setTomasFisicas] = useState<TomaFisicaInventario[]>([]);
   const [transformaciones, setTransformaciones] = useState<Transformacion[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -174,6 +176,7 @@ function InventarioPage() {
     obtenerTiposMaterial().then(setCategorias);
     obtenerProductos().then(setProductos);
     obtenerLotes().then(setLotes);
+    obtenerAlmacenes().then(setAlmacenes);
     obtenerTomasFisicas().then(lista => setTomasFisicas(lista.filter(t => t.estado === 'abierta')));
     obtenerTransformaciones({ estado: 'bruto' }).then(setTransformaciones);
   }, []);
@@ -245,6 +248,13 @@ function InventarioPage() {
           </select>
         </div>
         <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Almacén</label>
+          <select value={filtros.almacenId ?? ''} onChange={e => setFiltro('almacenId', e.target.value)} className={`${inputClass} w-44`}>
+            <option value="">Todos</option>
+            {almacenes.filter(a => a.activo).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+          </select>
+        </div>
+        <div>
           <label className="block text-xs font-medium text-text-secondary mb-1">Desde</label>
           <input type="date" value={filtros.desde ?? ''} onChange={e => setFiltro('desde', e.target.value)} className={inputClass} />
         </div>
@@ -252,7 +262,7 @@ function InventarioPage() {
           <label className="block text-xs font-medium text-text-secondary mb-1">Hasta</label>
           <input type="date" value={filtros.hasta ?? ''} onChange={e => setFiltro('hasta', e.target.value)} className={inputClass} />
         </div>
-        {(filtros.tipoMaterialId || filtros.productoId || filtros.desde || filtros.hasta) && (
+        {(filtros.tipoMaterialId || filtros.productoId || filtros.almacenId || filtros.desde || filtros.hasta) && (
           <button type="button" onClick={() => setFiltros({})} className="text-xs text-text-muted hover:text-text-primary underline pb-2">
             Limpiar
           </button>

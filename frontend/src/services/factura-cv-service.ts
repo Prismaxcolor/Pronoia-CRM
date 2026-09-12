@@ -9,6 +9,8 @@ export interface FacturaItemCV {
   peso: number;
   precioUnitario: number;
   subtotal: number;
+  /** Kg descontados al facturar (0 salvo en compra). `peso` ya viene neto de esto. */
+  descuentoKg: number;
 }
 
 export interface FacturaCV {
@@ -48,6 +50,7 @@ export function consolidarItems(items: FacturaItemCV[]): FacturaItemCV[] {
     if (ex) {
       ex.peso += it.peso;
       ex.subtotal += it.subtotal;
+      ex.descuentoKg += it.descuentoKg;
       ex.precioUnitario = ex.peso > 0 ? ex.subtotal / ex.peso : ex.precioUnitario;
     } else {
       mapa.set(clave, { ...it });
@@ -60,6 +63,8 @@ export interface CrearFacturaItemInput {
   productoId: string;
   peso: number;
   precioUnitario: number;
+  /** Solo tiene efecto en factura de compra. */
+  descuentoKg?: number;
 }
 
 export interface CrearFacturaInput {

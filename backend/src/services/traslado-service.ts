@@ -16,7 +16,9 @@ interface DetalleRow {
   tara: number | null;
   peso_neto: number | null;
   peso_recibido: number | null;
+  lote_id: string | null;
   productos?: { nombre: string } | null;
+  lotes?: { nombre: string } | null;
 }
 
 interface TrasladoRow {
@@ -45,6 +47,9 @@ export interface TrasladoMaterialPublico {
   tara: number;
   pesoNeto: number;
   pesoRecibido: number | null;
+  /** Presente cuando esta línea es un lote (PCB) trasladado completo, no material suelto. */
+  loteId: string | null;
+  nombreLote: string | null;
 }
 
 export interface TrasladoPublico {
@@ -77,6 +82,8 @@ function detalleToPublico(d: DetalleRow): TrasladoMaterialPublico {
     tara: Number(d.tara ?? 0),
     pesoNeto: Number(d.peso_neto ?? 0),
     pesoRecibido: d.peso_recibido === null ? null : Number(d.peso_recibido),
+    loteId: d.lote_id,
+    nombreLote: d.lotes?.nombre ?? null,
   };
 }
 
@@ -111,7 +118,7 @@ const SELECT_TRASLADO =
   '*, ' +
   'almacen_origen:almacenes!tickets_traslado_almacen_origen_id_fkey(nombre), ' +
   'almacen_destino:almacenes!tickets_traslado_almacen_destino_id_fkey(nombre), ' +
-  'detalle_traslado(*, productos(nombre))';
+  'detalle_traslado(*, productos(nombre), lotes(nombre))';
 
 export async function listarTraslados(): Promise<TrasladoPublico[]> {
   const { data, error } = await supabaseAdmin
@@ -149,6 +156,8 @@ export async function crearTraslado(
       tara: m.tara,
     })),
     p_pesado_por: pesadoPor,
+    p_fotos: input.fotos,
+    p_lote_ids: input.loteIds,
   });
 
   if (error || !trasladoId) return { error: error?.message ?? 'No se pudo guardar el traslado.' };

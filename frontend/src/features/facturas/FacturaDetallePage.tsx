@@ -156,7 +156,12 @@ function FacturaDetallePage({ tipo }: Props) {
           <tbody>
             {consolidarItems(factura.items).map(it => (
               <tr key={it.id}>
-                <td className="py-2.5 px-3 text-text-primary border border-border print:border-black">{it.nombreProducto ?? '—'}</td>
+                <td className="py-2.5 px-3 text-text-primary border border-border print:border-black">
+                  {it.nombreProducto ?? '—'}
+                  {it.descuentoKg > 0 && (
+                    <span className="block text-xs text-text-muted font-normal">Descuento aplicado: {fmt(it.descuentoKg)} kg</span>
+                  )}
+                </td>
                 <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.peso)}</td>
                 <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.precioUnitario)}</td>
                 <td className="py-2.5 px-3 text-right font-medium text-text-primary border border-border print:border-black">{fmt(it.subtotal)}</td>

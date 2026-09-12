@@ -1,100 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, EyeOff, Eye, Warehouse, ChevronDown, ChevronRight, ChevronUp, Star, AlertTriangle, Boxes } from 'lucide-react';
+import { Plus, Pencil, EyeOff, Eye, Warehouse, Star, AlertTriangle } from 'lucide-react';
 import {
   obtenerAlmacenes,
-  obtenerInventarioAlmacen,
   desactivarAlmacen,
   reactivarAlmacen,
   marcarPredeterminado,
 } from '../../services/almacen-service';
-import type { GrupoInventario } from '../../services/inventario-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import AlmacenFormModal from './AlmacenFormModal';
 import type { Almacen } from '@shared/types/index.js';
 
-function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function fmtFecha(iso: string): string {
   return new Date(iso).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-/** Inventario propio de un almacén (colapsable), agrupado por categoría →
- *  producto igual que el inventario general — a partir de compras, ventas y
- *  traslados que quedaron ligados a este almacén. Se pide bajo demanda, no en
- *  la carga inicial de la lista. */
-function StockAlmacen({ almacenId }: { almacenId: string }) {
-  const [grupos, setGrupos] = useState<GrupoInventario[] | null>(null);
-  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    obtenerInventarioAlmacen(almacenId).then(setGrupos);
-  }, [almacenId]);
-
-  const toggle = (clave: string) => {
-    setExpandidos(prev => {
-      const next = new Set(prev);
-      if (next.has(clave)) next.delete(clave);
-      else next.add(clave);
-      return next;
-    });
-  };
-
-  if (!grupos) {
-    return (
-      <div className="px-5 py-6 flex items-center justify-center bg-surface-alt/40">
-        <div className="w-5 h-5 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
-      </div>
-    );
-  }
-  if (grupos.length === 0) {
-    return (
-      <div className="px-5 py-8 bg-surface-alt/40 text-center">
-        <Boxes size={22} className="mx-auto text-text-muted/50 mb-2" />
-        <p className="text-xs text-text-muted">Sin movimientos todavía en este almacén.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="px-4 py-3 bg-surface-alt/40 space-y-2">
-      {grupos.map(g => {
-        const clave = g.tipoMaterialId ?? '__sin__';
-        return (
-          <div key={clave} className="bg-surface rounded-lg border border-border/70 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggle(clave)}
-              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-surface-alt/60 transition-colors"
-            >
-              {expandidos.has(clave) ? <ChevronDown size={14} className="text-text-muted shrink-0" /> : <ChevronRight size={14} className="text-text-muted shrink-0" />}
-              <span className="text-xs font-semibold text-text-primary flex-1 text-left truncate">{g.nombreCategoria}</span>
-              <span className="text-[11px] text-text-muted">{g.articulos.length} art.</span>
-              <span className={`text-xs font-bold tabular-nums px-2 py-0.5 rounded-full ${g.totalKg < 0 ? 'bg-red-50 text-red-600' : 'bg-brand-50 text-brand-700'}`}>
-                {fmt(g.totalKg)} kg
-              </span>
-            </button>
-
-            {expandidos.has(clave) && (
-              <div className="border-t border-border/70 divide-y divide-border/50">
-                {g.articulos.map(a => (
-                  <div key={a.productoId} className="flex items-center gap-3 px-3.5 py-2 text-xs">
-                    <span className="text-text-secondary flex-1 truncate">{a.nombre}</span>
-                    <span className="text-text-muted tabular-nums w-16 text-right" title="Entradas">+{fmt(a.entradas)}</span>
-                    <span className="text-text-muted tabular-nums w-16 text-right" title="Salidas">−{fmt(a.salidas)}</span>
-                    <span className={`font-semibold tabular-nums w-20 text-right ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
-                      {fmt(a.stock)} kg
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function AlmacenesPanel() {
@@ -105,7 +23,6 @@ function AlmacenesPanel() {
 
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [expandido, setExpandido] = useState<string | null>(null);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; almacen: Almacen | null } | { abierto: false }>({ abierto: false });
 
   const recargar = () => obtenerAlmacenes().then(setAlmacenes).finally(() => setCargando(false));
@@ -158,8 +75,8 @@ function AlmacenesPanel() {
             y los traslados mueven material entre almacenes.
           </p>
           <p className="text-xs text-text-muted mt-1">
-            El inventario general incluye además los pesajes anteriores a los almacenes y las
-            transformaciones, que no pertenecen a ningún almacén específico.
+            Para ver cuánto material hay en cada almacén, usa el filtro "Almacén" en la
+            pestaña Inventario.
           </p>
         </div>
         {puedeCrear && (
@@ -219,14 +136,6 @@ function AlmacenesPanel() {
                     <Star size={16} className={a.esPredeterminado ? 'fill-amber-400' : ''} />
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setExpandido(prev => (prev === a.id ? null : a.id))}
-                  className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 shrink-0"
-                >
-                  Inventario
-                  {expandido === a.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
                 {puedeEditar && (
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -260,7 +169,6 @@ function AlmacenesPanel() {
                 )}
                 </div>
               </div>
-              {expandido === a.id && <StockAlmacen almacenId={a.id} />}
             </div>
           ))}
         </div>

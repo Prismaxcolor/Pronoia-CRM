@@ -32,11 +32,14 @@ interface LineaFila {
   materialId?: string;
   /** Solo modo manual: id del lote destino, para el ticket que se genera. */
   destino: DestinoValor;
+  /** Descuento de peso al facturar (solo compra) — merma/tara adicional no
+   *  capturada en el pesaje. Se resta del peso antes de calcular el subtotal. */
+  descuentoKg: string;
 }
 
 let UID = 0;
 function lineaVacia(): LineaFila {
-  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false, destino: '' };
+  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false, destino: '', descuentoKg: '' };
 }
 
 interface Props {
@@ -103,9 +106,11 @@ function FacturaFormPage({ tipo }: Props) {
     return p != null ? String(p) : '';
   };
 
-  // Al (de)seleccionar tickets, reconstruir las líneas: una por material de cada
-  // ticket elegido. Se conservan los precios ya escritos (match por materialId);
-  // los nuevos se precargan con el precio de la lista elegida (si hay).
+  // Al (de)seleccionar tickets, reconstruir las líneas: UNA por material,
+  // consolidando el peso de todas las pesadas de ese material entre los
+  // tickets elegidos (antes salía una línea por cada pesada individual).
+  // Se conservan los precios ya escritos (match por productoId); los nuevos
+  // se precargan con el precio de la lista elegida (si hay).
   useEffect(() => {
     if (modoPeso !== 'ticket') return;
     // Reconstruye las líneas fusionando con las anteriores (conserva precios ya
@@ -113,21 +118,36 @@ function FacturaFormPage({ tipo }: Props) {
     // no una inicialización que se pueda mover a render/useMemo sin perder ese merge.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLineas(prev => {
-      const previos = new Map(prev.filter(l => l.materialId).map(l => [l.materialId!, l]));
-      const nuevas: LineaFila[] = ticketsSel.flatMap(t =>
-        t.materiales.map(m => {
-          const ex = previos.get(m.id);
-          return {
-            uid: ex?.uid ?? UID++,
-            productoId: m.productoId ?? '',
-            peso: String(m.pesoNeto),
-            precioUnitario: ex?.precioUnitario || precioDeLista(m.productoId ?? ''),
-            desdeTicket: true,
-            materialId: m.id,
-            destino: '',
-          };
-        })
-      );
+      const previos = new Map(prev.filter(l => l.productoId).map(l => [l.productoId, l]));
+      const porProducto = new Map<string, { uid: number; precioUnitario: string; peso: number; materialId: string; descuentoKg: string }>();
+      for (const t of ticketsSel) {
+        for (const m of t.materiales) {
+          const productoId = m.productoId ?? '';
+          const existente = porProducto.get(productoId);
+          if (existente) {
+            existente.peso += m.pesoNeto;
+          } else {
+            const previa = previos.get(productoId);
+            porProducto.set(productoId, {
+              uid: previa?.uid ?? UID++,
+              precioUnitario: previa?.precioUnitario || precioDeLista(productoId),
+              peso: m.pesoNeto,
+              materialId: m.id,
+              descuentoKg: previa?.descuentoKg ?? '',
+            });
+          }
+        }
+      }
+      const nuevas: LineaFila[] = Array.from(porProducto.entries()).map(([productoId, v]) => ({
+        uid: v.uid,
+        productoId,
+        peso: String(v.peso),
+        precioUnitario: v.precioUnitario,
+        desdeTicket: true,
+        materialId: v.materialId,
+        destino: '',
+        descuentoKg: v.descuentoKg,
+      }));
       return nuevas.length > 0 ? nuevas : [lineaVacia()];
     });
   }, [ticketsSel, modoPeso]);
@@ -171,7 +191,8 @@ function FacturaFormPage({ tipo }: Props) {
   const quitarLinea = (uid: number) =>
     setLineas(prev => (prev.length > 1 ? prev.filter(l => l.uid !== uid) : prev));
 
-  const subtotalLinea = (l: LineaFila) => (Number(l.peso) || 0) * (Number(l.precioUnitario) || 0);
+  const pesoFacturableLinea = (l: LineaFila) => Math.max((Number(l.peso) || 0) - (esCompra ? Number(l.descuentoKg) || 0 : 0), 0);
+  const subtotalLinea = (l: LineaFila) => pesoFacturableLinea(l) * (Number(l.precioUnitario) || 0);
   const total = useMemo(() => lineas.reduce((acc, l) => acc + subtotalLinea(l), 0), [lineas]);
 
   /** true si el material pertenece a una categoría "sin lote" (ej. No
@@ -231,6 +252,7 @@ function FacturaFormPage({ tipo }: Props) {
         productoId: l.productoId,
         peso: Number(l.peso),
         precioUnitario: Number(l.precioUnitario),
+        descuentoKg: esCompra ? Number(l.descuentoKg) || 0 : 0,
       })),
       descripcion: descripcion.trim() || null,
       observaciones: observaciones.trim() || null,
@@ -376,16 +398,26 @@ function FacturaFormPage({ tipo }: Props) {
                   )
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className={`grid gap-3 ${esCompra ? 'grid-cols-3' : 'grid-cols-2'}`}>
                   <div>
                     <label className={labelClass}>Peso (kg) {l.desdeTicket && <span className="text-text-muted">· del ticket</span>}</label>
                     <input type="number" step="0.001" min="0" value={l.peso} onChange={e => setLinea(l.uid, 'peso', e.target.value)} className={inputClass} placeholder="0.00" disabled={l.desdeTicket} />
                   </div>
+                  {esCompra && (
+                    <div>
+                      <label className={labelClass}>Descuento (kg)</label>
+                      <input type="number" step="0.001" min="0" value={l.descuentoKg} onChange={e => setLinea(l.uid, 'descuentoKg', e.target.value)} className={inputClass} placeholder="0.00" title="Merma o tara adicional a descontar al facturar." />
+                    </div>
+                  )}
                   <div>
                     <label className={labelClass}>Precio (kg) *</label>
                     <input type="number" step="0.01" min="0" value={l.precioUnitario} onChange={e => setLinea(l.uid, 'precioUnitario', e.target.value)} className={inputClass} placeholder="0.00" />
                   </div>
                 </div>
+
+                {esCompra && (Number(l.descuentoKg) || 0) > 0 && (
+                  <p className="text-xs text-text-muted">Peso facturable: {fmt(pesoFacturableLinea(l))} kg</p>
+                )}
 
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-text-muted">Subtotal</span>

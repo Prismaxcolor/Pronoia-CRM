@@ -32,6 +32,11 @@ export interface FiltrosInventario {
   productoId?: string;
   desde?: string;
   hasta?: string;
+  /** Si se pasa, el inventario se limita a lo atribuible a este almacén.
+   *  Material sin lote se atribuye por el almacén del ticket/transformación/
+   *  ajuste; material con lote (PCB), por el almacén ACTUAL del lote — mismo
+   *  criterio que usa stock_almacen() en SQL, para que ambas vistas cuadren. */
+  almacenId?: string;
 }
 
 const SIN_CATEGORIA = 'Sin categoría';
@@ -294,20 +299,32 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   const productos = await cargarProductos(filtros);
   // Solo contamos movimientos de materiales que pasaron el filtro de catálogo.
   const idsPermitidos = new Set(productos.map(p => p.id));
+  const almacenId = filtros.almacenId;
+
+  // Almacén ACTUAL de cada lote — mismo criterio que con_lote en
+  // stock_almacen(): todo el material de un lote se atribuye a donde el lote
+  // está HOY, no a dónde estaba cuando se pesó/transformó cada kilo.
+  const { data: lotesAlmacenData } = await supabaseAdmin.from('lotes').select('id, almacen_id');
+  const loteAlmacen = new Map<string, string | null>(
+    ((lotesAlmacenData as Array<{ id: string; almacen_id: string | null }> | null) ?? []).map(l => [l.id, l.almacen_id])
+  );
+  const loteEnAlmacen = (loteId: string | null) => !almacenId || (loteId != null && loteAlmacen.get(loteId) === almacenId);
 
   // Pesaje: entradas (compra) y salidas (venta), con su destino.
   let qTickets = supabaseAdmin
     .from('tickets_pesaje')
-    .select('tipo, fecha, detalle_tickets_pesaje(producto_id, peso_neto, destino_tipo, lote_id, lotes(nombre))');
+    .select('tipo, fecha, almacen_id, detalle_tickets_pesaje(producto_id, peso_neto, destino_tipo, lote_id, lotes(nombre))');
   if (filtros.desde) qTickets = qTickets.gte('fecha', filtros.desde);
   if (filtros.hasta) qTickets = qTickets.lte('fecha', filtros.hasta);
   const { data: ticketsData } = await qTickets;
 
   const entradas: MovimientoInventario[] = [];
   const salidas: MovimientoInventario[] = [];
-  for (const t of (ticketsData as unknown as TicketRow[]) ?? []) {
+  for (const t of (ticketsData as unknown as (TicketRow & { almacen_id: string | null })[]) ?? []) {
     for (const d of t.detalle_tickets_pesaje ?? []) {
       if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
+      const enEsteAlmacen = d.destino_tipo === 'lote' ? loteEnAlmacen(d.lote_id) : !almacenId || t.almacen_id === almacenId;
+      if (!enEsteAlmacen) continue;
       const mov: MovimientoInventario = {
         productoId: d.producto_id,
         destinoTipo: d.destino_tipo,
@@ -320,22 +337,62 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     }
   }
 
+  // Traslados: solo importan cuando se filtra por almacén (en el negocio
+  // completo un traslado no cambia el stock total, solo lo mueve). El origen
+  // descuenta desde que el traslado se CREA (el material ya salió
+  // físicamente); el destino solo suma cuando el traslado se completó —
+  // mismo criterio que stock_almacen(). Sin lote: los traslados todavía no
+  // soportan material con lote (ver 2.1 del plan de mejoras).
+  if (almacenId) {
+    const { data: trasladosData, error: errorTraslados } = await supabaseAdmin
+      .from('tickets_traslado')
+      .select('almacen_origen_id, almacen_destino_id, estado, created_at, completado_en, detalle_traslado(producto_id, peso_neto, peso_recibido)');
+    if (errorTraslados) throw errorTraslados;
+    for (const t of (trasladosData as unknown as Array<{
+      almacen_origen_id: string | null;
+      almacen_destino_id: string | null;
+      estado: 'pendiente' | 'completo';
+      created_at: string | null;
+      completado_en: string | null;
+      detalle_traslado?: Array<{ producto_id: string | null; peso_neto: number | null; peso_recibido: number | null }> | null;
+    }> | null) ?? []) {
+      const esOrigen = t.almacen_origen_id === almacenId;
+      const esDestinoCompleto = t.almacen_destino_id === almacenId && t.estado === 'completo';
+      if (!esOrigen && !esDestinoCompleto) continue;
+      const fecha = (esDestinoCompleto ? t.completado_en?.slice(0, 10) : t.created_at?.slice(0, 10)) ?? null;
+      if (filtros.desde && fecha && fecha < filtros.desde) continue;
+      if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+      for (const d of t.detalle_traslado ?? []) {
+        if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
+        if (esOrigen) {
+          salidas.push({ productoId: d.producto_id, destinoTipo: 'mpp', loteId: null, destinoLabel: MPP_LABEL, peso: Number(d.peso_neto ?? 0) });
+        }
+        if (esDestinoCompleto) {
+          entradas.push({ productoId: d.producto_id, destinoTipo: 'mpp', loteId: null, destinoLabel: MPP_LABEL, peso: Number(d.peso_recibido ?? 0) });
+        }
+      }
+    }
+  }
+
   // Retiros hacia transformaciones (Bloque 40): cuentan como salida del
   // (producto, lote_origen) de esa transformación. Filtrado de fecha en JS,
   // igual que el resto de este archivo, porque el embed no lo soporta.
   const { data: tedData } = await supabaseAdmin
     .from('transformacion_entrada_detalle')
-    .select('producto_id, peso_kg, transformaciones(lote_origen_id, fecha, lotes(nombre))');
+    .select('producto_id, peso_kg, transformaciones(lote_origen_id, fecha, lotes(nombre), almacen_id)');
   const retirosTransformacion: RetiroTransformacion[] = [];
   for (const d of (tedData as unknown as Array<{
     producto_id: string;
     peso_kg: number;
-    transformaciones?: { lote_origen_id: string | null; fecha: string | null; lotes?: { nombre: string } | null } | null;
+    transformaciones?: { lote_origen_id: string | null; fecha: string | null; lotes?: { nombre: string } | null; almacen_id: string | null } | null;
   }> | null) ?? []) {
     if (!idsPermitidos.has(d.producto_id) || !d.transformaciones) continue;
     const fecha = d.transformaciones.fecha;
     if (filtros.desde && fecha && fecha < filtros.desde) continue;
     if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+    const loteOrigenId = d.transformaciones.lote_origen_id ?? null;
+    const enEsteAlmacen = loteOrigenId ? loteEnAlmacen(loteOrigenId) : !almacenId || d.transformaciones.almacen_id === almacenId;
+    if (!enEsteAlmacen) continue;
     retirosTransformacion.push({
       productoId: d.producto_id,
       // Para ferroso lote_origen_id es null → bucket sin-lote (MPP)
@@ -349,7 +406,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   // después de la transformación (sin lote, van al bucket sin-lote/MPP).
   const { data: salidaFerrosoData } = await supabaseAdmin
     .from('transformacion_salida_detalle')
-    .select('producto_id, peso_neto, transformaciones!inner(fecha, categoria, estado)')
+    .select('producto_id, peso_neto, transformaciones!inner(fecha, categoria, estado, almacen_id)')
     .not('producto_id', 'is', null)
     .eq('transformaciones.categoria', 'ferroso_no_ferroso')
     .eq('transformaciones.estado', 'completa');
@@ -357,9 +414,10 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   for (const d of (salidaFerrosoData as unknown as Array<{
     producto_id: string;
     peso_neto: number;
-    transformaciones?: { fecha: string | null } | null;
+    transformaciones?: { fecha: string | null; almacen_id: string | null } | null;
   }> | null) ?? []) {
     if (!idsPermitidos.has(d.producto_id)) continue;
+    if (almacenId && d.transformaciones?.almacen_id !== almacenId) continue;
     const fecha = d.transformaciones?.fecha ?? null;
     if (filtros.desde && fecha && fecha < filtros.desde) continue;
     if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
@@ -412,6 +470,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     const fecha = s.transformaciones?.fecha ?? null;
     if (filtros.desde && fecha && fecha < filtros.desde) continue;
     if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+    if (!loteEnAlmacen(s.lote_destino_id)) continue;
     const entradaRows = entradaPorTransformacion.get(s.transformacion_id) ?? [];
     const totalEntrada = entradaRows.reduce((acc, r) => acc + r.pesoKg, 0);
     if (totalEntrada <= 0) continue;
@@ -447,6 +506,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     const fecha = s.transformaciones?.fecha ?? null;
     if (filtros.desde && fecha && fecha < filtros.desde) continue;
     if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+    if (!loteEnAlmacen(s.lote_destino_id)) continue;
     const entradaRows = entradaPorTransformacion.get(s.transformacion_id) ?? [];
     const totalEntrada = entradaRows.reduce((acc, r) => acc + r.pesoKg, 0);
     if (totalEntrada <= 0) continue;
@@ -465,7 +525,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   // "Ajuste" mezclaba movimientos de otra ventana temporal.
   let qAjustes = supabaseAdmin
     .from('ajustes_inventario')
-    .select('producto_id, lote_id, diferencia, created_at, lotes(nombre)')
+    .select('producto_id, lote_id, almacen_id, diferencia, created_at, lotes(nombre)')
     .not('producto_id', 'is', null);
   if (filtros.desde) qAjustes = qAjustes.gte('created_at', filtros.desde);
   if (filtros.hasta) qAjustes = qAjustes.lte('created_at', `${filtros.hasta}T23:59:59.999`);
@@ -475,10 +535,13 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   for (const d of (ajustesData as unknown as Array<{
     producto_id: string;
     lote_id: string | null;
+    almacen_id: string | null;
     diferencia: number;
     lotes?: { nombre: string } | null;
   }> | null) ?? []) {
     if (!idsPermitidos.has(d.producto_id)) continue;
+    const enEsteAlmacen = d.lote_id ? loteEnAlmacen(d.lote_id) : !almacenId || d.almacen_id === almacenId;
+    if (!enEsteAlmacen) continue;
     ajustesToma.push({
       productoId: d.producto_id,
       loteId: d.lote_id,
@@ -514,6 +577,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     const fecha = r.transformaciones?.fecha ?? null;
     if (filtros.desde && fecha && fecha < filtros.desde) continue;
     if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+    if (!loteEnAlmacen(loteId)) continue;
     const existing = retirosPorLote.get(loteId);
     if (existing) existing.monto += Number(r.peso_kg);
     else retirosPorLote.set(loteId, { nombreLote: r.transformaciones?.lotes?.nombre ?? null, monto: Number(r.peso_kg) });
@@ -525,28 +589,33 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   // notaba, indirectamente, en la vista por almacén). Se refleja como una
   // salida "sin lote" del producto, fechada por la fecha de recepción del
   // traslado.
-  const { data: trasladosCompletosData } = await supabaseAdmin
-    .from('tickets_traslado')
-    .select('completado_en, detalle_traslado(producto_id, peso_neto, peso_recibido)')
-    .eq('estado', 'completo');
-  for (const t of (trasladosCompletosData as unknown as Array<{
-    completado_en: string | null;
-    detalle_traslado?: Array<{ producto_id: string | null; peso_neto: number | null; peso_recibido: number | null }> | null;
-  }> | null) ?? []) {
-    const fecha = t.completado_en ? t.completado_en.slice(0, 10) : null;
-    if (filtros.desde && fecha && fecha < filtros.desde) continue;
-    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
-    for (const d of t.detalle_traslado ?? []) {
-      if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
-      const merma = Number(d.peso_neto ?? 0) - Number(d.peso_recibido ?? 0);
-      if (merma > 0.005) {
-        salidas.push({
-          productoId: d.producto_id,
-          destinoTipo: 'mpp',
-          loteId: null,
-          destinoLabel: MPP_LABEL,
-          peso: merma,
-        });
+  // Solo en la vista global: por almacén, la merma ya queda implícita en el
+  // bloque de traslados de arriba (origen pierde el peso_neto completo,
+  // destino solo gana el peso_recibido) — sumarla aparte aquí la contaría dos veces.
+  if (!almacenId) {
+    const { data: trasladosCompletosData } = await supabaseAdmin
+      .from('tickets_traslado')
+      .select('completado_en, detalle_traslado(producto_id, peso_neto, peso_recibido)')
+      .eq('estado', 'completo');
+    for (const t of (trasladosCompletosData as unknown as Array<{
+      completado_en: string | null;
+      detalle_traslado?: Array<{ producto_id: string | null; peso_neto: number | null; peso_recibido: number | null }> | null;
+    }> | null) ?? []) {
+      const fecha = t.completado_en ? t.completado_en.slice(0, 10) : null;
+      if (filtros.desde && fecha && fecha < filtros.desde) continue;
+      if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
+      for (const d of t.detalle_traslado ?? []) {
+        if (!d.producto_id || !idsPermitidos.has(d.producto_id)) continue;
+        const merma = Number(d.peso_neto ?? 0) - Number(d.peso_recibido ?? 0);
+        if (merma > 0.005) {
+          salidas.push({
+            productoId: d.producto_id,
+            destinoTipo: 'mpp',
+            loteId: null,
+            destinoLabel: MPP_LABEL,
+            peso: merma,
+          });
+        }
       }
     }
   }
@@ -562,6 +631,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     diferencia: number;
     lotes?: { nombre: string } | null;
   }> | null) ?? []) {
+    if (!loteEnAlmacen(a.lote_id)) continue;
     const existing = ajusteTomaFisicaPorLote.get(a.lote_id);
     if (existing) {
       existing.neto += Number(a.diferencia);
@@ -596,7 +666,14 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     }
   }
 
-  return construirGruposInventario(productos, entradas, salidas, retirosTransformacion, {}, ajustesToma);
+  return construirGruposInventario(
+    productos,
+    entradas,
+    salidas,
+    retirosTransformacion,
+    { incluirSinMovimiento: !almacenId },
+    ajustesToma
+  );
 }
 
 /**

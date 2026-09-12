@@ -12,6 +12,10 @@ export interface CrearTrasladoInput {
   almacenOrigenId: string;
   almacenDestinoId: string;
   materiales: CrearTrasladoMaterialInput[];
+  /** Lotes (PCB) a trasladar completos — no una porción, el lote entero. */
+  loteIds?: string[];
+  /** Evidencia fotográfica del pesaje de salida. */
+  fotos: string[];
   observaciones?: string | null;
 }
 

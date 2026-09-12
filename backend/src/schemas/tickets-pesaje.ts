@@ -88,6 +88,14 @@ export const crearTicketSchema = z
       .optional()
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),
+    /** Placa/identificador del vehículo que trajo o se llevó el material. */
+    vehiculo: z
+      .string()
+      .trim()
+      .max(50)
+      .optional()
+      .nullable()
+      .transform(v => (v && v.length > 0 ? v : null)),
   })
   .refine(d => d.estado === 'completo' ? d.materiales.length >= 1 : true, {
     message: 'Agrega al menos un material (o guarda el ticket en bruto).',
@@ -132,6 +140,13 @@ export const editarTicketSchema = z
       .string()
       .trim()
       .max(500)
+      .optional()
+      .nullable()
+      .transform(v => (v && v.length > 0 ? v : null)),
+    vehiculo: z
+      .string()
+      .trim()
+      .max(50)
       .optional()
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),

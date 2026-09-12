@@ -8,11 +8,14 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Resumen de materiales de un traslado: nombre si es uno, "N materiales" si varios. */
+/** Resumen de materiales/lotes de un traslado: nombre si es uno, "N ítems" si varios. */
 function resumenMateriales(t: Traslado): string {
   if (t.materiales.length === 0) return '—';
-  if (t.materiales.length === 1) return t.materiales[0].nombreProducto ?? 'material';
-  return `${t.materiales.length} materiales`;
+  if (t.materiales.length === 1) {
+    const m = t.materiales[0];
+    return m.loteId ? `${m.nombreLote ?? 'Lote'} (lote completo)` : m.nombreProducto ?? 'material';
+  }
+  return `${t.materiales.length} ítems`;
 }
 
 function TrasladosPanel() {

@@ -179,6 +179,11 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   doc.setFont('helvetica', 'bold').text(esCompra ? 'Proveedor' : 'Cliente', 56, y);
   doc.setFont('helvetica', 'normal').text(sanitizarPdf(nombreEntidad), 250, y);
   y += 20;
+  if (t.vehiculo) {
+    doc.setFont('helvetica', 'bold').text('Vehículo', 56, y);
+    doc.setFont('helvetica', 'normal').text(sanitizarPdf(t.vehiculo), 250, y);
+    y += 20;
+  }
   if (t.observaciones) {
     const lineas = doc.splitTextToSize(sanitizarPdf(t.observaciones), 289);
     doc.setFont('helvetica', 'bold').text('Observaciones', 56, y);

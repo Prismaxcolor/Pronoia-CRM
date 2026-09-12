@@ -73,9 +73,9 @@ function PesajePage() {
   // las rutas (usePesajeBorrador), no en useState local, para no perderse si
   // el usuario navega a otra pantalla (Dashboard, Cochinito, etc.) y vuelve.
   const {
-    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones },
+    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones, vehiculo, fotosTraslado },
     setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
-    setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones,
+    setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones, setVehiculo, setFotosTraslado,
     limpiarBorrador,
   } = usePesajeBorrador();
 
@@ -84,6 +84,7 @@ function PesajePage() {
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
   const [trasladoARecepcionar, setTrasladoARecepcionar] = useState<Traslado | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
+  const [loteIdsSeleccionados, setLoteIdsSeleccionados] = useState<string[]>([]);
   const [buscaCodigo, setBuscaCodigo] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'compra' | 'venta' | 'traslado'>('todos');
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
@@ -119,6 +120,9 @@ function PesajePage() {
       ? obtenerStockAlmacen(almacenOrigenId)
       : Promise.resolve(new Map<string, number>());
     promesa.then(setStockOrigen);
+    // Los lotes disponibles dependen del almacén de origen — si cambia, la
+    // selección anterior puede ya no ser válida.
+    setLoteIdsSeleccionados([]);
   }, [tipo, almacenOrigenId]);
 
   // Disponible del negocio (sin importar almacén) para el aviso informativo
@@ -176,28 +180,57 @@ function PesajePage() {
   const quitarFotoDevolucion = (idx: number) =>
     setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
 
-  const limpiar = () => limpiarBorrador();
+  const agregarFotosTraslado = (files: File[]) =>
+    setFotosTraslado(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+  const quitarFotoTraslado = (idx: number) =>
+    setFotosTraslado(prev => prev.filter((_, i) => i !== idx));
+
+  const limpiar = () => { limpiarBorrador(); setLoteIdsSeleccionados([]); };
+
+  const lotesEnOrigen = useMemo(
+    () => lotes.filter(l => l.activo && l.almacenId === almacenOrigenId),
+    [lotes, almacenOrigenId]
+  );
+  const toggleLoteSeleccionado = (loteId: string) =>
+    setLoteIdsSeleccionados(prev => (prev.includes(loteId) ? prev.filter(id => id !== loteId) : [...prev, loteId]));
 
   const guardarTraslado = async () => {
     setError(null);
 
+    // Filas vacías se ignoran: el formulario siempre arranca con una fila
+    // en blanco, y un traslado puede ser solo de lotes completos (sin
+    // material suelto), o al revés.
+    const materialesLlenos = materiales.filter(f => f.productoId);
+
     if (!almacenOrigenId) { setError('Elige el almacén de origen.'); return; }
     if (!almacenDestinoId) { setError('Elige el almacén de destino.'); return; }
     if (almacenOrigenId === almacenDestinoId) { setError('El almacén de origen y destino no pueden ser el mismo.'); return; }
-    if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
-    if (materiales.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
-    if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (materialesLlenos.length === 0 && loteIdsSeleccionados.length === 0) {
+      setError('Agrega al menos un material o selecciona un lote a trasladar.');
+      return;
+    }
+    if (materialesLlenos.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
+    if (materialesLlenos.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (fotosTraslado.length === 0) { setError('Agrega al menos una foto del traslado.'); return; }
 
     setGuardando(true);
+    const urlsTraslado = await subirFotosFila(fotosTraslado);
+    if (!urlsTraslado) {
+      setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+      setGuardando(false);
+      return;
+    }
     const result = await crearTraslado({
       almacenOrigenId,
       almacenDestinoId,
-      materiales: materiales.map(f => ({
+      materiales: materialesLlenos.map(f => ({
         productoId: f.productoId,
         subcategoria: f.subcategoria.trim() || null,
         pesoBruto: Number(f.pesoBruto) || 0,
         tara: taraKgFila(f, taras),
       })),
+      loteIds: loteIdsSeleccionados,
+      fotos: urlsTraslado,
       observaciones: observaciones.trim() || null,
     });
     setGuardando(false);
@@ -295,6 +328,7 @@ function PesajePage() {
       materiales: materialesConFotos,
       fotos: [],
       observaciones: observaciones.trim() || null,
+      vehiculo: vehiculo.trim() || null,
     });
 
     setGuardando(false);
@@ -779,6 +813,31 @@ function PesajePage() {
               </button>
             </div>
 
+            {tipo === 'traslado' && almacenOrigenId && (
+              <div className="space-y-2">
+                <label className={labelClass + ' mb-0'}>Lotes a trasladar completos (PCB)</label>
+                {lotesEnOrigen.length === 0 ? (
+                  <p className="text-xs text-text-muted">No hay lotes activos en el almacén de origen.</p>
+                ) : (
+                  <div className="border border-border rounded-lg divide-y divide-border overflow-hidden">
+                    {lotesEnOrigen.map(l => (
+                      <label key={l.id} className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-surface-alt/60">
+                        <input
+                          type="checkbox"
+                          checked={loteIdsSeleccionados.includes(l.id)}
+                          onChange={() => toggleLoteSeleccionado(l.id)}
+                          className="rounded border-border"
+                        />
+                        <span className="flex-1 text-text-primary">{l.nombre}</span>
+                        <span className="text-text-muted tabular-nums">{fmt(l.stockKg)} kg</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-text-muted">Se traslada el lote entero, no una porción — llega intacto al almacén destino cuando se confirme la recepción.</p>
+              </div>
+            )}
+
             <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
@@ -828,6 +887,22 @@ function PesajePage() {
               </>
               )}
             </div>
+
+            {tipo !== 'traslado' && (
+              <div>
+                <label className={labelClass}>Vehículo</label>
+                <input type="text" value={vehiculo} onChange={e => setVehiculo(e.target.value)} className={inputClass} placeholder="Placa o identificador" />
+              </div>
+            )}
+
+            {tipo === 'traslado' && (
+              <FotoMaterialPicker
+                label="Fotos del traslado"
+                fotos={fotosTraslado}
+                onAgregar={agregarFotosTraslado}
+                onQuitar={quitarFotoTraslado}
+              />
+            )}
 
             <div>
               <label className={labelClass}>Observaciones</label>
@@ -1348,8 +1423,11 @@ function resumenMateriales(t: TicketPesaje): string {
 
 function resumenMaterialesTraslado(t: Traslado): string {
   if (t.materiales.length === 0) return '—';
-  if (t.materiales.length === 1) return t.materiales[0].nombreProducto ?? 'material';
-  return `${t.materiales.length} materiales`;
+  if (t.materiales.length === 1) {
+    const m = t.materiales[0];
+    return m.loteId ? `${m.nombreLote ?? 'Lote'} (lote completo)` : m.nombreProducto ?? 'material';
+  }
+  return `${t.materiales.length} ítems`;
 }
 
 export default PesajePage;

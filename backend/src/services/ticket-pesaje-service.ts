@@ -54,6 +54,7 @@ interface TicketRow {
   pesado_por: string | null;
   completado_por: string | null;
   completado_en: string | null;
+  vehiculo: string | null;
   detalle_tickets_pesaje?: DetalleRow[] | null;
   pesajes_globales?: PesajeGlobalRow[] | null;
 }
@@ -116,6 +117,7 @@ export interface TicketPublico {
   pesadoPor: string | null;
   completadoPor: string | null;
   completadoEn: string | null;
+  vehiculo: string | null;
   createdAt: string;
 }
 
@@ -167,6 +169,7 @@ function toPublico(row: TicketRow): TicketPublico {
     pesadoPor: row.pesado_por,
     completadoPor: row.completado_por,
     completadoEn: row.completado_en,
+    vehiculo: row.vehiculo,
     createdAt: row.created_at,
   };
 }
@@ -257,6 +260,7 @@ export async function crearTicket(
     p_fotos_devolucion: input.fotosDevolucion,
     p_pesajes_globales: pesajesGlobalesARpc(input.pesajesGlobales),
     p_almacen_id: input.almacenId ?? null,
+    p_vehiculo: input.vehiculo,
   });
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };
@@ -304,6 +308,7 @@ export async function editarTicket(
     p_observaciones: input.observaciones,
     p_devolucion: input.devolucion,
     p_fotos_devolucion: input.fotosDevolucion,
+    p_vehiculo: input.vehiculo,
   });
 
   if (error) return { error: error.message };

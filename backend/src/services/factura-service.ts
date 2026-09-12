@@ -43,6 +43,8 @@ interface DetalleRow {
   peso: number | null;
   precio_unitario: number | null;
   subtotal: number | null;
+  /** Solo presente en detalle_facturas_compra. */
+  descuento_kg?: number | null;
   productos?: { nombre: string } | null;
 }
 
@@ -74,6 +76,8 @@ export interface ItemPublico {
   peso: number;
   precioUnitario: number;
   subtotal: number;
+  /** Kg descontados al facturar (0 salvo en compra). `peso` ya viene neto de esto. */
+  descuentoKg: number;
 }
 
 export interface FacturaPublica {
@@ -105,6 +109,7 @@ function detalleToPublico(d: DetalleRow): ItemPublico {
     peso: Number(d.peso ?? 0),
     precioUnitario: Number(d.precio_unitario ?? 0),
     subtotal: Number(d.subtotal ?? 0),
+    descuentoKg: Number(d.descuento_kg ?? 0),
   };
 }
 
@@ -235,6 +240,7 @@ export async function crearFactura(
       producto_id: i.productoId,
       peso: i.peso,
       precio_unitario: i.precioUnitario,
+      descuento_kg: i.descuentoKg,
     })),
   });
 

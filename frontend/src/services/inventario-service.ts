@@ -25,6 +25,7 @@ export interface FiltrosInventario {
   productoId?: string;
   desde?: string;
   hasta?: string;
+  almacenId?: string;
 }
 
 export async function obtenerInventario(filtros: FiltrosInventario = {}): Promise<GrupoInventario[]> {
@@ -33,6 +34,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   if (filtros.productoId) params.set('productoId', filtros.productoId);
   if (filtros.desde) params.set('desde', filtros.desde);
   if (filtros.hasta) params.set('hasta', filtros.hasta);
+  if (filtros.almacenId) params.set('almacenId', filtros.almacenId);
   const qs = params.toString();
   try {
     const { grupos } = await apiFetch<{ grupos: GrupoInventario[] }>(`/api/inventario${qs ? `?${qs}` : ''}`);
