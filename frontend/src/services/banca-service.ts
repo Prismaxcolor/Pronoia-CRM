@@ -89,9 +89,13 @@ export async function desarchivarBanca(id: string): Promise<boolean> {
 }
 
 export interface CrearMovimientoInput {
-  tipo: 'ingreso' | 'egreso';
+  tipo: 'ingreso' | 'egreso' | 'transferencia';
   bancaId: string;
+  /** Solo transferencia: banca que recibe los fondos. */
+  bancaDestinoId?: string | null;
   monto: number;
+  /** Solo transferencia entre monedas distintas: lo que entra a la banca destino. */
+  montoDestino?: number | null;
   moneda: string;
   descripcion: string;
   referencia: string;
@@ -103,7 +107,7 @@ export interface CrearMovimientoInput {
   clienteId?: string | null;
 }
 
-/** Crea un movimiento de ingreso o egreso. El trigger SQL ajusta el saldo. */
+/** Crea un movimiento de ingreso, egreso o transferencia. El trigger SQL ajusta el saldo. */
 export async function crearMovimiento(input: CrearMovimientoInput): Promise<Movimiento | null> {
   try {
     const { movimiento } = await apiFetch<{ movimiento: Movimiento }>('/api/cochinito/movimientos', {

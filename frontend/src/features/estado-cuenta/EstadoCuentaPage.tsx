@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, DollarSign, FileEdit, Ban } from 'lucide-react';
 import {
@@ -7,11 +7,12 @@ import {
   type EstadoCuenta,
   type TipoEntidad,
 } from '../../services/estado-cuenta-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
-import NotaAjusteModal from '../proveedores/NotaAjusteModal';
-import AnularNotaModal from '../proveedores/AnularNotaModal';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import PagoCobroModal from './PagoCobroModal';
+import NotaAjusteModal from './NotaAjusteModal';
+import AnularNotaModal from './AnularNotaModal';
+import type { ResultadoCobroMultiple } from '../../services/cobro-service';
 
 interface Props {
   /** Define de dónde se jalan los datos. La pantalla es idéntica para ambos. */
@@ -25,6 +26,7 @@ function fmt(n: number): string {
 const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   factura: 'Factura',
   pago: 'Pago',
+  adelanto: 'Adelanto',
   nota_credito: 'Nota crédito',
   nota_debito: 'Nota débito',
 };
@@ -32,9 +34,40 @@ const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
 const BADGE_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   factura: 'bg-amber-100 text-amber-700',
   pago: 'bg-green-100 text-green-700',
+  adelanto: 'bg-teal-100 text-teal-700',
   nota_credito: 'bg-blue-100 text-blue-700',
   nota_debito: 'bg-purple-100 text-purple-700',
 };
+
+/** Ruta destino del detalle imprimible de una entrada del estado de cuenta,
+ *  o null si esa fila no tiene detalle propio (pago, adelanto). */
+function rutaDetalle(tipo: TipoEntidad, entidadId: string, e: EntradaEstadoCuenta): string | null {
+  if (e.tipo === 'factura' && e.facturaId) {
+    return `${tipo === 'proveedor' ? '/compras' : '/ventas'}/${e.facturaId}`;
+  }
+  if ((e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && e.notaId) {
+    return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/notas/${e.notaId}`;
+  }
+  if ((e.tipo === 'pago' || e.tipo === 'adelanto') && e.pagoId) {
+    return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/pagos/${e.pagoId}`;
+  }
+  return null;
+}
+
+/** Correlativo del pago/adelanto (proveedor, PG-/AD-) o cobro/anticipo
+ *  (cliente, CB-/AC-) — solo para el mensaje del toast tras registrar. */
+function formatCodigoPago(tipo: TipoEntidad, numero: number | null): string {
+  if (numero == null) return '';
+  return tipo === 'proveedor'
+    ? `PG-${String(numero).padStart(4, '0')}`
+    : `CB-${String(numero).padStart(4, '0')}`;
+}
+function formatCodigoAdelanto(tipo: TipoEntidad, numero: number | null): string {
+  if (numero == null) return '';
+  return tipo === 'proveedor'
+    ? `AD-${String(numero).padStart(4, '0')}`
+    : `AC-${String(numero).padStart(4, '0')}`;
+}
 
 function EstadoCuentaPage({ tipo }: Props) {
   const { id = '' } = useParams();
@@ -52,27 +85,50 @@ function EstadoCuentaPage({ tipo }: Props) {
 
   const volverA = tipo === 'proveedor' ? '/proveedores' : '/clientes';
   const etiquetaEntidad = tipo === 'proveedor' ? 'Proveedores' : 'Clientes';
-  const puedePagar = tipo === 'proveedor' && tienePermiso('cochinito', 'crear');
-  const puedeAjustar = tipo === 'proveedor' && tienePermiso('proveedores', 'editar');
+  const recursoEntidad = tipo === 'proveedor' ? 'proveedores' : 'clientes';
+  const etiquetaAccionPago = tipo === 'proveedor' ? 'Registrar pago' : 'Registrar cobro';
+  // Un pago/cobro mueve dinero de/hacia una banca (Cochinito) → mismo
+  // permiso para ambos tipos de entidad, igual que un ajuste de saldo usa el
+  // permiso de editar la entidad correspondiente (proveedores o clientes).
+  const puedePagar = tienePermiso('cochinito', 'crear');
+  const puedeAjustar = tienePermiso(recursoEntidad, 'editar');
 
-  const cargar = () => {
-    setCargando(true);
+  const recargar = () =>
     obtenerEstadoCuenta(tipo, id, desde || undefined, hasta || undefined)
       .then(setEstado)
       .finally(() => setCargando(false));
-  };
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tipo, id, desde, hasta]);
+  /* recargar() se redefine cada render cerrando sobre estas mismas deps;
+   * agregarla dispararía el efecto en cada render en vez de solo cuando
+   * cambian tipo/id/desde/hasta. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { recargar(); }, [tipo, id, desde, hasta]);
 
-  const handlePagoRegistrado = () => {
+  const notasDebitoPendientes = useMemo(
+    () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_debito' && !e.anulada && !e.pagada),
+    [estado]
+  );
+  const notasCreditoPendientes = useMemo(
+    () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_credito' && !e.anulada && !e.pagada),
+    [estado]
+  );
+
+  const handlePagoRegistrado = (resultado: ResultadoCobroMultiple) => {
     setPagoAbierto(false);
-    toast.exito('Pago registrado.');
+    const etiquetaDoc = tipo === 'proveedor' ? 'Pago' : 'Cobro';
+    const etiquetaAdel = tipo === 'proveedor' ? 'adelanto' : 'anticipo';
+    const partes = [
+      resultado.numeroCobro != null ? `${etiquetaDoc} ${formatCodigoPago(tipo, resultado.numeroCobro)}` : null,
+      resultado.numeroAnticipo != null ? `${etiquetaAdel} ${formatCodigoAdelanto(tipo, resultado.numeroAnticipo)}` : null,
+    ].filter(Boolean);
+    toast.exito(partes.length > 0 ? `${partes.join(' y ')} registrados.` : `${etiquetaDoc} registrado.`);
     cargar();
   };
 
-  const handleNotaCreada = () => {
+  const handleNotaCreada = (codigo?: string | null) => {
     setNotaAbierta(false);
-    toast.exito('Nota registrada.');
+    toast.exito(codigo ? `Nota ${codigo} registrada.` : 'Nota registrada.');
     cargar();
   };
 
@@ -119,12 +175,12 @@ function EstadoCuentaPage({ tipo }: Props) {
         </button>
       </div>
 
-      <div className="flex items-start justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Estado de cuenta</h1>
           <p className="text-sm text-text-secondary mt-1">{estado.entidad.nombre}</p>
         </div>
-        <div className="print:hidden flex items-center gap-2 shrink-0">
+        <div className="print:hidden flex flex-wrap items-center gap-2">
           {puedeAjustar && (
             <button
               type="button"
@@ -140,9 +196,10 @@ function EstadoCuentaPage({ tipo }: Props) {
               type="button"
               onClick={() => setPagoAbierto(true)}
               className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+              title="Selecciona una o varias facturas y/o notas de débito, o regístralo como adelanto"
             >
               <DollarSign size={16} />
-              Registrar pago
+              {etiquetaAccionPago}
             </button>
           )}
           <button
@@ -200,13 +257,36 @@ function EstadoCuentaPage({ tipo }: Props) {
                   </span>
                   <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
                   {e.anulada && <span className="text-xs text-text-muted ml-2">(anulada)</span>}
+                  {e.pagada && !e.anulada && <span className="text-xs text-text-muted ml-2">(pagada)</span>}
+                  {e.facturaAsociadaCodigo && (
+                    <span className="block text-xs text-text-muted mt-0.5">→ {e.facturaAsociadaCodigo}</span>
+                  )}
                 </td>
-                <td className="px-5 py-3 text-text-muted">{e.referencia ?? '—'}</td>
+                <td className="px-5 py-3 text-text-muted">
+                  {(() => {
+                    const destino = rutaDetalle(tipo, id, e);
+                    if (!destino) return e.referencia ?? '—';
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => navigate(destino, {
+                          state: { volverA: `/${tipo === 'proveedor' ? 'proveedores' : 'clientes'}/${id}/estado-cuenta`, volverALabel: 'Estado de cuenta' },
+                        })}
+                        className="text-brand-600 hover:underline print:text-inherit print:no-underline"
+                      >
+                        {e.referencia ?? '—'}
+                      </button>
+                    );
+                  })()}
+                  {e.referenciaExterna && (
+                    <span className="block text-xs text-text-muted">{e.referenciaExterna}</span>
+                  )}
+                </td>
                 <td className="px-5 py-3 text-right text-text-primary">{e.cargo ? fmt(e.cargo) : '—'}</td>
                 <td className="px-5 py-3 text-right text-text-primary">{e.abono ? fmt(e.abono) : '—'}</td>
                 {puedeAjustar && (
                   <td className="px-5 py-3 text-right print:hidden">
-                    {(e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && (
+                    {(e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && !e.pagada && (
                       <button
                         type="button"
                         onClick={() => setNotaAAnular(e)}
@@ -249,25 +329,30 @@ function EstadoCuentaPage({ tipo }: Props) {
         </div>
       </div>
 
-      {pagoAbierto && tipo === 'proveedor' && (
-        <RegistrarPagoModal
-          proveedorId={estado.entidad.id}
+      {pagoAbierto && (
+        <PagoCobroModal
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
+          notasDebitoPendientes={notasDebitoPendientes}
+          notasCreditoPendientes={notasCreditoPendientes}
           onClose={() => setPagoAbierto(false)}
           onRegistrado={handlePagoRegistrado}
         />
       )}
 
-      {notaAbierta && tipo === 'proveedor' && (
+      {notaAbierta && (
         <NotaAjusteModal
-          proveedorId={estado.entidad.id}
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
           onClose={() => setNotaAbierta(false)}
           onCreada={handleNotaCreada}
         />
       )}
 
-      {notaAAnular && tipo === 'proveedor' && (
+      {notaAAnular && (
         <AnularNotaModal
-          proveedorId={estado.entidad.id}
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
           nota={notaAAnular}
           onClose={() => setNotaAAnular(null)}
           onAnulada={handleNotaAnulada}

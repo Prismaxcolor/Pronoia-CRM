@@ -1,8 +1,5 @@
 import { z } from 'zod';
-
-const ROLES = ['superadmin', 'administracion', 'trabajador'] as const;
-const RECURSOS = ['dashboard', 'productos', 'cochinito', 'facturacion', 'usuarios', 'clientes', 'proveedores', 'pesaje'] as const;
-const ACCIONES = ['ver', 'crear', 'editar', 'eliminar'] as const;
+import { ROLES, RECURSOS, ACCIONES } from '../utils/permisos.js';
 
 const permisoSchema = z.object({
   recurso: z.enum(RECURSOS),

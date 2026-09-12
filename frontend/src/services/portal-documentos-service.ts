@@ -24,7 +24,7 @@ export interface PortalComprobante {
   id: string;
   fecha: string;
   montoUsd: number;
-  comprobanteUrl: string;
+  comprobantes: string[];
 }
 
 export interface PortalDocumentos {

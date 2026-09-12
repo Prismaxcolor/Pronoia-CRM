@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Pencil, Check, EyeOff, Eye } from 'lucide-react';
+import { X, Plus, Pencil, Check, EyeOff, Eye, Trash2, PackageX } from 'lucide-react';
 import {
   obtenerTiposMaterial,
   crearTipoMaterial,
   actualizarTipoMaterial,
   desactivarTipoMaterial,
   reactivarTipoMaterial,
+  borrarTipoMaterial,
 } from '../../services/tipo-material-service';
-import { useToast } from '../../hooks/use-toast';
-import { useAuth } from '../../hooks/use-auth';
+import { useToast } from '../../hooks/use-toast-context';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import type { TipoMaterial } from '@shared/types/index.js';
 
 interface Props {
@@ -20,6 +22,7 @@ interface Props {
 function CategoriasModal({ onClose, onCambios }: Props) {
   const toast = useToast();
   const { tienePermiso } = useAuth();
+  const confirmar = useConfirm();
 
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -29,15 +32,14 @@ function CategoriasModal({ onClose, onCambios }: Props) {
   const [editId, setEditId] = useState<string | null>(null);
   const [editNombre, setEditNombre] = useState('');
 
-  const puedeCrear = tienePermiso('productos', 'crear');
-  const puedeEditar = tienePermiso('productos', 'editar');
+  const puedeCrear = tienePermiso('categorias', 'crear');
+  const puedeEditar = tienePermiso('categorias', 'editar');
+  const puedeEliminar = tienePermiso('categorias', 'eliminar');
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerTiposMaterial().then(setCategorias).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerTiposMaterial().then(setCategorias).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const marcarCambio = () => { setHuboCambios(true); };
 
@@ -80,6 +82,33 @@ function CategoriasModal({ onClose, onCambios }: Props) {
       : await reactivarTipoMaterial(c.id);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     toast.exito(c.activo ? `"${c.nombre}" desactivada.` : `"${c.nombre}" reactivada.`);
+    marcarCambio();
+    cargar();
+  };
+
+  const toggleSinLote = async (c: TipoMaterial) => {
+    const result = await actualizarTipoMaterial(c.id, { sinLote: !c.sinLote });
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito(
+      c.sinLote
+        ? `"${c.nombre}" vuelve a pedir lote al pesar.`
+        : `"${c.nombre}" ya no pide lote al pesar — va directo a inventario general.`
+    );
+    marcarCambio();
+    cargar();
+  };
+
+  const handleEliminar = async (c: TipoMaterial) => {
+    const ok = await confirmar({
+      titulo: 'Eliminar categoría',
+      mensaje: `¿Eliminar "${c.nombre}"? Esta acción no se puede deshacer.`,
+      confirmarLabel: 'Eliminar',
+      variante: 'danger',
+    });
+    if (!ok) return;
+    const result = await borrarTipoMaterial(c.id);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito(`"${c.nombre}" eliminada.`);
     marcarCambio();
     cargar();
   };
@@ -157,12 +186,23 @@ function CategoriasModal({ onClose, onCambios }: Props) {
                     </>
                   ) : (
                     <>
-                      <span className="flex-1 text-sm text-text-primary truncate">
+                      <span className="flex-1 min-w-0 text-sm text-text-primary truncate">
                         {c.nombre}
                         {!c.activo && <span className="ml-2 text-xs text-red-500">(inactiva)</span>}
+                        {c.sinLote && <span className="ml-2 text-xs text-brand-600">(sin lote)</span>}
                       </span>
                       {puedeEditar && (
-                        <>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleSinLote(c)}
+                            className={`p-1.5 rounded-md transition-colors ${
+                              c.sinLote ? 'bg-brand-50 text-brand-600 hover:bg-brand-100' : 'text-text-muted hover:bg-brand-50 hover:text-brand-600'
+                            }`}
+                            title={c.sinLote ? 'Vuelve a pedir lote al pesar' : 'No pedir lote al pesar (va directo a inventario general)'}
+                          >
+                            <PackageX size={14} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => empezarEdicion(c)}
@@ -181,7 +221,17 @@ function CategoriasModal({ onClose, onCambios }: Props) {
                           >
                             {c.activo ? <EyeOff size={14} /> : <Eye size={14} />}
                           </button>
-                        </>
+                          {puedeEliminar && (
+                            <button
+                              type="button"
+                              onClick={() => handleEliminar(c)}
+                              className="p-1.5 rounded-md text-text-muted hover:bg-red-50 hover:text-red-600 transition-colors"
+                              title="Eliminar"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </>
                   )}
@@ -192,6 +242,12 @@ function CategoriasModal({ onClose, onCambios }: Props) {
 
           <p className="text-xs text-text-muted">
             Desactivar una categoría la oculta del selector de productos, pero conserva los que ya la usan.
+            Solo se pueden eliminar categorías que ningún producto esté usando.
+          </p>
+          <p className="text-xs text-text-muted">
+            <PackageX size={12} className="inline -mt-0.5 mr-1" />
+            "Sin lote" (ej. No Ferroso): al pesar un material de esa categoría no se pide elegir lote —
+            va directo a inventario general.
           </p>
         </div>
       </div>

@@ -15,16 +15,16 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Taras predefinidas = configuración de catálogo, globales → permiso 'productos'.
+// Taras predefinidas = configuración de catálogo, globales → permiso 'taras'.
 
-router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
+router.get('/', requirePermiso('taras', 'ver'), async (_req, res) => {
   const taras = await listarTaras();
   res.json({ taras });
 });
 
 router.post(
   '/',
-  requirePermiso('productos', 'crear'),
+  requirePermiso('taras', 'crear'),
   validateBody(crearTaraSchema),
   async (req, res) => {
     const result = await crearTara(req.body);
@@ -44,7 +44,7 @@ router.post(
 
 router.patch(
   '/:id',
-  requirePermiso('productos', 'editar'),
+  requirePermiso('taras', 'editar'),
   validateBody(actualizarTaraSchema),
   async (req, res) => {
     const id = String(req.params.id);
@@ -64,7 +64,7 @@ router.patch(
   }
 );
 
-router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/desactivar', requirePermiso('taras', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const ok = await desactivarTara(id);
   if (!ok) {
@@ -80,7 +80,7 @@ router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req
   res.json({ ok: true });
 });
 
-router.post('/:id/reactivar', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/reactivar', requirePermiso('taras', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const ok = await reactivarTara(id);
   if (!ok) {

@@ -1,28 +1,86 @@
 import { z } from 'zod';
 
-export const crearTransformacionSchema = z
-  .object({
-    materialEntradaId: z.string().uuid('Material de entrada inválido.'),
-    cantidadEntrada: z.number().positive('La cantidad de entrada debe ser mayor a 0.'),
-    fecha: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).')
-      .optional()
-      .nullable()
-      .transform(v => (v && v.length > 0 ? v : null)),
-    notas: z.string().trim().max(500).optional().nullable().transform(v => (v && v.length > 0 ? v : null)),
-    detalles: z
-      .array(
-        z.object({
-          materialSalidaId: z.string().uuid('Material de salida inválido.'),
-          cantidad: z.number().positive('La cantidad debe ser mayor a 0.'),
-        })
-      )
-      .min(1, 'Agrega al menos un material de salida.'),
-  })
-  .refine(
-    d => d.detalles.reduce((s, x) => s + x.cantidad, 0) <= d.cantidadEntrada + 1e-9,
-    { message: 'La suma de las salidas no puede superar el material de entrada.', path: ['detalles'] }
-  );
+const textoOpcional = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .nullable()
+    .transform(v => (v && v.length > 0 ? v : null));
+
+/** Legacy: retira de lote-pool. */
+export const crearTransformacionSchema = z.object({
+  loteOrigenId: z.string().uuid('Selecciona el lote de origen.'),
+  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+  tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
+  notas: textoOpcional(500),
+});
+
+/** Legacy: completa con salidas a lotes. */
+const salidaLoteSchema = z.object({
+  loteDestinoId: z.string().uuid('Selecciona el lote destino.'),
+  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+  tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
+});
+
+export const completarTransformacionSchema = z.object({
+  salidas: z.array(salidaLoteSchema).min(1, 'Agrega al menos una salida.'),
+});
+
+/** Ferroso/No Ferroso: retira producto sin lote de un almacén. */
+export const crearTransformacionFerrosoSchema = z.object({
+  productoEntradaId: z.string().uuid('Selecciona el material de entrada.'),
+  almacenId: z.string().uuid('Selecciona el almacén.'),
+  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+  tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
+  notas: textoOpcional(500),
+  fotosEntrada: z.array(z.string()).min(1, 'Agrega al menos una foto de entrada.'),
+});
+
+const salidaFerrosoSchema = z.object({
+  productoId: z.string().uuid('Selecciona el material de salida.'),
+  pesoBruto: z.number().nonnegative(),
+  tara: z.number().nonnegative().default(0),
+  fotos: z.array(z.string()).min(1, 'Cada salida necesita al menos una foto.'),
+});
+
+export const completarTransformacionFerrosoSchema = z.object({
+  salidas: z.array(salidaFerrosoSchema).min(1, 'Agrega al menos una salida.'),
+});
+
+/** Config: guarda cuáles son los materiales de salida comunes de un producto de entrada. */
+export const guardarSalidasComunesSchema = z.object({
+  productosSalidaIds: z.array(z.string().uuid()).max(20),
+});
 
 export type CrearTransformacionInput = z.infer<typeof crearTransformacionSchema>;
+export type CompletarTransformacionInput = z.infer<typeof completarTransformacionSchema>;
+export type CrearTransformacionFerrosoInput = z.infer<typeof crearTransformacionFerrosoSchema>;
+export type CompletarTransformacionFerrosoInput = z.infer<typeof completarTransformacionFerrosoSchema>;
+
+/** PCB: retira de un lote de origen hacia un lote de destino. */
+export const crearTransformacionPCBSchema = z.object({
+  loteOrigenId: z.string().uuid('Selecciona el lote de origen.'),
+  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+  tara: z.number().min(0).default(0),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
+  notas: textoOpcional(500),
+  fotosEntrada: z.array(z.string()).min(1, 'Agrega al menos una foto de entrada.'),
+});
+
+const salidaPCBSchema = z.object({
+  loteDestinoId: z.string().uuid('Selecciona el lote de destino.'),
+  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+  tara: z.number().min(0).default(0),
+  fotos: z.array(z.string()).default([]),
+});
+
+export const completarTransformacionPCBSchema = z.object({
+  salidas: z.array(salidaPCBSchema).min(1, 'Agrega al menos un lote de destino.'),
+});
+
+export type CrearTransformacionPCBInput = z.infer<typeof crearTransformacionPCBSchema>;
+export type CompletarTransformacionPCBInput = z.infer<typeof completarTransformacionPCBSchema>;

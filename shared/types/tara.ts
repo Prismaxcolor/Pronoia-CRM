@@ -6,7 +6,7 @@ export interface Tara {
   id: string;
   nombre: string;
   peso: number;
-  foto: string | null;
+  fotos: string[];
   activo: boolean;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;

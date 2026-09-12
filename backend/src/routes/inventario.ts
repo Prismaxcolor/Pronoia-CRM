@@ -12,6 +12,7 @@ router.get('/', requirePermiso('productos', 'ver'), async (req, res) => {
     productoId: req.query.productoId ? String(req.query.productoId) : undefined,
     desde: req.query.desde ? String(req.query.desde) : undefined,
     hasta: req.query.hasta ? String(req.query.hasta) : undefined,
+    almacenId: req.query.almacenId ? String(req.query.almacenId) : undefined,
   });
   res.json({ grupos });
 });

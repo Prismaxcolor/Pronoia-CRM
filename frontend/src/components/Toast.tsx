@@ -1,5 +1,5 @@
 import { CheckCircle2, AlertTriangle, Info, XCircle, X } from 'lucide-react';
-import type { Toast, ToastTipo } from '../hooks/use-toast';
+import type { Toast, ToastTipo } from '../hooks/use-toast-context';
 
 interface IconConfig {
   icon: React.ReactNode;

@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react';
-import { X, Plus, Trash2, Loader2, Scale } from 'lucide-react';
+import { X, Plus, Trash2, Loader2, Scale, ChevronDown } from 'lucide-react';
 import { completarTicket } from '../../services/ticket-pesaje-service';
-import { useToast } from '../../hooks/use-toast';
-import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
+import { useToast } from '../../hooks/use-toast-context';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
+import FotoMaterialPicker from './FotoMaterialPicker';
+import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import SeleccionarTaraModal from './SeleccionarTaraModal';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
 interface Props {
@@ -15,14 +19,19 @@ interface Props {
 }
 
 function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
 function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onCompletado }: Props) {
   const toast = useToast();
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
+  const [devolucion, setDevolucion] = useState('');
+  const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
 
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
@@ -31,6 +40,18 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const quitarMaterial = (uid: number) =>
     setMateriales(prev => (prev.length > 1 ? prev.filter(f => f.uid !== uid) : prev));
 
+  const agregarFotosFila = (uid: number, files: File[]) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid
+      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      : f)));
+  const quitarFotoFila = (uid: number, idx: number) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
+  const agregarFotosDevolucion = (files: File[]) =>
+    setFotosDevolucion(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+  const quitarFotoDevolucion = (idx: number) =>
+    setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
+
   const pesoNetoTotal = useMemo(
     () => materiales.reduce((acc, f) => acc + netoFila(f, taras), 0),
     [materiales, taras]
@@ -38,7 +59,10 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
 
   // Bugfix: el peso global se toma del ticket guardado en bruto (no de un input
   // nuevo) para que la diferencia se calcule en vivo mientras se cargan los materiales.
-  const diferencia = useMemo(() => ticket.pesoGlobal - pesoNetoTotal, [ticket.pesoGlobal, pesoNetoTotal]);
+  const diferencia = useMemo(
+    () => ticket.pesoGlobal - pesoNetoTotal - (Number(devolucion) || 0),
+    [ticket.pesoGlobal, pesoNetoTotal, devolucion]
+  );
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
@@ -48,21 +72,40 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
     setError(null);
 
     if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
+    if (materiales.some(f => !esFilaSinLote(f, productos) && !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
     if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
       setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
       return;
     }
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
+    if (Number(devolucion) > 0 && fotosDevolucion.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
+    if (diferenciaFavoreceProveedor(diferencia, ticket.pesajeExterior)) {
+      setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
+      return;
+    }
 
     setGuardando(true);
-    const result = await completarTicket(ticket.id, materiales.map(f => ({
-      productoId: f.productoId,
-      subcategoria: f.subcategoria.trim() || null,
-      pesoBruto: Number(f.pesoBruto) || 0,
-      tara: taraKgFila(f, taras),
-      destinoTipo: f.destino === 'mpp' ? ('mpp' as const) : ('lote' as const),
-      loteId: f.destino === 'mpp' ? null : f.destino,
-    })));
+
+    const materialesConFotos = [];
+    for (const f of materiales) {
+      const urls = await subirFotosFila(f.fotos);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      materialesConFotos.push({ ...materialAPayload(f, taras, productos), fotos: urls });
+    }
+
+    const urlsDevolucion = await subirFotosFila(fotosDevolucion);
+    if (!urlsDevolucion) {
+      setError('No se pudo subir una de las fotos de la devolución. Revisa que el bucket "tickets" exista en Supabase Storage.');
+      setGuardando(false);
+      return;
+    }
+
+    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -102,30 +145,38 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Material *</label>
-                    <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
-                      <option value="">— Selecciona —</option>
-                      {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                      className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                    >
+                      <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                        {productos.find(p => p.id === f.productoId)?.nombre ?? '— Selecciona —'}
+                      </span>
+                      <ChevronDown size={14} className="text-text-muted shrink-0" />
+                    </button>
                   </div>
                   <div>
-                    <label className={labelClass}>Subcategoría / detalle</label>
-                    <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
+                    {esFilaSinLote(f, productos) ? (
+                      <>
+                        <label className={labelClass}>&nbsp;</label>
+                        <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                          Categoría sin lote — va directo a inventario general.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <label className={labelClass}>Destino (inventario) *</label>
+                        <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
+                          <option value="" disabled>-Selecciona-</option>
+                          {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                        </select>
+                      </>
+                    )}
                   </div>
-                </div>
-
-                <div>
-                  <label className={labelClass}>Destino (inventario) *</label>
-                  <select value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
-                    <option value="mpp">MPP (Material Por Procesar)</option>
-                    {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                  </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelClass}>Peso bruto (kg)</label>
-                    <input type="number" step="0.01" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
-                  </div>
                   <div>
                     <label className={labelClass}>Tara</label>
                     <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
@@ -139,24 +190,40 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                     {f.taraModo === 'preconfigurada' ? (
                       <div>
                         <div className="grid grid-cols-2 gap-2">
-                          <select value={f.taraId} onChange={e => setFila(f.uid, 'taraId', e.target.value)} className={inputClass}>
-                            <option value="">— Tara —</option>
-                            {taras.map(t => <option key={t.id} value={t.id}>{t.nombre} ({t.peso} kg)</option>)}
-                          </select>
+                          <button
+                            type="button"
+                            onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorTara(true); }}
+                            className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                          >
+                            <span className={f.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                              {taras.find(t => t.id === f.taraId)?.nombre ?? '— Sin tara —'}
+                            </span>
+                            <ChevronDown size={14} className="text-text-muted shrink-0" />
+                          </button>
                           <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
                         </div>
                         <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                       </div>
                     ) : (
-                      <input type="number" step="0.01" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
+                      <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
                     )}
+                  </div>
+                  <div>
+                    <label className={labelClass}>Peso bruto (kg)</label>
+                    <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center justify-end gap-2 text-sm">
                   <span className="text-text-muted">Neto del material</span>
                   <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                 </div>
+
+                <FotoMaterialPicker
+                  fotos={f.fotos}
+                  onAgregar={files => agregarFotosFila(f.uid, files)}
+                  onQuitar={idx => quitarFotoFila(f.uid, idx)}
+                />
               </div>
             );
           })}
@@ -167,25 +234,50 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
           </button>
 
           <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-brand-800">Peso global (de este pesaje)</span>
-              <span className="font-semibold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
-            </div>
+            {ticket.pesajeExterior ? (
+              <p className="text-xs text-brand-800">Pesaje exterior — sin peso global propio para reconciliar.</p>
+            ) : (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-brand-800">Peso global (de este pesaje)</span>
+                <span className="font-semibold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
                 <Scale size={16} />
-                Peso neto total
+                Suma de materiales
               </span>
               <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>
                 {fmt(pesoNetoTotal)} kg
               </span>
             </div>
-            <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
-              <span className="text-brand-800">Diferencia (global vs. neto)</span>
-              <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
-                {fmt(diferencia)} kg
-              </span>
+            <div className="flex items-center justify-between gap-3 text-sm border-t border-brand-200 pt-2">
+              <label htmlFor="devolucion-completar" className="text-brand-800 shrink-0">Devolución (kg)</label>
+              <input
+                id="devolucion-completar"
+                type="number"
+                step="0.001"
+                min="0"
+                value={devolucion}
+                onChange={e => setDevolucion(e.target.value)}
+                className="w-28 px-2 py-1 bg-surface border border-brand-200 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400"
+                placeholder="0.00"
+              />
             </div>
+            <FotoMaterialPicker
+              label="Fotos de la devolución"
+              fotos={fotosDevolucion}
+              onAgregar={agregarFotosDevolucion}
+              onQuitar={quitarFotoDevolucion}
+            />
+            {!ticket.pesajeExterior && (
+              <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
+                <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
+                <span className={`font-semibold ${colorClaseDiferencia(diferencia, ticket.pesoGlobal, ticket.pesajeExterior)}`}>
+                  {fmt(diferencia)} kg
+                </span>
+              </div>
+            )}
           </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -200,6 +292,30 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
           </div>
         </form>
       </div>
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => {
+            if (filaActivaUid != null) setFila(filaActivaUid, 'productoId', id);
+            setMostrarSelectorMaterial(false);
+          }}
+        />
+      )}
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={materiales.find(f => f.uid === filaActivaUid)?.taraId || undefined}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => {
+            if (filaActivaUid != null) {
+              setMateriales(prev => prev.map(x => (x.uid === filaActivaUid ? { ...x, ...seleccionarTaraFila(x, taraId) } : x)));
+            }
+            setMostrarSelectorTara(false);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,12 +1,16 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput } from '../schemas/tickets-pesaje.js';
+import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput, PesajeGlobalInput } from '../schemas/tickets-pesaje.js';
 import { notificarDocumento } from './telegram-notify-service.js';
 import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
 
-/** Formatea el correlativo de pesaje: 1 → "Pesaje 0001". Duplicado intencional
- *  de shared/types/ticket-pesaje.ts (el backend no comparte paquete con front). */
-function formatCodigoPesaje(numero: number): string {
-  return `Pesaje ${String(numero).padStart(4, '0')}`;
+/** Formatea el correlativo de pesaje: (1, 'compra') → "Compra-0001". Cada tipo
+ *  tiene su propio contador desde el Bloque 35 (antes compra y venta
+ *  compartían una sola secuencia bajo el prefijo genérico "Pesaje-"). Duplicado
+ *  intencional de shared/types/ticket-pesaje.ts (el backend no comparte
+ *  paquete con front). */
+function formatCodigoPesaje(numero: number, tipo: 'compra' | 'venta'): string {
+  const prefijo = tipo === 'compra' ? 'Compra' : 'Venta';
+  return `${prefijo}-${String(numero).padStart(4, '0')}`;
 }
 
 interface DetalleRow {
@@ -19,8 +23,17 @@ interface DetalleRow {
   peso_neto: number | null;
   destino_tipo: 'mpp' | 'lote';
   lote_id: string | null;
+  fotos: string[] | null;
   productos?: { nombre: string } | null;
   lotes?: { nombre: string } | null;
+}
+
+interface PesajeGlobalRow {
+  id: string;
+  orden: number;
+  peso: number;
+  tara: number;
+  fotos: string[] | null;
 }
 
 interface TicketRow {
@@ -34,11 +47,16 @@ interface TicketRow {
   facturado: boolean;
   created_at: string;
   peso_global: number | null;
+  pesaje_exterior: boolean;
+  devolucion: number | null;
+  fotos_devolucion: string[] | null;
   estado: 'bruto' | 'completo';
   pesado_por: string | null;
   completado_por: string | null;
   completado_en: string | null;
+  vehiculo: string | null;
   detalle_tickets_pesaje?: DetalleRow[] | null;
+  pesajes_globales?: PesajeGlobalRow[] | null;
 }
 
 export interface MaterialPublico {
@@ -53,6 +71,14 @@ export interface MaterialPublico {
   destinoTipo: 'mpp' | 'lote';
   loteId: string | null;
   nombreLote: string | null;
+  fotos: string[];
+}
+
+export interface PesajeGlobalPublico {
+  id: string;
+  peso: number;
+  tara: number;
+  fotos: string[];
 }
 
 export interface TicketPublico {
@@ -63,9 +89,26 @@ export interface TicketPublico {
   entidadId: string | null;
   fecha: string | null;
   materiales: MaterialPublico[];
+  /** Suma de los netos por material (incluida la basura). Alias explícito de
+   *  lo que antes se llamaba pesoNetoTotal — sigue existiendo con el mismo
+   *  nombre para no romper a quien ya lo consume. */
   pesoNetoTotal: number;
+  /** Mismo valor que pesoNetoTotal, con nombre explícito para quien necesite
+   *  distinguirlo de un neto "ajustado" en el futuro. */
+  pesoNetoMateriales: number;
   pesoGlobal: number;
-  /** peso_global - suma de netos (incluida la basura). Solo lectura, derivado. */
+  /** Desglose de pesadas individuales que suman pesoGlobal — solo se carga
+   *  al crear el ticket, no se edita después. */
+  pesajesGlobales: PesajeGlobalPublico[];
+  /** true si el camión se pesó en una báscula externa — no hay peso global propio. */
+  pesajeExterior: boolean;
+  /** Kg de devolución del ticket completo (no por material). Se suma a
+   *  pesoNetoMateriales para reconciliar contra pesoGlobal — no afecta
+   *  inventario ni factura. */
+  devolucion: number;
+  /** Fotos de la devolución del ticket completo (no por material). */
+  fotosDevolucion: string[];
+  /** peso_global - suma de netos - devolución. Solo lectura, derivado. */
   diferencia: number;
   fotos: string[];
   observaciones: string | null;
@@ -74,6 +117,7 @@ export interface TicketPublico {
   pesadoPor: string | null;
   completadoPor: string | null;
   completadoEn: string | null;
+  vehiculo: string | null;
   createdAt: string;
 }
 
@@ -90,6 +134,7 @@ function detalleToPublico(d: DetalleRow): MaterialPublico {
     destinoTipo: d.destino_tipo,
     loteId: d.lote_id,
     nombreLote: d.lotes?.nombre ?? null,
+    fotos: d.fotos ?? [],
   };
 }
 
@@ -97,17 +142,26 @@ function toPublico(row: TicketRow): TicketPublico {
   const materiales = (row.detalle_tickets_pesaje ?? []).map(detalleToPublico);
   const pesoNetoTotal = materiales.reduce((acc, m) => acc + m.pesoNeto, 0);
   const pesoGlobal = Number(row.peso_global ?? 0);
+  const devolucion = Number(row.devolucion ?? 0);
   return {
     id: row.id,
     numero: Number(row.numero),
-    codigo: formatCodigoPesaje(Number(row.numero)),
+    codigo: formatCodigoPesaje(Number(row.numero), row.tipo),
     tipo: row.tipo,
     entidadId: row.entidad_id,
     fecha: row.fecha,
     materiales,
     pesoNetoTotal,
+    pesoNetoMateriales: pesoNetoTotal,
     pesoGlobal,
-    diferencia: pesoGlobal - pesoNetoTotal,
+    pesajesGlobales: (row.pesajes_globales ?? [])
+      .slice()
+      .sort((a, b) => a.orden - b.orden)
+      .map(p => ({ id: p.id, peso: Number(p.peso), tara: Number(p.tara), fotos: p.fotos ?? [] })),
+    pesajeExterior: row.pesaje_exterior ?? false,
+    devolucion,
+    fotosDevolucion: row.fotos_devolucion ?? [],
+    diferencia: pesoGlobal - pesoNetoTotal - devolucion,
     fotos: row.fotos ?? [],
     observaciones: row.observaciones,
     facturado: row.facturado,
@@ -115,11 +169,12 @@ function toPublico(row: TicketRow): TicketPublico {
     pesadoPor: row.pesado_por,
     completadoPor: row.completado_por,
     completadoEn: row.completado_en,
+    vehiculo: row.vehiculo,
     createdAt: row.created_at,
   };
 }
 
-const SELECT_TICKET = '*, detalle_tickets_pesaje(*, productos(nombre), lotes(nombre))';
+const SELECT_TICKET = '*, detalle_tickets_pesaje(*, productos(nombre), lotes(nombre)), pesajes_globales(*)';
 
 export interface ListarTicketsOpts {
   /** Solo tickets sin facturar (para el selector de la factura). */
@@ -168,6 +223,10 @@ function notificarTicketSiCorresponde(ticket: TicketPublico): void {
   });
 }
 
+function pesajesGlobalesARpc(pesajes: PesajeGlobalInput[]) {
+  return pesajes.map(p => ({ peso: p.peso, tara: p.tara, fotos: p.fotos }));
+}
+
 function materialesARpc(materiales: CrearTicketInput['materiales']) {
   return materiales.map(m => ({
     producto_id: m.productoId,
@@ -177,6 +236,7 @@ function materialesARpc(materiales: CrearTicketInput['materiales']) {
     devolucion: m.devolucion,
     destino_tipo: m.destinoTipo,
     lote_id: m.destinoTipo === 'lote' ? m.loteId : null,
+    fotos: m.fotos,
   }));
 }
 
@@ -194,7 +254,13 @@ export async function crearTicket(
     p_materiales: materialesARpc(input.materiales),
     p_estado: input.estado,
     p_pesado_por: pesadoPor,
-    p_peso_global: input.pesoGlobal,
+    p_peso_global: input.pesajeExterior ? null : input.pesoGlobal,
+    p_devolucion: input.devolucion,
+    p_pesaje_exterior: input.pesajeExterior,
+    p_fotos_devolucion: input.fotosDevolucion,
+    p_pesajes_globales: pesajesGlobalesARpc(input.pesajesGlobales),
+    p_almacen_id: input.almacenId ?? null,
+    p_vehiculo: input.vehiculo,
   });
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };
@@ -215,6 +281,8 @@ export async function completarTicket(
     p_ticket_id: id,
     p_materiales: materialesARpc(input.materiales),
     p_completado_por: completadoPor,
+    p_devolucion: input.devolucion,
+    p_fotos_devolucion: input.fotosDevolucion,
   });
 
   if (error) return { error: error.message };
@@ -225,7 +293,9 @@ export async function completarTicket(
   return { ticket };
 }
 
-/** Corrige un ticket ya completo (material, pesos, peso global, observaciones).
+/** Corrige un ticket ya completo (material, pesos, observaciones). El peso
+ *  global se fija al crear el ticket y no se edita después (es la lectura
+ *  física de báscula de entrada) — el RPC hace coalesce(null, peso_global).
  *  La RPC rechaza tickets facturados o en bruto. */
 export async function editarTicket(
   id: string,
@@ -234,8 +304,11 @@ export async function editarTicket(
   const { error } = await supabaseAdmin.rpc('editar_ticket_pesaje', {
     p_ticket_id: id,
     p_materiales: materialesARpc(input.materiales),
-    p_peso_global: input.pesoGlobal ?? null,
+    p_peso_global: null,
     p_observaciones: input.observaciones,
+    p_devolucion: input.devolucion,
+    p_fotos_devolucion: input.fotosDevolucion,
+    p_vehiculo: input.vehiculo,
   });
 
   if (error) return { error: error.message };
@@ -243,4 +316,34 @@ export async function editarTicket(
   const ticket = await obtenerTicket(id);
   if (!ticket) return { error: 'El ticket se editó pero no se pudo leer de vuelta.' };
   return { ticket };
+}
+
+export interface BorrarTicketResult { ok: boolean; razon?: string; noEncontrado?: boolean }
+
+/**
+ * Borrado físico de un ticket no facturado. Las líneas de
+ * detalle_tickets_pesaje caen por cascade, así que su aporte al inventario
+ * desaparece con el ticket. Un ticket facturado nunca se borra: descuadraría
+ * una factura ya emitida (misma frontera que usa editar_ticket_pesaje).
+ */
+export async function borrarTicket(id: string): Promise<BorrarTicketResult> {
+  const { data: ticket } = await supabaseAdmin
+    .from('tickets_pesaje').select('id, facturado').eq('id', id).maybeSingle();
+  if (!ticket) return { ok: false, noEncontrado: true, razon: 'Ticket no encontrado.' };
+  if (ticket.facturado) {
+    return { ok: false, razon: 'El ticket ya está facturado y no se puede eliminar.' };
+  }
+
+  // Cinturón y tirantes: las tablas puente tienen FK sin cascade.
+  for (const tabla of ['facturas_compra_tickets', 'facturas_venta_tickets'] as const) {
+    const { count } = await supabaseAdmin
+      .from(tabla).select('ticket_id', { count: 'exact', head: true }).eq('ticket_id', id);
+    if ((count ?? 0) > 0) {
+      return { ok: false, razon: 'El ticket está asociado a una factura y no se puede eliminar.' };
+    }
+  }
+
+  const { error } = await supabaseAdmin.from('tickets_pesaje').delete().eq('id', id);
+  if (error) return { ok: false, razon: error.message };
+  return { ok: true };
 }

@@ -1,0 +1,509 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ChevronDown, Trash2, CheckCircle2, Circle, Images, ZoomIn, X } from 'lucide-react';
+import { obtenerTomaFisica, obtenerResumenTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
+import { obtenerProductos } from '../../services/producto-service';
+import { obtenerLotes } from '../../services/lote-service';
+import { obtenerTaras } from '../../services/tara-service';
+import { obtenerTiposMaterial } from '../../services/tipo-material-service';
+import { subirFotosFila, taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from './material-fila';
+import FotoMaterialPicker from './FotoMaterialPicker';
+import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import SeleccionarTaraModal from './SeleccionarTaraModal';
+import { useToast } from '../../hooks/use-toast-context';
+import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote, Tara, TipoMaterial, ResumenTomaFisicaLinea } from '@shared/types/index.js';
+
+function fmt(n: number): string {
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function ConteoTomaFisicaPage() {
+  const { tomaFisicaId = '' } = useParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const toast = useToast();
+  const preseleccionAplicada = useRef(false);
+
+  const [tomaFisica, setTomaFisica] = useState<TomaFisicaInventario | null>(null);
+  const [detalle, setDetalle] = useState<DetalleTomaFisica[]>([]);
+  const [lineas, setLineas] = useState<ResumenTomaFisicaLinea[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
+  const [taras, setTaras] = useState<Tara[]>([]);
+  const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
+  const [cargando, setCargando] = useState(true);
+
+  const [productoId, setProductoId] = useState('');
+  const [loteId, setLoteId] = useState('');
+  const [pesoBruto, setPesoBruto] = useState('');
+  const [campoTara, setCampoTara] = useState<CampoTara>(taraVacia());
+  const [fotos, setFotos] = useState<FotoMaterial[]>([]);
+  const [guardando, setGuardando] = useState(false);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [galeriaAbierta, setGaleriaAbierta] = useState<{ label: string; fotos: string[] } | null>(null);
+  const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
+
+  const cargar = () => {
+    setCargando(true);
+    Promise.all([
+      obtenerTomaFisica(tomaFisicaId),
+      obtenerResumenTomaFisica(tomaFisicaId),
+      obtenerProductos(),
+      obtenerLotes(),
+      obtenerTaras(),
+      obtenerTiposMaterial(),
+    ]).then(([res, resumen, prods, lts, tars, cats]) => {
+      if (res) { setTomaFisica(res.tomaFisica); setDetalle(res.detalle); }
+      setLineas(resumen);
+      setProductos(prods);
+      setLotes(lts);
+      setTaras(tars.filter(t => t.activo));
+      setCategorias(cats);
+      setCargando(false);
+    });
+  };
+
+  useEffect(() => { cargar(); }, [tomaFisicaId]);
+
+  // Si esta toma física ya se culminó (ej. en otra pestaña, o volviendo con
+  // el botón atrás del navegador a un enlace viejo), no tiene sentido dejar
+  // al usuario en un formulario muerto — lo mandamos directo al resultado.
+  useEffect(() => {
+    if (tomaFisica && tomaFisica.estado !== 'abierta') {
+      const msg = tomaFisica.estado === 'cancelada'
+        ? `${tomaFisica.codigo} fue cancelada.`
+        : `${tomaFisica.codigo} ya fue culminada — te llevamos al resultado.`;
+      toast.info(msg);
+      navigate(`/inventario/toma-fisica/${tomaFisicaId}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tomaFisica]);
+
+  // Categorías "con lote" (PCB): un lote mezclado no se puede desarmar
+  // material por material al contarlo físicamente — se pesa el lote
+  // completo, sin elegir material.
+  const esConLote = useMemo(
+    () => categorias.some(c => tomaFisica?.categoriaIds.includes(c.id) && !c.sinLote),
+    [categorias, tomaFisica]
+  );
+
+  // Solo materiales de las categorías elegidas para esta toma física
+  // (categorías "sin lote" — Ferroso/No Ferroso).
+  const productosDisponibles = useMemo(
+    () => productos.filter(p => p.activo && tomaFisica?.categoriaIds.includes(p.tipoMaterialId ?? '')),
+    [productos, tomaFisica]
+  );
+  const productoSel = productosDisponibles.find(p => p.id === productoId);
+  // Solo pide lote cuando el material es de una categoría con lote — y solo
+  // entre los lotes de esta toma física (si se acotó a lotes específicos al
+  // crearla) o todos los del almacén (si no se acotó).
+  const requiereLote = productoSel != null && productoSel.tipoMaterialSinLote !== true;
+  const lotesDelAlmacen = useMemo(
+    () => lotes.filter(l =>
+      l.activo
+      && l.almacenId === tomaFisica?.almacenId
+      && (!tomaFisica?.loteIds.length || tomaFisica.loteIds.includes(l.id))
+    ),
+    [lotes, tomaFisica]
+  );
+
+  // Preselección desde el link "Teórico vs. real" de la toma física
+  // (?producto=<id> o ?lote=<id>) — solo una vez, para no pisar la
+  // selección del usuario cada vez que cargar() trae listas nuevas.
+  useEffect(() => {
+    if (preseleccionAplicada.current) return;
+    const productoParam = searchParams.get('producto');
+    const loteParam = searchParams.get('lote');
+    if (!productoParam && !loteParam) return;
+    if (productoParam && productosDisponibles.some(p => p.id === productoParam)) {
+      setProductoId(productoParam);
+      preseleccionAplicada.current = true;
+    } else if (loteParam && lotesDelAlmacen.some(l => l.id === loteParam)) {
+      setLoteId(loteParam);
+      preseleccionAplicada.current = true;
+    }
+  }, [productosDisponibles, lotesDelAlmacen, searchParams]);
+
+  const loteSeleccionado = loteId ? lotes.find(l => l.id === loteId) ?? null : null;
+  const netoActual = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
+
+  // Composición estimada del lote DESPUÉS de registrar este pesaje.
+  // En toma física, netoActual ES el total real contado — no se suma al
+  // stock existente. Items que quedarían ≤ 0 kg se omiten.
+  const composicionProyectada = useMemo(() => {
+    if (!loteSeleccionado || loteSeleccionado.composicion.length === 0) return null;
+    if (pesoBruto === '' || netoActual < 0) return null;
+    const nuevoStock = netoActual;
+    const items = loteSeleccionado.composicion
+      .map(c => ({ item: c.item, kg: (c.porcentaje / 100) * nuevoStock }))
+      .filter(c => c.kg > 0);
+    return items.length > 0 ? items : null;
+  }, [loteSeleccionado, netoActual, pesoBruto]);
+
+  const agregarFotos = (files: File[]) =>
+    setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
+
+  const handleAgregar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (esConLote) {
+      if (!loteId) { setError('Elige el lote a contar.'); return; }
+    } else {
+      if (!productoId) { setError('Elige un material.'); return; }
+      if (requiereLote && !loteId) { setError('Elige el lote donde está este material.'); return; }
+    }
+    if (pesoBruto === '') { setError('Ingresa el peso bruto (puede ser 0 si no había material).'); return; }
+    if (netoActual < 0) { setError('El peso neto no puede ser negativo.'); return; }
+    if (fotos.length === 0) { setError('Agrega al menos una foto.'); return; }
+
+    setGuardando(true);
+    const urls = await subirFotosFila(fotos);
+    if (!urls) {
+      setGuardando(false);
+      setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+      return;
+    }
+    const result = await registrarPesajeTomaFisica(tomaFisicaId, {
+      productoId: esConLote ? null : productoId,
+      loteId: esConLote ? loteId : (requiereLote ? loteId : null),
+      pesoBruto: Number(pesoBruto) || 0,
+      tara: taraKgFila(campoTara, taras),
+      fotos: urls,
+    });
+    setGuardando(false);
+    if ('error' in result) { setError(result.error); return; }
+
+    toast.exito('Pesaje registrado.');
+    setPesoBruto('');
+    setCampoTara(taraVacia());
+    setFotos([]);
+    setLoteId('');
+    cargar();
+  };
+
+  const handleQuitar = async (detalleId: string) => {
+    const result = await eliminarPesajeTomaFisica(tomaFisicaId, detalleId);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    cargar();
+  };
+
+  const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
+  const labelClass = "block text-xs font-medium text-text-secondary mb-1";
+
+  if (cargando) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!tomaFisica) {
+    return <p className="text-center text-text-muted py-12 text-sm">Toma física no encontrada.</p>;
+  }
+
+  if (tomaFisica.estado !== 'abierta') {
+    // Redirigiendo (ver useEffect arriba) — spinner breve en vez de un
+    // formulario muerto o un mensaje que exige un clic para salir.
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-lg">
+      <button type="button" onClick={() => navigate(`/inventario/toma-fisica/${tomaFisicaId}`)} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
+        <ArrowLeft size={16} />
+        {tomaFisica.codigo}
+      </button>
+
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-text-primary">Conteo físico</h1>
+        <p className="text-sm text-text-secondary mt-1">
+          {tomaFisica.almacenNombre} · {tomaFisica.categoriaNombres.join(', ')}
+          {esConLote
+            ? ' — se pesa el lote completo, no un material puntual.'
+            : ' — pesaje simple, sin destino ni pesaje global.'}
+        </p>
+      </div>
+
+      {!esConLote && lineas.length > 0 && (
+        <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-border">
+            <h2 className="text-sm font-semibold text-text-primary">
+              Checklist de productos ({lineas.filter(l => l.cantidadPesajes > 0).length}/{lineas.length})
+            </h2>
+            <p className="text-xs text-text-muted mt-0.5">Toca un producto para cargarlo en el formulario.</p>
+          </div>
+          <div className="divide-y divide-border max-h-72 overflow-y-auto">
+            {lineas.map(l => {
+              const contado = l.cantidadPesajes > 0;
+              return (
+                <button
+                  key={l.productoId}
+                  type="button"
+                  onClick={() => { setProductoId(l.productoId ?? ''); setLoteId(''); }}
+                  className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors ${productoId === l.productoId ? 'bg-brand-50' : ''}`}
+                >
+                  {contado
+                    ? <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+                    : <Circle size={16} className="text-text-muted shrink-0" />}
+                  <span className={`flex-1 min-w-0 truncate ${contado ? 'text-text-primary' : 'text-text-secondary'}`}>
+                    {l.productoNombre}
+                  </span>
+                  <span className="text-xs text-text-muted shrink-0">Teórico: {fmt(l.stockTeorico)} kg</span>
+                  {contado && (
+                    <span className="text-xs font-semibold text-text-primary shrink-0">Real: {fmt(l.stockReal)} kg</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={handleAgregar} className="space-y-4 bg-surface rounded-xl border border-border p-5 mb-6">
+        {esConLote ? (
+          <div>
+            <label className={labelClass}>Lote *</label>
+            <select value={loteId} onChange={e => setLoteId(e.target.value)} className={inputClass}>
+              <option value="">Selecciona…</option>
+              {lotesDelAlmacen.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+            </select>
+            {lotesDelAlmacen.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">Este almacén no tiene lotes activos todavía.</p>
+            )}
+            {loteSeleccionado && loteSeleccionado.composicion.length > 0 && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <p className="text-[11px] font-medium text-amber-800 mb-1.5">
+                  Composición real de este lote, calculada por el sistema:
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {loteSeleccionado.composicion.map(c => (
+                    <span key={c.item} className="text-[11px] bg-white text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                      {c.item} · {c.porcentaje}% · ~{fmt(loteSeleccionado.stockKg * c.porcentaje / 100)} kg
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+        <div>
+          <label className={labelClass}>Material *</label>
+          <button
+            type="button"
+            onClick={() => setMostrarSelectorMaterial(true)}
+            className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+          >
+            <span className={productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+              {productosDisponibles.find(p => p.id === productoId)?.nombre ?? '— Selecciona —'}
+            </span>
+            <ChevronDown size={14} className="text-text-muted shrink-0" />
+          </button>
+        </div>
+
+        {requiereLote && (
+          <div>
+            <label className={labelClass}>Lote *</label>
+            <select value={loteId} onChange={e => setLoteId(e.target.value)} className={inputClass}>
+              <option value="">Selecciona…</option>
+              {lotesDelAlmacen.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+            </select>
+            {lotesDelAlmacen.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">Este almacén no tiene lotes activos todavía.</p>
+            )}
+            {loteSeleccionado && loteSeleccionado.composicion.length > 0 && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <p className="text-[11px] font-medium text-amber-800 mb-1.5">
+                  Composición real de este lote, calculada por el sistema:
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {loteSeleccionado.composicion.map(c => (
+                    <span key={c.item} className="text-[11px] bg-white text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                      {c.item} · {c.porcentaje}% · ~{fmt(loteSeleccionado.stockKg * c.porcentaje / 100)} kg
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+          </>
+        )}
+
+        <div>
+          <label className={labelClass}>Peso bruto (kg) *</label>
+          <input type="number" step="0.001" min="0" value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+        </div>
+
+        <div>
+          <label className={labelClass}>Tara</label>
+          <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
+            <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'preconfigurada' }))} className={`px-2 py-1 ${campoTara.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+              Preconfigurada
+            </button>
+            <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'manual' }))} className={`px-2 py-1 ${campoTara.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+              Manual
+            </button>
+          </div>
+          {campoTara.taraModo === 'preconfigurada' ? (
+            <div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMostrarSelectorTara(true)}
+                  className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                >
+                  <span className={campoTara.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                    {taras.find(t => t.id === campoTara.taraId)?.nombre ?? '— Sin tara —'}
+                  </span>
+                  <ChevronDown size={14} className="text-text-muted shrink-0" />
+                </button>
+                <input type="number" step="1" min="0" value={campoTara.taraCantidad} onChange={e => setCampoTara(prev => ({ ...prev, taraCantidad: e.target.value }))} className={inputClass} placeholder="Cantidad" />
+              </div>
+              <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(campoTara, taras))} kg</p>
+            </div>
+          ) : (
+            <input type="number" step="0.001" min="0" value={campoTara.taraManual} onChange={e => setCampoTara(prev => ({ ...prev, taraManual: e.target.value }))} className={inputClass} placeholder="0.00" />
+          )}
+        </div>
+
+        {pesoBruto !== '' && netoActual >= 0 && (
+          <p className="text-sm text-text-secondary">Neto: <span className="font-semibold text-text-primary">{fmt(netoActual)} kg</span></p>
+        )}
+
+        {composicionProyectada && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5">
+            <p className="text-[11px] font-medium text-blue-800 mb-1.5">
+              Composición estimada del lote después de registrar este pesaje:
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {composicionProyectada.map(c => (
+                <span key={c.item} className="text-[11px] bg-white text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
+                  {c.item} · ~{fmt(c.kg)} kg
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <FotoMaterialPicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <button type="submit" disabled={guardando} className="w-full py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+          {guardando ? 'Registrando…' : 'Agregar pesaje'}
+        </button>
+      </form>
+
+      <div className="bg-surface rounded-xl border border-border overflow-hidden">
+        <div className="px-5 py-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-text-primary">Pesajes registrados ({detalle.length})</h2>
+        </div>
+        {detalle.length === 0 ? (
+          <p className="px-5 py-6 text-center text-text-muted text-sm">Todavía no registraste ningún pesaje.</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {detalle.map(d => {
+              const label = d.nombreProducto
+                ? `${d.nombreProducto}${d.nombreLote ? ` · ${d.nombreLote}` : ''}`
+                : `${d.nombreLote ?? '—'} (lote completo)`;
+              return (
+                <div key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                  <div className="flex-1 min-w-0">
+                    {d.nombreProducto ? (
+                      <>
+                        <span className="text-text-primary">{d.nombreProducto}</span>
+                        {d.nombreLote && <span className="text-text-muted"> · {d.nombreLote}</span>}
+                      </>
+                    ) : (
+                      <span className="text-text-primary">{d.nombreLote ?? '—'} (lote completo)</span>
+                    )}
+                  </div>
+                  <span className="font-semibold text-text-primary shrink-0">{fmt(d.pesoNeto)} kg</span>
+                  {d.fotos.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setGaleriaAbierta({ label, fotos: d.fotos })}
+                      className="flex items-center gap-1 text-text-muted hover:text-brand-600 transition-colors shrink-0"
+                      title="Ver fotos"
+                    >
+                      <Images size={14} />
+                      <span className="text-xs">{d.fotos.length}</span>
+                    </button>
+                  )}
+                  <button type="button" onClick={() => handleQuitar(d.id)} className="text-text-muted hover:text-red-600 transition-colors shrink-0" title="Quitar">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productosDisponibles}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => { setProductoId(id); setLoteId(''); setMostrarSelectorMaterial(false); }}
+        />
+      )}
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={campoTara.taraId || undefined}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => { setCampoTara(prev => ({ ...prev, ...seleccionarTaraFila(prev, taraId) })); setMostrarSelectorTara(false); }}
+        />
+      )}
+
+      {galeriaAbierta && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setGaleriaAbierta(null)}>
+          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-sm font-semibold text-text-primary truncate">{galeriaAbierta.label}</h2>
+              <button type="button" onClick={() => setGaleriaAbierta(null)} className="text-text-muted hover:text-text-primary transition-colors shrink-0">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 grid grid-cols-3 gap-2">
+              {galeriaAbierta.fotos.map((url, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setFotoAmpliada(url)}
+                  className="group relative aspect-square rounded-lg overflow-hidden border border-border"
+                  title="Ver foto en grande"
+                >
+                  <img src={url} alt={`Foto ${i + 1}`} loading="lazy" className="w-full h-full object-cover" />
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                    <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fotoAmpliada && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4" onClick={() => setFotoAmpliada(null)}>
+          <button type="button" onClick={() => setFotoAmpliada(null)} className="absolute top-4 right-4 text-white/80 hover:text-white" title="Cerrar">
+            <X size={24} />
+          </button>
+          <img src={fotoAmpliada} alt="Foto ampliada" className="max-w-full max-h-[85vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default ConteoTomaFisicaPage;

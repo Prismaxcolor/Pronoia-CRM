@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Package } from 'lucide-react';
+import { Package, Lock, RefreshCw } from 'lucide-react';
 import {
   obtenerInventario,
   type ArticuloInventario,
@@ -8,8 +8,17 @@ import {
 } from '../../services/inventario-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { obtenerProductos } from '../../services/producto-service';
+import { obtenerLotes } from '../../services/lote-service';
+import { obtenerAlmacenes } from '../../services/almacen-service';
+import { obtenerTomasFisicas } from '../../services/toma-fisica-service';
+import { obtenerTransformaciones } from '../../services/transformacion-service';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import Accordion from '../../components/Accordion';
-import type { TipoMaterial, Producto } from '@shared/types/index.js';
+import AlmacenesPanel from './AlmacenesPanel';
+import TrasladosPanel from './TrasladosPanel';
+import TomaFisicaPanel from './TomaFisicaPanel';
+import LotesPanel from '../lotes/LotesPanel';
+import type { TipoMaterial, Producto, Lote, Almacen, ComposicionPCBItem, TomaFisicaInventario, Transformacion } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,15 +30,91 @@ interface GrupoDestino {
   label: string;
   totalKg: number;
   articulos: ArticuloConCategoria[];
+  composicion?: ComposicionPCBItem[];
+  stockLote?: number;
+  /** Toma física abierta que bloquea este lote ahora mismo, si hay. */
+  tomaFisicaBloqueando?: TomaFisicaInventario;
+  /** Kg retirados de este lote por transformaciones PCB creadas pero
+   *  todavía sin completar — "en limbo", ya salieron pero no llegaron
+   *  a ningún destino todavía. */
+  transformacionPendienteKg?: number;
 }
 
-/** Regrupa los mismos artículos ya cargados por destino (MPP o lote) en vez de por categoría. */
-function agruparPorDestino(grupos: GrupoInventario[]): GrupoDestino[] {
+/** ¿Esta toma física abierta bloquea este lote ahora mismo? Bloquea si es
+ *  del mismo almacén, incluye alguna categoría "con lote" (PCB), y — si se
+ *  acotó a lotes específicos al crearla — este lote es uno de ellos. */
+function tomaFisicaBloqueaLote(lote: Lote, t: TomaFisicaInventario, categorias: TipoMaterial[]): boolean {
+  if (t.estado !== 'abierta' || t.almacenId !== lote.almacenId) return false;
+  const tieneCategoriaConLote = t.categoriaIds.some(id => categorias.find(c => c.id === id)?.sinLote === false);
+  if (!tieneCategoriaConLote) return false;
+  return t.loteIds.length === 0 || t.loteIds.includes(lote.id);
+}
+
+interface EstadoArticulo {
+  tomaFisica?: TomaFisicaInventario;
+  transformacionKg?: number;
+}
+
+/** Estado de un artículo (producto + destino) en la vista por categoría:
+ *  ¿hay una toma física abierta que lo afecte, o una transformación
+ *  creada pero sin completar que ya le retiró peso? Para destino "lote"
+ *  (PCB) se puede precisar el almacén y el lote exactos. Para destino MPP
+ *  (Ferroso/No Ferroso) esta vista general no distingue almacén, así que
+ *  el indicativo es "sí hay alguna en curso", sin precisar dónde. */
+function estadoArticulo(
+  a: ArticuloInventario,
+  productos: Producto[],
+  lotes: Lote[],
+  tomasFisicas: TomaFisicaInventario[],
+  transformacionesPendientes: Transformacion[],
+  categorias: TipoMaterial[]
+): EstadoArticulo {
+  const kgDeProducto = (t: Transformacion) =>
+    t.entradaDetalle.filter(d => d.productoId === a.productoId).reduce((acc, d) => acc + d.pesoKg, 0);
+
+  if (a.destinoTipo === 'lote' && a.loteId) {
+    const lote = lotes.find(l => l.id === a.loteId);
+    const tomaFisica = lote ? tomasFisicas.find(t => tomaFisicaBloqueaLote(lote, t, categorias)) : undefined;
+    const pendientes = transformacionesPendientes.filter(
+      t => t.categoria === 'pcb' && t.loteOrigenId === a.loteId && kgDeProducto(t) > 0
+    );
+    return {
+      tomaFisica,
+      transformacionKg: pendientes.length > 0 ? pendientes.reduce((acc, t) => acc + kgDeProducto(t), 0) : undefined,
+    };
+  }
+
+  const producto = productos.find(p => p.id === a.productoId);
+  const tomaFisica = producto?.tipoMaterialId
+    ? tomasFisicas.find(t => t.estado === 'abierta' && t.categoriaIds.includes(producto.tipoMaterialId!))
+    : undefined;
+  const pendientes = transformacionesPendientes.filter(t => t.categoria === 'ferroso_no_ferroso' && kgDeProducto(t) > 0);
+  return {
+    tomaFisica,
+    transformacionKg: pendientes.length > 0 ? pendientes.reduce((acc, t) => acc + kgDeProducto(t), 0) : undefined,
+  };
+}
+
+/** Regrupa los mismos artículos ya cargados por destino (MPP, lote o "sin
+ *  movimiento") en vez de por categoría. Además incluye los lotes activos
+ *  que todavía no tienen ningún producto pesado adentro, como grupo vacío —
+ *  si no, un lote recién creado desaparece de esta vista hasta su primer pesaje. */
+function agruparPorDestino(
+  grupos: GrupoInventario[],
+  lotes: Lote[],
+  tomasFisicas: TomaFisicaInventario[],
+  transformaciones: Transformacion[],
+  categorias: TipoMaterial[]
+): GrupoDestino[] {
   const mapa = new Map<string, GrupoDestino>();
   for (const g of grupos) {
     for (const a of g.articulos) {
-      const clave = a.loteId ?? 'mpp';
+      const clave = a.loteId ?? a.destinoTipo;
       if (!mapa.has(clave)) {
+        // a.destinoLabel ya viene como "Sin lote" para destinoTipo 'mpp'
+        // (ver MPP_LABEL en inventario-service.ts) — Ferroso/No Ferroso
+        // está configurado así, nunca va a un lote real, por eso no
+        // aparece en /lotes.
         mapa.set(clave, { clave, label: a.destinoLabel, totalKg: 0, articulos: [] });
       }
       const grupo = mapa.get(clave)!;
@@ -37,29 +122,66 @@ function agruparPorDestino(grupos: GrupoInventario[]): GrupoDestino[] {
       grupo.totalKg += a.stock;
     }
   }
+  for (const l of lotes) {
+    if (l.activo && !mapa.has(l.id)) {
+      mapa.set(l.id, { clave: l.id, label: l.nombre, totalKg: 0, articulos: [] });
+    }
+  }
+  // Adjunta composición, stock real, y estado de bloqueo/transformación
+  // pendiente a cada grupo que corresponda a un lote real — los grupos
+  // MPP/sin-lote no tienen lote asociado.
+  for (const grupo of mapa.values()) {
+    const lote = lotes.find(l => l.id === grupo.clave);
+    if (!lote) continue;
+    grupo.composicion = lote.composicion;
+    grupo.stockLote = lote.stockKg;
+    grupo.tomaFisicaBloqueando = tomasFisicas.find(t => tomaFisicaBloqueaLote(lote, t, categorias));
+    const pendientesDeEsteLote = transformaciones.filter(
+      t => t.categoria === 'pcb' && t.estado === 'bruto' && t.loteOrigenId === lote.id
+    );
+    if (pendientesDeEsteLote.length > 0) {
+      grupo.transformacionPendienteKg = pendientesDeEsteLote.reduce((acc, t) => acc + t.pesoNeto, 0);
+    }
+  }
   return Array.from(mapa.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
 type Agrupacion = 'categoria' | 'lote';
+type Pestana = 'inventario' | 'almacenes' | 'lotes' | 'traslados' | 'toma-fisica';
 
 function InventarioPage() {
+  const [pestana, setPestana] = usePestanaRecordada<Pestana>(
+    'pronoia:inventario:pestana',
+    ['inventario', 'almacenes', 'lotes', 'traslados', 'toma-fisica'],
+    'inventario',
+  );
   const [grupos, setGrupos] = useState<GrupoInventario[]>([]);
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
+  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
+  const [tomasFisicas, setTomasFisicas] = useState<TomaFisicaInventario[]>([]);
+  const [transformaciones, setTransformaciones] = useState<Transformacion[]>([]);
   const [cargando, setCargando] = useState(true);
   const [filtros, setFiltros] = useState<FiltrosInventario>({});
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [agrupacion, setAgrupacion] = useState<Agrupacion>('categoria');
 
-  const gruposPorDestino = useMemo(() => agruparPorDestino(grupos), [grupos]);
+  const gruposPorDestino = useMemo(
+    () => agruparPorDestino(grupos, lotes, tomasFisicas, transformaciones, categorias),
+    [grupos, lotes, tomasFisicas, transformaciones, categorias]
+  );
 
   useEffect(() => {
     obtenerTiposMaterial().then(setCategorias);
     obtenerProductos().then(setProductos);
+    obtenerLotes().then(setLotes);
+    obtenerAlmacenes().then(setAlmacenes);
+    obtenerTomasFisicas().then(lista => setTomasFisicas(lista.filter(t => t.estado === 'abierta')));
+    obtenerTransformaciones({ estado: 'bruto' }).then(setTransformaciones);
   }, []);
 
   useEffect(() => {
-    setCargando(true);
     obtenerInventario(filtros).then(setGrupos).finally(() => setCargando(false));
   }, [filtros]);
 
@@ -84,6 +206,31 @@ function InventarioPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
+        <button type="button" onClick={() => setPestana('inventario')} className={`px-4 py-1.5 ${pestana === 'inventario' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Inventario
+        </button>
+        <button type="button" onClick={() => setPestana('almacenes')} className={`px-4 py-1.5 ${pestana === 'almacenes' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Almacenes
+        </button>
+        <button type="button" onClick={() => setPestana('lotes')} className={`px-4 py-1.5 ${pestana === 'lotes' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Lotes
+        </button>
+        <button type="button" onClick={() => setPestana('traslados')} className={`px-4 py-1.5 ${pestana === 'traslados' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Traslados
+        </button>
+        <button type="button" onClick={() => setPestana('toma-fisica')} className={`px-4 py-1.5 ${pestana === 'toma-fisica' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Toma física
+        </button>
+      </div>
+
+      {pestana === 'almacenes' && <AlmacenesPanel />}
+      {pestana === 'lotes' && <LotesPanel />}
+      {pestana === 'traslados' && <TrasladosPanel />}
+      {pestana === 'toma-fisica' && <TomaFisicaPanel />}
+
+      {pestana === 'inventario' && (
+      <>
       {/* Filtros */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <div>
@@ -101,6 +248,13 @@ function InventarioPage() {
           </select>
         </div>
         <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Almacén</label>
+          <select value={filtros.almacenId ?? ''} onChange={e => setFiltro('almacenId', e.target.value)} className={`${inputClass} w-44`}>
+            <option value="">Todos</option>
+            {almacenes.filter(a => a.activo).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+          </select>
+        </div>
+        <div>
           <label className="block text-xs font-medium text-text-secondary mb-1">Desde</label>
           <input type="date" value={filtros.desde ?? ''} onChange={e => setFiltro('desde', e.target.value)} className={inputClass} />
         </div>
@@ -108,12 +262,12 @@ function InventarioPage() {
           <label className="block text-xs font-medium text-text-secondary mb-1">Hasta</label>
           <input type="date" value={filtros.hasta ?? ''} onChange={e => setFiltro('hasta', e.target.value)} className={inputClass} />
         </div>
-        {(filtros.tipoMaterialId || filtros.productoId || filtros.desde || filtros.hasta) && (
+        {(filtros.tipoMaterialId || filtros.productoId || filtros.almacenId || filtros.desde || filtros.hasta) && (
           <button type="button" onClick={() => setFiltros({})} className="text-xs text-text-muted hover:text-text-primary underline pb-2">
             Limpiar
           </button>
         )}
-        <div className="ml-auto">
+        <div className="w-full sm:w-auto sm:ml-auto">
           <label className="block text-xs font-medium text-text-secondary mb-1">Agrupar por</label>
           <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
             <button type="button" onClick={() => setAgrupacion('categoria')} className={`px-3 py-2 ${agrupacion === 'categoria' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
@@ -162,13 +316,36 @@ function InventarioPage() {
                       <th className="px-4 py-2 font-medium text-right">Entradas</th>
                       <th className="px-4 py-2 font-medium text-right">Salidas</th>
                       <th className="px-4 py-2 font-medium text-right">Transf.</th>
+                      <th className="px-4 py-2 font-medium text-right">Ajuste</th>
                       <th className="px-5 py-2 font-medium text-right">Stock (kg)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {g.articulos.map(a => (
+                    {g.articulos.map(a => {
+                      const estado = estadoArticulo(a, productos, lotes, tomasFisicas, transformaciones, categorias);
+                      return (
                       <tr key={`${a.productoId}-${a.loteId ?? 'mpp'}`} className="border-t border-border">
-                        <td className="px-5 py-2.5 text-text-primary">{a.nombre}</td>
+                        <td className="px-5 py-2.5 text-text-primary">
+                          <div className="flex items-center gap-1.5">
+                            <span>{a.nombre}</span>
+                            {estado.tomaFisica && (
+                              <span
+                                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-700 shrink-0"
+                                title={`Bloqueado por la toma física ${estado.tomaFisica.codigo}, abierta`}
+                              >
+                                <Lock size={9} /> {estado.tomaFisica.codigo}
+                              </span>
+                            )}
+                            {estado.transformacionKg != null && (
+                              <span
+                                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-700 shrink-0"
+                                title="Kg retirados por una transformación creada pero todavía sin completar"
+                              >
+                                <RefreshCw size={9} /> {fmt(estado.transformacionKg)} kg
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-2.5">
                           <span className={`px-2 py-0.5 rounded-full text-xs ${a.destinoTipo === 'lote' ? 'bg-brand-100 text-brand-700' : 'bg-surface-alt text-text-secondary'}`}>
                             {a.destinoLabel}
@@ -177,11 +354,15 @@ function InventarioPage() {
                         <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
                         <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
                         <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.transformaciones)}</td>
+                        <td className={`px-4 py-2.5 text-right ${a.ajustes !== 0 ? 'font-semibold text-purple-700' : 'text-text-secondary'}`}>
+                          {a.ajustes > 0 ? '+' : ''}{fmt(a.ajustes)}
+                        </td>
                         <td className={`px-5 py-2.5 text-right font-semibold ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
                           {fmt(a.stock)}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table></div>
               </Accordion>
@@ -200,7 +381,23 @@ function InventarioPage() {
                   <div className="w-9 h-9 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
                     <Package size={16} />
                   </div>
-                  <span className="font-semibold text-text-primary text-sm flex-1 text-left">{g.label}</span>
+                  <span className="font-semibold text-text-primary text-sm flex-1 text-left truncate">{g.label}</span>
+                  {g.tomaFisicaBloqueando && (
+                    <span
+                      className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 shrink-0"
+                      title={`Bloqueado por la toma física ${g.tomaFisicaBloqueando.codigo}, abierta`}
+                    >
+                      <Lock size={11} /> Toma física {g.tomaFisicaBloqueando.codigo}
+                    </span>
+                  )}
+                  {g.transformacionPendienteKg != null && (
+                    <span
+                      className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 shrink-0"
+                      title="Peso retirado por una transformación PCB creada pero todavía sin completar"
+                    >
+                      <RefreshCw size={11} /> En transformación: {fmt(g.transformacionPendienteKg)} kg
+                    </span>
+                  )}
                   <span className="text-xs text-text-muted mr-2">{g.articulos.length} art.</span>
                   <span className={`text-base font-bold ${g.totalKg < 0 ? 'text-red-600' : 'text-text-primary'}`}>
                     {fmt(g.totalKg)} kg
@@ -208,6 +405,18 @@ function InventarioPage() {
                 </>
               }
             >
+              {g.composicion && g.composicion.length > 0 && (
+                <div className="px-5 pt-3 pb-1 bg-surface-alt border-b border-border">
+                  <p className="text-[11px] font-medium text-text-secondary mb-1.5">Composición estimada</p>
+                  <div className="flex flex-wrap gap-1 pb-2">
+                    {g.composicion.map(c => (
+                      <span key={c.item} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                        {c.item}: {c.porcentaje}% · ~{fmt((g.stockLote ?? g.totalKg) * (c.porcentaje / 100))} kg
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-text-muted bg-surface-alt">
@@ -216,17 +425,27 @@ function InventarioPage() {
                     <th className="px-4 py-2 font-medium text-right">Entradas</th>
                     <th className="px-4 py-2 font-medium text-right">Salidas</th>
                     <th className="px-4 py-2 font-medium text-right">Transf.</th>
+                    <th className="px-4 py-2 font-medium text-right">Ajuste</th>
                     <th className="px-5 py-2 font-medium text-right">Stock (kg)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {g.articulos.map(a => (
+                  {g.articulos.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-5 py-3 text-text-muted text-xs">
+                        Todavía no se pesó ningún artículo hacia este lote.
+                      </td>
+                    </tr>
+                  ) : g.articulos.map(a => (
                     <tr key={a.productoId} className="border-t border-border">
                       <td className="px-5 py-2.5 text-text-primary">{a.nombre}</td>
                       <td className="px-4 py-2.5 text-text-secondary">{a.categoria}</td>
                       <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
                       <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
                       <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.transformaciones)}</td>
+                      <td className={`px-4 py-2.5 text-right ${a.ajustes !== 0 ? 'font-semibold text-purple-700' : 'text-text-secondary'}`}>
+                        {a.ajustes > 0 ? '+' : ''}{fmt(a.ajustes)}
+                      </td>
                       <td className={`px-5 py-2.5 text-right font-semibold ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
                         {fmt(a.stock)}
                       </td>
@@ -237,6 +456,8 @@ function InventarioPage() {
             </Accordion>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );

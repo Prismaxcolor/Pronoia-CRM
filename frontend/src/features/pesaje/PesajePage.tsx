@@ -1,25 +1,56 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Scale, ImagePlus, X, Loader2, Plus, Trash2, PackageOpen } from 'lucide-react';
+import { Scale, Loader2, Plus, Trash2, PackageOpen, Search, ChevronDown, AlertTriangle } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { obtenerTickets, crearTicket } from '../../services/ticket-pesaje-service';
+import { obtenerTickets, crearTicket, borrarTicket } from '../../services/ticket-pesaje-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
-import { subirFotoTicket } from '../../services/storage-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { obtenerAlmacenes, obtenerStockAlmacen, obtenerStockGlobal } from '../../services/almacen-service';
+import { crearTraslado, obtenerTraslados } from '../../services/traslado-service';
+import { obtenerTomasFisicas } from '../../services/toma-fisica-service';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
+import { usePesajeBorrador } from '../../hooks/use-pesaje-borrador-context';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import CompletarTicketModal from './CompletarTicketModal';
-import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
-import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
+import CompletarTrasladoModal from '../inventario/CompletarTrasladoModal';
+import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import SeleccionarTaraModal from './SeleccionarTaraModal';
+import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
+import FotoMaterialPicker from './FotoMaterialPicker';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { obtenerVehiculos, crearVehiculo } from '../../services/vehiculo-service';
+import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
+import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario, type Vehiculo } from '@shared/types/index.js';
 
-interface FotoLocal { file: File; preview: string }
-interface Entidad { id: string; nombre: string; activo: boolean }
-type TipoPesaje = 'compra' | 'venta';
+/** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
+ *  traslado entre almacenes, mostrados juntos porque ambos son operaciones
+ *  de Pesaje — el traslado ya no vive solo en Inventario. */
+type FilaListado =
+  | { kind: 'pesaje'; ticket: TicketPesaje }
+  | { kind: 'traslado'; traslado: Traslado };
 
-function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
+interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
+
+/** Un lote (PCB) a trasladar completo — se pesa igual que un material, con
+ *  su propia tara y foto, en vez de asumir automáticamente el stock teórico. */
+interface LoteTrasladoFila {
+  uid: number;
+  loteId: string;
+  pesoBruto: string;
+  tara: string;
+  fotos: FotoMaterial[];
+}
+let LOTE_TRASLADO_UID = 0;
+function loteTrasladoFilaVacia(): LoteTrasladoFila {
+  return { uid: LOTE_TRASLADO_UID++, loteId: '', pesoBruto: '', tara: '0', fotos: [] };
+}
+function netoLoteTrasladoFila(f: LoteTrasladoFila): number {
+  return (Number(f.pesoBruto) || 0) - (Number(f.tara) || 0);
 }
 
 type Pestana = 'nuevo' | 'tickets';
@@ -27,32 +58,66 @@ type Pestana = 'nuevo' | 'tickets';
 function PesajePage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
+  const confirmar = useConfirm();
   const navigate = useNavigate();
   const puedeCrear = tienePermiso('pesaje', 'crear');
+  const puedeEliminarTicket = tienePermiso('pesaje', 'eliminar');
+  const puedeRecepcionarTraslado = tienePermiso('traslados', 'crear');
   const puedeVerTickets = tienePermiso('pesaje', 'ver') && tienePermiso('facturacion', 'ver');
+  const puedeContarTomaFisica = tienePermiso('toma_fisica', 'ver');
 
-  const [pestana, setPestana] = useState<Pestana>('nuevo');
+  // Si no tiene permiso para ver Tickets, "tickets" queda fuera de los valores
+  // válidos — ignora cualquier pestaña "tickets" guardada de una sesión
+  // anterior (ej. downgrade de rol); si no, el switch de pestañas queda oculto
+  // pero el contenido también, y la página se ve en blanco.
+  const [pestana, setPestana] = usePestanaRecordada<Pestana>(
+    'pronoia:pesaje:pestana',
+    puedeVerTickets ? ['nuevo', 'tickets'] : ['nuevo'],
+    'nuevo',
+  );
   const [proveedores, setProveedores] = useState<Entidad[]>([]);
   const [clientes, setClientes] = useState<Entidad[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
   const [tickets, setTickets] = useState<TicketPesaje[]>([]);
+  const [traslados, setTraslados] = useState<Traslado[]>([]);
+  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
+  const [stockOrigen, setStockOrigen] = useState<Map<string, number>>(new Map());
+  const [stockGlobalDisponible, setStockGlobalDisponible] = useState<Map<string, number>>(new Map());
+  const [tomasFisicasAbiertas, setTomasFisicasAbiertas] = useState<TomaFisicaInventario[]>([]);
 
-  const [tipo, setTipo] = useState<TipoPesaje>('compra');
-  const [entidadId, setEntidadId] = useState('');
-  const [fecha, setFecha] = useState(hoyISO());
-  const [pesoGlobal, setPesoGlobal] = useState('');
-  const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
-  const [observaciones, setObservaciones] = useState('');
-  const [fotos, setFotos] = useState<FotoLocal[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Campos del formulario "Nuevo pesaje" — viven en un Provider por encima de
+  // las rutas (usePesajeBorrador), no en useState local, para no perderse si
+  // el usuario navega a otra pantalla (Dashboard, Cochinito, etc.) y vuelve.
+  const {
+    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones, vehiculo },
+    setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
+    setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones, setVehiculo,
+    limpiarBorrador,
+  } = usePesajeBorrador();
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
+  const [trasladoARecepcionar, setTrasladoARecepcionar] = useState<Traslado | null>(null);
+  const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
+  const [loteFilas, setLoteFilas] = useState<LoteTrasladoFila[]>([]);
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  const [nuevoVehiculo, setNuevoVehiculo] = useState('');
+  const [buscaCodigo, setBuscaCodigo] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'compra' | 'venta' | 'traslado'>('todos');
+  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
+  const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
+  const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
+  const [filaLoteActivaUid, setFilaLoteActivaUid] = useState<number | null>(null);
+  const [mostrarSelectorAlmacenOrigen, setMostrarSelectorAlmacenOrigen] = useState(false);
+  const [mostrarSelectorAlmacenDestino, setMostrarSelectorAlmacenDestino] = useState(false);
 
   const cargarTickets = () => { obtenerTickets().then(setTickets); };
+  const cargarTraslados = () => { obtenerTraslados().then(setTraslados); };
 
   useEffect(() => {
     obtenerProveedores().then(lista => setProveedores(lista.filter(p => p.activo)));
@@ -60,11 +125,44 @@ function PesajePage() {
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
     obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
+    obtenerVehiculos().then(lista => setVehiculos(lista.filter(v => v.activo)));
     cargarTickets();
+    cargarTraslados();
+    if (puedeContarTomaFisica) {
+      obtenerTomasFisicas().then(lista => setTomasFisicasAbiertas(lista.filter(t => t.estado === 'abierta')));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Stock del almacén de origen elegido, para avisar (sin bloquear) si un
+  // traslado deja el material en negativo.
+  useEffect(() => {
+    const promesa = tipo === 'traslado' && almacenOrigenId
+      ? obtenerStockAlmacen(almacenOrigenId)
+      : Promise.resolve(new Map<string, number>());
+    promesa.then(setStockOrigen);
+    // Los lotes disponibles dependen del almacén de origen — si cambia, la
+    // selección anterior puede ya no ser válida.
+    setLoteFilas([]);
+  }, [tipo, almacenOrigenId]);
+
+  // Disponible del negocio (sin importar almacén) para el aviso informativo
+  // al vender — nunca bloquea, solo avisa (decisión P-3 del plan de
+  // consolidación, docs/PLAN_consolidacion_inventario.md).
+  useEffect(() => {
+    const promesa = tipo === 'venta' ? obtenerStockGlobal() : Promise.resolve(new Map<string, number>());
+    promesa.then(setStockGlobalDisponible);
+  }, [tipo]);
 
   const entidades = tipo === 'compra' ? proveedores : clientes;
   const labelEntidad = tipo === 'compra' ? 'Proveedor' : 'Cliente';
+  const almacenPredeterminado = almacenes.find(a => a.esPredeterminado);
+
+  // Recarga la lista de almacenes al cambiar de pestaña de tipo — si la
+  // estrella se movió desde otra pantalla, se refleja sin recargar la página.
+  useEffect(() => {
+    obtenerAlmacenes().then(lista => setAlmacenes(lista.filter(a => a.activo)));
+  }, [tipo]);
 
   // Mapa id→nombre de proveedores + clientes (para la tabla de tickets recientes)
   const nombrePorEntidad = useMemo(() => {
@@ -78,10 +176,10 @@ function PesajePage() {
     [materiales, taras]
   );
 
-  // Diferencia = Peso Global - suma de todos los materiales netos (incluida la basura).
+  // Diferencia = Peso Global - suma de materiales netos - devolución.
   const diferencia = useMemo(
-    () => (Number(pesoGlobal) || 0) - pesoNetoTotal,
-    [pesoGlobal, pesoNetoTotal]
+    () => sumaPesajesGlobales(pesajesGlobales) - pesoNetoTotal - (Number(devolucion) || 0),
+    [pesajesGlobales, pesoNetoTotal, devolucion]
   );
 
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
@@ -91,67 +189,207 @@ function PesajePage() {
   const quitarMaterial = (uid: number) =>
     setMateriales(prev => (prev.length > 1 ? prev.filter(f => f.uid !== uid) : prev));
 
-  const handleFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    setFotos(prev => [...prev, ...files.map(file => ({ file, preview: URL.createObjectURL(file) }))]);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  const agregarFotosFila = (uid: number, files: File[]) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid
+      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      : f)));
+  const quitarFotoFila = (uid: number, idx: number) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
+  const agregarFotosDevolucion = (files: File[]) =>
+    setFotosDevolucion(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+  const quitarFotoDevolucion = (idx: number) =>
+    setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
+
+  const limpiar = () => { limpiarBorrador(); setLoteFilas([]); };
+
+  const lotesEnOrigen = useMemo(
+    () => lotes.filter(l => l.activo && l.almacenId === almacenOrigenId),
+    [lotes, almacenOrigenId]
+  );
+
+  const agregarLoteFila = () => setLoteFilas(prev => [...prev, loteTrasladoFilaVacia()]);
+  const quitarLoteFila = (uid: number) => setLoteFilas(prev => prev.filter(f => f.uid !== uid));
+  const setLoteFilaCampo = (uid: number, campo: 'loteId' | 'pesoBruto' | 'tara', valor: string) =>
+    setLoteFilas(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
+  const agregarFotosLoteFila = (uid: number, files: File[]) =>
+    setLoteFilas(prev => prev.map(f => (f.uid === uid
+      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      : f)));
+  const quitarFotoLoteFila = (uid: number, idx: number) =>
+    setLoteFilas(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
+  const crearVehiculoInline = async () => {
+    const nombre = nuevoVehiculo.trim();
+    if (!nombre) return;
+    const result = await crearVehiculo({ nombre });
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    setVehiculos(prev => [...prev, result.vehiculo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    setVehiculo(result.vehiculo.nombre);
+    setNuevoVehiculo('');
   };
 
-  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
+  const guardarTraslado = async () => {
+    setError(null);
 
-  const limpiar = () => {
-    setEntidadId('');
-    setFecha(hoyISO());
-    setPesoGlobal('');
-    setMateriales([filaVacia()]);
-    setObservaciones('');
-    setFotos([]);
+    // Filas vacías se ignoran: el formulario siempre arranca con una fila
+    // en blanco, y un traslado puede ser solo de lotes completos (sin
+    // material suelto), o al revés.
+    const materialesLlenos = materiales.filter(f => f.productoId);
+
+    if (!almacenOrigenId) { setError('Elige el almacén de origen.'); return; }
+    if (!almacenDestinoId) { setError('Elige el almacén de destino.'); return; }
+    if (almacenOrigenId === almacenDestinoId) { setError('El almacén de origen y destino no pueden ser el mismo.'); return; }
+    if (materialesLlenos.length === 0 && loteFilas.length === 0) {
+      setError('Agrega al menos un material o un lote a trasladar.');
+      return;
+    }
+    if (materialesLlenos.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
+    if (materialesLlenos.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (materialesLlenos.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
+    if (loteFilas.some(f => !f.loteId)) { setError('Selecciona el lote de cada fila.'); return; }
+    if (loteFilas.some(f => netoLoteTrasladoFila(f) <= 0)) { setError('Cada lote debe tener un peso neto mayor a 0.'); return; }
+    if (loteFilas.some(f => f.fotos.length === 0)) { setError('Cada lote necesita al menos una foto del pesaje.'); return; }
+
+    setGuardando(true);
+
+    const materialesConFotos: Array<{ productoId: string; subcategoria: string | null; pesoBruto: number; tara: number; fotos: string[] }> = [];
+    for (const f of materialesLlenos) {
+      const urls = await subirFotosFila(f.fotos);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      materialesConFotos.push({
+        productoId: f.productoId,
+        subcategoria: f.subcategoria.trim() || null,
+        pesoBruto: Number(f.pesoBruto) || 0,
+        tara: taraKgFila(f, taras),
+        fotos: urls,
+      });
+    }
+
+    const lotesConFotos: Array<{ loteId: string; pesoBruto: number; tara: number; fotos: string[] }> = [];
+    for (const f of loteFilas) {
+      const urls = await subirFotosFila(f.fotos);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      lotesConFotos.push({
+        loteId: f.loteId,
+        pesoBruto: Number(f.pesoBruto) || 0,
+        tara: Number(f.tara) || 0,
+        fotos: urls,
+      });
+    }
+
+    const result = await crearTraslado({
+      almacenOrigenId,
+      almacenDestinoId,
+      materiales: materialesConFotos,
+      lotes: lotesConFotos,
+      vehiculo: vehiculo.trim() || null,
+      observaciones: observaciones.trim() || null,
+    });
+    setGuardando(false);
+
+    if ('error' in result) { setError(result.error); return; }
+    toast.exito(`${result.traslado.codigo} generado (${fmt(result.traslado.pesoNetoEnviado)} kg). Queda pendiente hasta que el almacén destino confirme la recepción.`);
+    limpiar();
   };
 
   const guardar = async (estado: 'bruto' | 'completo') => {
     setError(null);
 
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
-    if (!pesoGlobal || Number(pesoGlobal) <= 0) { setError('Registra el peso global de la pesada.'); return; }
+    if (!pesajeExterior && sumaPesajesGlobales(pesajesGlobales) <= 0) {
+      setError('Registra al menos un pesaje global con peso mayor a 0 (o marca "Pesaje exterior").');
+      return;
+    }
+    if (!pesajeExterior && pesajesGlobales.some(g => g.fotos.length === 0)) {
+      setError('Cada pesaje global necesita al menos una foto.');
+      return;
+    }
     if (estado === 'completo') {
       if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
+      if (materiales.some(f => !esFilaSinLote(f, productos) && !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
       if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
         setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
         return;
       }
       if (materiales.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
       if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+      if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
+      if (Number(devolucion) > 0 && fotosDevolucion.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
+      if (diferenciaFavoreceProveedor(diferencia, pesajeExterior)) {
+        setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
+        return;
+      }
     }
 
     setGuardando(true);
 
-    const urls: string[] = [];
-    for (const f of fotos) {
-      const url = await subirFotoTicket(f.file);
-      if (!url) {
-        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+    // Fotos por material — cada línea sube las suyas (Bloque 46), en vez de
+    // una sola galería general al final del ticket.
+    const materialesConFotos: Array<ReturnType<typeof materialAPayload> & { fotos: string[] }> = [];
+    if (estado !== 'bruto') {
+      for (const f of materiales) {
+        const urls = await subirFotosFila(f.fotos);
+        if (!urls) {
+          setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+          setGuardando(false);
+          return;
+        }
+        materialesConFotos.push({ ...materialAPayload(f, taras, productos), fotos: urls });
+      }
+    }
+
+    let urlsDevolucion: string[] = [];
+    if (estado !== 'bruto') {
+      const urls = await subirFotosFila(fotosDevolucion);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos de la devolución. Revisa que el bucket "tickets" exista en Supabase Storage.');
         setGuardando(false);
         return;
       }
-      urls.push(url);
+      urlsDevolucion = urls;
+    }
+
+    const pesajesGlobalesPayload: Array<{ peso: number; tara?: number; fotos?: string[] }> = [];
+    if (!pesajeExterior) {
+      for (const f of pesajesGlobales) {
+        let fotosUrls: string[] = [];
+        if (f.fotos.length > 0) {
+          const uploaded = await subirFotosPesajeGlobal(f);
+          if (!uploaded) {
+            setError('No se pudo subir una foto del pesaje global. Revisa que el bucket "tickets" exista en Supabase Storage.');
+            setGuardando(false);
+            return;
+          }
+          fotosUrls = uploaded;
+        }
+        pesajesGlobalesPayload.push({ peso: Number(f.peso) || 0, tara: Number(f.tara) || 0, fotos: fotosUrls });
+      }
     }
 
     const result = await crearTicket({
-      tipo,
+      tipo: tipo === 'venta' ? 'venta' : 'compra',
       entidadId,
+      almacenId: almacenes.length > 1 ? (almacenOrigenId || almacenPredeterminado?.id || null) : null,
       fecha,
-      pesoGlobal: Number(pesoGlobal) || 0,
+      pesoGlobal: pesajeExterior ? null : sumaPesajesGlobales(pesajesGlobales),
+      pesajesGlobales: pesajesGlobalesPayload,
+      pesajeExterior,
+      devolucion: Number(devolucion) || 0,
+      fotosDevolucion: urlsDevolucion,
       estado,
-      materiales: estado === 'bruto' ? [] : materiales.map(f => ({
-        productoId: f.productoId,
-        subcategoria: f.subcategoria.trim() || null,
-        pesoBruto: Number(f.pesoBruto) || 0,
-        tara: taraKgFila(f, taras),
-        destinoTipo: f.destino === 'mpp' ? ('mpp' as const) : ('lote' as const),
-        loteId: f.destino === 'mpp' ? null : f.destino,
-      })),
-      fotos: urls,
+      materiales: materialesConFotos,
+      fotos: [],
       observaciones: observaciones.trim() || null,
+      vehiculo: vehiculo.trim() || null,
     });
 
     setGuardando(false);
@@ -168,18 +406,78 @@ function PesajePage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (tipo === 'traslado') { guardarTraslado(); return; }
     guardar('completo');
+  };
+
+  const handleEliminarTicket = async (t: TicketPesaje) => {
+    const ok = await confirmar({
+      titulo: 'Eliminar ticket',
+      mensaje: `¿Eliminar el ticket ${t.codigo}? Esta acción no se puede deshacer.`,
+      confirmarLabel: 'Eliminar',
+      variante: 'danger',
+    });
+    if (!ok) return;
+    const result = await borrarTicket(t.id);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito(`${t.codigo} eliminado.`);
+    cargarTickets();
   };
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
-  const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 
-  const ticketsBruto = useMemo(() => tickets.filter(t => t.estado === 'bruto'), [tickets]);
-  const ticketsCompletos = useMemo(() => tickets.filter(t => t.estado === 'completo'), [tickets]);
+  const filaActiva = materiales.find(f => f.uid === filaActivaUid) ?? materiales[0];
+
+  // Traslados pasan el filtro de tipo solo si se pidió explícitamente 'traslado'
+  // o 'todos' — no tienen tipo compra/venta, así que 'compra'/'venta' los excluye.
+  const trasladosFiltrados = useMemo(
+    () => (filtroTipo === 'compra' || filtroTipo === 'venta')
+      ? []
+      : traslados.filter(t => coincideCodigo(t.codigo, buscaCodigo)),
+    [traslados, buscaCodigo, filtroTipo]
+  );
+  const ticketsFiltrados = useMemo(
+    () => filtroTipo === 'traslado'
+      ? []
+      : tickets.filter(t =>
+          coincideCodigo(t.codigo, buscaCodigo) && (filtroTipo === 'todos' || t.tipo === filtroTipo)
+        ),
+    [tickets, buscaCodigo, filtroTipo]
+  );
+  // "Por recepcionar" = tickets en bruto + traslados pendientes (mismo
+  // concepto: la operación ya se registró pero falta que alguien la confirme).
+  const filasBruto = useMemo((): FilaListado[] => {
+    const deTickets: FilaListado[] = (filtroEstado === 'todos' || filtroEstado === 'bruto')
+      ? ticketsFiltrados.filter(t => t.estado === 'bruto').map(ticket => ({ kind: 'pesaje' as const, ticket }))
+      : [];
+    const deTraslados: FilaListado[] = (filtroEstado === 'todos' || filtroEstado === 'bruto')
+      ? trasladosFiltrados.filter(t => t.estado === 'pendiente').map(traslado => ({ kind: 'traslado' as const, traslado }))
+      : [];
+    return [...deTickets, ...deTraslados];
+  }, [ticketsFiltrados, trasladosFiltrados, filtroEstado]);
+  // "Pendientes por facturar / Facturados" — los traslados nunca se facturan,
+  // así que solo aparecen ahí cuando el filtro es 'todos' (no tiene sentido
+  // pedirle "traslados facturados", ese estado no existe para ellos).
+  const filasCompletos = useMemo((): FilaListado[] => {
+    if (filtroEstado === 'bruto') return [];
+    const deTickets: FilaListado[] = ticketsFiltrados
+      .filter(t => {
+        if (t.estado !== 'completo') return false;
+        if (filtroEstado === 'pendiente') return !t.facturado;
+        if (filtroEstado === 'facturado') return t.facturado;
+        return true;
+      })
+      .map(ticket => ({ kind: 'pesaje' as const, ticket }));
+    const deTraslados: FilaListado[] = filtroEstado === 'todos'
+      ? trasladosFiltrados.filter(t => t.estado === 'completo').map(traslado => ({ kind: 'traslado' as const, traslado }))
+      : [];
+    return [...deTickets, ...deTraslados];
+  }, [ticketsFiltrados, trasladosFiltrados, filtroEstado]);
   const totalPendientePorRecepcionar = useMemo(
-    () => ticketsBruto.reduce((acc, t) => acc + t.pesoGlobal, 0),
-    [ticketsBruto]
+    () => filasBruto.reduce((acc, f) => acc + (f.kind === 'pesaje' ? f.ticket.pesoGlobal : f.traslado.pesoNetoEnviado), 0),
+    [filasBruto]
   );
 
   return (
@@ -190,6 +488,21 @@ function PesajePage() {
           Registra la pesada del material antes de facturar. Genera un ticket que luego se adjunta a la factura.
         </p>
       </div>
+
+      {tomasFisicasAbiertas.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {tomasFisicasAbiertas.map(t => (
+            <div key={t.id} className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+              <span className="text-amber-800">
+                Hay una toma física abierta en <strong>{t.almacenNombre}</strong> ({t.codigo}) — {t.categoriaNombres.join(', ')} está bloqueado ahí hasta cerrarla.
+              </span>
+              <button type="button" onClick={() => navigate(`/pesaje/conteo/${t.id}`)} className="text-amber-800 font-medium hover:underline shrink-0">
+                Registrar conteo
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {puedeVerTickets && (
         <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
@@ -206,38 +519,203 @@ function PesajePage() {
       <div className={puedeVerTickets ? 'max-w-2xl' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
         {puedeCrear ? (
           <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 h-fit">
-            {/* Toggle compra/venta */}
+            {/* Toggle compra/venta/traslado */}
             <div>
               <label className={labelClass}>Tipo de operación</label>
-              <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
-                <button type="button" onClick={() => { setTipo('compra'); setEntidadId(''); }} className={`px-4 py-1.5 ${tipo === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
-                  Compra (proveedor)
+              <div className="flex rounded-lg overflow-hidden border border-border text-sm w-full sm:w-fit">
+                <button type="button" onClick={() => { setTipo('compra'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Compra <span className="hidden sm:inline">(proveedor)</span>
                 </button>
-                <button type="button" onClick={() => { setTipo('venta'); setEntidadId(''); }} className={`px-4 py-1.5 ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
-                  Venta (cliente)
+                <button type="button" onClick={() => { setTipo('venta'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Venta <span className="hidden sm:inline">(cliente)</span>
+                </button>
+                <button type="button" onClick={() => { setTipo('traslado'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'traslado' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                  Traslado <span className="hidden sm:inline">(almacén)</span>
                 </button>
               </div>
             </div>
 
+            {tipo === 'traslado' ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Almacén origen *</label>
+                  <button type="button" onClick={() => setMostrarSelectorAlmacenOrigen(true)} className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
+                    <span className={almacenOrigenId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                      {almacenes.find(a => a.id === almacenOrigenId)?.nombre ?? '— Selecciona —'}
+                    </span>
+                    <ChevronDown size={14} className="text-text-muted shrink-0" />
+                  </button>
+                </div>
+                <div>
+                  <label className={labelClass}>Almacén destino *</label>
+                  <button type="button" onClick={() => setMostrarSelectorAlmacenDestino(true)} className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
+                    <span className={almacenDestinoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                      {almacenes.find(a => a.id === almacenDestinoId)?.nombre ?? '— Selecciona —'}
+                    </span>
+                    <ChevronDown size={14} className="text-text-muted shrink-0" />
+                  </button>
+                </div>
+              </div>
+            ) : (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>{labelEntidad} *</label>
-                <select value={entidadId} onChange={e => setEntidadId(e.target.value)} className={inputClass}>
-                  <option value="">— Selecciona —</option>
-                  {entidades.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                </select>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSelectorEntidad(true)}
+                  className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                >
+                  <span className={entidadId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                    {entidades.find(e => e.id === entidadId)?.nombre ?? '— Selecciona —'}
+                  </span>
+                  <ChevronDown size={14} className="text-text-muted shrink-0" />
+                </button>
               </div>
               <div>
                 <label className={labelClass}>Fecha</label>
                 <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
               </div>
             </div>
+            )}
 
+            {tipo !== 'traslado' && (
+              almacenes.length > 1 ? (
+                <div>
+                  <label className={labelClass}>Almacén</label>
+                  <select
+                    value={almacenOrigenId || almacenPredeterminado?.id || ''}
+                    onChange={e => setAlmacenOrigenId(e.target.value)}
+                    className={inputClass}
+                  >
+                    {almacenes.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.nombre}{a.esPredeterminado ? ' (predeterminado)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-text-muted mt-1">
+                    {tipo === 'compra'
+                      ? 'Esta compra entra al inventario de este almacén. No limita ni bloquea nada, es solo para saber dónde quedó el material.'
+                      : 'Esta venta sale del inventario de este almacén. No limita ni bloquea nada, es solo para saber de dónde salió el material.'}
+                  </p>
+                </div>
+              ) : almacenPredeterminado ? (
+                <div className="select-none px-3 py-2 bg-surface-alt border border-border rounded-lg">
+                  <p className="text-sm font-medium text-text-primary">Almacén: {almacenPredeterminado.nombre}</p>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    {tipo === 'compra'
+                      ? 'Esta compra entra al inventario de este almacén.'
+                      : 'Esta venta sale del inventario de este almacén.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800">
+                  <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                  <p className="text-xs">Ningún almacén está marcado como predeterminado — este pesaje no afectará a ningún almacén.</p>
+                </div>
+              )
+            )}
+
+            {tipo !== 'traslado' && (
             <div>
-              <label className={labelClass}>Peso global (kg) *</label>
-              <input type="number" step="0.01" min="0" value={pesoGlobal} onChange={e => setPesoGlobal(e.target.value)} className={inputClass} placeholder="0.00" />
-              <p className="text-xs text-text-muted mt-1">Pesaje único de todos los materiales juntos, al llegar el proveedor.</p>
+              <div className="flex items-center justify-between mb-2">
+                <label className={labelClass + ' mb-0'}>Pesaje global {!pesajeExterior && '*'}</label>
+                <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={pesajeExterior}
+                    onChange={e => setPesajeExterior(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  Pesaje exterior
+                </label>
+              </div>
+              {pesajeExterior ? (
+                <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                  El camión se pesó en una báscula externa — este ticket queda marcado como "Pesaje exterior", sin peso global propio.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {pesajesGlobales.map((f, idx) => {
+                    const neto = netoPesajeGlobalFila(f);
+                    return (
+                      <div key={f.uid} className="border border-border rounded-lg p-3 space-y-2 bg-surface-alt/40">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-text-secondary">Pesaje {idx + 1}</span>
+                          {pesajesGlobales.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setPesajesGlobales(prev => prev.filter(p => p.uid !== f.uid))}
+                              className="text-text-muted hover:text-red-600 transition-colors"
+                              title="Quitar pesaje"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelClass}>Peso bruto (kg)</label>
+                            <input
+                              type="number" step="0.001" min="0"
+                              value={f.peso}
+                              onChange={e => setPesajesGlobales(prev => prev.map(p => p.uid === f.uid ? { ...p, peso: e.target.value } : p))}
+                              className={inputClass}
+                              placeholder="0.000"
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Tara (kg)</label>
+                            <input
+                              type="number" step="0.001" min="0"
+                              value={f.tara}
+                              onChange={e => setPesajesGlobales(prev => prev.map(p => p.uid === f.uid ? { ...p, tara: e.target.value } : p))}
+                              className={inputClass}
+                              placeholder="0.000"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 text-sm">
+                          <span className="text-text-muted">Neto</span>
+                          <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
+                        </div>
+                        <FotoMaterialPicker
+                          label="Fotos del pesaje"
+                          fotos={f.fotos}
+                          onAgregar={files => {
+                            const nuevas = files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }));
+                            setPesajesGlobales(prev => prev.map(p => p.uid === f.uid
+                              ? { ...p, fotos: [...p.fotos, ...nuevas] }
+                              : p
+                            ));
+                          }}
+                          onQuitar={idx => setPesajesGlobales(prev => prev.map(p => p.uid === f.uid
+                            ? { ...p, fotos: p.fotos.filter((_, i) => i !== idx) }
+                            : p
+                          ))}
+                        />
+                      </div>
+                    );
+                  })}
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setPesajesGlobales(prev => [...prev, pesajeGlobalVacio()])}
+                      className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors"
+                    >
+                      <Plus size={16} />
+                      Agregar pesaje
+                    </button>
+                    {pesajesGlobales.length > 1 && (
+                      <span className="text-xs text-text-secondary">
+                        Total: <span className="font-semibold text-text-primary">{fmt(sumaPesajesGlobales(pesajesGlobales))} kg</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
+            )}
 
             {/* Materiales */}
             <div className="space-y-3">
@@ -246,7 +724,12 @@ function PesajePage() {
               {materiales.map((f, idx) => {
                 const neto = netoFila(f, taras);
                 return (
-                  <div key={f.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
+                  <div
+                    key={f.uid}
+                    onFocusCapture={() => setFilaActivaUid(f.uid)}
+                    onClick={() => setFilaActivaUid(f.uid)}
+                    className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-text-secondary">Material {idx + 1}</span>
                       {materiales.length > 1 && (
@@ -257,63 +740,128 @@ function PesajePage() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
+                      <div className={tipo === 'traslado' ? 'col-span-2' : ''}>
                         <label className={labelClass}>Material *</label>
-                        <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
-                          <option value="">— Selecciona —</option>
-                          {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                        </select>
+                        <button
+                          type="button"
+                          onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                          className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                        >
+                          <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                            {productos.find(p => p.id === f.productoId)?.nombre ?? '— Selecciona —'}
+                          </span>
+                          <ChevronDown size={14} className="text-text-muted shrink-0" />
+                        </button>
                       </div>
-                      <div>
-                        <label className={labelClass}>Subcategoría / detalle</label>
-                        <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
-                      </div>
+                      {tipo !== 'traslado' && (
+                        <div>
+                          {esFilaSinLote(f, productos) ? (
+                            <>
+                              <label className={labelClass}>&nbsp;</label>
+                              <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                                Categoría sin lote — va directo a inventario general.
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <label className={labelClass}>{tipo === 'venta' ? 'Origen (inventario) *' : 'Destino (inventario) *'}</label>
+                              <button
+                                type="button"
+                                onClick={() => { setFilaLoteActivaUid(f.uid); setMostrarSelectorLote(true); }}
+                                className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                              >
+                                <span className={f.destino ? 'text-text-primary truncate' : 'text-text-muted'}>
+                                  {lotes.find(l => l.id === f.destino)?.nombre ?? '— Selecciona —'}
+                                </span>
+                                <ChevronDown size={14} className="text-text-muted shrink-0" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    <div>
-                      <label className={labelClass}>Destino (inventario) *</label>
-                      <select value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
-                        <option value="mpp">MPP (Material Por Procesar)</option>
-                        {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className={labelClass}>Peso bruto (kg)</label>
-                        <input type="number" step="0.01" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
-                      </div>
-                      <div>
-                        <label className={labelClass}>Tara</label>
-                        <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
-                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'preconfigurada')} className={`px-2 py-1 ${f.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 items-center">
+                      {/* Las 4 celdas son hermanas directas del grid (no divs anidados por
+                          columna) a propósito: así CSS Grid iguala la altura de la fila 1
+                          (labels) entre ambas columnas automáticamente, sin importar que la
+                          de Tara traiga el toggle Preconfigurada/Manual y la de Peso bruto
+                          no — evita que los inputs de la fila 2 queden a distinta altura.
+                          Orden: Tara queda debajo de Material, Peso bruto debajo de Destino. */}
+                      <div className="flex items-center justify-between gap-1 sm:gap-2 min-w-0">
+                        <label className="text-xs font-medium text-text-secondary shrink-0">Tara</label>
+                        <div className="flex rounded-md overflow-hidden border border-border text-[9px] sm:text-[11px] shrink-0 min-w-0">
+                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'preconfigurada')} className={`px-1 sm:px-2 py-1 truncate ${f.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
                             Preconfigurada
                           </button>
-                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'manual')} className={`px-2 py-1 ${f.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+                          <button type="button" onClick={() => setFila(f.uid, 'taraModo', 'manual')} className={`px-1 sm:px-2 py-1 truncate ${f.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
                             Manual
                           </button>
                         </div>
+                      </div>
+                      <label className="text-xs font-medium text-text-secondary">Peso bruto (kg)</label>
+
+                      <div className="self-start">
                         {f.taraModo === 'preconfigurada' ? (
                           <div>
                             <div className="grid grid-cols-2 gap-2">
-                              <select value={f.taraId} onChange={e => setFila(f.uid, 'taraId', e.target.value)} className={inputClass}>
-                                <option value="">— Tara —</option>
-                                {taras.map(t => <option key={t.id} value={t.id}>{t.nombre} ({t.peso} kg)</option>)}
-                              </select>
+                              <button
+                                type="button"
+                                onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorTara(true); }}
+                                className={`${inputClass} flex items-center justify-between gap-1 text-left`}
+                              >
+                                <span className={f.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                                  {taras.find(t => t.id === f.taraId)?.nombre ?? '— Tara —'}
+                                </span>
+                                <ChevronDown size={14} className="text-text-muted shrink-0" />
+                              </button>
                               <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
                             </div>
                             <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                           </div>
                         ) : (
-                          <input type="number" step="0.01" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
+                          <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
                         )}
                       </div>
+                      <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass + ' self-start'} placeholder="0.00" />
                     </div>
 
-                    <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center justify-end gap-2 text-sm">
                       <span className="text-text-muted">Neto del material</span>
                       <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                     </div>
+
+                    <FotoMaterialPicker
+                      fotos={f.fotos}
+                      onAgregar={files => agregarFotosFila(f.uid, files)}
+                      onQuitar={idx => quitarFotoFila(f.uid, idx)}
+                    />
+
+                    {tipo === 'traslado' && f.productoId && (() => {
+                      const disponible = stockOrigen.get(f.productoId) ?? 0;
+                      if (neto <= disponible) return null;
+                      return (
+                        <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5">
+                          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                          <span>
+                            El almacén de origen solo tiene {fmt(disponible)} kg disponibles de este material — el inventario quedará en {fmt(disponible - neto)} kg.
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {tipo === 'venta' && f.productoId && (() => {
+                      const disponible = stockGlobalDisponible.get(f.productoId) ?? 0;
+                      if (neto <= disponible) return null;
+                      return (
+                        <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5">
+                          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                          <span>
+                            El negocio tiene {fmt(disponible)} kg registrados de este material — el inventario quedará en {fmt(disponible - neto)} kg. Esto no impide la venta, es solo un aviso.
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -324,41 +872,131 @@ function PesajePage() {
               </button>
             </div>
 
+            {tipo === 'traslado' && almacenOrigenId && (
+              <div className="space-y-3">
+                <label className={labelClass + ' mb-0'}>Lotes a trasladar completos (PCB)</label>
+
+                {loteFilas.map((f, idx) => {
+                  const neto = netoLoteTrasladoFila(f);
+                  const opcionesLote = lotesEnOrigen.filter(l => l.id === f.loteId || !loteFilas.some(o => o.uid !== f.uid && o.loteId === l.id));
+                  return (
+                    <div key={f.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-text-secondary">Lote {idx + 1}</span>
+                        <button type="button" onClick={() => quitarLoteFila(f.uid)} className="text-text-muted hover:text-red-600 transition-colors" title="Quitar lote">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Lote *</label>
+                        <select value={f.loteId} onChange={e => setLoteFilaCampo(f.uid, 'loteId', e.target.value)} className={inputClass}>
+                          <option value="">— Selecciona —</option>
+                          {opcionesLote.map(l => (
+                            <option key={l.id} value={l.id}>{l.nombre} ({fmt(l.stockKg)} kg en sistema)</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelClass}>Peso bruto (kg)</label>
+                          <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setLoteFilaCampo(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Tara (kg)</label>
+                          <input type="number" step="0.001" min="0" value={f.tara} onChange={e => setLoteFilaCampo(f.uid, 'tara', e.target.value)} className={inputClass} placeholder="0.00" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 text-sm">
+                        <span className="text-text-muted">Neto del lote</span>
+                        <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
+                      </div>
+                      <FotoMaterialPicker
+                        fotos={f.fotos}
+                        onAgregar={files => agregarFotosLoteFila(f.uid, files)}
+                        onQuitar={idx2 => quitarFotoLoteFila(f.uid, idx2)}
+                      />
+                    </div>
+                  );
+                })}
+
+                <button type="button" onClick={agregarLoteFila} disabled={lotesEnOrigen.length === 0} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <Plus size={16} />
+                  Agregar lote
+                </button>
+                {lotesEnOrigen.length === 0 && <p className="text-xs text-text-muted">No hay lotes activos en el almacén de origen.</p>}
+                <p className="text-xs text-text-muted">Se traslada el lote entero, no una porción — llega intacto al almacén destino cuando se confirme la recepción.</p>
+              </div>
+            )}
+
             <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
                   <Scale size={16} />
-                  Peso neto total
+                  Suma de materiales
                 </span>
                 <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>
                   {fmt(pesoNetoTotal)} kg
                 </span>
               </div>
+              {tipo === 'traslado' ? (
+                <p className="text-[11px] text-brand-700/80">
+                  Total que sale del almacén de origen. Queda pendiente hasta que el almacén destino confirme la
+                  recepción (pestaña Traslados, dentro de Inventario).
+                </p>
+              ) : (
+              <>
+              <div className="flex items-center justify-between gap-3 text-sm border-t border-brand-200 pt-2">
+                <label htmlFor="devolucion" className="text-brand-800 shrink-0">Devolución (kg)</label>
+                <input
+                  id="devolucion"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={devolucion}
+                  onChange={e => setDevolucion(e.target.value)}
+                  className="w-28 px-2 py-1 bg-surface border border-brand-200 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400"
+                  placeholder="0.00"
+                />
+              </div>
+              <p className="text-[11px] text-brand-700/80 -mt-1">
+                Kg que el proveedor se lleva de vuelta. Se suma al peso de los materiales para que
+                encuadre contra el peso global — no afecta el inventario ni la factura.
+              </p>
+              <FotoMaterialPicker
+                label="Fotos de la devolución"
+                fotos={fotosDevolucion}
+                onAgregar={agregarFotosDevolucion}
+                onQuitar={quitarFotoDevolucion}
+              />
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
-                <span className="text-brand-800">Diferencia (global vs. neto)</span>
-                <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>
+                <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
+                <span className={`font-semibold ${colorClaseDiferencia(diferencia, sumaPesajesGlobales(pesajesGlobales), pesajeExterior)}`}>
                   {fmt(diferencia)} kg
                 </span>
               </div>
+              </>
+              )}
             </div>
 
             <div>
-              <label className={labelClass}>Fotos de evidencia</label>
-              <div className="flex flex-wrap gap-2">
-                {fotos.map((f, idx) => (
-                  <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-border">
-                    <img src={f.preview} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
-                    <button type="button" onClick={() => quitarFoto(idx)} className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full p-0.5 hover:bg-black/80">
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-                <button type="button" onClick={() => fileInputRef.current?.click()} className="w-20 h-20 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-600 transition-colors">
-                  <ImagePlus size={20} />
-                  <span className="text-[10px] mt-1">Agregar</span>
+              <label className={labelClass}>Vehículo</label>
+              <select value={vehiculo} onChange={e => setVehiculo(e.target.value)} className={inputClass}>
+                <option value="">— Sin vehículo —</option>
+                {vehiculos.map(v => <option key={v.id} value={v.nombre}>{v.nombre}</option>)}
+              </select>
+              <div className="flex items-center gap-2 mt-1.5">
+                <input
+                  type="text"
+                  value={nuevoVehiculo}
+                  onChange={e => setNuevoVehiculo(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); crearVehiculoInline(); } }}
+                  className={`${inputClass} text-xs py-1.5`}
+                  placeholder="Agregar vehículo nuevo (placa)"
+                />
+                <button type="button" onClick={crearVehiculoInline} disabled={!nuevoVehiculo.trim()} className="shrink-0 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+                  Guardar
                 </button>
               </div>
-              <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFotos} className="hidden" />
             </div>
 
             <div>
@@ -369,7 +1007,9 @@ function PesajePage() {
             {error && <p className="text-red-500 text-sm">{error}</p>}
 
             <button type="submit" disabled={guardando} className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? <><Loader2 size={16} className="animate-spin" /> Guardando...</> : 'Generar ticket de pesaje'}
+              {guardando
+                ? <><Loader2 size={16} className="animate-spin" /> Guardando...</>
+                : tipo === 'traslado' ? 'Generar traslado' : 'Generar ticket de pesaje'}
             </button>
 
             {tipo === 'compra' && (
@@ -383,9 +1023,11 @@ function PesajePage() {
               </button>
             )}
 
+            {tipo !== 'traslado' && (
             <p className="text-xs text-text-muted">
-              ¿La operación fue fuera de la empresa y no se pesó aquí? Entonces no se genera ticket: el peso se ingresa a mano al crear la factura.
+              ¿Prefieres cargar el peso directamente al crear la factura? También puedes hacerlo desde ahí con "Peso manual" — se genera el ticket igual.
             </p>
+            )}
           </form>
         ) : (
           <p className="text-text-muted text-sm">No tienes permiso para registrar pesajes.</p>
@@ -393,14 +1035,24 @@ function PesajePage() {
 
         {!puedeVerTickets && (
           <SeccionTickets
-            ticketsBruto={ticketsBruto}
-            ticketsCompletos={ticketsCompletos}
+            filasBruto={filasBruto}
+            filasCompletos={filasCompletos}
             totalPendiente={totalPendientePorRecepcionar}
             nombrePorEntidad={nombrePorEntidad}
             fmt={fmt}
             puedeCrear={puedeCrear}
+            puedeEliminar={puedeEliminarTicket}
+            buscaCodigo={buscaCodigo}
+            onBuscaCodigo={setBuscaCodigo}
+            filtroTipo={filtroTipo}
+            onFiltroTipo={setFiltroTipo}
+            filtroEstado={filtroEstado}
+            onFiltroEstado={setFiltroEstado}
             onCompletar={setTicketACompletar}
+            onEliminar={handleEliminarTicket}
             onVerDetalle={id => navigate(`/pesaje/${id}`)}
+            onRecepcionarTraslado={setTrasladoARecepcionar}
+            puedeRecepcionarTraslado={puedeRecepcionarTraslado}
           />
         )}
       </div>
@@ -408,14 +1060,24 @@ function PesajePage() {
 
       {pestana === 'tickets' && puedeVerTickets && (
         <SeccionTickets
-          ticketsBruto={ticketsBruto}
-          ticketsCompletos={ticketsCompletos}
+          filasBruto={filasBruto}
+          filasCompletos={filasCompletos}
           totalPendiente={totalPendientePorRecepcionar}
           nombrePorEntidad={nombrePorEntidad}
           fmt={fmt}
           puedeCrear={puedeCrear}
+          puedeEliminar={puedeEliminarTicket}
+          buscaCodigo={buscaCodigo}
+          onBuscaCodigo={setBuscaCodigo}
+          filtroTipo={filtroTipo}
+          onFiltroTipo={setFiltroTipo}
+          filtroEstado={filtroEstado}
+          onFiltroEstado={setFiltroEstado}
           onCompletar={setTicketACompletar}
+          onEliminar={handleEliminarTicket}
           onVerDetalle={id => navigate(`/pesaje/${id}`)}
+          onRecepcionarTraslado={setTrasladoARecepcionar}
+          puedeRecepcionarTraslado={puedeRecepcionarTraslado}
         />
       )}
 
@@ -429,6 +1091,74 @@ function PesajePage() {
           onCompletado={cargarTickets}
         />
       )}
+
+      {trasladoARecepcionar && (
+        <CompletarTrasladoModal
+          traslado={trasladoARecepcionar}
+          onClose={() => setTrasladoARecepcionar(null)}
+          onCompletado={cargarTraslados}
+        />
+      )}
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={productoId => {
+            const uid = filaActiva?.uid ?? materiales[0].uid;
+            setFila(uid, 'productoId', productoId);
+            setMostrarSelectorMaterial(false);
+          }}
+        />
+      )}
+
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={filaActiva?.taraId}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => {
+            const uid = filaActiva?.uid ?? materiales[0].uid;
+            setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, ...seleccionarTaraFila(f, taraId) } : f)));
+            setMostrarSelectorTara(false);
+          }}
+        />
+      )}
+      {mostrarSelectorEntidad && (
+        <SeleccionarEntidadModal
+          titulo={labelEntidad}
+          entidades={entidades}
+          onClose={() => setMostrarSelectorEntidad(false)}
+          onSeleccionar={id => { setEntidadId(id); setMostrarSelectorEntidad(false); }}
+        />
+      )}
+      {mostrarSelectorLote && (
+        <SeleccionarEntidadModal
+          titulo={tipo === 'venta' ? 'Origen (inventario)' : 'Destino (inventario)'}
+          entidades={lotes.map(l => ({ id: l.id, nombre: l.nombre, activo: l.activo, fotos: l.fotos }))}
+          onClose={() => setMostrarSelectorLote(false)}
+          onSeleccionar={id => {
+            if (filaLoteActivaUid !== null) setFila(filaLoteActivaUid, 'destino', id);
+            setMostrarSelectorLote(false);
+          }}
+        />
+      )}
+      {mostrarSelectorAlmacenOrigen && (
+        <SeleccionarEntidadModal
+          titulo="Almacén origen"
+          entidades={almacenes.map(a => ({ id: a.id, nombre: a.nombre, activo: a.activo, fotos: a.fotos }))}
+          onClose={() => setMostrarSelectorAlmacenOrigen(false)}
+          onSeleccionar={id => { setAlmacenOrigenId(id); setMostrarSelectorAlmacenOrigen(false); }}
+        />
+      )}
+      {mostrarSelectorAlmacenDestino && (
+        <SeleccionarEntidadModal
+          titulo="Almacén destino"
+          entidades={almacenes.filter(a => a.id !== almacenOrigenId).map(a => ({ id: a.id, nombre: a.nombre, activo: a.activo, fotos: a.fotos }))}
+          onClose={() => setMostrarSelectorAlmacenDestino(false)}
+          onSeleccionar={id => { setAlmacenDestinoId(id); setMostrarSelectorAlmacenDestino(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -437,26 +1167,95 @@ function PesajePage() {
  *  completados (pendientes por facturar / facturados), con un totalizador
  *  destacado del material pendiente por recepcionar. */
 function SeccionTickets({
-  ticketsBruto,
-  ticketsCompletos,
+  filasBruto,
+  filasCompletos,
   totalPendiente,
   nombrePorEntidad,
   fmt,
   puedeCrear,
+  puedeEliminar,
+  puedeRecepcionarTraslado,
+  buscaCodigo,
+  onBuscaCodigo,
+  filtroTipo,
+  onFiltroTipo,
+  filtroEstado,
+  onFiltroEstado,
   onCompletar,
+  onEliminar,
   onVerDetalle,
+  onRecepcionarTraslado,
 }: {
-  ticketsBruto: TicketPesaje[];
-  ticketsCompletos: TicketPesaje[];
+  filasBruto: FilaListado[];
+  filasCompletos: FilaListado[];
   totalPendiente: number;
   nombrePorEntidad: Map<string, string>;
   fmt: (n: number) => string;
   puedeCrear: boolean;
+  puedeEliminar: boolean;
+  puedeRecepcionarTraslado: boolean;
+  buscaCodigo: string;
+  onBuscaCodigo: (v: string) => void;
+  filtroTipo: 'todos' | 'compra' | 'venta' | 'traslado';
+  onFiltroTipo: (v: 'todos' | 'compra' | 'venta' | 'traslado') => void;
+  filtroEstado: 'todos' | 'bruto' | 'pendiente' | 'facturado';
+  onFiltroEstado: (v: 'todos' | 'bruto' | 'pendiente' | 'facturado') => void;
   onCompletar: (t: TicketPesaje) => void;
+  onEliminar: (t: TicketPesaje) => void;
   onVerDetalle: (id: string) => void;
+  onRecepcionarTraslado: (t: Traslado) => void;
 }) {
+  const filtroActivo = filtroTipo !== 'todos' || filtroEstado !== 'todos';
+  const selectFiltroClass = "px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
+
   return (
     <div className="space-y-8">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full max-w-xs">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            type="search"
+            value={buscaCodigo}
+            onChange={e => onBuscaCodigo(e.target.value)}
+            placeholder="Buscar por N° de control..."
+            className="w-full pl-9 pr-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
+          />
+          {buscaCodigo && (
+            <button
+              type="button"
+              onClick={() => onBuscaCodigo('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted hover:text-text-primary"
+            >
+              Limpiar
+            </button>
+          )}
+        </div>
+
+        <select value={filtroTipo} onChange={e => onFiltroTipo(e.target.value as typeof filtroTipo)} className={selectFiltroClass}>
+          <option value="todos">Todos los tipos</option>
+          <option value="compra">Solo compra</option>
+          <option value="venta">Solo venta</option>
+          <option value="traslado">Solo traslado</option>
+        </select>
+
+        <select value={filtroEstado} onChange={e => onFiltroEstado(e.target.value as typeof filtroEstado)} className={selectFiltroClass}>
+          <option value="todos">Todos los estados</option>
+          <option value="bruto">En bruto / pendiente</option>
+          <option value="pendiente">Pendiente por facturar</option>
+          <option value="facturado">Facturado</option>
+        </select>
+
+        {filtroActivo && (
+          <button
+            type="button"
+            onClick={() => { onFiltroTipo('todos'); onFiltroEstado('todos'); }}
+            className="text-xs text-text-muted hover:text-text-primary underline"
+          >
+            Limpiar filtros
+          </button>
+        )}
+      </div>
+
       <div>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h2 className="text-sm font-semibold text-text-secondary">Por recepcionar (completar)</h2>
@@ -466,39 +1265,73 @@ function SeccionTickets({
             <span className="text-sm font-bold text-amber-800">{fmt(totalPendiente)} kg</span>
           </div>
         </div>
-        <TablaTickets tickets={ticketsBruto} modo="bruto" nombrePorEntidad={nombrePorEntidad} fmt={fmt} puedeCrear={puedeCrear} onCompletar={onCompletar} onVerDetalle={onVerDetalle} />
+        <TablaTickets
+          filas={filasBruto}
+          modo="bruto"
+          nombrePorEntidad={nombrePorEntidad}
+          fmt={fmt}
+          puedeCrear={puedeCrear}
+          puedeEliminar={puedeEliminar}
+          puedeRecepcionarTraslado={puedeRecepcionarTraslado}
+          onCompletar={onCompletar}
+          onEliminar={onEliminar}
+          onVerDetalle={onVerDetalle}
+          onRecepcionarTraslado={onRecepcionarTraslado}
+        />
       </div>
 
       <div>
         <h2 className="text-sm font-semibold text-text-secondary mb-3">Pendientes por facturar / Facturados</h2>
-        <TablaTickets tickets={ticketsCompletos} modo="completo" nombrePorEntidad={nombrePorEntidad} fmt={fmt} puedeCrear={puedeCrear} onCompletar={onCompletar} onVerDetalle={onVerDetalle} />
+        <TablaTickets
+          filas={filasCompletos}
+          modo="completo"
+          nombrePorEntidad={nombrePorEntidad}
+          fmt={fmt}
+          puedeCrear={puedeCrear}
+          puedeEliminar={puedeEliminar}
+          puedeRecepcionarTraslado={puedeRecepcionarTraslado}
+          onCompletar={onCompletar}
+          onEliminar={onEliminar}
+          onVerDetalle={onVerDetalle}
+          onRecepcionarTraslado={onRecepcionarTraslado}
+        />
       </div>
     </div>
   );
 }
 
 function TablaTickets({
-  tickets,
+  filas,
   modo,
   nombrePorEntidad,
   fmt,
   puedeCrear,
+  puedeEliminar,
+  puedeRecepcionarTraslado,
   onCompletar,
+  onEliminar,
   onVerDetalle,
+  onRecepcionarTraslado,
 }: {
-  tickets: TicketPesaje[];
+  filas: FilaListado[];
   modo: 'bruto' | 'completo';
   nombrePorEntidad: Map<string, string>;
   fmt: (n: number) => string;
   puedeCrear: boolean;
+  puedeEliminar: boolean;
+  puedeRecepcionarTraslado: boolean;
   onCompletar: (t: TicketPesaje) => void;
+  onEliminar: (t: TicketPesaje) => void;
   onVerDetalle: (id: string) => void;
+  onRecepcionarTraslado: (t: Traslado) => void;
 }) {
+  const hayAccion = puedeCrear || puedeEliminar || puedeRecepcionarTraslado;
+
   return (
     <div className="bg-surface rounded-xl border border-border overflow-hidden">
-      {tickets.length === 0 ? (
+      {filas.length === 0 ? (
         <p className="text-center text-text-muted py-10 text-sm">
-          {modo === 'bruto' ? 'No hay tickets pendientes por recepcionar.' : 'Aún no hay tickets completados.'}
+          {modo === 'bruto' ? 'No hay operaciones pendientes por recepcionar.' : 'Aún no hay operaciones completadas.'}
         </p>
       ) : (
         <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -507,50 +1340,172 @@ function TablaTickets({
               <th className="px-4 py-2.5 font-medium">N° Control</th>
               <th className="px-4 py-2.5 font-medium">Fecha</th>
               <th className="px-4 py-2.5 font-medium">Tipo</th>
-              <th className="px-4 py-2.5 font-medium">Entidad</th>
+              <th className="px-4 py-2.5 font-medium">Entidad / Almacenes</th>
               <th className="px-4 py-2.5 font-medium">Materiales</th>
-              <th className="px-4 py-2.5 font-medium text-right">{modo === 'bruto' ? 'Peso global (kg)' : 'Neto (kg)'}</th>
+              <th className="px-4 py-2.5 font-medium text-right">{modo === 'bruto' ? 'Peso (kg)' : 'Neto (kg)'}</th>
               <th className="px-4 py-2.5 font-medium text-right">Estado</th>
-              {puedeCrear && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
+              {hayAccion && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
             </tr>
           </thead>
           <tbody>
-            {tickets.map(t => (
-              <tr
-                key={t.id}
-                onClick={modo === 'completo' ? () => onVerDetalle(t.id) : undefined}
-                className={`border-b border-border last:border-b-0 ${modo === 'completo' ? 'cursor-pointer hover:bg-surface-alt/60 transition-colors' : ''}`}
-              >
-                <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">{t.codigo}</td>
-                <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
-                <td className="px-4 py-2.5 text-text-secondary capitalize">{t.tipo}</td>
-                <td className="px-4 py-2.5 text-text-primary">{t.entidadId ? (nombrePorEntidad.get(t.entidadId) ?? '—') : '—'}</td>
-                <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
-                <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(modo === 'bruto' ? t.pesoGlobal : t.pesoNetoTotal)}</td>
-                <td className="px-4 py-2.5 text-right">
-                  {t.estado === 'bruto' ? (
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700">En bruto</span>
-                  ) : (
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${t.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {t.facturado ? 'Facturado' : 'Pendiente'}
-                    </span>
-                  )}
-                </td>
-                {puedeCrear && (
-                  <td className="px-4 py-2.5 text-right">
-                    {t.estado === 'bruto' && (
-                      <button type="button" onClick={e => { e.stopPropagation(); onCompletar(t); }} className="text-xs font-medium text-brand-600 hover:text-brand-700">
-                        Completar
-                      </button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
+            {filas.map(f =>
+              f.kind === 'pesaje' ? (
+                <FilaTicketPesaje
+                  key={`t-${f.ticket.id}`}
+                  t={f.ticket}
+                  modo={modo}
+                  nombrePorEntidad={nombrePorEntidad}
+                  fmt={fmt}
+                  puedeCrear={puedeCrear}
+                  puedeEliminar={puedeEliminar}
+                  hayAccion={hayAccion}
+                  onCompletar={onCompletar}
+                  onEliminar={onEliminar}
+                  onVerDetalle={onVerDetalle}
+                />
+              ) : (
+                <FilaTicketTraslado
+                  key={`tr-${f.traslado.id}`}
+                  t={f.traslado}
+                  fmt={fmt}
+                  puedeRecepcionarTraslado={puedeRecepcionarTraslado}
+                  hayAccion={hayAccion}
+                  onRecepcionarTraslado={onRecepcionarTraslado}
+                />
+              )
+            )}
           </tbody>
         </table></div>
       )}
     </div>
+  );
+}
+
+function FilaTicketPesaje({
+  t,
+  modo,
+  nombrePorEntidad,
+  fmt,
+  puedeCrear,
+  puedeEliminar,
+  hayAccion,
+  onCompletar,
+  onEliminar,
+  onVerDetalle,
+}: {
+  t: TicketPesaje;
+  modo: 'bruto' | 'completo';
+  nombrePorEntidad: Map<string, string>;
+  fmt: (n: number) => string;
+  puedeCrear: boolean;
+  puedeEliminar: boolean;
+  hayAccion: boolean;
+  onCompletar: (t: TicketPesaje) => void;
+  onEliminar: (t: TicketPesaje) => void;
+  onVerDetalle: (id: string) => void;
+}) {
+  return (
+    <tr
+      onClick={() => onVerDetalle(t.id)}
+      className="border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-alt/60 transition-colors"
+    >
+      <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">
+        <span
+          className={`inline-flex items-center justify-center w-4 h-4 rounded text-[10px] font-bold mr-1.5 ${
+            t.tipo === 'compra' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+          }`}
+          title={t.tipo === 'compra' ? 'Compra' : 'Venta'}
+        >
+          {t.tipo === 'compra' ? 'C' : 'V'}
+        </span>
+        {t.codigo}
+      </td>
+      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
+      <td className="px-4 py-2.5 text-text-secondary">{t.tipo === 'compra' ? 'Ticket de compra' : 'Ticket de venta'}</td>
+      <td className="px-4 py-2.5 text-text-primary">{t.entidadId ? (nombrePorEntidad.get(t.entidadId) ?? '—') : '—'}</td>
+      <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
+      <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(modo === 'bruto' ? t.pesoGlobal : t.pesoNetoTotal)}</td>
+      <td className="px-4 py-2.5 text-right">
+        {t.estado === 'bruto' ? (
+          <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700">En bruto</span>
+        ) : (
+          <span className={`px-2 py-0.5 rounded-full text-xs ${t.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+            {t.facturado ? 'Facturado' : 'Pendiente'}
+          </span>
+        )}
+      </td>
+      {hayAccion && (
+        <td className="px-4 py-2.5 text-right">
+          <div className="flex items-center justify-end gap-3">
+            {puedeCrear && t.estado === 'bruto' && (
+              <button type="button" onClick={e => { e.stopPropagation(); onCompletar(t); }} className="text-xs font-medium text-brand-600 hover:text-brand-700">
+                Completar
+              </button>
+            )}
+            {puedeEliminar && !t.facturado && (
+              <button type="button" onClick={e => { e.stopPropagation(); onEliminar(t); }} className="text-text-muted hover:text-red-600 transition-colors" title="Eliminar ticket">
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        </td>
+      )}
+    </tr>
+  );
+}
+
+/** Fila de traslado dentro de la misma tabla de tickets — mismo layout de
+ *  columnas, con "Entidad" leído como "Origen → Destino" y sin acciones de
+ *  factura (los traslados no se facturan, no tienen borrado). */
+function FilaTicketTraslado({
+  t,
+  fmt,
+  puedeRecepcionarTraslado,
+  hayAccion,
+  onRecepcionarTraslado,
+}: {
+  t: Traslado;
+  fmt: (n: number) => string;
+  puedeRecepcionarTraslado: boolean;
+  hayAccion: boolean;
+  onRecepcionarTraslado: (t: Traslado) => void;
+}) {
+  const pendiente = t.estado === 'pendiente';
+  return (
+    <tr className="border-b border-border last:border-b-0">
+      <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">
+        <span
+          className="inline-flex items-center justify-center w-4 h-4 rounded text-[10px] font-bold mr-1.5 bg-teal-100 text-teal-700"
+          title="Traslado"
+        >
+          T
+        </span>
+        {t.codigo}
+      </td>
+      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.createdAt.slice(0, 10)}</td>
+      <td className="px-4 py-2.5 text-text-secondary">Traslado</td>
+      <td className="px-4 py-2.5 text-text-primary">
+        {t.nombreAlmacenOrigen ?? '—'} → {t.nombreAlmacenDestino ?? '—'}
+      </td>
+      <td className="px-4 py-2.5 text-text-secondary">{resumenMaterialesTraslado(t)}</td>
+      <td className="px-4 py-2.5 text-right font-medium text-text-primary">
+        {fmt(pendiente ? t.pesoNetoEnviado : (t.pesoNetoRecibido ?? t.pesoNetoEnviado))}
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        <span className={`px-2 py-0.5 rounded-full text-xs ${pendiente ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+          {pendiente ? 'Pendiente' : 'Completo'}
+        </span>
+      </td>
+      {hayAccion && (
+        <td className="px-4 py-2.5 text-right">
+          {puedeRecepcionarTraslado && pendiente && (
+            <button type="button" onClick={() => onRecepcionarTraslado(t)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
+              Recepcionar
+            </button>
+          )}
+        </td>
+      )}
+    </tr>
   );
 }
 
@@ -559,6 +1514,15 @@ function resumenMateriales(t: TicketPesaje): string {
   if (t.materiales.length === 0) return '—';
   if (t.materiales.length === 1) return t.materiales[0].nombreProducto ?? 'material';
   return `${t.materiales.length} materiales`;
+}
+
+function resumenMaterialesTraslado(t: Traslado): string {
+  if (t.materiales.length === 0) return '—';
+  if (t.materiales.length === 1) {
+    const m = t.materiales[0];
+    return m.loteId ? `${m.nombreLote ?? 'Lote'} (lote completo)` : m.nombreProducto ?? 'material';
+  }
+  return `${t.materiales.length} ítems`;
 }
 
 export default PesajePage;

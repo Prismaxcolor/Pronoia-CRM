@@ -10,6 +10,14 @@ export const crearCitaSchema = z.object({
 });
 export type CrearCitaInput = z.infer<typeof crearCitaSchema>;
 
+/** Agendar por staff (walk-in / teléfono): además de fecha/hora, el staff
+ *  elige a qué proveedor o cliente le está agendando la cita. */
+export const crearCitaStaffSchema = crearCitaSchema.extend({
+  entidadTipo: z.enum(['proveedor', 'cliente']),
+  entidadId: z.string().uuid('Proveedor/cliente inválido.'),
+});
+export type CrearCitaStaffInput = z.infer<typeof crearCitaStaffSchema>;
+
 export const actualizarEstadoCitaSchema = z.object({
   estado: z.enum(['pendiente', 'confirmada', 'reprogramada', 'cancelada', 'completada']),
 });

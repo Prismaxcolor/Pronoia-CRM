@@ -25,8 +25,15 @@ const upload = multer({
 const TIPOS: Record<string, { bucket: string; recurso: Recurso; accion: Accion }> = {
   productos: { bucket: 'productos', recurso: 'productos', accion: 'crear' },
   tickets: { bucket: 'tickets', recurso: 'pesaje', accion: 'crear' },
-  taras: { bucket: 'taras', recurso: 'productos', accion: 'crear' },
+  // Reusa el bucket "tickets" a propósito — misma naturaleza de evidencia
+  // fotográfica de pesaje, no amerita un bucket de Storage nuevo.
+  traslados: { bucket: 'tickets', recurso: 'traslados', accion: 'crear' },
+  taras: { bucket: 'taras', recurso: 'taras', accion: 'crear' },
   comprobantes: { bucket: 'comprobantes', recurso: 'cochinito', accion: 'crear' },
+  clientes: { bucket: 'clientes', recurso: 'clientes', accion: 'crear' },
+  proveedores: { bucket: 'proveedores', recurso: 'proveedores', accion: 'crear' },
+  almacenes: { bucket: 'almacenes', recurso: 'almacenes', accion: 'crear' },
+  lotes: { bucket: 'lotes', recurso: 'productos', accion: 'crear' },
 };
 
 declare global {

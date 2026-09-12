@@ -6,13 +6,33 @@ export type { Usuario, RolUsuario, Permiso, Recurso, Accion } from './usuario.js
 export { PERMISOS_POR_ROL, tienePermiso } from './usuario.js';
 export type { Cliente } from './cliente.js';
 export type { TipoMaterial } from './tipos-material.js';
-export type { ListaPrecios, PrecioLista } from './lista-precios.js';
+export type { ListaPrecios, PrecioLista, TipoListaPrecios } from './lista-precios.js';
 export type { Proveedor } from './proveedor.js';
-export type { TicketPesaje, TicketPesajeMaterial, TipoTicketPesaje } from './ticket-pesaje.js';
-export type { Lote, DestinoTipo } from './lote.js';
+export type { TicketPesaje, TicketPesajeMaterial, TipoTicketPesaje, PesajeGlobal } from './ticket-pesaje.js';
+export type { Lote, DestinoTipo, ComposicionPCBItem } from './lote.js';
 export { destinoLabel } from './lote.js';
 export { formatCodigoPesaje } from './ticket-pesaje.js';
 export type { FacturaCompra, FacturaVenta, FacturaLinea, EstadoFacturaCompraVenta } from './factura-compra-venta.js';
-export { formatCodigoCompra } from './factura-compra-venta.js';
-export type { Transformacion, DetalleTransformacion } from './transformacion.js';
+export { formatCodigoCompra, formatCodigoVenta } from './factura-compra-venta.js';
+export { normalizarCodigo, coincideCodigo } from './codigo.js';
+export type {
+  Transformacion,
+  EstadoTransformacion,
+  CategoriaTransformacion,
+  EntradaDetalleTransformacion,
+  SalidaTransformacion,
+  SalidaComun,
+} from './transformacion.js';
 export type { Tara } from './tara.js';
+export type { Vehiculo } from './vehiculo.js';
+export type { Almacen } from './almacen.js';
+export type { Traslado, TrasladoMaterial } from './traslado.js';
+export { formatCodigoTraslado } from './traslado.js';
+export type {
+  TomaFisicaInventario,
+  EstadoTomaFisica,
+  DetalleTomaFisica,
+  ResumenTomaFisica,
+  ResumenTomaFisicaLinea,
+} from './toma-fisica.js';
+export { codigoTomaFisica } from './toma-fisica.js';

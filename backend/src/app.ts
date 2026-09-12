@@ -19,11 +19,17 @@ import inventarioRouter from './routes/inventario.js';
 import transformacionesRouter from './routes/transformaciones.js';
 import lotesRouter from './routes/lotes.js';
 import tarasRouter from './routes/tara.js';
+import vehiculosRouter from './routes/vehiculo.js';
 import pagosRouter from './routes/pagos.js';
+import cobrosRouter from './routes/cobros.js';
 import cochinitoRouter from './routes/cochinito.js';
 import uploadsRouter from './routes/uploads.js';
 import portalRouter from './routes/portal.js';
 import citasRouter from './routes/citas.js';
+import almacenesRouter from './routes/almacenes.js';
+import trasladosRouter from './routes/traslados.js';
+import metricasRouter from './routes/metricas.js';
+import tomasFisicasRouter from './routes/toma-fisica.js';
 
 const app = express();
 
@@ -73,11 +79,17 @@ app.use('/api/inventario', inventarioRouter);
 app.use('/api/transformaciones', transformacionesRouter);
 app.use('/api/lotes', lotesRouter);
 app.use('/api/taras', tarasRouter);
+app.use('/api/vehiculos', vehiculosRouter);
 app.use('/api/pagos', pagosRouter);
+app.use('/api/cobros', cobrosRouter);
 app.use('/api/cochinito', cochinitoRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/tasas', tasasRouter);
 app.use('/api/portal', portalRouter);
 app.use('/api/citas', citasRouter);
+app.use('/api/almacenes', almacenesRouter);
+app.use('/api/traslados', trasladosRouter);
+app.use('/api/metricas', metricasRouter);
+app.use('/api/tomas-fisicas', tomasFisicasRouter);
 
 export default app;

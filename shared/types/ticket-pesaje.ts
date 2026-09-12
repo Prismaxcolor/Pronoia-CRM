@@ -28,6 +28,19 @@ export interface TicketPesajeMaterial {
   loteId: string | null;
   /** Nombre del lote, resuelto vía join. Solo lectura. */
   nombreLote?: string | null;
+  /** URLs de fotos de este material — cada material tiene las suyas, en vez
+   *  de una sola foto general para todo el ticket (Bloque 46). */
+  fotos: string[];
+}
+
+/** Una pesada individual que compone el peso global — el camión puede pasar
+ *  varias veces por la báscula, cada una con sus propias tara y fotos. Solo
+ *  se carga al crear el ticket, no se edita después (como el peso global). */
+export interface PesajeGlobal {
+  id: string;
+  peso: number;
+  tara: number;
+  fotos: string[];
 }
 
 /**
@@ -54,15 +67,34 @@ export interface TicketPesaje {
   materiales: TicketPesajeMaterial[];
   /** Suma de los pesos netos de todos los materiales. Solo lectura. */
   pesoNetoTotal: number;
-  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
+  /** Mismo valor que pesoNetoTotal, nombre explícito para distinguirlo de la
+   *  devolución (que se suma aparte, no está incluida acá). */
+  pesoNetoMateriales: number;
+  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor.
+   *  0 cuando pesajeExterior es true (no hay lectura propia de báscula). */
   pesoGlobal: number;
+  /** Desglose de pesadas individuales que suman pesoGlobal. */
+  pesajesGlobales: PesajeGlobal[];
+  /** true si el camión se pesó en una báscula externa a la que Pronoia no tiene acceso. */
+  pesajeExterior: boolean;
   /**
-   * pesoGlobal - (suma de netos + devolución total). Mide la merma/discrepancia
+   * Kg de devolución del ticket completo (no atada a ningún material). Se
+   * suma a pesoNetoMateriales para reconciliar contra pesoGlobal — NO resta
+   * del inventario ni de la factura, es solo un campo de conciliación.
+   */
+  devolucion: number;
+  /** URLs de fotos de la devolución del ticket completo (no por material). */
+  fotosDevolucion: string[];
+  /**
+   * pesoGlobal - pesoNetoMateriales - devolucion. Mide la merma/discrepancia
    * entre el pesaje global de entrada y lo que terminó contabilizado por
-   * material. Solo lectura, derivado (no se guarda en BD).
+   * material + devolución. Solo lectura, derivado (no se guarda en BD).
    */
   diferencia: number;
-  /** URLs o paths de fotos del material/pesada. */
+  /** URLs de fotos generales del ticket completo — campo legacy, anterior al
+   *  Bloque 46. Ya no se llena desde el formulario (las fotos ahora se
+   *  cargan por material, ver TicketPesajeMaterial.fotos), pero se conserva
+   *  para no perder las fotos de tickets creados antes de ese cambio. */
   fotos: string[] | null;
   observaciones: string | null;
   /** true cuando ya existe una factura (compra o venta) asociada. */
@@ -78,11 +110,15 @@ export interface TicketPesaje {
   completadoPor: string | null;
   /** ISO timestamp de cuándo se completó un ticket en bruto. */
   completadoEn: string | null;
+  /** Placa/identificador del vehículo que trajo o se llevó el material. */
+  vehiculo: string | null;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
 }
 
-/** Formatea el correlativo de un ticket de pesaje: 1 → "Pesaje 0001". */
-export function formatCodigoPesaje(numero: number): string {
-  return `Pesaje ${String(numero).padStart(4, '0')}`;
+/** Formatea el correlativo de un ticket de pesaje: (1, 'compra') → "Compra-0001".
+ *  Cada tipo tiene su propio contador desde el Bloque 35. */
+export function formatCodigoPesaje(numero: number, tipo: 'compra' | 'venta'): string {
+  const prefijo = tipo === 'compra' ? 'Compra' : 'Venta';
+  return `${prefijo}-${String(numero).padStart(4, '0')}`;
 }

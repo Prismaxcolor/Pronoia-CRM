@@ -4,6 +4,9 @@ import type { TipoMaterial } from '@shared/types/index.js';
 export interface TipoMaterialInput {
   nombre: string;
   descripcion?: string | null;
+  /** true si esta categoría nunca va a un lote específico al pesarla — va
+   *  directo a inventario general (MPP). Ej. "No Ferroso". */
+  sinLote?: boolean;
 }
 
 export async function obtenerTiposMaterial(): Promise<TipoMaterial[]> {
@@ -59,5 +62,14 @@ export async function reactivarTipoMaterial(id: string): Promise<{ ok: true } | 
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo reactivar la categoría.' };
+  }
+}
+
+export async function borrarTipoMaterial(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/tipos-material/${id}`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo eliminar la categoría.' };
   }
 }

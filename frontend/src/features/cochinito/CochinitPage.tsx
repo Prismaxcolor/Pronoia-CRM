@@ -5,9 +5,9 @@ import {
   Building2, Globe, Pencil, Archive, ArchiveRestore,
 } from 'lucide-react';
 import { obtenerBancas, obtenerMovimientos, archivarBanca, desarchivarBanca } from '../../services/banca-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import type { Banca, Movimiento, TipoMovimiento, TipoBanca } from '@shared/types/index.js';
 import TasaCambioWidget from './TasaCambioWidget';
 import CrearMovimientoModal from './CrearMovimientoModal';
@@ -67,10 +67,16 @@ function CochinitPage() {
     setMovimientos(m);
   };
 
+  // Igual que cargar(), pero sin pasar por una función async con nombre: el
+  // linter no puede ver más allá del await y marca el setState de adentro
+  // como "síncrono dentro del efecto" aunque no lo sea.
   useEffect(() => {
-    setCargando(true);
-    cargar().finally(() => setCargando(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    Promise.all([
+      obtenerBancas({ incluirArchivadas: mostrarArchivadas }),
+      obtenerMovimientos(),
+    ])
+      .then(([b, m]) => { setBancas(b); setMovimientos(m); })
+      .finally(() => setCargando(false));
   }, [mostrarArchivadas]);
 
   const stats = useMemo(() => {
@@ -198,10 +204,37 @@ function CochinitPage() {
         <StatCard label="Egresos del mes" valor={`-${stats.egresosMes.toLocaleString()}`} icon={<TrendingDown size={18} />} colorBg="bg-red-500" />
       </div>
 
-      {/* Bancas + tasa widget */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center justify-between">
+      {/* Tasas de cambio */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <TasaCambioWidget
+          fuenteKey="bcv"
+          titulo="Tasa BCV"
+          subtitulo="Banco Central de Venezuela"
+          monedaOrigen="USD"
+          cacheMs={24 * 60 * 60 * 1000}
+          acento="brand"
+        />
+        <TasaCambioWidget
+          fuenteKey="binance"
+          titulo="Tasa Binance"
+          subtitulo="Binance P2P — precio de venta"
+          monedaOrigen="USD"
+          cacheMs={15 * 60 * 1000}
+          acento="binance"
+        />
+        <TasaCambioWidget
+          fuenteKey="euro"
+          titulo="Tasa Euro"
+          subtitulo="Banco Central de Venezuela"
+          monedaOrigen="EUR"
+          cacheMs={24 * 60 * 60 * 1000}
+          acento="euro"
+        />
+      </div>
+
+      {/* Bancas */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Bancas</h2>
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
@@ -327,11 +360,6 @@ function CochinitPage() {
           )}
         </div>
 
-        <div className="lg:col-span-1">
-          <TasaCambioWidget />
-        </div>
-      </div>
-
       {/* Tabs + búsqueda */}
       <div className="flex items-center justify-between flex-wrap gap-3 border-b border-border">
         <div className="flex gap-1 overflow-x-auto">
@@ -438,6 +466,12 @@ function CochinitPage() {
                       {mov.moneda === 'USD' ? '$' : 'Bs '}
                       {mov.monto.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </p>
+                    {mov.tipo === 'transferencia' && mov.montoDestino != null && bancaDestino && (
+                      <p className="text-xs text-text-muted">
+                        → {bancaDestino.moneda === 'USD' ? '$' : 'Bs '}
+                        {mov.montoDestino.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    )}
                     <p className="text-xs text-text-muted capitalize">{mov.tipo}</p>
                   </div>
                 </div>

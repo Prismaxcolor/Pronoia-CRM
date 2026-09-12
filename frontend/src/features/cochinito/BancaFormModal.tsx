@@ -44,7 +44,7 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
 
     setGuardando(true);
 
-    let ok = false;
+    let ok: boolean;
     if (editando && banca) {
       ok = await actualizarBanca(banca.id, {
         nombre: nombreTrim,

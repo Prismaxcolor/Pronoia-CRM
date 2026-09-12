@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, EyeOff, Eye, Trash2, Tags } from 'lucide-react';
+import { Plus, Pencil, EyeOff, Eye, Trash2, Tags, Package, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   obtenerProductos,
   desactivarProducto,
   reactivarProducto,
   borrarProducto,
+  reordenarProductos,
 } from '../../services/producto-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import ProductoForm from './ProductoForm';
 import CategoriasModal from './CategoriasModal';
 import type { Producto, TipoProducto } from '@shared/types/index.js';
@@ -58,12 +59,10 @@ function ProductosPage() {
     });
   }, [productos, busqueda, categoriaFiltro, tipoFiltro]);
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerProductos().then(setProductos).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerProductos().then(setProductos).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleDesactivar = async (p: Producto) => {
     const ok = await confirmar({
@@ -109,6 +108,25 @@ function ProductosPage() {
     cargar();
   };
 
+  // Mueve contra el arreglo completo (no el filtrado) — así el orden real
+  // no se corrompe si hay una búsqueda o filtro activo mientras se reordena.
+  const mover = (id: string, direccion: 'arriba' | 'abajo') => {
+    const idx = productos.findIndex(p => p.id === id);
+    const destino = direccion === 'arriba' ? idx - 1 : idx + 1;
+    if (idx === -1 || destino < 0 || destino >= productos.length) return;
+
+    const reordenados = [...productos];
+    [reordenados[idx], reordenados[destino]] = [reordenados[destino], reordenados[idx]];
+    setProductos(reordenados);
+
+    reordenarProductos(reordenados.map(p => p.id)).then(result => {
+      if ('error' in result) {
+        toast.errorMsg(result.error);
+        cargar();
+      }
+    });
+  };
+
   if (cargando) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -119,9 +137,9 @@ function ProductosPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Productos</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {puedeEditar && (
             <button
               type="button"
@@ -211,7 +229,29 @@ function ProductosPage() {
             >
               {/* Acciones (top-right, hover) */}
               {(puedeEditar || puedeBorrar) && (
-                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                  {puedeEditar && (
+                    <button
+                      type="button"
+                      onClick={() => mover(p.id, 'arriba')}
+                      disabled={productos[0]?.id === p.id}
+                      className="p-1.5 rounded-md bg-surface-alt hover:bg-brand-50 text-text-muted hover:text-brand-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                      title="Mover arriba"
+                    >
+                      <ArrowUp size={13} />
+                    </button>
+                  )}
+                  {puedeEditar && (
+                    <button
+                      type="button"
+                      onClick={() => mover(p.id, 'abajo')}
+                      disabled={productos[productos.length - 1]?.id === p.id}
+                      className="p-1.5 rounded-md bg-surface-alt hover:bg-brand-50 text-text-muted hover:text-brand-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                      title="Mover abajo"
+                    >
+                      <ArrowDown size={13} />
+                    </button>
+                  )}
                   {puedeEditar && (
                     <button
                       type="button"
@@ -254,6 +294,14 @@ function ProductosPage() {
                   )}
                 </div>
               )}
+
+              <div className="w-full aspect-video mb-3 rounded-lg overflow-hidden bg-brand-100 flex items-center justify-center text-brand-700">
+                {p.fotos[0] ? (
+                  <img src={p.fotos[0]} alt={p.nombre} loading="lazy" className="w-full h-full object-cover" />
+                ) : (
+                  <Package size={28} />
+                )}
+              </div>
 
               <div className="flex items-start justify-between mb-3">
                 <h3 className="font-semibold text-text-primary text-sm leading-tight pr-20">{p.nombre}</h3>

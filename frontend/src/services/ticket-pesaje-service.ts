@@ -10,16 +10,38 @@ export interface CrearTicketMaterialInput {
   loteId?: string | null;
 }
 
+export interface PesajeGlobalInput {
+  peso: number;
+  tara?: number;
+  foto?: string | null;
+}
+
 export interface CrearTicketInput {
   tipo?: 'compra' | 'venta';
   entidadId: string;
+  /** Almacén donde queda registrado el movimiento. Si se omite o hay un solo
+   *  almacén activo, el backend usa el predeterminado — comportamiento de
+   *  siempre. Nunca bloquea ni limita qué se puede comprar/vender. */
+  almacenId?: string | null;
   fecha?: string | null;
-  pesoGlobal: number;
+  /** Obligatorio salvo pesajeExterior=true (báscula externa, sin lectura propia). */
+  pesoGlobal?: number | null;
+  /** Desglose de pesadas individuales que suman pesoGlobal. */
+  pesajesGlobales?: PesajeGlobalInput[];
+  /** true si el camión se pesó en una báscula externa a la que Pronoia no tiene acceso. */
+  pesajeExterior?: boolean;
+  /** Kg de devolución del ticket completo. Se suma a la suma de materiales
+   *  para reconciliar contra pesoGlobal — no afecta inventario ni factura. */
+  devolucion?: number;
+  /** URLs de fotos de la devolución del ticket completo (no por material). */
+  fotosDevolucion?: string[];
   /** 'bruto' guarda el ticket sin materiales/destinos, para completar después. */
   estado?: 'bruto' | 'completo';
   materiales: CrearTicketMaterialInput[];
   fotos: string[];
   observaciones?: string | null;
+  /** Placa/identificador del vehículo que trajo o se llevó el material. */
+  vehiculo?: string | null;
 }
 
 export interface ObtenerTicketsOpts {
@@ -69,12 +91,14 @@ export async function crearTicket(
 
 export async function completarTicket(
   id: string,
-  materiales: CrearTicketMaterialInput[]
+  materiales: CrearTicketMaterialInput[],
+  devolucion = 0,
+  fotosDevolucion: string[] = []
 ): Promise<{ ticket: TicketPesaje } | { error: string }> {
   try {
     const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}/completar`, {
       method: 'PATCH',
-      body: { materiales },
+      body: { materiales, devolucion, fotosDevolucion },
     });
     return { ticket };
   } catch (err) {
@@ -84,11 +108,14 @@ export async function completarTicket(
 
 export interface EditarTicketInput {
   materiales: CrearTicketMaterialInput[];
-  pesoGlobal?: number;
+  devolucion?: number;
+  fotosDevolucion?: string[];
   observaciones?: string | null;
+  vehiculo?: string | null;
 }
 
-/** Corrige un ticket ya completo (material, pesos, peso global, observaciones).
+/** Corrige un ticket ya completo (material, pesos, observaciones). El peso
+ *  global no se edita — se fija al crear el ticket.
  *  El backend rechaza la edición si el ticket ya está facturado. */
 export async function editarTicket(
   id: string,
@@ -102,5 +129,15 @@ export async function editarTicket(
     return { ticket };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo editar el ticket.' };
+  }
+}
+
+/** Borra un ticket no facturado. El backend rechaza si ya está facturado. */
+export async function borrarTicket(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/tickets-pesaje/${id}`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo eliminar el ticket.' };
   }
 }

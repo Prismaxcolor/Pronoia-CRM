@@ -1,0 +1,238 @@
+import type { RowInput } from 'jspdf-autotable';
+import { PRONOIA_LOGO_ICON_PNG_BASE64 } from '../assets/pronoia-logo-icon';
+
+/**
+ * Motor de diseño compartido para todos los PDF que genera el sistema —
+ * factura, ticket de pesaje, toma física, nota de crédito/débito,
+ * comprobante de pago/cobro. Un solo lugar para el encabezado de marca, el
+ * patrón de filas etiqueta-valor, y las dos familias de tabla (monetaria
+ * cuadrada / pesaje redondeada). Ver factura-export.ts para el caso de uso
+ * más completo (documento mixto: monetario + pesaje en el mismo PDF).
+ */
+
+export function fmt(n: number): string {
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * jsPDF con la fuente helvetica estándar solo soporta cp1252 (WinAnsi). Los
+ * caracteres tipográficos de Word/Google Docs que caen fuera rompen el
+ * renderizado de la línea completa (confirmado con U+2212 el 2026-07-23). Se
+ * mapean a su equivalente ASCII antes de escribir.
+ */
+const REEMPLAZOS_PDF: Array<[RegExp, string]> = [
+  [/[−–—]/g, '-'], // menos matemático, en dash, em dash
+  [/[‘’‛]/g, "'"],
+  [/[“”‟]/g, '"'],
+  [/…/g, '...'],
+  [/ /g, ' '],
+];
+
+export function sanitizarPdf(v: string): string {
+  return REEMPLAZOS_PDF.reduce((s, [re, r]) => s.replace(re, r), v);
+}
+
+export function descargarBlob(blob: Blob, nombre: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export const BOX_LEFT = 56;
+export const BOX_RIGHT = 539;
+export const BOX_PAD = 16;
+const GRIS_BORDE_CAJA: [number, number, number] = [205, 205, 205];
+const GRIS_LINEA_HEAD: [number, number, number] = [190, 190, 190];
+const GRIS_LINEA_FILA: [number, number, number] = [232, 232, 232];
+const GRIS_DIVISOR: [number, number, number] = [215, 215, 215];
+const GRIS_GRID: [number, number, number] = [70, 70, 70];
+
+/** Color del texto/borde del badge de estado — mismo criterio de color que
+ *  usan las pantallas de detalle (gris/azul/verde/ámbar/naranja/morado/rojo). */
+const BADGE_COLOR: Record<string, [number, number, number]> = {
+  borrador: [90, 95, 105],
+  emitida: [29, 78, 175],
+  pagada: [21, 128, 61],
+  cobrada: [21, 128, 61],
+  abierta: [161, 98, 7],
+  cerrada: [21, 128, 61],
+  credito: [29, 78, 175],
+  crédito: [29, 78, 175],
+  débito: [109, 40, 178],
+  debito: [109, 40, 178],
+  anulada: [185, 28, 28],
+  facturado: [21, 128, 61],
+  'pendiente por facturar': [161, 98, 7],
+};
+
+/**
+ * Encabezado de marca — solo el logo, arriba a la derecha. Estándar en
+ * TODOS los documentos que emite el sistema.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function encabezadoMarca(doc: any): void {
+  const iconSize = 40;
+  const iconX = BOX_RIGHT - iconSize;
+  doc.addImage(PRONOIA_LOGO_ICON_PNG_BASE64, 'PNG', iconX, 24, iconSize, iconSize * (164 / 160));
+}
+
+export interface Badge {
+  texto: string;
+  /** Para badges que no son un estado (ej. el código de un pago/adelanto,
+   *  o "Borrador" de ticket que es naranja y no gris como el de factura) y
+   *  por eso no calzan con la clave que les tocaría en BADGE_COLOR. */
+  color?: [number, number, number];
+}
+
+/** Título del documento + badges (siempre en píldora redonda, sea cual sea
+ *  el tipo de documento — el redondeado es constante). Algunos documentos
+ *  muestran más de uno a la vez (ej. nota: tipo + anulada/pagada; ticket:
+ *  estado + pesaje exterior) — se dibujan en fila, uno junto al otro. */
+export function tituloConBadge(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  doc: any,
+  y: number,
+  titulo: string,
+  badges: Badge | string | null | undefined | Array<Badge | string>
+): void {
+  doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(0).text(titulo, BOX_LEFT, y);
+  const lista = (Array.isArray(badges) ? badges : badges ? [badges] : [])
+    .map(b => (typeof b === 'string' ? { texto: b } : b));
+  let x = BOX_LEFT + doc.getTextWidth(titulo) + 12;
+  for (const badge of lista) {
+    const color = badge.color ?? BADGE_COLOR[badge.texto.toLowerCase()] ?? [90, 95, 105];
+    doc.setFontSize(9).setFont('helvetica', 'bold');
+    const bw = doc.getTextWidth(badge.texto.toUpperCase()) + 18;
+    doc.setDrawColor(...color).setLineWidth(1).roundedRect(x, y - 13, bw, 18, 9, 9, 'S');
+    doc.setTextColor(...color).text(badge.texto.toUpperCase(), x + bw / 2, y - 1, { align: 'center' });
+    x += bw + 6;
+  }
+  doc.setTextColor(0);
+}
+
+/**
+ * Subtítulo chico y gris pegado al título — mismo lugar y estilo que la
+ * línea "Ref. ... · fecha" del preview en pantalla (mt-1, text-muted).
+ * A diferencia de filaEncabezado, va TODO alineado a la izquierda: no es
+ * una fila etiqueta/valor con el valor a la derecha.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function subtitulo(doc: any, y: number, texto: string): void {
+  doc.setFontSize(10.5).setFont('helvetica', 'normal').setTextColor(110);
+  doc.text(sanitizarPdf(texto), BOX_LEFT, y);
+  doc.setTextColor(0);
+}
+
+/**
+ * Fila etiqueta/valor con línea divisoria completa debajo — el patrón
+ * estándar de encabezado en TODOS los documentos (factura, ticket, nota,
+ * pago, toma física...). Devuelve el Y donde continúa el documento.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function filaEncabezado(doc: any, y: number, label: string, valor: string): number {
+  doc.setFontSize(11).setFont('helvetica', 'normal').setTextColor(90);
+  doc.text(sanitizarPdf(label), BOX_LEFT, y);
+  doc.setTextColor(15);
+  const lineas = doc.splitTextToSize(sanitizarPdf(valor), 320);
+  doc.text(lineas, BOX_RIGHT, y, { align: 'right' });
+  const yLinea = y + 8 + (lineas.length - 1) * 13;
+  doc.setDrawColor(...GRIS_DIVISOR).setLineWidth(0.75).line(BOX_LEFT, yLinea, BOX_RIGHT, yLinea);
+  doc.setTextColor(0);
+  return yLinea + 20;
+}
+
+/**
+ * Tabla MONETARIA (montos, dinero): grid completo, esquinas cuadradas — como
+ * una hoja de cálculo. Para ítems de factura, notas de crédito/débito, pagos.
+ */
+export function tablaMonetaria(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  doc: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  autoTable: any,
+  opts: { startY: number; head: RowInput[]; body: RowInput[]; foot?: RowInput[] }
+): number {
+  autoTable(doc, {
+    startY: opts.startY,
+    head: opts.head,
+    body: opts.body,
+    foot: opts.foot,
+    margin: { left: BOX_LEFT, right: 595.28 - BOX_RIGHT },
+    styles: { font: 'helvetica', fontSize: 10, cellPadding: 7, lineWidth: 0.75, lineColor: GRIS_GRID },
+    headStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold', lineWidth: 0.75, lineColor: GRIS_GRID },
+    footStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold', lineWidth: 0.75, lineColor: GRIS_GRID },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    theme: 'grid',
+    // Sin foot en ningún llamador actual, pero si algún día se agrega un
+    // total acá, que no se repita en cada página — mismo criterio que
+    // tablaPesaje (ver nota ahí).
+    showFoot: 'lastPage',
+  });
+  return doc.lastAutoTable.finalY;
+}
+
+/** Y donde arranca la tabla en una página de CONTINUACIÓN (cuando la tabla
+ *  de pesaje no cabe entera en una sola página) — separado de BOX_PAD para
+ *  mantener el mismo margen visual que tiene la primera página. */
+const MARGIN_TOP_CONTINUACION = 40;
+
+/**
+ * Tabla de PESAJE (kilos, materiales): caja de esquinas redondeadas. El
+ * tamaño de la caja se mide DESPUÉS de renderizar la tabla (nunca se estima)
+ * — así calza siempre con el contenido real sin importar cuántas filas
+ * ocupe. El contenido va separado del borde por BOX_PAD para que el texto
+ * nunca toque la curva, y todas las líneas internas usan el mismo tono de
+ * gris (nunca negro puro) para no chocar visualmente con el borde
+ * redondeado. Devuelve el Y donde continúa el documento.
+ *
+ * La caja se dibuja UNA VEZ POR PÁGINA (hook `didDrawPage` de autoTable),
+ * no una sola vez al final: cuando la tabla no entra en una página y
+ * autoTable la parte sola, `doc.lastAutoTable.finalY` queda en la ÚLTIMA
+ * página pero `opts.startY` sigue apuntando a la PRIMERA — dibujar una sola
+ * caja mezclando esos dos Y de páginas distintas produce una caja vacía mal
+ * ubicada en la página final (bug real, visto en un ticket de 20
+ * materiales — Compra-0053, 04-sep-2026).
+ *
+ * `showFoot: 'lastPage'` — sin esto, "Total del ticket"/"Devolución" se
+ * repiten al final de CADA página (comportamiento por defecto de
+ * autoTable), y como no son subtotales por página sino el total del
+ * documento completo, verlos dos veces confunde (mismo ticket
+ * Compra-0053).
+ */
+export function tablaPesaje(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  doc: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  autoTable: any,
+  opts: { startY: number; head: RowInput[]; body: RowInput[]; foot?: RowInput[] }
+): number {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = { left: BOX_LEFT + BOX_PAD, right: pageWidth - (BOX_RIGHT - BOX_PAD), top: MARGIN_TOP_CONTINUACION };
+  let inicioSegmento = opts.startY;
+  autoTable(doc, {
+    startY: opts.startY + 10,
+    head: opts.head,
+    body: opts.body,
+    foot: opts.foot,
+    margin,
+    styles: { font: 'helvetica', fontSize: 10, cellPadding: 7, lineWidth: { bottom: 0.5 }, lineColor: GRIS_LINEA_FILA },
+    headStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { bottom: 1 }, lineColor: GRIS_LINEA_HEAD },
+    footStyles: { fillColor: false, textColor: 0, fontStyle: 'bold', lineWidth: { top: 1 }, lineColor: GRIS_LINEA_HEAD },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    theme: 'plain',
+    showFoot: 'lastPage',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    didDrawPage: (data: any) => {
+      const finY = data.cursor?.y ?? inicioSegmento;
+      doc.setDrawColor(...GRIS_BORDE_CAJA).setLineWidth(1)
+        .roundedRect(BOX_LEFT, inicioSegmento, BOX_RIGHT - BOX_LEFT, finY - inicioSegmento + 10, 8, 8, 'S');
+      inicioSegmento = MARGIN_TOP_CONTINUACION - 10;
+    },
+  });
+  return (doc.lastAutoTable.finalY as number) + 10;
+}

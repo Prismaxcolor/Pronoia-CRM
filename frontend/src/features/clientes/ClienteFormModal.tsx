@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearCliente, actualizarCliente } from '../../services/cliente-service';
-import { useToast } from '../../hooks/use-toast';
+import { subirFotoCliente } from '../../services/storage-service';
+import { useToast } from '../../hooks/use-toast-context';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import type { Cliente } from '@shared/types/index.js';
 
 interface Props {
@@ -21,13 +24,24 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
   const [telefono, setTelefono] = useState(cliente?.telefono ?? '');
   const [direccion, setDireccion] = useState(cliente?.direccion ?? '');
   const [notas, setNotas] = useState(cliente?.notas ?? '');
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(cliente?.fotos ?? []));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGuardando(true);
     setError(null);
+
+    const urls = await subirFotosLocal(fotos, subirFotoCliente);
+    if (!urls) {
+      setError('Error al subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
+    }
 
     const payload = {
       nombre: nombre.trim(),
@@ -36,6 +50,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
       telefono: telefono.trim() || null,
       direccion: direccion.trim() || null,
       notas: notas.trim() || null,
+      fotos: urls,
     };
 
     const result = editando && cliente
@@ -68,6 +83,8 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
+
           <div>
             <label className={labelClass}>Nombre *</label>
             <input
@@ -80,7 +97,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>RIF / Cédula</label>
               <input

@@ -1,25 +1,48 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { crearNotaAjuste } from '../../services/nota-ajuste-service';
+import { crearNotaAjusteCliente } from '../../services/nota-ajuste-cliente-service';
+import { obtenerFacturas, type FacturaCV } from '../../services/factura-cv-service';
+import type { TipoEntidad } from '../../services/estado-cuenta-service';
 
 interface Props {
-  proveedorId: string;
+  tipoEntidad: TipoEntidad;
+  entidadId: string;
   onClose: () => void;
-  onCreada: () => void;
+  onCreada: (codigo?: string | null) => void;
 }
 
 type Tipo = 'credito' | 'debito';
 
-function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
+function fmt(n: number): string {
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Nota de crédito/débito, compartida entre proveedor y cliente (Bloque 45)
+ *  — la pantalla es idéntica, solo cambia el endpoint según tipoEntidad. */
+function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
+  const esProveedor = tipoEntidad === 'proveedor';
   const [tipo, setTipo] = useState<Tipo>('credito');
+  const [facturaId, setFacturaId] = useState('');
+  const [facturas, setFacturas] = useState<FacturaCV[]>([]);
   const [monto, setMonto] = useState('');
   const [motivo, setMotivo] = useState('');
+  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
+
+  // La factura asociada es opcional (ajuste general de saldo) — se puede
+  // elegir cualquier factura de la entidad, incluso ya pagada (no se filtra
+  // por estado, a diferencia de PagoCobroModal que solo lista pendientes).
+  useEffect(() => {
+    obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista =>
+      setFacturas([...lista].sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
+    );
+  }, [esProveedor, entidadId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,11 +53,14 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
     if (!motivo.trim()) { setError('El motivo es obligatorio.'); return; }
 
     setGuardando(true);
-    const result = await crearNotaAjuste(proveedorId, { tipo, monto: montoNum, motivo: motivo.trim() });
+    const input = { tipo, monto: montoNum, motivo: motivo.trim(), facturaId: facturaId || null, fecha };
+    const result = esProveedor
+      ? await crearNotaAjuste(entidadId, input)
+      : await crearNotaAjusteCliente(entidadId, input);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    onCreada();
+    onCreada(result.codigo);
   };
 
   return (
@@ -59,10 +85,26 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
               </button>
             </div>
             <p className="text-xs text-text-muted mt-1">
-              {tipo === 'credito'
-                ? 'Resta del saldo que le debemos al proveedor (ej. descuento de flete).'
-                : 'Suma al saldo que le debemos al proveedor (ej. comisión o servicio adicional).'}
+              {esProveedor
+                ? (tipo === 'credito'
+                    ? 'Resta del saldo que le debemos al proveedor (ej. descuento de flete).'
+                    : 'Suma al saldo que le debemos al proveedor (ej. comisión o servicio adicional).')
+                : (tipo === 'credito'
+                    ? 'Resta del saldo que nos debe el cliente (ej. descuento comercial).'
+                    : 'Suma al saldo que nos debe el cliente (ej. cargo adicional por flete).')}
             </p>
+          </div>
+
+          <div>
+            <label className={labelClass}>Factura asociada <span className="text-text-muted">(opcional)</span></label>
+            <select value={facturaId} onChange={e => setFacturaId(e.target.value)} className={inputClass}>
+              <option value="">Sin factura asociada (ajuste general)</option>
+              {facturas.map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.codigo ?? f.id.slice(0, 8)} · {f.createdAt.slice(0, 10)} · ${fmt(f.total)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -80,6 +122,11 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
           </div>
 
           <div>
+            <label className={labelClass}>Fecha *</label>
+            <input type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
+          </div>
+
+          <div>
             <label className={labelClass}>Motivo *</label>
             <textarea
               required
@@ -88,7 +135,7 @@ function NotaAjusteModal({ proveedorId, onClose, onCreada }: Props) {
               className={`${inputClass} resize-none`}
               rows={3}
               maxLength={300}
-              placeholder="Ej: Descuento por flete no realizado por el proveedor"
+              placeholder={esProveedor ? 'Ej: Descuento por flete no realizado por el proveedor' : 'Ej: Descuento comercial por pronto pago'}
             />
           </div>
 
