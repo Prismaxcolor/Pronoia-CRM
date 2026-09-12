@@ -6,16 +6,24 @@ export interface CrearTrasladoMaterialInput {
   subcategoria?: string | null;
   pesoBruto: number;
   tara: number;
+  fotos: string[];
+}
+
+export interface CrearTrasladoLoteInput {
+  loteId: string;
+  pesoBruto: number;
+  tara: number;
+  fotos: string[];
 }
 
 export interface CrearTrasladoInput {
   almacenOrigenId: string;
   almacenDestinoId: string;
   materiales: CrearTrasladoMaterialInput[];
-  /** Lotes (PCB) a trasladar completos — no una porción, el lote entero. */
-  loteIds?: string[];
-  /** Evidencia fotográfica del pesaje de salida. */
-  fotos: string[];
+  /** Lotes (PCB) a trasladar completos — se pesan igual que un material. */
+  lotes: CrearTrasladoLoteInput[];
+  /** Placa/identificador del vehículo que hace el traslado. */
+  vehiculo?: string | null;
   observaciones?: string | null;
 }
 

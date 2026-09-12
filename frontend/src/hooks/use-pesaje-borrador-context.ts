@@ -22,10 +22,8 @@ export interface PesajeBorrador {
   fotosDevolucion: FotoMaterial[];
   materiales: MaterialFila[];
   observaciones: string;
-  /** Placa/identificador del vehículo (solo compra/venta, no traslado). */
+  /** Placa/identificador del vehículo — aplica a compra, venta y traslado. */
   vehiculo: string;
-  /** Evidencia fotográfica del pesaje de salida de un traslado (solo traslado). */
-  fotosTraslado: FotoMaterial[];
 }
 
 export interface PesajeBorradorContextType {
@@ -42,7 +40,6 @@ export interface PesajeBorradorContextType {
   setMateriales: Dispatch<SetStateAction<MaterialFila[]>>;
   setObservaciones: Dispatch<SetStateAction<string>>;
   setVehiculo: Dispatch<SetStateAction<string>>;
-  setFotosTraslado: Dispatch<SetStateAction<FotoMaterial[]>>;
   /** Vuelve el borrador a su estado inicial — se llama tras guardar con éxito. */
   limpiarBorrador: () => void;
 }

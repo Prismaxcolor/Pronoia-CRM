@@ -17,6 +17,7 @@ interface DetalleRow {
   peso_neto: number | null;
   peso_recibido: number | null;
   lote_id: string | null;
+  fotos: string[] | null;
   productos?: { nombre: string } | null;
   lotes?: { nombre: string } | null;
 }
@@ -29,6 +30,7 @@ interface TrasladoRow {
   estado: 'pendiente' | 'completo';
   observaciones: string | null;
   fotos: string[] | null;
+  vehiculo: string | null;
   pesado_por: string | null;
   completado_por: string | null;
   completado_en: string | null;
@@ -50,6 +52,7 @@ export interface TrasladoMaterialPublico {
   /** Presente cuando esta línea es un lote (PCB) trasladado completo, no material suelto. */
   loteId: string | null;
   nombreLote: string | null;
+  fotos: string[];
 }
 
 export interface TrasladoPublico {
@@ -64,7 +67,10 @@ export interface TrasladoPublico {
   pesoNetoEnviado: number;
   pesoNetoRecibido: number | null;
   observaciones: string | null;
+  /** Evidencia de la RECEPCIÓN (llenada al completar). Vacía mientras está pendiente. */
   fotos: string[];
+  /** Placa/identificador del vehículo que hace el traslado. */
+  vehiculo: string | null;
   estado: 'pendiente' | 'completo';
   pesadoPor: string | null;
   completadoPor: string | null;
@@ -84,6 +90,7 @@ function detalleToPublico(d: DetalleRow): TrasladoMaterialPublico {
     pesoRecibido: d.peso_recibido === null ? null : Number(d.peso_recibido),
     loteId: d.lote_id,
     nombreLote: d.lotes?.nombre ?? null,
+    fotos: d.fotos ?? [],
   };
 }
 
@@ -106,6 +113,7 @@ function toPublico(row: TrasladoRow): TrasladoPublico {
       : null,
     observaciones: row.observaciones,
     fotos: row.fotos ?? [],
+    vehiculo: row.vehiculo,
     estado: row.estado,
     pesadoPor: row.pesado_por,
     completadoPor: row.completado_por,
@@ -154,10 +162,16 @@ export async function crearTraslado(
       subcategoria: m.subcategoria,
       peso_bruto: m.pesoBruto,
       tara: m.tara,
+      fotos: m.fotos,
     })),
     p_pesado_por: pesadoPor,
-    p_fotos: input.fotos,
-    p_lote_ids: input.loteIds,
+    p_lotes: input.lotes.map(l => ({
+      lote_id: l.loteId,
+      peso_bruto: l.pesoBruto,
+      tara: l.tara,
+      fotos: l.fotos,
+    })),
+    p_vehiculo: input.vehiculo,
   });
 
   if (error || !trasladoId) return { error: error?.message ?? 'No se pudo guardar el traslado.' };

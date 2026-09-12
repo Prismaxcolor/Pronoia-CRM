@@ -5,6 +5,7 @@ import { obtenerTicket, editarTicket } from '../../services/ticket-pesaje-servic
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
+import { obtenerVehiculos, crearVehiculo } from '../../services/vehiculo-service';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -14,7 +15,7 @@ import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
-import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
+import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo } from '@shared/types/index.js';
 import { descargarTicketPDF } from '../../services/ticket-export';
 import FilaDocumento from '../../components/FilaDocumento';
 
@@ -55,6 +56,8 @@ function TicketDetallePage() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  const [nuevoVehiculo, setNuevoVehiculo] = useState('');
 
   const [editando, setEditando] = useState(false);
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
@@ -84,8 +87,19 @@ function TicketDetallePage() {
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
     obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
+    obtenerVehiculos().then(lista => setVehiculos(lista.filter(v => v.activo)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const crearVehiculoInline = async () => {
+    const nombre = nuevoVehiculo.trim();
+    if (!nombre) return;
+    const result = await crearVehiculo({ nombre });
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    setVehiculos(prev => [...prev, result.vehiculo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    setVehiculoEdit(result.vehiculo.nombre);
+    setNuevoVehiculo('');
+  };
 
   const pesoNetoTotal = useMemo(
     () => materiales.reduce((acc, f) => acc + netoFila(f, taras), 0),
@@ -572,7 +586,23 @@ function TicketDetallePage() {
 
           <div>
             <label className={labelClass}>Vehículo</label>
-            <input type="text" value={vehiculoEdit} onChange={e => setVehiculoEdit(e.target.value)} className={inputClass} placeholder="Placa o identificador" />
+            <select value={vehiculoEdit} onChange={e => setVehiculoEdit(e.target.value)} className={inputClass}>
+              <option value="">— Sin vehículo —</option>
+              {vehiculos.map(v => <option key={v.id} value={v.nombre}>{v.nombre}</option>)}
+            </select>
+            <div className="flex items-center gap-2 mt-1.5">
+              <input
+                type="text"
+                value={nuevoVehiculo}
+                onChange={e => setNuevoVehiculo(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); crearVehiculoInline(); } }}
+                className={`${inputClass} text-xs py-1.5`}
+                placeholder="Agregar vehículo nuevo (placa)"
+              />
+              <button type="button" onClick={crearVehiculoInline} disabled={!nuevoVehiculo.trim()} className="shrink-0 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+                Guardar
+              </button>
+            </div>
           </div>
 
           <div>

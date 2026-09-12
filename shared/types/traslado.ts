@@ -19,6 +19,8 @@ export interface TrasladoMaterial {
   loteId: string | null;
   /** Nombre del lote, resuelto vía join. Solo presente cuando loteId no es null. */
   nombreLote?: string | null;
+  /** Fotos de esta pesada específica — cada material/lote lleva las suyas. */
+  fotos: string[];
 }
 
 /**
@@ -44,7 +46,10 @@ export interface Traslado {
   /** Suma de lo recibido, null mientras el traslado siga pendiente. */
   pesoNetoRecibido: number | null;
   observaciones: string | null;
+  /** Evidencia de la RECEPCIÓN (llenada al completar). Vacía mientras está pendiente. */
   fotos: string[];
+  /** Placa/identificador del vehículo que hace el traslado. */
+  vehiculo: string | null;
   estado: 'pendiente' | 'completo';
   /** Usuario que registró el envío. */
   pesadoPor: string | null;

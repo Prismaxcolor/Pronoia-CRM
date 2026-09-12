@@ -24,6 +24,7 @@ export type {
   SalidaComun,
 } from './transformacion.js';
 export type { Tara } from './tara.js';
+export type { Vehiculo } from './vehiculo.js';
 export type { Almacen } from './almacen.js';
 export type { Traslado, TrasladoMaterial } from './traslado.js';
 export { formatCodigoTraslado } from './traslado.js';

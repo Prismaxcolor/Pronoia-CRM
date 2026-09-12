@@ -21,10 +21,11 @@ import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { obtenerVehiculos, crearVehiculo } from '../../services/vehiculo-service';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
-import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario } from '@shared/types/index.js';
+import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario, type Vehiculo } from '@shared/types/index.js';
 
 /** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
  *  traslado entre almacenes, mostrados juntos porque ambos son operaciones
@@ -34,6 +35,23 @@ type FilaListado =
   | { kind: 'traslado'; traslado: Traslado };
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
+
+/** Un lote (PCB) a trasladar completo — se pesa igual que un material, con
+ *  su propia tara y foto, en vez de asumir automáticamente el stock teórico. */
+interface LoteTrasladoFila {
+  uid: number;
+  loteId: string;
+  pesoBruto: string;
+  tara: string;
+  fotos: FotoMaterial[];
+}
+let LOTE_TRASLADO_UID = 0;
+function loteTrasladoFilaVacia(): LoteTrasladoFila {
+  return { uid: LOTE_TRASLADO_UID++, loteId: '', pesoBruto: '', tara: '0', fotos: [] };
+}
+function netoLoteTrasladoFila(f: LoteTrasladoFila): number {
+  return (Number(f.pesoBruto) || 0) - (Number(f.tara) || 0);
+}
 
 type Pestana = 'nuevo' | 'tickets';
 
@@ -73,9 +91,9 @@ function PesajePage() {
   // las rutas (usePesajeBorrador), no en useState local, para no perderse si
   // el usuario navega a otra pantalla (Dashboard, Cochinito, etc.) y vuelve.
   const {
-    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones, vehiculo, fotosTraslado },
+    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones, vehiculo },
     setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
-    setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones, setVehiculo, setFotosTraslado,
+    setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones, setVehiculo,
     limpiarBorrador,
   } = usePesajeBorrador();
 
@@ -84,7 +102,9 @@ function PesajePage() {
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
   const [trasladoARecepcionar, setTrasladoARecepcionar] = useState<Traslado | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
-  const [loteIdsSeleccionados, setLoteIdsSeleccionados] = useState<string[]>([]);
+  const [loteFilas, setLoteFilas] = useState<LoteTrasladoFila[]>([]);
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  const [nuevoVehiculo, setNuevoVehiculo] = useState('');
   const [buscaCodigo, setBuscaCodigo] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'compra' | 'venta' | 'traslado'>('todos');
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
@@ -105,6 +125,7 @@ function PesajePage() {
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
     obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
+    obtenerVehiculos().then(lista => setVehiculos(lista.filter(v => v.activo)));
     cargarTickets();
     cargarTraslados();
     if (puedeContarTomaFisica) {
@@ -122,7 +143,7 @@ function PesajePage() {
     promesa.then(setStockOrigen);
     // Los lotes disponibles dependen del almacén de origen — si cambia, la
     // selección anterior puede ya no ser válida.
-    setLoteIdsSeleccionados([]);
+    setLoteFilas([]);
   }, [tipo, almacenOrigenId]);
 
   // Disponible del negocio (sin importar almacén) para el aviso informativo
@@ -180,19 +201,33 @@ function PesajePage() {
   const quitarFotoDevolucion = (idx: number) =>
     setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
 
-  const agregarFotosTraslado = (files: File[]) =>
-    setFotosTraslado(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
-  const quitarFotoTraslado = (idx: number) =>
-    setFotosTraslado(prev => prev.filter((_, i) => i !== idx));
-
-  const limpiar = () => { limpiarBorrador(); setLoteIdsSeleccionados([]); };
+  const limpiar = () => { limpiarBorrador(); setLoteFilas([]); };
 
   const lotesEnOrigen = useMemo(
     () => lotes.filter(l => l.activo && l.almacenId === almacenOrigenId),
     [lotes, almacenOrigenId]
   );
-  const toggleLoteSeleccionado = (loteId: string) =>
-    setLoteIdsSeleccionados(prev => (prev.includes(loteId) ? prev.filter(id => id !== loteId) : [...prev, loteId]));
+
+  const agregarLoteFila = () => setLoteFilas(prev => [...prev, loteTrasladoFilaVacia()]);
+  const quitarLoteFila = (uid: number) => setLoteFilas(prev => prev.filter(f => f.uid !== uid));
+  const setLoteFilaCampo = (uid: number, campo: 'loteId' | 'pesoBruto' | 'tara', valor: string) =>
+    setLoteFilas(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
+  const agregarFotosLoteFila = (uid: number, files: File[]) =>
+    setLoteFilas(prev => prev.map(f => (f.uid === uid
+      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      : f)));
+  const quitarFotoLoteFila = (uid: number, idx: number) =>
+    setLoteFilas(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
+  const crearVehiculoInline = async () => {
+    const nombre = nuevoVehiculo.trim();
+    if (!nombre) return;
+    const result = await crearVehiculo({ nombre });
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    setVehiculos(prev => [...prev, result.vehiculo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    setVehiculo(result.vehiculo.nombre);
+    setNuevoVehiculo('');
+  };
 
   const guardarTraslado = async () => {
     setError(null);
@@ -205,32 +240,58 @@ function PesajePage() {
     if (!almacenOrigenId) { setError('Elige el almacén de origen.'); return; }
     if (!almacenDestinoId) { setError('Elige el almacén de destino.'); return; }
     if (almacenOrigenId === almacenDestinoId) { setError('El almacén de origen y destino no pueden ser el mismo.'); return; }
-    if (materialesLlenos.length === 0 && loteIdsSeleccionados.length === 0) {
-      setError('Agrega al menos un material o selecciona un lote a trasladar.');
+    if (materialesLlenos.length === 0 && loteFilas.length === 0) {
+      setError('Agrega al menos un material o un lote a trasladar.');
       return;
     }
     if (materialesLlenos.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
     if (materialesLlenos.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
-    if (fotosTraslado.length === 0) { setError('Agrega al menos una foto del traslado.'); return; }
+    if (materialesLlenos.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
+    if (loteFilas.some(f => !f.loteId)) { setError('Selecciona el lote de cada fila.'); return; }
+    if (loteFilas.some(f => netoLoteTrasladoFila(f) <= 0)) { setError('Cada lote debe tener un peso neto mayor a 0.'); return; }
+    if (loteFilas.some(f => f.fotos.length === 0)) { setError('Cada lote necesita al menos una foto del pesaje.'); return; }
 
     setGuardando(true);
-    const urlsTraslado = await subirFotosFila(fotosTraslado);
-    if (!urlsTraslado) {
-      setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
-      setGuardando(false);
-      return;
-    }
-    const result = await crearTraslado({
-      almacenOrigenId,
-      almacenDestinoId,
-      materiales: materialesLlenos.map(f => ({
+
+    const materialesConFotos: Array<{ productoId: string; subcategoria: string | null; pesoBruto: number; tara: number; fotos: string[] }> = [];
+    for (const f of materialesLlenos) {
+      const urls = await subirFotosFila(f.fotos);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      materialesConFotos.push({
         productoId: f.productoId,
         subcategoria: f.subcategoria.trim() || null,
         pesoBruto: Number(f.pesoBruto) || 0,
         tara: taraKgFila(f, taras),
-      })),
-      loteIds: loteIdsSeleccionados,
-      fotos: urlsTraslado,
+        fotos: urls,
+      });
+    }
+
+    const lotesConFotos: Array<{ loteId: string; pesoBruto: number; tara: number; fotos: string[] }> = [];
+    for (const f of loteFilas) {
+      const urls = await subirFotosFila(f.fotos);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      lotesConFotos.push({
+        loteId: f.loteId,
+        pesoBruto: Number(f.pesoBruto) || 0,
+        tara: Number(f.tara) || 0,
+        fotos: urls,
+      });
+    }
+
+    const result = await crearTraslado({
+      almacenOrigenId,
+      almacenDestinoId,
+      materiales: materialesConFotos,
+      lotes: lotesConFotos,
+      vehiculo: vehiculo.trim() || null,
       observaciones: observaciones.trim() || null,
     });
     setGuardando(false);
@@ -770,13 +831,11 @@ function PesajePage() {
                       <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                     </div>
 
-                    {tipo !== 'traslado' && (
-                      <FotoMaterialPicker
-                        fotos={f.fotos}
-                        onAgregar={files => agregarFotosFila(f.uid, files)}
-                        onQuitar={idx => quitarFotoFila(f.uid, idx)}
-                      />
-                    )}
+                    <FotoMaterialPicker
+                      fotos={f.fotos}
+                      onAgregar={files => agregarFotosFila(f.uid, files)}
+                      onQuitar={idx => quitarFotoFila(f.uid, idx)}
+                    />
 
                     {tipo === 'traslado' && f.productoId && (() => {
                       const disponible = stockOrigen.get(f.productoId) ?? 0;
@@ -814,26 +873,57 @@ function PesajePage() {
             </div>
 
             {tipo === 'traslado' && almacenOrigenId && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <label className={labelClass + ' mb-0'}>Lotes a trasladar completos (PCB)</label>
-                {lotesEnOrigen.length === 0 ? (
-                  <p className="text-xs text-text-muted">No hay lotes activos en el almacén de origen.</p>
-                ) : (
-                  <div className="border border-border rounded-lg divide-y divide-border overflow-hidden">
-                    {lotesEnOrigen.map(l => (
-                      <label key={l.id} className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-surface-alt/60">
-                        <input
-                          type="checkbox"
-                          checked={loteIdsSeleccionados.includes(l.id)}
-                          onChange={() => toggleLoteSeleccionado(l.id)}
-                          className="rounded border-border"
-                        />
-                        <span className="flex-1 text-text-primary">{l.nombre}</span>
-                        <span className="text-text-muted tabular-nums">{fmt(l.stockKg)} kg</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
+
+                {loteFilas.map((f, idx) => {
+                  const neto = netoLoteTrasladoFila(f);
+                  const opcionesLote = lotesEnOrigen.filter(l => l.id === f.loteId || !loteFilas.some(o => o.uid !== f.uid && o.loteId === l.id));
+                  return (
+                    <div key={f.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-text-secondary">Lote {idx + 1}</span>
+                        <button type="button" onClick={() => quitarLoteFila(f.uid)} className="text-text-muted hover:text-red-600 transition-colors" title="Quitar lote">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Lote *</label>
+                        <select value={f.loteId} onChange={e => setLoteFilaCampo(f.uid, 'loteId', e.target.value)} className={inputClass}>
+                          <option value="">— Selecciona —</option>
+                          {opcionesLote.map(l => (
+                            <option key={l.id} value={l.id}>{l.nombre} ({fmt(l.stockKg)} kg en sistema)</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelClass}>Peso bruto (kg)</label>
+                          <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setLoteFilaCampo(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Tara (kg)</label>
+                          <input type="number" step="0.001" min="0" value={f.tara} onChange={e => setLoteFilaCampo(f.uid, 'tara', e.target.value)} className={inputClass} placeholder="0.00" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 text-sm">
+                        <span className="text-text-muted">Neto del lote</span>
+                        <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
+                      </div>
+                      <FotoMaterialPicker
+                        fotos={f.fotos}
+                        onAgregar={files => agregarFotosLoteFila(f.uid, files)}
+                        onQuitar={idx2 => quitarFotoLoteFila(f.uid, idx2)}
+                      />
+                    </div>
+                  );
+                })}
+
+                <button type="button" onClick={agregarLoteFila} disabled={lotesEnOrigen.length === 0} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <Plus size={16} />
+                  Agregar lote
+                </button>
+                {lotesEnOrigen.length === 0 && <p className="text-xs text-text-muted">No hay lotes activos en el almacén de origen.</p>}
                 <p className="text-xs text-text-muted">Se traslada el lote entero, no una porción — llega intacto al almacén destino cuando se confirme la recepción.</p>
               </div>
             )}
@@ -888,21 +978,26 @@ function PesajePage() {
               )}
             </div>
 
-            {tipo !== 'traslado' && (
-              <div>
-                <label className={labelClass}>Vehículo</label>
-                <input type="text" value={vehiculo} onChange={e => setVehiculo(e.target.value)} className={inputClass} placeholder="Placa o identificador" />
+            <div>
+              <label className={labelClass}>Vehículo</label>
+              <select value={vehiculo} onChange={e => setVehiculo(e.target.value)} className={inputClass}>
+                <option value="">— Sin vehículo —</option>
+                {vehiculos.map(v => <option key={v.id} value={v.nombre}>{v.nombre}</option>)}
+              </select>
+              <div className="flex items-center gap-2 mt-1.5">
+                <input
+                  type="text"
+                  value={nuevoVehiculo}
+                  onChange={e => setNuevoVehiculo(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); crearVehiculoInline(); } }}
+                  className={`${inputClass} text-xs py-1.5`}
+                  placeholder="Agregar vehículo nuevo (placa)"
+                />
+                <button type="button" onClick={crearVehiculoInline} disabled={!nuevoVehiculo.trim()} className="shrink-0 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+                  Guardar
+                </button>
               </div>
-            )}
-
-            {tipo === 'traslado' && (
-              <FotoMaterialPicker
-                label="Fotos del traslado"
-                fotos={fotosTraslado}
-                onAgregar={agregarFotosTraslado}
-                onQuitar={quitarFotoTraslado}
-              />
-            )}
+            </div>
 
             <div>
               <label className={labelClass}>Observaciones</label>
