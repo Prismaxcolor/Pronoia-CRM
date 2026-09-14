@@ -1,15 +1,25 @@
 -- =============================================================================
 -- LIMPIEZA: vaciar todos los movimientos de kg + facturas de compra/venta para
 -- pruebas limpias. Se mantiene estructura: productos, categorías (tipos_material),
--- lotes, almacenes, proveedores, clientes, usuarios, listas de precios,
--- transformacion_salidas_comunes (config, no movimiento).
+-- lotes, almacenes, proveedores, clientes, usuarios, listas de precios, taras,
+-- vehículos, bancas (cuentas), transformacion_salidas_comunes (config, no
+-- movimiento), tasas_cambio (histórico de referencia, no es "kilos/facturas").
 --
--- Confirmado con el dueño (Julio, 2026-09-09): toda la data actual es de
--- prueba, autorizado wipe completo de kg + facturas compra/venta.
+-- Confirmado con el dueño (Julio, 2026-09-09, re-confirmado 2026-09-14): toda
+-- la data actual es de prueba, autorizado wipe completo de kg + facturas
+-- compra/venta — "no borres ni a los clientes ni sus datos ni los productos,
+-- ni los lotes, sino lo que está dentro de ellos".
 --
--- Verificado antes de aplicar: ninguna tabla fuera de esta lista referencia
--- (FK) ninguna tabla de esta lista — TRUNCATE CASCADE no toca nada fuera de
--- lo listado aquí.
+-- ACTUALIZADO 14-sep-2026: se agregó detalle_traslado_composicion (tabla
+-- nueva de esta sesión, snapshot de composición de traslados) y el reset de
+-- bancas.saldo (columna de saldo corriente que queda huérfana al vaciar
+-- movimientos — mismo tratamiento que lotes.composicion).
+--
+-- Verificado contra el listado real de tablas de information_schema (no solo
+-- de memoria): ninguna tabla fuera de esta lista referencia (FK) ninguna
+-- tabla de esta lista, salvo detalle_traslado_composicion → detalle_traslado
+-- (ambas están en la lista, así que CASCADE la cubre igual aunque no
+-- estuviera explícita).
 -- =============================================================================
 
 begin;
@@ -29,6 +39,7 @@ truncate table
   facturas_venta,
   detalle_tickets_pesaje,
   tickets_pesaje,
+  detalle_traslado_composicion,
   detalle_traslado,
   tickets_traslado,
   ajustes_inventario,
@@ -42,10 +53,14 @@ truncate table
   citas_despacho
 cascade;
 
--- lotes.composicion es una columna jsonb vestigial: el backend actual
--- (lote-service.ts) siempre deriva composición en vivo vía composicion_lote(),
+-- lotes.composicion es una columna jsonb vestigial: el backend siempre
+-- deriva composición en vivo vía composicion_lote()/composicion_lote_almacen(),
 -- nunca lee ni escribe esta columna. Se limpia solo por prolijidad.
 update public.lotes set composicion = '[]'::jsonb where composicion is not null;
+
+-- bancas.saldo es un saldo corriente que se alimentaba de `movimientos`
+-- (ya vaciada) — queda huérfano/desactualizado si no se resetea.
+update public.bancas set saldo = 0 where saldo <> 0;
 
 -- Reiniciar contadores para que las pruebas empiecen en 0001 de nuevo.
 alter sequence notas_credito_cliente_numero_seq restart with 1;

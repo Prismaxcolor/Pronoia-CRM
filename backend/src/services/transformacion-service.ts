@@ -18,12 +18,14 @@ interface SalidaDetalleRow {
   id: string;
   producto_id: string | null;
   lote_destino_id: string | null;
+  almacen_id: string | null;
   peso_bruto: number;
   tara: number;
   peso_neto: number;
   fotos: string[] | null;
   productos?: { nombre: string } | null;
   lotes?: { nombre: string } | null;
+  almacenes?: { nombre: string } | null;
 }
 
 interface TransformacionRow {
@@ -75,6 +77,8 @@ export interface TransformacionPublica {
     nombreProducto: string | null;
     loteDestinoId: string | null;
     nombreLoteDestino: string | null;
+    almacenId: string | null;
+    nombreAlmacen: string | null;
     pesoBruto: number;
     tara: number;
     pesoNeto: number;
@@ -113,6 +117,8 @@ function toPublico(row: TransformacionRow): TransformacionPublica {
       nombreProducto: d.productos?.nombre ?? null,
       loteDestinoId: d.lote_destino_id,
       nombreLoteDestino: d.lotes?.nombre ?? null,
+      almacenId: d.almacen_id,
+      nombreAlmacen: d.almacenes?.nombre ?? null,
       pesoBruto: Number(d.peso_bruto),
       tara: Number(d.tara),
       pesoNeto: Number(d.peso_neto),
@@ -126,7 +132,7 @@ const SELECT_TRANSFORMACION =
   'productos(nombre), ' +
   'lotes(nombre), ' +
   'transformacion_entrada_detalle(producto_id, peso_kg, productos(nombre)), ' +
-  'transformacion_salida_detalle(id, producto_id, lote_destino_id, peso_bruto, tara, peso_neto, fotos, productos(nombre), lotes(nombre))';
+  'transformacion_salida_detalle(id, producto_id, lote_destino_id, almacen_id, peso_bruto, tara, peso_neto, fotos, productos(nombre), lotes(nombre), almacenes(nombre))';
 
 export async function obtenerTransformacion(id: string): Promise<TransformacionPublica | null> {
   const { data, error } = await supabaseAdmin
@@ -286,6 +292,7 @@ export async function crearTransformacionPCB(
     p_notas: input.notas,
     p_fotos_entrada: input.fotosEntrada,
     p_registrado_por: registradoPor,
+    p_almacen_id: input.almacenId,
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar la transformación.' };
@@ -308,6 +315,7 @@ export async function completarTransformacionPCB(
     p_transformacion_id: id,
     p_salidas: input.salidas.map(s => ({
       lote_destino_id: s.loteDestinoId,
+      almacen_id: s.almacenId,
       peso_bruto: s.pesoBruto,
       tara: s.tara,
       fotos: s.fotos,

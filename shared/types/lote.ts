@@ -4,19 +4,34 @@ export interface ComposicionPCBItem {
   porcentaje: number;
 }
 
+/** Cuánto de un lote vive físicamente en un almacén concreto, ahora mismo,
+ *  y con QUÉ composición — cada almacén acumula sus propias compras y
+ *  transformaciones por separado, así que el mismo lote puede tener una
+ *  composición distinta en cada almacén donde tiene stock. */
+export interface StockLoteAlmacen {
+  almacenId: string;
+  almacenNombre: string;
+  stockKg: number;
+  composicion: ComposicionPCBItem[];
+}
+
 /**
  * Lote — destino de inventario gestionado (Lote 1, Lote 2, ...). Junto con MPP
  * (Material Por Procesar), define dónde se acumula el stock de cada material
  * pesado en un ticket.
+ *
+ * Un lote NO vive en un solo almacén: es un "producto compuesto" — su
+ * composición (composicion) es siempre global, pero su peso puede estar
+ * repartido entre varios almacenes a la vez (ver
+ * docs/migration_lote_stock_por_almacen.sql). stockPorAlmacen es 100%
+ * derivado de compras/traslados/transformaciones/ajustes, nunca editable.
  */
 export interface Lote {
   id: string;
   nombre: string;
   activo: boolean;
-  /** Almacén donde está físicamente este lote (Fase 0 de Toma física de inventario). */
-  almacenId: string;
-  /** Nombre del almacén, resuelto vía join. Solo lectura (no se envía). */
-  almacenNombre?: string | null;
+  /** Desglose de en qué almacén(es) está este lote y cuántos kg en cada uno. */
+  stockPorAlmacen: StockLoteAlmacen[];
   /** URLs públicas de las fotos del lote (bucket "lotes" en Storage). */
   fotos: string[];
   /** ISO timestamp (created_at en BD). */

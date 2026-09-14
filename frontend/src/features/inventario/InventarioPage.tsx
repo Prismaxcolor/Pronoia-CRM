@@ -44,7 +44,7 @@ interface GrupoDestino {
  *  del mismo almacén, incluye alguna categoría "con lote" (PCB), y — si se
  *  acotó a lotes específicos al crearla — este lote es uno de ellos. */
 function tomaFisicaBloqueaLote(lote: Lote, t: TomaFisicaInventario, categorias: TipoMaterial[]): boolean {
-  if (t.estado !== 'abierta' || t.almacenId !== lote.almacenId) return false;
+  if (t.estado !== 'abierta' || !lote.stockPorAlmacen.some(s => s.almacenId === t.almacenId)) return false;
   const tieneCategoriaConLote = t.categoriaIds.some(id => categorias.find(c => c.id === id)?.sinLote === false);
   if (!tieneCategoriaConLote) return false;
   return t.loteIds.length === 0 || t.loteIds.includes(lote.id);

@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Plus, Boxes, Loader2, Pencil } from 'lucide-react';
 import { obtenerLotes, crearLote, actualizarLote } from '../../services/lote-service';
-import { obtenerAlmacenes } from '../../services/almacen-service';
 import { subirFotoLote } from '../../services/storage-service';
 import { fotoLocalDeFile, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import LoteFormModal from './LoteFormModal';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import type { Lote, Almacen } from '@shared/types/index.js';
+import type { Lote } from '@shared/types/index.js';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,10 +20,8 @@ function LotesPanel() {
   const puedeEditar = tienePermiso('productos', 'editar');
 
   const [lotes, setLotes] = useState<Lote[]>([]);
-  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [cargando, setCargando] = useState(true);
   const [nombre, setNombre] = useState('');
-  const [almacenId, setAlmacenId] = useState('');
   const [fotosNuevoLote, setFotosNuevoLote] = useState<FotoLocal[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [loteEditando, setLoteEditando] = useState<Lote | null>(null);
@@ -32,23 +29,16 @@ function LotesPanel() {
   const recargar = () => obtenerLotes().then(setLotes).finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => {
-    recargar();
-    obtenerAlmacenes().then(lista => {
-      const activos = lista.filter(a => a.activo);
-      setAlmacenes(activos);
-      setAlmacenId(prev => prev || activos.find(a => a.esPredeterminado)?.id || activos[0]?.id || '');
-    });
-  }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleCrear = async (e: React.FormEvent) => {
     e.preventDefault();
     const limpio = nombre.trim();
-    if (!limpio || !almacenId) return;
+    if (!limpio) return;
     setGuardando(true);
     const urls = await subirFotosLocal(fotosNuevoLote, subirFotoLote);
     if (!urls) { toast.errorMsg('Error al subir una de las fotos.'); setGuardando(false); return; }
-    const result = await crearLote(limpio, almacenId, urls);
+    const result = await crearLote(limpio, urls);
     setGuardando(false);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     toast.exito(`Lote "${result.lote.nombre}" creado.`);
@@ -59,13 +49,6 @@ function LotesPanel() {
 
   const toggleActivo = async (l: Lote) => {
     const result = await actualizarLote(l.id, { activo: !l.activo });
-    if ('error' in result) { toast.errorMsg(result.error); return; }
-    cargar();
-  };
-
-  const cambiarAlmacen = async (l: Lote, nuevoAlmacenId: string) => {
-    if (nuevoAlmacenId === l.almacenId) return;
-    const result = await actualizarLote(l.id, { almacenId: nuevoAlmacenId });
     if ('error' in result) { toast.errorMsg(result.error); return; }
     cargar();
   };
@@ -103,21 +86,9 @@ function LotesPanel() {
                 placeholder="Ej. Lote 1"
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Almacén</label>
-              <select
-                value={almacenId}
-                onChange={e => setAlmacenId(e.target.value)}
-                className={`${inputClass} w-full sm:w-auto`}
-              >
-                {almacenes.map(a => (
-                  <option key={a.id} value={a.id}>{a.nombre}</option>
-                ))}
-              </select>
-            </div>
             <button
               type="submit"
-              disabled={guardando || !nombre.trim() || !almacenId}
+              disabled={guardando || !nombre.trim()}
               className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
             >
               {guardando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={18} />}
@@ -154,19 +125,6 @@ function LotesPanel() {
                     {fmt(l.stockKg)} kg
                   </p>
                 </div>
-                {puedeEditar ? (
-                  <select
-                    value={l.almacenId}
-                    onChange={e => cambiarAlmacen(l, e.target.value)}
-                    className="text-xs bg-surface-alt border border-border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-400 shrink-0"
-                  >
-                    {almacenes.map(a => (
-                      <option key={a.id} value={a.id}>{a.nombre}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="text-xs text-text-muted shrink-0">{l.almacenNombre ?? '—'}</span>
-                )}
                 {puedeEditar && (
                   <button
                     type="button"
@@ -187,14 +145,23 @@ function LotesPanel() {
                   </button>
                 )}
               </div>
-              {l.composicion.length > 0 && (
-                // Composición calculada en vivo a partir de lo realmente
-                // pesado en el lote — no es editable, nadie la declara a mano.
-                <div className="mt-2 pl-12 flex flex-wrap gap-1">
-                  {l.composicion.map(c => (
-                    <span key={c.item} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
-                      {c.item}: {c.porcentaje}%
-                    </span>
+              {l.stockPorAlmacen.length > 0 && (
+                // Cada almacén tiene SU PROPIA composición — no es la misma
+                // en todos: cada uno acumula sus propias compras y
+                // transformaciones por separado (ver
+                // docs/migration_lote_composicion_por_almacen.sql).
+                <div className="mt-2 pl-12 space-y-1.5">
+                  {l.stockPorAlmacen.map(s => (
+                    <div key={s.almacenId} className="flex flex-wrap items-center gap-1">
+                      <span className="text-[11px] bg-surface-alt border border-border rounded-full px-2 py-0.5 text-text-secondary font-medium">
+                        {s.almacenNombre}: {fmt(s.stockKg)} kg
+                      </span>
+                      {s.composicion.map(c => (
+                        <span key={c.item} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                          {c.item}: {c.porcentaje}%
+                        </span>
+                      ))}
+                    </div>
                   ))}
                 </div>
               )}

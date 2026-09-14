@@ -43,7 +43,7 @@ function NuevaTomaFisicaModal({
   // Solo pide elegir lotes cuando alguna categoría marcada es "con lote"
   // (ej. PCB) — las categorías sin lote (Ferroso, No Ferroso) no lo necesitan.
   const hayCategoriaConLote = categoriaIds.some(id => categorias.find(c => c.id === id)?.sinLote === false);
-  const lotesDelAlmacen = lotes.filter(l => l.activo && l.almacenId === almacenId);
+  const lotesDelAlmacen = lotes.filter(l => l.activo && l.stockPorAlmacen.some(s => s.almacenId === almacenId));
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
 

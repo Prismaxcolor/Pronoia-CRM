@@ -203,8 +203,11 @@ function PesajePage() {
 
   const limpiar = () => { limpiarBorrador(); setLoteFilas([]); };
 
+  // Un lote puede tener kilos repartidos en varios almacenes — se muestran
+  // acá los que tienen stock en el almacén de origen elegido (no bloquea
+  // seleccionar otro: ver stockPorAlmacen en shared/types/lote.ts).
   const lotesEnOrigen = useMemo(
-    () => lotes.filter(l => l.activo && l.almacenId === almacenOrigenId),
+    () => lotes.filter(l => l.activo && l.stockPorAlmacen.some(s => s.almacenId === almacenOrigenId && s.stockKg > 0)),
     [lotes, almacenOrigenId]
   );
 
@@ -874,11 +877,13 @@ function PesajePage() {
 
             {tipo === 'traslado' && almacenOrigenId && (
               <div className="space-y-3">
-                <label className={labelClass + ' mb-0'}>Lotes a trasladar completos (PCB)</label>
+                <label className={labelClass + ' mb-0'}>Lotes a trasladar (PCB)</label>
 
                 {loteFilas.map((f, idx) => {
                   const neto = netoLoteTrasladoFila(f);
                   const opcionesLote = lotesEnOrigen.filter(l => l.id === f.loteId || !loteFilas.some(o => o.uid !== f.uid && o.loteId === l.id));
+                  const loteSel = lotes.find(l => l.id === f.loteId);
+                  const stockEnOrigen = loteSel?.stockPorAlmacen.find(s => s.almacenId === almacenOrigenId)?.stockKg ?? 0;
                   return (
                     <div key={f.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
                       <div className="flex items-center justify-between">
@@ -891,10 +896,26 @@ function PesajePage() {
                         <label className={labelClass}>Lote *</label>
                         <select value={f.loteId} onChange={e => setLoteFilaCampo(f.uid, 'loteId', e.target.value)} className={inputClass}>
                           <option value="">— Selecciona —</option>
-                          {opcionesLote.map(l => (
-                            <option key={l.id} value={l.id}>{l.nombre} ({fmt(l.stockKg)} kg en sistema)</option>
-                          ))}
+                          {opcionesLote.map(l => {
+                            const kgEnOrigen = l.stockPorAlmacen.find(s => s.almacenId === almacenOrigenId)?.stockKg ?? 0;
+                            return <option key={l.id} value={l.id}>{l.nombre} ({fmt(kgEnOrigen)} kg en este almacén)</option>;
+                          })}
                         </select>
+                        {f.loteId && (
+                          <p className="text-[11px] text-text-muted mt-1">Disponible en este almacén: {fmt(stockEnOrigen)} kg</p>
+                        )}
+                        {/* La composición que viaja es la de ESTE almacén de
+                            origen (se congela al pesar) — no la del lote en
+                            otro almacén. */}
+                        {f.loteId && (loteSel?.stockPorAlmacen.find(s => s.almacenId === almacenOrigenId)?.composicion.length ?? 0) > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {loteSel?.stockPorAlmacen.find(s => s.almacenId === almacenOrigenId)?.composicion.map(c => (
+                              <span key={c.item} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                                {c.item}: {c.porcentaje}%
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -923,8 +944,8 @@ function PesajePage() {
                   <Plus size={16} />
                   Agregar lote
                 </button>
-                {lotesEnOrigen.length === 0 && <p className="text-xs text-text-muted">No hay lotes activos en el almacén de origen.</p>}
-                <p className="text-xs text-text-muted">Se traslada el lote entero, no una porción — llega intacto al almacén destino cuando se confirme la recepción.</p>
+                {lotesEnOrigen.length === 0 && <p className="text-xs text-text-muted">No hay lotes con stock en el almacén de origen.</p>}
+                <p className="text-xs text-text-muted">Puedes trasladar una porción del lote (pésala) — el resto sigue en el almacén de origen. Llega al destino cuando se confirme la recepción.</p>
               </div>
             )}
 

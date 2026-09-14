@@ -14,6 +14,10 @@ export interface SalidaTransformacion {
   nombreProducto: string | null;
   loteDestinoId: string | null;
   nombreLoteDestino: string | null;
+  /** Almacén donde queda este lote resultante (PCB) — puede diferir del
+   *  almacén de origen de la transformación y entre salidas distintas. */
+  almacenId: string | null;
+  nombreAlmacen: string | null;
   pesoBruto: number;
   tara: number;
   pesoNeto: number;

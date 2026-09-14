@@ -103,7 +103,7 @@ function ConteoTomaFisicaPage() {
   const lotesDelAlmacen = useMemo(
     () => lotes.filter(l =>
       l.activo
-      && l.almacenId === tomaFisica?.almacenId
+      && l.stockPorAlmacen.some(s => s.almacenId === tomaFisica?.almacenId)
       && (!tomaFisica?.loteIds.length || tomaFisica.loteIds.includes(l.id))
     ),
     [lotes, tomaFisica]

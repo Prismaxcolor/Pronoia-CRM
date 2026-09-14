@@ -13,7 +13,7 @@ function resumenMateriales(t: Traslado): string {
   if (t.materiales.length === 0) return '—';
   if (t.materiales.length === 1) {
     const m = t.materiales[0];
-    return m.loteId ? `${m.nombreLote ?? 'Lote'} (lote completo)` : m.nombreProducto ?? 'material';
+    return m.loteId ? `${m.nombreLote ?? 'Lote'} (${fmt(m.pesoNeto)} kg)` : m.nombreProducto ?? 'material';
   }
   return `${t.materiales.length} ítems`;
 }

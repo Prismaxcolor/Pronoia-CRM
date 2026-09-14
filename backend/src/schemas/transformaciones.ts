@@ -64,6 +64,9 @@ export type CompletarTransformacionFerrosoInput = z.infer<typeof completarTransf
 /** PCB: retira de un lote de origen hacia un lote de destino. */
 export const crearTransformacionPCBSchema = z.object({
   loteOrigenId: z.string().uuid('Selecciona el lote de origen.'),
+  /** De qué almacén sale físicamente el lote origen — un lote puede tener
+   *  porciones en más de un almacén, hay que saber de cuál se está pesando. */
+  almacenId: z.string().uuid('Selecciona el almacén de origen.'),
   pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
   tara: z.number().min(0).default(0),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
@@ -73,6 +76,9 @@ export const crearTransformacionPCBSchema = z.object({
 
 const salidaPCBSchema = z.object({
   loteDestinoId: z.string().uuid('Selecciona el lote de destino.'),
+  /** Almacén donde queda ESTE lote resultante — puede diferir del almacén
+   *  de origen y entre distintas salidas de la misma transformación. */
+  almacenId: z.string().uuid('Selecciona el almacén de destino.'),
   pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
   tara: z.number().min(0).default(0),
   fotos: z.array(z.string()).default([]),

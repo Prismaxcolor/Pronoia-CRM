@@ -30,7 +30,7 @@ import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
 import { taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
-import type { Transformacion, SalidaComun, Tara, Lote, EntradaDetalleTransformacion } from '@shared/types/index.js';
+import type { Transformacion, SalidaComun, Tara, Lote, EntradaDetalleTransformacion, ComposicionPCBItem } from '@shared/types/index.js';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
 
@@ -579,12 +579,13 @@ function NuevaFerrosoForm({
 // ---------------------------------------------------------------------------
 // Formulario: Nueva transformación PCB
 // ---------------------------------------------------------------------------
-function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void }) {
+function NuevaPCBForm({ lotes, almacenes, onCreada }: { lotes: Lote[]; almacenes: Almacen[]; onCreada: () => void }) {
   const toast = useToast();
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   const [loteOrigenId, setLoteOrigenId] = useState('');
+  const [almacenId, setAlmacenId] = useState('');
   const [pesoBruto, setPesoBruto] = useState('');
   const [tara, setTara] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
@@ -601,6 +602,7 @@ function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void
     e.preventDefault();
     setError(null);
     if (!loteOrigenId) { setError('Selecciona el lote de origen.'); return; }
+    if (!almacenId) { setError('Selecciona de qué almacén sale el lote.'); return; }
     if (neto <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
     if (fotos.length === 0) { setError('Agrega al menos una foto de entrada.'); return; }
     setGuardando(true);
@@ -612,6 +614,7 @@ function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void
     }
     const result = await crearTransformacionPCB({
       loteOrigenId,
+      almacenId,
       pesoBruto: Number(pesoBruto),
       tara: Number(tara) || 0,
       fecha,
@@ -621,7 +624,7 @@ function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     toast.exito('Transformación PCB iniciada. Complétala cuando tengas las salidas pesadas.');
-    setLoteOrigenId(''); setPesoBruto(''); setTara(''); setFotos([]); setFecha(hoyISO()); setNotas('');
+    setLoteOrigenId(''); setAlmacenId(''); setPesoBruto(''); setTara(''); setFotos([]); setFecha(hoyISO()); setNotas('');
     onCreada();
   };
 
@@ -637,17 +640,45 @@ function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void
           <ChevronDown size={14} className="text-text-muted shrink-0" />
         </button>
         {loteOrigen && (
-          <p className="text-xs text-text-muted mt-1">Stock actual: <span className="font-medium">{fmt(loteOrigen.stockKg)} kg</span></p>
+          <p className="text-xs text-text-muted mt-1">Stock total (todos los almacenes): <span className="font-medium">{fmt(loteOrigen.stockKg)} kg</span></p>
         )}
-        {loteOrigen && loteOrigen.composicion.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {loteOrigen.composicion.map(c => (
-              <span key={c.item} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
-                {c.item}: {c.porcentaje}%
+        {loteOrigen && loteOrigen.stockPorAlmacen.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {loteOrigen.stockPorAlmacen.map(s => (
+              <span key={s.almacenId} className="text-[11px] bg-surface-alt border border-border rounded-full px-2 py-0.5 text-text-secondary">
+                {s.almacenNombre}: {fmt(s.stockKg)} kg
               </span>
             ))}
           </div>
         )}
+      </div>
+      <div>
+        <label className={labelClass}>Almacén de origen *</label>
+        <select required value={almacenId} onChange={e => setAlmacenId(e.target.value)} className={inputClass}>
+          <option value="" disabled>-Selecciona de qué almacén sale el lote-</option>
+          {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+        </select>
+        {/* La composición de un lote es POR ALMACÉN: cada uno acumula sus
+            propias compras/transformaciones por separado (ver
+            docs/migration_lote_composicion_por_almacen.sql). Por eso esto
+            solo se muestra una vez elegido el almacén, y es lo que el
+            backend realmente usa para repartir la entrada. */}
+        {loteOrigen && almacenId && (() => {
+          const composicionEnAlmacen = loteOrigen.stockPorAlmacen.find(s => s.almacenId === almacenId)?.composicion ?? [];
+          if (composicionEnAlmacen.length === 0) {
+            return <p className="text-xs text-text-muted mt-1">Sin composición conocida en este almacén todavía.</p>;
+          }
+          return (
+            <div className="mt-2 flex flex-wrap gap-1">
+              <span className="text-[10px] text-text-muted w-full mb-0.5">Composición de este lote en este almacén:</span>
+              {composicionEnAlmacen.map(c => (
+                <span key={c.item} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                  {c.item}: {c.porcentaje}%
+                </span>
+              ))}
+            </div>
+          );
+        })()}
       </div>
       <div>
         <label className={labelClass}>Peso bruto a retirar (kg) *</label>
@@ -694,12 +725,13 @@ function NuevaPCBForm({ lotes, onCreada }: { lotes: Lote[]; onCreada: () => void
 interface FilaSalidaPCB {
   uid: number;
   loteDestinoId: string;
+  almacenId: string;
   pesoBruto: string;
   tara: string;
   fotos: FotoMaterial[];
 }
 function filaSalidaPCBVacia(): FilaSalidaPCB {
-  return { uid: nextUid++, loteDestinoId: '', pesoBruto: '', tara: '', fotos: [] };
+  return { uid: nextUid++, loteDestinoId: '', almacenId: '', pesoBruto: '', tara: '', fotos: [] };
 }
 
 interface ComposicionProyectada { item: string; porcentaje: number; esNuevo: boolean }
@@ -716,9 +748,13 @@ interface ComposicionProyectada { item: string; porcentaje: number; esNuevo: boo
  *  puede pasar tiempo y el lote origen puede haber tenido otros
  *  movimientos — usar su composición "de ahora" desincroniza esta
  *  previsualización de lo que el backend realmente va a guardar. */
-function proyectarComposicion(loteDestino: Lote | undefined, entradaDetalle: EntradaDetalleTransformacion[], netoEntrante: number): ComposicionProyectada[] {
-  if (!loteDestino || netoEntrante <= 0) return [];
-  const stockDestino = loteDestino.stockKg;
+function proyectarComposicion(
+  stockDestino: number,
+  compDestino: ComposicionPCBItem[],
+  entradaDetalle: EntradaDetalleTransformacion[],
+  netoEntrante: number
+): ComposicionProyectada[] {
+  if (netoEntrante <= 0) return [];
   const stockTotalNuevo = stockDestino + netoEntrante;
   if (stockTotalNuevo <= 0) return [];
 
@@ -727,7 +763,6 @@ function proyectarComposicion(loteDestino: Lote | undefined, entradaDetalle: Ent
     ? entradaDetalle.map(d => ({ item: d.nombreProducto, porcentaje: (d.pesoKg / totalEntrada) * 100 }))
     : [];
 
-  const compDestino = loteDestino.composicion;
   const itemsDestino = new Set(compDestino.map(c => c.item));
   const todosItems = Array.from(new Set([...compDestino.map(c => c.item), ...compOrigen.map(c => c.item)]));
 
@@ -745,11 +780,13 @@ function proyectarComposicion(loteDestino: Lote | undefined, entradaDetalle: Ent
 function CompletarPCBModal({
   transformacion,
   lotes,
+  almacenes,
   onClose,
   onCompletada,
 }: {
   transformacion: Transformacion;
   lotes: Lote[];
+  almacenes: Almacen[];
   onClose: () => void;
   onCompletada: () => void;
 }) {
@@ -774,6 +811,7 @@ function CompletarPCBModal({
   const handleCompletar = async () => {
     setError(null);
     if (filas.some(f => !f.loteDestinoId)) { setError('Selecciona el lote de destino en cada fila.'); return; }
+    if (filas.some(f => !f.almacenId)) { setError('Selecciona el almacén de destino en cada fila.'); return; }
     if (filas.some(f => netoFila(f) <= 0)) { setError('Cada salida debe tener un peso neto mayor a 0.'); return; }
     if (filas.some(f => f.loteDestinoId === transformacion.loteOrigenId)) {
       setError('El lote destino debe ser distinto del lote origen.');
@@ -793,6 +831,7 @@ function CompletarPCBModal({
     }
     const salidas = filas.map((f, i) => ({
       loteDestinoId: f.loteDestinoId,
+      almacenId: f.almacenId,
       pesoBruto: Number(f.pesoBruto),
       tara: Number(f.tara) || 0,
       fotos: fotasPorFila[i] as string[],
@@ -841,34 +880,49 @@ function CompletarPCBModal({
                       </span>
                       <ChevronDown size={14} className="text-text-muted shrink-0" />
                     </button>
-                    {loteDestino && loteDestino.composicion.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        <span className="text-[10px] text-text-muted w-full mb-0.5">Composición actual del destino:</span>
-                        {loteDestino.composicion.map(c => (
-                          <span key={c.item} className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
-                            {c.item}: {c.porcentaje}%
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {(() => {
-                      const proyeccion = proyectarComposicion(loteDestino, transformacion.entradaDetalle, netoFila(f));
-                      if (proyeccion.length === 0) return null;
+                  </div>
+                  <div>
+                    <label className={labelClass}>Almacén de destino *</label>
+                    <select required value={f.almacenId} onChange={e => actualizar(f.uid, { almacenId: e.target.value })} className={inputClass}>
+                      <option value="" disabled>-Selecciona dónde queda este lote-</option>
+                      {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                    </select>
+                    {/* La composición es POR (lote, almacén) — la de este
+                        destino en OTRO almacén no se muestra ni se toca. */}
+                    {loteDestino && f.almacenId && (() => {
+                      const enAlmacen = loteDestino.stockPorAlmacen.find(s => s.almacenId === f.almacenId);
+                      const stockDestino = enAlmacen?.stockKg ?? 0;
+                      const compDestino = enAlmacen?.composicion ?? [];
+                      const proyeccion = proyectarComposicion(stockDestino, compDestino, transformacion.entradaDetalle, netoFila(f));
                       return (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <span className="text-[10px] text-text-muted w-full mb-0.5">Composición estimada después de esta transformación:</span>
-                          {proyeccion.map(c => (
-                            <span
-                              key={c.item}
-                              className={`text-[11px] border rounded-full px-2 py-0.5 ${
-                                c.esNuevo ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'
-                              }`}
-                              title={c.esNuevo ? 'Material nuevo en este lote' : undefined}
-                            >
-                              {c.esNuevo && '★ '}{c.item}: {c.porcentaje}%
-                            </span>
-                          ))}
-                        </div>
+                        <>
+                          {compDestino.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              <span className="text-[10px] text-text-muted w-full mb-0.5">Composición actual del destino en este almacén:</span>
+                              {compDestino.map(c => (
+                                <span key={c.item} className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
+                                  {c.item}: {c.porcentaje}%
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {proyeccion.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              <span className="text-[10px] text-text-muted w-full mb-0.5">Composición estimada después de esta transformación:</span>
+                              {proyeccion.map(c => (
+                                <span
+                                  key={c.item}
+                                  className={`text-[11px] border rounded-full px-2 py-0.5 ${
+                                    c.esNuevo ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+                                  }`}
+                                  title={c.esNuevo ? 'Material nuevo en este lote en este almacén' : undefined}
+                                >
+                                  {c.esNuevo && '★ '}{c.item}: {c.porcentaje}%
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       );
                     })()}
                   </div>
@@ -1056,6 +1110,7 @@ function TransformacionesPage() {
               {categoria === 'pcb' ? (
                 <NuevaPCBForm
                   lotes={lotes}
+                  almacenes={almacenes}
                   onCreada={() => { void cargar(); setTab('pendientes'); }}
                 />
               ) : (
@@ -1163,6 +1218,7 @@ function TransformacionesPage() {
         <CompletarPCBModal
           transformacion={completando}
           lotes={lotes}
+          almacenes={almacenes}
           onClose={() => setCompletando(null)}
           onCompletada={() => { setCompletando(null); void cargar(); setTab('historial'); }}
         />
@@ -1217,7 +1273,10 @@ function TransformacionHistorialCard({ t }: { t: Transformacion }) {
           <p className="text-xs font-medium text-text-secondary mb-1">Salidas</p>
           {t.salidas.map(s => (
             <div key={s.id} className="flex justify-between text-xs text-text-secondary">
-              <span>→ {s.nombreProducto ?? s.nombreLoteDestino ?? '—'}</span>
+              <span>
+                → {s.nombreProducto ?? s.nombreLoteDestino ?? '—'}
+                {s.nombreAlmacen && <span className="text-text-muted"> ({s.nombreAlmacen})</span>}
+              </span>
               <span className="font-medium">{fmt(s.pesoNeto)} kg</span>
             </div>
           ))}

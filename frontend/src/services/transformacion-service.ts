@@ -176,6 +176,8 @@ export async function guardarSalidasComunes(
 
 export interface CrearTransformacionPCBInput {
   loteOrigenId: string;
+  /** De qué almacén sale físicamente el lote origen. */
+  almacenId: string;
   pesoBruto: number;
   tara: number;
   fecha: string;
@@ -185,6 +187,8 @@ export interface CrearTransformacionPCBInput {
 
 export interface CompletarTransformacionPCBSalidaInput {
   loteDestinoId: string;
+  /** Almacén donde queda este lote resultante. */
+  almacenId: string;
   pesoBruto: number;
   tara: number;
   fotos: string[];
