@@ -100,10 +100,12 @@ function ConteoTomaFisicaPage() {
   // entre los lotes de esta toma física (si se acotó a lotes específicos al
   // crearla) o todos los del almacén (si no se acotó).
   const requiereLote = productoSel != null && productoSel.tipoMaterialSinLote !== true;
+  // No se exige que el lote ya tenga stock registrado en este almacén — la
+  // toma física sirve justo para contar lo que hay de verdad, incluso si el
+  // sistema todavía no sabe que este lote está (o quedó en 0) acá.
   const lotesDelAlmacen = useMemo(
     () => lotes.filter(l =>
       l.activo
-      && l.stockPorAlmacen.some(s => s.almacenId === tomaFisica?.almacenId)
       && (!tomaFisica?.loteIds.length || tomaFisica.loteIds.includes(l.id))
     ),
     [lotes, tomaFisica]

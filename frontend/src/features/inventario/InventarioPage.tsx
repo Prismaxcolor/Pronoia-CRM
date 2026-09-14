@@ -40,11 +40,14 @@ interface GrupoDestino {
   transformacionPendienteKg?: number;
 }
 
-/** ¿Esta toma física abierta bloquea este lote ahora mismo? Bloquea si es
- *  del mismo almacén, incluye alguna categoría "con lote" (PCB), y — si se
- *  acotó a lotes específicos al crearla — este lote es uno de ellos. */
+/** ¿Esta toma física abierta bloquea este lote ahora mismo? Bloquea si
+ *  incluye alguna categoría "con lote" (PCB), y — si se acotó a lotes
+ *  específicos al crearla — este lote es uno de ellos. No exige que el
+ *  lote ya tenga stock registrado en el almacén de la toma física: eso
+ *  excluiría justo los lotes que la toma física busca encontrar (uno que
+ *  el sistema cree en 0 pero que en realidad sí tiene material ahí). */
 function tomaFisicaBloqueaLote(lote: Lote, t: TomaFisicaInventario, categorias: TipoMaterial[]): boolean {
-  if (t.estado !== 'abierta' || !lote.stockPorAlmacen.some(s => s.almacenId === t.almacenId)) return false;
+  if (t.estado !== 'abierta') return false;
   const tieneCategoriaConLote = t.categoriaIds.some(id => categorias.find(c => c.id === id)?.sinLote === false);
   if (!tieneCategoriaConLote) return false;
   return t.loteIds.length === 0 || t.loteIds.includes(lote.id);
