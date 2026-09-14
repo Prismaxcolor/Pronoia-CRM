@@ -294,21 +294,28 @@ async function cargarProductos(filtros: FiltrosInventario = {}): Promise<Product
  * Calcula el stock por (material, destino): entradas (pesaje de compra) −
  * salidas (pesaje de venta) ± neto de transformaciones. El peso entra/sale al
  * inventario en el momento del pesaje (ticket), no de la factura.
+ *
+ * NOTA (14-sep-2026): filtros.almacenId ya NO se usa acá — la ruta
+ * (routes/inventario.ts) delega el caso "filtrado por almacén" a
+ * obtenerInventarioAlmacen(), que sí soporta que un lote tenga kilos
+ * repartidos en varios almacenes a la vez (stock_almacen() en SQL). El
+ * `loteEnAlmacen` de acá abajo asumía un único lotes.almacen_id (columna
+ * eliminada en migration_lote_stock_por_almacen.sql) — se deja el código
+ * porque es inofensivo cuando almacenId siempre llega undefined
+ * (`!almacenId` corta antes de tocar la consulta rota), pero no reactivar
+ * este camino para filtrar por almacén sin arreglarlo primero.
  */
 export async function obtenerInventario(filtros: FiltrosInventario = {}): Promise<GrupoInventario[]> {
   const productos = await cargarProductos(filtros);
   // Solo contamos movimientos de materiales que pasaron el filtro de catálogo.
   const idsPermitidos = new Set(productos.map(p => p.id));
   const almacenId = filtros.almacenId;
-
-  // Almacén ACTUAL de cada lote — mismo criterio que con_lote en
-  // stock_almacen(): todo el material de un lote se atribuye a donde el lote
-  // está HOY, no a dónde estaba cuando se pesó/transformó cada kilo.
-  const { data: lotesAlmacenData } = await supabaseAdmin.from('lotes').select('id, almacen_id');
-  const loteAlmacen = new Map<string, string | null>(
-    ((lotesAlmacenData as Array<{ id: string; almacen_id: string | null }> | null) ?? []).map(l => [l.id, l.almacen_id])
-  );
-  const loteEnAlmacen = (loteId: string | null) => !almacenId || (loteId != null && loteAlmacen.get(loteId) === almacenId);
+  // El caso "con almacenId" ya no pasa por acá (ver nota de la función,
+  // arriba) — un lote puede tener kilos en varios almacenes a la vez, así
+  // que "el almacén de este lote" dejó de ser una pregunta con una sola
+  // respuesta. loteEnAlmacen queda como no-op (siempre true) porque
+  // almacenId siempre llega undefined en este camino.
+  const loteEnAlmacen = (_loteId: string | null) => !almacenId;
 
   // Pesaje: entradas (compra) y salidas (venta), con su destino.
   let qTickets = supabaseAdmin
@@ -692,8 +699,11 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
  * el sistema no bloquea movimientos por falta de stock, así que un número
  * negativo real debe verse, no ocultarse.
  */
-export async function obtenerInventarioAlmacen(almacenId: string): Promise<GrupoInventario[]> {
-  const productos = await cargarProductos();
+export async function obtenerInventarioAlmacen(
+  almacenId: string,
+  filtros: Pick<FiltrosInventario, 'tipoMaterialId' | 'productoId'> = {}
+): Promise<GrupoInventario[]> {
+  const productos = await cargarProductos(filtros);
   const metaPorId = new Map(productos.map(p => [p.id, p]));
 
   const { data, error } = await supabaseAdmin.rpc('stock_almacen', { p_almacen_id: almacenId });
