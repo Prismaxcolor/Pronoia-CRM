@@ -10,6 +10,7 @@ import type {
 interface ListaRow {
   id: string;
   nombre: string;
+  tipo: 'compra' | 'venta';
   vigente_desde: string | null;
   activo: boolean;
   created_at: string;
@@ -30,6 +31,7 @@ interface PrecioRow {
 export interface ListaPublica {
   id: string;
   nombre: string;
+  tipo: 'compra' | 'venta';
   vigenteDesde: string | null;
   activo: boolean;
   createdAt: string;
@@ -56,6 +58,7 @@ function listaToPublico(row: ListaRow): ListaPublica {
   return {
     id: row.id,
     nombre: row.nombre,
+    tipo: row.tipo,
     vigenteDesde: row.vigente_desde,
     activo: row.activo,
     createdAt: row.created_at,
@@ -75,12 +78,13 @@ function precioToPublico(row: PrecioRow): PrecioPublico {
 
 // ---- cabeceras --------------------------------------------------------------
 
-export async function listarListas(): Promise<ListaPublica[]> {
-  const { data, error } = await supabaseAdmin
-    .from('listas_precios')
-    .select('*')
-    .order('created_at', { ascending: false });
+/** Sin `tipo`, devuelve todas (pantalla de Configuración, que las administra
+ *  juntas). Con `tipo`, filtra — usado por el selector de una factura. */
+export async function listarListas(tipo?: 'compra' | 'venta'): Promise<ListaPublica[]> {
+  let query = supabaseAdmin.from('listas_precios').select('*').order('created_at', { ascending: false });
+  if (tipo) query = query.eq('tipo', tipo);
 
+  const { data, error } = await query;
   if (error || !data) return [];
   return (data as ListaRow[]).map(listaToPublico);
 }
@@ -115,7 +119,7 @@ export async function crearLista(
 ): Promise<{ lista: ListaPublica } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('listas_precios')
-    .insert({ nombre: input.nombre, vigente_desde: input.vigenteDesde ?? null })
+    .insert({ nombre: input.nombre, tipo: input.tipo, vigente_desde: input.vigenteDesde ?? null })
     .select('*')
     .single();
 
@@ -185,12 +189,16 @@ export async function eliminarPrecio(
 
 // ---- selector ---------------------------------------------------------------
 
-export async function listasParaProducto(productoId: string): Promise<ListaParaProducto[]> {
+export async function listasParaProducto(
+  productoId: string,
+  tipo: 'compra' | 'venta'
+): Promise<ListaParaProducto[]> {
   const { data, error } = await supabaseAdmin
     .from('precios_lista')
-    .select('precio, listas_precios!inner(id, nombre, vigente_desde, activo)')
+    .select('precio, listas_precios!inner(id, nombre, vigente_desde, activo, tipo)')
     .eq('producto_id', productoId)
-    .eq('listas_precios.activo', true);
+    .eq('listas_precios.activo', true)
+    .eq('listas_precios.tipo', tipo);
 
   if (error || !data) return [];
 

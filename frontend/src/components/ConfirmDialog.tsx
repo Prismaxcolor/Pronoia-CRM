@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { AlertTriangle, AlertOctagon, HelpCircle, X } from 'lucide-react';
-import type { ConfirmVariant } from '../hooks/use-confirm';
+import type { ConfirmVariant } from '../hooks/use-confirm-context';
 
 interface VariantStyles {
   icon: React.ReactNode;

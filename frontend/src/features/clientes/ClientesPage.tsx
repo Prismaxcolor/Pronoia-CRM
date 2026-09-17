@@ -8,9 +8,9 @@ import {
   borrarCliente,
   generarLinkTelegramCliente,
 } from '../../services/cliente-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import ClienteFormModal from './ClienteFormModal';
 import TelegramLinkModal from '../../components/TelegramLinkModal';
 import type { Cliente } from '@shared/types/index.js';
@@ -30,12 +30,13 @@ function ClientesPage() {
   const puedeEditar = tienePermiso('clientes', 'editar');
   const puedeBorrar = tienePermiso('clientes', 'eliminar');
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerClientes().then(setClientes).finally(() => setCargando(false));
-  };
+  // recargar() no toca setCargando(true): al montar, cargando ya arranca en
+  // true, así que llamarlo de nuevo síncronamente dentro del efecto dispara
+  // el lint react-hooks/set-state-in-effect sin necesidad real.
+  const recargar = () => obtenerClientes().then(setClientes).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleDesactivar = async (c: Cliente) => {
     const ok = await confirmar({
@@ -104,7 +105,7 @@ function ClientesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Clientes</h1>
           <p className="text-sm text-text-secondary mt-1">Clientes frecuentes para facturación</p>
@@ -113,7 +114,7 @@ function ClientesPage() {
           <button
             type="button"
             onClick={() => setFormAbierto({ abierto: true, cliente: null })}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shrink-0"
           >
             <Plus size={18} />
             Nuevo cliente
@@ -140,7 +141,7 @@ function ClientesPage() {
             }`}
           >
             {(puedeEditar || puedeBorrar) && (
-              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                 {puedeEditar && (
                   <button
                     type="button"

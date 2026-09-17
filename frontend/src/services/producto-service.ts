@@ -13,10 +13,11 @@ interface ProductoApi {
   descripcion: string;
   tipoMaterialId: string | null;
   tipoMaterialNombre: string | null;
+  tipoMaterialSinLote: boolean | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagenUrl: string | null;
+  fotos: string[];
   creadoPor: string;
   creadoEn: string;
   peso?: number;
@@ -31,9 +32,10 @@ function mapApi(api: ProductoApi): Producto {
     descripcion: api.descripcion,
     tipoMaterialId: api.tipoMaterialId,
     tipoMaterialNombre: api.tipoMaterialNombre,
+    tipoMaterialSinLote: api.tipoMaterialSinLote,
     moneda: api.moneda,
     activo: api.activo,
-    imagenUrl: api.imagenUrl,
+    fotos: api.fotos,
     creadoPor: api.creadoPor,
     creadoEn: api.creadoEn,
   };
@@ -118,5 +120,15 @@ export async function borrarProducto(id: string): Promise<{ ok: true } | { error
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo borrar el producto.' };
+  }
+}
+
+/** Persiste el nuevo orden del catálogo: ids en el orden deseado, de arriba a abajo. */
+export async function reordenarProductos(ids: string[]): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch('/api/productos/reordenar', { method: 'PATCH', body: { ids } });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo reordenar el catálogo.' };
   }
 }

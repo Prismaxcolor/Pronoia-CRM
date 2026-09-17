@@ -1,0 +1,261 @@
+import { supabaseAdmin } from '../config/supabase.js';
+import type { CrearTomaFisicaInput, RegistrarPesajeTomaFisicaInput } from '../schemas/toma-fisica.js';
+
+/** Duplicado intencional de shared/types/toma-fisica.ts (mismo patrón que
+ *  formatCodigoPesaje / formatCodigoTraslado — @shared no resuelve limpio
+ *  en runtime con tsx + ESM). */
+function codigoTomaFisica(numero: number): string {
+  return `INV-${String(numero).padStart(4, '0')}`;
+}
+
+interface TomaFisicaRow {
+  id: string;
+  numero: number;
+  descripcion: string | null;
+  almacen_id: string;
+  categorias: string[];
+  lote_ids: string[] | null;
+  estado: 'abierta' | 'cerrada' | 'cancelada';
+  abierta_por: string;
+  abierta_en: string;
+  cerrada_por: string | null;
+  cerrada_en: string | null;
+  created_at: string;
+  snapshot_resumen: Array<Record<string, unknown>> | null;
+  almacenes?: { nombre: string } | null;
+}
+
+export interface TomaFisicaPublica {
+  id: string;
+  codigo: string;
+  numero: number;
+  descripcion: string | null;
+  almacenId: string;
+  almacenNombre: string | null;
+  categoriaIds: string[];
+  categoriaNombres: string[];
+  loteIds: string[];
+  loteNombres: string[];
+  estado: 'abierta' | 'cerrada' | 'cancelada';
+  abiertaPor: string;
+  abiertaEn: string;
+  cerradaPor: string | null;
+  cerradaEn: string | null;
+  createdAt: string;
+  snapshotResumen: ResumenTomaFisicaLinea[] | null;
+}
+
+export interface DetalleTomaFisicaPublico {
+  id: string;
+  tomaFisicaId: string;
+  /** null cuando se pesó un lote PCB completo (sin desglose por material). */
+  productoId: string | null;
+  nombreProducto: string | null;
+  loteId: string | null;
+  nombreLote: string | null;
+  pesoBruto: number;
+  tara: number;
+  pesoNeto: number;
+  fotos: string[];
+  registradoPor: string;
+  createdAt: string;
+}
+
+export interface ResumenTomaFisicaLinea {
+  /** null en líneas "por lote completo" (PCB) — ver loteId/loteNombre. */
+  productoId: string | null;
+  productoNombre: string | null;
+  loteId: string | null;
+  loteNombre: string | null;
+  stockTeorico: number;
+  stockReal: number;
+  diferencia: number;
+  cantidadPesajes: number;
+}
+
+async function nombresDeTabla(tabla: 'tipos_material' | 'lotes', ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const { data } = await supabaseAdmin.from(tabla).select('id, nombre').in('id', ids);
+  return new Map((data ?? []).map(r => [r.id as string, r.nombre as string]));
+}
+
+async function toPublico(row: TomaFisicaRow): Promise<TomaFisicaPublica> {
+  const loteIds = row.lote_ids ?? [];
+  const [nombresCat, nombresLote] = await Promise.all([
+    nombresDeTabla('tipos_material', row.categorias ?? []),
+    nombresDeTabla('lotes', loteIds),
+  ]);
+  return {
+    id: row.id,
+    codigo: codigoTomaFisica(row.numero),
+    numero: row.numero,
+    descripcion: row.descripcion,
+    almacenId: row.almacen_id,
+    almacenNombre: row.almacenes?.nombre ?? null,
+    categoriaIds: row.categorias ?? [],
+    categoriaNombres: (row.categorias ?? []).map(id => nombresCat.get(id) ?? '—'),
+    loteIds,
+    loteNombres: loteIds.map(id => nombresLote.get(id) ?? '—'),
+    estado: row.estado,
+    abiertaPor: row.abierta_por,
+    abiertaEn: row.abierta_en,
+    cerradaPor: row.cerrada_por,
+    cerradaEn: row.cerrada_en,
+    createdAt: row.created_at,
+    snapshotResumen: parseSnapshot(row.snapshot_resumen),
+  };
+}
+
+function parseSnapshot(raw: Array<Record<string, unknown>> | null): ResumenTomaFisicaLinea[] | null {
+  if (!raw || raw.length === 0) return null;
+  return raw.map(r => ({
+    productoId: r.producto_id as string | null,
+    productoNombre: r.producto_nombre as string | null,
+    loteId: r.lote_id as string | null,
+    loteNombre: r.lote_nombre as string | null,
+    stockTeorico: Number(r.stock_teorico),
+    stockReal: Number(r.stock_real),
+    diferencia: Number(r.diferencia),
+    cantidadPesajes: Number(r.cantidad_pesajes),
+  }));
+}
+
+export async function listarTomasFisicas(): Promise<TomaFisicaPublica[]> {
+  const { data, error } = await supabaseAdmin
+    .from('tomas_fisicas_inventario')
+    .select('*, almacenes(nombre), snapshot_resumen')
+    .order('numero', { ascending: false });
+
+  if (error || !data) return [];
+  return Promise.all((data as TomaFisicaRow[]).map(toPublico));
+}
+
+export async function obtenerTomaFisica(id: string): Promise<TomaFisicaPublica | null> {
+  const { data, error } = await supabaseAdmin
+    .from('tomas_fisicas_inventario')
+    .select('*, almacenes(nombre), snapshot_resumen')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return toPublico(data as TomaFisicaRow);
+}
+
+export async function crearTomaFisica(
+  input: CrearTomaFisicaInput,
+  abiertaPor: string
+): Promise<{ tomaFisica: TomaFisicaPublica } | { error: string }> {
+  const { data, error } = await supabaseAdmin.rpc('crear_toma_fisica_inventario', {
+    p_almacen_id: input.almacenId,
+    p_categorias: input.categoriaIds,
+    p_descripcion: input.descripcion,
+    p_abierta_por: abiertaPor,
+    p_lote_ids: input.loteIds && input.loteIds.length > 0 ? input.loteIds : null,
+  });
+
+  if (error || !data) return { error: error?.message ?? 'No se pudo crear la toma física.' };
+  const tomaFisica = await obtenerTomaFisica(data as string);
+  if (!tomaFisica) return { error: 'La toma física se creó pero no se pudo leer de vuelta.' };
+  return { tomaFisica };
+}
+
+export async function listarDetalleTomaFisica(tomaFisicaId: string): Promise<DetalleTomaFisicaPublico[]> {
+  const { data, error } = await supabaseAdmin
+    .from('detalle_toma_fisica')
+    .select('*, productos(nombre), lotes(nombre)')
+    .eq('toma_fisica_id', tomaFisicaId)
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return (data as Array<Record<string, unknown>>).map(row => ({
+    id: row.id as string,
+    tomaFisicaId: row.toma_fisica_id as string,
+    productoId: row.producto_id as string | null,
+    nombreProducto: (row.productos as { nombre: string } | null)?.nombre ?? null,
+    loteId: row.lote_id as string | null,
+    nombreLote: (row.lotes as { nombre: string } | null)?.nombre ?? null,
+    pesoBruto: Number(row.peso_bruto),
+    tara: Number(row.tara),
+    pesoNeto: Number(row.peso_neto),
+    fotos: (row.fotos as string[]) ?? [],
+    registradoPor: row.registrado_por as string,
+    createdAt: row.created_at as string,
+  }));
+}
+
+export async function registrarPesajeTomaFisica(
+  tomaFisicaId: string,
+  input: RegistrarPesajeTomaFisicaInput,
+  registradoPor: string
+): Promise<{ id: string } | { error: string }> {
+  const { data, error } = await supabaseAdmin.rpc('registrar_pesaje_toma_fisica', {
+    p_toma_fisica_id: tomaFisicaId,
+    p_producto_id: input.productoId ?? null,
+    p_lote_id: input.loteId ?? null,
+    p_peso_bruto: input.pesoBruto,
+    p_tara: input.tara,
+    p_fotos: input.fotos,
+    p_registrado_por: registradoPor,
+  });
+
+  if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pesaje.' };
+  return { id: data as string };
+}
+
+export async function eliminarPesajeTomaFisica(detalleId: string): Promise<{ ok: true } | { error: string }> {
+  const { error } = await supabaseAdmin.rpc('eliminar_pesaje_toma_fisica', { p_detalle_id: detalleId });
+  if (error) return { error: error.message };
+  return { ok: true };
+}
+
+export async function resumenTomaFisica(tomaFisicaId: string): Promise<ResumenTomaFisicaLinea[]> {
+  // Para tomas físicas cerradas o canceladas devolvemos el snapshot guardado
+  // al momento de culminar — resumen_toma_fisica es una vista en vivo que
+  // mostraría 0/0/0 de diferencia una vez ajustado el stock.
+  const { data: row } = await supabaseAdmin
+    .from('tomas_fisicas_inventario')
+    .select('estado, snapshot_resumen')
+    .eq('id', tomaFisicaId)
+    .maybeSingle();
+
+  if (row && row.estado !== 'abierta' && row.snapshot_resumen) {
+    return parseSnapshot(row.snapshot_resumen as Array<Record<string, unknown>>) ?? [];
+  }
+
+  const { data, error } = await supabaseAdmin.rpc('resumen_toma_fisica', { p_toma_fisica_id: tomaFisicaId });
+  if (error || !data) return [];
+  return (data as Array<Record<string, unknown>>).map(r => ({
+    productoId: r.producto_id as string | null,
+    productoNombre: r.producto_nombre as string | null,
+    loteId: r.lote_id as string | null,
+    loteNombre: r.lote_nombre as string | null,
+    stockTeorico: Number(r.stock_teorico),
+    stockReal: Number(r.stock_real),
+    diferencia: Number(r.diferencia),
+    cantidadPesajes: Number(r.cantidad_pesajes),
+  }));
+}
+
+export async function cancelarTomaFisica(
+  tomaFisicaId: string,
+  canceladaPor: string
+): Promise<{ ok: true } | { error: string }> {
+  const { error } = await supabaseAdmin.rpc('cancelar_toma_fisica_inventario', {
+    p_toma_fisica_id: tomaFisicaId,
+    p_cancelada_por: canceladaPor,
+  });
+  if (error) return { error: error.message };
+  return { ok: true };
+}
+
+export async function culminarTomaFisica(
+  tomaFisicaId: string,
+  cerradaPor: string
+): Promise<{ ok: true } | { error: string }> {
+  const { error } = await supabaseAdmin.rpc('culminar_toma_fisica_inventario', {
+    p_toma_fisica_id: tomaFisicaId,
+    p_cerrada_por: cerradaPor,
+  });
+  if (error) return { error: error.message };
+  return { ok: true };
+}

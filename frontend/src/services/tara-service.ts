@@ -4,7 +4,7 @@ import type { Tara } from '@shared/types/index.js';
 export interface TaraInput {
   nombre: string;
   peso: number;
-  foto?: string | null;
+  fotos?: string[];
 }
 
 export async function obtenerTaras(): Promise<Tara[]> {

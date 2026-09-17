@@ -1,14 +1,6 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { obtenerPortalMe, cerrarSesionPortal, type PortalMe } from '../services/portal-auth-service';
-
-interface PortalAuthContextType {
-  entidad: PortalMe | null;
-  cargando: boolean;
-  refrescar: () => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-const PortalAuthContext = createContext<PortalAuthContextType | null>(null);
+import { PortalAuthContext } from './use-portal-auth-context';
 
 export function PortalAuthProvider({ children }: { children: ReactNode }) {
   const [entidad, setEntidad] = useState<PortalMe | null>(null);
@@ -19,8 +11,11 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
     setEntidad(me);
   };
 
+  // Igual que cargar(), pero sin pasar por una función async con nombre: el
+  // linter no puede ver más allá del await y marca el setState de adentro
+  // como "síncrono dentro del efecto" aunque no lo sea.
   useEffect(() => {
-    cargar().finally(() => setCargando(false));
+    obtenerPortalMe().then(setEntidad).finally(() => setCargando(false));
   }, []);
 
   const logout = async () => {
@@ -33,10 +28,4 @@ export function PortalAuthProvider({ children }: { children: ReactNode }) {
       {children}
     </PortalAuthContext.Provider>
   );
-}
-
-export function usePortalAuth(): PortalAuthContextType {
-  const ctx = useContext(PortalAuthContext);
-  if (!ctx) throw new Error('usePortalAuth debe usarse dentro de PortalAuthProvider');
-  return ctx;
 }

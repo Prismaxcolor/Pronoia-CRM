@@ -1,27 +1,25 @@
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, EyeOff, Eye, Weight } from 'lucide-react';
 import { obtenerTaras, desactivarTara, reactivarTara } from '../../services/tara-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 import TaraFormModal from './TaraFormModal';
 import type { Tara } from '@shared/types/index.js';
 
 function TarasPage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
-  const puedeCrear = tienePermiso('productos', 'crear');
-  const puedeEditar = tienePermiso('productos', 'editar');
+  const puedeCrear = tienePermiso('taras', 'crear');
+  const puedeEditar = tienePermiso('taras', 'editar');
 
   const [taras, setTaras] = useState<Tara[]>([]);
   const [cargando, setCargando] = useState(true);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; tara: Tara | null } | { abierto: false }>({ abierto: false });
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerTaras().then(setTaras).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerTaras().then(setTaras).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleDesactivar = async (t: Tara) => {
     const result = await desactivarTara(t.id);
@@ -47,7 +45,7 @@ function TarasPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Taras</h1>
           <p className="text-sm text-text-secondary mt-1">
@@ -73,7 +71,7 @@ function TarasPage() {
           {taras.map(t => (
             <div key={t.id} className={`flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0 ${!t.activo ? 'opacity-60' : ''}`}>
               <div className="w-11 h-11 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0 overflow-hidden">
-                {t.foto ? <img src={t.foto} alt={t.nombre} className="w-full h-full object-cover" /> : <Weight size={18} />}
+                {t.fotos[0] ? <img src={t.fotos[0]} alt={t.nombre} className="w-full h-full object-cover" /> : <Weight size={18} />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

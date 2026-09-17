@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
 
 interface NivelFuerza { score: number; label: string; color: string }
 

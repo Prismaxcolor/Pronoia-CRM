@@ -5,6 +5,7 @@ import {
   crearTicket,
   completarTicket,
   editarTicket,
+  borrarTicket,
 } from '../services/ticket-pesaje-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -93,5 +94,21 @@ router.patch(
     res.json(result);
   }
 );
+
+router.delete('/:id', requirePermiso('pesaje', 'eliminar'), async (req, res) => {
+  const id = String(req.params.id);
+  const result = await borrarTicket(id);
+  if (!result.ok) {
+    res.status(result.noEncontrado ? 404 : 409).json({ error: result.razon });
+    return;
+  }
+  logger.info({
+    evento: 'ticket_pesaje_eliminado',
+    ip: clienteIp(req),
+    userId: req.user!.sub,
+    ticketId: id,
+  });
+  res.json({ ok: true });
+});
 
 export default router;

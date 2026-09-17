@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearProveedor, actualizarProveedor } from '../../services/proveedor-service';
-import { useToast } from '../../hooks/use-toast';
+import { subirFotoProveedor } from '../../services/storage-service';
+import { useToast } from '../../hooks/use-toast-context';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import type { Proveedor } from '@shared/types/index.js';
 
 interface Props {
@@ -19,19 +22,31 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
   const [rfc, setRfc] = useState(proveedor?.rfc ?? '');
   const [telefono, setTelefono] = useState(proveedor?.telefono ?? '');
   const [email, setEmail] = useState(proveedor?.email ?? '');
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(proveedor?.fotos ?? []));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGuardando(true);
     setError(null);
 
+    const urls = await subirFotosLocal(fotos, subirFotoProveedor);
+    if (!urls) {
+      setError('Error al subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
+    }
+
     const payload = {
       nombre: nombre.trim(),
       rfc: rfc.trim() || null,
       telefono: telefono.trim() || null,
       email: email.trim() || null,
+      fotos: urls,
     };
 
     const result = editando && proveedor
@@ -64,6 +79,8 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
+
           <div>
             <label className={labelClass}>Nombre *</label>
             <input
@@ -76,7 +93,7 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>RIF / Cédula</label>
               <input

@@ -7,9 +7,9 @@ import {
   eliminarPrecio,
 } from '../../services/lista-precios-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
 import type { ListaPrecios, PrecioLista, Producto } from '@shared/types/index.js';
 
 function ListaDetallePage() {
@@ -30,10 +30,12 @@ function ListaDetallePage() {
   const [nuevoProductoId, setNuevoProductoId] = useState('');
   const [nuevoPrecio, setNuevoPrecio] = useState('');
 
-  const puedeEditar = tienePermiso('productos', 'editar');
+  const puedeEditar = tienePermiso('listas_precios', 'editar');
 
-  const cargar = () => {
-    setCargando(true);
+  // Sin "loud" version con setCargando(true): las mutaciones de precios en esta
+  // pantalla actualizan `precios` en el momento (setPrecios(prev => ...)), no
+  // recargan la página entera.
+  useEffect(() => {
     Promise.all([obtenerListaDetalle(id), obtenerProductos()])
       .then(([detalle, prods]) => {
         if (detalle) {
@@ -43,9 +45,7 @@ function ListaDetallePage() {
         setProductos(prods);
       })
       .finally(() => setCargando(false));
-  };
-
-  useEffect(() => { cargar(); }, [id]);
+  }, [id]);
 
   // productos que aún no tienen precio en esta lista
   const productosDisponibles = useMemo(() => {
@@ -55,8 +55,8 @@ function ListaDetallePage() {
 
   const guardarPrecio = async (productoId: string, valorCrudo: string) => {
     const valor = Number(valorCrudo);
-    if (!Number.isFinite(valor) || valor <= 0) {
-      toast.errorMsg('El precio debe ser un número mayor a 0.');
+    if (!Number.isFinite(valor) || valor < 0) {
+      toast.errorMsg('El precio no puede ser negativo.');
       return;
     }
     const result = await upsertPrecioEnLista(id, productoId, valor);
@@ -70,7 +70,7 @@ function ListaDetallePage() {
     e.preventDefault();
     const valor = Number(nuevoPrecio);
     if (!nuevoProductoId) { toast.errorMsg('Elige un material.'); return; }
-    if (!Number.isFinite(valor) || valor <= 0) { toast.errorMsg('El precio debe ser mayor a 0.'); return; }
+    if (!Number.isFinite(valor) || valor < 0) { toast.errorMsg('El precio no puede ser negativo.'); return; }
     const result = await upsertPrecioEnLista(id, nuevoProductoId, valor);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     setPrecios(prev => [...prev, result.precio]);

@@ -5,6 +5,7 @@ import {
   actualizarTipoMaterial,
   desactivarTipoMaterial,
   reactivarTipoMaterial,
+  borrarTipoMaterial,
 } from '../services/tipo-material-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -18,16 +19,16 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Categorías de material = configuración del catálogo → permiso 'productos'.
+// Categorías de material = configuración del catálogo → permiso 'categorias'.
 
-router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
+router.get('/', requirePermiso('categorias', 'ver'), async (_req, res) => {
   const tipos = await listarTiposMaterial();
   res.json({ tipos });
 });
 
 router.post(
   '/',
-  requirePermiso('productos', 'crear'),
+  requirePermiso('categorias', 'crear'),
   validateBody(crearTipoMaterialSchema),
   async (req, res) => {
     const result = await crearTipoMaterial(req.body);
@@ -47,7 +48,7 @@ router.post(
 
 router.patch(
   '/:id',
-  requirePermiso('productos', 'editar'),
+  requirePermiso('categorias', 'editar'),
   validateBody(actualizarTipoMaterialSchema),
   async (req, res) => {
     const id = String(req.params.id);
@@ -67,7 +68,7 @@ router.patch(
   }
 );
 
-router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/desactivar', requirePermiso('categorias', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const ok = await desactivarTipoMaterial(id);
   if (!ok) {
@@ -83,7 +84,7 @@ router.post('/:id/desactivar', requirePermiso('productos', 'editar'), async (req
   res.json({ ok: true });
 });
 
-router.post('/:id/reactivar', requirePermiso('productos', 'editar'), async (req, res) => {
+router.post('/:id/reactivar', requirePermiso('categorias', 'editar'), async (req, res) => {
   const id = String(req.params.id);
   const ok = await reactivarTipoMaterial(id);
   if (!ok) {
@@ -92,6 +93,22 @@ router.post('/:id/reactivar', requirePermiso('productos', 'editar'), async (req,
   }
   logger.info({
     evento: 'tipo_material_reactivado',
+    ip: clienteIp(req),
+    userId: req.user!.sub,
+    tipoMaterialId: id,
+  });
+  res.json({ ok: true });
+});
+
+router.delete('/:id', requirePermiso('categorias', 'eliminar'), async (req, res) => {
+  const id = String(req.params.id);
+  const result = await borrarTipoMaterial(id);
+  if (!result.ok) {
+    res.status(409).json({ error: result.razon, referencias: result.referencias });
+    return;
+  }
+  logger.info({
+    evento: 'tipo_material_eliminado',
     ip: clienteIp(req),
     userId: req.user!.sub,
     tipoMaterialId: id,

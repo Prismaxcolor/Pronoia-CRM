@@ -1,9 +1,24 @@
 import { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { actualizarUsuario } from '../../services/usuario-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
+import Switch from '../../components/Switch';
 import { PERMISOS_POR_ROL } from '@shared/types/index.js';
 import type { Usuario, RolUsuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
+
+/** Compara dos listas de permisos por contenido (recurso+acción), sin
+ *  importar el orden — a diferencia de JSON.stringify, no da falsos
+ *  "personalizado" cuando la lista de PERMISOS_POR_ROL cambia de orden o de
+ *  tamaño (ej. se agregan recursos nuevos) pero el contenido efectivo del
+ *  usuario sigue siendo el del rol. */
+function mismosPermisos(a: Permiso[], b: Permiso[]): boolean {
+  const claves = (arr: Permiso[]) => new Set(arr.map(p => `${p.recurso}:${p.accion}`));
+  const setA = claves(a);
+  const setB = claves(b);
+  if (setA.size !== setB.size) return false;
+  for (const k of setA) if (!setB.has(k)) return false;
+  return true;
+}
 
 interface Props {
   usuario: Usuario;
@@ -14,11 +29,18 @@ interface Props {
 const RECURSOS: { recurso: Recurso; label: string }[] = [
   { recurso: 'dashboard', label: 'Dashboard' },
   { recurso: 'productos', label: 'Productos' },
+  { recurso: 'categorias', label: 'Categorías' },
+  { recurso: 'taras', label: 'Taras' },
+  { recurso: 'almacenes', label: 'Almacenes' },
+  { recurso: 'listas_precios', label: 'Listas de precios' },
+  { recurso: 'pesaje', label: 'Pesaje' },
+  { recurso: 'traslados', label: 'Traslados' },
+  { recurso: 'transformaciones', label: 'Transformaciones' },
   { recurso: 'facturacion', label: 'Facturacion' },
   { recurso: 'cochinito', label: 'Cochinito (Tesoreria)' },
   { recurso: 'clientes', label: 'Clientes' },
   { recurso: 'proveedores', label: 'Proveedores' },
-  { recurso: 'pesaje', label: 'Pesaje' },
+  { recurso: 'despachos', label: 'Despachos' },
   { recurso: 'usuarios', label: 'Usuarios' },
 ];
 
@@ -29,7 +51,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
   const [permisos, setPermisos] = useState<Permiso[]>(usuario.permisos);
   const [guardando, setGuardando] = useState(false);
   const [useCustom, setUseCustom] = useState(
-    JSON.stringify(usuario.permisos) !== JSON.stringify(PERMISOS_POR_ROL[usuario.rol])
+    !mismosPermisos(usuario.permisos, PERMISOS_POR_ROL[usuario.rol])
   );
   const toast = useToast();
 
@@ -47,6 +69,14 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
 
   const handleRolChange = (nuevoRol: RolUsuario) => {
     setRol(nuevoRol);
+    // El superadmin tiene acceso total siempre (el backend lo bypassea) —
+    // permisos personalizados no tiene sentido acá y es justo lo que dejaba
+    // arrays viejos pegados que confundían el conteo en la tabla de Usuarios.
+    if (nuevoRol === 'superadmin') {
+      setUseCustom(false);
+      setPermisos(PERMISOS_POR_ROL.superadmin);
+      return;
+    }
     if (!useCustom) {
       setPermisos(PERMISOS_POR_ROL[nuevoRol]);
     }
@@ -61,7 +91,11 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
 
   const handleGuardar = async () => {
     setGuardando(true);
-    const permisosGuardar = useCustom ? permisos : [];
+    // rol === 'superadmin' manda siempre, incluso si useCustom quedó en true
+    // por un array de permisos personalizados viejo con el que se abrió el
+    // modal (el caso que dejaba superadmins con un conteo de permisos
+    // corrupto) — así este guardado lo limpia en vez de reescribirlo.
+    const permisosGuardar = rol === 'superadmin' ? [] : (useCustom ? permisos : []);
     const result = await actualizarUsuario(usuario.id, { rol, permisos: permisosGuardar });
     setGuardando(false);
     if ('usuario' in result) {
@@ -107,23 +141,24 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
             </div>
           </div>
 
-          {/* Toggle permisos custom */}
-          <div className="flex items-center justify-between p-3 bg-surface-alt rounded-lg border border-border">
-            <div>
-              <p className="text-sm font-medium text-text-primary">Permisos personalizados</p>
-              <p className="text-xs text-text-muted">Sobreescribe los permisos por defecto del rol</p>
+          {/* Toggle permisos custom — no aplica a superadmin, que siempre tiene acceso total */}
+          {rol === 'superadmin' ? (
+            <div className="p-3 bg-brand-50 rounded-lg border border-brand-200">
+              <p className="text-sm font-medium text-brand-700">Acceso total</p>
+              <p className="text-xs text-brand-600">El superadministrador siempre puede ver y hacer todo — no admite permisos personalizados.</p>
             </div>
-            <button
-              type="button"
-              onClick={() => handleCustomToggle(!useCustom)}
-              className={`w-11 h-6 rounded-full transition-colors relative ${useCustom ? 'bg-brand-600' : 'bg-gray-300'}`}
-            >
-              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${useCustom ? 'translate-x-5.5' : 'translate-x-0.5'}`} />
-            </button>
-          </div>
+          ) : (
+            <div className="flex items-center justify-between p-3 bg-surface-alt rounded-lg border border-border">
+              <div>
+                <p className="text-sm font-medium text-text-primary">Permisos personalizados</p>
+                <p className="text-xs text-text-muted">Sobreescribe los permisos por defecto del rol</p>
+              </div>
+              <Switch checked={useCustom} onChange={handleCustomToggle} />
+            </div>
+          )}
 
           {/* Matriz de permisos */}
-          {useCustom && (
+          {useCustom && rol !== 'superadmin' && (
             <div className="border border-border rounded-lg overflow-hidden">
               <div className="overflow-x-auto"><table className="w-full text-xs">
                 <thead>

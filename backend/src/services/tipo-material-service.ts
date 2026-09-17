@@ -9,6 +9,7 @@ interface TipoMaterialRow {
   nombre: string;
   descripcion: string | null;
   activo: boolean;
+  sin_lote: boolean;
   created_at: string;
 }
 
@@ -17,6 +18,7 @@ export interface TipoMaterialPublico {
   nombre: string;
   descripcion: string | null;
   activo: boolean;
+  sinLote: boolean;
   createdAt: string;
 }
 
@@ -26,6 +28,7 @@ function toPublico(row: TipoMaterialRow): TipoMaterialPublico {
     nombre: row.nombre,
     descripcion: row.descripcion,
     activo: row.activo,
+    sinLote: row.sin_lote,
     createdAt: row.created_at,
   };
 }
@@ -50,7 +53,7 @@ export async function crearTipoMaterial(
 ): Promise<{ tipo: TipoMaterialPublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('tipos_material')
-    .insert({ nombre: input.nombre, descripcion: input.descripcion })
+    .insert({ nombre: input.nombre, descripcion: input.descripcion, sin_lote: input.sinLote })
     .select('*')
     .single();
 
@@ -69,6 +72,7 @@ export async function actualizarTipoMaterial(
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.descripcion !== undefined) update.descripcion = cambios.descripcion;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
+  if (cambios.sinLote !== undefined) update.sin_lote = cambios.sinLote;
 
   const { data, error } = await supabaseAdmin
     .from('tipos_material')
@@ -99,4 +103,34 @@ export async function reactivarTipoMaterial(id: string): Promise<boolean> {
     .update({ activo: true })
     .eq('id', id);
   return !error;
+}
+
+export interface BorrarTipoMaterialResult {
+  ok: boolean;
+  razon?: string;
+  referencias?: { productos: number };
+}
+
+/**
+ * Borrado físico. Solo permitido si ningún producto usa la categoría. Si hay
+ * productos asignados, se mantiene desactivada (no rompe el historial).
+ */
+export async function borrarTipoMaterial(id: string): Promise<BorrarTipoMaterialResult> {
+  const { count } = await supabaseAdmin
+    .from('productos')
+    .select('id', { count: 'exact', head: true })
+    .eq('tipo_material_id', id);
+
+  const productos = count ?? 0;
+  if (productos > 0) {
+    return {
+      ok: false,
+      razon: `La categoría la usan ${productos} producto${productos > 1 ? 's' : ''}. Reasígnalos o desactívala en vez de borrarla.`,
+      referencias: { productos },
+    };
+  }
+
+  const { error } = await supabaseAdmin.from('tipos_material').delete().eq('id', id);
+  if (error) return { ok: false, razon: error.message };
+  return { ok: true };
 }
