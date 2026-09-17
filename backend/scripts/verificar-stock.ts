@@ -16,7 +16,13 @@
  */
 import 'dotenv/config';
 import { supabaseAdmin } from '../src/config/supabase.js';
-import { obtenerInventarioAlmacen } from '../src/services/inventario-service.js';
+import { obtenerInventarioAlmacen, LOTE_ADJ_CLAVE, LOTE_TRANSFORMACION_CLAVE } from '../src/services/inventario-service.js';
+
+/** Líneas sintéticas de lote sin desglose por producto (toma física o
+ *  transformación sin composición conocida) — stock_almacen() (SQL) no
+ *  puede devolverlas, así que no participan de esta comparación SQL-vs-TS. */
+const esSintetico = (productoId: string) =>
+  productoId.startsWith(LOTE_ADJ_CLAVE) || productoId.startsWith(LOTE_TRANSFORMACION_CLAVE);
 
 async function main() {
   let discrepancias = 0;
@@ -40,7 +46,10 @@ async function main() {
 
     const grupos = await obtenerInventarioAlmacen(almacen.id);
     const tsPorProducto = new Map<string, number>();
-    for (const g of grupos) for (const a of g.articulos) tsPorProducto.set(a.productoId, a.stock);
+    for (const g of grupos) for (const a of g.articulos) {
+      if (esSintetico(a.productoId)) continue;
+      tsPorProducto.set(a.productoId, a.stock);
+    }
 
     const idsTodos = new Set([...sqlPorProducto.keys(), ...tsPorProducto.keys()]);
     for (const productoId of idsTodos) {

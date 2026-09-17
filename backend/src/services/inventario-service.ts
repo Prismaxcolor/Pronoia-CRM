@@ -49,9 +49,14 @@ const MPP_LABEL = 'Sin lote';
 /** Catálogo sin ningún pesaje todavía — no implica que su destino sea MPP,
  *  solo que nunca se movió. Ver ArticuloInventario.destinoTipo. */
 const SIN_MOVIMIENTO_LABEL = 'Sin movimiento';
-const LOTE_ADJ_CLAVE = '__lote_adj__';
+/** Prefijo del productoId sintético de una línea de lote sin desglose por
+ *  producto (ver AjusteTomaInventario) — exportado porque scripts/verificar-stock.ts
+ *  necesita reconocer y excluir estas líneas: no existen en stock_almacen()
+ *  (SQL), que solo puede devolver producto_id reales, nunca una fila "lote
+ *  sin clasificar". */
+export const LOTE_ADJ_CLAVE = '__lote_adj__';
 const LOTE_ADJ_CATEGORIA = 'Ajustes de inventario';
-const LOTE_TRANSFORMACION_CLAVE = '__lote_transf__';
+export const LOTE_TRANSFORMACION_CLAVE = '__lote_transf__';
 const LOTE_TRANSFORMACION_CATEGORIA = 'Recibido por transformación';
 
 // ---- núcleo puro (testeable sin BD) ----------------------------------------
@@ -735,6 +740,56 @@ export async function obtenerInventarioAlmacen(
     });
     g.totalKg += stock;
   }
+
+  // Ajustes de toma física SIN desglose por producto (lote PCB contado como
+  // un todo — ver AjusteTomaInventario). stock_lote_por_producto() exige
+  // producto_id, así que stock_almacen() nunca puede atribuir estos kg a
+  // ningún producto real: sin esto, un lote cuyo único movimiento fuera una
+  // toma física (caso real, 16-sep-2026: BGYP/BGPP en ALMACEN G1)
+  // desaparecía por completo al filtrar por almacén, aunque sí se veía en
+  // "Todos" (obtenerInventario() ya maneja este mismo caso con la misma
+  // línea sintética, sin filtrar por almacén). Mismo criterio: se muestra
+  // siempre, sin importar tipoMaterialId/productoId (esos filtros no aplican
+  // a una línea que no tiene producto).
+  const { data: ajustesLoteData } = await supabaseAdmin
+    .from('ajustes_inventario')
+    .select('lote_id, diferencia, lotes(nombre)')
+    .eq('almacen_id', almacenId)
+    .is('producto_id', null)
+    .not('lote_id', 'is', null);
+
+  const ajusteNetoPorLote = new Map<string, { nombreLote: string | null; neto: number }>();
+  for (const a of (ajustesLoteData as unknown as Array<{
+    lote_id: string;
+    diferencia: number;
+    lotes?: { nombre: string } | null;
+  }> | null) ?? []) {
+    const existing = ajusteNetoPorLote.get(a.lote_id);
+    if (existing) existing.neto += Number(a.diferencia);
+    else ajusteNetoPorLote.set(a.lote_id, { nombreLote: a.lotes?.nombre ?? null, neto: Number(a.diferencia) });
+  }
+  for (const [loteId, info] of ajusteNetoPorLote) {
+    if (Math.abs(info.neto) < 0.005) continue;
+    let g = grupos.get(LOTE_ADJ_CLAVE);
+    if (!g) {
+      g = { tipoMaterialId: null, nombreCategoria: LOTE_ADJ_CATEGORIA, totalKg: 0, articulos: [] };
+      grupos.set(LOTE_ADJ_CLAVE, g);
+    }
+    g.articulos.push({
+      productoId: `${LOTE_ADJ_CLAVE}${loteId}`,
+      nombre: `${info.nombreLote ?? 'Lote'} — ajuste de inventario`,
+      destinoTipo: 'lote',
+      loteId,
+      destinoLabel: info.nombreLote ?? 'Lote',
+      entradas: 0,
+      salidas: 0,
+      transformaciones: 0,
+      ajustes: info.neto,
+      stock: info.neto,
+    });
+    g.totalKg += info.neto;
+  }
+
   for (const g of grupos.values()) g.articulos.sort((a, b) => a.nombre.localeCompare(b.nombre));
   return Array.from(grupos.values()).sort((a, b) => a.nombreCategoria.localeCompare(b.nombreCategoria));
 }
