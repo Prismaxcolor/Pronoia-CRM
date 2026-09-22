@@ -179,6 +179,92 @@ function TomaFisicaDetallePage() {
 
       <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
         <div className="px-5 py-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-text-primary">Teórico (sistema) vs. real (contado)</h2>
+        </div>
+        {lineas.length === 0 ? (
+          <p className="px-5 py-6 text-center text-text-muted text-sm">Sin diferencias que mostrar todavía.</p>
+        ) : (
+          <>
+          <table className="w-full text-sm print:border-collapse">
+            <thead>
+              <tr className="text-left text-xs text-text-muted bg-surface-alt">
+                <th className="py-2 pl-5 pr-2 font-medium w-8"></th>
+                <th className="py-2 px-2 font-medium">Material</th>
+                <th className="py-2 px-4 font-medium">Lote</th>
+                <th className="py-2 px-4 font-medium text-right print:hidden">Fotos</th>
+                <th className="py-2 px-4 font-medium text-right">Teórico</th>
+                <th className="py-2 px-4 font-medium text-right">Real</th>
+                <th className="py-2 px-5 font-medium text-right">Diferencia</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lineas.map((l, i) => {
+                const contado = l.cantidadPesajes > 0;
+                const puedeIrAContar = tomaFisica.estado === 'abierta' && puedeContar && (l.productoId || l.loteId);
+                const label = l.productoNombre
+                  ? `${l.productoNombre}${l.loteNombre ? ` · ${l.loteNombre}` : ''}`
+                  : `${l.loteNombre ?? '—'} (lote completo)`;
+                // Fotos de todos los pesajes que componen esta línea — mismos
+                // criterios que usa el resumen para agrupar (producto + lote).
+                const fotosLinea = detalle
+                  .filter(d => d.productoId === l.productoId && d.loteId === l.loteId)
+                  .flatMap(d => d.fotos);
+                return (
+                  <tr
+                    key={i}
+                    onClick={puedeIrAContar ? () => {
+                      const param = l.productoId ? `producto=${l.productoId}` : `lote=${l.loteId}`;
+                      navigate(`/pesaje/conteo/${tomaFisica.id}?${param}`);
+                    } : undefined}
+                    className={`border-t border-border ${contado ? '' : 'opacity-60'} ${puedeIrAContar ? 'cursor-pointer hover:bg-surface-alt transition-colors print:cursor-auto print:hover:bg-transparent' : ''}`}
+                  >
+                    <td className="py-2.5 pl-5 pr-2">
+                      {contado
+                        ? <CheckCircle2 size={16} className="text-green-600" />
+                        : <Circle size={16} className="text-text-muted" />}
+                    </td>
+                    <td className="py-2.5 px-2 text-text-primary">
+                      {l.productoNombre ?? <span className="text-text-muted">Lote completo</span>}
+                    </td>
+                    <td className="py-2.5 px-4 text-text-secondary">
+                      {l.loteNombre ?? '—'}
+                      <BadgesComposicion loteId={l.loteId} lotes={lotes} />
+                    </td>
+                    <td className="py-2.5 px-4 text-right print:hidden">
+                      {fotosLinea.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); setGaleriaAbierta({ label, fotos: fotosLinea }); }}
+                          className="inline-flex items-center gap-1 text-text-muted hover:text-brand-600 transition-colors"
+                          title="Ver fotos"
+                        >
+                          <Images size={14} />
+                          <span className="text-xs">{fotosLinea.length}</span>
+                        </button>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockTeorico)}</td>
+                    <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockReal)}</td>
+                    <td className={`py-2.5 px-5 text-right font-semibold ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
+                      {l.diferencia > 0 ? '+' : ''}{fmt(l.diferencia)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-surface-alt text-sm">
+            <span className="font-medium text-text-secondary">Total: {fmt(totalTeorico)} teórico → {fmt(totalReal)} real</span>
+            <span className={`font-bold ${totalDiferencia < 0 ? 'text-red-600' : totalDiferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
+              {totalDiferencia > 0 ? '+' : ''}{fmt(totalDiferencia)} kg
+            </span>
+          </div>
+          </>
+        )}
+      </div>
+
+      <div className="bg-surface rounded-xl border border-border overflow-hidden print:shadow-none">
+        <div className="px-5 py-3 border-b border-border">
           <h2 className="text-sm font-semibold text-text-primary">
             Ticket de la toma física ({detalle.length} pesaje{detalle.length === 1 ? '' : 's'})
           </h2>
@@ -230,70 +316,6 @@ function TomaFisicaDetallePage() {
               })}
             </tbody>
           </table>
-        )}
-      </div>
-
-      <div className="bg-surface rounded-xl border border-border overflow-hidden print:shadow-none">
-        <div className="px-5 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold text-text-primary">Teórico (sistema) vs. real (contado)</h2>
-        </div>
-        {lineas.length === 0 ? (
-          <p className="px-5 py-6 text-center text-text-muted text-sm">Sin diferencias que mostrar todavía.</p>
-        ) : (
-          <>
-          <table className="w-full text-sm print:border-collapse">
-            <thead>
-              <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="py-2 pl-5 pr-2 font-medium w-8"></th>
-                <th className="py-2 px-2 font-medium">Material</th>
-                <th className="py-2 px-4 font-medium">Lote</th>
-                <th className="py-2 px-4 font-medium text-right">Teórico</th>
-                <th className="py-2 px-4 font-medium text-right">Real</th>
-                <th className="py-2 px-5 font-medium text-right">Diferencia</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lineas.map((l, i) => {
-                const contado = l.cantidadPesajes > 0;
-                const puedeIrAContar = tomaFisica.estado === 'abierta' && puedeContar && (l.productoId || l.loteId);
-                return (
-                  <tr
-                    key={i}
-                    onClick={puedeIrAContar ? () => {
-                      const param = l.productoId ? `producto=${l.productoId}` : `lote=${l.loteId}`;
-                      navigate(`/pesaje/conteo/${tomaFisica.id}?${param}`);
-                    } : undefined}
-                    className={`border-t border-border ${contado ? '' : 'opacity-60'} ${puedeIrAContar ? 'cursor-pointer hover:bg-surface-alt transition-colors print:cursor-auto print:hover:bg-transparent' : ''}`}
-                  >
-                    <td className="py-2.5 pl-5 pr-2">
-                      {contado
-                        ? <CheckCircle2 size={16} className="text-green-600" />
-                        : <Circle size={16} className="text-text-muted" />}
-                    </td>
-                    <td className="py-2.5 px-2 text-text-primary">
-                      {l.productoNombre ?? <span className="text-text-muted">Lote completo</span>}
-                    </td>
-                    <td className="py-2.5 px-4 text-text-secondary">
-                      {l.loteNombre ?? '—'}
-                      <BadgesComposicion loteId={l.loteId} lotes={lotes} />
-                    </td>
-                    <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockTeorico)}</td>
-                    <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockReal)}</td>
-                    <td className={`py-2.5 px-5 text-right font-semibold ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
-                      {l.diferencia > 0 ? '+' : ''}{fmt(l.diferencia)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-surface-alt text-sm">
-            <span className="font-medium text-text-secondary">Total: {fmt(totalTeorico)} teórico → {fmt(totalReal)} real</span>
-            <span className={`font-bold ${totalDiferencia < 0 ? 'text-red-600' : totalDiferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
-              {totalDiferencia > 0 ? '+' : ''}{fmt(totalDiferencia)} kg
-            </span>
-          </div>
-          </>
         )}
       </div>
 
