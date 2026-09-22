@@ -75,20 +75,10 @@ function TomaFisicaDetallePage() {
   const totalReal = lineas.reduce((acc, l) => acc + l.stockReal, 0);
   const totalDiferencia = totalReal - totalTeorico;
 
-  // Ticket agrupado por material — lo mismo que se pesó, sumado (no el
-  // resumen teórico/real, ese es solo para culminar).
-  const ticketPorMaterial = detalle.reduce((mapa, d) => {
-    const clave = `${d.productoId}-${d.loteId ?? 'sin-lote'}`;
-    const actual = mapa.get(clave);
-    if (actual) {
-      actual.pesoNeto += d.pesoNeto;
-      actual.cantidad += 1;
-      actual.fotos.push(...d.fotos);
-    } else {
-      mapa.set(clave, { nombreProducto: d.nombreProducto, nombreLote: d.nombreLote, loteId: d.loteId, pesoNeto: d.pesoNeto, cantidad: 1, fotos: [...d.fotos] });
-    }
-    return mapa;
-  }, new Map<string, { nombreProducto: string | null; nombreLote: string | null; loteId: string | null; pesoNeto: number; cantidad: number; fotos: string[] }>());
+  // Ticket con cada pesaje individual, en el mismo orden en que se
+  // registraron (el más viejo primero) — para poder numerarlos 1, 2, 3…
+  // igual que se ven mientras se están contando.
+  const detalleOrdenado = [...detalle].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   const handleCulminar = async () => {
     const ok = await confirmar({
@@ -193,48 +183,48 @@ function TomaFisicaDetallePage() {
             Ticket de la toma física ({detalle.length} pesaje{detalle.length === 1 ? '' : 's'})
           </h2>
         </div>
-        {ticketPorMaterial.size === 0 ? (
+        {detalleOrdenado.length === 0 ? (
           <p className="px-5 py-6 text-center text-text-muted text-sm">Todavía no se registró ningún pesaje.</p>
         ) : (
           <table className="w-full text-sm print:border-collapse">
             <thead>
               <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="py-2 px-5 font-medium">Material</th>
+                <th className="py-2 pl-5 pr-2 font-medium w-8">#</th>
+                <th className="py-2 px-2 font-medium">Material</th>
                 <th className="py-2 px-4 font-medium">Lote</th>
-                <th className="py-2 px-4 font-medium text-right">Pesajes</th>
                 <th className="py-2 px-4 font-medium text-right print:hidden">Fotos</th>
                 <th className="py-2 px-5 font-medium text-right">Peso neto (kg)</th>
               </tr>
             </thead>
             <tbody>
-              {Array.from(ticketPorMaterial.values()).map((m, i) => {
-                const label = m.nombreProducto
-                  ? `${m.nombreProducto}${m.nombreLote ? ` · ${m.nombreLote}` : ''}`
-                  : `${m.nombreLote ?? '—'} (lote completo)`;
+              {detalleOrdenado.map((d, i) => {
+                const label = d.nombreProducto
+                  ? `${d.nombreProducto}${d.nombreLote ? ` · ${d.nombreLote}` : ''}`
+                  : `${d.nombreLote ?? '—'} (lote completo)`;
                 return (
-                  <tr key={i} className="border-t border-border">
-                    <td className="py-2.5 px-5 text-text-primary">
-                      {m.nombreProducto ?? <span className="text-text-muted">Lote completo</span>}
+                  <tr key={d.id} className="border-t border-border">
+                    <td className="py-2.5 pl-5 pr-2 text-text-muted">{i + 1}</td>
+                    <td className="py-2.5 px-2 text-text-primary">
+                      {d.nombreProducto ?? <span className="text-text-muted">Lote completo</span>}
                     </td>
                     <td className="py-2.5 px-4 text-text-secondary">
-                      {m.nombreLote ?? '—'}
-                      <BadgesComposicion loteId={m.loteId} lotes={lotes} />
+                      {d.nombreLote ?? '—'}
+                      <BadgesComposicion loteId={d.loteId} lotes={lotes} />
                     </td>
-                    <td className="py-2.5 px-4 text-right text-text-secondary">{m.cantidad}</td>
                     <td className="py-2.5 px-4 text-right print:hidden">
-                      {m.fotos.length > 0 && (
+                      {d.fotos.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => setGaleriaAbierta({ label, fotos: m.fotos })}
+                          onClick={() => setGaleriaAbierta({ label, fotos: d.fotos })}
                           className="inline-flex items-center gap-1 text-text-muted hover:text-brand-600 transition-colors"
                           title="Ver fotos"
                         >
                           <Images size={14} />
-                          <span className="text-xs">{m.fotos.length}</span>
+                          <span className="text-xs">{d.fotos.length}</span>
                         </button>
                       )}
                     </td>
-                    <td className="py-2.5 px-5 text-right font-semibold text-text-primary">{fmt(m.pesoNeto)}</td>
+                    <td className="py-2.5 px-5 text-right font-semibold text-text-primary">{fmt(d.pesoNeto)}</td>
                   </tr>
                 );
               })}
