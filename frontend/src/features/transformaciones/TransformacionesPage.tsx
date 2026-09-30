@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Recycle, CheckCircle2, Clock, X, Plus, Loader2, Trash2,
-  ChevronDown, ChevronUp, AlertTriangle,
+  ChevronDown, ChevronUp, AlertTriangle, Search,
 } from 'lucide-react';
 import {
   obtenerTransformaciones,
@@ -30,7 +30,9 @@ import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
 import { taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
-import type { Transformacion, SalidaComun, Tara, Lote, EntradaDetalleTransformacion, ComposicionPCBItem } from '@shared/types/index.js';
+import { coincideCodigo, type Transformacion, type SalidaComun, type Tara, type Lote, type EntradaDetalleTransformacion, type ComposicionPCBItem } from '@shared/types/index.js';
+import SelectorOrden from '../../components/SelectorOrden';
+import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
 
@@ -1016,6 +1018,8 @@ function TransformacionesPage() {
   const [cargando, setCargando] = useState(true);
 
   const [completando, setCompletando] = useState<Transformacion | null>(null);
+  const [busqueda, setBusqueda] = useState('');
+  const [orden, setOrden] = useState<OrdenListado>(ORDEN_POR_DEFECTO);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -1053,8 +1057,37 @@ function TransformacionesPage() {
     void cargar();
   };
 
-  const pendientes = transformaciones.filter(t => t.estado === 'bruto');
-  const completas = transformaciones.filter(t => t.estado === 'completa');
+  const { pendientes, completas, totalPendientes } = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    const coincide = (t: Transformacion) => {
+      if (!q) return true;
+      const nombre = (t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '').toLowerCase();
+      return coincideCodigo(t.codigo, busqueda) || nombre.includes(q);
+    };
+    const visibles = ordenarListado(transformaciones.filter(coincide), orden, t => t);
+    return {
+      pendientes: visibles.filter(t => t.estado === 'bruto'),
+      completas: visibles.filter(t => t.estado === 'completa'),
+      totalPendientes: transformaciones.filter(t => t.estado === 'bruto').length,
+    };
+  }, [transformaciones, busqueda, orden]);
+  const hayBusqueda = busqueda.trim() !== '';
+
+  const barraListado = (
+    <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="relative w-full max-w-xs">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+        <input
+          type="search"
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          placeholder="Buscar por código o material..."
+          className="w-full pl-9 pr-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
+        />
+      </div>
+      <SelectorOrden orden={orden} onChange={setOrden} />
+    </div>
+  );
 
   const tabBtn = (t: Tab, label: string) => (
     <button
@@ -1094,7 +1127,7 @@ function TransformacionesPage() {
       {/* Tabs */}
       <div className="flex gap-1 mb-5 bg-surface-alt rounded-xl p-1 w-fit border border-border">
         {tabBtn('nueva', 'Nueva')}
-        {tabBtn('pendientes', `Pendientes${pendientes.length > 0 ? ` (${pendientes.length})` : ''}`)}
+        {tabBtn('pendientes', `Pendientes${totalPendientes > 0 ? ` (${totalPendientes})` : ''}`)}
         {tabBtn('historial', 'Historial')}
         {tabBtn('config', 'Configuración')}
       </div>
@@ -1131,11 +1164,12 @@ function TransformacionesPage() {
       {/* --- Tab: Pendientes --- */}
       {tab === 'pendientes' && (
         <div>
+          {barraListado}
           {cargando ? (
             <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-text-muted" /></div>
           ) : pendientes.length === 0 ? (
             <div className="bg-surface rounded-xl border border-border p-10 text-center text-text-muted text-sm">
-              No hay transformaciones pendientes.
+              {hayBusqueda ? 'Sin resultados para la búsqueda.' : 'No hay transformaciones pendientes.'}
             </div>
           ) : (
             <div className="space-y-3">
@@ -1188,11 +1222,12 @@ function TransformacionesPage() {
       {/* --- Tab: Historial --- */}
       {tab === 'historial' && (
         <div>
+          {barraListado}
           {cargando ? (
             <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-text-muted" /></div>
           ) : completas.length === 0 ? (
             <div className="bg-surface rounded-xl border border-border p-10 text-center text-text-muted text-sm">
-              Aún no hay transformaciones completadas.
+              {hayBusqueda ? 'Sin resultados para la búsqueda.' : 'Aún no hay transformaciones completadas.'}
             </div>
           ) : (
             <div className="space-y-3">

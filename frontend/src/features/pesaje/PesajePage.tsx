@@ -21,6 +21,8 @@ import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
+import SelectorOrden from '../../components/SelectorOrden';
+import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import { obtenerVehiculos, crearVehiculo } from '../../services/vehiculo-service';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
@@ -33,6 +35,19 @@ import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara,
 type FilaListado =
   | { kind: 'pesaje'; ticket: TicketPesaje }
   | { kind: 'traslado'; traslado: Traslado };
+
+const leerOrdenable = (f: FilaListado) => (f.kind === 'pesaje' ? f.ticket : f.traslado);
+const TIPOS_CORRELATIVO = ['compra', 'venta', 'traslado'] as const;
+const tipoFila = (f: FilaListado) => (f.kind === 'pesaje' ? f.ticket.tipo : 'traslado');
+
+function ordenarFilas(filas: FilaListado[], orden: OrdenListado): FilaListado[] {
+  if (orden.campo !== 'correlativo') return ordenarListado(filas, orden, leerOrdenable);
+  // Compra, venta y traslado llevan cada uno su propia secuencia: el correlativo
+  // solo es comparable dentro del mismo tipo, así que se agrupa por tipo.
+  return TIPOS_CORRELATIVO.flatMap(tipo =>
+    ordenarListado(filas.filter(f => tipoFila(f) === tipo), orden, leerOrdenable)
+  );
+}
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
 
@@ -113,6 +128,7 @@ function PesajePage() {
   const [buscaCodigo, setBuscaCodigo] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'compra' | 'venta' | 'traslado'>('todos');
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
+  const [orden, setOrden] = useState<OrdenListado>(ORDEN_POR_DEFECTO);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
@@ -464,8 +480,8 @@ function PesajePage() {
     const deTraslados: FilaListado[] = (filtroEstado === 'todos' || filtroEstado === 'bruto')
       ? trasladosFiltrados.filter(t => t.estado === 'pendiente').map(traslado => ({ kind: 'traslado' as const, traslado }))
       : [];
-    return [...deTickets, ...deTraslados];
-  }, [ticketsFiltrados, trasladosFiltrados, filtroEstado]);
+    return ordenarFilas([...deTickets, ...deTraslados], orden);
+  }, [ticketsFiltrados, trasladosFiltrados, filtroEstado, orden]);
   // "Pendientes por facturar / Facturados" — los traslados nunca se facturan,
   // así que solo aparecen ahí cuando el filtro es 'todos' (no tiene sentido
   // pedirle "traslados facturados", ese estado no existe para ellos).
@@ -482,8 +498,8 @@ function PesajePage() {
     const deTraslados: FilaListado[] = filtroEstado === 'todos'
       ? trasladosFiltrados.filter(t => t.estado === 'completo').map(traslado => ({ kind: 'traslado' as const, traslado }))
       : [];
-    return [...deTickets, ...deTraslados];
-  }, [ticketsFiltrados, trasladosFiltrados, filtroEstado]);
+    return ordenarFilas([...deTickets, ...deTraslados], orden);
+  }, [ticketsFiltrados, trasladosFiltrados, filtroEstado, orden]);
   const totalPendientePorRecepcionar = useMemo(
     () => filasBruto.reduce((acc, f) => acc + (f.kind === 'pesaje' ? f.ticket.pesoGlobal : f.traslado.pesoNetoEnviado), 0),
     [filasBruto]
@@ -1053,6 +1069,8 @@ function PesajePage() {
             puedeEliminar={puedeEliminarTicket}
             buscaCodigo={buscaCodigo}
             onBuscaCodigo={setBuscaCodigo}
+            orden={orden}
+            onOrden={setOrden}
             filtroTipo={filtroTipo}
             onFiltroTipo={setFiltroTipo}
             filtroEstado={filtroEstado}
@@ -1078,6 +1096,8 @@ function PesajePage() {
           puedeEliminar={puedeEliminarTicket}
           buscaCodigo={buscaCodigo}
           onBuscaCodigo={setBuscaCodigo}
+          orden={orden}
+          onOrden={setOrden}
           filtroTipo={filtroTipo}
           onFiltroTipo={setFiltroTipo}
           filtroEstado={filtroEstado}
@@ -1186,6 +1206,8 @@ function SeccionTickets({
   puedeRecepcionarTraslado,
   buscaCodigo,
   onBuscaCodigo,
+  orden,
+  onOrden,
   filtroTipo,
   onFiltroTipo,
   filtroEstado,
@@ -1205,6 +1227,8 @@ function SeccionTickets({
   puedeRecepcionarTraslado: boolean;
   buscaCodigo: string;
   onBuscaCodigo: (v: string) => void;
+  orden: OrdenListado;
+  onOrden: (v: OrdenListado) => void;
   filtroTipo: 'todos' | 'compra' | 'venta' | 'traslado';
   onFiltroTipo: (v: 'todos' | 'compra' | 'venta' | 'traslado') => void;
   filtroEstado: 'todos' | 'bruto' | 'pendiente' | 'facturado';
@@ -1253,6 +1277,8 @@ function SeccionTickets({
           <option value="pendiente">Pendiente por facturar</option>
           <option value="facturado">Facturado</option>
         </select>
+
+        <SelectorOrden orden={orden} onChange={onOrden} />
 
         {filtroActivo && (
           <button
