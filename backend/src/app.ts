@@ -30,6 +30,8 @@ import almacenesRouter from './routes/almacenes.js';
 import trasladosRouter from './routes/traslados.js';
 import metricasRouter from './routes/metricas.js';
 import tomasFisicasRouter from './routes/toma-fisica.js';
+import auditoriaRouter from './routes/auditoria.js';
+import llavesEdicionRouter from './routes/llaves-edicion.js';
 
 const app = express();
 
@@ -91,5 +93,7 @@ app.use('/api/almacenes', almacenesRouter);
 app.use('/api/traslados', trasladosRouter);
 app.use('/api/metricas', metricasRouter);
 app.use('/api/tomas-fisicas', tomasFisicasRouter);
+app.use('/api/auditoria', auditoriaRouter);
+app.use('/api/llaves-edicion', llavesEdicionRouter);
 
 export default app;

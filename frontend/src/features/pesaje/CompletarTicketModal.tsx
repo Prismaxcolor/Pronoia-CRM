@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale, ChevronDown } from 'lucide-react';
-import { completarTicket } from '../../services/ticket-pesaje-service';
+import { completarTicket, obtenerTickets } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
@@ -18,6 +18,11 @@ interface Props {
   onCompletado: () => void;
 }
 
+/** Suma el peso global del ticket principal con el de los tickets unidos seleccionados. */
+function pesoGlobalTotal(pesoPrincipal: number, unidos: ReadonlyArray<{ pesoGlobal: number }>): number {
+  return unidos.reduce((acc, t) => acc + t.pesoGlobal, pesoPrincipal);
+}
+
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
@@ -32,6 +37,24 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
+  const [candidatos, setCandidatos] = useState<TicketPesaje[]>([]);
+  const [unidosIds, setUnidosIds] = useState<string[]>([]);
+
+  const puedeUnir = ticket.tipo === 'compra' && !!ticket.entidadId && !ticket.pesajeExterior;
+
+  // Otros tickets en bruto del mismo proveedor (opcional: si no hay, no se muestra nada).
+  useEffect(() => {
+    if (!puedeUnir || !ticket.entidadId) return;
+    let activo = true;
+    obtenerTickets({ tipo: 'compra', entidadId: ticket.entidadId, estado: 'bruto' }).then(lista => {
+      if (!activo) return;
+      setCandidatos(lista.filter(t => t.id !== ticket.id && t.estado === 'bruto' && !t.pesajeExterior && !t.ticketPrincipalId));
+    });
+    return () => { activo = false; };
+  }, [puedeUnir, ticket.entidadId, ticket.id]);
+
+  const alternarUnido = (id: string) =>
+    setUnidosIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
 
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
@@ -57,11 +80,14 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
     [materiales, taras]
   );
 
+  const unidos = useMemo(() => candidatos.filter(t => unidosIds.includes(t.id)), [candidatos, unidosIds]);
+  const pesoGlobalSumado = useMemo(() => pesoGlobalTotal(ticket.pesoGlobal, unidos), [ticket.pesoGlobal, unidos]);
+
   // Bugfix: el peso global se toma del ticket guardado en bruto (no de un input
   // nuevo) para que la diferencia se calcule en vivo mientras se cargan los materiales.
   const diferencia = useMemo(
-    () => ticket.pesoGlobal - pesoNetoTotal - (Number(devolucion) || 0),
-    [ticket.pesoGlobal, pesoNetoTotal, devolucion]
+    () => pesoGlobalSumado - pesoNetoTotal - (Number(devolucion) || 0),
+    [pesoGlobalSumado, pesoNetoTotal, devolucion]
   );
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
@@ -105,7 +131,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       return;
     }
 
-    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion);
+    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion, unidosIds);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -128,6 +154,23 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
           <p className="text-xs text-text-muted">
             Este ticket se guardó en bruto. Registra los materiales y destinos definitivos para que se contabilice en el inventario.
           </p>
+
+          {candidatos.length > 0 && (
+            <div className="border border-border rounded-lg p-3 space-y-2 bg-surface-alt/40">
+              <p className="text-xs font-semibold text-text-secondary">Otros tickets de este proveedor</p>
+              <p className="text-[11px] text-text-muted">Selecciona los que quieras sumar a este pesaje. Sus pesos globales se suman y se completan juntos.</p>
+              {candidatos.map(t => (
+                <label key={t.id} className="flex items-center justify-between gap-3 text-sm cursor-pointer">
+                  <span className="flex items-center gap-2 text-text-primary">
+                    <input type="checkbox" checked={unidosIds.includes(t.id)} onChange={() => alternarUnido(t.id)} />
+                    {t.codigo}
+                    <span className="text-xs text-text-muted">{t.fecha ?? '—'}</span>
+                  </span>
+                  <span className="font-medium text-text-secondary">{fmt(t.pesoGlobal)} kg</span>
+                </label>
+              ))}
+            </div>
+          )}
 
           {materiales.map((f, idx) => {
             const neto = netoFila(f, taras);
@@ -238,8 +281,8 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
               <p className="text-xs text-brand-800">Sin pesaje global — no hay peso global para reconciliar.</p>
             ) : (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-brand-800">Peso global (de este pesaje)</span>
-                <span className="font-semibold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
+                <span className="text-brand-800">{unidos.length > 0 ? `Peso global total (${unidos.length + 1} tickets)` : 'Peso global (de este pesaje)'}</span>
+                <span className="font-semibold text-brand-700">{fmt(pesoGlobalSumado)} kg</span>
               </div>
             )}
             <div className="flex items-center justify-between">
@@ -273,7 +316,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
             {!ticket.pesajeExterior && (
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
-                <span className={`font-semibold ${colorClaseDiferencia(diferencia, ticket.pesoGlobal, ticket.pesajeExterior)}`}>
+                <span className={`font-semibold ${colorClaseDiferencia(diferencia, pesoGlobalSumado, ticket.pesajeExterior)}`}>
                   {fmt(diferencia)} kg
                 </span>
               </div>

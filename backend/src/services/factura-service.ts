@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearFacturaInput } from '../schemas/facturas.js';
 import { notificarDocumento } from './telegram-notify-service.js';
 import { generarFacturaPdf, nombreArchivoFactura } from './document-generator.js';
+import { idsTicketsUnidos } from './ticket-principal.js';
 import { formatCodigoCompra, formatCodigoVenta } from '../utils/codigos.js';
 
 export type TipoFactura = 'compra' | 'venta';
@@ -227,6 +228,9 @@ export async function crearFactura(
     }
     if (tickets.some(t => t.estado === 'bruto')) {
       return { error: 'Alguno de los tickets está en bruto (sin completar); no se puede facturar hasta terminarlo.' };
+    }
+    if ((await idsTicketsUnidos(ticketIds)).length > 0) {
+      return { error: 'Alguno de los tickets está unido a otro ticket; factura el ticket principal.' };
     }
     if (tickets.some(t => t.entidad_id !== input.entidadId)) {
       return { error: 'Todos los tickets deben ser del mismo proveedor/cliente que la factura.' };

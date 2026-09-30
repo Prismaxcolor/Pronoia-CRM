@@ -1454,6 +1454,11 @@ function FilaTicketPesaje({
           {t.tipo === 'compra' ? 'C' : 'V'}
         </span>
         {t.codigo}
+        {t.ticketPrincipalId && (
+          <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-alt text-text-secondary" title="Pesaje global sumado al ticket principal; no se factura por separado">
+            Unido a {t.ticketPrincipalCodigo ?? 'otro ticket'}
+          </span>
+        )}
       </td>
       <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
       <td className="px-4 py-2.5 text-text-secondary">{t.tipo === 'compra' ? 'Ticket de compra' : 'Ticket de venta'}</td>

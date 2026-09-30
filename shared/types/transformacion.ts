@@ -22,6 +22,8 @@ export interface SalidaTransformacion {
   tara: number;
   pesoNeto: number;
   fotos: string[];
+  /** Precio por kg de la salida (valoración). Solo en GET /:id; ausente si la migración no está aplicada. */
+  precioUnitario?: number | null;
 }
 
 export interface Transformacion {
@@ -50,6 +52,12 @@ export interface Transformacion {
   createdAt: string;
   entradaDetalle: EntradaDetalleTransformacion[];
   salidas: SalidaTransformacion[];
+  /** Valoración (solo GET /:id). false = migración de valoración sin aplicar en BD. */
+  valoracionDisponible?: boolean;
+  /** Factura de compra a la que está anclada (opcional). */
+  facturaCompraId?: string | null;
+  /** Precio de compra por kg del material de entrada (editable). */
+  costoUnitario?: number | null;
 }
 
 /** Configuración: qué materiales salen habitualmente de un material de entrada. */

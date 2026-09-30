@@ -48,6 +48,7 @@ export interface ObtenerTicketsOpts {
   soloNoFacturados?: boolean;
   entidadId?: string;
   tipo?: 'compra' | 'venta';
+  estado?: 'bruto' | 'completo';
 }
 
 export async function obtenerTickets(opts: ObtenerTicketsOpts = {}): Promise<TicketPesaje[]> {
@@ -55,6 +56,7 @@ export async function obtenerTickets(opts: ObtenerTicketsOpts = {}): Promise<Tic
   if (opts.soloNoFacturados) params.set('soloNoFacturados', 'true');
   if (opts.entidadId) params.set('entidadId', opts.entidadId);
   if (opts.tipo) params.set('tipo', opts.tipo);
+  if (opts.estado) params.set('estado', opts.estado);
   const qs = params.toString();
   try {
     const { tickets } = await apiFetch<{ tickets: TicketPesaje[] }>(
@@ -93,12 +95,20 @@ export async function completarTicket(
   id: string,
   materiales: CrearTicketMaterialInput[],
   devolucion = 0,
-  fotosDevolucion: string[] = []
+  fotosDevolucion: string[] = [],
+  /** Otros tickets en bruto del mismo proveedor cuyo peso global se suma. Si
+   *  viene vacío no se envía el campo (mismo request de siempre). */
+  ticketsUnidosIds: string[] = []
 ): Promise<{ ticket: TicketPesaje } | { error: string }> {
   try {
     const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}/completar`, {
       method: 'PATCH',
-      body: { materiales, devolucion, fotosDevolucion },
+      body: {
+        materiales,
+        devolucion,
+        fotosDevolucion,
+        ...(ticketsUnidosIds.length > 0 ? { ticketsUnidosIds } : {}),
+      },
     });
     return { ticket };
   } catch (err) {
@@ -112,6 +122,8 @@ export interface EditarTicketInput {
   fotosDevolucion?: string[];
   observaciones?: string | null;
   vehiculo?: string | null;
+  /** Llave de un solo uso del superadmin; solo se envía si el servidor la exige. */
+  llaveEdicion?: string;
 }
 
 /** Corrige un ticket ya completo (material, pesos, observaciones). El peso

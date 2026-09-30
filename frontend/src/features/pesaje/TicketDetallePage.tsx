@@ -18,6 +18,9 @@ import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo } from '@shared/types/index.js';
 import { descargarTicketPDF } from '../../services/ticket-export';
 import FilaDocumento from '../../components/FilaDocumento';
+import HistorialEdiciones from '../../components/HistorialEdiciones';
+import GenerarLlaveEdicion from '../../components/GenerarLlaveEdicion';
+import { obtenerConfigLlaves } from '../../services/llave-service';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -45,8 +48,12 @@ function filasDesdeTicket(t: TicketPesaje): MaterialFila[] {
 function TicketDetallePage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
   const toast = useToast();
+  const esSuperadmin = usuario?.rol === 'superadmin';
+  // El servidor exige llave solo con REQUIRE_EDIT_KEY=true y a no-superadmin.
+  const [requiereLlave, setRequiereLlave] = useState(false);
+  const [llaveEdicion, setLlaveEdicion] = useState('');
 
   const puedeEditar = tienePermiso('pesaje', 'editar');
 
@@ -79,6 +86,7 @@ function TicketDetallePage() {
 
   useEffect(() => {
     cargarTicket();
+    obtenerConfigLlaves().then(cfg => setRequiereLlave(cfg.requiereLlave));
     Promise.all([obtenerProveedores(), obtenerClientes()]).then(([proveedores, clientes]) => {
       const m = new Map<string, string>();
       [...proveedores, ...clientes].forEach(e => m.set(e.id, e.nombre));
@@ -206,11 +214,13 @@ function TicketDetallePage() {
       devolucion: Number(devolucionEdit) || 0,
       fotosDevolucion: urlsDevolucion,
       materiales: materialesConFotos,
+      llaveEdicion: requiereLlave && llaveEdicion.trim() ? llaveEdicion.trim() : undefined,
     });
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
     toast.exito(`${result.ticket.codigo} actualizado.`);
+    setLlaveEdicion('');
     setEditando(false);
     cargarTicket();
   };
@@ -238,7 +248,7 @@ function TicketDetallePage() {
   }
 
   const esCompra = ticket.tipo === 'compra';
-  const puedeEditarEsteTicket = puedeEditar && !ticket.facturado && ticket.estado !== 'bruto';
+  const puedeEditarEsteTicket = puedeEditar && !ticket.facturado && ticket.estado !== 'bruto' && !ticket.ticketPrincipalId;
 
   // Todas las fotos del ticket (por material + generales) en una sola galería
   // con etiqueta de material, en vez de un bloque apilado por material
@@ -288,6 +298,11 @@ function TicketDetallePage() {
                 {ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}
               </span>
             )}
+            {ticket.ticketPrincipalId && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-surface-alt text-text-secondary print:border print:border-black print:bg-transparent" title="Su pesaje global se sumó al ticket principal; se edita y factura desde allí">
+                Unido a {ticket.ticketPrincipalCodigo ?? 'otro ticket'}
+              </span>
+            )}
             {ticket.pesajeExterior && (
               <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 print:border print:border-black print:bg-transparent">
                 Sin pesaje global
@@ -298,6 +313,9 @@ function TicketDetallePage() {
         </div>
         {!editando && (
           <div className="print:hidden flex items-center gap-2 shrink-0">
+            {esSuperadmin && puedeEditarEsteTicket && (
+              <GenerarLlaveEdicion entidadTipo="ticket_pesaje" entidadId={ticket.id} />
+            )}
             {puedeEditarEsteTicket && (
               <button type="button" onClick={iniciarEdicion} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Editar ticket">
                 <Pencil size={16} />
@@ -433,6 +451,8 @@ function TicketDetallePage() {
               </div>
             </div>
           )}
+
+          <HistorialEdiciones entidadTipo="ticket_pesaje" entidadId={ticket.id} />
         </>
       ) : (
         <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
@@ -609,6 +629,21 @@ function TicketDetallePage() {
             <label className={labelClass}>Observaciones</label>
             <textarea value={observacionesEdit} onChange={e => setObservacionesEdit(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Notas del pesaje" />
           </div>
+
+          {requiereLlave && !esSuperadmin && (
+            <div>
+              <label className={labelClass}>Llave de edición</label>
+              <input
+                type="text"
+                value={llaveEdicion}
+                onChange={e => setLlaveEdicion(e.target.value)}
+                className={`${inputClass} font-mono uppercase tracking-wider`}
+                placeholder="Código entregado por el administrador"
+                autoComplete="off"
+                required
+              />
+            </div>
+          )}
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 

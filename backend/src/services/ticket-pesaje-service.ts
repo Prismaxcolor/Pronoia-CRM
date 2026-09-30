@@ -2,6 +2,20 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput, PesajeGlobalInput } from '../schemas/tickets-pesaje.js';
 import { notificarDocumento } from './telegram-notify-service.js';
 import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
+import {
+  contarSecundarios,
+  esErrorFuncionInexistente,
+  esSecundarioUnido,
+  esTicketUnido,
+  MENSAJE_PRINCIPAL_CON_UNIDOS_BORRAR,
+  MENSAJE_TICKET_UNIDO_BORRAR,
+  MENSAJE_TICKET_UNIDO_COMPLETAR,
+  MENSAJE_TICKET_UNIDO_EDITAR,
+  MENSAJE_UNION_NO_HABILITADA,
+} from './ticket-principal.js';
+import { validarUnionTickets, type TicketUnibleRow } from './ticket-union.js';
+import { autorizarEdicion, type ActorEdicion } from './edicion-autorizada-service.js';
+import { auditarEdicionTicket } from './ticket-auditoria.js';
 
 /** Formatea el correlativo de pesaje: (1, 'compra') → "Compra-0001". Cada tipo
  *  tiene su propio contador desde el Bloque 35 (antes compra y venta
@@ -55,6 +69,7 @@ interface TicketRow {
   completado_por: string | null;
   completado_en: string | null;
   vehiculo: string | null;
+  ticket_principal_id?: string | null;
   detalle_tickets_pesaje?: DetalleRow[] | null;
   pesajes_globales?: PesajeGlobalRow[] | null;
 }
@@ -118,6 +133,10 @@ export interface TicketPublico {
   completadoPor: string | null;
   completadoEn: string | null;
   vehiculo: string | null;
+  /** Id del ticket principal si este se unió a otro al completar; null si no. */
+  ticketPrincipalId?: string | null;
+  /** Código del ticket principal, para mostrar "Unido a ...". */
+  ticketPrincipalCodigo?: string | null;
   createdAt: string;
 }
 
@@ -170,6 +189,8 @@ function toPublico(row: TicketRow): TicketPublico {
     completadoPor: row.completado_por,
     completadoEn: row.completado_en,
     vehiculo: row.vehiculo,
+    ticketPrincipalId: row.ticket_principal_id ?? null,
+    ticketPrincipalCodigo: null,
     createdAt: row.created_at,
   };
 }
@@ -183,6 +204,8 @@ export interface ListarTicketsOpts {
   entidadId?: string;
   /** Filtra por tipo de pesaje (compra/venta). */
   tipo?: 'compra' | 'venta';
+  /** Filtra por estado en el servidor (p. ej. 'bruto' para los candidatos a unir). */
+  estado?: 'bruto' | 'completo';
 }
 
 export async function listarTickets(opts: ListarTicketsOpts = {}): Promise<TicketPublico[]> {
@@ -194,10 +217,30 @@ export async function listarTickets(opts: ListarTicketsOpts = {}): Promise<Ticke
   if (opts.soloNoFacturados) query = query.eq('facturado', false);
   if (opts.entidadId) query = query.eq('entidad_id', opts.entidadId);
   if (opts.tipo) query = query.eq('tipo', opts.tipo);
+  if (opts.estado) query = query.eq('estado', opts.estado);
 
   const { data, error } = await query;
   if (error || !data) return [];
-  return (data as unknown as TicketRow[]).map(toPublico);
+  const todas = data as unknown as TicketRow[];
+  // Un ticket unido (secundario) se factura a través de su principal: no se
+  // ofrece como facturable por separado. Se filtra aquí con el valor leído por
+  // '*' (si la columna no existe aún, es undefined y no se excluye nada).
+  const rows = opts.soloNoFacturados ? todas.filter(r => !esTicketUnido(r)) : todas;
+  const codigoPorId = await codigosDePrincipales(rows);
+  return rows.map(r => ({
+    ...toPublico(r),
+    ticketPrincipalCodigo: r.ticket_principal_id ? (codigoPorId.get(r.ticket_principal_id) ?? null) : null,
+  }));
+}
+
+/** Resuelve con una consulta aparte el código de cada ticket principal referenciado
+ *  por `rows` (el principal puede no estar en el resultado filtrado). Vacío si no hay uniones. */
+async function codigosDePrincipales(rows: TicketRow[]): Promise<Map<string, string>> {
+  const ids = [...new Set(rows.map(r => r.ticket_principal_id).filter((x): x is string => !!x))];
+  if (ids.length === 0) return new Map();
+  const { data } = await supabaseAdmin.from('tickets_pesaje').select('id, numero, tipo').in('id', ids);
+  const principales = (data ?? []) as Array<{ id: string; numero: number; tipo: 'compra' | 'venta' }>;
+  return new Map(principales.map(p => [p.id, formatCodigoPesaje(Number(p.numero), p.tipo)]));
 }
 
 export async function obtenerTicket(id: string): Promise<TicketPublico | null> {
@@ -208,7 +251,9 @@ export async function obtenerTicket(id: string): Promise<TicketPublico | null> {
     .maybeSingle();
 
   if (error || !data) return null;
-  return toPublico(data as unknown as TicketRow);
+  const row = data as unknown as TicketRow;
+  const codigos = await codigosDePrincipales([row]);
+  return { ...toPublico(row), ticketPrincipalCodigo: row.ticket_principal_id ? (codigos.get(row.ticket_principal_id) ?? null) : null };
 }
 
 /** Dispara el envío del ticket por Telegram cuando queda 'completo' (fire-and-forget). */
@@ -271,21 +316,53 @@ export async function crearTicket(
   return { ticket };
 }
 
-/** Completa un ticket guardado en bruto: agrega materiales/destinos y lo marca 'completo'. */
+/** Valida (con mensaje amigable) que los tickets a unir se puedan sumar al
+ *  principal. La RPC vuelve a validar dentro de la transacción. */
+async function errorDeUnion(id: string, idsUnidos: string[]): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('tickets_pesaje')
+    .select('*')
+    .in('id', [id, ...idsUnidos]);
+  if (error || !data) return 'No se pudieron verificar los tickets a unir.';
+
+  const filas = data as unknown as TicketUnibleRow[];
+  const principal = filas.find(t => t.id === id);
+  if (!principal) return 'Ticket no encontrado.';
+  return validarUnionTickets(principal, filas.filter(t => t.id !== id), idsUnidos);
+}
+
+/** Completa un ticket guardado en bruto: agrega materiales/destinos y lo marca 'completo'.
+ *  Si input.ticketsUnidosIds trae ids, suma sus pesos globales y los marca
+ *  completos enlazados a este (RPC nueva); si no, usa la RPC de siempre. */
 export async function completarTicket(
   id: string,
   input: CompletarTicketInput,
   completadoPor: string
 ): Promise<{ ticket: TicketPublico } | { error: string }> {
-  const { error } = await supabaseAdmin.rpc('completar_ticket_pesaje', {
+  const idsUnidos = input.ticketsUnidosIds ?? [];
+  const paramsBase = {
     p_ticket_id: id,
     p_materiales: materialesARpc(input.materiales),
     p_completado_por: completadoPor,
     p_devolucion: input.devolucion,
     p_fotos_devolucion: input.fotosDevolucion,
-  });
+  };
 
-  if (error) return { error: error.message };
+  // Un ticket ya unido a otro no se completa por separado (tolerante a columna ausente).
+  if (await esSecundarioUnido(id)) return { error: MENSAJE_TICKET_UNIDO_COMPLETAR };
+
+  if (idsUnidos.length > 0) {
+    const errorUnion = await errorDeUnion(id, idsUnidos);
+    if (errorUnion) return { error: errorUnion };
+  }
+
+  const { error } = idsUnidos.length > 0
+    ? await supabaseAdmin.rpc('completar_ticket_pesaje_unido', { ...paramsBase, p_tickets_unidos: idsUnidos })
+    : await supabaseAdmin.rpc('completar_ticket_pesaje', paramsBase);
+
+  if (error) {
+    return { error: idsUnidos.length > 0 && esErrorFuncionInexistente(error) ? MENSAJE_UNION_NO_HABILITADA : error.message };
+  }
 
   const ticket = await obtenerTicket(id);
   if (!ticket) return { error: 'El ticket se completó pero no se pudo leer de vuelta.' };
@@ -299,8 +376,17 @@ export async function completarTicket(
  *  La RPC rechaza tickets facturados o en bruto. */
 export async function editarTicket(
   id: string,
-  input: EditarTicketInput
-): Promise<{ ticket: TicketPublico } | { error: string }> {
+  input: EditarTicketInput,
+  actor: ActorEdicion
+): Promise<{ ticket: TicketPublico } | { error: string; codigo?: number }> {
+  // Un ticket unido (secundario) no tiene detalle propio: se edita el principal.
+  if (await esSecundarioUnido(id)) return { error: MENSAJE_TICKET_UNIDO_EDITAR, codigo: 409 };
+
+  const auth = await autorizarEdicion(actor, 'ticket_pesaje', id);
+  if (!auth.ok) return { error: auth.error, codigo: auth.codigo };
+
+  const antes = await obtenerTicket(id).catch(() => null);
+
   const { error } = await supabaseAdmin.rpc('editar_ticket_pesaje', {
     p_ticket_id: id,
     p_materiales: materialesARpc(input.materiales),
@@ -311,10 +397,14 @@ export async function editarTicket(
     p_vehiculo: input.vehiculo,
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    await auth.liberar();
+    return { error: error.message };
+  }
 
   const ticket = await obtenerTicket(id);
   if (!ticket) return { error: 'El ticket se editó pero no se pudo leer de vuelta.' };
+  await auditarEdicionTicket(id, actor, auth.autorizadoPor, antes, ticket);
   return { ticket };
 }
 
@@ -333,6 +423,9 @@ export async function borrarTicket(id: string): Promise<BorrarTicketResult> {
   if (ticket.facturado) {
     return { ok: false, razon: 'El ticket ya está facturado y no se puede eliminar.' };
   }
+
+  if (await esSecundarioUnido(id)) return { ok: false, razon: MENSAJE_TICKET_UNIDO_BORRAR };
+  if ((await contarSecundarios(id)) > 0) return { ok: false, razon: MENSAJE_PRINCIPAL_CON_UNIDOS_BORRAR };
 
   // Cinturón y tirantes: las tablas puente tienen FK sin cascade.
   for (const tabla of ['facturas_compra_tickets', 'facturas_venta_tickets'] as const) {

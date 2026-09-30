@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_TICKETS_UNIDOS } from '../services/ticket-union.js';
 
 /** Una línea de material dentro del ticket. El peso neto lo calcula la BD. */
 export const materialSchema = z
@@ -124,6 +125,13 @@ export const completarTicketSchema = z
     materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
     devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
     fotosDevolucion: z.array(z.string()).default([]),
+    /** Opcional: otros tickets en bruto del mismo proveedor cuyos pesos globales
+     *  se suman a este al completar. Vacío/omitido = flujo de siempre. */
+    ticketsUnidosIds: z
+      .array(z.string().uuid('Ticket a unir inválido.'))
+      .max(MAX_TICKETS_UNIDOS, `No se pueden unir más de ${MAX_TICKETS_UNIDOS} tickets.`)
+      .refine(ids => new Set(ids).size === ids.length, { message: 'Hay tickets repetidos en la unión.' })
+      .default([]),
   })
   .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {
     message: 'Agrega al menos una foto de la devolución.',
@@ -150,6 +158,8 @@ export const editarTicketSchema = z
       .optional()
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),
+    /** Llave de un solo uso entregada por el superadmin; solo se exige con REQUIRE_EDIT_KEY=true. */
+    llaveEdicion: z.string().trim().max(32).optional(),
   })
   .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {
     message: 'Agrega al menos una foto de la devolución.',

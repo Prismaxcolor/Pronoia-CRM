@@ -10,6 +10,7 @@ import {
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearTicketSchema, completarTicketSchema, editarTicketSchema } from '../schemas/tickets-pesaje.js';
+import type { EditarTicketInput } from '../schemas/tickets-pesaje.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -22,7 +23,8 @@ router.get('/', requirePermiso('pesaje', 'ver'), async (req, res) => {
   const soloNoFacturados = req.query.soloNoFacturados === 'true';
   const entidadId = req.query.entidadId ? String(req.query.entidadId) : undefined;
   const tipo = req.query.tipo === 'venta' ? 'venta' : req.query.tipo === 'compra' ? 'compra' : undefined;
-  const tickets = await listarTickets({ soloNoFacturados, entidadId, tipo });
+  const estado = req.query.estado === 'bruto' ? 'bruto' : req.query.estado === 'completo' ? 'completo' : undefined;
+  const tickets = await listarTickets({ soloNoFacturados, entidadId, tipo, estado });
   res.json({ tickets });
 });
 
@@ -80,9 +82,15 @@ router.patch(
   requirePermiso('pesaje', 'editar'),
   validateBody(editarTicketSchema),
   async (req, res) => {
-    const result = await editarTicket(String(req.params.id), req.body);
+    const { llaveEdicion, ...datos } = req.body as EditarTicketInput;
+    const result = await editarTicket(String(req.params.id), datos, {
+      userId: req.user!.sub,
+      email: req.user!.email,
+      rol: req.user!.rol,
+      llave: llaveEdicion,
+    });
     if ('error' in result) {
-      res.status(400).json(result);
+      res.status(result.codigo ?? 400).json({ error: result.error });
       return;
     }
     logger.info({

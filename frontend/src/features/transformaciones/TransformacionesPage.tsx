@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Recycle, CheckCircle2, Clock, X, Plus, Loader2, Trash2,
   ChevronDown, ChevronUp, AlertTriangle, Search,
@@ -1193,6 +1194,9 @@ function TransformacionesPage() {
                     </p>
                   )}
                   <div className="flex gap-3 pl-11">
+                    <Link to={`/transformaciones/${t.id}`} className="text-xs font-medium text-text-secondary hover:text-brand-600">
+                      Ver detalle
+                    </Link>
                     {puedeCrear && (
                       <button
                         type="button"
@@ -1288,10 +1292,10 @@ function TransformacionHistorialCard({ t }: { t: Transformacion }) {
           <Recycle size={15} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-text-primary truncate">
+          <Link to={`/transformaciones/${t.id}`} className="block text-sm font-medium text-text-primary truncate hover:text-brand-600">
             {t.codigo && <span className="text-text-muted">{t.codigo} · </span>}
             {t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '—'} — {fmt(t.pesoNeto)} kg
-          </p>
+          </Link>
           <p className="text-xs text-text-muted">{t.fecha}</p>
         </div>
         <CheckCircle2 size={14} className="text-green-600 shrink-0" />

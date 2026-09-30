@@ -112,6 +112,12 @@ export interface TicketPesaje {
   completadoEn: string | null;
   /** Placa/identificador del vehículo que trajo o se llevó el material. */
   vehiculo: string | null;
+  /** Si este ticket se unió a otro al completar (pesaje global sumado): id del
+   *  ticket principal. Null en tickets normales. Un ticket unido no genera
+   *  stock propio y no se factura por separado. */
+  ticketPrincipalId?: string | null;
+  /** Código del ticket principal (ej. "Compra-0012") para mostrar "Unido a". */
+  ticketPrincipalCodigo?: string | null;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
 }

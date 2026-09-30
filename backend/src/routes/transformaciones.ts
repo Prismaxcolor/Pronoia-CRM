@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import {
   listarTransformaciones,
-  obtenerTransformacion,
   crearTransformacion,
   completarTransformacion,
   borrarTransformacion,
@@ -23,6 +22,11 @@ import {
   crearTransformacionPCBSchema,
   completarTransformacionPCBSchema,
 } from '../schemas/transformaciones.js';
+import { guardarValoracionSchema } from '../schemas/transformaciones-valoracion.js';
+import {
+  guardarValoracion,
+  obtenerTransformacionConValoracion,
+} from '../services/transformacion-valoracion-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -70,13 +74,34 @@ router.put(
 );
 
 router.get('/:id', requirePermiso('transformaciones', 'ver'), async (req, res) => {
-  const transformacion = await obtenerTransformacion(String(req.params.id));
+  const transformacion = await obtenerTransformacionConValoracion(String(req.params.id));
   if (!transformacion) {
     res.status(404).json({ error: 'Transformación no encontrada.' });
     return;
   }
   res.json({ transformacion });
 });
+
+// ---------------------------------------------------------------------------
+// Valoración (ancla opcional a factura de compra + precios editables)
+// ---------------------------------------------------------------------------
+
+router.patch(
+  '/:id/valoracion',
+  requirePermiso('transformaciones', 'editar'),
+  validateBody(guardarValoracionSchema),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const result = await guardarValoracion(id, req.body);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    logger.info({ evento: 'transformacion_valoracion_guardada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: id });
+    const transformacion = await obtenerTransformacionConValoracion(id);
+    res.json({ transformacion });
+  }
+);
 
 // ---------------------------------------------------------------------------
 // Legacy (lote-pool)
