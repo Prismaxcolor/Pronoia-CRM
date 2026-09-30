@@ -106,7 +106,7 @@ export const crearTicketSchema = z
     path: ['estado'],
   })
   .refine(d => d.pesajeExterior || (d.pesoGlobal != null && d.pesoGlobal > 0), {
-    message: 'Registra el peso global de la pesada (o marca "Pesaje exterior").',
+    message: 'Registra el peso global de la pesada (solo la venta puede ir sin pesaje global).',
     path: ['pesoGlobal'],
   })
   .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {

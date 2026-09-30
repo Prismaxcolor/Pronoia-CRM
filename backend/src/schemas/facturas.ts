@@ -10,14 +10,15 @@ const textoOpcional = (max: number) =>
     .transform(v => (v && v.length > 0 ? v : null));
 
 /** Una línea de la factura: un material con su peso y precio.
- *  `descuentoKg` (solo tiene efecto en factura de compra) es un descuento de
- *  peso aplicado al facturar — ej. merma o tara adicional no capturada en el
- *  pesaje — que se resta antes de calcular el subtotal. */
+ *  `descuentoKg` es un descuento de peso aplicado al facturar — ej. merma o
+ *  tara adicional no capturada en el pesaje — que se resta antes de calcular
+ *  el subtotal. El precio puede ser 0 (solo compra); la venta lo rechaza en
+ *  `crearFactura`. */
 const itemSchema = z
   .object({
     productoId: z.string().uuid('Material inválido.'),
     peso: z.number().positive('El peso debe ser mayor a 0.'),
-    precioUnitario: z.number().positive('El precio unitario debe ser mayor a 0.'),
+    precioUnitario: z.number().nonnegative('El precio unitario no puede ser negativo.'),
     descuentoKg: z.number().min(0, 'El descuento no puede ser negativo.').default(0),
   })
   .refine(i => i.descuentoKg < i.peso, {

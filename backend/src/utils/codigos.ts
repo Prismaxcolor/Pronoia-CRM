@@ -51,3 +51,8 @@ export function formatCodigoNotaCreditoCliente(numero: number): string {
 export function formatCodigoNotaDebitoCliente(numero: number): string {
   return `NDV-${String(numero).padStart(4, '0')}`;
 }
+
+/** Formatea el correlativo de una transformación: 1 → "TR-0001". */
+export function formatCodigoTransformacion(numero: number): string {
+  return `TR-${String(numero).padStart(4, '0')}`;
+}

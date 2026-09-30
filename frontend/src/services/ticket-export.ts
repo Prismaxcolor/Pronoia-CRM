@@ -11,7 +11,7 @@ function badges(ticket: TicketPesaje): Badge[] {
     ? { texto: 'Borrador', color: [194, 65, 12] }
     : { texto: ticket.facturado ? 'Facturado' : 'Pendiente por facturar' };
   const lista = [estado];
-  if (ticket.pesajeExterior) lista.push({ texto: 'Pesaje exterior', color: [126, 34, 206] });
+  if (ticket.pesajeExterior) lista.push({ texto: 'Sin pesaje global', color: [126, 34, 206] });
   return lista;
 }
 
@@ -40,7 +40,7 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
   y += 6;
   if (ticket.pesajeExterior) {
     doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(130)
-      .text('Pesaje exterior — sin peso global propio.', 56, y);
+      .text('Sin pesaje global.', 56, y);
     doc.setTextColor(0);
     y += 10;
   } else {

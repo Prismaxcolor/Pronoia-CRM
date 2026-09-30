@@ -290,7 +290,7 @@ function TicketDetallePage() {
             )}
             {ticket.pesajeExterior && (
               <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 print:border print:border-black print:bg-transparent">
-                Pesaje exterior
+                Sin pesaje global
               </span>
             )}
           </div>
@@ -327,7 +327,7 @@ function TicketDetallePage() {
           </div>
 
           {ticket.pesajeExterior ? (
-            <p className="text-xs text-text-muted mb-4">Pesaje exterior — sin peso global propio.</p>
+            <p className="text-xs text-text-muted mb-4">Sin pesaje global.</p>
           ) : (
             <>
               <div className="flex justify-between items-baseline pt-3 mb-1">
@@ -438,7 +438,7 @@ function TicketDetallePage() {
         <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
           {ticket.pesajeExterior ? (
             <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-4 py-2.5">
-              Pesaje exterior — sin peso global propio para reconciliar.
+              Sin pesaje global — no hay peso global para reconciliar.
             </p>
           ) : (
             <div className="flex items-center justify-between text-sm bg-surface-alt border border-border rounded-lg px-4 py-2.5">

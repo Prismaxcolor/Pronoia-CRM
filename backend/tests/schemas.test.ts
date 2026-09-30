@@ -39,8 +39,13 @@ describe('crearFacturaSchema', () => {
     expect(r.success).toBe(false);
   });
 
-  it('rechaza precio unitario <= 0', () => {
+  it('acepta precio unitario 0 (la venta lo rechaza en el servicio)', () => {
     const r = crearFacturaSchema.safeParse({ ...base, items: [{ ...item, precioUnitario: 0 }] });
+    expect(r.success).toBe(true);
+  });
+
+  it('rechaza precio unitario negativo', () => {
+    const r = crearFacturaSchema.safeParse({ ...base, items: [{ ...item, precioUnitario: -1 }] });
     expect(r.success).toBe(false);
   });
 
@@ -220,8 +225,9 @@ describe('listas de precios', () => {
     if (r.success) expect((r.data as Record<string, unknown>).tipo).toBeUndefined();
   });
 
-  it('upsertPrecioSchema exige precio > 0', () => {
-    expect(upsertPrecioSchema.safeParse({ productoId: UUID, precio: 0 }).success).toBe(false);
+  it('upsertPrecioSchema acepta precio 0 pero no negativo', () => {
+    expect(upsertPrecioSchema.safeParse({ productoId: UUID, precio: 0 }).success).toBe(true);
+    expect(upsertPrecioSchema.safeParse({ productoId: UUID, precio: -1 }).success).toBe(false);
     expect(upsertPrecioSchema.safeParse({ productoId: UUID, precio: 15 }).success).toBe(true);
   });
 });

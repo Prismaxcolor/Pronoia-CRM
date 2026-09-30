@@ -26,6 +26,9 @@ export interface SalidaTransformacion {
 
 export interface Transformacion {
   id: string;
+  numero: number | null;
+  /** Correlativo legible, ej. "TR-0001". Null si aún no se aplicó la migración. */
+  codigo: string | null;
   categoria: CategoriaTransformacion;
   /** Ferroso: producto de entrada (sin lote). */
   productoEntradaId: string | null;

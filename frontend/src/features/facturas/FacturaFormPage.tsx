@@ -1,24 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Loader2 } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { obtenerTickets, crearTicket } from '../../services/ticket-pesaje-service';
-import { obtenerLotes } from '../../services/lote-service';
+import { obtenerTickets } from '../../services/ticket-pesaje-service';
 import { crearFactura, type TipoFactura } from '../../services/factura-cv-service';
 import { obtenerListas, obtenerListaDetalle } from '../../services/lista-precios-service';
 import { useToast } from '../../hooks/use-toast-context';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
-import type { DestinoValor } from '../pesaje/material-fila';
-import type { Producto, TicketPesaje, ListaPrecios, Lote } from '@shared/types/index.js';
+import type { Producto, TicketPesaje, ListaPrecios } from '@shared/types/index.js';
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotos: string[] }
-type ModoPeso = 'ticket' | 'manual';
-
-function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /** Una línea del formulario (valores como string para los inputs). */
 interface LineaFila {
@@ -26,13 +19,11 @@ interface LineaFila {
   productoId: string;
   peso: string;
   precioUnitario: string;
-  /** Viene de un ticket: material y peso bloqueados. */
+  /** Material y peso bloqueados: vienen del ticket de pesaje. */
   desdeTicket: boolean;
   /** id del material del ticket (detalle), para conservar precios al re-seleccionar. */
   materialId?: string;
-  /** Solo modo manual: id del lote destino, para el ticket que se genera. */
-  destino: DestinoValor;
-  /** Descuento de peso al facturar (solo compra) — merma/tara adicional no
+  /** Descuento de peso al facturar — merma/tara adicional no
    *  capturada en el pesaje. Se resta del peso antes de calcular el subtotal.
    *  El valor tecleado se interpreta según `descuentoModo` (kg directos o %
    *  del peso de la línea); siempre se envía al backend como kg. */
@@ -42,7 +33,7 @@ interface LineaFila {
 
 let UID = 0;
 function lineaVacia(): LineaFila {
-  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false, destino: '', descuento: '', descuentoModo: 'kg' };
+  return { uid: UID++, productoId: '', peso: '', precioUnitario: '', desdeTicket: false, descuento: '', descuentoModo: 'kg' };
 }
 
 interface Props {
@@ -60,15 +51,12 @@ function FacturaFormPage({ tipo }: Props) {
 
   const [entidades, setEntidades] = useState<Entidad[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [lotes, setLotes] = useState<Lote[]>([]);
   const [ticketsPendientes, setTicketsPendientes] = useState<TicketPesaje[]>([]);
   const [listas, setListas] = useState<ListaPrecios[]>([]);
 
   const [entidadId, setEntidadId] = useState('');
-  const [modoPeso, setModoPeso] = useState<ModoPeso>('ticket');
   const [ticketIds, setTicketIds] = useState<string[]>([]);
   const [lineas, setLineas] = useState<LineaFila[]>([lineaVacia()]);
-  const [devolucion, setDevolucion] = useState('');
   const [listaSelId, setListaSelId] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [observaciones, setObservaciones] = useState('');
@@ -86,7 +74,6 @@ function FacturaFormPage({ tipo }: Props) {
     cargar().then(lista => setEntidades(lista.filter(e => e.activo)));
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerListas(tipo).then(lista => setListas(lista.filter(l => l.activo)));
-    obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
   }, [esCompra, tipo]);
 
   useEffect(() => {
@@ -115,7 +102,6 @@ function FacturaFormPage({ tipo }: Props) {
   // Se conservan los precios ya escritos (match por productoId); los nuevos
   // se precargan con el precio de la lista elegida (si hay).
   useEffect(() => {
-    if (modoPeso !== 'ticket') return;
     // Reconstruye las líneas fusionando con las anteriores (conserva precios ya
     // escritos a mano) — es una sincronización real con los tickets seleccionados,
     // no una inicialización que se pueda mover a render/useMemo sin perder ese merge.
@@ -149,34 +135,18 @@ function FacturaFormPage({ tipo }: Props) {
         precioUnitario: v.precioUnitario,
         desdeTicket: true,
         materialId: v.materialId,
-        destino: '',
         descuento: v.descuento,
         descuentoModo: v.descuentoModo,
       }));
       return nuevas.length > 0 ? nuevas : [lineaVacia()];
     });
-  }, [ticketsSel, modoPeso]);
+  }, [ticketsSel]);
 
   const toggleTicket = (id: string) =>
     setTicketIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
 
-  const cambiarModo = (m: ModoPeso) => {
-    setModoPeso(m);
-    setTicketIds([]);
-    setLineas([lineaVacia()]);
-    setDevolucion('');
-  };
-
   const setLinea = (uid: number, campo: keyof LineaFila, valor: string) =>
     setLineas(prev => prev.map(l => (l.uid === uid ? { ...l, [campo]: valor } : l)));
-
-  // Al elegir material en una línea manual, autocompletar su precio desde la lista.
-  const setMaterialLinea = (uid: number, productoId: string) =>
-    setLineas(prev => prev.map(l => {
-      if (l.uid !== uid) return l;
-      const precio = precioDeLista(productoId);
-      return { ...l, productoId, precioUnitario: precio || l.precioUnitario };
-    }));
 
   // Elegir lista global: carga sus precios y autocompleta TODAS las líneas.
   const aplicarLista = async (id: string) => {
@@ -192,13 +162,8 @@ function FacturaFormPage({ tipo }: Props) {
     }));
   };
 
-  const agregarLinea = () => setLineas(prev => [...prev, lineaVacia()]);
-  const quitarLinea = (uid: number) =>
-    setLineas(prev => (prev.length > 1 ? prev.filter(l => l.uid !== uid) : prev));
-
   /** Descuento de la línea convertido siempre a kg, sin importar el modo elegido. */
   const descuentoKgLinea = (l: LineaFila): number => {
-    if (!esCompra) return 0;
     const valor = Number(l.descuento) || 0;
     const peso = Number(l.peso) || 0;
     return l.descuentoModo === 'porcentaje' ? (peso * valor) / 100 : valor;
@@ -207,59 +172,26 @@ function FacturaFormPage({ tipo }: Props) {
   const subtotalLinea = (l: LineaFila) => pesoFacturableLinea(l) * (Number(l.precioUnitario) || 0);
   const total = useMemo(() => lineas.reduce((acc, l) => acc + subtotalLinea(l), 0), [lineas]);
 
-  /** true si el material pertenece a una categoría "sin lote" (ej. No
-   *  Ferroso, Bloque 47) — no pide lote, va directo a inventario general. */
-  const esSinLote = (productoId: string): boolean =>
-    productos.find(p => p.id === productoId)?.tipoMaterialSinLote === true;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (!entidadId) { setError(`Elige un ${labelEntidad.toLowerCase()}.`); return; }
-    if (modoPeso === 'ticket' && ticketIds.length === 0) { setError('Selecciona al menos un ticket de pesaje o cambia a peso manual.'); return; }
+    if (ticketIds.length === 0) { setError('Selecciona al menos un ticket de pesaje.'); return; }
     if (lineas.some(l => !l.productoId)) { setError('Selecciona un material en cada fila.'); return; }
-    if (modoPeso === 'manual' && lineas.some(l => !esSinLote(l.productoId) && !l.destino)) { setError('Selecciona el destino de inventario en cada fila.'); return; }
     if (lineas.some(l => (Number(l.peso) || 0) <= 0)) { setError('Cada material debe tener un peso mayor a 0.'); return; }
-    if (lineas.some(l => (Number(l.precioUnitario) || 0) <= 0)) { setError('Cada material debe tener un precio unitario mayor a 0.'); return; }
+    // En compra el precio puede ser 0 (material recibido sin costo); en venta no.
+    const precioMinimoValido = (l: LineaFila) => l.precioUnitario !== '' && (esCompra ? Number(l.precioUnitario) >= 0 : Number(l.precioUnitario) > 0);
+    if (lineas.some(l => !precioMinimoValido(l))) {
+      setError(esCompra ? 'Cada material debe tener un precio unitario (puede ser 0).' : 'Cada material debe tener un precio unitario mayor a 0.');
+      return;
+    }
 
     setGuardando(true);
 
-    // En modo manual, el peso siempre genera su propio ticket de pesaje (con
-    // devolución y destino de inventario), igual que si se hubiera cargado
-    // desde la pestaña Pesaje — así el material sí se contabiliza en el
-    // inventario y queda el documento del ticket.
-    let ticketIdsAEnviar = ticketIds;
-    if (modoPeso === 'manual') {
-      const pesoTotal = lineas.reduce((acc, l) => acc + (Number(l.peso) || 0), 0);
-      const devolucionNum = Number(devolucion) || 0;
-      const resultTicket = await crearTicket({
-        tipo,
-        entidadId,
-        fecha: hoyISO(),
-        pesoGlobal: pesoTotal + devolucionNum,
-        devolucion: devolucionNum,
-        estado: 'completo',
-        materiales: lineas.map(l => ({
-          productoId: l.productoId,
-          pesoBruto: Number(l.peso) || 0,
-          tara: 0,
-          destinoTipo: esSinLote(l.productoId) ? ('mpp' as const) : ('lote' as const),
-          loteId: esSinLote(l.productoId) ? null : l.destino,
-        })),
-        fotos: [],
-      });
-      if ('error' in resultTicket) {
-        setError(resultTicket.error);
-        setGuardando(false);
-        return;
-      }
-      ticketIdsAEnviar = [resultTicket.ticket.id];
-    }
-
     const result = await crearFactura(tipo, {
       entidadId,
-      ticketIds: ticketIdsAEnviar,
+      ticketIds,
       items: lineas.map(l => ({
         productoId: l.productoId,
         peso: Number(l.peso),
@@ -279,6 +211,8 @@ function FacturaFormPage({ tipo }: Props) {
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
   const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Solo la factura de compra muestra el signo de moneda.
+  const fmtMoneda = (n: number) => (esCompra ? `$ ${fmt(n)}` : fmt(n));
   const nombreProducto = (id: string) => productos.find(p => p.id === id)?.nombre ?? 'material';
 
   return (
@@ -317,55 +251,40 @@ function FacturaFormPage({ tipo }: Props) {
         </div>
 
         <div>
-          <label className={labelClass}>Origen del peso</label>
-          <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-3">
-            <button type="button" onClick={() => cambiarModo('ticket')} className={`px-4 py-1.5 ${modoPeso === 'ticket' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
-              Ticket de pesaje
-            </button>
-            <button type="button" onClick={() => cambiarModo('manual')} className={`px-4 py-1.5 ${modoPeso === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
-              Peso manual
-            </button>
-          </div>
+          <label className={labelClass}>Tickets de pesaje *</label>
 
-          {modoPeso === 'ticket' && (
-            !entidadId ? (
-              <p className="text-xs text-text-muted">Elige primero un {labelEntidad.toLowerCase()}.</p>
-            ) : ticketsPendientes.length === 0 ? (
-              <p className="text-xs text-text-muted">Sin tickets pendientes para este {labelEntidad.toLowerCase()}.</p>
-            ) : (
-              <div className="border border-border rounded-lg divide-y divide-border max-h-56 overflow-y-auto">
-                {ticketsPendientes.map(t => (
-                  <label key={t.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-alt transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={ticketIds.includes(t.id)}
-                      onChange={() => toggleTicket(t.id)}
-                      className="w-4 h-4 accent-brand-600 shrink-0"
-                    />
-                    <span className="text-sm text-text-primary">
-                      <span className="font-medium">{t.codigo}</span>
-                      <span className="text-text-muted"> · {t.fecha ?? '—'} · {t.materiales.length === 1 ? (t.materiales[0].nombreProducto ?? 'material') : `${t.materiales.length} materiales`} · {fmt(t.pesoNetoTotal)} kg</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )
+          {!entidadId ? (
+            <p className="text-xs text-text-muted">Elige primero un {labelEntidad.toLowerCase()}.</p>
+          ) : ticketsPendientes.length === 0 ? (
+            <p className="text-xs text-text-muted">Sin tickets pendientes para este {labelEntidad.toLowerCase()}.</p>
+          ) : (
+            <div className="border border-border rounded-lg divide-y divide-border max-h-56 overflow-y-auto">
+              {ticketsPendientes.map(t => (
+                <label key={t.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-alt transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={ticketIds.includes(t.id)}
+                    onChange={() => toggleTicket(t.id)}
+                    className="w-4 h-4 accent-brand-600 shrink-0"
+                  />
+                  <span className="text-sm text-text-primary">
+                    <span className="font-medium">{t.codigo}</span>
+                    <span className="text-text-muted"> · {t.fecha ?? '—'} · {t.materiales.length === 1 ? (t.materiales[0].nombreProducto ?? 'material') : `${t.materiales.length} materiales`} · {fmt(t.pesoNetoTotal)} kg</span>
+                  </span>
+                </label>
+              ))}
+            </div>
           )}
-          {modoPeso === 'ticket' && ticketIds.length > 0 && (
+          {ticketIds.length > 0 && (
             <p className="text-xs text-text-muted mt-2">{ticketIds.length} ticket{ticketIds.length === 1 ? '' : 's'} seleccionado{ticketIds.length === 1 ? '' : 's'}.</p>
-          )}
-          {modoPeso === 'manual' && (
-            <p className="text-xs text-text-muted">
-              Se genera automáticamente su propio ticket de pesaje con estos materiales (con destino de inventario y devolución).
-            </p>
           )}
         </div>
 
         {/* Líneas de la factura */}
         <div className="space-y-3">
-          <label className={labelClass + ' mb-0'}>Materiales {modoPeso === 'ticket' && ticketsSel.length > 0 ? '(de los tickets)' : ''}</label>
+          <label className={labelClass + ' mb-0'}>Materiales {ticketsSel.length > 0 ? '(de los tickets)' : ''}</label>
 
-          {modoPeso === 'ticket' && ticketsSel.length === 0 ? (
+          {ticketsSel.length === 0 ? (
             <p className="text-xs text-text-muted">Selecciona uno o más tickets para cargar sus materiales.</p>
           ) : (
             lineas.map((l, idx) => (
@@ -374,88 +293,52 @@ function FacturaFormPage({ tipo }: Props) {
                   <span className="text-xs font-semibold text-text-secondary">
                     Material {idx + 1}{l.desdeTicket ? ` · ${nombreProducto(l.productoId)}` : ''}
                   </span>
-                  {modoPeso === 'manual' && lineas.length > 1 && (
-                    <button type="button" onClick={() => quitarLinea(l.uid)} className="text-text-muted hover:text-red-600 transition-colors" title="Quitar material">
-                      <Trash2 size={15} />
-                    </button>
-                  )}
                 </div>
 
-                {!l.desdeTicket && (
-                  <div>
-                    <label className={labelClass}>Material *</label>
-                    <select value={l.productoId} onChange={e => setMaterialLinea(l.uid, e.target.value)} className={inputClass}>
-                      <option value="">— Selecciona —</option>
-                      {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                    </select>
-                  </div>
-                )}
-
-                {modoPeso === 'manual' && (
-                  esSinLote(l.productoId) ? (
-                    <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
-                      "{productos.find(p => p.id === l.productoId)?.tipoMaterialNombre}" es una categoría sin lote — este material va directo a inventario general, no pide lote.
-                    </p>
-                  ) : (
-                    <div>
-                      <label className={labelClass}>{esCompra ? 'Destino (inventario) *' : 'Origen (inventario) *'}</label>
-                      <select required value={l.destino} onChange={e => setLinea(l.uid, 'destino', e.target.value)} className={inputClass}>
-                        <option value="" disabled>-Selecciona-</option>
-                        {lotes.map(lo => <option key={lo.id} value={lo.id}>{lo.nombre}</option>)}
-                      </select>
-                      <p className="text-xs text-text-muted mt-1">
-                        {esCompra ? 'A qué lote entra este material comprado.' : 'De qué lote sale este material vendido.'}
-                      </p>
-                    </div>
-                  )
-                )}
-
-                <div className={`grid gap-3 ${esCompra ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                <div className="grid gap-3 grid-cols-3">
                   <div>
                     <label className={labelClass}>Peso (kg) {l.desdeTicket && <span className="text-text-muted">· del ticket</span>}</label>
                     <input type="number" step="0.001" min="0" value={l.peso} onChange={e => setLinea(l.uid, 'peso', e.target.value)} className={inputClass} placeholder="0.00" disabled={l.desdeTicket} />
                   </div>
-                  {esCompra && (
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className={labelClass + ' mb-0'}>Descuento ({l.descuentoModo === 'porcentaje' ? '%' : 'kg'})</label>
-                        <div className="flex rounded-md border border-border overflow-hidden text-[11px]">
-                          <button
-                            type="button"
-                            onClick={() => setLinea(l.uid, 'descuentoModo', 'kg')}
-                            className={`px-1.5 py-0.5 ${l.descuentoModo === 'kg' ? 'bg-brand-400 text-white' : 'bg-surface-alt text-text-muted'}`}
-                          >
-                            kg
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setLinea(l.uid, 'descuentoModo', 'porcentaje')}
-                            className={`px-1.5 py-0.5 ${l.descuentoModo === 'porcentaje' ? 'bg-brand-400 text-white' : 'bg-surface-alt text-text-muted'}`}
-                          >
-                            %
-                          </button>
-                        </div>
-                      </div>
-                      <input
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        max={l.descuentoModo === 'porcentaje' ? 100 : undefined}
-                        value={l.descuento}
-                        onChange={e => setLinea(l.uid, 'descuento', e.target.value)}
-                        className={inputClass}
-                        placeholder="0.00"
-                        title={l.descuentoModo === 'porcentaje' ? 'Porcentaje del peso a descontar al facturar.' : 'Merma o tara adicional (kg) a descontar al facturar.'}
-                      />
-                    </div>
-                  )}
                   <div>
-                    <label className={labelClass}>Precio (kg) *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={labelClass + ' mb-0'}>Descuento ({l.descuentoModo === 'porcentaje' ? '%' : 'kg'})</label>
+                      <div className="flex rounded-md border border-border overflow-hidden text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setLinea(l.uid, 'descuentoModo', 'kg')}
+                          className={`px-1.5 py-0.5 ${l.descuentoModo === 'kg' ? 'bg-brand-400 text-white' : 'bg-surface-alt text-text-muted'}`}
+                        >
+                          kg
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLinea(l.uid, 'descuentoModo', 'porcentaje')}
+                          className={`px-1.5 py-0.5 ${l.descuentoModo === 'porcentaje' ? 'bg-brand-400 text-white' : 'bg-surface-alt text-text-muted'}`}
+                        >
+                          %
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      max={l.descuentoModo === 'porcentaje' ? 100 : undefined}
+                      value={l.descuento}
+                      onChange={e => setLinea(l.uid, 'descuento', e.target.value)}
+                      className={inputClass}
+                      placeholder="0.00"
+                      title={l.descuentoModo === 'porcentaje' ? 'Porcentaje del peso a descontar al facturar.' : 'Merma o tara adicional (kg) a descontar al facturar.'}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Precio {esCompra ? '($/kg)' : '(kg)'} *</label>
                     <input type="number" step="0.01" min="0" value={l.precioUnitario} onChange={e => setLinea(l.uid, 'precioUnitario', e.target.value)} className={inputClass} placeholder="0.00" />
                   </div>
                 </div>
 
-                {esCompra && descuentoKgLinea(l) > 0 && (
+                {descuentoKgLinea(l) > 0 && (
                   <p className="text-xs text-text-muted">
                     Descuento: {fmt(descuentoKgLinea(l))} kg · Peso facturable: {fmt(pesoFacturableLinea(l))} kg
                   </p>
@@ -463,39 +346,12 @@ function FacturaFormPage({ tipo }: Props) {
 
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-text-muted">Subtotal</span>
-                  <span className="font-semibold text-text-primary">{fmt(subtotalLinea(l))}</span>
+                  <span className="font-semibold text-text-primary">{fmtMoneda(subtotalLinea(l))}</span>
                 </div>
               </div>
             ))
           )}
 
-          {modoPeso === 'manual' && (
-            <button type="button" onClick={agregarLinea} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors">
-              <Plus size={16} />
-              Agregar material
-            </button>
-          )}
-
-          {modoPeso === 'manual' && (
-            <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 space-y-1">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <label htmlFor="devolucion-manual" className="text-brand-800 shrink-0">Devolución (kg)</label>
-                <input
-                  id="devolucion-manual"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={devolucion}
-                  onChange={e => setDevolucion(e.target.value)}
-                  className="w-28 px-2 py-1 bg-surface border border-brand-200 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400"
-                  placeholder="0.00"
-                />
-              </div>
-              <p className="text-[11px] text-brand-700/80">
-                Kg que {esCompra ? 'el proveedor se lleva' : 'el cliente se lleva'} de vuelta. Va en el ticket que se genera, no afecta el inventario ni la factura.
-              </p>
-            </div>
-          )}
         </div>
 
         <div>
@@ -510,7 +366,7 @@ function FacturaFormPage({ tipo }: Props) {
         <div className="flex items-center justify-end bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
           <div className="text-right">
             <p className="text-xs text-brand-700">Total ({lineas.length} {lineas.length === 1 ? 'material' : 'materiales'})</p>
-            <p className="text-xl font-bold text-brand-700">{fmt(total)}</p>
+            <p className="text-xl font-bold text-brand-700">{fmtMoneda(total)}</p>
           </div>
         </div>
 

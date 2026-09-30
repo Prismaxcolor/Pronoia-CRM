@@ -1147,11 +1147,17 @@ function TransformacionesPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-text-primary truncate">
+                        {t.codigo && <span className="text-text-muted">{t.codigo} · </span>}
                         {t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '—'} — {fmt(t.pesoNeto)} kg
                       </p>
                       <p className="text-xs text-text-muted">{t.fecha}</p>
                     </div>
                   </div>
+                  {t.notas && (
+                    <p className="pl-11 mb-3 text-xs text-text-secondary whitespace-pre-line">
+                      <span className="font-medium">Notas:</span> {t.notas}
+                    </p>
+                  )}
                   <div className="flex gap-3 pl-11">
                     {puedeCrear && (
                       <button
@@ -1248,6 +1254,7 @@ function TransformacionHistorialCard({ t }: { t: Transformacion }) {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-text-primary truncate">
+            {t.codigo && <span className="text-text-muted">{t.codigo} · </span>}
             {t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '—'} — {fmt(t.pesoNeto)} kg
           </p>
           <p className="text-xs text-text-muted">{t.fecha}</p>

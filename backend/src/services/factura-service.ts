@@ -207,6 +207,10 @@ export async function crearFactura(
   const cfg = CONFIG[tipo];
   const ticketIds = input.ticketIds ?? [];
 
+  if (tipo === 'venta' && input.items.some(i => i.precioUnitario <= 0)) {
+    return { error: 'El precio unitario debe ser mayor a 0 en una factura de venta.' };
+  }
+
   // Si la factura agrupa tickets, validar que existan, sean del mismo
   // proveedor/cliente y no estén ya facturados.
   if (ticketIds.length > 0) {

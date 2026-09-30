@@ -235,7 +235,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
 
           <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 space-y-2">
             {ticket.pesajeExterior ? (
-              <p className="text-xs text-brand-800">Pesaje exterior — sin peso global propio para reconciliar.</p>
+              <p className="text-xs text-brand-800">Sin pesaje global — no hay peso global para reconciliar.</p>
             ) : (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-brand-800">Peso global (de este pesaje)</span>

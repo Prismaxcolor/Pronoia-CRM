@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { formatCodigoTransformacion } from '../utils/codigos.js';
 import type {
   CrearTransformacionInput,
   CompletarTransformacionInput,
@@ -30,6 +31,7 @@ interface SalidaDetalleRow {
 
 interface TransformacionRow {
   id: string;
+  numero: number | string | null;
   categoria: string;
   producto_entrada_id: string | null;
   almacen_id: string | null;
@@ -53,6 +55,9 @@ interface TransformacionRow {
 
 export interface TransformacionPublica {
   id: string;
+  numero: number | null;
+  /** Correlativo legible, ej. "TR-0001". */
+  codigo: string | null;
   categoria: string;
   productoEntradaId: string | null;
   nombreProductoEntrada: string | null;
@@ -89,6 +94,8 @@ export interface TransformacionPublica {
 function toPublico(row: TransformacionRow): TransformacionPublica {
   return {
     id: row.id,
+    numero: row.numero != null ? Number(row.numero) : null,
+    codigo: row.numero != null ? formatCodigoTransformacion(Number(row.numero)) : null,
     categoria: row.categoria ?? 'ferroso_no_ferroso',
     productoEntradaId: row.producto_entrada_id,
     nombreProductoEntrada: row.productos?.nombre ?? null,
