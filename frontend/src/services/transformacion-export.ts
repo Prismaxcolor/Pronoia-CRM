@@ -1,5 +1,6 @@
 import type { Transformacion } from '@shared/types/index.js';
 import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
+import { etiquetaSalida } from '../lib/salida-mixta';
 
 export interface NombresTransformacion {
   almacen: string | null;
@@ -57,7 +58,7 @@ export async function descargarTransformacionPDF(t: Transformacion, nombres: Nom
       startY: y,
       head: [['Salida', 'Almacén', 'Bruto', 'Tara', 'Neto (kg)']],
       body: t.salidas.map(s => [
-        sanitizarPdf(s.nombreProducto ?? s.nombreLoteDestino ?? '—'),
+        sanitizarPdf(etiquetaSalida(s).replace('→', '->')) /* Helvetica del PDF no trae la flecha */,
         sanitizarPdf(s.nombreAlmacen ?? '—'),
         fmt(s.pesoBruto),
         fmt(s.tara),

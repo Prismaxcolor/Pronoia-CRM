@@ -1,5 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { formatCodigoTransformacion } from '../utils/codigos.js';
+import { esErrorFuncionInexistente } from './ticket-principal.js';
+import { validarSalidasMixtasPorCategoria } from '../schemas/transformaciones.js';
 import type {
   CrearTransformacionInput,
   CompletarTransformacionInput,
@@ -7,6 +9,8 @@ import type {
   CompletarTransformacionFerrosoInput,
   CrearTransformacionPCBInput,
   CompletarTransformacionPCBInput,
+  CompletarTransformacionMixtaInput,
+  SalidaMixtaInput,
 } from '../schemas/transformaciones.js';
 
 interface EntradaDetalleRow {
@@ -88,7 +92,15 @@ export interface TransformacionPublica {
     tara: number;
     pesoNeto: number;
     fotos: string[];
+    tipoSalida?: 'material' | 'lote' | 'material_a_lote';
   }>;
+}
+
+/** material = producto sin lote; lote = lote sin producto; material_a_lote = ambos. */
+function derivarTipoSalida(d: Pick<SalidaDetalleRow, 'producto_id' | 'lote_destino_id'>): 'material' | 'lote' | 'material_a_lote' | undefined {
+  if (d.producto_id && d.lote_destino_id) return 'material_a_lote';
+  if (d.lote_destino_id) return 'lote';
+  return d.producto_id ? 'material' : undefined;
 }
 
 function toPublico(row: TransformacionRow): TransformacionPublica {
@@ -130,6 +142,7 @@ function toPublico(row: TransformacionRow): TransformacionPublica {
       tara: Number(d.tara),
       pesoNeto: Number(d.peso_neto),
       fotos: d.fotos ?? [],
+      tipoSalida: derivarTipoSalida(d),
     })),
   };
 }
@@ -333,6 +346,110 @@ export async function completarTransformacionPCB(
   if (error) return { error: error.message };
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer.' };
+  return { transformacion };
+}
+
+// ---------------------------------------------------------------------------
+// Salidas mixtas
+// ---------------------------------------------------------------------------
+
+export const MENSAJE_MIXTAS_NO_HABILITADAS = 'Las salidas mixtas aún no están habilitadas en la base de datos.';
+/** Tolerancia (kg) de redondeo al comparar la suma de salidas con la entrada. */
+export const TOLERANCIA_BALANCE_KG = 0.01;
+
+export type ResultadoTransformacion =
+  | { transformacion: TransformacionPublica }
+  | { error: string; status?: number };
+
+/** Suma de netos de las salidas (bruto - tara). */
+export function sumarNetosSalidas(salidas: ReadonlyArray<{ pesoBruto: number; tara: number }>): number {
+  return salidas.reduce((acc, s) => acc + (s.pesoBruto - s.tara), 0);
+}
+
+/** Mensaje de error si las salidas pesan más que la entrada; null si cuadra. */
+export function validarBalancePesos(
+  netoEntrada: number,
+  salidas: ReadonlyArray<{ pesoBruto: number; tara: number }>
+): string | null {
+  const totalSalidas = sumarNetosSalidas(salidas);
+  if (totalSalidas <= netoEntrada + TOLERANCIA_BALANCE_KG) return null;
+  return (
+    `Las salidas suman ${totalSalidas.toFixed(2)} kg y superan el peso neto de entrada ` +
+    `(${netoEntrada.toFixed(2)} kg).`
+  );
+}
+
+/** En PCB una salida a lote no puede volver al mismo lote de origen. */
+export function validarLoteDestinoDistintoDeOrigen(
+  loteOrigenId: string | null,
+  salidas: readonly SalidaMixtaInput[]
+): string | null {
+  if (!loteOrigenId) return null;
+  const vuelve = salidas.some(s => s.tipo === 'lote' && s.loteDestinoId === loteOrigenId);
+  return vuelve ? 'El lote de destino no puede ser el mismo lote de origen.' : null;
+}
+
+interface TransformacionCabecera {
+  categoria: string;
+  estado: string;
+  peso_neto: number;
+  lote_origen_id: string | null;
+}
+
+/** Valida estado, categoría, reglas por tipo, balance y lote origen != destino. */
+export function validarCompletarMixta(
+  cab: TransformacionCabecera,
+  salidas: readonly SalidaMixtaInput[]
+): string | null {
+  if (cab.estado !== 'bruto') return 'La transformación ya fue completada.';
+  const porCategoria = validarSalidasMixtasPorCategoria(cab.categoria, salidas);
+  if (porCategoria) return porCategoria;
+  const balance = validarBalancePesos(Number(cab.peso_neto), salidas);
+  if (balance) return balance;
+  return cab.categoria === 'pcb' ? validarLoteDestinoDistintoDeOrigen(cab.lote_origen_id, salidas) : null;
+}
+
+function salidaMixtaARpc(s: SalidaMixtaInput) {
+  return {
+    tipo: s.tipo,
+    producto_id: s.productoId ?? null,
+    lote_destino_id: s.tipo === 'lote' ? s.loteDestinoId : null,
+    almacen_id: s.almacenId ?? null,
+    peso_bruto: s.pesoBruto,
+    tara: s.tara,
+    fotos: s.fotos,
+  };
+}
+
+/** Completa una transformación con salidas mixtas (material suelto y/o lote
+ *  destino) vía completar_transformacion_mixta. Si la función SQL todavía no
+ *  existe responde 409 sin tocar nada. */
+export async function completarTransformacionMixta(
+  id: string,
+  input: CompletarTransformacionMixtaInput,
+  completadoPor: string
+): Promise<ResultadoTransformacion> {
+  const { data: cab } = await supabaseAdmin
+    .from('transformaciones')
+    .select('categoria, estado, peso_neto, lote_origen_id')
+    .eq('id', id)
+    .maybeSingle();
+  if (!cab) return { error: 'Transformación no encontrada.', status: 404 };
+
+  const invalido = validarCompletarMixta(cab as TransformacionCabecera, input.salidas);
+  if (invalido) return { error: invalido, status: 400 };
+
+  const { error } = await supabaseAdmin.rpc('completar_transformacion_mixta', {
+    p_transformacion_id: id,
+    p_salidas: input.salidas.map(salidaMixtaARpc),
+    p_completado_por: completadoPor,
+  });
+  if (error) {
+    if (esErrorFuncionInexistente(error)) return { error: MENSAJE_MIXTAS_NO_HABILITADAS, status: 409 };
+    return { error: error.message, status: 400 };
+  }
+  const transformacion = await obtenerTransformacion(id);
+  if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer.', status: 500 };
   return { transformacion };
 }
 

@@ -1,5 +1,6 @@
 import { apiFetch } from './api-client';
 import type { Transformacion, SalidaComun } from '@shared/types/index.js';
+import type { SalidaMixtaInput } from '../lib/salida-mixta';
 
 // ---------------------------------------------------------------------------
 // Tipos de entrada
@@ -220,6 +221,25 @@ export async function completarTransformacionPCB(
     return { transformacion };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación PCB.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Salidas mixtas (lote + material en la misma transformación)
+// ---------------------------------------------------------------------------
+
+export async function completarTransformacionMixta(
+  id: string,
+  salidas: SalidaMixtaInput[]
+): Promise<{ transformacion: Transformacion } | { error: string }> {
+  try {
+    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
+      `/api/transformaciones/${id}/completar-mixta`,
+      { method: 'PATCH', body: { salidas } }
+    );
+    return { transformacion };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación.' };
   }
 }
 

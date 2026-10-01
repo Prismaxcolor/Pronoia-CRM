@@ -295,6 +295,129 @@ async function cargarProductos(filtros: FiltrosInventario = {}): Promise<Product
   }));
 }
 
+/** Una fila de transformacion_salida_detalle ya normalizada (camelCase). */
+export interface SalidaTransformacionInventario {
+  transformacionId: string;
+  productoId: string | null;
+  loteDestinoId: string | null;
+  nombreLote: string | null;
+  /** Almacén propio de la salida (puede ser null en datos antiguos). */
+  almacenId: string | null;
+  /** Almacén de la transformación — respaldo cuando la salida no tiene uno. */
+  almacenTransformacionId: string | null;
+  estadoTransformacion: string | null;
+  fecha: string | null;
+  pesoNeto: number;
+}
+
+export interface EntradaTransformacionInventario {
+  productoId: string | null;
+  pesoKg: number;
+}
+
+export interface ContextoDistribucionSalidas {
+  idsPermitidos: Set<string>;
+  almacenId?: string;
+  desde?: string;
+  hasta?: string;
+  loteEnAlmacen: (loteId: string | null) => boolean;
+}
+
+export interface ResultadoDistribucionSalidas {
+  entradas: MovimientoInventario[];
+  /** Porción heredada sin producto conocido, acumulada por lote destino. */
+  sinProductoPorLote: Map<string, { nombreLote: string | null; monto: number }>;
+}
+
+function fueraDeRango(fecha: string | null, desde?: string, hasta?: string): boolean {
+  if (desde && fecha && fecha < desde) return true;
+  if (hasta && fecha && fecha > hasta) return true;
+  return false;
+}
+
+/** Salida A: material suelto (producto, sin lote). Cuenta en el almacén
+ *  coalesce(salida.almacen_id, transformacion.almacen_id). */
+function entradaMaterialSuelto(
+  s: SalidaTransformacionInventario,
+  ctx: ContextoDistribucionSalidas
+): MovimientoInventario | null {
+  if (s.estadoTransformacion !== 'completa' || !s.productoId) return null;
+  if (!ctx.idsPermitidos.has(s.productoId)) return null;
+  const almacenEfectivo = s.almacenId ?? s.almacenTransformacionId;
+  if (ctx.almacenId && almacenEfectivo !== ctx.almacenId) return null;
+  return { productoId: s.productoId, destinoTipo: 'mpp', loteId: null, destinoLabel: MPP_LABEL, peso: s.pesoNeto };
+}
+
+/** Salida B: lote destino sin producto. Hereda la composición de ENTRADA de
+ *  la transformación, proporcional a lo que recibió el destino (misma fórmula
+ *  que stock_lote_por_producto() / salida_null_distribuida() en SQL). */
+function distribuirHeredada(
+  s: SalidaTransformacionInventario,
+  entradaRows: EntradaTransformacionInventario[],
+  ctx: ContextoDistribucionSalidas,
+  out: ResultadoDistribucionSalidas
+): void {
+  const totalEntrada = entradaRows.reduce((acc, r) => acc + r.pesoKg, 0);
+  if (totalEntrada <= 0 || !s.loteDestinoId) return;
+  for (const r of entradaRows) {
+    if (!r.productoId || !ctx.idsPermitidos.has(r.productoId)) continue;
+    out.entradas.push({
+      productoId: r.productoId,
+      destinoTipo: 'lote',
+      loteId: s.loteDestinoId,
+      destinoLabel: s.nombreLote ?? 'Lote',
+      peso: (s.pesoNeto * r.pesoKg) / totalEntrada,
+    });
+  }
+  const pesoKgSinProducto = entradaRows.filter(r => !r.productoId).reduce((acc, r) => acc + r.pesoKg, 0);
+  if (pesoKgSinProducto <= 0) return;
+  const monto = (s.pesoNeto * pesoKgSinProducto) / totalEntrada;
+  const existing = out.sinProductoPorLote.get(s.loteDestinoId);
+  if (existing) existing.monto += monto;
+  else out.sinProductoPorLote.set(s.loteDestinoId, { nombreLote: s.nombreLote, monto });
+}
+
+/**
+ * Reparte las salidas de transformaciones en movimientos de inventario, con la
+ * misma semántica que stock_almacen()/stock_lote_por_producto() en SQL:
+ *  - A (producto, sin lote): material suelto, cualquier categoría.
+ *  - B (lote destino, sin producto): composición heredada de la entrada.
+ *  - C (producto y lote destino): composición directa de ese producto en el lote.
+ * Función pura: no toca la BD.
+ */
+export function distribuirSalidasTransformacion(
+  salidas: SalidaTransformacionInventario[],
+  entradaPorTransformacion: Map<string, EntradaTransformacionInventario[]>,
+  ctx: ContextoDistribucionSalidas
+): ResultadoDistribucionSalidas {
+  const materialSuelto: MovimientoInventario[] = [];
+  const out: ResultadoDistribucionSalidas = { entradas: [], sinProductoPorLote: new Map() };
+
+  for (const s of salidas) {
+    if (fueraDeRango(s.fecha, ctx.desde, ctx.hasta)) continue;
+    if (!s.loteDestinoId) {
+      const mov = entradaMaterialSuelto(s, ctx);
+      if (mov) materialSuelto.push(mov);
+      continue;
+    }
+    if (!ctx.loteEnAlmacen(s.loteDestinoId)) continue;
+    if (s.productoId) {
+      if (!ctx.idsPermitidos.has(s.productoId)) continue;
+      out.entradas.push({
+        productoId: s.productoId,
+        destinoTipo: 'lote',
+        loteId: s.loteDestinoId,
+        destinoLabel: s.nombreLote ?? 'Lote',
+        peso: s.pesoNeto,
+      });
+      continue;
+    }
+    distribuirHeredada(s, entradaPorTransformacion.get(s.transformacionId) ?? [], ctx, out);
+  }
+  out.entradas.unshift(...materialSuelto);
+  return out;
+}
+
 /**
  * Calcula el stock por (material, destino): entradas (pesaje de compra) −
  * salidas (pesaje de venta) ± neto de transformaciones. El peso entra/sale al
@@ -414,48 +537,15 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     });
   }
 
-  // Salidas de transformaciones ferroso: materiales que volvieron al inventario
-  // después de la transformación (sin lote, van al bucket sin-lote/MPP).
-  const { data: salidaFerrosoData } = await supabaseAdmin
+  // Salidas de transformaciones (cualquier categoría), una sola consulta. Se
+  // clasifican en distribuirSalidasTransformacion():
+  //  - material suelto (producto sin lote): entra al bucket sin-lote;
+  //  - lote destino sin producto: hereda la composición de ENTRADA;
+  //  - producto + lote destino: composición directa de ese producto.
+  const { data: salidaTransfData } = await supabaseAdmin
     .from('transformacion_salida_detalle')
-    .select('producto_id, peso_neto, transformaciones!inner(fecha, categoria, estado, almacen_id)')
-    .not('producto_id', 'is', null)
-    .eq('transformaciones.categoria', 'ferroso_no_ferroso')
-    .eq('transformaciones.estado', 'completa');
-
-  for (const d of (salidaFerrosoData as unknown as Array<{
-    producto_id: string;
-    peso_neto: number;
-    transformaciones?: { fecha: string | null; almacen_id: string | null } | null;
-  }> | null) ?? []) {
-    if (!idsPermitidos.has(d.producto_id)) continue;
-    if (almacenId && d.transformaciones?.almacen_id !== almacenId) continue;
-    const fecha = d.transformaciones?.fecha ?? null;
-    if (filtros.desde && fecha && fecha < filtros.desde) continue;
-    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
-    entradas.push({
-      productoId: d.producto_id,
-      destinoTipo: 'mpp',
-      loteId: null,
-      destinoLabel: MPP_LABEL,
-      peso: Number(d.peso_neto ?? 0),
-    });
-  }
-
-  // Llegadas a lotes destino por transformación PCB/legacy: el material que
-  // salió de una transformación hacia un lote destino hereda la composición
-  // de ENTRADA de esa misma transformación, repartida proporcionalmente
-  // según cuánto recibió cada destino — misma fórmula que
-  // stock_lote_por_producto() en SQL (ver
-  // docs/migration_fix_composicion_lote_destino_transformacion.sql). Se
-  // duplica aquí, igual que ya se hace arriba para la salida ferroso, porque
-  // este archivo recalcula el inventario en JS en vez de reusar la función
-  // SQL. Sin este bloque, un lote que recibió material de una transformación
-  // se veía con menos kg en /inventario que en /transformaciones o /lotes.
-  const { data: salidaLoteData } = await supabaseAdmin
-    .from('transformacion_salida_detalle')
-    .select('transformacion_id, lote_destino_id, peso_neto, lotes(nombre), transformaciones(fecha)')
-    .not('lote_destino_id', 'is', null);
+    .select('transformacion_id, producto_id, lote_destino_id, almacen_id, peso_neto, lotes(nombre), transformaciones(fecha, estado, almacen_id)')
+    .or('producto_id.not.is.null,lote_destino_id.not.is.null');
 
   const { data: entradaPorTransformacionData } = await supabaseAdmin
     .from('transformacion_entrada_detalle')
@@ -472,63 +562,37 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     entradaPorTransformacion.set(d.transformacion_id, arr);
   }
 
-  for (const s of (salidaLoteData as unknown as Array<{
-    transformacion_id: string;
-    lote_destino_id: string;
-    peso_neto: number;
-    lotes?: { nombre: string } | null;
-    transformaciones?: { fecha: string | null } | null;
-  }> | null) ?? []) {
-    const fecha = s.transformaciones?.fecha ?? null;
-    if (filtros.desde && fecha && fecha < filtros.desde) continue;
-    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
-    if (!loteEnAlmacen(s.lote_destino_id)) continue;
-    const entradaRows = entradaPorTransformacion.get(s.transformacion_id) ?? [];
-    const totalEntrada = entradaRows.reduce((acc, r) => acc + r.pesoKg, 0);
-    if (totalEntrada <= 0) continue;
-    for (const r of entradaRows) {
-      if (!r.productoId || !idsPermitidos.has(r.productoId)) continue;
-      entradas.push({
-        productoId: r.productoId,
-        destinoTipo: 'lote',
-        loteId: s.lote_destino_id,
-        destinoLabel: s.lotes?.nombre ?? 'Lote',
-        peso: (Number(s.peso_neto) * r.pesoKg) / totalEntrada,
-      });
-    }
-  }
+  const salidasTransformacion: SalidaTransformacionInventario[] = (
+    (salidaTransfData as unknown as Array<{
+      transformacion_id: string;
+      producto_id: string | null;
+      lote_destino_id: string | null;
+      almacen_id: string | null;
+      peso_neto: number;
+      lotes?: { nombre: string } | null;
+      transformaciones?: { fecha: string | null; estado: string | null; almacen_id: string | null } | null;
+    }> | null) ?? []
+  ).map(s => ({
+    transformacionId: s.transformacion_id,
+    productoId: s.producto_id,
+    loteDestinoId: s.lote_destino_id,
+    nombreLote: s.lotes?.nombre ?? null,
+    almacenId: s.almacen_id,
+    almacenTransformacionId: s.transformaciones?.almacen_id ?? null,
+    estadoTransformacion: s.transformaciones?.estado ?? null,
+    fecha: s.transformaciones?.fecha ?? null,
+    pesoNeto: Number(s.peso_neto),
+  }));
 
-  // Llegadas SIN CLASIFICAR (producto_id null) a un lote destino por
-  // transformación — misma fórmula que salida_null_distribuida() en SQL.
-  // Si el lote origen no tenía composición conocida por producto (ej. un
-  // lote "MPP" cuyo stock viene solo de ajustes/toma física), la porción
-  // heredada no puede entrar a ningún producto real — no hay a cuál — así
-  // que se acumula por lote, igual que ya se hace abajo con los ajustes de
-  // toma física sin producto. Sin esto, esos kg simplemente desaparecían
-  // del inventario tras completar la transformación: se descontaban del
-  // origen pero no aparecían en ningún lado del destino.
-  const llegadasSinProductoPorLote = new Map<string, { nombreLote: string | null; monto: number }>();
-  for (const s of (salidaLoteData as unknown as Array<{
-    transformacion_id: string;
-    lote_destino_id: string;
-    peso_neto: number;
-    lotes?: { nombre: string } | null;
-    transformaciones?: { fecha: string | null } | null;
-  }> | null) ?? []) {
-    const fecha = s.transformaciones?.fecha ?? null;
-    if (filtros.desde && fecha && fecha < filtros.desde) continue;
-    if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
-    if (!loteEnAlmacen(s.lote_destino_id)) continue;
-    const entradaRows = entradaPorTransformacion.get(s.transformacion_id) ?? [];
-    const totalEntrada = entradaRows.reduce((acc, r) => acc + r.pesoKg, 0);
-    if (totalEntrada <= 0) continue;
-    const pesoKgSinProducto = entradaRows.filter(r => !r.productoId).reduce((acc, r) => acc + r.pesoKg, 0);
-    if (pesoKgSinProducto <= 0) continue;
-    const monto = (Number(s.peso_neto) * pesoKgSinProducto) / totalEntrada;
-    const existing = llegadasSinProductoPorLote.get(s.lote_destino_id);
-    if (existing) existing.monto += monto;
-    else llegadasSinProductoPorLote.set(s.lote_destino_id, { nombreLote: s.lotes?.nombre ?? null, monto });
-  }
+  const distribucion = distribuirSalidasTransformacion(salidasTransformacion, entradaPorTransformacion, {
+    idsPermitidos,
+    almacenId,
+    desde: filtros.desde,
+    hasta: filtros.hasta,
+    loteEnAlmacen,
+  });
+  entradas.push(...distribucion.entradas);
+  const llegadasSinProductoPorLote = distribucion.sinProductoPorLote;
 
   // Ajustes de toma física con producto conocido (culminar_toma_fisica_inventario).
   // Filtro de fecha por created_at (RC-8 del plan de consolidación): antes

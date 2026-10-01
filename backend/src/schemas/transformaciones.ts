@@ -90,3 +90,84 @@ export const completarTransformacionPCBSchema = z.object({
 
 export type CrearTransformacionPCBInput = z.infer<typeof crearTransformacionPCBSchema>;
 export type CompletarTransformacionPCBInput = z.infer<typeof completarTransformacionPCBSchema>;
+
+// ---------------------------------------------------------------------------
+// Salidas mixtas (material suelto y/o lote destino en una misma transformación)
+// ---------------------------------------------------------------------------
+
+const salidaMixtaBase = {
+  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
+  tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
+  /** URLs ya subidas (mismo formato que completar-pcb / completar-ferroso). */
+  fotos: z.array(z.string()).default([]),
+};
+
+/** Material que vuelve al inventario sin lote. almacenId opcional: si falta
+ *  se usa el almacén de la transformación (solo ferroso; en PCB es obligatorio). */
+const salidaMixtaMaterialSchema = z.object({
+  tipo: z.literal('material'),
+  productoId: z.string().uuid('Selecciona el material de salida.'),
+  almacenId: z.string().uuid('Selecciona el almacén de destino.').nullish(),
+  ...salidaMixtaBase,
+});
+
+/** Lote destino. productoId presente = material_a_lote (solo ferroso);
+ *  ausente = el lote hereda la composición de la entrada (PCB). */
+const salidaMixtaLoteSchema = z.object({
+  tipo: z.literal('lote'),
+  loteDestinoId: z.string().uuid('Selecciona el lote de destino.'),
+  productoId: z.string().uuid('Selecciona el material de salida.').nullish(),
+  almacenId: z.string().uuid('Selecciona el almacén de destino.').nullish(),
+  ...salidaMixtaBase,
+});
+
+export const completarTransformacionMixtaSchema = z.object({
+  salidas: z
+    .array(z.discriminatedUnion('tipo', [salidaMixtaMaterialSchema, salidaMixtaLoteSchema]))
+    .min(1, 'Agrega al menos una salida.')
+    .superRefine((salidas, ctx) => {
+      salidas.forEach((s, i) => {
+        if (s.pesoBruto - s.tara <= 0) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [i, 'tara'],
+            message: 'La tara debe ser menor al peso bruto (el neto debe ser mayor a 0).',
+          });
+        }
+      });
+    }),
+});
+
+export type CompletarTransformacionMixtaInput = z.infer<typeof completarTransformacionMixtaSchema>;
+export type SalidaMixtaInput = CompletarTransformacionMixtaInput['salidas'][number];
+
+/** Reglas por categoría (las mismas que valida la RPC). Devuelve el primer
+ *  mensaje de error o null si todas las salidas son válidas. */
+export function validarSalidasMixtasPorCategoria(
+  categoria: string,
+  salidas: readonly SalidaMixtaInput[]
+): string | null {
+  for (let i = 0; i < salidas.length; i++) {
+    const msg = errorSalidaMixta(categoria, salidas[i]);
+    if (msg) return `Salida ${i + 1}: ${msg}`;
+  }
+  return null;
+}
+
+function errorSalidaMixta(categoria: string, s: SalidaMixtaInput): string | null {
+  if (categoria === 'pcb') {
+    if (s.tipo === 'lote') {
+      if (s.productoId) return 'en PCB un lote de destino no lleva material.';
+      return s.almacenId ? null : 'indica el almacén donde queda el lote.';
+    }
+    return s.almacenId ? null : 'indica el almacén donde queda el material.';
+  }
+  if (categoria === 'ferroso_no_ferroso') {
+    if (s.tipo === 'lote') {
+      if (!s.productoId) return 'indica el material que entra al lote.';
+      return s.almacenId ? null : 'indica el almacén donde queda el lote.';
+    }
+    return null;
+  }
+  return 'categoría de transformación no soportada.';
+}

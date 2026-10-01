@@ -6,6 +6,7 @@ import { obtenerFacturas, obtenerFactura, consolidarItems, type FacturaCV } from
 import { guardarValoracion } from '../../services/transformacion-valoracion-service';
 import { calcularGananciaTransformacion } from '../../lib/ganancia-transformacion';
 import { useToast } from '../../hooks/use-toast-context';
+import { etiquetaSalida } from '../../lib/salida-mixta';
 
 interface Props {
   transformacion: Transformacion;
@@ -147,7 +148,7 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
           {t.salidas.map(s => (
             <div key={s.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
               <span className="text-text-secondary flex-1 min-w-0 truncate">
-                {s.nombreProducto ?? s.nombreLoteDestino ?? '—'} — {fmt(s.pesoNeto)} kg
+                {etiquetaSalida(s)} — {fmt(s.pesoNeto)} kg
               </span>
               <span className="text-xs text-text-muted">$/kg</span>
               <input

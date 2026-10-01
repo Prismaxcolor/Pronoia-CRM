@@ -10,6 +10,7 @@ import {
   guardarSalidasComunesProducto,
   crearTransformacionPCB,
   completarTransformacionPCB,
+  completarTransformacionMixta,
 } from '../services/transformacion-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -21,6 +22,7 @@ import {
   guardarSalidasComunesSchema,
   crearTransformacionPCBSchema,
   completarTransformacionPCBSchema,
+  completarTransformacionMixtaSchema,
 } from '../schemas/transformaciones.js';
 import { guardarValoracionSchema } from '../schemas/transformaciones-valoracion.js';
 import { editarTransformacionSchema, type EditarTransformacionInput } from '../schemas/transformaciones-editar.js';
@@ -226,6 +228,21 @@ router.patch(
       return;
     }
     logger.info({ evento: 'transformacion_pcb_completada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
+    res.json(result);
+  }
+);
+
+router.patch(
+  '/:id/completar-mixta',
+  requirePermiso('transformaciones', 'crear'),
+  validateBody(completarTransformacionMixtaSchema),
+  async (req, res) => {
+    const result = await completarTransformacionMixta(String(req.params.id), req.body, req.user!.sub);
+    if ('error' in result) {
+      res.status(result.status ?? 400).json({ error: result.error });
+      return;
+    }
+    logger.info({ evento: 'transformacion_mixta_completada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
     res.json(result);
   }
 );

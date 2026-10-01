@@ -9,7 +9,9 @@ export interface EntradaDetalleTransformacion {
 
 export interface SalidaTransformacion {
   id: string;
-  /** Solo para transformaciones ferroso (sin lote). */
+  /** Material de la salida. Con loteDestinoId nulo es material suelto (sin lote);
+   *  con loteDestinoId es material que entra a ese lote. Nulo en una salida a lote
+   *  que hereda la composición de la entrada. */
   productoId: string | null;
   nombreProducto: string | null;
   loteDestinoId: string | null;
@@ -22,6 +24,8 @@ export interface SalidaTransformacion {
   tara: number;
   pesoNeto: number;
   fotos: string[];
+  /** Derivado: material (producto sin lote), lote (lote sin producto) o material_a_lote (ambos). */
+  tipoSalida?: 'material' | 'lote' | 'material_a_lote';
   /** Precio por kg de la salida (valoración). Solo en GET /:id; ausente si la migración no está aplicada. */
   precioUnitario?: number | null;
 }

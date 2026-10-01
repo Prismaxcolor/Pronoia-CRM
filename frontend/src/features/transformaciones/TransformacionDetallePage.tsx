@@ -14,6 +14,7 @@ import GenerarLlaveEdicion from '../../components/GenerarLlaveEdicion';
 import { obtenerConfigLlaves } from '../../services/llave-service';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Transformacion } from '@shared/types/index.js';
+import { etiquetaSalida } from '../../lib/salida-mixta';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -32,7 +33,7 @@ function construirGaleria(t: Transformacion): FotoGaleria[] {
       s.fotos.map((url, i) => ({
         key: `s-${s.id}-${i}`,
         url,
-        label: s.nombreProducto ?? s.nombreLoteDestino ?? 'Salida',
+        label: s.nombreProducto || s.nombreLoteDestino ? etiquetaSalida(s) : 'Salida',
         peso: s.pesoNeto as number | null,
       }))
     ),
@@ -203,7 +204,7 @@ function TransformacionDetallePage() {
               <tbody>
                 {t.salidas.map(s => (
                   <tr key={s.id} className="border-t border-border">
-                    <td className="py-2.5 px-5 text-text-primary">{s.nombreProducto ?? s.nombreLoteDestino ?? '—'}</td>
+                    <td className="py-2.5 px-5 text-text-primary">{etiquetaSalida(s)}</td>
                     <td className="py-2.5 px-4 text-text-secondary">{s.nombreAlmacen ?? '—'}</td>
                     <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(s.pesoBruto)}</td>
                     <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(s.tara)}</td>

@@ -13,6 +13,7 @@ import {
   guardarSalidasComunes,
   crearTransformacionPCB,
   completarTransformacionPCB,
+  completarTransformacionMixta,
   type CrearTransformacionFerrosoInput,
   type CompletarTransformacionFerrosoSalidaInput,
 } from '../../services/transformacion-service';
@@ -31,7 +32,9 @@ import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
 import { taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
-import { coincideCodigo, type Transformacion, type SalidaComun, type Tara, type Lote, type EntradaDetalleTransformacion, type ComposicionPCBItem } from '@shared/types/index.js';
+import { coincideCodigo, type Transformacion, type SalidaComun, type Tara, type Lote } from '@shared/types/index.js';
+import { SelectorTipoSalida, BloqueLoteDestino, BloqueMaterialDestino } from './SalidaMixtaFila';
+import { etiquetaSalida, hayFilasMixtas, validarSalidas, armarSalidaMixta, type TipoSalida } from '../../lib/salida-mixta';
 import SelectorOrden from '../../components/SelectorOrden';
 import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
 import type { Producto } from '@shared/types/index.js';
@@ -49,14 +52,27 @@ function fmt(n: number) { return n.toLocaleString('es-VE', { minimumFractionDigi
 interface FilaSalida extends CampoTara {
   uid: number;
   productoId: string;
+  /** 'lote' = salida mixta: el material de la fila va a un lote existente. */
+  tipo: TipoSalida;
+  loteDestinoId: string;
+  almacenId: string;
   pesoBruto: string;
   fotos: FotoMaterial[];
 }
 
 let nextUid = 1;
 function filaVacia(productoId = ''): FilaSalida {
-  return { uid: nextUid++, productoId, pesoBruto: '', ...taraVacia(), fotos: [] };
+  return { uid: nextUid++, productoId, tipo: 'material', loteDestinoId: '', almacenId: '', pesoBruto: '', ...taraVacia(), fotos: [] };
 }
+
+const OPCIONES_TIPO_FERROSO = [
+  { tipo: 'material' as const, etiqueta: 'Material' },
+  { tipo: 'lote' as const, etiqueta: 'Lote' },
+];
+const OPCIONES_TIPO_PCB = [
+  { tipo: 'lote' as const, etiqueta: 'Lote' },
+  { tipo: 'material' as const, etiqueta: 'Material' },
+];
 
 // ---------------------------------------------------------------------------
 // Modal: Completar transformación ferroso
@@ -66,6 +82,8 @@ function CompletarFerrosoModal({
   productos,
   taras,
   salidasComunes,
+  lotes,
+  almacenes,
   onClose,
   onCompletada,
 }: {
@@ -73,6 +91,8 @@ function CompletarFerrosoModal({
   productos: Producto[];
   taras: Tara[];
   salidasComunes: SalidaComun[];
+  lotes: Lote[];
+  almacenes: Almacen[];
   onClose: () => void;
   onCompletada: () => void;
 }) {
@@ -92,6 +112,7 @@ function CompletarFerrosoModal({
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
+  const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
 
   const actualizar = (uid: number, campo: Partial<FilaSalida>) => {
     setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
@@ -109,12 +130,12 @@ function CompletarFerrosoModal({
 
   const handleCompletar = async () => {
     setError(null);
-    if (filas.some(f => !f.productoId)) { setError('Todos los materiales de salida necesitan un producto.'); return; }
-    if (filas.some(f => netoFila(f) <= 0)) {
-      setError('Cada salida debe tener peso neto mayor a 0.');
-      return;
-    }
-    if (filas.some(f => f.fotos.length === 0)) { setError('Cada salida necesita al menos una foto.'); return; }
+    const errorValidacion = validarSalidas(
+      'ferroso_no_ferroso',
+      filas.map(f => ({ ...f, neto: netoFila(f), cantidadFotos: f.fotos.length })),
+      { pesoEntrada: transformacion.pesoNeto }
+    );
+    if (errorValidacion) { setError(errorValidacion); return; }
 
     setGuardando(true);
     const fotasPorFila = await Promise.all(filas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
@@ -123,14 +144,17 @@ function CompletarFerrosoModal({
       setGuardando(false);
       return;
     }
-    const salidaInputs: CompletarTransformacionFerrosoSalidaInput[] = filas.map((f, i) => ({
-      productoId: f.productoId,
-      pesoBruto: Number(f.pesoBruto),
-      tara: taraKgFila(f, taras),
-      fotos: fotasPorFila[i] as string[],
-    }));
-
-    const result = await completarTransformacionFerroso(transformacion.id, salidaInputs);
+    const result = hayFilasMixtas('ferroso_no_ferroso', filas)
+      ? await completarTransformacionMixta(
+        transformacion.id,
+        filas.map((f, i) => armarSalidaMixta('ferroso_no_ferroso', f, Number(f.pesoBruto), taraKgFila(f, taras), fotasPorFila[i] as string[]))
+      )
+      : await completarTransformacionFerroso(transformacion.id, filas.map((f, i): CompletarTransformacionFerrosoSalidaInput => ({
+        productoId: f.productoId,
+        pesoBruto: Number(f.pesoBruto),
+        tara: taraKgFila(f, taras),
+        fotos: fotasPorFila[i] as string[],
+      })));
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     toast.exito('Transformación completada.');
@@ -162,6 +186,7 @@ function CompletarFerrosoModal({
                 )}
               </div>
               <div className="space-y-2">
+                <SelectorTipoSalida valor={f.tipo} opciones={OPCIONES_TIPO_FERROSO} onCambiar={tipo => actualizar(f.uid, { tipo })} />
                 <div>
                   <label className={labelClass}>Material *</label>
                   <button
@@ -175,6 +200,17 @@ function CompletarFerrosoModal({
                     <ChevronDown size={14} className="text-text-muted shrink-0" />
                   </button>
                 </div>
+                {f.tipo === 'lote' && (
+                  <BloqueLoteDestino
+                    lote={lotes.find(l => l.id === f.loteDestinoId)}
+                    almacenId={f.almacenId}
+                    almacenes={almacenes}
+                    entradaDetalle={[{ productoId: f.productoId, nombreProducto: productos.find(p => p.id === f.productoId)?.nombre ?? '', pesoKg: 1 }]}
+                    neto={netoFila(f)}
+                    onElegirLote={() => { setFilaActivaUid(f.uid); setMostrarSelectorLote(true); }}
+                    onCambiarAlmacen={almacenId => actualizar(f.uid, { almacenId })}
+                  />
+                )}
                 <div>
                   <label className={labelClass}>Peso bruto (kg) *</label>
                   <input type="number" step="0.001" min="0.001" value={f.pesoBruto}
@@ -264,6 +300,14 @@ function CompletarFerrosoModal({
             if (filaActivaUid != null) actualizar(filaActivaUid, { productoId: id });
             setMostrarSelectorMaterial(false);
           }}
+        />
+      )}
+      {mostrarSelectorLote && (
+        <SeleccionarEntidadModal
+          titulo="Selecciona el lote de destino"
+          entidades={lotes.filter(l => l.activo).map(l => ({ id: l.id, nombre: `${l.nombre} — ${fmt(l.stockKg)} kg`, fotos: l.fotos }))}
+          onClose={() => setMostrarSelectorLote(false)}
+          onSeleccionar={id => { if (filaActivaUid != null) actualizar(filaActivaUid, { loteDestinoId: id }); setMostrarSelectorLote(false); }}
         />
       )}
       {mostrarSelectorTara && (
@@ -727,6 +771,9 @@ function NuevaPCBForm({ lotes, almacenes, onCreada }: { lotes: Lote[]; almacenes
 // ---------------------------------------------------------------------------
 interface FilaSalidaPCB {
   uid: number;
+  /** 'material' = salida mixta: material suelto (producto + almacén). */
+  tipo: TipoSalida;
+  productoId: string;
   loteDestinoId: string;
   almacenId: string;
   pesoBruto: string;
@@ -734,62 +781,21 @@ interface FilaSalidaPCB {
   fotos: FotoMaterial[];
 }
 function filaSalidaPCBVacia(): FilaSalidaPCB {
-  return { uid: nextUid++, loteDestinoId: '', almacenId: '', pesoBruto: '', tara: '', fotos: [] };
-}
-
-interface ComposicionProyectada { item: string; porcentaje: number; esNuevo: boolean }
-
-/** Estima cómo quedaría la composición del lote destino si esta salida se
- *  completa tal cual está ahora — mezclando lo que ya tiene el destino con
- *  lo que entra. Solo referencial: la composición real, una vez completada
- *  la transformación, se recalcula sola a partir del stock real.
- *
- *  Importante: la composición de lo que entra se calcula a partir de
- *  `entradaDetalle` (lo que el backend ya congeló al CREAR la transformación
- *  — la misma fórmula que usará al completarla), no de la composición
- *  actual del lote origen. Entre crear y completar una transformación
- *  puede pasar tiempo y el lote origen puede haber tenido otros
- *  movimientos — usar su composición "de ahora" desincroniza esta
- *  previsualización de lo que el backend realmente va a guardar. */
-function proyectarComposicion(
-  stockDestino: number,
-  compDestino: ComposicionPCBItem[],
-  entradaDetalle: EntradaDetalleTransformacion[],
-  netoEntrante: number
-): ComposicionProyectada[] {
-  if (netoEntrante <= 0) return [];
-  const stockTotalNuevo = stockDestino + netoEntrante;
-  if (stockTotalNuevo <= 0) return [];
-
-  const totalEntrada = entradaDetalle.reduce((acc, d) => acc + d.pesoKg, 0);
-  const compOrigen = totalEntrada > 0
-    ? entradaDetalle.map(d => ({ item: d.nombreProducto, porcentaje: (d.pesoKg / totalEntrada) * 100 }))
-    : [];
-
-  const itemsDestino = new Set(compDestino.map(c => c.item));
-  const todosItems = Array.from(new Set([...compDestino.map(c => c.item), ...compOrigen.map(c => c.item)]));
-
-  return todosItems
-    .map(item => {
-      const pctDestino = compDestino.find(c => c.item === item)?.porcentaje ?? 0;
-      const pctOrigen = compOrigen.find(c => c.item === item)?.porcentaje ?? 0;
-      const kg = (stockDestino * pctDestino) / 100 + (netoEntrante * pctOrigen) / 100;
-      return { item, porcentaje: Math.round((kg / stockTotalNuevo) * 10000) / 100, esNuevo: !itemsDestino.has(item) };
-    })
-    .filter(c => c.porcentaje > 0)
-    .sort((a, b) => b.porcentaje - a.porcentaje);
+  return { uid: nextUid++, tipo: 'lote', productoId: '', loteDestinoId: '', almacenId: '', pesoBruto: '', tara: '', fotos: [] };
 }
 
 function CompletarPCBModal({
   transformacion,
   lotes,
   almacenes,
+  productos,
   onClose,
   onCompletada,
 }: {
   transformacion: Transformacion;
   lotes: Lote[];
   almacenes: Almacen[];
+  productos: Producto[];
   onClose: () => void;
   onCompletada: () => void;
 }) {
@@ -802,6 +808,7 @@ function CompletarPCBModal({
   const [error, setError] = useState<string | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
 
   const actualizar = (uid: number, campo: Partial<FilaSalidaPCB>) => {
     setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
@@ -813,17 +820,12 @@ function CompletarPCBModal({
 
   const handleCompletar = async () => {
     setError(null);
-    if (filas.some(f => !f.loteDestinoId)) { setError('Selecciona el lote de destino en cada fila.'); return; }
-    if (filas.some(f => !f.almacenId)) { setError('Selecciona el almacén de destino en cada fila.'); return; }
-    if (filas.some(f => netoFila(f) <= 0)) { setError('Cada salida debe tener un peso neto mayor a 0.'); return; }
-    if (filas.some(f => f.loteDestinoId === transformacion.loteOrigenId)) {
-      setError('El lote destino debe ser distinto del lote origen.');
-      return;
-    }
-    if (totalSalidas > transformacion.pesoNeto + 0.01) {
-      setError(`La suma de las salidas (${fmt(totalSalidas)} kg) supera lo que entró (${fmt(transformacion.pesoNeto)} kg).`);
-      return;
-    }
+    const errorValidacion = validarSalidas(
+      'pcb',
+      filas.map(f => ({ ...f, neto: netoFila(f), cantidadFotos: f.fotos.length })),
+      { loteOrigenId: transformacion.loteOrigenId, pesoEntrada: transformacion.pesoNeto }
+    );
+    if (errorValidacion) { setError(errorValidacion); return; }
 
     setGuardando(true);
     const fotasPorFila = await Promise.all(filas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
@@ -832,15 +834,18 @@ function CompletarPCBModal({
       setGuardando(false);
       return;
     }
-    const salidas = filas.map((f, i) => ({
-      loteDestinoId: f.loteDestinoId,
-      almacenId: f.almacenId,
-      pesoBruto: Number(f.pesoBruto),
-      tara: Number(f.tara) || 0,
-      fotos: fotasPorFila[i] as string[],
-    }));
-
-    const result = await completarTransformacionPCB(transformacion.id, salidas);
+    const result = hayFilasMixtas('pcb', filas)
+      ? await completarTransformacionMixta(
+        transformacion.id,
+        filas.map((f, i) => armarSalidaMixta('pcb', f, Number(f.pesoBruto), Number(f.tara) || 0, fotasPorFila[i] as string[]))
+      )
+      : await completarTransformacionPCB(transformacion.id, filas.map((f, i) => ({
+        loteDestinoId: f.loteDestinoId,
+        almacenId: f.almacenId,
+        pesoBruto: Number(f.pesoBruto),
+        tara: Number(f.tara) || 0,
+        fotos: fotasPorFila[i] as string[],
+      })));
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     toast.exito('Transformación PCB completada.');
@@ -874,61 +879,26 @@ function CompletarPCBModal({
                   )}
                 </div>
                 <div className="space-y-2">
-                  <div>
-                    <label className={labelClass}>Lote de destino *</label>
-                    <button type="button" onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorLote(true); }}
-                      className={`${inputClass} flex items-center justify-between gap-2 text-left`}>
-                      <span className={f.loteDestinoId ? 'text-text-primary truncate' : 'text-text-muted'}>
-                        {loteDestino?.nombre ?? '-Selecciona el lote de destino-'}
-                      </span>
-                      <ChevronDown size={14} className="text-text-muted shrink-0" />
-                    </button>
-                  </div>
-                  <div>
-                    <label className={labelClass}>Almacén de destino *</label>
-                    <select required value={f.almacenId} onChange={e => actualizar(f.uid, { almacenId: e.target.value })} className={inputClass}>
-                      <option value="" disabled>-Selecciona dónde queda este lote-</option>
-                      {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                    </select>
-                    {/* La composición es POR (lote, almacén) — la de este
-                        destino en OTRO almacén no se muestra ni se toca. */}
-                    {loteDestino && f.almacenId && (() => {
-                      const enAlmacen = loteDestino.stockPorAlmacen.find(s => s.almacenId === f.almacenId);
-                      const stockDestino = enAlmacen?.stockKg ?? 0;
-                      const compDestino = enAlmacen?.composicion ?? [];
-                      const proyeccion = proyectarComposicion(stockDestino, compDestino, transformacion.entradaDetalle, netoFila(f));
-                      return (
-                        <>
-                          {compDestino.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              <span className="text-[10px] text-text-muted w-full mb-0.5">Composición actual del destino en este almacén:</span>
-                              {compDestino.map(c => (
-                                <span key={c.item} className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
-                                  {c.item}: {c.porcentaje}%
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {proyeccion.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              <span className="text-[10px] text-text-muted w-full mb-0.5">Composición estimada después de esta transformación:</span>
-                              {proyeccion.map(c => (
-                                <span
-                                  key={c.item}
-                                  className={`text-[11px] border rounded-full px-2 py-0.5 ${
-                                    c.esNuevo ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'
-                                  }`}
-                                  title={c.esNuevo ? 'Material nuevo en este lote en este almacén' : undefined}
-                                >
-                                  {c.esNuevo && '★ '}{c.item}: {c.porcentaje}%
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
+                  <SelectorTipoSalida valor={f.tipo} opciones={OPCIONES_TIPO_PCB} onCambiar={tipo => actualizar(f.uid, { tipo })} />
+                  {f.tipo === 'lote' ? (
+                    <BloqueLoteDestino
+                      lote={loteDestino}
+                      almacenId={f.almacenId}
+                      almacenes={almacenes}
+                      entradaDetalle={transformacion.entradaDetalle}
+                      neto={netoFila(f)}
+                      onElegirLote={() => { setFilaActivaUid(f.uid); setMostrarSelectorLote(true); }}
+                      onCambiarAlmacen={almacenId => actualizar(f.uid, { almacenId })}
+                    />
+                  ) : (
+                    <BloqueMaterialDestino
+                      nombreProducto={productos.find(p => p.id === f.productoId)?.nombre}
+                      almacenId={f.almacenId}
+                      almacenes={almacenes}
+                      onElegirProducto={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                      onCambiarAlmacen={almacenId => actualizar(f.uid, { almacenId })}
+                    />
+                  )}
                   <div>
                     <label className={labelClass}>Peso bruto de salida (kg) *</label>
                     <input type="number" step="0.001" min="0.001" value={f.pesoBruto}
@@ -957,7 +927,7 @@ function CompletarPCBModal({
           onClick={() => setFilas(prev => [...prev, filaSalidaPCBVacia()])}
           className="w-full flex items-center justify-center gap-1.5 py-2 border border-dashed border-border rounded-lg text-sm text-text-muted hover:text-text-secondary hover:border-brand-400 transition-colors mb-4"
         >
-          <Plus size={14} /> Agregar lote de destino
+          <Plus size={14} /> Agregar salida
         </button>
 
         <div className="bg-surface-alt rounded-lg p-3 mb-4 text-xs space-y-1 border border-border">
@@ -986,6 +956,13 @@ function CompletarPCBModal({
             entidades={lotes.filter(l => l.activo && l.id !== transformacion.loteOrigenId).map(l => ({ id: l.id, nombre: `${l.nombre} — ${fmt(l.stockKg)} kg`, fotos: l.fotos }))}
             onClose={() => setMostrarSelectorLote(false)}
             onSeleccionar={id => { if (filaActivaUid != null) actualizar(filaActivaUid, { loteDestinoId: id }); setMostrarSelectorLote(false); }}
+          />
+        )}
+        {mostrarSelectorMaterial && (
+          <SeleccionarMaterialModal
+            productos={productos}
+            onClose={() => setMostrarSelectorMaterial(false)}
+            onSeleccionar={id => { if (filaActivaUid != null) actualizar(filaActivaUid, { productoId: id }); setMostrarSelectorMaterial(false); }}
           />
         )}
       </div>
@@ -1264,6 +1241,7 @@ function TransformacionesPage() {
           transformacion={completando}
           lotes={lotes}
           almacenes={almacenes}
+          productos={productos}
           onClose={() => setCompletando(null)}
           onCompletada={() => { setCompletando(null); void cargar(); setTab('historial'); }}
         />
@@ -1274,6 +1252,8 @@ function TransformacionesPage() {
           productos={productos}
           taras={taras}
           salidasComunes={salidasComunes.filter(s => s.productoEntradaId === completando.productoEntradaId)}
+          lotes={lotes}
+          almacenes={almacenes}
           onClose={() => setCompletando(null)}
           onCompletada={() => { setCompletando(null); void cargar(); setTab('historial'); }}
         />
@@ -1308,7 +1288,7 @@ function TransformacionHistorialCard({ t }: { t: Transformacion }) {
         <div className="pl-11 mt-2 flex flex-wrap gap-2">
           {t.salidas.map(s => (
             <span key={s.id} className="text-xs bg-surface-alt border border-border rounded-full px-2.5 py-0.5 text-text-secondary">
-              {s.nombreProducto ?? s.nombreLoteDestino ?? '—'}: {fmt(s.pesoNeto)} kg
+              {etiquetaSalida(s)}: {fmt(s.pesoNeto)} kg
             </span>
           ))}
         </div>
@@ -1320,7 +1300,7 @@ function TransformacionHistorialCard({ t }: { t: Transformacion }) {
           {t.salidas.map(s => (
             <div key={s.id} className="flex justify-between text-xs text-text-secondary">
               <span>
-                → {s.nombreProducto ?? s.nombreLoteDestino ?? '—'}
+                → {etiquetaSalida(s)}
                 {s.nombreAlmacen && <span className="text-text-muted"> ({s.nombreAlmacen})</span>}
               </span>
               <span className="font-medium">{fmt(s.pesoNeto)} kg</span>
