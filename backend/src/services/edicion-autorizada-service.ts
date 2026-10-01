@@ -3,6 +3,7 @@ import { consumirLlave, liberarLlave } from './llave-edicion-service.js';
 import {
   edicionRequiereLlave,
   esSuperadminVigente,
+  llaveEdicionActiva,
   type UsuarioVigente,
 } from '../utils/llave-edicion.js';
 import type { EntidadConLlave } from '../utils/auditoria.js';
@@ -41,9 +42,9 @@ export async function esSuperadminEnBd(userId: string): Promise<boolean> {
 }
 
 /**
- * Decide si el actor puede editar el documento. Con REQUIRE_EDIT_KEY apagado
- * (default) pasa sin tocar la BD. Con el flag activo se relee el usuario en
- * la BD: un inactivo se rechaza y el rol vigente (no el del JWT) decide si
+ * Decide si el actor puede editar el documento. La llave está activa por defecto;
+ * solo con REQUIRE_EDIT_KEY=false pasa sin tocar la BD. Con la llave activa se
+ * relee el usuario en la BD: un inactivo se rechaza y el rol vigente (no el del JWT) decide si
  * necesita llave. Quien la necesita debe presentar una llave vigente, de un
  * solo uso y ligada a este documento; se consume aquí y `liberar` la devuelve
  * si la edición falla.
@@ -53,7 +54,7 @@ export async function autorizarEdicion(
   entidadTipo: EntidadConLlave,
   entidadId: string
 ): Promise<AutorizacionEdicion> {
-  if (process.env.REQUIRE_EDIT_KEY !== 'true') {
+  if (!llaveEdicionActiva()) {
     return { ok: true, autorizadoPor: null, liberar: SIN_LIBERAR };
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, FileDown, ZoomIn, X } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown, ZoomIn, X, Pencil } from 'lucide-react';
 import { obtenerTransformacion } from '../../services/transformacion-service';
 import { obtenerAlmacenes } from '../../services/almacen-service';
 import { obtenerUsuarios } from '../../services/usuario-service';
@@ -8,6 +8,11 @@ import { descargarTransformacionPDF } from '../../services/transformacion-export
 import { useAuth } from '../../hooks/use-auth-context';
 import FilaDocumento from '../../components/FilaDocumento';
 import ValoracionTransformacion from './ValoracionTransformacion';
+import EditarTransformacionModal from './EditarTransformacionModal';
+import HistorialEdiciones from '../../components/HistorialEdiciones';
+import GenerarLlaveEdicion from '../../components/GenerarLlaveEdicion';
+import { obtenerConfigLlaves } from '../../services/llave-service';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Transformacion } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -37,7 +42,10 @@ function construirGaleria(t: Transformacion): FotoGaleria[] {
 function TransformacionDetallePage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
+  const toast = useToast();
+  const esSuperadmin = usuario?.rol === 'superadmin';
+  const puedeEditar = tienePermiso('transformaciones', 'editar');
 
   const [t, setT] = useState<Transformacion | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -45,6 +53,12 @@ function TransformacionDetallePage() {
   const [nombreUsuario, setNombreUsuario] = useState<Map<string, string>>(new Map());
   const [fotoAmpliada, setFotoAmpliada] = useState<FotoGaleria | null>(null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [editando, setEditando] = useState(false);
+  // El servidor exige llave a no-superadmin (llave activa por defecto).
+  // Valor seguro hasta que responda el servidor: la llave está activa por defecto.
+  const [requiereLlave, setRequiereLlave] = useState(true);
+  // Cambia tras editar para que HistorialEdiciones se vuelva a cargar.
+  const [versionHistorial, setVersionHistorial] = useState(0);
 
   useEffect(() => {
     let cancelado = false;
@@ -59,6 +73,9 @@ function TransformacionDetallePage() {
     // Sin permiso de usuarios la lista llega vacía: los responsables se muestran como "—".
     obtenerUsuarios()
       .then(l => { if (!cancelado) setNombreUsuario(new Map(l.map(u => [u.id, u.nombre]))); })
+      .catch(() => undefined);
+    obtenerConfigLlaves()
+      .then(cfg => { if (!cancelado) setRequiereLlave(cfg.requiereLlave); })
       .catch(() => undefined);
     return () => { cancelado = true; };
   }, [id]);
@@ -118,7 +135,13 @@ function TransformacionDetallePage() {
           </p>
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
-          {/* Punto de enganche: botón "Editar" (master/llave) — lo implementa otro agente. */}
+          {esSuperadmin && puedeEditar && <GenerarLlaveEdicion entidadTipo="transformacion" entidadId={t.id} />}
+          {puedeEditar && (
+            <button type="button" onClick={() => setEditando(true)} className={botonClass} title="Editar fecha y notas">
+              <Pencil size={16} />
+              Editar
+            </button>
+          )}
           <button type="button" onClick={() => void descargarTransformacionPDF(t, nombres)} className={botonClass} title="Descargar PDF">
             <FileDown size={16} />
             PDF
@@ -225,6 +248,22 @@ function TransformacionDetallePage() {
           transformacion={t}
           puedeEditar={tienePermiso('transformaciones', 'editar')}
           onGuardada={setT}
+        />
+      )}
+
+      <HistorialEdiciones key={versionHistorial} entidadTipo="transformacion" entidadId={t.id} />
+
+      {editando && (
+        <EditarTransformacionModal
+          transformacion={t}
+          requiereLlave={requiereLlave && !esSuperadmin}
+          onClose={() => setEditando(false)}
+          onGuardada={nueva => {
+            setT(nueva);
+            setEditando(false);
+            setVersionHistorial(v => v + 1);
+            toast.exito('Transformación actualizada.');
+          }}
         />
       )}
 

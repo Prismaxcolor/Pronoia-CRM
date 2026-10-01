@@ -235,3 +235,28 @@ export async function borrarTransformacion(id: string): Promise<{ ok: true } | {
     return { error: err instanceof Error ? err.message : 'No se pudo cancelar la transformación.' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Edición de fecha/notas (protegida por llave y auditada en el servidor)
+// ---------------------------------------------------------------------------
+
+export interface EditarTransformacionInput {
+  fecha?: string;
+  notas?: string;
+  llaveEdicion?: string;
+}
+
+export async function editarTransformacion(
+  id: string,
+  input: EditarTransformacionInput
+): Promise<{ transformacion: Transformacion } | { error: string }> {
+  try {
+    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
+      `/api/transformaciones/${id}/editar`,
+      { method: 'PATCH', body: input }
+    );
+    return { transformacion };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo editar la transformación.' };
+  }
+}

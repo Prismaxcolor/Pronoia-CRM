@@ -1,6 +1,9 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { GuardarValoracionInput } from '../schemas/transformaciones-valoracion.js';
 import { obtenerTransformacion } from './transformacion-service.js';
+import { registrarAuditoria } from './auditoria-service.js';
+import { cambiosValoracion } from '../utils/edicion-transformacion.js';
+import type { ActorEdicion } from './edicion-autorizada-service.js';
 
 /**
  * Valoración de una transformación (ancla opcional a factura de compra).
@@ -87,12 +90,14 @@ function traducirError(err: { code?: string; message?: string }): GuardarValorac
  *  Campo undefined = sin cambios; null = borrar. */
 export async function guardarValoracion(
   transformacionId: string,
-  input: GuardarValoracionInput
+  input: GuardarValoracionInput,
+  actor?: Pick<ActorEdicion, 'userId' | 'email'>
 ): Promise<GuardarValoracionResult> {
   if (input.facturaCompraId && !(await validarFactura(input.facturaCompraId))) {
     return { ok: false, status: 400, error: 'La factura de compra indicada no existe.' };
   }
 
+  const antes = actor ? await leerValoracion(transformacionId) : null;
   const { error } = await supabaseAdmin.rpc('guardar_valoracion_transformacion', {
     p_id: transformacionId,
     p_factura_compra_id: input.facturaCompraId ?? null,
@@ -101,7 +106,33 @@ export async function guardarValoracion(
     p_set_factura: input.facturaCompraId !== undefined,
     p_set_costo: input.costoUnitario !== undefined,
   });
-  return error ? traducirError(error) : { ok: true };
+  if (error) return traducirError(error);
+  if (actor) await auditarValoracion(transformacionId, actor, antes);
+  return { ok: true };
+}
+
+/** Auditoría de la valoración (accion 'valoracion'): SIN llave — es análisis de
+ *  precios, no altera el documento. Tolerante: registrarAuditoria no lanza y
+ *  cualquier fallo de lectura aquí se ignora. */
+async function auditarValoracion(
+  id: string,
+  actor: Pick<ActorEdicion, 'userId' | 'email'>,
+  antes: ValoracionPublica | null
+): Promise<void> {
+  try {
+    const cambios = cambiosValoracion(antes, await leerValoracion(id));
+    if (Object.keys(cambios).length === 0) return;
+    await registrarAuditoria({
+      entidadTipo: 'transformacion',
+      entidadId: id,
+      accion: 'valoracion',
+      usuarioId: actor.userId,
+      usuarioEmail: actor.email,
+      cambios,
+    });
+  } catch {
+    // la auditoría nunca debe romper el guardado
+  }
 }
 
 /** Transformación base + campos de valoración (opcionales: ausentes si la migración no está aplicada). */

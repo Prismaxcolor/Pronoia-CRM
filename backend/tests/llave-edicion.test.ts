@@ -111,21 +111,20 @@ describe('expiración y uso único', () => {
 });
 
 describe('regla de permiso: edicionRequiereLlave', () => {
-  it('con el flag apagado nadie necesita llave (comportamiento actual)', () => {
-    expect(edicionRequiereLlave('administracion', undefined)).toBe(false);
-    expect(edicionRequiereLlave('trabajador', 'false')).toBe(false);
-    expect(edicionRequiereLlave('administracion', '')).toBe(false);
-  });
-
-  it('con el flag en true, todo rol salvo superadmin necesita llave', () => {
+  it('la llave está activa por defecto: sin variable, todo rol salvo superadmin la necesita', () => {
+    expect(edicionRequiereLlave('administracion', undefined)).toBe(true);
+    expect(edicionRequiereLlave('trabajador', undefined)).toBe(true);
+    expect(edicionRequiereLlave('administracion', '')).toBe(true);
     expect(edicionRequiereLlave('administracion', 'true')).toBe(true);
-    expect(edicionRequiereLlave('trabajador', 'true')).toBe(true);
+    expect(edicionRequiereLlave('superadmin', undefined)).toBe(false);
     expect(edicionRequiereLlave('superadmin', 'true')).toBe(false);
   });
 
-  it('solo el valor exacto "true" activa el flag', () => {
-    expect(edicionRequiereLlave('administracion', 'TRUE')).toBe(false);
-    expect(edicionRequiereLlave('administracion', '1')).toBe(false);
+  it('solo el valor exacto "false" la apaga (interruptor de emergencia)', () => {
+    expect(edicionRequiereLlave('administracion', 'false')).toBe(false);
+    expect(edicionRequiereLlave('trabajador', 'false')).toBe(false);
+    expect(edicionRequiereLlave('administracion', 'FALSE')).toBe(true);
+    expect(edicionRequiereLlave('administracion', '0')).toBe(true);
   });
 
   it('cada entidad auditable mapea a un recurso cuyo permiso ver tiene el superadmin', () => {
@@ -232,12 +231,13 @@ describe("esSuperadminVigente (rol releído de la BD)", () => {
 });
 
 describe("entidades con llave", () => {
-  it("hoy solo los tickets aceptan llave", () => {
-    expect([...ENTIDADES_CON_LLAVE]).toEqual(["ticket_pesaje"]);
+  it("hoy aceptan llave los tickets de pesaje y las transformaciones", () => {
+    expect([...ENTIDADES_CON_LLAVE]).toEqual(["ticket_pesaje", "transformacion"]);
   });
 
-  it("crearLlaveSchema rechaza factura y transformación (sin llave conectada)", () => {
-    for (const tipo of ["factura_compra", "factura_venta", "transformacion"]) {
+  it("crearLlaveSchema acepta transformación y rechaza facturas (no tienen edición)", () => {
+    expect(crearLlaveSchema.safeParse({ entidadTipo: "transformacion", entidadId: UUID }).success).toBe(true);
+    for (const tipo of ["factura_compra", "factura_venta"]) {
       expect(crearLlaveSchema.safeParse({ entidadTipo: tipo, entidadId: UUID }).success).toBe(false);
     }
   });

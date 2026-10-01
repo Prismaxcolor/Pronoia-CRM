@@ -10,18 +10,18 @@ export const ENTIDADES_AUDITABLES = [
 export type EntidadAuditable = (typeof ENTIDADES_AUDITABLES)[number];
 
 /**
- * Entidades para las que hoy se exige llave de edición. REQUIRE_EDIT_KEY solo
- * está conectado a la edición de tickets; factura y transformación son
- * auditables pero NO aceptan llave hasta que su edición llame a
- * autorizarEdicion(). Para conectarlas: agregar el tipo aquí y su tabla en
- * TABLA_POR_ENTIDAD.
+ * Entidades cuya edición exige llave. Ticket de pesaje y transformación llaman
+ * a autorizarEdicion(). Las facturas son auditables pero hoy no tienen edición
+ * (solo se crean), así que no aceptan llave; para conectarlas: agregar el tipo
+ * aquí, su tabla en TABLA_POR_ENTIDAD y llamar a autorizarEdicion() al editar.
  */
-export const ENTIDADES_CON_LLAVE = ['ticket_pesaje'] as const satisfies readonly EntidadAuditable[];
+export const ENTIDADES_CON_LLAVE = ['ticket_pesaje', 'transformacion'] as const satisfies readonly EntidadAuditable[];
 export type EntidadConLlave = (typeof ENTIDADES_CON_LLAVE)[number];
 
 /** Tabla donde vive cada entidad (para verificar que existe antes de emitir una llave). */
 export const TABLA_POR_ENTIDAD: Record<EntidadConLlave, string> = {
   ticket_pesaje: 'tickets_pesaje',
+  transformacion: 'transformaciones',
 };
 
 /** Recurso cuyo permiso 'ver' habilita leer el historial de cada entidad. */

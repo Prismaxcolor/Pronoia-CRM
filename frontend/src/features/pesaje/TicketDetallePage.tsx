@@ -51,8 +51,8 @@ function TicketDetallePage() {
   const { tienePermiso, usuario } = useAuth();
   const toast = useToast();
   const esSuperadmin = usuario?.rol === 'superadmin';
-  // El servidor exige llave solo con REQUIRE_EDIT_KEY=true y a no-superadmin.
-  const [requiereLlave, setRequiereLlave] = useState(false);
+  // El servidor exige llave a todo no-superadmin (activa por defecto; solo REQUIRE_EDIT_KEY=false la apaga).
+  const [requiereLlave, setRequiereLlave] = useState(true);
   const [llaveEdicion, setLlaveEdicion] = useState('');
 
   const puedeEditar = tienePermiso('pesaje', 'editar');

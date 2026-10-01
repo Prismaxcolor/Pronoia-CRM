@@ -27,12 +27,13 @@ export async function generarLlaveEdicion(
   }
 }
 
-/** Si el servidor exige llave al usuario actual para editar (REQUIRE_EDIT_KEY).
- *  Ante cualquier fallo asume que no, para no mostrar un campo que no aplica. */
+/** Si el servidor exige llave al usuario actual para editar. La llave está activa
+ *  por defecto, así que ante cualquier fallo se asume que SÍ (el superadmin no la
+ *  muestra de todos modos): mejor un campo de más que un 403 sin dónde escribirla. */
 export async function obtenerConfigLlaves(): Promise<ConfigLlaves> {
   try {
     return await apiFetch<ConfigLlaves>('/api/llaves-edicion/config');
   } catch {
-    return { requiereLlave: false, vigenciaMinutos: 15 };
+    return { requiereLlave: true, vigenciaMinutos: 15 };
   }
 }

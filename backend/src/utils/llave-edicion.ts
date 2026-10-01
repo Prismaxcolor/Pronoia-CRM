@@ -78,13 +78,20 @@ export function esSuperadminVigente(u: UsuarioVigente | null): boolean {
 }
 
 /**
- * Regla de permiso: con REQUIRE_EDIT_KEY==='true', todo rol distinto de
- * superadmin necesita llave para editar. Con el flag apagado (default) nadie
- * la necesita y el comportamiento es el de siempre.
+ * La exigencia de llave está ACTIVA por defecto. Solo se apaga poniendo
+ * REQUIRE_EDIT_KEY=false (interruptor de emergencia sin cambiar código).
+ */
+export function llaveEdicionActiva(flag: string | undefined = process.env.REQUIRE_EDIT_KEY): boolean {
+  return flag !== 'false';
+}
+
+/**
+ * Regla de permiso: con la llave activa, todo rol distinto de superadmin
+ * necesita llave para editar. El superadmin edita siempre sin llave.
  */
 export function edicionRequiereLlave(
   rol: RolUsuario,
   flag: string | undefined = process.env.REQUIRE_EDIT_KEY
 ): boolean {
-  return flag === 'true' && rol !== 'superadmin';
+  return llaveEdicionActiva(flag) && rol !== 'superadmin';
 }

@@ -23,6 +23,8 @@ import {
   completarTransformacionPCBSchema,
 } from '../schemas/transformaciones.js';
 import { guardarValoracionSchema } from '../schemas/transformaciones-valoracion.js';
+import { editarTransformacionSchema, type EditarTransformacionInput } from '../schemas/transformaciones-editar.js';
+import { editarTransformacion } from '../services/transformacion-edicion-service.js';
 import {
   guardarValoracion,
   obtenerTransformacionConValoracion,
@@ -92,7 +94,7 @@ router.patch(
   validateBody(guardarValoracionSchema),
   async (req, res) => {
     const id = String(req.params.id);
-    const result = await guardarValoracion(id, req.body);
+    const result = await guardarValoracion(id, req.body, { userId: req.user!.sub, email: req.user!.email });
     if (!result.ok) {
       res.status(result.status).json({ error: result.error });
       return;
@@ -100,6 +102,29 @@ router.patch(
     logger.info({ evento: 'transformacion_valoracion_guardada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: id });
     const transformacion = await obtenerTransformacionConValoracion(id);
     res.json({ transformacion });
+  }
+);
+
+// Edición de fecha/notas (no pesos ni salidas): protegida por llave y auditada.
+router.patch(
+  '/:id/editar',
+  requirePermiso('transformaciones', 'editar'),
+  validateBody(editarTransformacionSchema),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const { llaveEdicion, ...datos } = req.body as EditarTransformacionInput;
+    const result = await editarTransformacion(id, datos, {
+      userId: req.user!.sub,
+      email: req.user!.email,
+      rol: req.user!.rol,
+      llave: llaveEdicion || undefined,
+    });
+    if ('error' in result) {
+      res.status(result.codigo).json({ error: result.error });
+      return;
+    }
+    logger.info({ evento: 'transformacion_editada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: id });
+    res.json({ transformacion: result.transformacion });
   }
 );
 

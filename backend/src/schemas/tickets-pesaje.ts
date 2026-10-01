@@ -158,7 +158,7 @@ export const editarTicketSchema = z
       .optional()
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),
-    /** Llave de un solo uso entregada por el superadmin; solo se exige con REQUIRE_EDIT_KEY=true. */
+    /** Llave de un solo uso entregada por el superadmin; se exige a todo rol distinto de superadmin (salvo REQUIRE_EDIT_KEY=false). */
     llaveEdicion: z.string().trim().max(32).optional(),
   })
   .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {
