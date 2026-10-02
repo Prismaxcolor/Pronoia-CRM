@@ -130,26 +130,28 @@ function CompletarFerrosoModal({
 
   const handleCompletar = async () => {
     setError(null);
+    // Salida a lote: el material que entra al lote es el de entrada de la transformación.
+    const filasEfectivas = filas.map(f => (f.tipo === 'lote' ? { ...f, productoId: transformacion.productoEntradaId ?? '' } : f));
     const errorValidacion = validarSalidas(
       'ferroso_no_ferroso',
-      filas.map(f => ({ ...f, neto: netoFila(f), cantidadFotos: f.fotos.length })),
+      filasEfectivas.map(f => ({ ...f, neto: netoFila(f), cantidadFotos: f.fotos.length })),
       { pesoEntrada: transformacion.pesoNeto }
     );
     if (errorValidacion) { setError(errorValidacion); return; }
 
     setGuardando(true);
-    const fotasPorFila = await Promise.all(filas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
+    const fotasPorFila = await Promise.all(filasEfectivas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
     if (fotasPorFila.some(urls => urls === null)) {
       setError('No se pudo subir una de las fotos. Intenta de nuevo.');
       setGuardando(false);
       return;
     }
-    const result = hayFilasMixtas('ferroso_no_ferroso', filas)
+    const result = hayFilasMixtas('ferroso_no_ferroso', filasEfectivas)
       ? await completarTransformacionMixta(
         transformacion.id,
-        filas.map((f, i) => armarSalidaMixta('ferroso_no_ferroso', f, Number(f.pesoBruto), taraKgFila(f, taras), fotasPorFila[i] as string[]))
+        filasEfectivas.map((f, i) => armarSalidaMixta('ferroso_no_ferroso', f, Number(f.pesoBruto), taraKgFila(f, taras), fotasPorFila[i] as string[]))
       )
-      : await completarTransformacionFerroso(transformacion.id, filas.map((f, i): CompletarTransformacionFerrosoSalidaInput => ({
+      : await completarTransformacionFerroso(transformacion.id, filasEfectivas.map((f, i): CompletarTransformacionFerrosoSalidaInput => ({
         productoId: f.productoId,
         pesoBruto: Number(f.pesoBruto),
         tara: taraKgFila(f, taras),
@@ -187,25 +189,27 @@ function CompletarFerrosoModal({
               </div>
               <div className="space-y-2">
                 <SelectorTipoSalida valor={f.tipo} opciones={OPCIONES_TIPO_FERROSO} onCambiar={tipo => actualizar(f.uid, { tipo })} />
-                <div>
-                  <label className={labelClass}>Material *</label>
-                  <button
-                    type="button"
-                    onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
-                    className={`${inputClass} flex items-center justify-between gap-2 text-left`}
-                  >
-                    <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
-                      {productos.find(p => p.id === f.productoId)?.nombre ?? '-Selecciona-'}
-                    </span>
-                    <ChevronDown size={14} className="text-text-muted shrink-0" />
-                  </button>
-                </div>
+                {f.tipo === 'material' && (
+                  <div>
+                    <label className={labelClass}>Material *</label>
+                    <button
+                      type="button"
+                      onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                      className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                    >
+                      <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                        {productos.find(p => p.id === f.productoId)?.nombre ?? '-Selecciona-'}
+                      </span>
+                      <ChevronDown size={14} className="text-text-muted shrink-0" />
+                    </button>
+                  </div>
+                )}
                 {f.tipo === 'lote' && (
                   <BloqueLoteDestino
                     lote={lotes.find(l => l.id === f.loteDestinoId)}
                     almacenId={f.almacenId}
                     almacenes={almacenes}
-                    entradaDetalle={[{ productoId: f.productoId, nombreProducto: productos.find(p => p.id === f.productoId)?.nombre ?? '', pesoKg: 1 }]}
+                    entradaDetalle={[{ productoId: transformacion.productoEntradaId ?? '', nombreProducto: transformacion.nombreProductoEntrada ?? '', pesoKg: 1 }]}
                     neto={netoFila(f)}
                     onElegirLote={() => { setFilaActivaUid(f.uid); setMostrarSelectorLote(true); }}
                     onCambiarAlmacen={almacenId => actualizar(f.uid, { almacenId })}

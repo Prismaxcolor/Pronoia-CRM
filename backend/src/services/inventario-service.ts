@@ -752,6 +752,71 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   );
 }
 
+const UMBRAL_STOCK_KG = 0.005;
+
+export interface LoteAlmacenParaDesglose {
+  loteId: string;
+  nombreLote: string | null;
+  /** Stock real del lote en el almacén (stock_lote_por_almacen). */
+  stockTotalAlmacen: number;
+  /** Stock del lote en el almacén atribuido a productos (stock_lote_almacen_por_producto). */
+  stockPorProducto: readonly number[];
+}
+
+export interface LoteSinDesglose {
+  loteId: string;
+  nombreLote: string | null;
+  neto: number;
+}
+
+/** Kilos de cada lote en un almacén que ningún producto explica: total real
+ *  menos la suma por producto. Función pura. Un resto negativo se conserva
+ *  (es un faltante real); solo se descarta el ruido de redondeo. */
+export function calcularLotesSinDesglose(lotes: readonly LoteAlmacenParaDesglose[]): LoteSinDesglose[] {
+  return lotes
+    .map(l => ({
+      loteId: l.loteId,
+      nombreLote: l.nombreLote,
+      neto: l.stockTotalAlmacen - l.stockPorProducto.reduce((acc, kg) => acc + kg, 0),
+    }))
+    .filter(l => Math.abs(l.neto) >= UMBRAL_STOCK_KG);
+}
+
+const LOTES_POR_TANDA = 10;
+const MAX_LOTES_DESGLOSE = 5000;
+
+async function filaLoteAlmacen(l: { id: string; nombre: string | null }, almacenId: string): Promise<LoteAlmacenParaDesglose | null> {
+  const [totales, porProducto] = await Promise.all([
+    supabaseAdmin.rpc('stock_lote_por_almacen', { p_lote_id: l.id }),
+    supabaseAdmin.rpc('stock_lote_almacen_por_producto', { p_lote_id: l.id, p_almacen_id: almacenId }),
+  ]);
+  if (totales.error || porProducto.error) {
+    // Un lote que falla no debe tumbar el inventario completo del almacén.
+    console.error('[inventario] desglose de lote falló', l.id, totales.error ?? porProducto.error);
+    return null;
+  }
+  const enAlmacen = (totales.data as Array<{ almacen_id: string; stock: number }> | null)?.find(r => r.almacen_id === almacenId);
+  return {
+    loteId: l.id,
+    nombreLote: l.nombre,
+    stockTotalAlmacen: Number(enAlmacen?.stock ?? 0),
+    stockPorProducto: ((porProducto.data as Array<{ stock: number }> | null) ?? []).map(r => Number(r.stock)),
+  };
+}
+
+async function cargarLotesSinDesglose(almacenId: string): Promise<LoteSinDesglose[]> {
+  const { data, error } = await supabaseAdmin.from('lotes').select('id, nombre').limit(MAX_LOTES_DESGLOSE);
+  if (error) throw error;
+  const lotes = (data as Array<{ id: string; nombre: string | null }> | null) ?? [];
+
+  const filas: LoteAlmacenParaDesglose[] = [];
+  for (let i = 0; i < lotes.length; i += LOTES_POR_TANDA) {
+    const tanda = await Promise.all(lotes.slice(i, i + LOTES_POR_TANDA).map(l => filaLoteAlmacen(l, almacenId)));
+    for (const f of tanda) if (f) filas.push(f);
+  }
+  return calcularLotesSinDesglose(filas);
+}
+
 /**
  * Inventario propio de UN almacén — llama directamente a stock_almacen() en
  * SQL (fuente única corregida en la Fase 3 del plan de consolidación,
@@ -805,45 +870,27 @@ export async function obtenerInventarioAlmacen(
     g.totalKg += stock;
   }
 
-  // Ajustes de toma física SIN desglose por producto (lote PCB contado como
-  // un todo — ver AjusteTomaInventario). stock_lote_por_producto() exige
-  // producto_id, así que stock_almacen() nunca puede atribuir estos kg a
-  // ningún producto real: sin esto, un lote cuyo único movimiento fuera una
-  // toma física (caso real, 16-sep-2026: BGYP/BGPP en ALMACEN G1)
-  // desaparecía por completo al filtrar por almacén, aunque sí se veía en
-  // "Todos" (obtenerInventario() ya maneja este mismo caso con la misma
-  // línea sintética, sin filtrar por almacén). Mismo criterio: se muestra
-  // siempre, sin importar tipoMaterialId/productoId (esos filtros no aplican
-  // a una línea que no tiene producto).
-  const { data: ajustesLoteData } = await supabaseAdmin
-    .from('ajustes_inventario')
-    .select('lote_id, diferencia, lotes(nombre)')
-    .eq('almacen_id', almacenId)
-    .is('producto_id', null)
-    .not('lote_id', 'is', null);
-
-  const ajusteNetoPorLote = new Map<string, { nombreLote: string | null; neto: number }>();
-  for (const a of (ajustesLoteData as unknown as Array<{
-    lote_id: string;
-    diferencia: number;
-    lotes?: { nombre: string } | null;
-  }> | null) ?? []) {
-    const existing = ajusteNetoPorLote.get(a.lote_id);
-    if (existing) existing.neto += Number(a.diferencia);
-    else ajusteNetoPorLote.set(a.lote_id, { nombreLote: a.lotes?.nombre ?? null, neto: Number(a.diferencia) });
-  }
-  for (const [loteId, info] of ajusteNetoPorLote) {
-    if (Math.abs(info.neto) < 0.005) continue;
+  // Kilos de lote que ningún producto puede atribuirse en este almacén
+  // (lote contado como un todo en una toma física, y los traslados de ese
+  // lote: sus filas de composición no traen producto). stock_almacen()
+  // solo devuelve producto_id reales, así que sin esto el filtro por
+  // almacén mostraba solo el ajuste y no el stock real (ej. BGPP en G1:
+  // ajuste 12293.9 − traslado 9 = 12284.9). Se calcula contra el stock
+  // real del lote en el almacén (mismo cálculo que stock_lote_por_almacen).
+  // Se muestra siempre, sin importar tipoMaterialId/productoId (esos
+  // filtros no aplican a una línea que no tiene producto).
+  const sinDesglose = await cargarLotesSinDesglose(almacenId);
+  for (const info of sinDesglose) {
     let g = grupos.get(LOTE_ADJ_CLAVE);
     if (!g) {
       g = { tipoMaterialId: null, nombreCategoria: LOTE_ADJ_CATEGORIA, totalKg: 0, articulos: [] };
       grupos.set(LOTE_ADJ_CLAVE, g);
     }
     g.articulos.push({
-      productoId: `${LOTE_ADJ_CLAVE}${loteId}`,
-      nombre: `${info.nombreLote ?? 'Lote'} — ajuste de inventario`,
+      productoId: `${LOTE_ADJ_CLAVE}${info.loteId}`,
+      nombre: `${info.nombreLote ?? 'Lote'} — sin desglose por material`,
       destinoTipo: 'lote',
-      loteId,
+      loteId: info.loteId,
       destinoLabel: info.nombreLote ?? 'Lote',
       entradas: 0,
       salidas: 0,
