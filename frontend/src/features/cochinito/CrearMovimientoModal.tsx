@@ -274,7 +274,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
                       key={key}
                       type="button"
                       onClick={() => { setTasaFuente(key); setMontoDestinoTocado(false); }}
-                      className={`px-3 py-1.5 ${tasaFuente === key ? 'bg-blue-600 text-white' : 'bg-surface text-text-secondary'}`}
+                      className={`px-3 py-1.5 ${tasaFuente === key ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}
                     >
                       {label}{tasas[key] != null ? ` (${tasas[key]!.toLocaleString('es-VE', { maximumFractionDigits: 2 })})` : ''}
                     </button>
@@ -392,7 +392,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
               className={`flex-1 py-2.5 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
                 colorTipo === 'green' ? 'bg-green-600 hover:bg-green-700' :
                 colorTipo === 'red' ? 'bg-red-600 hover:bg-red-700' :
-                'bg-blue-600 hover:bg-blue-700'
+                'bg-brand-600 hover:bg-brand-700'
               }`}
             >
               {guardando ? 'Registrando...' : `Registrar ${tipo}`}

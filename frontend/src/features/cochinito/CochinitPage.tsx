@@ -16,7 +16,7 @@ import BancaFormModal from './BancaFormModal';
 const TIPO_MOV_ICON: Record<TipoMovimiento, React.ReactNode> = {
   ingreso: <ArrowDownLeft size={16} className="text-green-600" />,
   egreso: <ArrowUpRight size={16} className="text-red-600" />,
-  transferencia: <ArrowLeftRight size={16} className="text-blue-600" />,
+  transferencia: <ArrowLeftRight size={16} className="text-brand-600" />,
 };
 
 const TIPO_BANCA_ICON: Record<TipoBanca, React.ReactNode> = {
@@ -460,7 +460,7 @@ function CochinitPage() {
                     <p className={`text-sm font-bold ${
                       mov.tipo === 'ingreso' ? 'text-green-600' :
                       mov.tipo === 'egreso' ? 'text-red-600' :
-                      'text-blue-600'
+                      'text-brand-600'
                     }`}>
                       {mov.tipo === 'ingreso' ? '+' : mov.tipo === 'egreso' ? '-' : ''}
                       {mov.moneda === 'USD' ? '$' : 'Bs '}
