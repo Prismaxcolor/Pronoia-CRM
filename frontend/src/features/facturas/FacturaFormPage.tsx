@@ -180,8 +180,8 @@ function FacturaFormPage({ tipo }: Props) {
     if (ticketIds.length === 0) { setError('Selecciona al menos un ticket de pesaje.'); return; }
     if (lineas.some(l => !l.productoId)) { setError('Selecciona un material en cada fila.'); return; }
     if (lineas.some(l => (Number(l.peso) || 0) <= 0)) { setError('Cada material debe tener un peso mayor a 0.'); return; }
-    // En compra el precio puede ser 0 (material recibido sin costo); en venta no.
-    const precioMinimoValido = (l: LineaFila) => l.precioUnitario !== '' && (esCompra ? Number(l.precioUnitario) >= 0 : Number(l.precioUnitario) > 0);
+    // El precio puede ser 0 (material sin costo) tanto en compra como en venta.
+    const precioMinimoValido = (l: LineaFila) => l.precioUnitario !== '' && Number(l.precioUnitario) >= 0;
     if (lineas.some(l => !precioMinimoValido(l))) {
       setError('Cada material debe tener un precio unitario (puede ser 0).');
       return;
