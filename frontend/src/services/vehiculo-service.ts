@@ -3,7 +3,13 @@ import type { Vehiculo } from '@shared/types/index.js';
 
 export interface VehiculoInput {
   nombre: string;
+  placa?: string | null;
+  marca?: string | null;
+  modelo?: string | null;
+  color?: string | null;
+  conductor?: string | null;
   descripcion?: string | null;
+  fotos?: string[];
 }
 
 export async function obtenerVehiculos(): Promise<Vehiculo[]> {

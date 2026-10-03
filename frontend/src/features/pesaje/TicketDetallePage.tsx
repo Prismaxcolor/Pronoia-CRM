@@ -8,6 +8,8 @@ import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
 import { obtenerVehiculos } from '../../services/vehiculo-service';
 import VehiculoSelector from '../../components/VehiculoSelector';
+import VehiculoResumen from '../../components/VehiculoResumen';
+import { buscarVehiculoPorTexto } from '../../lib/vehiculo';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -69,7 +71,8 @@ function TicketDetallePage() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
-  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  // Catálogo completo (incluye inactivos): el detalle muestra la foto aunque el vehículo ya se haya desactivado.
+  const [catalogoVehiculos, setCatalogoVehiculos] = useState<Vehiculo[]>([]);
 
   const [editando, setEditando] = useState(false);
   const [avisosFactura, setAvisosFactura] = useState<AvisoFacturaTicket[]>([]);
@@ -105,7 +108,7 @@ function TicketDetallePage() {
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
     obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
-    obtenerVehiculos().then(lista => setVehiculos(lista.filter(v => v.activo)));
+    obtenerVehiculos().then(setCatalogoVehiculos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -278,6 +281,8 @@ function TicketDetallePage() {
   }
 
   const esCompra = ticket.tipo === 'compra';
+  const vehiculosActivos = catalogoVehiculos.filter(v => v.activo);
+  const vehiculoDelCatalogo = buscarVehiculoPorTexto(ticket.vehiculo, catalogoVehiculos);
   // Con llave se edita aunque el rol no tenga 'pesaje:editar' y aunque el ticket esté facturado.
   const puedeUsarLlave = requiereLlave && !esSuperadmin;
   const puedeEditarEsteTicket = (puedeEditar || puedeUsarLlave) && ticket.estado !== 'bruto' && !ticket.ticketPrincipalId;
@@ -376,6 +381,7 @@ function TicketDetallePage() {
           <div className="mb-6">
             <FilaDocumento label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
             {ticket.vehiculo && <FilaDocumento label="Vehículo" valor={ticket.vehiculo} />}
+            {vehiculoDelCatalogo && <div className="print:hidden pb-2"><VehiculoResumen vehiculo={vehiculoDelCatalogo} /></div>}
             {ticket.observaciones && <FilaDocumento label="Observaciones" valor={ticket.observaciones} />}
           </div>
 
@@ -656,7 +662,7 @@ function TicketDetallePage() {
             )}
           </div>
 
-          <VehiculoSelector value={vehiculoEdit} onChange={setVehiculoEdit} vehiculos={vehiculos} inputClass={inputClass} labelClass={labelClass} />
+          <VehiculoSelector value={vehiculoEdit} onChange={setVehiculoEdit} vehiculos={vehiculosActivos} inputClass={inputClass} labelClass={labelClass} />
 
           <div>
             <label className={labelClass}>Observaciones</label>

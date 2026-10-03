@@ -5,7 +5,14 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import VehiculoFormModal from './VehiculoFormModal';
+import VisorFotos from '../../components/VisorFotos';
+import { etiquetaVehiculo } from '../../lib/vehiculo';
 import type { Vehiculo } from '@shared/types/index.js';
+
+/** Datos secundarios en una línea: marca, modelo, color, chofer y descripción. */
+function detalle(v: Vehiculo): string {
+  return [v.marca, v.modelo, v.color, v.conductor ? `Chofer: ${v.conductor}` : null, v.descripcion].filter(Boolean).join(' · ');
+}
 
 const botonIcono = 'p-1.5 rounded-md hover:bg-surface-alt text-text-muted transition-colors';
 
@@ -19,6 +26,7 @@ function VehiculosPage() {
 
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [visor, setVisor] = useState<{ fotos: string[]; indice: number } | null>(null);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; vehiculo: Vehiculo | null } | { abierto: false }>({ abierto: false });
 
   const recargar = () => obtenerVehiculos().then(setVehiculos).finally(() => setCargando(false));
@@ -82,17 +90,32 @@ function VehiculosPage() {
         <div className="bg-surface rounded-xl border border-border overflow-hidden">
           {vehiculos.map(v => (
             <div key={v.id} className={`flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0 ${!v.activo ? 'opacity-60' : ''}`}>
-              <div className="w-11 h-11 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
-                <Car size={18} />
-              </div>
+              {v.fotos[0] ? (
+                <button
+                  type="button"
+                  onClick={() => setVisor({ fotos: v.fotos, indice: 0 })}
+                  className="relative w-11 h-11 rounded-lg overflow-hidden border border-border shrink-0"
+                  title="Ver fotos"
+                >
+                  <img src={v.fotos[0]} alt={`Foto de ${etiquetaVehiculo(v)}`} className="w-full h-full object-cover" />
+                  {v.fotos.length > 1 && (
+                    <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1 rounded-tl">{v.fotos.length}</span>
+                  )}
+                </button>
+              ) : (
+                <div className="w-11 h-11 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
+                  <Car size={18} />
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-text-primary text-sm truncate">{v.nombre}</h3>
+                  <h3 className="font-semibold text-text-primary text-sm truncate">{v.placa ?? v.nombre}</h3>
+                  {v.placa && <span className="text-sm text-text-secondary truncate">· {v.nombre}</span>}
                   {!v.activo && (
                     <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full shrink-0">Inactivo</span>
                   )}
                 </div>
-                {v.descripcion && <p className="text-xs text-text-muted truncate">{v.descripcion}</p>}
+                {detalle(v) && <p className="text-xs text-text-muted truncate">{detalle(v)}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {puedeEditar && (
@@ -119,6 +142,10 @@ function VehiculosPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {visor && (
+        <VisorFotos fotos={visor.fotos} indice={visor.indice} onCambiar={i => setVisor({ ...visor, indice: i })} onCerrar={() => setVisor(null)} alt="Foto del vehículo ampliada" />
       )}
 
       {formAbierto.abierto && (

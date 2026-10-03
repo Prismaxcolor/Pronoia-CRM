@@ -93,7 +93,7 @@ export const crearTicketSchema = z
     vehiculo: z
       .string()
       .trim()
-      .max(50)
+      .max(100)
       .optional()
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),
@@ -158,7 +158,7 @@ export const editarTicketSchema = z
     vehiculo: z
       .string()
       .trim()
-      .max(50)
+      .max(100)
       .optional()
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),

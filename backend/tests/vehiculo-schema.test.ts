@@ -4,17 +4,17 @@ import { crearTicketSchema } from '../src/schemas/tickets-pesaje.js';
 
 describe('crearVehiculoSchema', () => {
   it('acepta solo placa/nombre', () => {
-    const r = crearVehiculoSchema.safeParse({ nombre: ' ABC-123 ' });
-    expect(r.success && r.data).toEqual({ nombre: 'ABC-123', descripcion: null });
+    const r = crearVehiculoSchema.safeParse({ nombre: ' ABC-123 ', placa: 'abc-123' });
+    expect(r.success && r.data).toMatchObject({ nombre: 'ABC-123', placa: 'ABC-123', descripcion: null });
   });
 
   it('acepta descripcion y la normaliza', () => {
-    const r = crearVehiculoSchema.safeParse({ nombre: 'ABC-123', descripcion: '  Camión 350 ' });
+    const r = crearVehiculoSchema.safeParse({ nombre: 'ABC-123', placa: 'P1', descripcion: '  Camión 350 ' });
     expect(r.success && r.data.descripcion).toBe('Camión 350');
   });
 
   it('descripcion vacía pasa a null', () => {
-    const r = crearVehiculoSchema.safeParse({ nombre: 'ABC-123', descripcion: '   ' });
+    const r = crearVehiculoSchema.safeParse({ nombre: 'ABC-123', placa: 'P1', descripcion: '   ' });
     expect(r.success && r.data.descripcion).toBeNull();
   });
 
@@ -23,7 +23,7 @@ describe('crearVehiculoSchema', () => {
   });
 
   it('rechaza descripcion de más de 200 caracteres', () => {
-    expect(crearVehiculoSchema.safeParse({ nombre: 'A', descripcion: 'x'.repeat(201) }).success).toBe(false);
+    expect(crearVehiculoSchema.safeParse({ nombre: 'A', placa: 'P1', descripcion: 'x'.repeat(201) }).success).toBe(false);
   });
 });
 

@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { buscarVehiculoPorTexto, etiquetaVehiculo } from '../lib/vehiculo';
+import VehiculoResumen from './VehiculoResumen';
 import type { Vehiculo } from '@shared/types/index.js';
 
 /** Valor del <select> que activa el campo de texto libre (vehículo de tercero). */
 export const OPCION_TERCERO = '__tercero__';
 
 interface Props {
-  /** Texto que se guarda en el ticket (placa de la lista o texto libre). */
+  /** Texto que se guarda en el ticket ("PLACA · nombre" o texto libre de tercero). */
   value: string;
   onChange: (valor: string) => void;
   /** Vehículos activos del catálogo del sistema. */
@@ -14,25 +16,23 @@ interface Props {
   labelClass: string;
 }
 
-function estaEnLista(valor: string, vehiculos: Vehiculo[]): boolean {
-  const normalizado = valor.trim().toLowerCase();
-  return vehiculos.some(v => v.nombre.trim().toLowerCase() === normalizado);
-}
-
 /**
- * Selector de vehículo: elige uno del catálogo o "Vehículo de tercero", que
- * deja escribir placa/descripción a mano. El tercero solo se guarda como
- * texto en el ticket; nunca se crea en el catálogo de vehículos.
+ * Selector de vehículo: elige uno del catálogo (se muestra "placa · nombre" y,
+ * debajo, su miniatura con visor de fotos) o "Vehículo de tercero", que deja
+ * escribir placa/descripción a mano. El tercero solo se guarda como texto en
+ * el ticket; nunca se crea en el catálogo de vehículos. Los tickets antiguos
+ * que guardaron solo el nombre siguen reconociéndose.
  */
 function VehiculoSelector({ value, onChange, vehiculos, inputClass, labelClass }: Props) {
   const [terceroForzado, setTerceroForzado] = useState(false);
-  const esTercero = terceroForzado || (value.trim() !== '' && !estaEnLista(value, vehiculos));
-  const valorSelect = esTercero ? OPCION_TERCERO : value;
+  const elegido = buscarVehiculoPorTexto(value, vehiculos);
+  const esTercero = terceroForzado || (value.trim() !== '' && !elegido);
+  const valorSelect = esTercero ? OPCION_TERCERO : elegido ? etiquetaVehiculo(elegido) : '';
 
   const handleSelect = (nuevo: string) => {
     if (nuevo === OPCION_TERCERO) {
       setTerceroForzado(true);
-      if (estaEnLista(value, vehiculos)) onChange('');
+      if (elegido) onChange('');
       return;
     }
     setTerceroForzado(false);
@@ -45,12 +45,13 @@ function VehiculoSelector({ value, onChange, vehiculos, inputClass, labelClass }
       <select value={valorSelect} onChange={e => handleSelect(e.target.value)} className={inputClass}>
         <option value="">— Sin vehículo —</option>
         {vehiculos.map(v => (
-          <option key={v.id} value={v.nombre}>
-            {v.descripcion ? `${v.nombre} — ${v.descripcion}` : v.nombre}
+          <option key={v.id} value={etiquetaVehiculo(v)}>
+            {etiquetaVehiculo(v)}
           </option>
         ))}
         <option value={OPCION_TERCERO}>Vehículo de tercero (escribir a mano)</option>
       </select>
+      {!esTercero && elegido && <VehiculoResumen vehiculo={elegido} />}
       {esTercero && (
         <div className="mt-1.5">
           <input

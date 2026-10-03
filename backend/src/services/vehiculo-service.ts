@@ -4,6 +4,13 @@ import type { CrearVehiculoInput, ActualizarVehiculoInput } from '../schemas/veh
 interface VehiculoRow {
   id: string;
   nombre: string;
+  placa: string | null;
+  marca: string | null;
+  modelo: string | null;
+  color: string | null;
+  conductor: string | null;
+  descripcion: string | null;
+  fotos: string[] | null;
   activo: boolean;
   created_at: string;
 }
@@ -11,6 +18,13 @@ interface VehiculoRow {
 export interface VehiculoPublico {
   id: string;
   nombre: string;
+  placa: string | null;
+  marca: string | null;
+  modelo: string | null;
+  color: string | null;
+  conductor: string | null;
+  descripcion: string | null;
+  fotos: string[];
   activo: boolean;
   createdAt: string;
 }
@@ -19,9 +33,23 @@ function toPublico(row: VehiculoRow): VehiculoPublico {
   return {
     id: row.id,
     nombre: row.nombre,
+    placa: row.placa,
+    marca: row.marca,
+    modelo: row.modelo,
+    color: row.color,
+    conductor: row.conductor,
+    descripcion: row.descripcion,
+    fotos: row.fotos ?? [],
     activo: row.activo,
     createdAt: row.created_at,
   };
+}
+
+/** Traduce el error de índice único (23505) según cuál índice se violó. */
+function mensajeDuplicado(mensaje: string): string {
+  return mensaje.includes('idx_vehiculos_placa_activa')
+    ? 'Ya existe un vehículo activo con esa placa.'
+    : 'Ya existe un vehículo con ese nombre.';
 }
 
 export async function listarVehiculos(): Promise<VehiculoPublico[]> {
@@ -39,12 +67,21 @@ export async function crearVehiculo(
 ): Promise<{ vehiculo: VehiculoPublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('vehiculos')
-    .insert(input.descripcion ? { nombre: input.nombre, descripcion: input.descripcion } : { nombre: input.nombre })
+    .insert({
+      nombre: input.nombre,
+      placa: input.placa,
+      marca: input.marca,
+      modelo: input.modelo,
+      color: input.color,
+      conductor: input.conductor,
+      descripcion: input.descripcion,
+      fotos: input.fotos ?? [],
+    })
     .select('*')
     .single();
 
   if (error) {
-    if (error.code === '23505') return { error: 'Ya existe un vehículo con ese nombre/placa.' };
+    if (error.code === '23505') return { error: mensajeDuplicado(error.message) };
     return { error: error.message };
   }
   return { vehiculo: toPublico(data as VehiculoRow) };
@@ -54,10 +91,11 @@ export async function actualizarVehiculo(
   id: string,
   cambios: ActualizarVehiculoInput
 ): Promise<{ vehiculo: VehiculoPublico } | { error: string }> {
+  // Solo se envían los campos presentes: un PATCH parcial no debe borrar el resto.
   const update: Record<string, unknown> = {};
-  if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
-  if (cambios.descripcion !== undefined) update.descripcion = cambios.descripcion;
-  if (cambios.activo !== undefined) update.activo = cambios.activo;
+  for (const campo of ['nombre', 'placa', 'marca', 'modelo', 'color', 'conductor', 'descripcion', 'fotos', 'activo'] as const) {
+    if (cambios[campo] !== undefined) update[campo] = cambios[campo];
+  }
 
   const { data, error } = await supabaseAdmin
     .from('vehiculos')
@@ -66,7 +104,10 @@ export async function actualizarVehiculo(
     .select('*')
     .maybeSingle();
 
-  if (error) return { error: error.message };
+  if (error) {
+    if (error.code === '23505') return { error: mensajeDuplicado(error.message) };
+    return { error: error.message };
+  }
   if (!data) return { error: 'Vehículo no encontrado.' };
   return { vehiculo: toPublico(data as VehiculoRow) };
 }
@@ -76,9 +117,13 @@ export async function desactivarVehiculo(id: string): Promise<boolean> {
   return !error;
 }
 
-export async function reactivarVehiculo(id: string): Promise<boolean> {
+/** Falla (con mensaje) si otro vehículo activo ya usa la misma placa. */
+export async function reactivarVehiculo(id: string): Promise<{ ok: true } | { error: string }> {
   const { error } = await supabaseAdmin.from('vehiculos').update({ activo: true }).eq('id', id);
-  return !error;
+  if (error) {
+    return { error: error.code === '23505' ? mensajeDuplicado(error.message) : 'No se pudo reactivar el vehículo.' };
+  }
+  return { ok: true };
 }
 
 /** Borra el vehículo del catálogo. Los tickets guardan la placa como texto,

@@ -83,9 +83,9 @@ router.post('/:id/desactivar', requirePermiso('vehiculos', 'editar'), async (req
 
 router.post('/:id/reactivar', requirePermiso('vehiculos', 'editar'), async (req, res) => {
   const id = String(req.params.id);
-  const ok = await reactivarVehiculo(id);
-  if (!ok) {
-    res.status(500).json({ error: 'No se pudo reactivar el vehículo.' });
+  const result = await reactivarVehiculo(id);
+  if ('error' in result) {
+    res.status(400).json(result);
     return;
   }
   logger.info({
