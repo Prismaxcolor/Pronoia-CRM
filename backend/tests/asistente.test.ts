@@ -93,7 +93,7 @@ describe('proveedor OpenAI-compatible (fetch simulado)', () => {
     expect(url).toBe('https://x/y');
     const body = JSON.parse(init.body as string);
     expect(body.model).toBe('m');
-    expect(body.max_tokens).toBe(350);
+    expect(body.max_tokens).toBe(150);
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
@@ -194,5 +194,23 @@ describe('servicio del asistente', () => {
 
   it('el registro de herramientas está vacío (sin acceso a datos todavía)', () => {
     expect(HERRAMIENTAS_ASISTENTE).toHaveLength(0);
+  });
+});
+
+describe('proveedor OpenAI (modelo barato)', () => {
+  it('con clave va primero, usa gpt-4.1-nano y deja los gratuitos de respaldo', async () => {
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'hola' } }] }), { status: 200 }));
+    const cadena = construirCadenaProveedores({ ASISTENTE_IA_PROVIDER: 'openai', ASISTENTE_IA_API_KEY: 'sk-test' }, fetchFn);
+    expect(cadena.map(p => p.nombre)).toEqual(['openai', 'llm7', 'pollinations']);
+    await cadena[0]!.completar({ mensajes: [{ role: 'user', content: 'hola' }], maxTokens: 99999, timeoutMs: 1000 });
+    const [url, init] = fetchFn.mock.calls[0]!;
+    expect(url).toBe('https://api.openai.com/v1/chat/completions');
+    const body = JSON.parse(init.body as string);
+    expect(body.model).toBe('gpt-4.1-nano');
+    expect(body.max_tokens).toBeLessThanOrEqual(150);
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test');
+  });
+  it('sin clave no usa OpenAI aunque se pida', () => {
+    expect(construirCadenaProveedores({ ASISTENTE_IA_PROVIDER: 'openai' }).map(p => p.nombre)).toEqual(['llm7', 'pollinations']);
   });
 });

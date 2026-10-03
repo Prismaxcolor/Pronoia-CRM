@@ -2,10 +2,11 @@ import { z } from 'zod';
 
 /** Límites del endpoint del asistente BLOB. Centralizados para poder testearlos. */
 export const MAX_LONGITUD_MENSAJE = 500;
-export const MAX_MENSAJES_HISTORIAL = 6;
-export const MAX_TOKENS_SALIDA = 350;
+// Topes bajos a propósito: con una clave de pago, cada llamada debe costar fracciones de centavo.
+export const MAX_MENSAJES_HISTORIAL = 4;
+export const MAX_TOKENS_SALIDA = 150;
 export const MAX_LONGITUD_NOMBRE = 30;
-export const LIMITE_PETICIONES_POR_MINUTO = 20;
+export const LIMITE_PETICIONES_POR_MINUTO = 8;
 
 export const PERSONALIDADES = ['amigable', 'sarcastico', 'formal', 'misterioso'] as const;
 export type Personalidad = (typeof PERSONALIDADES)[number];

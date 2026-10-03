@@ -5,7 +5,7 @@
  *   1. llm7.io        (anónimo, modelo "default")
  *   2. Pollinations   (anónimo, modelo "openai")
  * Plan B con clave gratuita (opcional, por variable de entorno):
- *   ASISTENTE_IA_PROVIDER = gemini | groq | openrouter | llm7 | pollinations | auto
+ *   ASISTENTE_IA_PROVIDER = openai | gemini | groq | openrouter | llm7 | pollinations | auto
  *   ASISTENTE_IA_API_KEY  = clave del proveedor elegido
  *   ASISTENTE_IA_MODEL    = (opcional) sobrescribe el modelo
  * IMPORTANTE: los mensajes del usuario salen a un tercero. Nunca se envían datos del negocio.
@@ -96,6 +96,11 @@ const PRESETS_CON_CLAVE: Record<string, { url: string; modelo: string }> = {
   gemini: {
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     modelo: 'gemini-2.0-flash',
+  },
+  // Modelo más barato de OpenAI a propósito: BLOB es una mascota, no necesita más.
+  openai: {
+    url: 'https://api.openai.com/v1/chat/completions',
+    modelo: 'gpt-4.1-nano',
   },
   groq: {
     url: 'https://api.groq.com/openai/v1/chat/completions',
