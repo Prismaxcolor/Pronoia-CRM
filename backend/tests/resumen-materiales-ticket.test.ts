@@ -7,6 +7,10 @@ describe('contarMaterialesDistintos', () => {
   it('cuenta productos únicos, no pesadas', () => {
     expect(contarMaterialesDistintos([m('a'), m('a'), m('b'), m('a')])).toBe(2);
   });
+  it('productos distintos con el mismo lote de destino cuentan por producto', () => {
+    const enLote = (id: string) => ({ ...m(id), loteId: 'PCB' as string | null });
+    expect(contarMaterialesDistintos([enLote('a'), enLote('b'), enLote('c'), enLote('d'), enLote('e')])).toBe(5);
+  });
   it('lista vacía = 0', () => {
     expect(contarMaterialesDistintos([])).toBe(0);
   });

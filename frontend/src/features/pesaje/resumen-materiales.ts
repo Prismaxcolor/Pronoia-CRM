@@ -7,8 +7,10 @@ export interface LineaMaterial {
 }
 
 function claveMaterial(l: LineaMaterial, idx: number): string {
-  if (l.loteId) return `lote:${l.loteId}`;
+  // Se cuenta por producto: el lote de destino lo comparten varios productos.
+  // Solo una fila sin producto (lote completo) se identifica por su lote.
   if (l.productoId) return `prod:${l.productoId}`;
+  if (l.loteId) return `lote:${l.loteId}`;
   return `fila:${idx}`;
 }
 
@@ -24,7 +26,7 @@ export function resumenMateriales(lineas: readonly LineaMaterial[]): string {
   if (unicas.size === 0) return '—';
   if (unicas.size === 1) {
     const l = [...unicas.values()][0];
-    return l.loteId ? `${l.nombreLote ?? 'Lote'} (lote completo)` : l.nombreProducto ?? 'material';
+    return !l.productoId && l.loteId ? `${l.nombreLote ?? 'Lote'} (lote completo)` : l.nombreProducto ?? 'material';
   }
   return `${unicas.size} materiales`;
 }
