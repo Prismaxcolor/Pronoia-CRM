@@ -11,14 +11,14 @@ interface ProductoRow {
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagen_url: string | null;
+  fotos: string[] | null;
   creado_por: string | null;
   creado_en: string;
   peso: number | null;
   variantes: unknown;
   sub_productos: unknown;
-  // join con tipos_material(nombre)
-  tipos_material?: { nombre: string } | null;
+  // join con tipos_material(nombre, sin_lote)
+  tipos_material?: { nombre: string; sin_lote: boolean } | null;
 }
 
 export interface ProductoPublico {
@@ -27,10 +27,11 @@ export interface ProductoPublico {
   descripcion: string;
   tipoMaterialId: string | null;
   tipoMaterialNombre: string | null;
+  tipoMaterialSinLote: boolean | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagenUrl: string | null;
+  fotos: string[];
   creadoPor: string;
   creadoEn: string;
   peso?: number;
@@ -45,10 +46,11 @@ function toPublico(row: ProductoRow): ProductoPublico {
     descripcion: row.descripcion ?? '',
     tipoMaterialId: row.tipo_material_id,
     tipoMaterialNombre: row.tipos_material?.nombre ?? null,
+    tipoMaterialSinLote: row.tipos_material?.sin_lote ?? null,
     moneda: row.moneda,
     activo: row.activo,
     tipo: row.tipo,
-    imagenUrl: row.imagen_url,
+    fotos: row.fotos ?? [],
     creadoPor: row.creado_por ?? '',
     creadoEn: row.creado_en,
   };
@@ -69,7 +71,7 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
     moneda: input.moneda,
     activo: input.activo,
     tipo: input.tipo,
-    imagen_url: input.imagenUrl ?? null,
+    fotos: input.fotos ?? [],
   };
   if (creadoPor !== undefined) row.creado_por = creadoPor;
 
@@ -93,8 +95,8 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
 export async function listarProductos(): Promise<ProductoPublico[]> {
   const { data, error } = await supabaseAdmin
     .from('productos')
-    .select('*, tipos_material(nombre)')
-    .order('creado_en', { ascending: false });
+    .select('*, tipos_material(nombre, sin_lote)')
+    .order('orden', { ascending: true });
 
   if (error || !data) return [];
   return (data as unknown as ProductoRow[]).map(toPublico);
@@ -106,14 +108,39 @@ export async function crearProducto(
 ): Promise<{ producto: ProductoPublico } | { error: string }> {
   const row = inputToRow(input, creadoPor);
 
+  // Los productos nuevos aparecen primero (orden más bajo), igual que antes
+  // cuando el catálogo se mostraba por fecha de creación descendente. El
+  // usuario puede reordenarlo manualmente después con reordenarProductos.
+  const { data: primero } = await supabaseAdmin
+    .from('productos')
+    .select('orden')
+    .order('orden', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  row.orden = ((primero as { orden: number } | null)?.orden ?? 0) - 1;
+
   const { data, error } = await supabaseAdmin
     .from('productos')
     .insert(row)
-    .select('*, tipos_material(nombre)')
+    .select('*, tipos_material(nombre, sin_lote)')
     .single();
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el producto.' };
   return { producto: toPublico(data as unknown as ProductoRow) };
+}
+
+/** Persiste el nuevo orden manual del catálogo: ids en el orden deseado,
+ *  de arriba a abajo. Asigna orden = índice en el arreglo recibido. */
+export async function reordenarProductos(ids: string[]): Promise<{ ok: true } | { error: string }> {
+  const resultados = await Promise.all(
+    ids.map((id, indice) =>
+      supabaseAdmin.from('productos').update({ orden: indice }).eq('id', id)
+    )
+  );
+
+  const fallo = resultados.find(r => r.error);
+  if (fallo?.error) return { error: fallo.error.message };
+  return { ok: true };
 }
 
 export async function actualizarProducto(
@@ -139,7 +166,7 @@ export async function actualizarProducto(
     .from('productos')
     .update(row)
     .eq('id', id)
-    .select('*, tipos_material(nombre)')
+    .select('*, tipos_material(nombre, sin_lote)')
     .maybeSingle();
 
   if (error) return { error: error.message };

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearUsuario } from '../../services/usuario-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import type { RolUsuario } from '@shared/types/index.js';
 
 interface Props {

@@ -78,9 +78,11 @@ function PortalEstadoCuentaPage() {
                 <div key={i} className="flex items-center justify-between p-4">
                   <div>
                     <span className={`inline-block px-2 py-0.5 rounded-full text-xs mr-2 ${
-                      e.tipo === 'factura' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                      e.tipo === 'factura' ? 'bg-amber-100 text-amber-700'
+                        : e.tipo === 'adelanto' ? 'bg-teal-100 text-teal-700'
+                        : 'bg-green-100 text-green-700'
                     }`}>
-                      {e.tipo === 'factura' ? 'Factura' : 'Pago'}
+                      {e.tipo === 'factura' ? 'Factura' : e.tipo === 'adelanto' ? 'Adelanto' : 'Pago'}
                     </span>
                     <p className="text-sm font-medium text-text-primary mt-1">{e.descripcion}</p>
                     <p className="text-xs text-text-muted">{fecha(e.fecha)}</p>

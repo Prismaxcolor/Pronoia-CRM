@@ -11,8 +11,8 @@ import {
 } from '../../services/portal-agendar-service';
 import PortalHeader from '../../components/PortalHeader';
 import PortalSkeleton from '../../components/PortalSkeleton';
-import { useConfirm } from '../../hooks/use-confirm';
-import { useToast } from '../../hooks/use-toast';
+import { useConfirm } from '../../hooks/use-confirm-context';
+import { useToast } from '../../hooks/use-toast-context';
 
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);

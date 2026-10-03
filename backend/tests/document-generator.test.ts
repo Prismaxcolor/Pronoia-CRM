@@ -50,7 +50,9 @@ const TICKET: TicketPublico = {
     },
   ],
   pesoNetoTotal: 10,
+  pesoNetoMateriales: 10,
   pesoGlobal: 10,
+  devolucion: 0,
   diferencia: 0,
   fotos: [],
   observaciones: null,
@@ -110,6 +112,11 @@ describe('generarTicketPdf', () => {
 
   it('no rompe con acentos y ñ en el nombre de la entidad', () => {
     const buffer = generarTicketPdf(TICKET, 'Compañía Metálica José Peña');
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('no rompe con un ticket que tiene devolución', () => {
+    const buffer = generarTicketPdf({ ...TICKET, devolucion: 2, diferencia: -2 }, 'Reciclados El Valle C.A.');
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
   });
 });

@@ -48,14 +48,9 @@ router.patch(
   validateBody(actualizarUsuarioSchema),
   async (req, res) => {
     const id = String(req.params.id);
-    if (id === req.user!.sub && req.body.activo === false) {
-      res.status(400).json({ error: 'No puedes desactivarte a ti mismo.' });
-      return;
-    }
-
-    const result = await actualizarUsuarioAdmin(id, req.body);
+    const result = await actualizarUsuarioAdmin(req.user!.sub, id, req.body);
     if ('error' in result) {
-      res.status(400).json(result);
+      res.status(result.status).json({ error: result.error });
       return;
     }
     logger.info({

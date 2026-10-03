@@ -2,7 +2,7 @@ import { getToken } from './api-client';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
-async function subirArchivo(tipo: 'productos' | 'tickets' | 'taras' | 'comprobantes', file: File): Promise<string | null> {
+async function subirArchivo(tipo: 'productos' | 'tickets' | 'taras' | 'comprobantes' | 'traslados' | 'clientes' | 'proveedores' | 'almacenes' | 'lotes', file: File): Promise<string | null> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -35,4 +35,29 @@ export function subirFotoTara(file: File): Promise<string | null> {
 /** Sube la foto del comprobante de un pago (transferencia, USDT, etc.). */
 export function subirComprobantePago(file: File): Promise<string | null> {
   return subirArchivo('comprobantes', file);
+}
+
+/** Sube una foto de evidencia de recepción de un traslado entre almacenes. */
+export function subirFotoTraslado(file: File): Promise<string | null> {
+  return subirArchivo('traslados', file);
+}
+
+/** Sube la foto de un cliente (para el selector visual en Nueva Factura). */
+export function subirFotoCliente(file: File): Promise<string | null> {
+  return subirArchivo('clientes', file);
+}
+
+/** Sube la foto de un proveedor (para el selector visual en Nueva Factura). */
+export function subirFotoProveedor(file: File): Promise<string | null> {
+  return subirArchivo('proveedores', file);
+}
+
+/** Sube la foto de un almacén. */
+export function subirFotoAlmacen(file: File): Promise<string | null> {
+  return subirArchivo('almacenes', file);
+}
+
+/** Sube la foto de un lote. */
+export function subirFotoLote(file: File): Promise<string | null> {
+  return subirArchivo('lotes', file);
 }

@@ -2,7 +2,7 @@ import { portalApiFetch } from './portal-api-client';
 
 export interface EntradaEstadoCuenta {
   fecha: string;
-  tipo: 'factura' | 'pago';
+  tipo: 'factura' | 'pago' | 'adelanto' | 'nota_credito' | 'nota_debito';
   descripcion: string;
   referencia: string | null;
   cargo: number;

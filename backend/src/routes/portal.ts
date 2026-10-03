@@ -89,7 +89,7 @@ router.get('/documentos/facturas/:id/pdf', requirePortalAuth, async (req, res) =
   const tipo = entidadTipo === 'proveedor' ? 'compra' : 'venta';
   const factura = await obtenerFactura(tipo, String(req.params.id));
 
-  if (!factura || factura.entidadId !== entidadId) {
+  if (!factura || factura.entidadId !== entidadId || factura.estado === 'anulada') {
     res.status(404).json({ error: 'Factura no encontrada.' });
     return;
   }

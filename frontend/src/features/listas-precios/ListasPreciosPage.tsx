@@ -5,15 +5,21 @@ import {
   obtenerListas,
   eliminarLista,
 } from '../../services/lista-precios-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import ListaFormModal from './ListaFormModal';
 import type { ListaPrecios } from '@shared/types/index.js';
 
 function ListasPreciosPage() {
   const [listas, setListas] = useState<ListaPrecios[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [tipoVisible, setTipoVisible] = usePestanaRecordada<'compra' | 'venta'>(
+    'pronoia:listas-precios:tipo',
+    ['compra', 'venta'],
+    'compra',
+  );
   const [formAbierto, setFormAbierto] = useState<
     { abierto: true; lista: ListaPrecios | null } | { abierto: false }
   >({ abierto: false });
@@ -22,16 +28,14 @@ function ListasPreciosPage() {
   const toast = useToast();
   const confirmar = useConfirm();
 
-  const puedeCrear = tienePermiso('productos', 'crear');
-  const puedeEditar = tienePermiso('productos', 'editar');
-  const puedeBorrar = tienePermiso('productos', 'eliminar');
+  const puedeCrear = tienePermiso('listas_precios', 'crear');
+  const puedeEditar = tienePermiso('listas_precios', 'editar');
+  const puedeBorrar = tienePermiso('listas_precios', 'eliminar');
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerListas().then(setListas).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerListas().then(setListas).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
   const handleBorrar = async (l: ListaPrecios, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -53,6 +57,8 @@ function ListasPreciosPage() {
     setFormAbierto({ abierto: true, lista: l });
   };
 
+  const listasVisibles = listas.filter(l => l.tipo === tipoVisible);
+
   if (cargando) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -63,7 +69,7 @@ function ListasPreciosPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Listas de precios</h1>
           <p className="text-sm text-text-secondary mt-1">
@@ -74,7 +80,7 @@ function ListasPreciosPage() {
           <button
             type="button"
             onClick={() => setFormAbierto({ abierto: true, lista: null })}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shrink-0"
           >
             <Plus size={18} />
             Nueva lista
@@ -82,11 +88,22 @@ function ListasPreciosPage() {
         )}
       </div>
 
-      {listas.length === 0 ? (
-        <p className="text-center text-text-muted py-12">No hay listas de precios todavía.</p>
+      <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
+        <button type="button" onClick={() => setTipoVisible('compra')} className={`px-4 py-1.5 ${tipoVisible === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Compra
+        </button>
+        <button type="button" onClick={() => setTipoVisible('venta')} className={`px-4 py-1.5 ${tipoVisible === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          Venta
+        </button>
+      </div>
+
+      {listasVisibles.length === 0 ? (
+        <p className="text-center text-text-muted py-12">
+          No hay listas de {tipoVisible === 'compra' ? 'compra' : 'venta'} todavía.
+        </p>
       ) : (
         <div className="bg-surface rounded-xl border border-border overflow-hidden">
-          {listas.map(l => (
+          {listasVisibles.map(l => (
             <div
               key={l.id}
               onClick={() => navigate(`/listas-precios/${l.id}`)}
@@ -107,7 +124,7 @@ function ListasPreciosPage() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                 {puedeEditar && (
                   <button
                     type="button"
@@ -138,6 +155,7 @@ function ListasPreciosPage() {
       {formAbierto.abierto && (
         <ListaFormModal
           lista={formAbierto.lista}
+          tipoInicial={tipoVisible}
           onClose={() => setFormAbierto({ abierto: false })}
           onGuardado={() => { setFormAbierto({ abierto: false }); cargar(); }}
         />

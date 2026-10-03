@@ -1,19 +1,35 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Pencil, Loader2, Plus, Trash2, Scale } from 'lucide-react';
-import { obtenerTicket, editarTicket } from '../../services/ticket-pesaje-service';
+import { ArrowLeft, Printer, FileDown, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, ChevronDown } from 'lucide-react';
+import { obtenerTicket, editarTicket, type AvisoFacturaTicket } from '../../services/ticket-pesaje-service';
+import AvisoFacturaBanner from './AvisoFacturaBanner';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
+import { obtenerVehiculos } from '../../services/vehiculo-service';
+import VehiculoSelector from '../../components/VehiculoSelector';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { filaVacia, taraKgFila, netoFila, type MaterialFila } from './material-fila';
-import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara } from '@shared/types/index.js';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
+import FotoMaterialPicker from './FotoMaterialPicker';
+import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import SeleccionarTaraModal from './SeleccionarTaraModal';
+import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo } from '@shared/types/index.js';
+import { descargarTicketPDF } from '../../services/ticket-export';
+import FilaDocumento from '../../components/FilaDocumento';
+import HistorialEdiciones from '../../components/HistorialEdiciones';
+import GenerarLlaveEdicion from '../../components/GenerarLlaveEdicion';
+import { obtenerConfigLlaves } from '../../services/llave-service';
+import CompartirBoton from '../../components/CompartirBoton';
+import PesajesGlobalesEditor from './PesajesGlobalesEditor';
+import { pesajeGlobalVacio, sumaPesajesGlobales, subirFotosPesajeGlobal, type PesajeGlobalFila } from './pesaje-global-fila';
+import VisorFotos from '../../components/VisorFotos';
 
 function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
 /** Convierte los materiales ya guardados de un ticket en filas editables. La
@@ -30,15 +46,20 @@ function filasDesdeTicket(t: TicketPesaje): MaterialFila[] {
     taraId: '',
     taraCantidad: '',
     taraManual: String(m.tara),
-    destino: m.destinoTipo === 'lote' && m.loteId ? m.loteId : 'mpp',
+    destino: m.loteId ?? '',
+    fotos: m.fotos.map(url => ({ tipo: 'existente' as const, url })),
   }));
 }
 
 function TicketDetallePage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
   const toast = useToast();
+  const esSuperadmin = usuario?.rol === 'superadmin';
+  // El servidor exige llave a todo no-superadmin (activa por defecto; solo REQUIRE_EDIT_KEY=false la apaga).
+  const [requiereLlave, setRequiereLlave] = useState(true);
+  const [llaveEdicion, setLlaveEdicion] = useState('');
 
   const puedeEditar = tienePermiso('pesaje', 'editar');
 
@@ -48,13 +69,26 @@ function TicketDetallePage() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
 
   const [editando, setEditando] = useState(false);
+  const [avisosFactura, setAvisosFactura] = useState<AvisoFacturaTicket[]>([]);
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
-  const [pesoGlobalEdit, setPesoGlobalEdit] = useState('');
+  const [devolucionEdit, setDevolucionEdit] = useState('');
+  const [fotosDevolucionEdit, setFotosDevolucionEdit] = useState<FotoMaterial[]>([]);
   const [observacionesEdit, setObservacionesEdit] = useState('');
+  const [vehiculoEdit, setVehiculoEdit] = useState('');
+  const [fechaEdit, setFechaEdit] = useState('');
+  const [pesajesEdit, setPesajesEdit] = useState<PesajeGlobalFila[]>([]);
+  // Solo se envían las pesadas si el usuario las tocó (tickets viejos pueden no tener desglose ni fotos por pesada).
+  const [pesajesTocados, setPesajesTocados] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ocultarDestino, setOcultarDestino] = useState(false);
+  const [fotoAmpliada, setFotoAmpliada] = useState<{ url: string; label: string; peso: number | null } | null>(null);
+  const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
+  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
 
   const cargarTicket = () => {
     obtenerTicket(id).then(t => { setTicket(t); setCargando(false); });
@@ -62,6 +96,7 @@ function TicketDetallePage() {
 
   useEffect(() => {
     cargarTicket();
+    obtenerConfigLlaves().then(cfg => setRequiereLlave(cfg.requiereLlave));
     Promise.all([obtenerProveedores(), obtenerClientes()]).then(([proveedores, clientes]) => {
       const m = new Map<string, string>();
       [...proveedores, ...clientes].forEach(e => m.set(e.id, e.nombre));
@@ -70,6 +105,7 @@ function TicketDetallePage() {
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
     obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
+    obtenerVehiculos().then(lista => setVehiculos(lista.filter(v => v.activo)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -78,15 +114,44 @@ function TicketDetallePage() {
     [materiales, taras]
   );
   const diferencia = useMemo(
-    () => (Number(pesoGlobalEdit) || 0) - pesoNetoTotal,
-    [pesoGlobalEdit, pesoNetoTotal]
+    () => (pesajesTocados ? sumaPesajesGlobales(pesajesEdit) : (ticket?.pesoGlobal ?? 0)) - pesoNetoTotal - (Number(devolucionEdit) || 0),
+    [ticket, pesoNetoTotal, devolucionEdit, pesajesTocados, pesajesEdit]
   );
+
+  /** Subtotal por material cuando el mismo material se pesó más de una vez
+   *  en este ticket (varias pesadas) — para no repetir el total a simple
+   *  vista sumando filas sueltas. */
+  const totalesPorMaterial = useMemo(() => {
+    if (!ticket) return [];
+    const mapa = new Map<string, { nombre: string; total: number; cantidad: number }>();
+    for (const m of ticket.materiales) {
+      const clave = m.productoId ?? m.id;
+      const existente = mapa.get(clave);
+      if (existente) {
+        existente.total += m.pesoNeto;
+        existente.cantidad += 1;
+      } else {
+        mapa.set(clave, { nombre: m.nombreProducto ?? '—', total: m.pesoNeto, cantidad: 1 });
+      }
+    }
+    return Array.from(mapa.values()).filter(t => t.cantidad > 1);
+  }, [ticket]);
 
   const iniciarEdicion = () => {
     if (!ticket) return;
     setMateriales(filasDesdeTicket(ticket));
-    setPesoGlobalEdit(String(ticket.pesoGlobal));
+    setDevolucionEdit(ticket.devolucion ? String(ticket.devolucion) : '');
+    setFotosDevolucionEdit(ticket.fotosDevolucion.map(url => ({ tipo: 'existente' as const, url })));
     setObservacionesEdit(ticket.observaciones ?? '');
+    setVehiculoEdit(ticket.vehiculo ?? '');
+    setFechaEdit(ticket.fecha ?? ticket.createdAt.slice(0, 10));
+    setPesajesEdit(ticket.pesajesGlobales.map(p => ({
+      ...pesajeGlobalVacio(),
+      peso: String(p.peso),
+      tara: p.tara ? String(p.tara) : '',
+      fotos: p.fotos.map(url => ({ tipo: 'existente' as const, url })),
+    })));
+    setPesajesTocados(false);
     setError(null);
     setEditando(true);
   };
@@ -100,36 +165,92 @@ function TicketDetallePage() {
   const quitarMaterial = (uid: number) =>
     setMateriales(prev => (prev.length > 1 ? prev.filter(f => f.uid !== uid) : prev));
 
+  const agregarFotosFila = (uid: number, files: File[]) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid
+      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      : f)));
+  const quitarFotoFila = (uid: number, idx: number) =>
+    setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
+
+  const agregarFotosDevolucion = (files: File[]) =>
+    setFotosDevolucionEdit(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+  const quitarFotoDevolucion = (idx: number) =>
+    setFotosDevolucionEdit(prev => prev.filter((_, i) => i !== idx));
+
+  /** Sube las fotos nuevas de cada pesaje; null si alguna falla o un pesaje queda sin foto. */
+  const pesajesParaEnviar = async () => {
+    const salida = [];
+    for (const f of pesajesEdit) {
+      const fotos = await subirFotosPesajeGlobal(f);
+      if (!fotos || fotos.length === 0) return null;
+      salida.push({ peso: Number(f.peso) || 0, tara: Number(f.tara) || 0, fotos });
+    }
+    return salida;
+  };
+
   const guardarEdicion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ticket) return;
     setError(null);
 
-    if (!pesoGlobalEdit || Number(pesoGlobalEdit) <= 0) { setError('Registra el peso global de la pesada.'); return; }
     if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
+    if (materiales.some(f => !esFilaSinLote(f, productos) && !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
     if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
       setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
       return;
     }
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
+    if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
+    if (Number(devolucionEdit) > 0 && fotosDevolucionEdit.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
+    if (diferenciaFavoreceProveedor(diferencia, ticket.pesajeExterior)) {
+      setError('La suma de materiales + devolución supera el peso global — eso favorece al proveedor. Revisa los pesos antes de guardar.');
+      return;
+    }
 
     setGuardando(true);
+
+    const materialesConFotos = [];
+    for (const f of materiales) {
+      const urls = await subirFotosFila(f.fotos);
+      if (!urls) {
+        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
+        setGuardando(false);
+        return;
+      }
+      materialesConFotos.push({ ...materialAPayload(f, taras, productos), fotos: urls });
+    }
+
+    const urlsDevolucion = await subirFotosFila(fotosDevolucionEdit);
+    if (!urlsDevolucion) {
+      setError('No se pudo subir una de las fotos de la devolución. Revisa que el bucket "tickets" exista en Supabase Storage.');
+      setGuardando(false);
+      return;
+    }
+
+    const pesajesPayload = pesajesTocados ? await pesajesParaEnviar() : undefined;
+    if (pesajesTocados && !pesajesPayload) {
+      setError('No se pudo subir una foto del pesaje global, o falta una foto en algún pesaje.');
+      setGuardando(false);
+      return;
+    }
+
     const result = await editarTicket(ticket.id, {
-      pesoGlobal: Number(pesoGlobalEdit),
       observaciones: observacionesEdit.trim() || null,
-      materiales: materiales.map(f => ({
-        productoId: f.productoId,
-        subcategoria: f.subcategoria.trim() || null,
-        pesoBruto: Number(f.pesoBruto) || 0,
-        tara: taraKgFila(f, taras),
-        destinoTipo: f.destino === 'mpp' ? ('mpp' as const) : ('lote' as const),
-        loteId: f.destino === 'mpp' ? null : f.destino,
-      })),
+      vehiculo: vehiculoEdit.trim() || null,
+      devolucion: Number(devolucionEdit) || 0,
+      fotosDevolucion: urlsDevolucion,
+      materiales: materialesConFotos,
+      fecha: fechaEdit || undefined,
+      pesajesGlobales: pesajesPayload ?? undefined,
+      llaveEdicion: requiereLlave && llaveEdicion.trim() ? llaveEdicion.trim() : undefined,
     });
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
     toast.exito(`${result.ticket.codigo} actualizado.`);
+    if (result.advertencia) toast.errorMsg(result.advertencia);
+    setAvisosFactura(result.avisosFactura ?? []);
+    setLlaveEdicion('');
     setEditando(false);
     cargarTicket();
   };
@@ -157,7 +278,28 @@ function TicketDetallePage() {
   }
 
   const esCompra = ticket.tipo === 'compra';
-  const puedeEditarEsteTicket = puedeEditar && !ticket.facturado;
+  // Con llave se edita aunque el rol no tenga 'pesaje:editar' y aunque el ticket esté facturado.
+  const puedeUsarLlave = requiereLlave && !esSuperadmin;
+  const puedeEditarEsteTicket = (puedeEditar || puedeUsarLlave) && ticket.estado !== 'bruto' && !ticket.ticketPrincipalId;
+
+  // Todas las fotos del ticket (por material + generales) en una sola galería
+  // con etiqueta de material, en vez de un bloque apilado por material
+  // (se veía como una lista infinita de fotos, una por fila).
+  const fotosGaleria = [
+    ...ticket.materiales.flatMap(m =>
+      m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? 'Material', peso: m.pesoNeto as number | null }))
+    ),
+    ...ticket.pesajesGlobales.flatMap((p, idxPesaje) =>
+      p.fotos.map((url, i) => ({
+        key: `p-${p.id}-${i}`,
+        url,
+        label: ticket.pesajesGlobales.length > 1 ? `Pesaje global ${idxPesaje + 1}` : 'Pesaje global',
+        peso: (p.peso - p.tara) as number | null,
+      }))
+    ),
+    ...ticket.fotosDevolucion.map((url, i) => ({ key: `d-${i}`, url, label: 'Devolución', peso: null as number | null })),
+    ...(ticket.fotos ?? []).map((url, i) => ({ key: `g-${i}`, url, label: 'General', peso: null as number | null })),
+  ];
 
   return (
     <div className="max-w-2xl print-documento print:max-w-none">
@@ -168,93 +310,214 @@ function TicketDetallePage() {
         </button>
       </div>
 
+      <AvisoFacturaBanner avisos={avisosFactura} onIrEstadoCuenta={ruta => navigate(ruta)} onCerrar={() => setAvisosFactura([])} />
+
+      {/* Encabezado de marca — solo el logo, estándar en todo documento impreso. */}
+      <div className="hidden print:flex items-center justify-end mb-6">
+        <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
+      </div>
+
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-text-primary">{ticket.codigo}</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs ${ticket.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} print:border print:border-black print:bg-transparent`}>
-              {ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}
-            </span>
+            <h1 className="text-2xl font-bold text-text-primary">
+              {ticket.estado === 'bruto' ? 'Ticket de pesaje en bruto' : 'Ticket de pesaje'}
+            </h1>
+            {ticket.estado === 'bruto' ? (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 print:border print:border-black print:bg-transparent">
+                Borrador
+              </span>
+            ) : (
+              <span className={`px-2 py-0.5 rounded-full text-xs ${ticket.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} print:border print:border-black print:bg-transparent`}>
+                {ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}
+              </span>
+            )}
+            {ticket.ticketPrincipalId && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-surface-alt text-text-secondary print:border print:border-black print:bg-transparent" title="Su pesaje global se sumó al ticket principal; se edita y factura desde allí">
+                Unido a {ticket.ticketPrincipalCodigo ?? 'otro ticket'}
+              </span>
+            )}
+            {ticket.pesajeExterior && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 print:border print:border-black print:bg-transparent">
+                Sin pesaje global
+              </span>
+            )}
           </div>
-          <p className="text-sm text-text-muted mt-1">{esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
+          <p className="text-sm text-text-muted mt-1">Ref. {ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
         </div>
         {!editando && (
           <div className="print:hidden flex items-center gap-2 shrink-0">
+            {esSuperadmin && puedeEditarEsteTicket && (
+              <GenerarLlaveEdicion entidadTipo="ticket_pesaje" entidadId={ticket.id} />
+            )}
             {puedeEditarEsteTicket && (
               <button type="button" onClick={iniciarEdicion} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Editar ticket">
                 <Pencil size={16} />
                 Editar
               </button>
             )}
+            <button type="button" onClick={() => descargarTicketPDF(ticket, ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—', esCompra)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
+              <FileDown size={16} />
+              PDF
+            </button>
             <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
               <Printer size={16} />
               Imprimir
             </button>
+            <CompartirBoton titulo={`Ticket de pesaje ${ticket.codigo}`} obtenerPdf={() => descargarTicketPDF(ticket, ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—', esCompra, 'blob')} />
           </div>
         )}
       </div>
 
       {!editando ? (
-        <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:border-0 print:rounded-none print:shadow-none print:p-0 print:mb-4">
-          <Fila label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
-          {ticket.observaciones && <Fila label="Observaciones" valor={ticket.observaciones} />}
-
-          <div className="overflow-x-auto mt-4">
-            <table className="w-full text-sm print:border-collapse">
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-text-muted print:border-black">
-                  <th className="py-2 font-medium print:border print:border-black print:px-2">Material</th>
-                  <th className="py-2 font-medium print:border print:border-black print:px-2">Destino</th>
-                  <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Bruto</th>
-                  <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Tara</th>
-                  <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Devol.</th>
-                  <th className="py-2 font-medium text-right print:border print:border-black print:px-2">Neto (kg)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ticket.materiales.map(m => (
-                  <tr key={m.id} className="border-b border-border last:border-b-0 print:border-black">
-                    <td className="py-2 text-text-primary print:border print:border-black print:px-2">{m.nombreProducto ?? m.subcategoria ?? '—'}</td>
-                    <td className="py-2 text-text-secondary print:border print:border-black print:px-2">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>
-                    <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.pesoBruto)}</td>
-                    <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.tara)}</td>
-                    <td className="py-2 text-right text-text-secondary print:border print:border-black print:px-2">{fmt(m.devolucion)}</td>
-                    <td className="py-2 text-right font-medium text-text-primary print:border print:border-black print:px-2">{fmt(m.pesoNeto)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <>
+          {/* Encabezado universal: filas etiqueta-valor con línea divisoria,
+           *  sin tarjeta — mismo patrón que factura/nota/pago. */}
+          <div className="mb-6">
+            <FilaDocumento label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
+            {ticket.vehiculo && <FilaDocumento label="Vehículo" valor={ticket.vehiculo} />}
+            {ticket.observaciones && <FilaDocumento label="Observaciones" valor={ticket.observaciones} />}
           </div>
 
-          <div className="flex justify-between pt-3 mt-1">
-            <span className="font-semibold text-text-primary">Peso global</span>
-            <span className="text-text-primary font-medium">{fmt(ticket.pesoGlobal)} kg</span>
-          </div>
-          <div className="flex justify-between pt-1">
-            <span className="font-semibold text-text-primary">Peso neto total</span>
-            <span className="text-xl font-bold text-brand-700">{fmt(ticket.pesoNetoTotal)} kg</span>
-          </div>
-          <div className="flex justify-between pt-1 text-sm">
-            <span className="text-text-secondary">Diferencia (global vs. neto)</span>
-            <span className={`font-medium ${Math.abs(ticket.diferencia) > 0.01 ? 'text-amber-600' : 'text-text-primary'}`}>{fmt(ticket.diferencia)} kg</span>
-          </div>
+          {ticket.pesajeExterior ? (
+            <p className="text-xs text-text-muted mb-4">Sin pesaje global.</p>
+          ) : (
+            <>
+              <div className="flex justify-between items-baseline pt-3 mb-1">
+                <span className="font-semibold text-text-primary text-lg">Peso global</span>
+                <span className="text-2xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
+              </div>
+              <div className="flex justify-between items-baseline mb-4 text-sm">
+                <span className="text-text-secondary">Peso neto</span>
+                <span className="font-semibold text-text-primary">{fmt(ticket.pesoNetoTotal)} kg</span>
+              </div>
+            </>
+          )}
 
-          {ticket.fotos && ticket.fotos.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-4 print:hidden">
-              {ticket.fotos.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
-                  <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
-                </a>
-              ))}
+          {ticket.estado === 'bruto' && (
+            <p className="mb-4 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 print:border print:border-black print:bg-transparent print:text-black">
+              Ticket en borrador — materiales pendientes de registro. No contabilizado en inventario.
+            </p>
+          )}
+
+          {ticket.estado !== 'bruto' && (
+            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none w-fit mb-2 print:hidden">
+              <input type="checkbox" checked={ocultarDestino} onChange={e => setOcultarDestino(e.target.checked)} className="rounded border-border" />
+              Ocultar destino al imprimir (versión para el proveedor)
+            </label>
+          )}
+
+          {/* Tabla de pesaje: caja redondeada — este documento es 100% pesaje.
+           *  Padding en cada celda (no en el contenedor) — mismo patrón que
+           *  TomaFisicaDetallePage, para que nada quede pegado al borde si la
+           *  tabla desborda y hace scroll horizontal. */}
+          {ticket.estado !== 'bruto' && (
+            <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm print:border-collapse">
+                  <thead>
+                    <tr className="text-left text-xs text-text-muted bg-surface-alt">
+                      <th className="py-2 px-5 font-medium">Material</th>
+                      {!ocultarDestino && <th className="py-2 px-4 font-medium">Destino</th>}
+                      <th className="py-2 px-4 font-medium text-right">Bruto</th>
+                      <th className="py-2 px-4 font-medium text-right">Tara</th>
+                      <th className="py-2 px-5 font-medium text-right">Neto (kg)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ticket.materiales.map(m => (
+                      <tr key={m.id} className="border-t border-border">
+                        <td className="py-2.5 px-5 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                        {!ocultarDestino && <td className="py-2.5 px-4 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
+                        <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
+                        <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.tara)}</td>
+                        <td className="py-2.5 px-5 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
+                      </tr>
+                    ))}
+                    {ticket.devolucion > 0 && (
+                      <tr className="border-t border-border bg-surface-alt/40">
+                        <td className="py-2.5 px-5 text-text-primary font-medium" colSpan={ocultarDestino ? 3 : 4}>
+                          Devolución
+                        </td>
+                        <td className="py-2.5 px-5 text-right font-medium text-text-primary">{fmt(ticket.devolucion)}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {totalesPorMaterial.length > 0 && (
+                <div className="border-t border-border px-5 py-3 bg-surface-alt/60">
+                  <p className="text-[11px] font-medium text-text-secondary mb-1.5">Total por material ({totalesPorMaterial.reduce((acc, t) => acc + t.cantidad, 0)} pesadas)</p>
+                  <div className="flex flex-wrap gap-x-6 gap-y-1">
+                    {totalesPorMaterial.map(t => (
+                      <div key={t.nombre} className="flex items-baseline gap-1.5 text-sm">
+                        <span className="text-text-secondary">{t.nombre}</span>
+                        <span className="text-text-muted text-xs">({t.cantidad}×)</span>
+                        <span className="font-semibold text-text-primary">{fmt(t.total)} kg</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </div>
+
+          {fotosGaleria.length > 0 && (
+            <div className="mb-4 print:hidden">
+              <p className="text-xs font-medium text-text-secondary mb-2">Fotos ({fotosGaleria.length})</p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                {fotosGaleria.map(({ key, url, label, peso }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setFotoAmpliada({ url, label, peso })}
+                    className="group relative aspect-square rounded-lg overflow-hidden border border-border"
+                    title="Ver foto en grande"
+                  >
+                    <img src={url} alt={label} loading="lazy" className="w-full h-full object-cover" />
+                    <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] leading-tight px-1.5 py-1 truncate text-left">
+                      {label}
+                    </span>
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                      <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <HistorialEdiciones entidadTipo="ticket_pesaje" entidadId={ticket.id} />
+        </>
       ) : (
         <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
+          {ticket.facturado && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+              Este ticket ya está facturado. Al guardar con la llave de edición, la factura se anula si aún no tiene pagos (el ticket queda disponible para volver a facturar con los datos corregidos). Si ya fue pagada, no se anula: te avisaremos para que revises el estado de cuenta.
+            </p>
+          )}
+
           <div>
-            <label className={labelClass}>Peso global (kg) *</label>
-            <input type="number" step="0.01" min="0" value={pesoGlobalEdit} onChange={e => setPesoGlobalEdit(e.target.value)} className={inputClass} placeholder="0.00" />
+            <label className={labelClass}>Fecha</label>
+            <input type="date" value={fechaEdit} onChange={e => setFechaEdit(e.target.value)} className={inputClass} required />
           </div>
+
+          {ticket.pesajeExterior ? (
+            <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-4 py-2.5">
+              Sin pesaje global — no hay peso global para reconciliar.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center justify-between text-sm bg-surface-alt border border-border rounded-lg px-4 py-2.5">
+                <span className="text-text-secondary">Peso global</span>
+                <span className="font-semibold text-text-primary">{fmt(pesajesTocados ? sumaPesajesGlobales(pesajesEdit) : ticket.pesoGlobal)} kg</span>
+              </div>
+              <PesajesGlobalesEditor
+                pesajes={pesajesEdit}
+                onChange={siguiente => { setPesajesEdit(siguiente); setPesajesTocados(true); }}
+              />
+            </>
+          )}
 
           <div className="space-y-3">
             <label className={labelClass + ' mb-0'}>Materiales</label>
@@ -272,32 +535,38 @@ function TicketDetallePage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={labelClass}>Material *</label>
-                      <select value={f.productoId} onChange={e => setFila(f.uid, 'productoId', e.target.value)} className={inputClass}>
-                        <option value="">— Selecciona —</option>
-                        {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelClass}>Subcategoría / detalle</label>
-                      <input type="text" value={f.subcategoria} onChange={e => setFila(f.uid, 'subcategoria', e.target.value)} className={inputClass} placeholder="Ej. PCB media densidad" />
-                    </div>
+                  <div>
+                    <label className={labelClass}>Material *</label>
+                    <button
+                      type="button"
+                      onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
+                      className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                    >
+                      <span className={f.productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                        {productos.find(p => p.id === f.productoId)?.nombre ?? '— Selecciona —'}
+                      </span>
+                      <ChevronDown size={14} className="text-text-muted shrink-0" />
+                    </button>
                   </div>
 
-                  <div>
-                    <label className={labelClass}>Destino (inventario) *</label>
-                    <select value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
-                      <option value="mpp">MPP (Material Por Procesar)</option>
-                      {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                    </select>
-                  </div>
+                  {esFilaSinLote(f, productos) ? (
+                    <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-3 py-2">
+                      "{productos.find(p => p.id === f.productoId)?.tipoMaterialNombre}" es una categoría sin lote — este material va directo a inventario general, no pide lote.
+                    </p>
+                  ) : (
+                    <div>
+                      <label className={labelClass}>Destino (inventario) *</label>
+                      <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
+                        <option value="" disabled>-Selecciona-</option>
+                        {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                      </select>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelClass}>Peso bruto (kg)</label>
-                      <input type="number" step="0.01" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
+                      <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
                     </div>
                     <div>
                       <label className={labelClass}>Tara</label>
@@ -312,24 +581,36 @@ function TicketDetallePage() {
                       {f.taraModo === 'preconfigurada' ? (
                         <div>
                           <div className="grid grid-cols-2 gap-2">
-                            <select value={f.taraId} onChange={e => setFila(f.uid, 'taraId', e.target.value)} className={inputClass}>
-                              <option value="">— Tara —</option>
-                              {taras.map(t => <option key={t.id} value={t.id}>{t.nombre} ({t.peso} kg)</option>)}
-                            </select>
+                            <button
+                              type="button"
+                              onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorTara(true); }}
+                              className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                            >
+                              <span className={f.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                                {taras.find(t => t.id === f.taraId)?.nombre ?? '— Tara —'}
+                              </span>
+                              <ChevronDown size={14} className="text-text-muted shrink-0" />
+                            </button>
                             <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
                           </div>
                           <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                         </div>
                       ) : (
-                        <input type="number" step="0.01" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
+                        <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => setFila(f.uid, 'taraManual', e.target.value)} className={inputClass} placeholder="0.00" />
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center justify-end gap-2 text-sm">
                     <span className="text-text-muted">Neto del material</span>
                     <span className={`font-semibold ${neto < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(neto)} kg</span>
                   </div>
+
+                  <FotoMaterialPicker
+                    fotos={f.fotos}
+                    onAgregar={files => agregarFotosFila(f.uid, files)}
+                    onQuitar={idx => quitarFotoFila(f.uid, idx)}
+                  />
                 </div>
               );
             })}
@@ -344,20 +625,58 @@ function TicketDetallePage() {
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm font-medium text-brand-800">
                 <Scale size={16} />
-                Peso neto total
+                Suma de materiales
               </span>
               <span className={`text-lg font-bold ${pesoNetoTotal < 0 ? 'text-red-600' : 'text-brand-700'}`}>{fmt(pesoNetoTotal)} kg</span>
             </div>
-            <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
-              <span className="text-brand-800">Diferencia (global vs. neto)</span>
-              <span className={`font-semibold ${Math.abs(diferencia) > 0.01 ? 'text-amber-600' : 'text-brand-700'}`}>{fmt(diferencia)} kg</span>
+            <div className="flex items-center justify-between gap-3 text-sm border-t border-brand-200 pt-2">
+              <label htmlFor="devolucion-edit" className="text-brand-800 shrink-0">Devolución (kg)</label>
+              <input
+                id="devolucion-edit"
+                type="number"
+                step="0.001"
+                min="0"
+                value={devolucionEdit}
+                onChange={e => setDevolucionEdit(e.target.value)}
+                className="w-28 px-2 py-1 bg-surface border border-brand-200 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400"
+                placeholder="0.00"
+              />
             </div>
+            <FotoMaterialPicker
+              label="Fotos de la devolución"
+              fotos={fotosDevolucionEdit}
+              onAgregar={agregarFotosDevolucion}
+              onQuitar={quitarFotoDevolucion}
+            />
+            {!ticket.pesajeExterior && (
+              <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
+                <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
+                <span className={`font-semibold ${colorClaseDiferencia(diferencia, ticket?.pesoGlobal ?? 0, ticket?.pesajeExterior ?? false)}`}>{fmt(diferencia)} kg</span>
+              </div>
+            )}
           </div>
+
+          <VehiculoSelector value={vehiculoEdit} onChange={setVehiculoEdit} vehiculos={vehiculos} inputClass={inputClass} labelClass={labelClass} />
 
           <div>
             <label className={labelClass}>Observaciones</label>
             <textarea value={observacionesEdit} onChange={e => setObservacionesEdit(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Notas del pesaje" />
           </div>
+
+          {requiereLlave && !esSuperadmin && (
+            <div>
+              <label className={labelClass}>Llave de edición</label>
+              <input
+                type="text"
+                value={llaveEdicion}
+                onChange={e => setLlaveEdicion(e.target.value)}
+                className={`${inputClass} font-mono uppercase tracking-wider`}
+                placeholder="Código entregado por el administrador"
+                autoComplete="off"
+                required
+              />
+            </div>
+          )}
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
@@ -371,15 +690,40 @@ function TicketDetallePage() {
           </div>
         </form>
       )}
-    </div>
-  );
-}
 
-function Fila({ label, valor }: { label: string; valor: string }) {
-  return (
-    <div className="flex justify-between py-2 border-b border-border last:border-b-0 print:border-black">
-      <span className="text-text-secondary text-sm">{label}</span>
-      <span className="text-text-primary text-sm font-medium text-right">{valor}</span>
+      {fotoAmpliada && (
+        <VisorFotos
+          fotos={fotosGaleria.map(f => f.url)}
+          indice={Math.max(0, fotosGaleria.findIndex(f => f.url === fotoAmpliada.url))}
+          onCambiar={i => setFotoAmpliada(fotosGaleria[i])}
+          onCerrar={() => setFotoAmpliada(null)}
+          pie={<>{fotoAmpliada.label}{fotoAmpliada.peso != null && ` — ${fmt(fotoAmpliada.peso)} kg`}</>}
+        />
+      )}
+
+      {mostrarSelectorMaterial && (
+        <SeleccionarMaterialModal
+          productos={productos}
+          onClose={() => setMostrarSelectorMaterial(false)}
+          onSeleccionar={id => {
+            if (filaActivaUid != null) setFila(filaActivaUid, 'productoId', id);
+            setMostrarSelectorMaterial(false);
+          }}
+        />
+      )}
+      {mostrarSelectorTara && (
+        <SeleccionarTaraModal
+          taras={taras}
+          taraSeleccionada={materiales.find(f => f.uid === filaActivaUid)?.taraId || undefined}
+          onClose={() => setMostrarSelectorTara(false)}
+          onSeleccionar={taraId => {
+            if (filaActivaUid != null) {
+              setMateriales(prev => prev.map(x => (x.uid === filaActivaUid ? { ...x, ...seleccionarTaraFila(x, taraId) } : x)));
+            }
+            setMostrarSelectorTara(false);
+          }}
+        />
+      )}
     </div>
   );
 }

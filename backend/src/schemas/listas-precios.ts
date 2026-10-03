@@ -10,10 +10,16 @@ const fechaIso = z
 
 export const crearListaSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(120),
+  /** Obligatorio, sin default: se fuerza a elegir para qué es la lista al
+   *  crearla. No se puede cambiar después (ver actualizarListaSchema). */
+  tipo: z.enum(['compra', 'venta'], { message: 'Elige si la lista es de compra o de venta.' }),
   vigenteDesde: fechaIso,
 });
 
+// tipo se omite a propósito: no es editable después de crear la lista (D12
+// del plan — una lista con historial no debe poder cambiar de tipo a medio camino).
 export const actualizarListaSchema = crearListaSchema
+  .omit({ tipo: true })
   .extend({ activo: z.boolean().optional() })
   .partial()
   .refine(
@@ -21,10 +27,11 @@ export const actualizarListaSchema = crearListaSchema
     { message: 'Debes enviar al menos un campo a actualizar.' }
   );
 
-/** Upsert de un precio (material) dentro de una lista. */
+/** Upsert de un precio (material) dentro de una lista. Permite 0 (material
+ *  sin valor comercial que igual se quiere dejar registrado en la lista). */
 export const upsertPrecioSchema = z.object({
   productoId: z.string().uuid('productoId inválido.'),
-  precio: z.number().positive('El precio debe ser mayor a 0.'),
+  precio: z.number().nonnegative('El precio no puede ser negativo.'),
 });
 
 export type CrearListaInput = z.infer<typeof crearListaSchema>;

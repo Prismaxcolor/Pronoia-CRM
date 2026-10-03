@@ -2,8 +2,12 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearFacturaInput } from '../schemas/facturas.js';
 import { notificarDocumento } from './telegram-notify-service.js';
 import { generarFacturaPdf, nombreArchivoFactura } from './document-generator.js';
+import { idsTicketsUnidos } from './ticket-principal.js';
+import { formatCodigoCompra, formatCodigoVenta } from '../utils/codigos.js';
 
 export type TipoFactura = 'compra' | 'venta';
+/** 'anulada': se conserva para historial, pero ya no es deuda ni se puede pagar. */
+export type EstadoFactura = 'borrador' | 'emitida' | 'pagada' | 'anulada';
 
 interface Config {
   tabla: 'facturas_compra' | 'facturas_venta';
@@ -36,23 +40,20 @@ const CONFIG: Record<TipoFactura, Config> = {
   },
 };
 
-/** Formatea el correlativo de una factura de compra: 1 → "Compra 0001". */
-function formatCodigoCompra(numero: number): string {
-  return `Compra ${String(numero).padStart(4, '0')}`;
-}
-
 interface DetalleRow {
   id: string;
   producto_id: string | null;
   peso: number | null;
   precio_unitario: number | null;
   subtotal: number | null;
+  /** Solo presente en detalle_facturas_compra. */
+  descuento_kg?: number | null;
   productos?: { nombre: string } | null;
 }
 
 interface FacturaRow {
   id: string;
-  /** Solo presente en facturas_compra (correlativo automático). */
+  /** Correlativo automático, presente en ambas tablas. */
   numero?: number | null;
   proveedor_id?: string | null;
   cliente_id?: string | null;
@@ -61,7 +62,7 @@ interface FacturaRow {
   monto_pagado?: number | null;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFactura;
   created_at: string;
   proveedores?: { nombre: string } | null;
   clientes?: { nombre: string } | null;
@@ -78,13 +79,15 @@ export interface ItemPublico {
   peso: number;
   precioUnitario: number;
   subtotal: number;
+  /** Kg descontados al facturar (0 salvo en compra). `peso` ya viene neto de esto. */
+  descuentoKg: number;
 }
 
 export interface FacturaPublica {
   id: string;
-  /** Correlativo automático. Solo en compras (null en ventas). */
+  /** Correlativo automático, en ambos tipos de factura. */
   numero: number | null;
-  /** Código de control formateado ("Compra 0001"). Solo en compras. */
+  /** Código de control formateado ("C-0001" / "V-0001"). */
   codigo: string | null;
   tipo: TipoFactura;
   entidadId: string | null;
@@ -97,7 +100,7 @@ export interface FacturaPublica {
   montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFactura;
   createdAt: string;
 }
 
@@ -109,6 +112,7 @@ function detalleToPublico(d: DetalleRow): ItemPublico {
     peso: Number(d.peso ?? 0),
     precioUnitario: Number(d.precio_unitario ?? 0),
     subtotal: Number(d.subtotal ?? 0),
+    descuentoKg: Number(d.descuento_kg ?? 0),
   };
 }
 
@@ -119,11 +123,12 @@ function toPublico(row: FacturaRow, tipo: TipoFactura): FacturaPublica {
   const items = (detalle ?? []).map(detalleToPublico);
   const ticketsJoin = tipo === 'compra' ? row.facturas_compra_tickets : row.facturas_venta_tickets;
   const ticketIds = (ticketsJoin ?? []).map(t => t.ticket_id);
-  const numero = tipo === 'compra' && row.numero != null ? Number(row.numero) : null;
+  const numero = row.numero != null ? Number(row.numero) : null;
+  const codigo = numero == null ? null : tipo === 'compra' ? formatCodigoCompra(numero) : formatCodigoVenta(numero);
   return {
     id: row.id,
     numero,
-    codigo: numero != null ? formatCodigoCompra(numero) : null,
+    codigo,
     tipo,
     entidadId,
     nombreEntidad,
@@ -222,6 +227,9 @@ export async function crearFactura(
     if (tickets.some(t => t.estado === 'bruto')) {
       return { error: 'Alguno de los tickets está en bruto (sin completar); no se puede facturar hasta terminarlo.' };
     }
+    if ((await idsTicketsUnidos(ticketIds)).length > 0) {
+      return { error: 'Alguno de los tickets está unido a otro ticket; factura el ticket principal.' };
+    }
     if (tickets.some(t => t.entidad_id !== input.entidadId)) {
       return { error: 'Todos los tickets deben ser del mismo proveedor/cliente que la factura.' };
     }
@@ -238,6 +246,7 @@ export async function crearFactura(
       producto_id: i.productoId,
       peso: i.peso,
       precio_unitario: i.precioUnitario,
+      descuento_kg: i.descuentoKg,
     })),
   });
 

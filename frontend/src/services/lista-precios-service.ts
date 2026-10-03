@@ -1,5 +1,5 @@
 import { apiFetch } from './api-client';
-import type { ListaPrecios, PrecioLista } from '@shared/types/index.js';
+import type { ListaPrecios, PrecioLista, TipoListaPrecios } from '@shared/types/index.js';
 
 /** Lista activa con el precio de un material concreto (para el selector). */
 export interface ListaParaProducto {
@@ -11,6 +11,7 @@ export interface ListaParaProducto {
 
 export interface CrearListaInput {
   nombre: string;
+  tipo: TipoListaPrecios;
   vigenteDesde?: string | null;
 }
 
@@ -20,9 +21,12 @@ export interface ActualizarListaInput {
   activo?: boolean;
 }
 
-export async function obtenerListas(): Promise<ListaPrecios[]> {
+/** Sin `tipo`, trae todas (pantalla de Configuración). Con `tipo`, filtra —
+ *  usar al armar el selector de una factura. */
+export async function obtenerListas(tipo?: TipoListaPrecios): Promise<ListaPrecios[]> {
   try {
-    const { listas } = await apiFetch<{ listas: ListaPrecios[] }>('/api/listas-precios');
+    const qs = tipo ? `?tipo=${tipo}` : '';
+    const { listas } = await apiFetch<{ listas: ListaPrecios[] }>(`/api/listas-precios${qs}`);
     return listas;
   } catch {
     return [];
@@ -107,11 +111,14 @@ export async function eliminarPrecio(
   }
 }
 
-/** Listas activas que tienen un precio definido para el material dado. */
-export async function obtenerListasParaProducto(productoId: string): Promise<ListaParaProducto[]> {
+/** Listas activas (del tipo dado) que tienen un precio definido para el material. */
+export async function obtenerListasParaProducto(
+  productoId: string,
+  tipo: TipoListaPrecios
+): Promise<ListaParaProducto[]> {
   try {
     const { listas } = await apiFetch<{ listas: ListaParaProducto[] }>(
-      `/api/listas-precios/para-producto/${productoId}`
+      `/api/listas-precios/para-producto/${productoId}?tipo=${tipo}`
     );
     return listas;
   } catch {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Send, Recycle } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { solicitarLoginPortal } from '../../services/portal-auth-service';
 
 function PortalLoginPage() {
@@ -25,8 +25,8 @@ function PortalLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-alt px-4">
       <div className="w-full max-w-sm bg-surface rounded-2xl shadow-md p-6 sm:p-8">
-        <div className="w-14 h-14 rounded-2xl bg-brand-600 flex items-center justify-center text-white mx-auto shadow-sm">
-          <Recycle size={26} />
+        <div className="w-16 h-16 rounded-2xl bg-brand-600 flex items-center justify-center mx-auto shadow-sm p-2">
+          <img src="/logo-pronoia.png" alt="Pronoia" className="w-full h-full object-contain" />
         </div>
         <h1 className="text-2xl font-bold text-text-primary text-center mt-4">Pronoia Scrap</h1>
         <p className="text-sm text-text-secondary text-center mt-1 mb-6">

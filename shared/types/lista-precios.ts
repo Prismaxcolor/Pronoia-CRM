@@ -7,10 +7,15 @@
  * (por proveedor, por semana, etc.).
  */
 
+export type TipoListaPrecios = 'compra' | 'venta';
+
 /** Cabecera de una lista de precios. */
 export interface ListaPrecios {
   id: string;
   nombre: string;
+  /** De compra (a proveedores) o de venta (a clientes). Se fija al crear la
+   *  lista y no se edita después. */
+  tipo: TipoListaPrecios;
   /** Fecha desde la que aplica esta lista (date ISO: YYYY-MM-DD). */
   vigenteDesde: string | null;
   activo: boolean;

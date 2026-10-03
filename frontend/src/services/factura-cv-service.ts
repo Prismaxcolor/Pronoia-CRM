@@ -1,6 +1,8 @@
 import { apiFetch } from './api-client';
 
 export type TipoFactura = 'compra' | 'venta';
+/** 'anulada': se conserva para historial, pero no es deuda ni se puede pagar. */
+export type EstadoFacturaCV = 'borrador' | 'emitida' | 'pagada' | 'anulada';
 
 export interface FacturaItemCV {
   id: string;
@@ -9,13 +11,15 @@ export interface FacturaItemCV {
   peso: number;
   precioUnitario: number;
   subtotal: number;
+  /** Kg descontados al facturar (0 salvo en compra). `peso` ya viene neto de esto. */
+  descuentoKg: number;
 }
 
 export interface FacturaCV {
   id: string;
-  /** Correlativo automático. Solo en compras (null en ventas). */
+  /** Correlativo automático, en ambos tipos de factura. */
   numero: number | null;
-  /** Código de control formateado ("Compra 0001"). Solo en compras. */
+  /** Código de control formateado ("C-0001" / "V-0001"). */
   codigo: string | null;
   tipo: TipoFactura;
   entidadId: string | null;
@@ -27,7 +31,7 @@ export interface FacturaCV {
   montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFacturaCV;
   createdAt: string;
 }
 
@@ -48,6 +52,7 @@ export function consolidarItems(items: FacturaItemCV[]): FacturaItemCV[] {
     if (ex) {
       ex.peso += it.peso;
       ex.subtotal += it.subtotal;
+      ex.descuentoKg += it.descuentoKg;
       ex.precioUnitario = ex.peso > 0 ? ex.subtotal / ex.peso : ex.precioUnitario;
     } else {
       mapa.set(clave, { ...it });
@@ -60,6 +65,8 @@ export interface CrearFacturaItemInput {
   productoId: string;
   peso: number;
   precioUnitario: number;
+  /** Solo tiene efecto en factura de compra. */
+  descuentoKg?: number;
 }
 
 export interface CrearFacturaInput {
