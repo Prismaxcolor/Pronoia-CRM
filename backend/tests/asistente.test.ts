@@ -1,4 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+
+// El servicio importa herramientas que usan supabaseAdmin; estas pruebas no tocan la BD.
+vi.mock('../src/config/supabase.js', () => ({ supabaseAdmin: {} }));
+
 import {
   asistenteChatSchema,
   nombrePila,
@@ -175,7 +179,7 @@ describe('servicio del asistente', () => {
 
   it('devuelve la respuesta de la IA', async () => {
     const cadena: ProveedorIA[] = [{ nombre: 'a', completar: async () => '¡Hola, Ana!' }];
-    expect(await responderChat(input, { cadena })).toEqual({ respuesta: '¡Hola, Ana!', origen: 'ia' });
+    expect(await responderChat(input, { cadena })).toEqual({ respuesta: '¡Hola, Ana!', origen: 'ia', modo: 'charla', consultas: [] });
   });
 
   it('si todo falla responde con frase de reserva en español, sin lanzar', async () => {
@@ -192,8 +196,10 @@ describe('servicio del asistente', () => {
     }
   });
 
-  it('el registro de herramientas está vacío (sin acceso a datos todavía)', () => {
-    expect(HERRAMIENTAS_ASISTENTE).toHaveLength(0);
+  it('sin userId ni proveedor con herramientas, BLOB queda en modo charla (sin datos)', async () => {
+    const cadena: ProveedorIA[] = [{ nombre: 'a', completar: async () => 'hola' }];
+    expect((await responderChat(input, { cadena })).modo).toBe('charla');
+    expect(HERRAMIENTAS_ASISTENTE.length).toBeGreaterThan(0);
   });
 });
 

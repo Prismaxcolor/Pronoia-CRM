@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Blobatar } from '@blobatar/react';
 import { useGaze } from '@blobatar/react/gaze';
 import { useAuth } from '../../hooks/use-auth-context';
-import { enviarMensajeAsistente, type MensajeChat } from '../../services/asistente-service';
+import { aHistorial, enviarMensajeAsistente, type MensajeChat } from '../../services/asistente-service';
 import { INACTIVIDAD_DEFECTO_MS } from './animo';
 import { BlobChat } from './BlobChat';
 import { BlobCara } from './BlobCara';
@@ -164,7 +164,7 @@ export default function Blob() {
   });
 
   const enviarMensaje = useCallback(async (texto: string) => {
-    const historial = mensajes.slice(-MAX_HISTORIAL_ENVIADO);
+    const historial = aHistorial(mensajes.slice(-MAX_HISTORIAL_ENVIADO));
     setMensajes(m => [...m, { role: 'user', content: texto }]);
     setEscribiendo(true);
     const r = await enviarMensajeAsistente({
@@ -173,9 +173,10 @@ export default function Blob() {
       nombre: usuario?.nombre ?? '',
       pagina: paginaDesdeRuta(vivo.current.pathname),
       personalidad: vivo.current.config.personalidad,
+      consultarDatos: vivo.current.config.consultarDatos,
     });
     setEscribiendo(false);
-    setMensajes(m => [...m, { role: 'assistant', content: r.respuesta }]);
+    setMensajes(m => [...m, { role: 'assistant', content: r.respuesta, consultas: r.consultas }]);
   }, [mensajes, usuario?.nombre]);
 
   const tam = PX_TAMANO[config.tamano];

@@ -3,6 +3,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { requireAuth } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { asistenteChatSchema, LIMITE_PETICIONES_POR_MINUTO } from '../utils/asistente-limites.js';
+import { verificarAcceso } from '../services/asistente-acceso.js';
 import { responderChat } from '../services/asistente-service.js';
 
 const router = Router();
@@ -20,6 +21,14 @@ const asistenteLimiter = rateLimit({
 });
 
 router.post('/chat', asistenteLimiter, validateBody(asistenteChatSchema), async (req, res) => {
+  // En tests no se toca la base real: el acceso se prueba con dobles en asistente-acceso.test.ts.
+  if (process.env.NODE_ENV !== 'test') {
+    const acceso = await verificarAcceso(req.user!.sub);
+    if (!acceso.ok) {
+      res.status(acceso.status).json({ error: acceso.error });
+      return;
+    }
+  }
   const resultado = await responderChat(req.body, { userId: req.user!.sub });
   res.json(resultado);
 });

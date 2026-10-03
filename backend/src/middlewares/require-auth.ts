@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { verificarToken, type JwtPayload } from '../services/auth-service.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import {
-  PERMISOS_POR_ROL,
+  permisosEfectivos,
   tienePermiso,
   type Permiso,
   type Recurso,
@@ -78,10 +78,7 @@ export function requirePermiso(recurso: Recurso, accion: Accion) {
     }
 
     const rol = data.rol as RolUsuario;
-    const permisosCustom = data.permisos as Permiso[] | null;
-    const permisos = permisosCustom && permisosCustom.length > 0
-      ? permisosCustom
-      : PERMISOS_POR_ROL[rol] ?? [];
+    const permisos = permisosEfectivos(rol, data.permisos as Permiso[] | null);
 
     if (!tienePermiso(permisos, recurso, accion)) {
       res.status(403).json({ error: `Te falta el permiso ${recurso}:${accion}.` });

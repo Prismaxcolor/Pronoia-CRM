@@ -5,8 +5,16 @@ export const MAX_LONGITUD_MENSAJE = 500;
 // Topes bajos a propósito: con una clave de pago, cada llamada debe costar fracciones de centavo.
 export const MAX_MENSAJES_HISTORIAL = 4;
 export const MAX_TOKENS_SALIDA = 150;
+/** Con datos de herramientas la respuesta necesita algo más de espacio (cifras, 2-3 líneas). */
+export const MAX_TOKENS_SALIDA_DATOS = 350;
+/** Rondas máximas de llamadas a herramientas por pregunta (la siguiente llamada ya es solo texto). */
+export const MAX_RONDAS_HERRAMIENTAS = 3;
+/** Llamadas a herramientas que se ejecutan por ronda; las demás se rechazan. */
+export const MAX_LLAMADAS_POR_RONDA = 4;
 export const MAX_LONGITUD_NOMBRE = 30;
 export const LIMITE_PETICIONES_POR_MINUTO = 8;
+/** Tope diario por usuario (una pregunta = una petición a /chat), persistido en Supabase. */
+export const LIMITE_PREGUNTAS_DIARIAS = 60;
 
 export const PERSONALIDADES = ['amigable', 'sarcastico', 'formal', 'misterioso'] as const;
 export type Personalidad = (typeof PERSONALIDADES)[number];
@@ -31,6 +39,8 @@ export function nombrePila(raw: string | undefined | null): string {
 
 const mensajeSchema = z.object({
   role: z.enum(['user', 'assistant']),
+  /** El frontend marca las respuestas de BLOB que incluyeron datos consultados del sistema. */
+  datos: z.boolean().optional(),
   // Se recorta (no se rechaza): una respuesta previa de la IA puede ser más larga que el límite.
   content: z.string().trim().min(1).transform(c => c.slice(0, MAX_LONGITUD_MENSAJE)),
 });
@@ -51,6 +61,8 @@ export const asistenteChatSchema = z.object({
     .transform((p): PaginaAsistente =>
       (PAGINAS_ASISTENTE as readonly string[]).includes(p ?? '') ? (p as PaginaAsistente) : 'otra'),
   personalidad: z.enum(PERSONALIDADES).optional().default('amigable'),
+  /** Interruptor del usuario: false = BLOB no consulta datos (no se ofrecen herramientas). */
+  consultarDatos: z.boolean().optional().default(true),
 });
 
 export type AsistenteChatInput = z.infer<typeof asistenteChatSchema>;

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// asistente-service importa herramientas que usan supabaseAdmin; aquí no se toca la BD.
+vi.mock('../src/config/supabase.js', () => ({ supabaseAdmin: {} }));
+
 import { obtenerSecreto, configurarSecretosParaPruebas, TTL_SECRETOS_MS } from '../src/config/secretos';
 import { responderChat, leerEntornoIA } from '../src/services/asistente-service';
 import { cabecerasWebhookN8n } from '../src/utils/n8n-headers';

@@ -24,6 +24,8 @@ export interface BlobConfig {
   frecuencia: Frecuencia;
   /** false = solo reacciones, sin chat con IA. */
   iaActiva: boolean;
+  /** false = BLOB no consulta datos del sistema (solo charla). Se aplica en el servidor. */
+  consultarDatos: boolean;
   frasesPropias: string[];
 }
 
@@ -35,6 +37,7 @@ export const CONFIG_DEFECTO: BlobConfig = {
   esquina: 'br',
   frecuencia: 'media',
   iaActiva: true,
+  consultarDatos: true,
   frasesPropias: [],
 };
 
@@ -64,6 +67,7 @@ export function normalizarConfig(raw: unknown): BlobConfig {
     esquina: enumOr(r.esquina, ESQUINAS, CONFIG_DEFECTO.esquina),
     frecuencia: enumOr(r.frecuencia, FRECUENCIAS, CONFIG_DEFECTO.frecuencia),
     iaActiva: typeof r.iaActiva === 'boolean' ? r.iaActiva : CONFIG_DEFECTO.iaActiva,
+    consultarDatos: typeof r.consultarDatos === 'boolean' ? r.consultarDatos : CONFIG_DEFECTO.consultarDatos,
     frasesPropias: frases,
   };
 }

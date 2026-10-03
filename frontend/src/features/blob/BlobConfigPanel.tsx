@@ -70,6 +70,16 @@ export function BlobConfigPanel({ config, semilla, onCambiar }: Props) {
         <Switch checked={config.iaActiva} onChange={iaActiva => onCambiar({ iaActiva })} />
       </label>
 
+      <label className="flex items-center justify-between gap-3">
+        <span className="text-sm text-text-primary">
+          Permitir que BLOB consulte datos
+          <span className="block text-xs text-text-muted">
+            Es una preferencia personal de esta sesión del navegador. Mientras esté activada, tus preguntas y los resultados de tus consultas se procesan con OpenAI. BLOB solo consulta lo que tus permisos permiten.
+          </span>
+        </span>
+        <Switch checked={config.consultarDatos} onChange={consultarDatos => onCambiar({ consultarDatos })} disabled={!config.iaActiva} />
+      </label>
+
       <label className="block">
         <span className={etiqueta}>Mis frases (una por línea, máx. {MAX_FRASES_PROPIAS})</span>
         <textarea

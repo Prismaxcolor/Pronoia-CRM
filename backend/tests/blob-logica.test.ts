@@ -154,6 +154,13 @@ describe('config', () => {
     expect(c.frasesPropias[1]).toHaveLength(80);
   });
 
+  it('"consultar datos" viene activado por defecto y solo acepta booleanos', () => {
+    expect(CONFIG_DEFECTO.consultarDatos).toBe(true);
+    expect(normalizarConfig({ consultarDatos: false }).consultarDatos).toBe(false);
+    expect(normalizarConfig({ consultarDatos: 'no' }).consultarDatos).toBe(true);
+    expect(normalizarConfig({}).consultarDatos).toBe(true);
+  });
+
   it('guarda y carga por usuario; storage roto no lanza', () => {
     const mem = new Map<string, string>();
     const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };

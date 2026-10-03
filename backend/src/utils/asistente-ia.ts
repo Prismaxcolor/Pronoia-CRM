@@ -8,9 +8,11 @@
  *   ASISTENTE_IA_PROVIDER = openai | gemini | groq | openrouter | llm7 | pollinations | auto
  *   ASISTENTE_IA_API_KEY  = clave del proveedor elegido
  *   ASISTENTE_IA_MODEL    = (opcional) sobrescribe el modelo
- * IMPORTANTE: los mensajes del usuario salen a un tercero. Nunca se envían datos del negocio.
+ * IMPORTANTE: los mensajes del usuario salen a un tercero. Los datos del negocio (resultados de las
+ * herramientas de consulta) SOLO se envían al proveedor con `soportaHerramientas` (OpenAI con clave);
+ * los anónimos (llm7, Pollinations) nunca los reciben.
  */
-import { MAX_TOKENS_SALIDA } from './asistente-limites.js';
+import { MAX_TOKENS_SALIDA, MAX_TOKENS_SALIDA_DATOS } from './asistente-limites.js';
 
 export interface MensajeIA {
   role: 'system' | 'user' | 'assistant';
@@ -23,9 +25,45 @@ export interface PeticionIA {
   timeoutMs: number;
 }
 
+/** Mensajes del bucle de herramientas (formato OpenAI chat/completions con tools). */
+export interface LlamadaHerramienta {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+export type MensajeConHerramientas =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string | null; tool_calls?: LlamadaHerramienta[] }
+  | { role: 'tool'; tool_call_id: string; content: string };
+
+export interface DefinicionHerramientaIA {
+  type: 'function';
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+}
+
+export interface PeticionConHerramientas {
+  mensajes: MensajeConHerramientas[];
+  herramientas: DefinicionHerramientaIA[];
+  /** true = el modelo debe responder con texto (última ronda). */
+  forzarTexto?: boolean;
+  maxTokens: number;
+  timeoutMs: number;
+}
+
+export interface TurnoIA {
+  texto: string;
+  llamadas: LlamadaHerramienta[];
+  tokensEntrada?: number;
+  tokensSalida?: number;
+}
+
 export interface ProveedorIA {
   nombre: string;
+  /** Solo los proveedores de pago de confianza (OpenAI) reciben datos del negocio. */
+  soportaHerramientas?: boolean;
   completar(peticion: PeticionIA): Promise<string>;
+  conversarConHerramientas?(peticion: PeticionConHerramientas): Promise<TurnoIA>;
 }
 
 export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
@@ -45,6 +83,8 @@ interface OpcionesCompat {
   modelo: string;
   apiKey?: string;
   fetchFn?: FetchFn;
+  /** Habilita function calling (solo OpenAI con clave). */
+  herramientas?: boolean;
 }
 
 /** Quita bloques de razonamiento que algunos modelos filtran en el contenido. */
@@ -52,40 +92,89 @@ export function limpiarRespuesta(texto: string): string {
   return texto.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
+/** POST a chat/completions con timeout; devuelve el JSON o lanza ('timeout', 'HTTP n'). */
+async function publicarChat(
+  op: OpcionesCompat,
+  fetchFn: FetchFn,
+  cuerpo: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (op.apiKey) headers.Authorization = `Bearer ${op.apiKey}`;
+    const resp = await fetchFn(op.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model: op.modelo, ...cuerpo }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') throw new Error('timeout');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+interface RespuestaChatCompletions {
+  choices?: Array<{ message?: { content?: unknown; tool_calls?: unknown } }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+}
+
+/** Acepta solo tool_calls bien formadas (id, nombre y argumentos como texto). */
+function extraerLlamadas(crudo: unknown): LlamadaHerramienta[] {
+  if (!Array.isArray(crudo)) return [];
+  return crudo.flatMap((c): LlamadaHerramienta[] => {
+    const llamada = c as { id?: unknown; function?: { name?: unknown; arguments?: unknown } };
+    const { id, function: fn } = llamada;
+    if (typeof id !== 'string' || typeof fn?.name !== 'string') return [];
+    return [{ id, type: 'function', function: { name: fn.name, arguments: typeof fn.arguments === 'string' ? fn.arguments : '{}' } }];
+  });
+}
+
 export function crearProveedorOpenAICompat(op: OpcionesCompat): ProveedorIA {
   const fetchFn: FetchFn = op.fetchFn ?? ((u, i) => fetch(u, i));
   return {
     nombre: op.nombre,
+    soportaHerramientas: op.herramientas === true,
     async completar({ mensajes, maxTokens, timeoutMs }) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (op.apiKey) headers.Authorization = `Bearer ${op.apiKey}`;
-        const resp = await fetchFn(op.url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: op.modelo,
-            messages: mensajes,
-            max_tokens: Math.min(maxTokens, MAX_TOKENS_SALIDA),
-          }),
-          signal: controller.signal,
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = (await resp.json()) as {
-          choices?: Array<{ message?: { content?: unknown } }>;
-        };
-        const contenido = data.choices?.[0]?.message?.content;
-        const texto = typeof contenido === 'string' ? limpiarRespuesta(contenido) : '';
-        if (!texto) throw new Error('respuesta vacía');
-        return texto;
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') throw new Error('timeout');
-        throw err;
-      } finally {
-        clearTimeout(timer);
+      const data = (await publicarChat(
+        op,
+        fetchFn,
+        { messages: mensajes, max_tokens: Math.min(maxTokens, MAX_TOKENS_SALIDA) },
+        timeoutMs,
+      )) as RespuestaChatCompletions;
+      const contenido = data.choices?.[0]?.message?.content;
+      const texto = typeof contenido === 'string' ? limpiarRespuesta(contenido) : '';
+      if (!texto) throw new Error('respuesta vacía');
+      return texto;
+    },
+    async conversarConHerramientas({ mensajes, herramientas, forzarTexto, maxTokens, timeoutMs }) {
+      if (op.herramientas !== true) throw new Error('el proveedor no soporta herramientas');
+      const cuerpo: Record<string, unknown> = {
+        messages: mensajes,
+        max_tokens: Math.min(maxTokens, MAX_TOKENS_SALIDA_DATOS),
+      };
+      if (herramientas.length > 0) {
+        cuerpo.tools = herramientas;
+        cuerpo.tool_choice = forzarTexto ? 'none' : 'auto';
       }
+      const data = (await publicarChat(op, fetchFn, cuerpo, timeoutMs)) as RespuestaChatCompletions;
+      const mensaje = data.choices?.[0]?.message;
+      const contenido = mensaje?.content;
+      const texto = typeof contenido === 'string' ? limpiarRespuesta(contenido) : '';
+      const llamadas = forzarTexto ? [] : extraerLlamadas(mensaje?.tool_calls);
+      if (!texto && llamadas.length === 0) throw new Error('respuesta vacía');
+      return {
+        texto,
+        llamadas,
+        tokensEntrada: data.usage?.prompt_tokens,
+        tokensSalida: data.usage?.completion_tokens,
+      };
     },
   };
 }
@@ -149,6 +238,7 @@ export function construirCadenaProveedores(env: Env, fetchFn?: FetchFn): Proveed
         modelo: modelo || preset.modelo,
         apiKey,
         fetchFn,
+        herramientas: elegido === 'openai',
       }),
       llm7,
       pollinations,

@@ -89,12 +89,12 @@ export function BlobChat({ config, semilla, mensajes, escribiendo, onEnviar, onB
             {mensajes.length === 0 && (
               <p className="py-4 text-center text-sm text-text-muted">
                 {config.iaActiva
-                  ? `Hola, soy ${config.nombre}. Pregúntame lo que quieras (aún no veo los datos del sistema).`
+                  ? `Hola, soy ${config.nombre}. Pregúntame lo que quieras${config.consultarDatos ? ' o consúltame datos del sistema (según tus permisos)' : ''}.`
                   : 'La IA está apagada: solo reacciono. Actívala en la configuración (engranaje).'}
               </p>
             )}
             {mensajes.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                 <p
                   className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm ${
                     m.role === 'user' ? 'bg-brand-600 text-text-on-brand' : 'bg-surface-hover text-text-primary'
@@ -102,6 +102,9 @@ export function BlobChat({ config, semilla, mensajes, escribiendo, onEnviar, onB
                 >
                   {m.content}
                 </p>
+                {m.consultas && m.consultas.length > 0 && (
+                  <p className="mt-0.5 px-1 text-[11px] text-text-muted">Consulté: {m.consultas.join(', ')}</p>
+                )}
               </div>
             ))}
             {escribiendo && (

@@ -101,6 +101,14 @@ export const PERMISOS_POR_ROL: Record<RolUsuario, Permiso[]> = {
   ],
 };
 
+/**
+ * Permisos efectivos de un usuario: los personalizados (si hay alguno) reemplazan a los del rol.
+ * Misma regla que usa requirePermiso; el superadmin se resuelve aparte (siempre pasa).
+ */
+export function permisosEfectivos(rol: RolUsuario, personalizados: Permiso[] | null | undefined): Permiso[] {
+  return personalizados && personalizados.length > 0 ? personalizados : PERMISOS_POR_ROL[rol] ?? [];
+}
+
 export function tienePermiso(permisos: Permiso[], recurso: Recurso, accion: Accion): boolean {
   return permisos.some(p => p.recurso === recurso && p.accion === accion);
 }
