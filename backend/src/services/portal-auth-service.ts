@@ -105,7 +105,7 @@ export async function solicitarLogin(identificador: string): Promise<void> {
 
     const respuesta = await fetch(ENV.N8N_WEBHOOK_PORTAL_LOGIN, {
       method: 'POST',
-      headers: cabecerasWebhookN8n(),
+      headers: await cabecerasWebhookN8n(),
       body: JSON.stringify({ chatId: entidad.chatId, deepLink }),
       signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
     });

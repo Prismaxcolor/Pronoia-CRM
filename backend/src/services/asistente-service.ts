@@ -5,10 +5,22 @@ import {
   completarConRespaldo,
   construirCadenaProveedores,
   ErrorIA,
+  type FetchFn,
   type MensajeIA,
   type ProveedorIA,
 } from '../utils/asistente-ia.js';
 import { logger } from '../utils/logger.js';
+import { obtenerSecreto } from '../config/secretos.js';
+
+const CLAVES_IA = ['ASISTENTE_IA_PROVIDER', 'ASISTENTE_IA_API_KEY', 'ASISTENTE_IA_MODEL'] as const;
+
+/** Entorno para construirCadenaProveedores: cada clave sale de env o, si falta, de la tabla de secretos. */
+export async function leerEntornoIA(
+  leer: (clave: string) => Promise<string | undefined> = obtenerSecreto,
+): Promise<Record<string, string | undefined>> {
+  const valores = await Promise.all(CLAVES_IA.map(clave => leer(clave)));
+  return Object.fromEntries(CLAVES_IA.map((clave, i) => [clave, valores[i]]));
+}
 
 /** Vercel Hobby corta a los 10 s: cada proveedor tiene 4,5 s (caben los 2 anónimos). */
 export const TIMEOUT_PROVEEDOR_MS = 4500;
@@ -58,9 +70,9 @@ export function armarMensajes(input: AsistenteChatInput): MensajeIA[] {
 
 export async function responderChat(
   input: AsistenteChatInput,
-  opciones: { cadena?: ProveedorIA[]; userId?: string } = {},
+  opciones: { cadena?: ProveedorIA[]; userId?: string; fetchFn?: FetchFn } = {},
 ): Promise<RespuestaAsistente> {
-  const cadena = opciones.cadena ?? construirCadenaProveedores(process.env);
+  const cadena = opciones.cadena ?? construirCadenaProveedores(await leerEntornoIA(), opciones.fetchFn);
   try {
     const { texto, proveedor } = await completarConRespaldo(cadena, {
       mensajes: armarMensajes(input),

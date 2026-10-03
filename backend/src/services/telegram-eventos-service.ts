@@ -140,11 +140,12 @@ export function huboCambioVisible(antes: TicketPublico, despues: TicketPublico):
   return huella(antes) !== huella(despues);
 }
 
-function mensajeFactura(f: FacturaPublica, anulada: boolean, motivo?: string): string {
+/** El motivo de anulación es interno: nunca se incluye en el mensaje a terceros. */
+function mensajeFactura(f: FacturaPublica, anulada: boolean): string {
   const ref = f.codigo ?? `N.º ${f.id.slice(0, 8)}`;
   const tipo = f.tipo === 'compra' ? 'de compra' : 'de venta';
   if (anulada) {
-    return `FACTURA ANULADA: la factura ${tipo} ${ref} por $${fmt(f.total)} fue anulada${motivo ? ` (${motivo})` : ''} y ya no es válida.`;
+    return `FACTURA ANULADA: la factura ${tipo} ${ref} por $${fmt(f.total)} fue anulada y ya no es válida.`;
   }
   return `Factura ${tipo} ${ref} por $${fmt(f.total)}.`;
 }
@@ -167,8 +168,7 @@ function notificarFacturaEmitidaInterno(factura: FacturaPublica): void {
 /** Facturas que anuló la edición de un ticket (efecto 'anulada'): se manda el PDF marcado ANULADA. */
 function notificarFacturasAnuladasInterno(
   efectos: ReadonlyArray<EfectoFactura>,
-  cargarFactura: (tipo: TipoFactura, id: string) => Promise<FacturaPublica | null>,
-  motivo?: string
+  cargarFactura: (tipo: TipoFactura, id: string) => Promise<FacturaPublica | null>
 ): void {
   for (const e of efectos) {
     if (e.accion !== 'anulada' || !e.entidadId) continue;
@@ -182,7 +182,7 @@ function notificarFacturasAnuladasInterno(
         return {
           buffer: generarFacturaPdf(factura),
           nombreArchivo: nombreArchivoFactura(factura).replace(/\.pdf$/, '-anulada.pdf'),
-          mensaje: mensajeFactura(factura, true, motivo),
+          mensaje: mensajeFactura(factura, true),
         };
       },
     });

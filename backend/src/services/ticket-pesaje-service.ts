@@ -450,7 +450,7 @@ export async function editarTicket(
   // ni impedir la auditoría de abajo.
   try {
     if (antes && huboCambioVisible(antes, ticket)) notificarTicket(ticket, { corregido: true });
-    if (facturado) notificarFacturasAnuladas(parsearEfectosFactura(facturasRaw), obtenerFactura, `corrección del ticket ${ticket.codigo}`);
+    if (facturado) notificarFacturasAnuladas(parsearEfectosFactura(facturasRaw), obtenerFactura);
   } catch (err) {
     logger.error({ evento: 'ticket_edicion_error_aviso_telegram', ticketId: id, mensaje: err instanceof Error ? err.message : String(err) });
   }

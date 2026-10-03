@@ -48,7 +48,7 @@ export async function notificarGrupo(payload: PayloadGrupo): Promise<void> {
     };
     const respuesta = await fetch(ENV.N8N_WEBHOOK_GRUPO, {
       method: 'POST',
-      headers: cabecerasWebhookN8n(),
+      headers: await cabecerasWebhookN8n(),
       body: JSON.stringify(cuerpo),
       signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
     });

@@ -223,6 +223,8 @@ describe('edición de ticket con llave', () => {
     expect(corregido?.mensaje).toContain('DOCUMENTO CORREGIDO');
     expect(anulada).toMatchObject({ accion: 'documento', entidadTipo: 'proveedor', chatId: CHAT_P1 });
     expect(anulada?.mensaje).toContain('FACTURA ANULADA');
+    expect(anulada?.mensaje).not.toContain('corrección del ticket'); // el motivo de anulación es interno
+    expect(anulada?.mensaje).not.toContain('(');
     expect(anulada?.nombreArchivo).toBe('factura-compra-c-0003-anulada.pdf');
   });
 

@@ -54,11 +54,11 @@ describe('ENV: webhooks de n8n', () => {
 
 // --- H1(b): header X-Pronoia-Secret ----------------------------------------------------
 describe('cabecerasWebhookN8n', () => {
-  afterEach(() => vi.doUnmock('../src/config/env.js'));
+  afterEach(() => vi.unstubAllEnvs());
 
   async function cabeceras(secreto: string) {
     vi.resetModules();
-    vi.doMock('../src/config/env.js', () => ({ ENV: { N8N_WEBHOOK_SECRET: secreto } }));
+    vi.stubEnv('N8N_WEBHOOK_SECRET', secreto);
     return (await import('../src/utils/n8n-headers.js')).cabecerasWebhookN8n();
   }
 

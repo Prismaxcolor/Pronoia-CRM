@@ -99,7 +99,7 @@ async function llamarWebhook(
   try {
     const respuesta = await fetch(ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO, {
       method: 'POST',
-      headers: cabecerasWebhookN8n(),
+      headers: await cabecerasWebhookN8n(),
       body: JSON.stringify({
         tipoDocumento: base.tipoDocumento,
         entidadTipo: base.entidadTipo,
