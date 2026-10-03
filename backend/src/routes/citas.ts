@@ -4,6 +4,7 @@ import { validateBody } from '../middlewares/validate.js';
 import { actualizarEstadoCitaSchema, crearCitaStaffSchema } from '../schemas/citas.js';
 import { listarCitasStaff, actualizarEstadoCita, crearCita, HORARIOS_DISPONIBLES } from '../services/cita-despacho-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { notificarCita } from '../services/telegram-eventos-service.js';
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.post('/', requirePermiso('despachos', 'crear'), validateBody(crearCitaSta
     userId: req.user!.sub,
     citaId: result.cita.id,
   });
+  notificarCita(entidadTipo, entidadId, result.cita); // Telegram, fire-and-forget
   res.status(201).json(result);
 });
 

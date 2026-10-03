@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { TABLA_ENTIDAD, type EntidadTelegram } from './telegram-link-service.js';
 import type { CrearCitaInput } from '../schemas/citas.js';
+import { notificarCita } from './telegram-eventos-service.js';
 
 export type EstadoCita = 'pendiente' | 'confirmada' | 'reprogramada' | 'cancelada' | 'completada';
 
@@ -171,6 +172,10 @@ export async function cancelarCitaPropia(
 }
 
 export async function actualizarEstadoCita(id: string, estado: EstadoCita): Promise<CitaPublica | null> {
+  // Estado previo: si no cambió, no se vuelve a avisar por Telegram (idempotencia).
+  const { data: previa } = await supabaseAdmin.from('citas_despacho').select('estado').eq('id', id).maybeSingle();
+  const estadoPrevio = (previa as { estado: string } | null)?.estado;
+
   const { data, error } = await supabaseAdmin
     .from('citas_despacho')
     .update({ estado })
@@ -179,5 +184,8 @@ export async function actualizarEstadoCita(id: string, estado: EstadoCita): Prom
     .maybeSingle();
 
   if (error || !data) return null;
-  return citaToPublica(data as CitaRow);
+  const cita = citaToPublica(data as CitaRow);
+  // Telegram (fire-and-forget): el cliente/proveedor se entera del cambio de estado de su cita.
+  if (estadoPrevio !== estado) notificarCita(cita.entidadTipo, cita.entidadId, cita);
+  return cita;
 }

@@ -1,51 +1,19 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { RegistrarCobroMultipleInput } from '../schemas/cobros.js';
-import { notificarDocumento } from './telegram-notify-service.js';
+import { notificarPago } from './telegram-eventos-service.js';
 import { logger } from '../utils/logger.js';
 
 /** Espejo de pago-service.ts (registrarPagoMultiple) para cobros a cliente —
  *  ver nota en nota-ajuste-cliente-service.ts sobre por qué es un archivo
  *  aparte en vez de generalizar el de proveedor. */
 
-const MIME_POR_EXTENSION: Record<string, string> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-};
-
-function extension(url: string): string {
-  const limpio = url.split('?')[0];
-  return limpio.split('.').pop()?.toLowerCase() ?? 'jpg';
-}
-
-function notificarComprobanteSiCorresponde(clienteId: string, comprobanteUrl: string, indice: number): void {
-  const ext = extension(comprobanteUrl);
-  void notificarDocumento({
-    entidadTipo: 'cliente',
-    entidadId: clienteId,
-    tipoDocumento: 'comprobante',
-    nombreArchivo: `comprobante-cobro-${indice + 1}.${ext}`,
-    contentType: MIME_POR_EXTENSION[ext] ?? 'application/octet-stream',
-    generarBuffer: async () => {
-      const resp = await fetch(comprobanteUrl);
-      if (!resp.ok) throw new Error(`No se pudo descargar el comprobante (status ${resp.status}).`);
-      return Buffer.from(await resp.arrayBuffer());
-    },
-  });
-}
-
-async function adjuntarComprobante(movimientoId: string, clienteId: string, comprobantes: string[]): Promise<void> {
+async function adjuntarComprobante(movimientoId: string, comprobantes: string[]): Promise<void> {
   const { error } = await supabaseAdmin
     .from('movimientos')
     .update({ comprobantes })
     .eq('id', movimientoId);
 
-  if (error) {
-    logger.error({ evento: 'cobro_comprobante_no_guardado', mensaje: error.message, movimientoId });
-  } else {
-    comprobantes.forEach((url, indice) => notificarComprobanteSiCorresponde(clienteId, url, indice));
-  }
+  if (error) logger.error({ evento: 'cobro_comprobante_no_guardado', mensaje: error.message, movimientoId });
 }
 
 interface ResultadoCobroMulti {
@@ -82,8 +50,13 @@ export async function registrarCobroMultiple(
   const resultado = data as ResultadoCobroMulti;
 
   if (input.comprobantes.length > 0 && resultado.movimientoPrincipalId) {
-    await adjuntarComprobante(resultado.movimientoPrincipalId, input.clienteId, input.comprobantes);
+    await adjuntarComprobante(resultado.movimientoPrincipalId, input.comprobantes);
   }
+  // Telegram (fire-and-forget): comprobante del cobro/anticipo o del cruce puro (sin dinero).
+  notificarPago('cliente', input.clienteId, resultado.grupoId, {
+    comprobantes: resultado.movimientoPrincipalId ? input.comprobantes : [],
+    esCruce: resultado.movimientoPrincipalId === null,
+  });
 
   return resultado;
 }

@@ -1,7 +1,9 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { logger } from '../utils/logger.js';
 import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput, PesajeGlobalInput } from '../schemas/tickets-pesaje.js';
-import { notificarDocumento } from './telegram-notify-service.js';
-import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
+import { notificarTicket, notificarFacturasAnuladas, huboCambioVisible } from './telegram-eventos-service.js';
+import { obtenerFactura } from './factura-service.js';
+import { parsearEfectosFactura } from '../utils/factura-ticket-edicion.js';
 import {
   contarSecundarios,
   esErrorFuncionInexistente,
@@ -262,14 +264,7 @@ export async function obtenerTicket(id: string): Promise<TicketPublico | null> {
 
 /** Dispara el envío del ticket por Telegram cuando queda 'completo' (fire-and-forget). */
 function notificarTicketSiCorresponde(ticket: TicketPublico): void {
-  if (ticket.estado !== 'completo' || !ticket.entidadId) return;
-  void notificarDocumento({
-    entidadTipo: ticket.tipo === 'compra' ? 'proveedor' : 'cliente',
-    entidadId: ticket.entidadId,
-    tipoDocumento: 'ticket',
-    nombreArchivo: nombreArchivoTicket(ticket),
-    generarBuffer: nombreEntidad => generarTicketPdf(ticket, nombreEntidad),
-  });
+  notificarTicket(ticket); // PDF + fotos; solo si está 'completo' (ver telegram-eventos-service.ts)
 }
 
 function pesajesGlobalesARpc(pesajes: PesajeGlobalInput[]) {
@@ -448,7 +443,17 @@ export async function editarTicket(
 
   const ticket = await obtenerTicket(id);
   if (!ticket) return { error: 'El ticket se editó pero no se pudo leer de vuelta.' };
-  const avisosFactura = facturado ? await avisosDeFacturasEditadas((data as { facturas?: unknown } | null)?.facturas) : [];
+  const facturasRaw = (data as { facturas?: unknown } | null)?.facturas;
+  const avisosFactura = facturado ? await avisosDeFacturasEditadas(facturasRaw) : [];
+  // Telegram (fire-and-forget): ticket corregido si cambió algo visible, y aviso de las facturas que la edición anuló.
+  // Aislado: ni un dato raro ni un fallo de armado del aviso pueden romper la edición ya commiteada
+  // ni impedir la auditoría de abajo.
+  try {
+    if (antes && huboCambioVisible(antes, ticket)) notificarTicket(ticket, { corregido: true });
+    if (facturado) notificarFacturasAnuladas(parsearEfectosFactura(facturasRaw), obtenerFactura, `corrección del ticket ${ticket.codigo}`);
+  } catch (err) {
+    logger.error({ evento: 'ticket_edicion_error_aviso_telegram', ticketId: id, mensaje: err instanceof Error ? err.message : String(err) });
+  }
   const registrada = await auditarEdicionTicket(id, actor, auth.autorizadoPor, antes, ticket, { facturado, avisosFactura });
   return {
     ticket,

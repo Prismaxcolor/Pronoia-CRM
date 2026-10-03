@@ -1,7 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearFacturaInput } from '../schemas/facturas.js';
-import { notificarDocumento } from './telegram-notify-service.js';
-import { generarFacturaPdf, nombreArchivoFactura } from './document-generator.js';
+import { notificarFacturaEmitida } from './telegram-eventos-service.js';
 import { idsTicketsUnidos } from './ticket-principal.js';
 import { formatCodigoCompra, formatCodigoVenta } from '../utils/codigos.js';
 
@@ -193,14 +192,7 @@ export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<Fac
 
 /** Dispara el envío de la factura por Telegram cuando queda 'emitida' (fire-and-forget). */
 function notificarFacturaSiCorresponde(factura: FacturaPublica): void {
-  if (factura.estado !== 'emitida' || !factura.entidadId) return;
-  void notificarDocumento({
-    entidadTipo: factura.tipo === 'compra' ? 'proveedor' : 'cliente',
-    entidadId: factura.entidadId,
-    tipoDocumento: 'factura',
-    nombreArchivo: nombreArchivoFactura(factura),
-    generarBuffer: () => generarFacturaPdf(factura),
-  });
+  notificarFacturaEmitida(factura); // PDF; solo si está 'emitida' (ver telegram-eventos-service.ts)
 }
 
 export async function crearFactura(

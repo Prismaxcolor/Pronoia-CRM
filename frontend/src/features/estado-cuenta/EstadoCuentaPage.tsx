@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, DollarSign, FileEdit, Ban } from 'lucide-react';
+import { ArrowLeft, Printer, DollarSign, FileEdit, Ban, Send } from 'lucide-react';
 import {
   obtenerEstadoCuenta,
+  enviarEstadoCuentaTelegram,
   type EntradaEstadoCuenta,
   type EstadoCuenta,
   type TipoEntidad,
@@ -85,6 +86,7 @@ function EstadoCuentaPage({ tipo }: Props) {
   const [pagoAbierto, setPagoAbierto] = useState(false);
   const [notaAbierta, setNotaAbierta] = useState(false);
   const [notaAAnular, setNotaAAnular] = useState<EntradaEstadoCuenta | null>(null);
+  const [enviandoTelegram, setEnviandoTelegram] = useState(false);
 
   const volverA = tipo === 'proveedor' ? '/proveedores' : '/clientes';
   const etiquetaEntidad = tipo === 'proveedor' ? 'Proveedores' : 'Clientes';
@@ -95,6 +97,14 @@ function EstadoCuentaPage({ tipo }: Props) {
   // permiso de editar la entidad correspondiente (proveedores o clientes).
   const puedePagar = tienePermiso('cochinito', 'crear');
   const puedeAjustar = tienePermiso(recursoEntidad, 'editar');
+
+  const enviarPorTelegram = async () => {
+    setEnviandoTelegram(true);
+    const r = await enviarEstadoCuentaTelegram(tipo, id);
+    setEnviandoTelegram(false);
+    if ('error' in r) toast.errorMsg(r.error);
+    else toast.exito('Estado de cuenta enviado por Telegram.');
+  };
 
   const recargar = () =>
     obtenerEstadoCuenta(tipo, id, desde || undefined, hasta || undefined)
@@ -218,6 +228,18 @@ function EstadoCuentaPage({ tipo }: Props) {
             <Printer size={16} />
             Imprimir
           </button>
+          {puedeAjustar && (
+            <button
+              type="button"
+              onClick={enviarPorTelegram}
+              disabled={enviandoTelegram}
+              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors disabled:opacity-50"
+              title="Manda el estado de cuenta (PDF) al Telegram vinculado"
+            >
+              <Send size={16} />
+              {enviandoTelegram ? 'Enviando...' : 'Enviar por Telegram'}
+            </button>
+          )}
           <CompartirBoton titulo="Estado de cuenta" />
         </div>
       </div>

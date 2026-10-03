@@ -8,6 +8,17 @@ function parseOrigins(raw: string | undefined): string[] {
   return raw.split(',').map(o => o.trim()).filter(Boolean);
 }
 
+const ES_PRODUCCION = process.env.NODE_ENV === 'production';
+const N8N_BASE_PRODUCCION = 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook';
+
+/** URL por defecto de un webhook de n8n: SOLO en producción (Vercel). En development/test
+ *  queda vacía a propósito, para que ningún entorno local/CI envíe mensajes reales a
+ *  proveedores o clientes. Para probar en local hay que fijar la variable explícitamente. */
+function webhookN8n(valor: string | undefined, rutaProduccion: string): string {
+  if (valor) return valor;
+  return ES_PRODUCCION ? `${N8N_BASE_PRODUCCION}/${rutaProduccion}` : '';
+}
+
 export const ENV = {
   PORT: parseInt(process.env.PORT || '3000', 10),
   NODE_ENV: process.env.NODE_ENV || 'development',
@@ -22,21 +33,25 @@ export const ENV = {
    *  y hace la entrega real por Telegram. Si falta, notificarDocumento no hace nada
    *  (no rompe el flujo de negocio que lo dispara). */
   N8N_WEBHOOK_ENVIAR_DOCUMENTO:
-    process.env.N8N_WEBHOOK_ENVIAR_DOCUMENTO || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/enviar-documento-pronoia',
+    webhookN8n(process.env.N8N_WEBHOOK_ENVIAR_DOCUMENTO, 'enviar-documento-pronoia'),
   /** Webhook del workflow v2 de n8n ("Enviar Contenido a Proveedor/Cliente"): entrega por
    *  Telegram documentos, fotos/álbumes y mensajes de texto (campo `accion`). Variable
    *  nueva a propósito: N8N_WEBHOOK_ENVIAR_DOCUMENTO sigue apuntando al workflow v1 (solo
    *  documentos) y puede estar fijada así en Vercel. */
   N8N_WEBHOOK_ENVIAR_CONTENIDO:
-    process.env.N8N_WEBHOOK_ENVIAR_CONTENIDO || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/enviar-contenido-pronoia',
+    webhookN8n(process.env.N8N_WEBHOOK_ENVIAR_CONTENIDO, 'enviar-contenido-pronoia'),
   /** Webhook de n8n que manda el link de acceso al portal por Telegram. */
   N8N_WEBHOOK_PORTAL_LOGIN:
-    process.env.N8N_WEBHOOK_PORTAL_LOGIN || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/portal-enviar-link-acceso',
+    webhookN8n(process.env.N8N_WEBHOOK_PORTAL_LOGIN, 'portal-enviar-link-acceso'),
+  /** Secreto compartido OPCIONAL con n8n: si existe, se envía en el header X-Pronoia-Secret
+   *  en cada llamada a los webhooks. Sin valor por defecto (el repo es público); se carga
+   *  solo como variable de entorno. Sin variable no se envía header (retrocompatible). */
+  N8N_WEBHOOK_SECRET: process.env.N8N_WEBHOOK_SECRET || '',
   /** Webhook de n8n ("Notificar Grupo Pronoia") que recibe {texto, parseMode, documentoUrl?,
    *  nombreArchivo?, fotos?[]} y lo manda al grupo interno de Telegram. El chat id del grupo
    *  vive en el workflow de n8n, no aquí. */
   N8N_WEBHOOK_GRUPO:
-    process.env.N8N_WEBHOOK_GRUPO || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/notificar-grupo-pronoia',
+    webhookN8n(process.env.N8N_WEBHOOK_GRUPO, 'notificar-grupo-pronoia'),
   /** Interruptor general de las notificaciones al grupo ('false' las apaga). Apagado en tests. */
   GRUPO_NOTIFICACIONES_ACTIVAS: process.env.GRUPO_NOTIFICACIONES !== 'false' && process.env.NODE_ENV !== 'test',
   /** Eventos a silenciar, separados por coma: claves ("ticket.editado") o categorías ("maestros"). */

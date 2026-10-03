@@ -1,11 +1,12 @@
 // Diagnóstico manual del envío de documentos por Telegram (Fase 1). Crea un
 // proveedor de prueba temporal, le manda un ticket de pesaje de prueba al chat_id
-// indicado, y borra el proveedor al terminar. Requiere N8N_WEBHOOK_ENVIAR_DOCUMENTO
+// indicado, y borra el proveedor al terminar. Requiere N8N_WEBHOOK_ENVIAR_CONTENIDO
 // configurado en .env y que el bot ya te haya vinculado (tu chat_id real).
 //
 // Uso: npx tsx scripts/test-telegram-notify.ts <chat_id>
 
 import { supabaseAdmin as sb } from '../src/config/supabase.js';
+import { ENV } from '../src/config/env.js';
 import { notificarDocumento } from '../src/services/telegram-notify-service.js';
 import { generarTicketPdf, nombreArchivoTicket } from '../src/services/document-generator.js';
 import type { TicketPublico } from '../src/services/ticket-pesaje-service.js';
@@ -13,6 +14,13 @@ import type { TicketPublico } from '../src/services/ticket-pesaje-service.js';
 const chatId = process.argv[2];
 if (!chatId) {
   console.error('Uso: npx tsx scripts/test-telegram-notify.ts <chat_id>');
+  process.exit(1);
+}
+
+// Fuera de producción no hay URL por defecto (evita envíos reales por accidente): hay que
+// fijar N8N_WEBHOOK_ENVIAR_CONTENIDO a propósito en .env para este diagnóstico.
+if (!ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO) {
+  console.error('N8N_WEBHOOK_ENVIAR_CONTENIDO no está definido en .env: no se envía nada (sin URL por defecto fuera de producción).');
   process.exit(1);
 }
 
@@ -55,8 +63,7 @@ try {
     entidadTipo: 'proveedor',
     entidadId: proveedor.id,
     tipoDocumento: 'ticket',
-    nombreArchivo: nombreArchivoTicket(ticket),
-    generarBuffer: nombreEntidad => generarTicketPdf(ticket, nombreEntidad),
+    preparar: nombreEntidad => ({ buffer: generarTicketPdf(ticket, nombreEntidad), nombreArchivo: nombreArchivoTicket(ticket) }),
   });
   console.log('✅ notificarDocumento() ejecutado sin errores. Revisá Telegram.');
 } finally {

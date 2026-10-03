@@ -8,10 +8,13 @@ import {
   borrarCliente,
 } from '../services/cliente-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { estadoCuentaTelegramLimiter } from '../middlewares/rate-limit.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearClienteSchema, actualizarClienteSchema } from '../schemas/clientes.js';
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { generarLinkTelegram } from '../services/telegram-link-service.js';
+import { enviarEstadoCuentaTelegram } from '../services/telegram-estado-cuenta-service.js';
 import { crearNotaAjusteCliente, anularNotaAjusteCliente, obtenerNotaAjusteCliente } from '../services/nota-ajuste-cliente-service.js';
 import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-ajuste.js';
 import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
@@ -41,6 +44,24 @@ router.get('/:id/estado-cuenta', requirePermiso('clientes', 'ver'), async (req, 
   }
   res.json(estado);
 });
+
+// Manda el estado de cuenta (versión externa, PDF) al Telegram de la entidad, a pedido del equipo.
+router.post(
+  '/:id/estado-cuenta/enviar-telegram',
+  requirePermiso('clientes', 'editar'),
+  validarUuidParam('id'),
+  estadoCuentaTelegramLimiter,
+  async (req, res) => {
+    const id = String(req.params.id);
+    const result = await enviarEstadoCuentaTelegram('cliente', id);
+    if ('error' in result) {
+      res.status(result.codigo).json({ error: result.error });
+      return;
+    }
+    logger.info({ evento: 'cliente_estado_cuenta_telegram', ip: clienteIp(req), userId: req.user!.sub, clienteId: id });
+    res.status(202).json({ ok: true });
+  }
+);
 
 // Detalle de una nota (vista tipo "ticket" con impresión) — espejo de
 // proveedores.ts, mismo permiso que el estado de cuenta, solo lectura.

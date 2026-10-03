@@ -1,4 +1,4 @@
-import { apiFetch } from './api-client';
+import { apiFetch, ApiError } from './api-client';
 
 export type TipoEntidad = 'proveedor' | 'cliente';
 
@@ -40,6 +40,17 @@ export interface EstadoCuenta {
   entidad: { id: string; tipo: TipoEntidad; nombre: string };
   entradas: EntradaEstadoCuenta[];
   totales: { facturado: number; pagado: number; saldo: number };
+}
+
+/** Manda el estado de cuenta (PDF, versión externa) al Telegram de la entidad. Devuelve el mensaje de error si no se pudo. */
+export async function enviarEstadoCuentaTelegram(tipo: TipoEntidad, id: string): Promise<{ ok: true } | { error: string }> {
+  const base = tipo === 'proveedor' ? '/api/proveedores' : '/api/clientes';
+  try {
+    await apiFetch<{ ok: true }>(`${base}/${id}/estado-cuenta/enviar-telegram`, { method: 'POST' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof ApiError ? err.message : 'No se pudo enviar el estado de cuenta.' };
+  }
 }
 
 /**

@@ -1,54 +1,24 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { RegistrarPagoInput, RegistrarPagoMultipleInput } from '../schemas/pagos.js';
-import { notificarDocumento } from './telegram-notify-service.js';
+import { notificarPago } from './telegram-eventos-service.js';
 import { logger } from '../utils/logger.js';
 
-const MIME_POR_EXTENSION: Record<string, string> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-};
-
-function extension(url: string): string {
-  const limpio = url.split('?')[0];
-  return limpio.split('.').pop()?.toLowerCase() ?? 'jpg';
-}
-
-/** Dispara el envío de un comprobante por Telegram (fire-and-forget). El archivo ya
- *  está subido al bucket público `comprobantes` — acá se re-descarga para mandarlo
- *  por el mismo canal privado (documentos-telegram) que ya usan ticket/factura. */
-function notificarComprobanteSiCorresponde(proveedorId: string, comprobanteUrl: string, indice: number): void {
-  const ext = extension(comprobanteUrl);
-  void notificarDocumento({
-    entidadTipo: 'proveedor',
-    entidadId: proveedorId,
-    tipoDocumento: 'comprobante',
-    nombreArchivo: `comprobante-pago-${indice + 1}.${ext}`,
-    contentType: MIME_POR_EXTENSION[ext] ?? 'application/octet-stream',
-    generarBuffer: async () => {
-      const resp = await fetch(comprobanteUrl);
-      if (!resp.ok) throw new Error(`No se pudo descargar el comprobante (status ${resp.status}).`);
-      return Buffer.from(await resp.arrayBuffer());
-    },
-  });
-}
-
-/** Adjunta los comprobantes ya subidos al movimiento y notifica cada uno por
- *  Telegram. El pago ya quedó registrado antes de llamar esto — si guardar
- *  los comprobantes falla, no se deshace el pago, solo se loguea. La plata
+/** Guarda las fotos del comprobante en el movimiento. El pago ya quedó registrado antes
+ *  de llamar esto — si guardarlas falla, no se deshace el pago, solo se loguea. La plata
  *  ya se movió, es lo que importa. */
-async function adjuntarComprobante(movimientoId: string, proveedorId: string, comprobantes: string[]): Promise<void> {
+async function adjuntarComprobante(movimientoId: string, comprobantes: string[]): Promise<void> {
   const { error } = await supabaseAdmin
     .from('movimientos')
     .update({ comprobantes })
     .eq('id', movimientoId);
 
-  if (error) {
-    logger.error({ evento: 'pago_comprobante_no_guardado', mensaje: error.message, movimientoId });
-  } else {
-    comprobantes.forEach((url, indice) => notificarComprobanteSiCorresponde(proveedorId, url, indice));
-  }
+  if (error) logger.error({ evento: 'pago_comprobante_no_guardado', mensaje: error.message, movimientoId });
+}
+
+/** Un movimiento suelto pertenece a un grupo de operación (o es su propio grupo si es legacy). */
+async function grupoDeMovimiento(movimientoId: string): Promise<string> {
+  const { data } = await supabaseAdmin.from('movimientos').select('grupo_id').eq('id', movimientoId).maybeSingle();
+  return (data as { grupo_id: string | null } | null)?.grupo_id ?? movimientoId;
 }
 
 export async function registrarPago(
@@ -71,7 +41,11 @@ export async function registrarPago(
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
   const movimientoId = data as string;
 
-  if (input.comprobantes.length > 0) await adjuntarComprobante(movimientoId, input.proveedorId, input.comprobantes);
+  if (input.comprobantes.length > 0) await adjuntarComprobante(movimientoId, input.comprobantes);
+  // Telegram (fire-and-forget): comprobante PDF del pago + fotos del comprobante bancario.
+  void grupoDeMovimiento(movimientoId)
+    .then(grupoId => notificarPago('proveedor', input.proveedorId, grupoId, { comprobantes: input.comprobantes }))
+    .catch(err => logger.error({ evento: 'pago_telegram_error', mensaje: err instanceof Error ? err.message : String(err) }));
 
   return { movimientoId };
 }
@@ -112,8 +86,13 @@ export async function registrarPagoMultiple(
   const resultado = data as ResultadoPagoMulti;
 
   if (input.comprobantes.length > 0 && resultado.movimientoPrincipalId) {
-    await adjuntarComprobante(resultado.movimientoPrincipalId, input.proveedorId, input.comprobantes);
+    await adjuntarComprobante(resultado.movimientoPrincipalId, input.comprobantes);
   }
+  // Telegram (fire-and-forget): comprobante del pago/adelanto o del cruce puro (sin dinero).
+  notificarPago('proveedor', input.proveedorId, resultado.grupoId, {
+    comprobantes: resultado.movimientoPrincipalId ? input.comprobantes : [],
+    esCruce: resultado.movimientoPrincipalId === null,
+  });
 
   return resultado;
 }

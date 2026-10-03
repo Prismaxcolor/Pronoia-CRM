@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearNotaAjusteInput } from '../schemas/notas-ajuste.js';
 import { formatCodigoNotaCredito, formatCodigoNotaDebito } from '../utils/codigos.js';
+import { notificarNota } from './telegram-eventos-service.js';
 
 export interface NotaAjusteCruda {
   id: string;
@@ -87,6 +88,8 @@ export async function crearNotaAjuste(
   const codigo = row.numero != null
     ? (row.tipo === 'credito' ? formatCodigoNotaCredito(row.numero) : formatCodigoNotaDebito(row.numero))
     : null;
+  // Telegram (fire-and-forget): la nota (PDF) al proveedor si está vinculado.
+  notificarNota('proveedor', proveedorId, () => obtenerNotaAjuste(proveedorId, row.id), 'creada');
   return { id: row.id, codigo };
 }
 
@@ -270,5 +273,6 @@ export async function anularNotaAjuste(
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo anular la nota.' };
+  notificarNota('proveedor', proveedorId, () => obtenerNotaAjuste(proveedorId, notaId), 'anulada');
   return { id: data as string };
 }

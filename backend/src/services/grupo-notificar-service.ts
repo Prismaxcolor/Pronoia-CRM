@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
+import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
 import { logger } from '../utils/logger.js';
 import { formatCodigoNotaCredito, formatCodigoNotaDebito, formatCodigoNotaCreditoCliente, formatCodigoNotaDebitoCliente, formatCodigoTransformacion } from '../utils/codigos.js';
 import { formatearMensaje, type ActorEvento } from '../utils/grupo-formato.js';
@@ -47,7 +48,7 @@ export async function notificarGrupo(payload: PayloadGrupo): Promise<void> {
     };
     const respuesta = await fetch(ENV.N8N_WEBHOOK_GRUPO, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: cabecerasWebhookN8n(),
       body: JSON.stringify(cuerpo),
       signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
     });

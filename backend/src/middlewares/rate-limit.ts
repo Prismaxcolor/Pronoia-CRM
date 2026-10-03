@@ -37,3 +37,14 @@ export const portalLoginLimiter = rateLimit({
     return `${ipKeyGenerator(req.ip ?? 'na')}::${identificador}`;
   },
 });
+
+/** 1 envío de estado de cuenta por Telegram por minuto por usuario+entidad (evita spamear al proveedor/cliente). */
+export const estadoCuentaTelegramLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 1,
+  skipFailedRequests: true, // un 404/409 (sin vincular, etc.) no gasta el cupo
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Ya se envió el estado de cuenta hace instantes. Espera un minuto antes de reenviarlo.' },
+  keyGenerator: (req) => `${req.user?.sub ?? ipKeyGenerator(req.ip ?? 'na')}::${String(req.params.id)}`,
+});

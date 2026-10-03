@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearNotaAjusteInput } from '../schemas/notas-ajuste.js';
 import { formatCodigoNotaCreditoCliente, formatCodigoNotaDebitoCliente } from '../utils/codigos.js';
+import { notificarNota } from './telegram-eventos-service.js';
 
 /** Espejo de nota-ajuste-service.ts para clientes (Bloque 45) — misma forma,
  *  tabla y RPC propias (notas_ajuste_cliente / anular_nota_ajuste_cliente,
@@ -88,6 +89,8 @@ export async function crearNotaAjusteCliente(
   const codigo = row.numero != null
     ? (row.tipo === 'credito' ? formatCodigoNotaCreditoCliente(row.numero) : formatCodigoNotaDebitoCliente(row.numero))
     : null;
+  // Telegram (fire-and-forget): la nota (PDF) al cliente si está vinculado.
+  notificarNota('cliente', clienteId, () => obtenerNotaAjusteCliente(clienteId, row.id), 'creada');
   return { id: row.id, codigo };
 }
 
@@ -255,5 +258,6 @@ export async function anularNotaAjusteCliente(
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo anular la nota.' };
+  notificarNota('cliente', clienteId, () => obtenerNotaAjusteCliente(clienteId, notaId), 'anulada');
   return { id: data as string };
 }

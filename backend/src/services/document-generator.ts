@@ -9,7 +9,7 @@ import { LOGO_PRONOIA_BASE64 } from '../assets/logo-pronoia.js';
 // doc.save() en el navegador) para que el PDF que se manda por Telegram sea igual al
 // que se ve/descarga en la web — un solo diseño de verdad.
 
-function fmt(n: number): string {
+export function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -27,12 +27,14 @@ const REEMPLAZOS_PDF: Array<[RegExp, string]> = [
   [/\u00A0/g, ' '],
 ];
 
-function sanitizarPdf(v: string): string {
+export function sanitizarPdf(v: string): string {
   return REEMPLAZOS_PDF.reduce((s, [re, r]) => s.replace(re, r), v);
 }
 
 /** Texto del origen del peso: peso manual o cantidad de tickets. */
 function origenPeso(f: FacturaPublica): string {
+  // Al anularse, la BD suelta los tickets de la factura: sin esto diría "Peso manual".
+  if (f.estado === 'anulada') return 'Tickets corregidos (factura anulada)';
   if (f.ticketIds.length === 0) return 'Peso manual';
   return `${f.ticketIds.length} ticket${f.ticketIds.length === 1 ? '' : 's'} de pesaje`;
 }
@@ -78,7 +80,7 @@ function consolidarItems(items: ItemPublico[]): ItemPublico[] {
   return Array.from(mapa.values());
 }
 
-function encabezado(doc: jsPDF, titulo: string): number {
+export function encabezado(doc: jsPDF, titulo: string): number {
   const iconSize = 40;
   doc.addImage(LOGO_PRONOIA_BASE64, 'PNG', 539 - iconSize, 24, iconSize, iconSize);
 
@@ -91,7 +93,7 @@ export function generarFacturaPdf(f: FacturaPublica): Buffer {
   const esCompra = f.tipo === 'compra';
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-  let y = encabezado(doc, `Factura de ${esCompra ? 'compra' : 'venta'}`);
+  let y = encabezado(doc, `Factura de ${esCompra ? 'compra' : 'venta'}${f.estado === 'anulada' ? ' (ANULADA)' : ''}`);
 
   y += 20;
   doc.setFontSize(10).setFont('helvetica', 'normal');
