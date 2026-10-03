@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
+import Blob from '../features/blob/Blob';
 
 function Layout() {
   // El contenedor externo estaba en min-h-screen (crece con el contenido en
@@ -54,6 +55,7 @@ function Layout() {
           </div>
         </main>
       </div>
+      <Blob />
     </div>
   );
 }

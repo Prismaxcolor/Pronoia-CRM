@@ -32,6 +32,7 @@ import metricasRouter from './routes/metricas.js';
 import tomasFisicasRouter from './routes/toma-fisica.js';
 import auditoriaRouter from './routes/auditoria.js';
 import llavesEdicionRouter from './routes/llaves-edicion.js';
+import asistenteRouter from './routes/asistente.js';
 
 const app = express();
 
@@ -95,5 +96,6 @@ app.use('/api/metricas', metricasRouter);
 app.use('/api/tomas-fisicas', tomasFisicasRouter);
 app.use('/api/auditoria', auditoriaRouter);
 app.use('/api/llaves-edicion', llavesEdicionRouter);
+app.use('/api/asistente', asistenteRouter);
 
 export default app;
