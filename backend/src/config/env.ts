@@ -17,15 +17,17 @@ export const ENV = {
   SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || '',
   CORS_ORIGINS: parseOrigins(process.env.CORS_ORIGINS),
   /** Username del bot de Telegram (sin @) para vincular proveedores/clientes. */
-  TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || '',
+  TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || 'PronAIScrapbot',
   /** Webhook de n8n que recibe {tipoDocumento, chatId, nombreEntidad, url, nombreArchivo}
    *  y hace la entrega real por Telegram. Si falta, notificarDocumento no hace nada
    *  (no rompe el flujo de negocio que lo dispara). */
-  N8N_WEBHOOK_ENVIAR_DOCUMENTO: process.env.N8N_WEBHOOK_ENVIAR_DOCUMENTO || '',
+  N8N_WEBHOOK_ENVIAR_DOCUMENTO:
+    process.env.N8N_WEBHOOK_ENVIAR_DOCUMENTO || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/enviar-documento-pronoia',
   /** Webhook de n8n que manda el link de acceso al portal por Telegram. */
-  N8N_WEBHOOK_PORTAL_LOGIN: process.env.N8N_WEBHOOK_PORTAL_LOGIN || '',
+  N8N_WEBHOOK_PORTAL_LOGIN:
+    process.env.N8N_WEBHOOK_PORTAL_LOGIN || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/portal-enviar-link-acceso',
   /** Base del portal para armar el link de acceso (ej. https://portal.pronoiascrap.com). */
-  PORTAL_URL: process.env.PORTAL_URL || 'http://localhost:5173',
+  PORTAL_URL: process.env.PORTAL_URL || 'https://pronoia-crm.vercel.app',
   /** Secreto para firmar sesiones del portal de proveedores/clientes — deliberadamente
    *  distinto del JWT_SECRET del staff (un token robado de un lado nunca sirve en el
    *  otro). Sin variable propia, se deriva de JWT_SECRET (que ya es obligatorio) para
