@@ -18,8 +18,7 @@ import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFi
 import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
-import LoteOpciones from './LoteOpciones';
-import AvisoSinLotesAnclados from './AvisoSinLotesAnclados';
+import SelectorDestinoLote from './SelectorDestinoLote';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo } from '@shared/types/index.js';
 import { descargarTicketPDF } from '../../services/ticket-export';
@@ -566,11 +565,7 @@ function TicketDetallePage() {
                   ) : (
                     <div>
                       <label className={labelClass}>Destino (inventario) *</label>
-                      <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
-                        <option value="" disabled>-Selecciona-</option>
-                        <LoteOpciones lotes={lotes} loteIdsPosibles={loteIdsPosiblesFila(f, productos)} loteActualId={f.destino} />
-                      </select>
-                      <AvisoSinLotesAnclados lotes={lotes} loteIdsPosibles={loteIdsPosiblesFila(f, productos)} />
+                      <SelectorDestinoLote lotes={lotes} loteIdsPosibles={loteIdsPosiblesFila(f, productos)} valor={f.destino} onChange={id => setFila(f.uid, 'destino', id)} />
                     </div>
                   )}
 

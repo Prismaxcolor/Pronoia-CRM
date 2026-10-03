@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { X, User, Search } from 'lucide-react';
+import { X, User, Search, Check, Maximize2 } from 'lucide-react';
+import VisorFotos from './VisorFotos';
 
 interface EntidadConFoto {
   id: string;
@@ -7,6 +8,8 @@ interface EntidadConFoto {
   fotos?: string[];
   /** Si es true se muestra marcada y agrupada primero (ej. lotes posibles de un producto). */
   destacado?: boolean;
+  /** Línea secundaria bajo el nombre (ej. stock de un lote). */
+  detalle?: string;
 }
 
 interface Props<T extends EntidadConFoto> {
@@ -18,13 +21,19 @@ interface Props<T extends EntidadConFoto> {
   etiquetaDestacados?: string;
   /** Mensaje cuando no hay ninguna entidad que mostrar (en vez de la búsqueda vacía). */
   mensajeVacio?: string;
+  /** Entidad ya elegida: se resalta con una marca. */
+  seleccionadoId?: string;
+  /** Si es true, las entidades con varias fotos muestran un botón para ampliarlas
+   *  en el visor sin seleccionar; con una sola foto no hace falta. */
+  ampliarFotos?: boolean;
 }
 
 /** Selector visual con foto: mismo patrón que SeleccionarMaterialModal de
  *  Pesaje, generalizado a cualquier entidad con {id, nombre, fotos}
- *  (cliente, proveedor). No reemplaza el <select>, conviven ambos. */
-function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos', mensajeVacio }: Props<T>) {
+ *  (cliente, proveedor, lote). No reemplaza el <select>, conviven ambos. */
+function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos', mensajeVacio, seleccionadoId, ampliarFotos = false }: Props<T>) {
   const [busqueda, setBusqueda] = useState('');
+  const [visor, setVisor] = useState<{ fotos: string[]; indice: number; nombre: string } | null>(null);
 
   const filtrados = entidades.filter(e =>
     e.nombre.toLowerCase().includes(busqueda.trim().toLowerCase())
@@ -34,23 +43,46 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
   const destacados = filtrados.filter(e => e.destacado);
   const resto = filtrados.filter(e => !e.destacado);
 
-  const tarjeta = (e: T) => (
-    <button
-      key={e.id}
-      type="button"
-      onClick={() => onSeleccionar(e.id)}
-      className={`text-left rounded-xl border overflow-hidden hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all ${e.destacado ? 'border-brand-400 ring-1 ring-brand-100' : 'border-border'}`}
-    >
-      <div className="w-full aspect-square bg-brand-100 flex items-center justify-center text-brand-700">
-        {e.fotos?.[0] ? (
-          <img src={e.fotos[0]} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
-        ) : (
-          <User size={28} />
+  const tarjeta = (e: T) => {
+    const esActual = e.id === seleccionadoId;
+    const puedeAmpliar = ampliarFotos && (e.fotos?.length ?? 0) > 1;
+    const borde = esActual ? 'border-brand-600 ring-2 ring-brand-300' : e.destacado ? 'border-brand-400 ring-1 ring-brand-100' : 'border-border';
+    return (
+      <div
+        key={e.id}
+        className={`relative rounded-xl border overflow-hidden hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all ${borde}`}
+      >
+        <button type="button" onClick={() => onSeleccionar(e.id)} className="block w-full text-left">
+          <div className="w-full aspect-square bg-brand-100 flex items-center justify-center text-brand-700">
+            {e.fotos?.[0] ? (
+              <img src={e.fotos[0]} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
+            ) : (
+              <User size={28} />
+            )}
+          </div>
+          <div className="p-2">
+            <p className="text-xs text-text-primary truncate">{e.destacado ? '★ ' : ''}{e.nombre}</p>
+            {e.detalle && <p className="text-[11px] text-text-muted truncate">{e.detalle}</p>}
+          </div>
+        </button>
+        {esActual && (
+          <span className="absolute top-1.5 left-1.5 bg-brand-600 text-white rounded-full p-1 pointer-events-none">
+            <Check size={12} />
+          </span>
+        )}
+        {puedeAmpliar && (
+          <button
+            type="button"
+            aria-label={`Ampliar fotos de ${e.nombre}`}
+            onClick={() => setVisor({ fotos: e.fotos ?? [], indice: 0, nombre: e.nombre })}
+            className="absolute top-1.5 right-1.5 bg-black/55 text-white rounded-full p-2 hover:bg-black/75"
+          >
+            <Maximize2 size={14} />
+          </button>
         )}
       </div>
-      <p className="text-xs text-text-primary p-2 truncate">{e.destacado ? '★ ' : ''}{e.nombre}</p>
-    </button>
-  );
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -95,6 +127,15 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
           )}
         </div>
       </div>
+      {visor && (
+        <VisorFotos
+          fotos={visor.fotos}
+          indice={visor.indice}
+          onCambiar={i => setVisor(v => (v ? { ...v, indice: i } : v))}
+          onCerrar={() => setVisor(null)}
+          pie={visor.nombre}
+        />
+      )}
     </div>
   );
 }
