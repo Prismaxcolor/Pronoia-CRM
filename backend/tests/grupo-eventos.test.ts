@@ -145,6 +145,12 @@ describe('plantillas', () => {
     }));
     expect(lineas).toEqual(expect.arrayContaining(['Vehículo: ABC123', '• Cobre: 900 kg']));
   });
+
+  it('ticket completado dice el tipo y el día del ticket', () => {
+    const e = CATALOGO_EVENTOS.find(x => x.clave === 'ticket.completado')!;
+    const lineas = e.detalles!(ctxBase({ resBody: { ticket: { tipo: 'compra', fecha: '2026-09-25', vehiculo: 'ABC123' } } }));
+    expect(lineas).toEqual(expect.arrayContaining(['Tipo: Compra', 'Fecha del ticket: 25/09/2026']));
+  });
 });
 
 describe('NUNCA salen datos sensibles', () => {

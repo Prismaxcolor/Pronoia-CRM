@@ -189,7 +189,11 @@ function detallesTicket(ctx: ContextoEvento): string[] {
   });
   const neto = num(t.pesoNetoTotal);
   const global = num(t.pesoGlobal);
+  const fecha = txt(t.fecha);
+  const tipo = t.tipo === 'venta' ? 'Venta' : t.tipo === 'compra' ? 'Compra' : null;
   return [
+    ...linea('Tipo', tipo),
+    ...linea('Fecha del ticket', fecha ? fecha.slice(0, 10).split('-').reverse().join('/') : null),
     ...linea('Vehículo', txt(t.vehiculo)),
     ...(global !== null && global > 0 ? [`Peso global: ${kg(global)}`] : []),
     ...(neto !== null && neto > 0 ? [`Neto total: ${kg(neto)}`] : []),
