@@ -72,8 +72,9 @@ describe('matriz de permisos de las herramientas', () => {
   it('cada herramienta exige solo permisos de lectura (ver) y tiene nombre y esquema', () => {
     expect(new Set(todas).size).toBe(todas.length);
     for (const h of HERRAMIENTAS_ASISTENTE) {
-      expect(h.permisos.length).toBeGreaterThan(0);
-      expect(h.permisos.every(p => p.accion === 'ver')).toBe(true);
+      const exigidos = [...h.permisos, ...(h.permisosAlguno ?? [])];
+      expect(exigidos.length).toBeGreaterThan(0);
+      expect(exigidos.every(p => p.accion === 'ver')).toBe(true);
       expect(h.descripcion.length).toBeGreaterThan(10);
       const def = definicionParaIA(h);
       expect(def.function.name).toBe(h.nombre);
@@ -123,8 +124,8 @@ describe('matriz de permisos de las herramientas', () => {
       transformaciones: ['consultar_transformaciones'],
       traslados: ['consultar_traslados'],
       facturacion: ['consultar_facturas', 'resumen_facturacion'],
-      proveedores: ['buscar_proveedor', 'consultar_notas_proveedor', 'saldo_proveedor'],
-      clientes: ['buscar_cliente', 'consultar_notas_cliente', 'saldo_cliente'],
+      proveedores: ['buscar_persona', 'buscar_proveedor', 'consultar_notas_proveedor', 'saldo_persona', 'saldo_proveedor'],
+      clientes: ['buscar_cliente', 'buscar_persona', 'consultar_notas_cliente', 'saldo_cliente', 'saldo_persona'],
       cochinito: ['consultar_bancas', 'consultar_movimientos'],
     };
     for (const recurso of RECURSOS) {

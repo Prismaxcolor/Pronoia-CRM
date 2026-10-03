@@ -92,6 +92,11 @@ describe('búsqueda difusa', () => {
     expect(coincidePorPalabras('HIERRO', 'hierros')).toBe(true);
     expect(coincidePorPalabras('HIERRO', undefined)).toBe(true);
     expect(coincidePorPalabras('HIERRO', 'cobre')).toBe(false);
+    // Los nexos que añade quien habla no impiden encontrar el nombre ("jesus CON los teques").
+    expect(coincidePorPalabras('Jesus los Teques', 'jesus con los teques')).toBe(true);
+    expect(coincidePorPalabras('Jesus los Teques', 'saldo con los teques')).toBe(false);
+    expect(coincidePorPalabras('Jesus los Teques', 'los')).toBe(true);
+    expect(coincidePorPalabras('PACIFIC METALS', 'los')).toBe(false);
   });
 
   it('similitud: errores de escritura puntúan alto y lo distinto bajo', () => {

@@ -23,12 +23,16 @@ export interface ContextoHerramienta {
   userId: string;
   /** Hoy (YYYY-MM-DD) en la zona horaria de la operación. */
   hoy: string;
+  /** ¿Esta persona cumple el permiso? (para herramientas que consultan según lo que puede ver). */
+  puede: (permiso: Permiso) => boolean;
 }
 
 export interface ResultadoHerramienta {
   /** Cantidad de filas/registros devueltos (para la auditoría; no se registra el contenido). */
   filas: number;
   datos: unknown;
+  /** Sustituye la etiqueta fija de la herramienta en "Consulté: ..." (según lo que se consultó de verdad). */
+  etiqueta?: string;
 }
 
 export interface HerramientaAsistente {
@@ -41,6 +45,8 @@ export interface HerramientaAsistente {
   parametros: z.ZodType;
   /** TODOS estos permisos son obligatorios (siempre acción 'ver': las herramientas son de solo lectura). */
   permisos: readonly Permiso[];
+  /** Además de `permisos`, basta UNO de estos (p. ej. proveedores o clientes). La herramienta decide qué consulta según `ctx.puede`. */
+  permisosAlguno?: readonly Permiso[];
   ejecutar: (args: unknown, ctx: ContextoHerramienta) => Promise<ResultadoHerramienta>;
 }
 
@@ -50,6 +56,7 @@ export interface DefinicionHerramienta<S extends z.ZodType> {
   descripcion: string;
   parametros: S;
   permisos: readonly Permiso[];
+  permisosAlguno?: readonly Permiso[];
   ejecutar: (args: z.output<S>, ctx: ContextoHerramienta) => Promise<ResultadoHerramienta>;
 }
 
@@ -61,6 +68,7 @@ export function definirHerramienta<S extends z.ZodType>(def: DefinicionHerramien
     descripcion: def.descripcion,
     parametros: def.parametros,
     permisos: def.permisos,
+    ...(def.permisosAlguno ? { permisosAlguno: def.permisosAlguno } : {}),
     ejecutar: (args, ctx) => def.ejecutar(args as z.output<S>, ctx),
   };
 }

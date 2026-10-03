@@ -283,6 +283,188 @@ describe('consultar_lotes', () => {
   });
 });
 
+describe('consultar_lotes: nombre normalizado y almacén (galpón)', () => {
+  const lotes = () => [
+    { nombre: 'LOTE 2', activo: true, stockKg: 1500, stockPorAlmacen: [{ almacenNombre: 'ALMACEN G2', stockKg: 1200 }, { almacenNombre: 'ALMACEN G1', stockKg: 300 }] },
+    { nombre: 'LOTE 20', activo: true, stockKg: 9, stockPorAlmacen: [{ almacenNombre: 'ALMACEN G1', stockKg: 9 }] },
+    { nombre: 'LOTE 3', activo: true, stockKg: 10, stockPorAlmacen: [{ almacenNombre: 'ALMACEN G1', stockKg: 10 }] },
+    { nombre: 'LOTE VIEJO', activo: false, stockKg: 5, stockPorAlmacen: [] },
+  ];
+  beforeEach(() => servicios.listarLotes.mockResolvedValue(lotes()));
+
+  it.each(['lote 2', 'LOTE 2', 'lote dos', 'Lote #2'])('"%s" devuelve solo LOTE 2 (no LOTE 20)', async nombre => {
+    const r = await datos('consultar_lotes', { nombre });
+    expect(r.lotes.map((l: any) => l.lote)).toEqual(['LOTE 2']); // eslint-disable-line @typescript-eslint/no-explicit-any
+  });
+
+  it('"lote 2 en galpón 2" responde directo con los kg del lote en ALMACEN G2 y lo que hay en el otro', async () => {
+    const r = await datos('consultar_lotes', { nombre: 'lote 2', almacen: 'galpón 2' });
+    expect(r.almacenSolicitado).toBe('ALMACEN G2');
+    expect(r.lotes).toHaveLength(1);
+    expect(r.lotes[0].enAlmacenSolicitado).toEqual({ almacen: 'ALMACEN G2', kg: 1200, texto: '1.200 kg' });
+    expect(r.lotes[0].almacenesDondeEsta).toEqual([
+      { almacen: 'ALMACEN G2', kg: 1200, texto: '1.200 kg' },
+      { almacen: 'ALMACEN G1', kg: 300, texto: '300 kg' },
+    ]);
+  });
+
+  it.each(['g2', 'el segundo galpón', 'almacén 2', 'bodega dos'])('el almacén "%s" es ALMACEN G2', async almacen => {
+    const r = await datos('consultar_lotes', { nombre: 'lote 2', almacen });
+    expect(r.lotes[0].enAlmacenSolicitado.almacen).toBe('ALMACEN G2');
+  });
+
+  it('un lote que no está en ese galpón da 0 kg en él y dice dónde sí está', async () => {
+    const r = await datos('consultar_lotes', { nombre: 'lote 3', almacen: 'galpón 2' });
+    expect(r.lotes[0].enAlmacenSolicitado).toEqual({ almacen: 'ALMACEN G2', kg: 0, texto: '0 kg' });
+    expect(r.lotes[0].almacenesDondeEsta).toEqual([{ almacen: 'ALMACEN G1', kg: 10, texto: '10 kg' }]);
+  });
+
+  it('un galpón que no existe devuelve los disponibles sin consultar lotes', async () => {
+    const r = await datos('consultar_lotes', { nombre: 'lote 2', almacen: 'galpón 7' });
+    expect(r.error).toMatch(/No encontré ese almacén/);
+    expect(r.almacenesDisponibles).toEqual(['ALMACEN G1', 'ALMACEN G2']);
+    expect(servicios.listarLotes).not.toHaveBeenCalled();
+  });
+
+  it('sin almacén sigue igual que antes (sin enAlmacenSolicitado)', async () => {
+    const r = await datos('consultar_lotes', { nombre: 'lote 3' });
+    expect(r.lotes[0]).not.toHaveProperty('enAlmacenSolicitado');
+    expect(r).not.toHaveProperty('almacenSolicitado');
+  });
+
+  it('consultar_stock_almacen entiende "galpón 2"', async () => {
+    servicios.obtenerInventarioAlmacen.mockResolvedValue([]);
+    await datos('consultar_stock_almacen', { almacen: 'el galpón dos' });
+    expect(servicios.obtenerInventarioAlmacen).toHaveBeenCalledWith('g2', {});
+  });
+});
+
+describe('saldo_persona / buscar_persona: solo el lado donde existe', () => {
+  const estado = (tipo: 'proveedor' | 'cliente', nombre: string, saldo: number) => ({
+    entidad: { id: 'x', tipo, nombre },
+    totales: { facturado: 100, pagado: 50, saldo },
+    entradas: [],
+  });
+  beforeEach(() => {
+    tablas.proveedores = [
+      ...tablas.proveedores,
+      { id: 'p3', nombre: 'TRES MUNDOS CORP. CA', activo: true },
+    ];
+    tablas.clientes = [...tablas.clientes, { id: 'c2', nombre: 'TRES MUNDOS CORP', activo: true }];
+    servicios.obtenerEstadoCuenta.mockImplementation(async (tipo: 'proveedor' | 'cliente', id: string) =>
+      tipo === 'proveedor'
+        ? estado('proveedor', id === 'p1' ? 'Jesus los Teques' : 'TRES MUNDOS CORP. CA', id === 'p1' ? -549.47 : 200)
+        : estado('cliente', id === 'c1' ? 'PACIFIC METALS' : 'TRES MUNDOS CORP', id === 'c1' ? 13192.83 : 75),
+    );
+  });
+
+  it('un proveedor se responde como proveedor, sin mencionar clientes y con una sola etiqueta', async () => {
+    const r = await ejecutar('saldo_persona', { nombre: 'jesus con los teques' });
+    expect(r.estado).toBe('ok');
+    expect(r.etiqueta).toBe('estado de cuenta de proveedor');
+    expect(r.contenido).not.toMatch(/cliente/i);
+    const d = JSON.parse(r.contenido);
+    expect(d.coincidencias).toHaveLength(1);
+    expect(d.coincidencias[0]).toMatchObject({ rol: 'proveedor', nombre: 'Jesus los Teques', saldoUsd: -549.47, saldoTexto: '-USD 549,47' });
+    expect(servicios.obtenerEstadoCuenta).toHaveBeenCalledTimes(1);
+    expect(servicios.obtenerEstadoCuenta).toHaveBeenCalledWith('proveedor', 'p1');
+  });
+
+  it('un cliente se responde como cliente, sin mencionar proveedores', async () => {
+    const r = await ejecutar('saldo_persona', { nombre: 'pacific' });
+    expect(r.etiqueta).toBe('estado de cuenta de cliente');
+    expect(r.contenido).not.toMatch(/proveedor/i);
+    expect(JSON.parse(r.contenido).coincidencias[0]).toMatchObject({ rol: 'cliente', nombre: 'PACIFIC METALS', saldoUsd: 13192.83 });
+  });
+
+  it('si existe en ambos lados da los dos saldos rotulados', async () => {
+    const r = await ejecutar('saldo_persona', { nombre: 'tres mundos' });
+    expect(r.etiqueta).toBe('estado de cuenta de proveedor y cliente');
+    const d = JSON.parse(r.contenido);
+    expect(d.coincidencias.map((c: any) => [c.rol, c.saldoUsd])).toEqual([['proveedor', 200], ['cliente', 75]]); // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(d.coincidencias[0].lectura).toMatch(/proveedor/);
+    expect(d.coincidencias[1].lectura).toMatch(/cliente/);
+  });
+
+  it('si no existe en ninguno: no se encontró, con parecidos y sin hablar de "como cliente"/"como proveedor"', async () => {
+    const r = await ejecutar('saldo_persona', { nombre: 'Jesuss los Tekes' });
+    const d = JSON.parse(r.contenido);
+    expect(d.error).toMatch(/No encontré a nadie/);
+    expect(d.parecidos).toContain('Jesus los Teques');
+    expect(r.contenido).not.toMatch(/como (cliente|proveedor)/i);
+    expect(servicios.obtenerEstadoCuenta).not.toHaveBeenCalled();
+  });
+
+  it('nombre inexistente del todo: no se encontró y ofrece ejemplos reales', async () => {
+    const d = JSON.parse((await ejecutar('saldo_persona', { nombre: 'Zzzxqw Inexistente' })).contenido);
+    expect(d.error).toMatch(/No encontré a nadie/);
+    expect(d.ejemplos.length).toBeGreaterThan(0);
+  });
+
+  it('varios con el mismo nombre en un lado: devuelve las opciones con su rol y no consulta saldos', async () => {
+    tablas.proveedores = [...tablas.proveedores, { id: 'p9', nombre: 'JESUS PEREZ', activo: true }];
+    const d = JSON.parse((await ejecutar('saldo_persona', { nombre: 'jesus' })).contenido);
+    expect(d.error).toMatch(/varios/);
+    expect(d.posibles).toEqual(expect.arrayContaining([{ nombre: 'JESUS PEREZ', rol: 'proveedor' }, { nombre: 'Jesus los Teques', rol: 'proveedor' }]));
+    expect(servicios.obtenerEstadoCuenta).not.toHaveBeenCalled();
+  });
+
+  describe('permisos', () => {
+    it('solo proveedores: nunca consulta ni insinúa clientes', async () => {
+      const ctx = ctxVer('proveedores');
+      const hallado = await ejecutar('saldo_persona', { nombre: 'tres mundos' }, ctx);
+      expect(JSON.parse(hallado.contenido).coincidencias.map((c: any) => c.rol)).toEqual(['proveedor']); // eslint-disable-line @typescript-eslint/no-explicit-any
+      const ausente = await ejecutar('saldo_persona', { nombre: 'pacific' }, ctx);
+      expect(ausente.etiqueta).toBe('estado de cuenta de proveedor');
+      expect(ausente.contenido).not.toMatch(/PACIFIC|cliente/i);
+      expect(servicios.obtenerEstadoCuenta).not.toHaveBeenCalledWith('cliente', expect.anything());
+    });
+
+    it('solo clientes: nunca consulta ni insinúa proveedores', async () => {
+      const ctx = ctxVer('clientes');
+      const hallado = await ejecutar('saldo_persona', { nombre: 'tres mundos' }, ctx);
+      expect(JSON.parse(hallado.contenido).coincidencias.map((c: any) => c.rol)).toEqual(['cliente']); // eslint-disable-line @typescript-eslint/no-explicit-any
+      const ausente = await ejecutar('saldo_persona', { nombre: 'teques' }, ctx);
+      expect(ausente.contenido).not.toMatch(/Teques|proveedor/i);
+      expect(servicios.obtenerEstadoCuenta).not.toHaveBeenCalledWith('proveedor', expect.anything());
+    });
+
+    it('sin permiso de ninguno de los dos no se ofrece ni se ejecuta', async () => {
+      const ctx = ctxVer('pesaje', 'productos');
+      expect(herramientasPermitidas(ctx).map(h => h.nombre)).not.toContain('saldo_persona');
+      expect((await ejecutar('saldo_persona', { nombre: 'x' }, ctx)).estado).toBe('sin_permiso');
+      expect((await ejecutar('buscar_persona', { nombre: 'x' }, ctx)).estado).toBe('sin_permiso');
+    });
+
+    it('con permiso de uno solo se ofrece', () => {
+      expect(herramientasPermitidas(ctxVer('clientes')).map(h => h.nombre)).toEqual(expect.arrayContaining(['saldo_persona', 'buscar_persona']));
+      expect(herramientasPermitidas(ctxVer('proveedores')).map(h => h.nombre)).toEqual(expect.arrayContaining(['saldo_persona', 'buscar_persona']));
+    });
+  });
+
+  describe('buscar_persona', () => {
+    it('devuelve solo coincidencias, rotuladas, con una etiqueta', async () => {
+      const r = await ejecutar('buscar_persona', { nombre: 'teques' });
+      expect(r.etiqueta).toBe('proveedores');
+      const d = JSON.parse(r.contenido);
+      expect(d.coincidencias).toEqual([{ nombre: 'Jesus los Teques', rol: 'proveedor', activo: true }]);
+      expect(r.contenido).not.toMatch(/cliente/i);
+    });
+
+    it('en ambos lados lista las dos', async () => {
+      const r = await ejecutar('buscar_persona', { nombre: 'tres mundos' });
+      expect(r.etiqueta).toBe('proveedores y clientes');
+      expect(JSON.parse(r.contenido).coincidencias.map((c: any) => c.rol)).toEqual(['proveedor', 'cliente']); // eslint-disable-line @typescript-eslint/no-explicit-any
+    });
+
+    it('sin coincidencias: parecidos y ejemplos, sin hablar del otro lado', async () => {
+      const d = JSON.parse((await ejecutar('buscar_persona', { nombre: 'Jesuss los Tekes' })).contenido);
+      expect(d.coincidencias).toEqual([]);
+      expect(d.parecidos).toContain('Jesus los Teques');
+    });
+  });
+});
+
 describe('consultar_facturas con soloPendientes', () => {
   beforeEach(() => {
     tablas.facturas_compra = [
@@ -329,13 +511,13 @@ describe('proveedor vs cliente: nombres no encontrados', () => {
   it('saldo_cliente de un proveedor: no existe, sugiere probar saldo_proveedor y no consulta el estado de cuenta', async () => {
     const r = await datos('saldo_cliente', { nombre: 'Jesus los Teques' });
     expect(r.error).toMatch(/No encontré ningún cliente/);
-    expect(r.ayuda).toMatch(/saldo_proveedor/);
+    expect(r.ayuda).toMatch(/saldo_persona/);
     expect(servicios.obtenerEstadoCuenta).not.toHaveBeenCalled();
   });
 
-  it('saldo_proveedor de un cliente: ayuda hacia saldo_cliente', async () => {
+  it('saldo_proveedor de un cliente: ayuda hacia saldo_persona', async () => {
     const r = await datos('saldo_proveedor', { nombre: 'Pacific' });
-    expect(r.ayuda).toMatch(/saldo_cliente/);
+    expect(r.ayuda).toMatch(/saldo_persona/);
   });
 
   it('el nombre mal escrito devuelve parecidos y ejemplos, sin filtrar datos de otra lista', async () => {
@@ -360,7 +542,7 @@ describe('proveedor vs cliente: nombres no encontrados', () => {
   it('buscar_cliente sin coincidencias aporta la pista del otro tipo', async () => {
     const r = await datos('buscar_cliente', { nombre: 'Jesus' });
     expect(r.clientes).toEqual([]);
-    expect(r.ayuda).toMatch(/buscar_proveedor/);
+    expect(r.ayuda).toMatch(/buscar_persona/);
   });
 
   it('lecturaSaldo distingue deuda, saldo a favor y cero para proveedor y cliente', () => {

@@ -19,7 +19,11 @@ import {
   type HerramientaAsistente,
 } from './asistente-herr-base.js';
 import { formatearKg } from './asistente-formato.js';
-import { coincidePorPalabras, normalizarTexto, sugerirParecidos } from './asistente-similitud.js';
+import { coincidePorPalabras, sugerirParecidos } from './asistente-similitud.js';
+import { resolverAlmacenEntre, type AlmacenBasico, type ResolucionAlmacen } from './asistente-resolucion-nombres.js';
+
+export { resolverAlmacenEntre };
+export type { AlmacenBasico, ResolucionAlmacen };
 
 /** Tope de almacenes que se recorren en el resumen (cada uno es una consulta de inventario). */
 export const MAX_ALMACENES_RESUMEN = 8;
@@ -49,33 +53,9 @@ export function ejemplosDeMateriales(articulos: readonly (ArticuloInventario & {
   return [...porProducto].sort((a, b) => b[1] - a[1]).slice(0, MAX_EJEMPLOS_MATERIALES).map(([n]) => textoSeguro(n));
 }
 
-export interface AlmacenBasico {
-  id: string;
-  nombre: string;
-}
-
 export async function cargarAlmacenesActivos(): Promise<AlmacenBasico[]> {
   const { data } = await supabaseAdmin.from('almacenes').select('id, nombre').eq('activo', true).order('nombre').limit(50);
   return ((data ?? []) as AlmacenBasico[]).filter(a => typeof a.nombre === 'string');
-}
-
-/** "Almacén G1", "almacen g1" y "G1" son el mismo almacén ("ALMACEN G1"). */
-const clave = (t: string): string => normalizarTexto(t).replace(/\balmacen\b/g, '').replace(/\s+/g, ' ').trim();
-
-export type ResolucionAlmacen =
-  | { almacen: AlmacenBasico }
-  | { error: 'no_encontrado' | 'ambiguo'; candidatos: AlmacenBasico[] };
-
-/** Resuelve el texto del usuario a UN almacén activo (sin depender de acentos ni del prefijo "Almacén"). */
-export function resolverAlmacenEntre(almacenes: readonly AlmacenBasico[], texto: string): ResolucionAlmacen {
-  const buscado = clave(texto);
-  if (!buscado && almacenes.length > 1) return { error: 'ambiguo', candidatos: almacenes.slice() };
-  const exactos = almacenes.filter(a => clave(a.nombre) === buscado);
-  if (exactos.length === 1) return { almacen: exactos[0]! };
-  const parciales = buscado ? almacenes.filter(a => clave(a.nombre).includes(buscado)) : [];
-  if (parciales.length === 1) return { almacen: parciales[0]! };
-  if (parciales.length > 1) return { error: 'ambiguo', candidatos: parciales };
-  return { error: 'no_encontrado', candidatos: almacenes.slice() };
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +66,7 @@ export const listarAlmacenes = definirHerramienta({
   nombre: 'listar_almacenes',
   etiqueta: 'almacenes',
   descripcion:
-    'Lista los ALMACENES activos (sitios físicos como "ALMACEN G1", "ALMACEN G2"). Úsala para "qué almacenes hay/tenemos", "dónde guardamos material" o cuando el usuario nombre un almacén y haya que saber cuáles existen. Los lotes (BGPP, LOTE 3...) NO son almacenes.',
+    'Lista los ALMACENES activos (sitios físicos como "ALMACEN G1", "ALMACEN G2"; en Pronoia también se les dice galpones: galpón 1 = G1, galpón 2 = G2). Úsala para "qué almacenes hay/tenemos", "dónde guardamos material" o cuando el usuario nombre un almacén y haya que saber cuáles existen. Los lotes (BGPP, LOTE 3...) NO son almacenes.',
   parametros: z.object({}),
   permisos: [{ recurso: 'almacenes', accion: 'ver' }],
   async ejecutar() {

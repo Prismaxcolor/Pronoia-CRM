@@ -19,6 +19,7 @@ import {
   redondear,
   textoSeguro,
   type HerramientaAsistente,
+  type ResultadoHerramienta,
 } from './asistente-herr-base.js';
 import {
   formatCodigoCompra,
@@ -219,7 +220,7 @@ const notasSchema = z.object({
   limite: limiteSchema,
 });
 
-interface Perfil {
+export interface Perfil {
   tipo: TipoEntidad;
   tabla: 'proveedores' | 'clientes';
   singular: 'proveedor' | 'cliente';
@@ -232,7 +233,7 @@ interface Perfil {
   codigoNota: (tipo: string, numero: number) => string;
 }
 
-const PERFIL_PROVEEDOR: Perfil = {
+export const PERFIL_PROVEEDOR: Perfil = {
   tipo: 'proveedor',
   tabla: 'proveedores',
   singular: 'proveedor',
@@ -240,10 +241,10 @@ const PERFIL_PROVEEDOR: Perfil = {
   tablaNotas: 'notas_ajuste_proveedor',
   columnaNotas: 'proveedor_id',
   permiso: { recurso: 'proveedores', accion: 'ver' },
-  ayudaNoEncontrado: 'No existe como PROVEEDOR. Si podría ser un cliente (alguien a quien le vendemos), prueba con buscar_cliente / saldo_cliente.',
+  ayudaNoEncontrado: 'No hay ningún proveedor con ese nombre. Si no sabes si la persona es proveedor o cliente, usa saldo_persona o buscar_persona (buscan en ambos lados y reportan solo donde existe). No le digas al usuario que "no existe como proveedor".',
   codigoNota: (t, n) => (t === 'credito' ? formatCodigoNotaCredito(n) : formatCodigoNotaDebito(n)),
 };
-const PERFIL_CLIENTE: Perfil = {
+export const PERFIL_CLIENTE: Perfil = {
   tipo: 'cliente',
   tabla: 'clientes',
   singular: 'cliente',
@@ -251,12 +252,12 @@ const PERFIL_CLIENTE: Perfil = {
   tablaNotas: 'notas_ajuste_cliente',
   columnaNotas: 'cliente_id',
   permiso: { recurso: 'clientes', accion: 'ver' },
-  ayudaNoEncontrado: 'No existe como CLIENTE. Si podría ser un proveedor (alguien a quien le compramos, o a quien le debemos), prueba con buscar_proveedor / saldo_proveedor.',
+  ayudaNoEncontrado: 'No hay ningún cliente con ese nombre. Si no sabes si la persona es proveedor o cliente, usa saldo_persona o buscar_persona (buscan en ambos lados y reportan solo donde existe). No le digas al usuario que "no existe como cliente".',
   codigoNota: (t, n) => (t === 'credito' ? formatCodigoNotaCreditoCliente(n) : formatCodigoNotaDebitoCliente(n)),
 };
 
 /** Resuelve un nombre a UNA entidad; si es ambiguo o no existe, devuelve las opciones. */
-async function resolverEntidad(p: Perfil, nombre: string) {
+export async function resolverEntidad(p: Perfil, nombre: string) {
   const { data } = await supabaseAdmin
     .from(p.tabla)
     .select('id, nombre')
@@ -273,7 +274,7 @@ async function resolverEntidad(p: Perfil, nombre: string) {
 const MAX_NOMBRES_BUSQUEDA = 300;
 const MAX_SUGERENCIAS_NOMBRE = 8;
 
-async function todosLosNombres(p: Perfil): Promise<Array<{ id: string; nombre: string; activo?: boolean }>> {
+export async function todosLosNombres(p: Perfil): Promise<Array<{ id: string; nombre: string; activo?: boolean }>> {
   const { data } = await supabaseAdmin.from(p.tabla).select('id, nombre, activo').order('nombre').limit(MAX_NOMBRES_BUSQUEDA);
   return ((data ?? []) as Array<{ id: string; nombre: string; activo?: boolean }>).filter(f => typeof f.nombre === 'string');
 }
@@ -284,7 +285,7 @@ async function filtrarPorPalabras(p: Perfil, nombre: string) {
 }
 
 /** Nombres parecidos (o, si no hay, unos cuantos existentes) para ofrecer cuando no se encuentra a nadie. */
-async function sugerenciasDeNombre(p: Perfil, nombre: string): Promise<{ parecidos: string[]; ejemplos: string[] }> {
+export async function sugerenciasDeNombre(p: Perfil, nombre: string): Promise<{ parecidos: string[]; ejemplos: string[] }> {
   const nombres = (await todosLosNombres(p)).map(f => textoSeguro(f.nombre));
   return { parecidos: sugerirParecidos(nombre, nombres, 5), ejemplos: nombres.slice(0, MAX_SUGERENCIAS_NOMBRE) };
 }
@@ -304,14 +305,45 @@ export function codigoCorrelativo(valor: unknown): string | null {
   return typeof valor === 'string' && CODIGO_CORRELATIVO.test(valor) ? valor : null;
 }
 
+/** Estado de cuenta (en USD) de UNA entidad ya resuelta: totales, lectura del saldo y últimos movimientos. */
+export async function estadoDeCuentaDe(p: Perfil, id: string): Promise<ResultadoHerramienta> {
+  const estado = await obtenerEstadoCuenta(p.tipo, id);
+  if (!estado) return { filas: 0, datos: { fuente: `estado de cuenta (${p.singular})`, error: 'No pude armar el estado de cuenta.' } };
+  const recientes = [...estado.entradas]
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+    .slice(0, ENTRADAS_ESTADO_CUENTA)
+    .map(e => ({
+      fecha: e.fecha.slice(0, 10),
+      tipo: e.tipo,
+      // Solo el código correlativo interno; la referencia libre (bancaria/comprobante) nunca sale.
+      ...(codigoCorrelativo(e.referencia) ? { referencia: codigoCorrelativo(e.referencia) } : {}),
+      cargoUsd: dinero(e.cargo),
+      abonoUsd: dinero(e.abono),
+    }));
+  return {
+    filas: recientes.length,
+    datos: {
+      fuente: `estado de cuenta (${p.singular})`,
+      moneda: MONEDA_FACTURAS,
+      [p.singular]: textoSeguro(estado.entidad.nombre),
+      facturadoUsd: dinero(estado.totales.facturado),
+      [p.tipo === 'proveedor' ? 'pagadoUsd' : 'cobradoUsd']: dinero(estado.totales.pagado),
+      saldoUsd: dinero(estado.totales.saldo),
+      saldoTexto: formatearMonto(estado.totales.saldo),
+      lectura: lecturaSaldo(p.tipo, Number(estado.totales.saldo)),
+      ultimosMovimientos: recientes,
+    },
+  };
+}
+
 function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
   const buscar = definirHerramienta({
     nombre: `buscar_${p.singular}`,
     etiqueta: p.plural,
     descripcion:
       p.tipo === 'proveedor'
-        ? 'Busca PROVEEDORES (a quienes les compramos material y a quienes les debemos) por nombre aproximado: solo nombre y si está activo. Úsala para confirmar cómo se escribe un nombre o cuando no sepas si una persona es proveedor o cliente (busca también con buscar_cliente). Sin datos de contacto.'
-        : 'Busca CLIENTES (a quienes les vendemos material y que nos deben a nosotros) por nombre aproximado: solo nombre y si está activo. Úsala para confirmar cómo se escribe un nombre o cuando no sepas si una persona es cliente o proveedor (busca también con buscar_proveedor). Sin datos de contacto.',
+        ? 'Busca PROVEEDORES (a quienes les compramos material y a quienes les debemos) por nombre aproximado: solo nombre y si está activo. Úsala para confirmar cómo se escribe un nombre o, si no sabes si es proveedor o cliente, usa mejor buscar_persona. Sin datos de contacto.'
+        : 'Busca CLIENTES (a quienes les vendemos material y que nos deben a nosotros) por nombre aproximado: solo nombre y si está activo. Úsala para confirmar cómo se escribe un nombre o, si no sabes si es cliente o proveedor, usa mejor buscar_persona. Sin datos de contacto.',
     parametros: buscarSchema,
     permisos: [p.permiso],
     async ejecutar({ nombre, limite }) {
@@ -344,8 +376,8 @@ function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
     etiqueta: `estado de cuenta de ${p.singular}`,
     descripcion:
       p.tipo === 'proveedor'
-        ? `Estado de cuenta de un PROVEEDOR en ${MONEDA_FACTURAS}: facturado, pagado, saldo y últimos movimientos. Úsala cuando pregunten "cuánto le debemos a X", "cuánto le hemos pagado/comprado a X", "saldo de X" y X sea alguien a quien le compramos. saldoUsd positivo = le debemos; negativo = tiene saldo a nuestro favor (le pagamos de más/adelantos). Si el nombre no existe aquí, prueba saldo_cliente.`
-        : `Estado de cuenta de un CLIENTE en ${MONEDA_FACTURAS}: facturado, cobrado, saldo y últimos movimientos. Úsala cuando pregunten "cuánto nos debe X", "cuánto le hemos vendido/cobrado a X" y X sea alguien a quien le vendemos. saldoUsd positivo = nos debe; negativo = tiene saldo a su favor. Si el nombre no existe aquí, prueba saldo_proveedor.`,
+        ? `Estado de cuenta de un PROVEEDOR en ${MONEDA_FACTURAS}: facturado, pagado, saldo y últimos movimientos. Úsala cuando pregunten "cuánto le debemos a X", "cuánto le hemos pagado/comprado a X", "saldo de X" y X sea alguien a quien le compramos. saldoUsd positivo = le debemos; negativo = tiene saldo a nuestro favor (le pagamos de más/adelantos). Si no sabes si X es proveedor o cliente, usa saldo_persona.`
+        : `Estado de cuenta de un CLIENTE en ${MONEDA_FACTURAS}: facturado, cobrado, saldo y últimos movimientos. Úsala cuando pregunten "cuánto nos debe X", "cuánto le hemos vendido/cobrado a X" y X sea alguien a quien le vendemos. saldoUsd positivo = nos debe; negativo = tiene saldo a su favor. Si no sabes si X es cliente o proveedor, usa saldo_persona.`,
     parametros: saldoSchema,
     permisos: [p.permiso],
     async ejecutar({ nombre }) {
@@ -362,33 +394,7 @@ function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
           },
         };
       }
-      const estado = await obtenerEstadoCuenta(p.tipo, elegida.id);
-      if (!estado) return { filas: 0, datos: { fuente: `estado de cuenta (${p.singular})`, error: 'No pude armar el estado de cuenta.' } };
-      const recientes = [...estado.entradas]
-        .sort((a, b) => b.fecha.localeCompare(a.fecha))
-        .slice(0, ENTRADAS_ESTADO_CUENTA)
-        .map(e => ({
-          fecha: e.fecha.slice(0, 10),
-          tipo: e.tipo,
-          // Solo el código correlativo interno; la referencia libre (bancaria/comprobante) nunca sale.
-          ...(codigoCorrelativo(e.referencia) ? { referencia: codigoCorrelativo(e.referencia) } : {}),
-          cargoUsd: dinero(e.cargo),
-          abonoUsd: dinero(e.abono),
-        }));
-      return {
-        filas: recientes.length,
-        datos: {
-          fuente: `estado de cuenta (${p.singular})`,
-          moneda: MONEDA_FACTURAS,
-          [p.singular]: textoSeguro(estado.entidad.nombre),
-          facturadoUsd: dinero(estado.totales.facturado),
-          [p.tipo === 'proveedor' ? 'pagadoUsd' : 'cobradoUsd']: dinero(estado.totales.pagado),
-          saldoUsd: dinero(estado.totales.saldo),
-          saldoTexto: formatearMonto(estado.totales.saldo),
-          lectura: lecturaSaldo(p.tipo, Number(estado.totales.saldo)),
-          ultimosMovimientos: recientes,
-        },
-      };
+      return estadoDeCuentaDe(p, elegida.id);
     },
   });
 

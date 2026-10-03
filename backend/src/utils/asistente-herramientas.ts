@@ -25,12 +25,14 @@ import {
 import { fechaHoy, serializarAcotado, type HerramientaAsistente } from './asistente-herr-base.js';
 import { HERRAMIENTAS_OPERACION } from './asistente-herr-operacion.js';
 import { HERRAMIENTAS_DINERO } from './asistente-herr-dinero.js';
+import { HERRAMIENTAS_PERSONA } from './asistente-herr-persona.js';
 
 export type { HerramientaAsistente } from './asistente-herr-base.js';
 
 export const HERRAMIENTAS_ASISTENTE: readonly HerramientaAsistente[] = [
   ...HERRAMIENTAS_OPERACION,
   ...HERRAMIENTAS_DINERO,
+  ...HERRAMIENTAS_PERSONA,
 ];
 
 // ---------------------------------------------------------------------------
@@ -57,7 +59,14 @@ export async function cargarContextoPermisos(userId: string): Promise<ContextoPe
 /** Cumple TODOS los permisos de la herramienta (el superadmin siempre cumple). */
 export function puedeUsar(herramienta: HerramientaAsistente, contexto: ContextoPermisos): boolean {
   if (contexto.rol === 'superadmin') return true;
-  return herramienta.permisos.every(p => tienePermiso(contexto.permisos, p.recurso, p.accion));
+  const cumple = (p: Permiso) => tienePermiso(contexto.permisos, p.recurso, p.accion);
+  const alguno = herramienta.permisosAlguno;
+  return herramienta.permisos.every(cumple) && (!alguno || alguno.some(cumple));
+}
+
+/** El permiso individual (el superadmin siempre lo cumple). */
+export function cumplePermiso(contexto: ContextoPermisos, permiso: Permiso): boolean {
+  return contexto.rol === 'superadmin' || tienePermiso(contexto.permisos, permiso.recurso, permiso.accion);
 }
 
 export function herramientasPermitidas(
@@ -125,10 +134,14 @@ export async function ejecutarHerramienta(
   }
 
   try {
-    const { filas, datos } = await herramienta.ejecutar(validado.data, { userId, hoy: fechaHoy(opciones.ahora) });
-    auditar('ok', { parametros: parametrosParaLog(validado.data), filas });
-    const { texto } = serializarAcotado({ ...(datos as object), consultadoEl: fechaHoy(opciones.ahora) });
-    return { estado: 'ok', contenido: texto, etiqueta: herramienta.etiqueta };
+    const resultado = await herramienta.ejecutar(validado.data, {
+      userId,
+      hoy: fechaHoy(opciones.ahora),
+      puede: p => cumplePermiso(contexto, p),
+    });
+    auditar('ok', { parametros: parametrosParaLog(validado.data), filas: resultado.filas });
+    const { texto } = serializarAcotado({ ...(resultado.datos as object), consultadoEl: fechaHoy(opciones.ahora) });
+    return { estado: 'ok', contenido: texto, etiqueta: resultado.etiqueta ?? herramienta.etiqueta };
   } catch (err) {
     // Se registra el error (sin datos) y al modelo solo le llega un mensaje genérico.
     logger.warn({ evento: 'asistente_herramienta_error', userId, herramienta: nombre, mensaje: err instanceof Error ? err.message : 'desconocido' });

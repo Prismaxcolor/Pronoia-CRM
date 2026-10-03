@@ -19,8 +19,10 @@ import {
 } from './asistente-herr-base.js';
 import { formatearKg } from './asistente-formato.js';
 import { coincidePorPalabras, sugerirParecidos } from './asistente-similitud.js';
+import { normalizarNombreLote } from './asistente-resolucion-nombres.js';
 import {
   HERRAMIENTAS_CATALOGO,
+  type AlmacenBasico,
   cargarAlmacenesActivos,
   categoriaLegible,
   ejemplosDeMateriales,
@@ -101,7 +103,7 @@ export const consultarInventario = definirHerramienta({
 });
 
 const stockAlmacenSchema = z.object({
-  almacen: z.string().min(1).max(60).describe('Nombre del almacén tal como lo dice el usuario: "G1", "G2", "almacén G1"...'),
+  almacen: z.string().min(1).max(60).describe('Almacén tal como lo dice el usuario: "G1", "galpón 2", "el segundo galpón", "almacén G1"... (galpón, bodega, depósito y almacén son lo mismo; el número o la letra identifican cuál).'),
   producto: z.string().max(60).optional().describe('Parte del nombre del material para ver solo ese.'),
   limite: limiteSchema,
 });
@@ -110,7 +112,7 @@ export const consultarStockAlmacen = definirHerramienta({
   nombre: 'consultar_stock_almacen',
   etiqueta: 'inventario por almacén',
   descripcion:
-    'Stock (kg) de UN almacén concreto (G1, G2...) con sus materiales y el lote al que pertenecen (si lo hay). Úsala para "qué hay en G1", "cuántos kilos hay en el almacén G2". Si no sabes qué almacenes existen llama primero a listar_almacenes; para comparar todos los almacenes usa resumen_stock_por_almacen.',
+    'Stock (kg) de UN almacén concreto (G1, G2...) con sus materiales y el lote al que pertenecen (si lo hay). Úsala para "qué hay en G1", "qué hay en el galpón 2", "cuántos kilos hay en el almacén G2" (en Pronoia los galpones SON los almacenes: galpón 1 = ALMACEN G1, galpón 2 = ALMACEN G2). Si no sabes qué almacenes existen llama primero a listar_almacenes; para comparar todos los almacenes usa resumen_stock_por_almacen.',
   parametros: stockAlmacenSchema,
   permisos: [{ recurso: 'almacenes', accion: 'ver' }],
   async ejecutar({ almacen, producto, limite }) {
@@ -157,35 +159,67 @@ export const consultarStockAlmacen = definirHerramienta({
 });
 
 const lotesSchema = z.object({
-  nombre: z.string().max(60).optional().describe('Parte del nombre del lote (BGPP, LOTE 3, PCB LIGADO...).'),
+  nombre: z.string().max(60).optional().describe('Parte del nombre del lote (BGPP, LOTE 3, PCB LIGADO...). "lote 2", "LOTE 2" y "lote dos" son lo mismo.'),
+  almacen: z.string().max(60).optional().describe('Si el usuario pregunta por un lote EN un almacén/galpón ("lote 2 en el galpón 2"), pon aquí el almacén tal como lo dijo: "galpón 2", "G2", "almacén 1"... Galpón, bodega, depósito y almacén son lo mismo.'),
   limite: limiteSchema,
 });
+
+/** Lotes que corresponden al nombre pedido: si hay uno idéntico solo ese ("lote 2" no trae "LOTE 20"). */
+export function filtrarLotesPorNombre<T extends { nombre: string }>(lotes: readonly T[], nombre: string | undefined): T[] {
+  if (!nombre) return [...lotes];
+  const buscado = normalizarNombreLote(nombre);
+  const exactos = lotes.filter(l => normalizarNombreLote(l.nombre) === buscado);
+  return exactos.length > 0 ? exactos : lotes.filter(l => coincide(normalizarNombreLote(l.nombre), buscado));
+}
 
 export const consultarLotes = definirHerramienta({
   nombre: 'consultar_lotes',
   etiqueta: 'lotes',
   descripcion:
-    'LOTES activos (BGPP, BGYP, LOTE 1, LOTE 2, PCB LIGADO...) con su stock en kg total y en qué almacén(es) está guardado cada uno. Úsala para "cuánto hay en el lote X", "qué lotes hay". Un lote NO es un almacén ni un producto: agrupa material y puede estar repartido en varios almacenes.',
+    'LOTES activos (BGPP, BGYP, LOTE 1, LOTE 2, PCB LIGADO...) con su stock en kg total y en qué almacén(es) está guardado cada uno. Úsala para "cuánto hay en el lote X", "qué lotes hay" y para preguntas compuestas como "qué tenemos del lote 2 en el galpón 2": pasa nombre="lote 2" y almacen="galpón 2" y responde directo con enAlmacenSolicitado (kg del lote en ese almacén) y, si aplica, lo que hay en el otro. Un lote NO es un almacén ni un producto: agrupa material y puede estar repartido en varios almacenes.',
   parametros: lotesSchema,
   permisos: [{ recurso: 'productos', accion: 'ver' }],
-  async ejecutar({ nombre, limite }) {
+  async ejecutar({ nombre, almacen, limite }) {
+    let almacenPedido: AlmacenBasico | null = null;
+    if (almacen) {
+      const resolucion = resolverAlmacenEntre(await cargarAlmacenesActivos(), almacen);
+      if ('error' in resolucion) {
+        return {
+          filas: 0,
+          datos: {
+            fuente: 'almacenes',
+            error: resolucion.error === 'no_encontrado' ? 'No encontré ese almacén.' : 'Hay varios almacenes con ese nombre; pregunta cuál.',
+            almacenesDisponibles: resolucion.candidatos.map(a => textoSeguro(a.nombre)),
+          },
+        };
+      }
+      almacenPedido = resolucion.almacen;
+    }
     const activos = (await listarLotes()).filter(l => l.activo);
-    const lotes = activos.filter(l => coincide(l.nombre, nombre));
+    const lotes = filtrarLotesPorNombre(activos, nombre);
     const ordenados = [...lotes].sort((a, b) => b.stockKg - a.stockKg);
-    const filas = ordenados.slice(0, limiteEfectivo(limite)).map(l => ({
-      lote: textoSeguro(l.nombre),
-      stockKg: kgRedondeado(l.stockKg),
-      texto: formatearKg(kgRedondeado(l.stockKg)),
-      almacenesDondeEsta: l.stockPorAlmacen
+    const filas = ordenados.slice(0, limiteEfectivo(limite)).map(l => {
+      const enAlmacenes = l.stockPorAlmacen
         .filter(s => s.stockKg !== 0)
         .slice(0, 5)
-        .map(s => ({ almacen: textoSeguro(s.almacenNombre), kg: kgRedondeado(s.stockKg), texto: formatearKg(kgRedondeado(s.stockKg)) })),
-    }));
+        .map(s => ({ almacen: textoSeguro(s.almacenNombre), kg: kgRedondeado(s.stockKg), texto: formatearKg(kgRedondeado(s.stockKg)) }));
+      const kgPedido = almacenPedido ? enAlmacenes.find(s => s.almacen === textoSeguro(almacenPedido!.nombre))?.kg ?? 0 : 0;
+      return {
+        lote: textoSeguro(l.nombre),
+        stockKg: kgRedondeado(l.stockKg),
+        texto: formatearKg(kgRedondeado(l.stockKg)),
+        almacenesDondeEsta: enAlmacenes,
+        ...(almacenPedido
+          ? { enAlmacenSolicitado: { almacen: textoSeguro(almacenPedido.nombre), kg: kgPedido, texto: formatearKg(kgPedido) } }
+          : {}),
+      };
+    });
     const sinResultados = lotes.length === 0 && Boolean(nombre);
     return {
       filas: filas.length,
       datos: {
         fuente: 'lotes',
+        ...(almacenPedido ? { almacenSolicitado: textoSeguro(almacenPedido.nombre) } : {}),
         lotesEncontrados: lotes.length,
         totalKg: kgRedondeado(sumar(lotes.map(l => l.stockKg))),
         totalTexto: formatearKg(kgRedondeado(sumar(lotes.map(l => l.stockKg)))),

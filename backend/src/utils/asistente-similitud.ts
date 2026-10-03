@@ -41,13 +41,17 @@ const singular = (p: string): string => (p.length > 3 && p.endsWith('s') ? p.sli
 
 const palabras = (t: string): string[] => normalizarTexto(t).split(' ').filter(p => p.length >= 2 || /[0-9]/.test(p)).map(singular);
 
-/** Todas las palabras de la consulta aparecen (como prefijo/trozo) en el texto. */
+/** Nexos que el usuario añade al hablar ("jesus CON los teques") y que no distinguen un nombre de otro. */
+const NEXOS = new Set(['con', 'de', 'del', 'el', 'la', 'los', 'las', 'y', 'en', 'por', 'para']);
+
+/** Todas las palabras de la consulta aparecen (como prefijo/trozo) en el texto; los nexos sueltos no cuentan. */
 export function coincidePorPalabras(texto: string, consulta: string | undefined): boolean {
   if (!consulta) return true;
   const objetivo = normalizarTexto(texto);
   const ps = palabras(consulta);
   if (ps.length === 0) return true;
-  return ps.every(p => objetivo.includes(p));
+  const significativas = ps.filter(p => !NEXOS.has(p));
+  return (significativas.length > 0 ? significativas : ps).every(p => objetivo.includes(p));
 }
 
 /** Similitud 0..1 entre una consulta y un candidato (mejor palabra contra palabra, o frase completa). */

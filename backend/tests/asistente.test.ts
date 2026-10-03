@@ -82,6 +82,15 @@ describe('construirSystemPrompt', () => {
     expect(p).toContain('NO tienes acceso');
   });
 
+  it('modo datos: galpón = almacén, una sola búsqueda de persona y estilo directo', () => {
+    const p = construirSystemPrompt({ nombre: 'Ana', pagina: 'inicio', personalidad: 'amigable', modo: 'datos', areas: ['inventario'] });
+    expect(p).toMatch(/GALPONES/);
+    expect(p).toContain('saldo_persona');
+    expect(p).toMatch(/NUNCA menciones el lado donde no aparece/);
+    expect(p).toMatch(/No ofrezcas .*¿quieres que busque/);
+    expect(p).not.toMatch(/prueba la otra tú misma/);
+  });
+
   it('sin nombre no menciona "se llama"', () => {
     expect(construirSystemPrompt({ nombre: '', pagina: 'otra', personalidad: 'formal' })).not.toContain('se llama');
   });
