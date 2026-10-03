@@ -1,6 +1,8 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearTomaFisicaInput, RegistrarPesajeTomaFisicaInput } from '../schemas/toma-fisica.js';
+import { categoriaIdsConProductosAnclados } from './tipo-material-service.js';
 import {
+  categoriaSinLoteEfectivo,
   derivarAlcance,
   validarAlcance,
   buscarTomaSolapada,
@@ -162,13 +164,19 @@ export async function obtenerTomaFisica(id: string): Promise<TomaFisicaPublica |
 /** Valida alcance, almacén, lotes y solape con tomas abiertas antes de llamar
  *  al RPC (que sigue siendo la barrera final contra solapes). */
 async function validarCreacion(input: CrearTomaFisicaInput): Promise<{ error: string } | { alcance: AlcanceToma }> {
-  const [{ data: almacen }, { data: cats }] = await Promise.all([
+  const [{ data: almacen }, { data: cats }, anclados] = await Promise.all([
     supabaseAdmin.from('almacenes').select('id, activo').eq('id', input.almacenId).maybeSingle(),
     supabaseAdmin.from('tipos_material').select('id, sin_lote').in('id', input.categoriaIds),
+    categoriaIdsConProductosAnclados(input.categoriaIds),
   ]);
   if (!almacen || almacen.activo === false) return { error: 'El almacén elegido no existe o está inactivo.' };
 
-  const categorias = (cats ?? []).map(c => ({ id: c.id as string, sinLote: c.sin_lote === true }));
+  // Una categoría con productos anclados a lotes se inventaría por lote, aunque
+  // esté marcada "sin lote" (los lotes se anclan a productos, no a categorías).
+  const categorias = (cats ?? []).map(c => ({
+    id: c.id as string,
+    sinLote: categoriaSinLoteEfectivo(c.sin_lote === true, anclados.has(c.id as string)),
+  }));
   if (categorias.length !== new Set(input.categoriaIds).size) return { error: 'Alguna categoría elegida no existe.' };
 
   const loteIds = input.loteIds ?? [];

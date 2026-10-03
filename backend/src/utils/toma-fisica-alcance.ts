@@ -13,6 +13,13 @@ export interface CategoriaAlcance {
   sinLote: boolean;
 }
 
+/** Una categoría se inventaría "por categoría" solo si está marcada sin lote Y
+ *  ninguno de sus productos está anclado a un lote (producto_lotes). Si algún
+ *  producto tiene lotes posibles, la categoría se cuenta por lote. */
+export function categoriaSinLoteEfectivo(sinLoteFlag: boolean, tieneProductosAnclados: boolean): boolean {
+  return sinLoteFlag && !tieneProductosAnclados;
+}
+
 export function derivarAlcance(loteIds: string[] | null, categoriasSinLote: boolean[]): AlcanceToma {
   if (loteIds && loteIds.length > 0) return 'lote';
   return categoriasSinLote.some(sinLote => !sinLote) ? 'lote' : 'categoria';

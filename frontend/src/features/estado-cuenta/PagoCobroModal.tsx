@@ -5,7 +5,9 @@ import { obtenerTasaOficial } from '../../services/tasa-service';
 import { obtenerFacturas } from '../../services/factura-cv-service';
 import { registrarPagoMultiple, type BancaPago, type ItemPagoMultiple } from '../../services/pago-service';
 import { registrarCobroMultiple, type ResultadoCobroMultiple } from '../../services/cobro-service';
+import { obtenerAdelantosDisponibles, type AdelantoDisponible } from '../../services/cruce-service';
 import { subirComprobantePago } from '../../services/storage-service';
+import { calcularCruce, redondear2, sugerirMontoCredito, validarMontoAplicable, type ItemCruce } from '../../lib/cruce';
 import { fotoLocalDeFile, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import type { Banca } from '@shared/types/index.js';
@@ -56,6 +58,9 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   const [montosFactura, setMontosFactura] = useState<Record<string, string>>({});
   const [notaIdsSel, setNotaIdsSel] = useState<string[]>([]);
   const [notaCreditoIdsSel, setNotaCreditoIdsSel] = useState<string[]>([]);
+  const [adelantos, setAdelantos] = useState<AdelantoDisponible[]>([]);
+  /** Adelantos/anticipos marcados → monto (USD, string editable) que se cruza con las facturas. */
+  const [montosAdelanto, setMontosAdelanto] = useState<Record<string, string>>({});
 
   /** Total a pagar/cobrar (USD): mientras sea null, se deriva de lo
    *  seleccionado en cada render (cero clics extra en el caso común). Al
@@ -85,9 +90,10 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     });
     obtenerTasaOficial().then(t => setTasa(t?.tasa ?? null));
     obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista =>
-      setFacturasPendientes(lista.filter(f => f.estado !== 'pagada' && f.estado !== 'anulada'))
+      setFacturasPendientes(lista.filter(f => f.estado === 'emitida'))
     );
-  }, [esProveedor, entidadId]);
+    obtenerAdelantosDisponibles(tipoEntidad, entidadId).then(setAdelantos);
+  }, [esProveedor, tipoEntidad, entidadId]);
 
   const toggleFactura = (f: FacturaCV) =>
     setMontosFactura(prev => {
@@ -116,18 +122,45 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     [notasCreditoPendientes, notaCreditoIdsSel]
   );
 
-  const totalFacturas = facturasSel.reduce((acc, f) => acc + (parseFloat(montosFactura[f.id]) || 0), 0);
-  const totalNotas = notasSel.reduce((acc, n) => acc + n.cargo, 0);
-  const totalCargos = totalFacturas + totalNotas;
-  // Las notas de crédito se usan como método de pago/cobro: reducen lo que
-  // hace falta cubrir con banca, en vez de sumar (al revés de las de débito).
-  const totalCreditos = notasCreditoSel.reduce((acc, n) => acc + n.abono, 0);
-  const totalItems = totalCargos - totalCreditos;
+  const adelantosSel = useMemo(
+    () => adelantos.filter(a => a.id in montosAdelanto),
+    [adelantos, montosAdelanto]
+  );
+
+  // Cruce: facturas + notas de débito - adelantos - notas de crédito = lo que
+  // hay que pagar en efectivo/banco (ver lib/cruce.ts). Los adelantos y las
+  // notas de crédito se usan como método de pago: reducen lo que se paga con banca.
+  const itemsCruce: ItemCruce[] = [
+    ...facturasSel.map(f => ({ tipo: 'factura' as const, montoUsd: parseFloat(montosFactura[f.id]) || 0 })),
+    ...notasSel.map(n => ({ tipo: 'nota_debito' as const, montoUsd: n.cargo })),
+    ...adelantosSel.map(a => ({ tipo: 'adelanto' as const, montoUsd: parseFloat(montosAdelanto[a.id]) || 0 })),
+    ...notasCreditoSel.map(n => ({ tipo: 'nota_credito' as const, montoUsd: n.abono })),
+  ];
+  const cruce = calcularCruce(itemsCruce);
+  const totalItems = cruce.efectivo;
+  const hayItems = itemsCruce.length > 0;
 
   const totalTocado = totalEditadoManual !== null;
-  const totalEditado = totalEditadoManual ?? (totalItems > 0 ? totalItems.toFixed(2) : '');
+  const totalEditado = totalEditadoManual ?? (hayItems && !cruce.error ? totalItems.toFixed(2) : '');
   const totalEditadoNum = parseFloat(totalEditado) || 0;
   const adelantoCalculado = totalEditadoNum - totalItems;
+  /** Hay ítems y no queda nada por pagar: se registra como cruce, sin banca ni movimiento de dinero. */
+  const esCrucePuro = hayItems && !cruce.error && totalEditadoNum <= 0.01;
+
+  const toggleAdelanto = (a: AdelantoDisponible) =>
+    setMontosAdelanto(prev => {
+      if (!(a.id in prev)) {
+        // Sugiere lo que falta por cubrir, sin pasarse de las facturas ni de lo disponible.
+        const aplicadoOtros = Object.entries(prev).reduce((acc, [, v]) => acc + (parseFloat(v) || 0), 0);
+        const pendiente = cruce.totalCargos - cruce.totalNotasCredito - aplicadoOtros;
+        return { ...prev, [a.id]: sugerirMontoCredito(a.disponible, pendiente).toFixed(2) };
+      }
+      const next = { ...prev };
+      delete next[a.id];
+      return next;
+    });
+  const setMontoAdelanto = (id: string, value: string) =>
+    setMontosAdelanto(prev => ({ ...prev, [id]: value }));
 
   // Con una sola banca, su monto se muestra igual al total (mismo
   // comportamiento que antes de agregar multi-banco) mientras no se toque a
@@ -167,19 +200,18 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     facturasSel.forEach(f => partes.push(f.codigo ?? f.id.slice(0, 8)));
     if (notasSel.length > 0) partes.push(`${notasSel.length} nota${notasSel.length === 1 ? '' : 's'} débito`);
     if (notasCreditoSel.length > 0) partes.push(`${notasCreditoSel.length} nota${notasCreditoSel.length === 1 ? '' : 's'} crédito aplicada${notasCreditoSel.length === 1 ? '' : 's'}`);
+    if (adelantosSel.length > 0) partes.push(`${etiquetaAdelanto}${adelantosSel.length === 1 ? '' : 's'} aplicado${adelantosSel.length === 1 ? '' : 's'}: ${adelantosSel.map(a => a.codigo ?? a.id.slice(0, 8)).join(', ')}`);
     if (adelantoCalculado > 0.01) partes.push(`${etiquetaAdelanto} $${fmt(adelantoCalculado)}`);
-    return partes.length > 0 ? `${esProveedor ? 'Pago' : 'Cobro'} combinado: ${partes.join(', ')}` : '';
-  }, [facturasSel, notasSel, notasCreditoSel, adelantoCalculado, etiquetaAdelanto, esProveedor]);
+    if (partes.length === 0) return '';
+    return `${esCrucePuro ? 'Cruce' : esProveedor ? 'Pago combinado' : 'Cobro combinado'}: ${partes.join(', ')}`;
+  }, [facturasSel, notasSel, notasCreditoSel, adelantosSel, adelantoCalculado, etiquetaAdelanto, esProveedor, esCrucePuro]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (totalCreditos > totalCargos + 0.01) {
-      setError(`Las notas de crédito seleccionadas ($${fmt(totalCreditos)}) superan lo que se está ${esProveedor ? 'pagando' : 'cobrando'} ($${fmt(totalCargos)}). Desmarcá alguna o agregá más facturas.`);
-      return;
-    }
-    if (totalEditadoNum <= 0) { setError(`El total a ${verbo} debe ser mayor a 0.`); return; }
+    if (cruce.error) { setError(cruce.error); return; }
+    if (!hayItems && totalEditadoNum <= 0) { setError(`Seleccioná al menos una factura, nota o ${etiquetaAdelanto}, o indicá un monto a ${verbo}.`); return; }
     if (adelantoCalculado < -0.01) {
       setError(`El total a ${verbo} ($${fmt(totalEditadoNum)}) es menor a lo seleccionado ($${fmt(totalItems)}). Bajá el monto de alguna factura o desmarcala.`);
       return;
@@ -196,6 +228,14 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       }
     }
 
+    for (const a of adelantosSel) {
+      const mensaje = validarMontoAplicable(parseFloat(montosAdelanto[a.id]) || 0, a.disponible, a.codigo ?? etiquetaAdelanto);
+      if (mensaje) { setError(mensaje); return; }
+    }
+
+    // Cruce puro: no se mueve dinero, no hace falta banca ni método de pago.
+    const bancasPayload: BancaPago[] = [];
+    if (!esCrucePuro) {
     if (lineasEfectivas.length === 0 || lineasEfectivas.some(l => !l.bancaId)) {
       setError('Seleccioná una banca válida en cada línea.');
       return;
@@ -206,7 +246,6 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       return;
     }
 
-    const bancasPayload: BancaPago[] = [];
     for (const linea of lineasEfectivas) {
       const banca = bancas.find(b => b.id === linea.bancaId);
       if (!banca) { setError('Banca no encontrada.'); return; }
@@ -232,16 +271,19 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       setError(`La suma de las bancas ($${fmt(sumaBancasUsd)}) no coincide con el total a ${verbo} ($${fmt(totalEditadoNum)}).`);
       return;
     }
+    }
 
     const items: ItemPagoMultiple[] = [
       ...facturasSel.map(f => ({ tipo: 'factura' as const, id: f.id, montoUsd: parseFloat(montosFactura[f.id]) || 0 })),
       ...notasSel.map(n => ({ tipo: 'nota_debito' as const, id: n.notaId!, montoUsd: n.cargo })),
       ...notasCreditoSel.map(n => ({ tipo: 'nota_credito' as const, id: n.notaId!, montoUsd: n.abono })),
+      ...adelantosSel.map(a => ({ tipo: 'adelanto' as const, id: a.id, montoUsd: redondear2(parseFloat(montosAdelanto[a.id]) || 0) })),
     ];
 
     setGuardando(true);
 
-    const comprobantesUrls = await subirFotosLocal(comprobantes, subirComprobantePago);
+    // Un cruce puro no mueve dinero: no hay movimiento al que colgar comprobantes.
+    const comprobantesUrls = esCrucePuro ? [] : await subirFotosLocal(comprobantes, subirComprobantePago);
     if (!comprobantesUrls) {
       setGuardando(false);
       setError('No se pudo subir uno de los comprobantes. Probá de nuevo o registrá el pago sin ellos.');
@@ -250,7 +292,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
 
     const datosComunes = {
       bancas: bancasPayload,
-      montoUsd: totalEditadoNum,
+      montoUsd: esCrucePuro ? 0 : totalEditadoNum,
       descripcion: (descripcion.trim() || descripcionSugerida) || null,
       fecha,
       items,
@@ -267,6 +309,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
         grupoId: result.grupoId,
         numeroCobro: result.numeroPago,
         numeroAnticipo: result.numeroAdelanto,
+        numeroCruce: result.numeroCruce,
       });
       return;
     }
@@ -286,7 +329,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
           <div>
             <h2 className="text-lg font-bold text-text-primary">{etiquetaAccion}</h2>
-            <p className="text-sm text-text-secondary">Selecciona una o varias facturas y/o notas de débito, o regístralo como {etiquetaAdelanto}.</p>
+            <p className="text-sm text-text-secondary">Selecciona facturas y/o notas de débito y cruzalas con {esProveedor ? 'adelantos' : 'anticipos'} y notas de crédito, o regístralo como {etiquetaAdelanto}.</p>
           </div>
           <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
@@ -364,6 +407,48 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
           </div>
 
           <div>
+            <label className={labelClass}>{esProveedor ? 'Adelantos' : 'Anticipos'} disponibles <span className="text-text-muted">(se descuentan de lo que hay que {verbo})</span></label>
+            {adelantos.length === 0 ? (
+              <p className="text-xs text-text-muted">Sin {esProveedor ? 'adelantos' : 'anticipos'} con saldo disponible.</p>
+            ) : (
+              <div className="border border-border rounded-lg divide-y divide-border max-h-48 overflow-y-auto">
+                {adelantos.map(a => {
+                  const marcado = a.id in montosAdelanto;
+                  return (
+                    <div key={a.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-alt transition-colors">
+                      <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={marcado}
+                          onChange={() => toggleAdelanto(a)}
+                          className="w-4 h-4 accent-brand-600 shrink-0"
+                        />
+                        <span className="text-sm text-text-primary truncate">
+                          {a.codigo ?? a.id.slice(0, 8)}
+                          <span className="text-xs text-text-muted ml-2">{a.fecha}</span>
+                        </span>
+                      </label>
+                      {marcado ? (
+                        <div className="relative shrink-0">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-xs">$</span>
+                          <input
+                            type="number" step="0.01" min="0.01" max={a.disponible.toFixed(2)}
+                            value={montosAdelanto[a.id]}
+                            onChange={e => setMontoAdelanto(a.id, e.target.value)}
+                            className="w-24 pl-5 pr-2 py-1 text-right text-xs bg-surface border border-border rounded focus:outline-none focus:ring-2 focus:ring-brand-400"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-teal-700 shrink-0">${fmt(a.disponible)}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div>
             <label className={labelClass}>Notas de crédito disponibles <span className="text-text-muted">(se aplican como método de {esProveedor ? 'pago' : 'cobro'})</span></label>
             {notasCreditoPendientes.length === 0 ? (
               <p className="text-xs text-text-muted">Sin notas de crédito disponibles.</p>
@@ -385,16 +470,36 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
                 ))}
               </div>
             )}
-            {totalCreditos > 0 && (
-              <p className="text-xs text-green-600 mt-1">
-                Se descuentan ${fmt(totalCreditos)} de lo que hay que cubrir con banca.
-              </p>
-            )}
           </div>
+
+          {hayItems && (
+            <div className="border border-border rounded-lg px-4 py-3 space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-text-secondary">Facturas seleccionadas</span><span className="text-text-primary">${fmt(cruce.totalFacturas)}</span></div>
+              {cruce.totalNotasDebito > 0 && (
+                <div className="flex justify-between"><span className="text-text-secondary">+ Notas de débito</span><span className="text-text-primary">${fmt(cruce.totalNotasDebito)}</span></div>
+              )}
+              {cruce.totalAdelantos > 0 && (
+                <div className="flex justify-between"><span className="text-text-secondary">- {esProveedor ? 'Adelantos' : 'Anticipos'} aplicados</span><span className="text-green-600">-${fmt(cruce.totalAdelantos)}</span></div>
+              )}
+              {cruce.totalNotasCredito > 0 && (
+                <div className="flex justify-between"><span className="text-text-secondary">- Notas de crédito</span><span className="text-green-600">-${fmt(cruce.totalNotasCredito)}</span></div>
+              )}
+              <div className="flex justify-between pt-1 border-t border-border font-semibold">
+                <span className="text-text-primary">= A {verbo} en efectivo/banco</span>
+                <span className="text-text-primary">${fmt(cruce.efectivo)}</span>
+              </div>
+            </div>
+          )}
+
+          {cruce.error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <p className="text-sm text-red-600">{cruce.error}</p>
+            </div>
+          )}
 
           <div className="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-brand-800 shrink-0">Total a {verbo}</span>
+              <span className="text-sm text-brand-800 shrink-0">Total a {verbo} (efectivo/banco)</span>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-700 text-sm">$</span>
                 <input
@@ -431,6 +536,15 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
             </div>
           )}
 
+          {esCrucePuro && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
+              <p className="text-sm text-indigo-800">
+                <strong>Cruce sin movimiento de dinero:</strong> lo seleccionado queda saldado con {esProveedor ? 'adelantos' : 'anticipos'} y notas. No hace falta banca ni método de {esProveedor ? 'pago' : 'cobro'}; se guarda como documento de cruce (correlativo {esProveedor ? 'CR-…' : 'CRV-…'}).
+              </p>
+            </div>
+          )}
+
+          {!esCrucePuro && (
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className={labelClass}>{etiquetaBanca} *</label>
@@ -517,6 +631,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
               {!sumaBancasCuadra && ` (faltan $${fmt(totalEditadoNum - sumaBancasUsd)})`}
             </p>
           </div>
+          )}
 
           <div>
             <label className={labelClass}>Fecha</label>
@@ -534,12 +649,14 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
             />
           </div>
 
-          <FotoMultiplePicker
-            fotos={comprobantes}
-            onAgregar={agregarComprobantes}
-            onQuitar={quitarComprobante}
-            label={`Comprobante de ${esProveedor ? 'pago' : 'cobro'} (opcional)`}
-          />
+          {!esCrucePuro && (
+            <FotoMultiplePicker
+              fotos={comprobantes}
+              onAgregar={agregarComprobantes}
+              onQuitar={quitarComprobante}
+              label={`Comprobante de ${esProveedor ? 'pago' : 'cobro'} (opcional)`}
+            />
+          )}
 
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
@@ -552,7 +669,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Registrando...' : etiquetaAccion}
+              {guardando ? 'Registrando...' : esCrucePuro ? 'Registrar cruce' : etiquetaAccion}
             </button>
           </div>
         </form>

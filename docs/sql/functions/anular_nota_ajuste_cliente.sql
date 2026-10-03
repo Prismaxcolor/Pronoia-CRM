@@ -1,50 +1,50 @@
--- Extraído de producción vía pg_get_functiondef, 11-sep-2026
+-- Versión vigente tras docs/migration_anular_notas_sin_inversa.sql (anular = marcar, sin nota inversa).
 -- Args: p_nota_id uuid, p_motivo text, p_registrado_por uuid
 
-CREATE OR REPLACE FUNCTION public.anular_nota_ajuste_cliente(p_nota_id uuid, p_motivo text, p_registrado_por uuid)
- RETURNS uuid
- LANGUAGE plpgsql
-AS $function$
+create or replace function public.anular_nota_ajuste_cliente(
+  p_nota_id uuid, p_motivo text, p_registrado_por uuid
+) returns uuid
+language plpgsql
+as $function$
 declare
-  v_cliente_id   uuid;
-  v_tipo         text;
-  v_monto        numeric;
-  v_anulada      boolean;
-  v_pagada       boolean;
-  v_factura_id   uuid;
-  v_nueva_id     uuid;
+  v_encontrada boolean;
+  v_anulada    boolean;
+  v_pagada     boolean;
+  v_mov_id     uuid;
+  v_mov_num    bigint;
+  v_ref        text;
 begin
-  select cliente_id, tipo, monto, anulada, pagada, factura_id
-    into v_cliente_id, v_tipo, v_monto, v_anulada, v_pagada, v_factura_id
+  select true, anulada, pagada, movimiento_id
+    into v_encontrada, v_anulada, v_pagada, v_mov_id
     from public.notas_ajuste_cliente
-   where id = p_nota_id;
+   where id = p_nota_id
+   for update;
 
-  if v_cliente_id is null then
+  if v_encontrada is not true then
     raise exception 'Nota no encontrada.';
   end if;
   if v_anulada then
     raise exception 'Esta nota ya fue anulada.';
   end if;
   if v_pagada then
-    raise exception 'Esta nota ya fue aplicada a un cobro — no se puede anular sin reversar antes el cobro.';
+    select numero into v_mov_num from public.movimientos where id = v_mov_id;
+    v_ref := case
+      when v_mov_num is not null then ' (CB-' || lpad(v_mov_num::text, 4, '0') || ')'
+      else ''
+    end;
+    raise exception 'Esta nota ya fue aplicada en un cobro%: no se puede anular sin reversar antes ese cobro.', v_ref;
+  end if;
+  if coalesce(btrim(p_motivo), '') = '' then
+    raise exception 'El motivo de la anulación es obligatorio.';
   end if;
 
-  insert into public.notas_ajuste_cliente
-    (cliente_id, tipo, monto, motivo, anula_nota_id, registrado_por, factura_id)
-  values (
-    v_cliente_id,
-    case when v_tipo = 'credito' then 'debito' else 'credito' end,
-    v_monto,
-    p_motivo,
-    p_nota_id,
-    p_registrado_por,
-    v_factura_id
-  )
-  returning id into v_nueva_id;
+  update public.notas_ajuste_cliente
+     set anulada = true,
+         anulada_at = now(),
+         anulada_por = p_registrado_por,
+         anulada_motivo = btrim(p_motivo)
+   where id = p_nota_id;
 
-  update public.notas_ajuste_cliente set anulada = true where id = p_nota_id;
-
-  return v_nueva_id;
+  return p_nota_id;
 end;
-$function$
-;
+$function$;

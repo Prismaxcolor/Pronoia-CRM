@@ -11,7 +11,7 @@ export interface BancaPagoDetalle {
 }
 
 export interface ItemPagoDetalle {
-  tipo: 'factura' | 'nota_debito' | 'nota_credito';
+  tipo: 'factura' | 'nota_debito' | 'nota_credito' | 'adelanto';
   /** Código de control del documento aplicado (C-/V-/ND-/NC-/NDV-/NCV-).
    *  Null si el documento referenciado ya no tiene numero. */
   codigo: string | null;
@@ -31,6 +31,8 @@ export interface PagoDetalle {
   totalUsd: number;
   codigoPago: string | null;
   codigoAdelanto: string | null;
+  /** CR-/CRV- cuando la operación fue un cruce sin movimiento de dinero. */
+  codigoCruce: string | null;
   /** Desglose por factura/nota aplicada — vacío en pagos registrados antes
    *  del Bloque 49, esa data nunca se guardó. */
   items: ItemPagoDetalle[];

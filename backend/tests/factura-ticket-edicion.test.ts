@@ -96,3 +96,28 @@ describe('cambiosAuditoriaFactura', () => {
     expect(cambiosAuditoriaFactura([])).toEqual({});
   });
 });
+
+describe('factura con notas vigentes al editar el ticket', () => {
+  const conNotas: EfectoFactura = {
+    tipo: 'compra', facturaId: 'f9', numero: 12, entidadId: 'prov-1', total: 100, montoPagado: 0,
+    estadoAnterior: 'emitida', accion: 'con_notas', ticketsLiberados: 0, notasVigentes: 2,
+  };
+
+  it('se parsea la acción con_notas y el conteo de notas', () => {
+    const r = parsearEfectosFactura([{ ...conNotas }]);
+    expect(r[0]).toMatchObject({ accion: 'con_notas', notasVigentes: 2 });
+  });
+
+  it('aviso: no se anuló, pide anular las notas primero y va como aviso accionable', () => {
+    const [a] = construirAvisosFactura([conNotas], new Map([['prov-1', 'Juan']]));
+    expect(a.tipo).toBe('pagada');
+    expect(a.mensaje).toMatch(/C-0012/);
+    expect(a.mensaje).toMatch(/2 notas/);
+    expect(a.mensaje).toMatch(/no se anuló/i);
+  });
+
+  it('auditoría: deja claro que no se anuló por notas vigentes', () => {
+    const cambios = cambiosAuditoriaFactura(construirAvisosFactura([conNotas], new Map()));
+    expect(cambios['Factura C-0012'].despues).toMatch(/notas vigentes/i);
+  });
+});

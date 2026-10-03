@@ -139,6 +139,13 @@ function NotaDetallePage({ tipoEntidad }: Props) {
         )}
         <FilaDocumento label="Motivo" valor={nota.motivo} />
         <FilaDocumento label="Registrado por" valor={nota.registradoPor ?? '—'} />
+        {nota.anulada && (
+          <>
+            <FilaDocumento label="Anulada el" valor={nota.anuladaAt ? nota.anuladaAt.slice(0, 10) : '—'} />
+            <FilaDocumento label="Anulada por" valor={nota.anuladaPor ?? '—'} />
+            <FilaDocumento label="Motivo de anulación" valor={nota.anuladaMotivo ?? '—'} />
+          </>
+        )}
 
         <div className="flex justify-between items-baseline mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
           <span className="font-semibold text-text-primary text-lg">Monto</span>

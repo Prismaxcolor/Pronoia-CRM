@@ -18,3 +18,13 @@ export async function leerPaginado<T>(
     if (pagina.length < TAMANO_PAGINA) return filas;
   }
 }
+
+/** Ids por consulta `.in()`: evita URLs de PostgREST demasiado largas. */
+export const IDS_POR_CONSULTA = 200;
+
+/** Parte una lista en trozos de `tamano` elementos (sin mutar la original). */
+export function trocear<T>(items: readonly T[], tamano: number = IDS_POR_CONSULTA): T[][] {
+  const trozos: T[][] = [];
+  for (let i = 0; i < items.length; i += tamano) trozos.push(items.slice(i, i + tamano));
+  return trozos;
+}

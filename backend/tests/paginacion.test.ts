@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { leerPaginado, TAMANO_PAGINA } from '../src/utils/paginacion.js';
+import { leerPaginado, TAMANO_PAGINA, trocear } from '../src/utils/paginacion.js';
 
 const filas = (n: number, desde = 0) => Array.from({ length: n }, (_, i) => ({ id: desde + i }));
 
@@ -24,5 +24,21 @@ describe('leerPaginado', () => {
 
   it('propaga el error en vez de devolver datos parciales', async () => {
     await expect(leerPaginado(async () => ({ data: null, error: { message: 'boom' } }))).rejects.toThrow('boom');
+  });
+});
+
+describe('trocear', () => {
+  it('parte en trozos del tamaño pedido, con el último incompleto', () => {
+    expect(trocear([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+  it('lista vacía da cero trozos y no muta la entrada', () => {
+    const entrada = [1, 2, 3];
+    expect(trocear([], 2)).toEqual([]);
+    trocear(entrada, 2);
+    expect(entrada).toEqual([1, 2, 3]);
+  });
+  it('por defecto usa 200 ids por trozo', () => {
+    const r = trocear(Array.from({ length: 450 }, (_, i) => i));
+    expect(r.map(t => t.length)).toEqual([200, 200, 50]);
   });
 });

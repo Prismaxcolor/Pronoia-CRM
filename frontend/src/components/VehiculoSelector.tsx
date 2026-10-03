@@ -1,10 +1,9 @@
 import { useState } from 'react';
+import { Car, Pencil } from 'lucide-react';
 import { buscarVehiculoPorTexto, etiquetaVehiculo } from '../lib/vehiculo';
 import VehiculoResumen from './VehiculoResumen';
+import SeleccionarVehiculoModal from './SeleccionarVehiculoModal';
 import type { Vehiculo } from '@shared/types/index.js';
-
-/** Valor del <select> que activa el campo de texto libre (vehículo de tercero). */
-export const OPCION_TERCERO = '__tercero__';
 
 interface Props {
   /** Texto que se guarda en el ticket ("PLACA · nombre" o texto libre de tercero). */
@@ -12,58 +11,70 @@ interface Props {
   onChange: (valor: string) => void;
   /** Vehículos activos del catálogo del sistema. */
   vehiculos: Vehiculo[];
-  inputClass: string;
+  /** Se conservan por compatibilidad con los formularios; el selector visual usa sus propios estilos. */
+  inputClass?: string;
   labelClass: string;
 }
 
 /**
- * Selector de vehículo: elige uno del catálogo (se muestra "placa · nombre" y,
- * debajo, su miniatura con visor de fotos) o "Vehículo de tercero", que deja
- * escribir placa/descripción a mano. El tercero solo se guarda como texto en
- * el ticket; nunca se crea en el catálogo de vehículos. Los tickets antiguos
- * que guardaron solo el nombre siguen reconociéndose.
+ * Selector de vehículo: un botón abre un modal con tarjetas del catálogo
+ * (foto, placa, nombre, datos; buscador; tocar la foto la amplía) y la opción
+ * "Vehículo de tercero", que deja escribir placa/descripción a mano. El tercero
+ * solo se guarda como texto en el ticket; nunca se crea en el catálogo de
+ * vehículos. Los tickets antiguos que guardaron solo el nombre siguen
+ * reconociéndose.
  */
-function VehiculoSelector({ value, onChange, vehiculos, inputClass, labelClass }: Props) {
-  const [terceroForzado, setTerceroForzado] = useState(false);
+function VehiculoSelector({ value, onChange, vehiculos, labelClass }: Props) {
+  const [modalAbierto, setModalAbierto] = useState(false);
   const elegido = buscarVehiculoPorTexto(value, vehiculos);
-  const esTercero = terceroForzado || (value.trim() !== '' && !elegido);
-  const valorSelect = esTercero ? OPCION_TERCERO : elegido ? etiquetaVehiculo(elegido) : '';
+  const textoTercero = !elegido ? value.trim() : '';
 
-  const handleSelect = (nuevo: string) => {
-    if (nuevo === OPCION_TERCERO) {
-      setTerceroForzado(true);
-      if (elegido) onChange('');
-      return;
-    }
-    setTerceroForzado(false);
+  const cerrarYAplicar = (nuevo: string) => {
     onChange(nuevo);
+    setModalAbierto(false);
   };
+
+  const botonAbrir = (texto: string, conIcono: boolean) => (
+    <button
+      type="button"
+      onClick={() => setModalAbierto(true)}
+      className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border bg-surface-alt text-sm text-text-primary hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all"
+    >
+      {conIcono && <Car size={16} className="text-brand-700 shrink-0" />}
+      {texto}
+    </button>
+  );
 
   return (
     <div>
       <label className={labelClass}>Vehículo</label>
-      <select value={valorSelect} onChange={e => handleSelect(e.target.value)} className={inputClass}>
-        <option value="">— Sin vehículo —</option>
-        {vehiculos.map(v => (
-          <option key={v.id} value={etiquetaVehiculo(v)}>
-            {etiquetaVehiculo(v)}
-          </option>
-        ))}
-        <option value={OPCION_TERCERO}>Vehículo de tercero (escribir a mano)</option>
-      </select>
-      {!esTercero && elegido && <VehiculoResumen vehiculo={elegido} />}
-      {esTercero && (
-        <div className="mt-1.5">
-          <input
-            type="text"
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            maxLength={50}
-            className={`${inputClass} text-xs py-1.5`}
-            placeholder="Placa o descripción del vehículo de tercero"
-          />
-          <p className="text-xs text-text-muted mt-1">Solo se guarda en este ticket, no se agrega a la lista de vehículos.</p>
+      {elegido ? (
+        <>
+          <VehiculoResumen vehiculo={elegido} />
+          <div className="flex gap-2 mt-1.5">{botonAbrir('Cambiar vehículo', false)}</div>
+        </>
+      ) : textoTercero ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border bg-surface-alt text-sm text-text-primary min-w-0">
+            <Pencil size={14} className="text-text-muted shrink-0" />
+            <span className="truncate">{textoTercero}</span>
+            <span className="text-xs text-text-muted shrink-0">(tercero)</span>
+          </div>
+          {botonAbrir('Cambiar vehículo', false)}
         </div>
+      ) : (
+        botonAbrir('Elegir vehículo (sin vehículo)', true)
+      )}
+
+      {modalAbierto && (
+        <SeleccionarVehiculoModal
+          vehiculos={vehiculos}
+          elegidoId={elegido?.id ?? null}
+          textoTercero={textoTercero}
+          onClose={() => setModalAbierto(false)}
+          onSeleccionar={v => cerrarYAplicar(v ? etiquetaVehiculo(v) : '')}
+          onSeleccionarTercero={cerrarYAplicar}
+        />
       )}
     </div>
   );

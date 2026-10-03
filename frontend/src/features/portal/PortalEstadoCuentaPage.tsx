@@ -3,6 +3,7 @@ import { Inbox } from 'lucide-react';
 import {
   obtenerEstadoCuentaPortal,
   type EstadoCuentaPortal,
+  type EntradaEstadoCuenta,
 } from '../../services/portal-estado-cuenta-service';
 import PortalHeader from '../../components/PortalHeader';
 import PortalSkeleton from '../../components/PortalSkeleton';
@@ -25,6 +26,21 @@ function mensajeSaldo(tipo: 'proveedor' | 'cliente', saldo: number): { texto: st
   return pronoiaDebe
     ? { texto: 'Pronoia te debe', positivo: true }
     : { texto: 'Le debes a Pronoia', positivo: false };
+}
+
+const ETIQUETA: Record<EntradaEstadoCuenta['tipo'], { texto: string; clase: string }> = {
+  factura: { texto: 'Factura', clase: 'bg-amber-100 text-amber-700' },
+  pago: { texto: 'Pago', clase: 'bg-green-100 text-green-700' },
+  adelanto: { texto: 'Adelanto', clase: 'bg-teal-100 text-teal-700' },
+  nota_credito: { texto: 'Nota de crédito', clase: 'bg-green-100 text-green-700' },
+  nota_debito: { texto: 'Nota de débito', clase: 'bg-amber-100 text-amber-700' },
+  cruce: { texto: 'Cruce', clase: 'bg-indigo-100 text-indigo-700' },
+};
+
+/** Facturas y notas de débito suman al saldo (cargo); el resto lo reduce (abono). */
+function importeEntrada(e: EntradaEstadoCuenta): number {
+  if (e.tipo === 'cruce') return e.montoCruzado ?? 0;
+  return e.tipo === 'factura' || e.tipo === 'nota_debito' ? e.cargo : e.abono;
 }
 
 function PortalEstadoCuentaPage() {
@@ -77,18 +93,14 @@ function PortalEstadoCuentaPage() {
               datos.entradas.map((e, i) => (
                 <div key={i} className="flex items-center justify-between p-4">
                   <div>
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs mr-2 ${
-                      e.tipo === 'factura' ? 'bg-amber-100 text-amber-700'
-                        : e.tipo === 'adelanto' ? 'bg-teal-100 text-teal-700'
-                        : 'bg-green-100 text-green-700'
-                    }`}>
-                      {e.tipo === 'factura' ? 'Factura' : e.tipo === 'adelanto' ? 'Adelanto' : 'Pago'}
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs mr-2 ${ETIQUETA[e.tipo].clase}`}>
+                      {ETIQUETA[e.tipo].texto}
                     </span>
                     <p className="text-sm font-medium text-text-primary mt-1">{e.descripcion}</p>
                     <p className="text-xs text-text-muted">{fecha(e.fecha)}</p>
                   </div>
                   <p className="text-sm font-semibold text-text-primary">
-                    ${fmt(e.tipo === 'factura' ? e.cargo : e.abono)}
+                    ${fmt(importeEntrada(e))}
                   </p>
                 </div>
               ))

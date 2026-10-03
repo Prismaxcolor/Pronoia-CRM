@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validarPagoCombinado } from './pago-combinado.js';
 
 const textoOpcional = (max: number) =>
   z
@@ -29,10 +30,12 @@ export const registrarPagoSchema = z.object({
 export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
 
 /** Un ítem del pago combinado: factura o nota de débito a liquidar (suman al
- *  total a cubrir con banca), o nota de crédito aplicada como método de pago
- *  (resta del total a cubrir con banca) — con el monto (USD) que le corresponde. */
+ *  total a cubrir con banca); nota de crédito o adelanto con saldo sin aplicar
+ *  usados como método de pago (restan del total a cubrir con banca) — con el
+ *  monto (USD) que le corresponde. Para un adelanto, `id` es el adelanto_id que
+ *  devuelve GET /api/proveedores/:id/adelantos-disponibles. */
 export const itemPagoMultipleSchema = z.object({
-  tipo: z.enum(['factura', 'nota_debito', 'nota_credito']),
+  tipo: z.enum(['factura', 'nota_debito', 'nota_credito', 'adelanto']),
   id: z.string().uuid('Ítem inválido.'),
   montoUsd: z.number().positive('El monto de cada ítem debe ser mayor a 0.'),
 });
@@ -51,57 +54,19 @@ export const bancaPagoSchema = z.object({
 /** Pago combinado ("Registrar pago"): puede repartirse entre varias bancas de
  *  origen, liquida varias facturas y/o notas de débito a la vez, y el
  *  excedente del total sobre la suma de esos ítems se registra aparte como
- *  adelanto (lo separa la RPC, no el frontend). */
+ *  adelanto (lo separa la RPC, no el frontend). Los adelantos y notas de
+ *  crédito seleccionados se descuentan; si no queda nada por pagar
+ *  (`montoUsd` = 0, `bancas` vacío) es un cruce puro, sin movimiento de dinero. */
 export const registrarPagoMultipleSchema = z.object({
   proveedorId: z.string().uuid('Selecciona un proveedor.'),
-  bancas: z.array(bancaPagoSchema).min(1, 'Agregá al menos una banca.'),
-  montoUsd: z.number().positive('El monto en USD debe ser mayor a 0.'),
+  bancas: z.array(bancaPagoSchema).default([]),
+  montoUsd: z.number().min(0, 'El monto en USD no puede ser negativo.'),
   descripcion: textoOpcional(300),
   referencia: textoOpcional(50),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   items: z.array(itemPagoMultipleSchema).default([]),
   comprobantes: z.array(z.string().url('Comprobante inválido.')).default([]),
-}).superRefine((data, ctx) => {
-  const sumaBancas = data.bancas.reduce((acc, b) => acc + b.montoUsd, 0);
-  if (Math.abs(sumaBancas - data.montoUsd) > 0.02) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['bancas'],
-      message: `La suma de las bancas ($${sumaBancas.toFixed(2)}) no coincide con el total a pagar ($${data.montoUsd.toFixed(2)}).`,
-    });
-  }
-
-  const idsUnicos = new Set(data.bancas.map(b => b.bancaId));
-  if (idsUnicos.size !== data.bancas.length) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['bancas'],
-      message: 'No se puede repetir la misma banca en un pago.',
-    });
-  }
-
-  // Las notas de crédito restan del total a cubrir con banca (al revés de
-  // facturas/notas de débito, que suman) — mismo criterio que la RPC.
-  const sumaCargos = data.items.filter(i => i.tipo !== 'nota_credito').reduce((acc, i) => acc + i.montoUsd, 0);
-  const sumaCreditos = data.items.filter(i => i.tipo === 'nota_credito').reduce((acc, i) => acc + i.montoUsd, 0);
-
-  if (sumaCreditos > sumaCargos + 0.01) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['items'],
-      message: `Las notas de crédito seleccionadas ($${sumaCreditos.toFixed(2)}) superan lo que se está pagando ($${sumaCargos.toFixed(2)}).`,
-    });
-  }
-
-  const sumaItems = sumaCargos - sumaCreditos;
-  if (data.montoUsd < sumaItems - 0.01) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['montoUsd'],
-      message: `El total a pagar ($${data.montoUsd.toFixed(2)}) es menor a la suma de lo seleccionado ($${sumaItems.toFixed(2)}).`,
-    });
-  }
-});
+}).superRefine((data, ctx) => validarPagoCombinado(data, ctx, 'pago'));
 
 export type BancaPagoInput = z.infer<typeof bancaPagoSchema>;
 export type ItemPagoMultipleInput = z.infer<typeof itemPagoMultipleSchema>;

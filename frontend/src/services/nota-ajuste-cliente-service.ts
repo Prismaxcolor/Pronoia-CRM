@@ -26,6 +26,10 @@ export interface NotaAjusteClienteDetalle {
   nombreCliente: string;
   registradoPor: string | null;
   anulaNotaId: string | null;
+  /** Datos de la anulación (null si la nota no está anulada). */
+  anuladaAt: string | null;
+  anuladaPor: string | null;
+  anuladaMotivo: string | null;
   facturaAsociada: { id: string; codigo: string | null; total: number } | null;
 }
 

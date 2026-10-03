@@ -7,6 +7,9 @@ const baseSchema = z.object({
   moneda: z.enum(['USD', 'VES']),
   activo: z.boolean().default(true),
   fotos: z.array(z.string().url('URL de imagen inválida.')).default([]),
+  /** Lotes posibles del producto (producto_lotes). Vacío = no pertenece a ningún lote.
+   *  Si se omite al actualizar, los anclajes actuales no se tocan. */
+  loteIds: z.array(z.string().uuid('ID de lote inválido.')).max(100).optional(),
 });
 
 const varianteSchema = z.object({

@@ -30,6 +30,7 @@ const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   adelanto: 'Adelanto',
   nota_credito: 'Nota crédito',
   nota_debito: 'Nota débito',
+  cruce: 'Cruce',
 };
 
 const BADGE_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
@@ -38,6 +39,7 @@ const BADGE_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   adelanto: 'bg-teal-100 text-teal-700',
   nota_credito: 'bg-blue-100 text-blue-700',
   nota_debito: 'bg-purple-100 text-purple-700',
+  cruce: 'bg-indigo-100 text-indigo-700',
 };
 
 /** Ruta destino del detalle imprimible de una entrada del estado de cuenta,
@@ -49,7 +51,7 @@ function rutaDetalle(tipo: TipoEntidad, entidadId: string, e: EntradaEstadoCuent
   if ((e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && e.notaId) {
     return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/notas/${e.notaId}`;
   }
-  if ((e.tipo === 'pago' || e.tipo === 'adelanto') && e.pagoId) {
+  if ((e.tipo === 'pago' || e.tipo === 'adelanto' || e.tipo === 'cruce') && e.pagoId) {
     return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/pagos/${e.pagoId}`;
   }
   return null;
@@ -119,6 +121,11 @@ function EstadoCuentaPage({ tipo }: Props) {
     setPagoAbierto(false);
     const etiquetaDoc = tipo === 'proveedor' ? 'Pago' : 'Cobro';
     const etiquetaAdel = tipo === 'proveedor' ? 'adelanto' : 'anticipo';
+    if (resultado.numeroCruce != null) {
+      toast.exito(`Cruce ${tipo === 'proveedor' ? 'CR' : 'CRV'}-${String(resultado.numeroCruce).padStart(4, '0')} registrado.`);
+      cargar();
+      return;
+    }
     const partes = [
       resultado.numeroCobro != null ? `${etiquetaDoc} ${formatCodigoPago(tipo, resultado.numeroCobro)}` : null,
       resultado.numeroAnticipo != null ? `${etiquetaAdel} ${formatCodigoAdelanto(tipo, resultado.numeroAnticipo)}` : null,
@@ -197,7 +204,7 @@ function EstadoCuentaPage({ tipo }: Props) {
               type="button"
               onClick={() => setPagoAbierto(true)}
               className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-              title="Selecciona una o varias facturas y/o notas de débito, o regístralo como adelanto"
+              title="Selecciona facturas y/o notas, cruzalas con adelantos y notas de crédito, o regístralo como adelanto"
             >
               <DollarSign size={16} />
               {etiquetaAccionPago}
@@ -258,10 +265,16 @@ function EstadoCuentaPage({ tipo }: Props) {
                     {LABEL_POR_TIPO[e.tipo]}
                   </span>
                   <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
-                  {e.anulada && <span className="text-xs text-text-muted ml-2">(anulada)</span>}
+                  {e.anulada && <span className="text-xs font-medium text-red-600 ml-2">Anulada</span>}
                   {e.pagada && !e.anulada && <span className="text-xs text-text-muted ml-2">(pagada)</span>}
                   {e.facturaAsociadaCodigo && (
                     <span className="block text-xs text-text-muted mt-0.5">→ {e.facturaAsociadaCodigo}</span>
+                  )}
+                  {e.tipo === 'cruce' && (
+                    <span className="block text-xs text-text-muted mt-0.5">Saldó ${fmt(e.montoCruzado ?? 0)} en facturas sin mover dinero (el saldo no cambia)</span>
+                  )}
+                  {e.tipo === 'adelanto' && e.adelantoAplicado != null && e.adelantoAplicado > 0 && (
+                    <span className="block text-xs text-text-muted mt-0.5">Aplicado ${fmt(e.adelantoAplicado)} a facturas · disponible ${fmt(e.adelantoDisponible ?? 0)}</span>
                   )}
                 </td>
                 <td className="px-5 py-3 text-text-muted">
@@ -284,8 +297,16 @@ function EstadoCuentaPage({ tipo }: Props) {
                     <span className="block text-xs text-text-muted">{e.referenciaExterna}</span>
                   )}
                 </td>
-                <td className="px-5 py-3 text-right text-text-primary">{e.cargo ? fmt(e.cargo) : '—'}</td>
-                <td className="px-5 py-3 text-right text-text-primary">{e.abono ? fmt(e.abono) : '—'}</td>
+                <td className="px-5 py-3 text-right text-text-primary">
+                  {e.anulada && e.tipo === 'nota_debito' && e.montoAnulado
+                    ? <span className="line-through text-text-muted">{fmt(e.montoAnulado)}</span>
+                    : (e.cargo ? fmt(e.cargo) : '—')}
+                </td>
+                <td className="px-5 py-3 text-right text-text-primary">
+                  {e.anulada && e.tipo === 'nota_credito' && e.montoAnulado
+                    ? <span className="line-through text-text-muted">{fmt(e.montoAnulado)}</span>
+                    : (e.abono ? fmt(e.abono) : '—')}
+                </td>
                 {puedeAjustar && (
                   <td className="px-5 py-3 text-right print:hidden">
                     {(e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && !e.pagada && (

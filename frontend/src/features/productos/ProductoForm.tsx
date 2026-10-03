@@ -2,12 +2,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { crearProducto, actualizarProducto, obtenerProductos } from '../../services/producto-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
+import { obtenerLotes } from '../../services/lote-service';
+import LotesPosiblesPicker from './LotesPosiblesPicker';
 import { subirImagenProducto } from '../../services/storage-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
-import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial } from '@shared/types/index.js';
+import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial, Lote } from '@shared/types/index.js';
 
 interface Props {
   /** Si se pasa, el form arranca en modo "editar". Si no, modo "crear". */
@@ -40,6 +42,13 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       setCategorias(tipos.filter(t => t.activo || t.id === producto?.tipoMaterialId))
     );
   }, [producto?.tipoMaterialId]);
+  const [lotesDisponibles, setLotesDisponibles] = useState<Lote[]>([]);
+  const [loteIds, setLoteIds] = useState<string[]>(producto?.loteIds ?? []);
+  useEffect(() => {
+    obtenerLotes().then(lotes =>
+      setLotesDisponibles(lotes.filter(l => l.activo || (producto?.loteIds ?? []).includes(l.id)))
+    );
+  }, [producto?.loteIds]);
   const [activo, setActivo] = useState(producto?.activo ?? true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +133,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       return;
     }
 
-    const base = { nombre, descripcion, tipoMaterialId, moneda, activo, fotos: urls };
+    const base = { nombre, descripcion, tipoMaterialId, moneda, activo, fotos: urls, loteIds };
 
     let payload;
     if (tipo === 'amarillo') {
@@ -232,6 +241,11 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
                 <option value="VES">VES</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Lotes posibles</label>
+            <LotesPosiblesPicker lotes={lotesDisponibles} seleccionados={loteIds} onChange={setLoteIds} />
           </div>
 
           {editando && (

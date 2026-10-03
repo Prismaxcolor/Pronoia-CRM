@@ -18,6 +18,7 @@ import { obtenerFactura } from '../services/factura-service.js';
 import { obtenerTicket } from '../services/ticket-pesaje-service.js';
 import { generarFacturaPdf, generarTicketPdf, nombreArchivoFactura, nombreArchivoTicket } from '../services/document-generator.js';
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
+import { aEstadoCuentaPortal } from '../services/portal-estado-cuenta.js';
 import { listarListas, obtenerListaDetalle } from '../services/lista-precios-service.js';
 import { listarGuiasEntidad } from '../services/guia-corpoez-service.js';
 import { supabaseAdmin } from '../config/supabase.js';
@@ -128,7 +129,7 @@ router.get('/estado-cuenta', requirePortalAuth, async (req, res) => {
     res.status(404).json({ error: 'No encontrado.' });
     return;
   }
-  res.json(estado);
+  res.json(aEstadoCuentaPortal(estado));
 });
 
 // Listas de precios activas — no hay una lista "asignada" a cada proveedor/cliente

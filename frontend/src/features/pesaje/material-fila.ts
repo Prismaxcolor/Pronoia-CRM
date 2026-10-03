@@ -1,6 +1,8 @@
 import type { Producto, Tara } from '@shared/types/index.js';
+import { redondearKg } from '@shared/types/ticket-pesaje.js';
 import { subirFotoTicket } from '../../services/storage-service';
 import { previewFotoLocal, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import { esFilaSinLote } from './sin-lote-fila';
 
 /** Valor del selector de destino: el id de un lote real, o '' si el
  *  usuario todavía no eligió nada (sin preselección por defecto). */
@@ -29,6 +31,11 @@ export interface MaterialFila {
   taraManual: string;
   /** id del lote destino, o '' si aún no se eligió. */
   destino: DestinoValor;
+  /** Solo en filas de un ticket ya guardado: producto y destino con los que se
+   *  guardó. Mientras el producto de la fila no cambie, el destino guardado
+   *  manda (un 'mpp' sin lote sigue siendo sin lote aunque el producto reciba
+   *  lotes anclados después). */
+  guardado?: { productoId: string; destinoTipo: 'mpp' | 'lote' };
   /** Fotos de este material — cada material lleva las suyas (Bloque 46), no
    *  hay una sola foto general al final del ticket. */
   fotos: FotoMaterial[];
@@ -75,14 +82,14 @@ export function taraVacia(): CampoTara {
 
 /** Kg de tara resultantes de una fila, según su modo (preconfigurada × cantidad, o manual). */
 export function taraKgFila(f: CampoTara, taras: Tara[]): number {
-  if (f.taraModo === 'manual') return Number(f.taraManual) || 0;
+  if (f.taraModo === 'manual') return redondearKg(Number(f.taraManual) || 0);
   const tara = taras.find(t => t.id === f.taraId);
   if (!tara) return 0;
-  return tara.peso * (Number(f.taraCantidad) || 0);
+  return redondearKg(tara.peso * (Number(f.taraCantidad) || 0));
 }
 
 export function netoFila(f: MaterialFila, taras: Tara[]): number {
-  return (Number(f.pesoBruto) || 0) - taraKgFila(f, taras);
+  return redondearKg((Number(f.pesoBruto) || 0) - taraKgFila(f, taras));
 }
 
 /** Campos a actualizar en una fila al elegir (o quitar) una tara preconfigurada:
@@ -96,11 +103,11 @@ export function seleccionarTaraFila(f: CampoTara, taraId: string): Pick<CampoTar
   };
 }
 
-/** true si el material elegido en esta fila pertenece a una categoría "sin
- *  lote" (ej. No Ferroso, Bloque 47) — no se pide lote al pesarlo, va
- *  directo a inventario general (MPP). */
-export function esFilaSinLote(f: MaterialFila, productos: Producto[]): boolean {
-  return productos.find(p => p.id === f.productoId)?.tipoMaterialSinLote === true;
+export { esFilaSinLote };
+
+/** Ids de los lotes posibles (anclados) del material elegido en la fila. */
+export function loteIdsPosiblesFila(f: MaterialFila, productos: Producto[]): string[] {
+  return productos.find(p => p.id === f.productoId)?.loteIds ?? [];
 }
 
 /** Campos de una fila (sin fotos, sin uid) en el formato que espera el
@@ -119,7 +126,7 @@ export function materialAPayload(f: MaterialFila, taras: Tara[], productos: Prod
   return {
     productoId: f.productoId,
     subcategoria: f.subcategoria.trim() || null,
-    pesoBruto: Number(f.pesoBruto) || 0,
+    pesoBruto: redondearKg(Number(f.pesoBruto) || 0),
     tara: taraKgFila(f, taras),
     destinoTipo: sinLote ? 'mpp' : 'lote',
     loteId: sinLote ? null : f.destino,

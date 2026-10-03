@@ -32,7 +32,9 @@ export async function registrarPago(
 }
 
 export interface ItemPagoMultiple {
-  tipo: 'factura' | 'nota_debito' | 'nota_credito';
+  /** 'adelanto' = adelanto/anticipo con saldo sin aplicar (su `id` es el adelanto_id
+   *  de obtenerAdelantosDisponibles); resta como una nota de crédito. */
+  tipo: 'factura' | 'nota_debito' | 'nota_credito' | 'adelanto';
   id: string;
   /** Monto (USD) que se le aplica de este pago a este ítem. */
   montoUsd: number;
@@ -51,8 +53,9 @@ export interface BancaPago {
 export interface RegistrarPagoMultipleInput {
   proveedorId: string;
   bancas: BancaPago[];
-  /** Total a pagar (USD) — puede superar la suma de los ítems, el excedente
-   *  se registra como adelanto aparte. */
+  /** Total a pagar en efectivo/banco (USD) — puede superar lo que resta de los
+   *  ítems (el excedente se registra como adelanto aparte) y puede ser 0: cruce
+   *  puro, con `bancas` vacío y sin movimiento de dinero. */
   montoUsd: number;
   descripcion?: string | null;
   referencia?: string | null;
@@ -62,11 +65,14 @@ export interface RegistrarPagoMultipleInput {
 }
 
 export interface ResultadoPagoMultiple {
-  movimientoPrincipalId: string;
+  /** Null en un cruce puro: no hay movimiento de dinero. */
+  movimientoPrincipalId: string | null;
   movimientoIds: string[];
   grupoId: string;
   numeroPago: number | null;
   numeroAdelanto: number | null;
+  /** Correlativo CR- si la operación fue un cruce puro. */
+  numeroCruce: number | null;
 }
 
 /** "Registrar pago": una o varias bancas de origen, liquida varias facturas

@@ -54,13 +54,16 @@ export async function crearNotaAjusteCliente(
   if (input.facturaId) {
     const { data: factura, error: errFactura } = await supabaseAdmin
       .from('facturas_venta')
-      .select('id')
+      .select('id, estado')
       .eq('id', input.facturaId)
       .eq('cliente_id', clienteId)
       .maybeSingle();
 
     if (errFactura || !factura) {
       return { error: 'La factura no pertenece a este cliente.' };
+    }
+    if ((factura as { estado?: string }).estado === 'anulada') {
+      return { error: 'No se puede crear una nota sobre una factura anulada.' };
     }
   }
 
@@ -103,6 +106,10 @@ export interface NotaAjusteClienteDetalle {
   nombreCliente: string;
   registradoPor: string | null;
   anulaNotaId: string | null;
+  /** Datos de la anulación (solo si anulada): cuándo, quién (nombre ya resuelto) y por qué. */
+  anuladaAt: string | null;
+  anuladaPor: string | null;
+  anuladaMotivo: string | null;
   facturaAsociada: { id: string; codigo: string | null; total: number } | null;
 }
 
@@ -119,6 +126,9 @@ interface NotaDetalleRow {
   registrado_por: string | null;
   anula_nota_id: string | null;
   factura_id: string | null;
+  anulada_at?: string | null;
+  anulada_por?: string | null;
+  anulada_motivo?: string | null;
 }
 
 /** Duplicado intencional de nota-ajuste-service.ts / estado-cuenta-service.ts
@@ -132,7 +142,8 @@ export function construirNotaAjusteClienteDetalle(
   row: NotaDetalleRow,
   nombreCliente: string,
   nombreRegistradoPor: string | null,
-  facturaAsociada: NotaAjusteClienteDetalle['facturaAsociada'] = null
+  facturaAsociada: NotaAjusteClienteDetalle['facturaAsociada'] = null,
+  nombreAnuladaPor: string | null = null
 ): NotaAjusteClienteDetalle {
   return {
     id: row.id,
@@ -150,6 +161,9 @@ export function construirNotaAjusteClienteDetalle(
     nombreCliente,
     registradoPor: nombreRegistradoPor,
     anulaNotaId: row.anula_nota_id,
+    anuladaAt: row.anulada ? (row.anulada_at ?? null) : null,
+    anuladaPor: row.anulada ? nombreAnuladaPor : null,
+    anuladaMotivo: row.anulada ? (row.anulada_motivo ?? null) : null,
     facturaAsociada,
   };
 }
@@ -160,7 +174,7 @@ export async function obtenerNotaAjusteCliente(
 ): Promise<NotaAjusteClienteDetalle | { error: string }> {
   const { data: nota, error: errNota } = await supabaseAdmin
     .from('notas_ajuste_cliente')
-    .select('id, cliente_id, tipo, monto, motivo, anulada, pagada, numero, fecha, registrado_por, anula_nota_id, factura_id')
+    .select('id, cliente_id, tipo, monto, motivo, anulada, pagada, numero, fecha, registrado_por, anula_nota_id, factura_id, anulada_at, anulada_por, anulada_motivo')
     .eq('id', notaId)
     .eq('cliente_id', clienteId)
     .maybeSingle();
@@ -186,6 +200,16 @@ export async function obtenerNotaAjusteCliente(
     nombreRegistradoPor = (usuario as { nombre: string } | null)?.nombre ?? null;
   }
 
+  let nombreAnuladaPor: string | null = null;
+  if (row.anulada && row.anulada_por) {
+    const { data: usuario } = await supabaseAdmin
+      .from('users')
+      .select('id, nombre')
+      .eq('id', row.anulada_por)
+      .maybeSingle();
+    nombreAnuladaPor = (usuario as { nombre: string } | null)?.nombre ?? null;
+  }
+
   let facturaAsociada: NotaAjusteClienteDetalle['facturaAsociada'] = null;
   if (row.factura_id) {
     const { data: factura } = await supabaseAdmin
@@ -203,10 +227,12 @@ export async function obtenerNotaAjusteCliente(
     }
   }
 
-  return construirNotaAjusteClienteDetalle(row, nombreCliente, nombreRegistradoPor, facturaAsociada);
+  return construirNotaAjusteClienteDetalle(row, nombreCliente, nombreRegistradoPor, facturaAsociada, nombreAnuladaPor);
 }
 
-/** Anula una nota ya creada: la RPC inserta la nota contraria (nunca se borra). */
+/** Anula una nota: la RPC solo la marca anulada (con fecha, usuario y motivo). No crea
+ *  ninguna nota contraria y la nota anulada deja de afectar el estado de cuenta. Devuelve
+ *  el id de la misma nota. La RPC rechaza notas ya anuladas o ya aplicadas a un cobro. */
 export async function anularNotaAjusteCliente(
   clienteId: string,
   notaId: string,

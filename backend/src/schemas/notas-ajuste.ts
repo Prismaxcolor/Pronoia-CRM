@@ -12,7 +12,7 @@ export const crearNotaAjusteSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).').optional().nullable(),
 });
 
-/** Anula una nota existente (no se borra: se reversa con una nota contraria). */
+/** Anula una nota existente (no se borra ni se crea nota contraria: queda marcada como anulada). */
 export const anularNotaAjusteSchema = z.object({
   motivo: z.string().trim().min(1, 'El motivo de la anulación es obligatorio.').max(300),
 });

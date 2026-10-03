@@ -11,10 +11,12 @@ import {
   formatCodigoNotaCredito,
   formatCodigoNotaDebitoCliente,
   formatCodigoNotaCreditoCliente,
+  formatCodigoCruce,
+  formatCodigoCruceCliente,
 } from '../utils/codigos.js';
 
 type Subtipo = 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
-type TipoItemAplicacion = 'factura' | 'nota_debito' | 'nota_credito';
+type TipoItemAplicacion = 'factura' | 'nota_debito' | 'nota_credito' | 'adelanto';
 
 interface AplicacionRow {
   tipo: TipoItemAplicacion;
@@ -51,7 +53,8 @@ export interface ItemPagoDetalle {
   tipo: TipoItemAplicacion;
   /** Código de control del documento aplicado (C-/V-/ND-/NC-/NDV-/NCV-).
    *  Null si el documento referenciado ya no tiene numero (no debería pasar
-   *  en finanzas, pero no bloquea el resto del comprobante). */
+   *  en finanzas, pero no bloquea el resto del comprobante). Para un adelanto
+   *  es el AD-/AC- del adelanto que se aplicó. */
   codigo: string | null;
   montoUsd: number;
 }
@@ -71,6 +74,9 @@ export interface PagoDetalle {
   codigoPago: string | null;
   /** Correlativo del adelanto/anticipo (AD-/AC-), null si esta operación no tuvo esa parte. */
   codigoAdelanto: string | null;
+  /** Correlativo del cruce (CR-/CRV-) cuando la operación no movió dinero: solo
+   *  compensó facturas con adelantos/notas. Null en pagos/cobros con efectivo. */
+  codigoCruce: string | null;
   /** Desglose por factura/nota aplicada, con el monto exacto de cada una
    *  (Bloque 49). Vacío en pagos registrados antes de ese bloque — esa data
    *  nunca se guardó, el comprobante sigue mostrando solo `descripcion`. */
@@ -123,7 +129,7 @@ export async function obtenerPagoDetalle(
   // colarse una fila de otro grupo cuyo grupo_id coincidiera con este id por
   // casualidad; en la práctica son uuid random, el riesgo es nulo.
   const propias = filas.filter(f => (f.grupo_id ?? f.id) === grupoId);
-  if (propias.length === 0) return { error: 'Pago no encontrado para esta entidad.' };
+  if (propias.length === 0) return obtenerCruceDetalle(tipoEntidad, entidadId, grupoId);
 
   // Selects planos + Map, no embeddings anidados de PostgREST — mismo estilo
   // que nota-ajuste-service.ts.
@@ -153,9 +159,41 @@ export async function obtenerPagoDetalle(
   const filaComprobante = propias.find(f => f.comprobantes && f.comprobantes.length > 0) ?? null;
   const filaDescripcion = propias.find(f => f.descripcion) ?? propias[0];
 
-  // Desglose por ítem (Bloque 49) — grupo_id ya viene validado contra esta
-  // entidad arriba (mismo id que agrupa las filas de `propias`), así que no
-  // hace falta revalidar pertenencia acá.
+  const items = await cargarItems(tipoEntidad, entidadId, grupoId);
+
+  return {
+    grupoId,
+    entidadTipo: tipoEntidad,
+    entidadId,
+    nombreEntidad,
+    fecha: propias[0].fecha.slice(0, 10),
+    descripcion: filaDescripcion.descripcion,
+    comprobantes: filaComprobante?.comprobantes ?? [],
+    registradoPor: nombreRegistradoPor,
+    bancas: propias.map(f => ({
+      bancaId: f.banca_origen_id,
+      bancaNombre: f.banca_origen_id ? (nombrePorBancaId.get(f.banca_origen_id) ?? null) : null,
+      monto: Number(f.monto),
+      moneda: f.moneda,
+      montoUsd: Number(f.monto_usd ?? f.monto),
+      referencia: f.referencia,
+    })),
+    totalUsd: propias.reduce((s, f) => s + Number(f.monto_usd ?? f.monto), 0),
+    codigoPago: filaPago ? formatCodigoPago(tipoEntidad, filaPago.subtipo, filaPago.numero) : null,
+    codigoAdelanto: filaAdelanto ? formatCodigoPago(tipoEntidad, filaAdelanto.subtipo, filaAdelanto.numero) : null,
+    codigoCruce: null,
+    items,
+  };
+}
+
+/**
+ * Desglose por ítem (Bloque 49) de una operación: facturas, notas y adelantos
+ * aplicados con su monto exacto. `grupoId` ya viene validado contra la entidad
+ * por quien llama (pertenece a sus movimientos o a su cruce).
+ */
+async function cargarItems(tipoEntidad: TipoEntidad, entidadId: string, grupoId: string): Promise<ItemPagoDetalle[]> {
+  const esProveedor = tipoEntidad === 'proveedor';
+
   const { data: aplicacionesData } = await supabaseAdmin
     .from('pago_aplicaciones')
     .select('tipo, item_id, monto_usd')
@@ -164,7 +202,8 @@ export async function obtenerPagoDetalle(
   const aplicaciones = (aplicacionesData as AplicacionRow[] | null) ?? [];
 
   const facturaIds = aplicaciones.filter(a => a.tipo === 'factura').map(a => a.item_id);
-  const notaIds = aplicaciones.filter(a => a.tipo !== 'factura').map(a => a.item_id);
+  const notaIds = aplicaciones.filter(a => a.tipo === 'nota_debito' || a.tipo === 'nota_credito').map(a => a.item_id);
+  const adelantoIds = aplicaciones.filter(a => a.tipo === 'adelanto').map(a => a.item_id);
 
   const codigoPorFacturaId = new Map<string, string>();
   if (facturaIds.length > 0) {
@@ -189,32 +228,75 @@ export async function obtenerPagoDetalle(
     }
   }
 
-  const items: ItemPagoDetalle[] = aplicaciones.map(a => ({
+  // El item_id de un adelanto es el grupo_id de su operación (o el id del
+  // movimiento si es legacy sin grupo): se busca el AD-/AC- por cualquiera de los dos.
+  const codigoPorAdelantoId = new Map<string, string>();
+  if (adelantoIds.length > 0) {
+    const columnaEntidad = esProveedor ? 'proveedor_id' : 'cliente_id';
+    const subtipoAdelanto = esProveedor ? 'adelanto' : 'anticipo';
+    const lista = adelantoIds.join(',');
+    const { data: adelantosData } = await supabaseAdmin
+      .from('movimientos')
+      .select('id, grupo_id, numero')
+      .eq(columnaEntidad, entidadId)
+      .eq('subtipo', subtipoAdelanto)
+      .or(`grupo_id.in.(${lista}),id.in.(${lista})`);
+    for (const m of (adelantosData as Array<{ id: string; grupo_id: string | null; numero: number | null }> | null) ?? []) {
+      if (m.numero == null) continue;
+      codigoPorAdelantoId.set(m.grupo_id ?? m.id, formatCodigoPago(tipoEntidad, subtipoAdelanto, m.numero) ?? '');
+    }
+  }
+
+  return aplicaciones.map(a => ({
     tipo: a.tipo,
-    codigo: a.tipo === 'factura' ? (codigoPorFacturaId.get(a.item_id) ?? null) : (codigoPorNotaId.get(a.item_id) ?? null),
+    codigo: (a.tipo === 'factura' ? codigoPorFacturaId : a.tipo === 'adelanto' ? codigoPorAdelantoId : codigoPorNotaId).get(a.item_id) ?? null,
     montoUsd: Number(a.monto_usd),
   }));
+}
+
+/**
+ * Comprobante de un cruce sin movimiento de dinero (tabla `cruces`): no hay
+ * filas en `movimientos`, el documento es la compensación de facturas con
+ * adelantos y notas. Valida pertenencia a la entidad, igual que un pago.
+ */
+async function obtenerCruceDetalle(
+  tipoEntidad: TipoEntidad,
+  entidadId: string,
+  grupoId: string
+): Promise<PagoDetalle | { error: string }> {
+  const esProveedor = tipoEntidad === 'proveedor';
+
+  const { data } = await supabaseAdmin
+    .from('cruces')
+    .select('grupo_id, numero, fecha, descripcion, registrado_por')
+    .eq('grupo_id', grupoId)
+    .eq(esProveedor ? 'proveedor_id' : 'cliente_id', entidadId)
+    .maybeSingle();
+  const cruce = data as { grupo_id: string; numero: number; fecha: string; descripcion: string | null; registrado_por: string | null } | null;
+  if (!cruce) return { error: 'Pago no encontrado para esta entidad.' };
+
+  const [{ data: entidadData }, { data: usuario }, items] = await Promise.all([
+    supabaseAdmin.from(esProveedor ? 'proveedores' : 'clientes').select('id, nombre').eq('id', entidadId).maybeSingle(),
+    cruce.registrado_por
+      ? supabaseAdmin.from('users').select('id, nombre').eq('id', cruce.registrado_por).maybeSingle()
+      : Promise.resolve({ data: null }),
+    cargarItems(tipoEntidad, entidadId, grupoId),
+  ]);
 
   return {
     grupoId,
     entidadTipo: tipoEntidad,
     entidadId,
-    nombreEntidad,
-    fecha: propias[0].fecha.slice(0, 10),
-    descripcion: filaDescripcion.descripcion,
-    comprobantes: filaComprobante?.comprobantes ?? [],
-    registradoPor: nombreRegistradoPor,
-    bancas: propias.map(f => ({
-      bancaId: f.banca_origen_id,
-      bancaNombre: f.banca_origen_id ? (nombrePorBancaId.get(f.banca_origen_id) ?? null) : null,
-      monto: Number(f.monto),
-      moneda: f.moneda,
-      montoUsd: Number(f.monto_usd ?? f.monto),
-      referencia: f.referencia,
-    })),
-    totalUsd: propias.reduce((s, f) => s + Number(f.monto_usd ?? f.monto), 0),
-    codigoPago: filaPago ? formatCodigoPago(tipoEntidad, filaPago.subtipo, filaPago.numero) : null,
-    codigoAdelanto: filaAdelanto ? formatCodigoPago(tipoEntidad, filaAdelanto.subtipo, filaAdelanto.numero) : null,
+    nombreEntidad: (entidadData as { nombre: string } | null)?.nombre ?? '—',
+    fecha: cruce.fecha.slice(0, 10),
+    descripcion: cruce.descripcion,
+    comprobantes: [],
+    registradoPor: (usuario as { nombre: string } | null)?.nombre ?? null,
+    bancas: [],
+    totalUsd: 0,
+    codigoPago: null,
+    codigoAdelanto: null,
+    codigoCruce: esProveedor ? formatCodigoCruce(cruce.numero) : formatCodigoCruceCliente(cruce.numero),
     items,
   };
 }

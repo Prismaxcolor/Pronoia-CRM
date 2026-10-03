@@ -56,3 +56,16 @@ export type DestinoTipo = 'mpp' | 'lote';
 export function destinoLabel(destinoTipo: DestinoTipo, nombreLote?: string | null): string {
   return destinoTipo === 'lote' ? (nombreLote ?? 'Lote') : 'Sin lote';
 }
+
+/** Ordena los lotes para el selector de destino: primero los anclados al
+ *  producto (marcados), luego el resto; cada grupo por nombre. No muta la entrada. */
+export function ordenarLotesPorAnclaje<T extends { id: string; nombre: string }>(
+  lotes: readonly T[],
+  loteIdsAnclados: readonly string[]
+): Array<T & { anclado: boolean }> {
+  const anclados = new Set(loteIdsAnclados);
+  const conMarca = lotes.map(l => ({ ...l, anclado: anclados.has(l.id) }));
+  return conMarca.sort(
+    (a, b) => Number(b.anclado) - Number(a.anclado) || a.nombre.localeCompare(b.nombre, 'es', { numeric: true })
+  );
+}

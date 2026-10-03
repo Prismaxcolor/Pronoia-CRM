@@ -5,6 +5,7 @@ const ETIQUETA_ITEM: Record<string, string> = {
   factura: 'Factura',
   nota_debito: 'Nota de débito',
   nota_credito: 'Nota de crédito',
+  adelanto: 'Adelanto',
 };
 
 /** Documento puramente monetario: filas de encabezado + desglose (si lo
@@ -16,14 +17,15 @@ export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean, 
 
   encabezadoMarca(doc);
 
-  const titulo = esProveedor ? 'Comprobante de pago' : 'Comprobante de cobro';
+  const esCruce = pago.codigoCruce != null;
+  const titulo = esCruce ? 'Comprobante de cruce' : esProveedor ? 'Comprobante de pago' : 'Comprobante de cobro';
   // Código de pago (verde) o de adelanto (verde azulado) como píldora junto
   // al título — igual que en el preview en pantalla. Ninguno de los dos es
   // un "estado", por eso necesitan color explícito en vez del lookup normal.
-  const codigo = pago.codigoPago ?? pago.codigoAdelanto ?? null;
+  const codigo = pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? null;
   const colorCodigo: [number, number, number] | undefined = pago.codigoPago
     ? [21, 128, 61]
-    : pago.codigoAdelanto ? [15, 118, 110] : undefined;
+    : pago.codigoAdelanto ? [15, 118, 110] : pago.codigoCruce ? [67, 56, 202] : undefined;
   let y = 56 + 52;
   tituloConBadge(doc, y, titulo, codigo ? { texto: codigo, color: colorCodigo } : null);
 
@@ -43,7 +45,7 @@ export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean, 
     const itemsBody = pago.items.map(it => [
       sanitizarPdf(it.codigo ?? '—'),
       ETIQUETA_ITEM[it.tipo],
-      `${it.tipo === 'nota_credito' ? '-' : ''}$${fmt(it.montoUsd)}`,
+      `${it.tipo === 'nota_credito' || it.tipo === 'adelanto' ? '-' : ''}$${fmt(it.montoUsd)}`,
     ]);
     y = tablaMonetaria(doc, autoTable, {
       startY: y,
@@ -55,6 +57,7 @@ export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean, 
     y += 6;
   }
 
+  if (!esCruce) {
   const bancasBody = pago.bancas.map(b => [
     sanitizarPdf(b.bancaNombre ?? '—'),
     `${fmt(b.monto)} ${b.moneda}`,
@@ -68,13 +71,18 @@ export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean, 
     head: [['Banca', 'Monto', 'Referencia']],
     body: bancasBody,
   });
+  } else {
+    doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(80)
+      .text('Cruce sin movimiento de dinero: no se uso banca ni metodo de pago.', 56, y + 6);
+    y += 14;
+  }
 
   y += 30;
   doc.setDrawColor(120).setLineWidth(1.5).line(56, y, 539, y);
   y += 24;
-  doc.setFontSize(20).setFont('helvetica', 'bold').setTextColor(0).text('Total', 56, y);
+  doc.setFontSize(20).setFont('helvetica', 'bold').setTextColor(0).text(esCruce ? 'Total en efectivo/banco' : 'Total', 56, y);
   doc.text(`$${fmt(pago.totalUsd)}`, 539, y, { align: 'right' });
 
-  const nombreArchivo = (pago.codigoPago ?? pago.codigoAdelanto ?? pago.grupoId.slice(0, 8)).replace(/\s+/g, '-').toLowerCase();
-  return entregarPdf(doc, `${esProveedor ? 'pago' : 'cobro'}-${nombreArchivo}.pdf`, modo);
+  const nombreArchivo = (pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? pago.grupoId.slice(0, 8)).replace(/\s+/g, '-').toLowerCase();
+  return entregarPdf(doc, `${esCruce ? 'cruce' : esProveedor ? 'pago' : 'cobro'}-${nombreArchivo}.pdf`, modo);
 }

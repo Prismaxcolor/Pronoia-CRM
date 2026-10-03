@@ -1,8 +1,9 @@
+import { redondearKg } from './peso-kg.js';
 type PesajeEntrada = { peso: number; tara?: number; fotos?: string[] };
 
 /** Peso global del camión: suma de (peso - tara) de cada pesada. */
 export function pesoGlobalDePesajes(pesajes: ReadonlyArray<PesajeEntrada>): number {
-  return pesajes.reduce((acc, p) => acc + p.peso - (p.tara ?? 0), 0);
+  return redondearKg(pesajes.reduce((acc, p) => acc + redondearKg(p.peso) - redondearKg(p.tara ?? 0), 0));
 }
 
 export interface ContextoEdicionFacturado {

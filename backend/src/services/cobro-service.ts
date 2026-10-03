@@ -49,11 +49,14 @@ async function adjuntarComprobante(movimientoId: string, clienteId: string, comp
 }
 
 interface ResultadoCobroMulti {
-  movimientoPrincipalId: string;
+  /** Null en un cruce puro (efectivo = 0): no hay movimiento de dinero. */
+  movimientoPrincipalId: string | null;
   movimientoIds: string[];
   grupoId: string;
   numeroCobro: number | null;
   numeroAnticipo: number | null;
+  /** Correlativo CRV- cuando la operación fue un cruce puro, sin movimiento de dinero. */
+  numeroCruce: number | null;
 }
 
 /** Cobro combinado ("Registrar cobro"): repartido entre una o varias bancas
@@ -78,7 +81,7 @@ export async function registrarCobroMultiple(
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el cobro.' };
   const resultado = data as ResultadoCobroMulti;
 
-  if (input.comprobantes.length > 0) {
+  if (input.comprobantes.length > 0 && resultado.movimientoPrincipalId) {
     await adjuntarComprobante(resultado.movimientoPrincipalId, input.clienteId, input.comprobantes);
   }
 

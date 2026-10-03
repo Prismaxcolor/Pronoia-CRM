@@ -18,11 +18,14 @@ export interface RegistrarCobroMultipleInput {
 }
 
 export interface ResultadoCobroMultiple {
-  movimientoPrincipalId: string;
+  /** Null en un cruce puro: no hay movimiento de dinero. */
+  movimientoPrincipalId: string | null;
   movimientoIds: string[];
   grupoId: string;
   numeroCobro: number | null;
   numeroAnticipo: number | null;
+  /** Correlativo CRV- si la operación fue un cruce puro. */
+  numeroCruce: number | null;
 }
 
 /** "Registrar cobro": una o varias bancas de destino, liquida varias

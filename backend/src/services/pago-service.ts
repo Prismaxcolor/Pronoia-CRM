@@ -77,17 +77,22 @@ export async function registrarPago(
 }
 
 interface ResultadoPagoMulti {
-  movimientoPrincipalId: string;
+  /** Null en un cruce puro (efectivo = 0): no hay movimiento de dinero. */
+  movimientoPrincipalId: string | null;
   movimientoIds: string[];
   grupoId: string;
   numeroPago: number | null;
   numeroAdelanto: number | null;
+  /** Correlativo CR- cuando la operación fue un cruce puro, sin movimiento de dinero. */
+  numeroCruce: number | null;
 }
 
 /** Pago combinado ("Registrar pago"): repartido entre una o varias bancas de
  *  origen, liquida varias facturas y/o notas de débito a la vez. El
  *  excedente del total sobre la suma de esos ítems queda como adelanto, en
- *  un movimiento aparte con su propio correlativo (lo separa la RPC). */
+ *  un movimiento aparte con su propio correlativo (lo separa la RPC).
+ *  Los adelantos y notas de crédito seleccionados se descuentan del total; si
+ *  no queda nada por pagar es un cruce puro (sin bancas, sin movimiento). */
 export async function registrarPagoMultiple(
   input: RegistrarPagoMultipleInput,
   registradoPor: string
@@ -106,7 +111,7 @@ export async function registrarPagoMultiple(
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
   const resultado = data as ResultadoPagoMulti;
 
-  if (input.comprobantes.length > 0) {
+  if (input.comprobantes.length > 0 && resultado.movimientoPrincipalId) {
     await adjuntarComprobante(resultado.movimientoPrincipalId, input.proveedorId, input.comprobantes);
   }
 

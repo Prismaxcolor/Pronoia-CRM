@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { leerPaginado, trocear } from '../utils/paginacion.js';
 import type {
   CrearTipoMaterialInput,
   ActualizarTipoMaterialInput,
@@ -19,16 +20,20 @@ export interface TipoMaterialPublico {
   descripcion: string | null;
   activo: boolean;
   sinLote: boolean;
+  /** true si algún producto de la categoría tiene lotes posibles (producto_lotes):
+   *  esa categoría se inventaría por lote, no por categoría. */
+  tieneProductosAnclados: boolean;
   createdAt: string;
 }
 
-function toPublico(row: TipoMaterialRow): TipoMaterialPublico {
+function toPublico(row: TipoMaterialRow, tieneProductosAnclados = false): TipoMaterialPublico {
   return {
     id: row.id,
     nombre: row.nombre,
     descripcion: row.descripcion,
     activo: row.activo,
     sinLote: row.sin_lote,
+    tieneProductosAnclados,
     createdAt: row.created_at,
   };
 }
@@ -38,6 +43,31 @@ function esNombreDuplicado(error: { code?: string } | null): boolean {
   return error?.code === '23505';
 }
 
+/** Ids de categorías (entre las pedidas, o todas) con al menos un producto anclado a un lote.
+ *  Lanza si la consulta falla: un error no debe leerse como "sin anclados". */
+export async function categoriaIdsConProductosAnclados(ids?: string[]): Promise<Set<string>> {
+  const anclados = new Set<string>();
+  if (ids && ids.length === 0) return anclados;
+  const lotesDeIds = ids ? trocear([...new Set(ids)]) : [undefined];
+  for (const lote of lotesDeIds) {
+    const filas = await leerPaginado<{ productos: { tipo_material_id: string | null } | null }>((desde, hasta) => {
+      let q = supabaseAdmin
+        .from('producto_lotes')
+        .select('producto_id, lote_id, productos!inner(tipo_material_id)')
+        .order('producto_id', { ascending: true })
+        .order('lote_id', { ascending: true })
+        .range(desde, hasta);
+      if (lote) q = q.in('productos.tipo_material_id', lote);
+      return q;
+    });
+    for (const fila of filas) {
+      const cat = fila.productos?.tipo_material_id;
+      if (cat) anclados.add(cat);
+    }
+  }
+  return anclados;
+}
+
 export async function listarTiposMaterial(): Promise<TipoMaterialPublico[]> {
   const { data, error } = await supabaseAdmin
     .from('tipos_material')
@@ -45,7 +75,8 @@ export async function listarTiposMaterial(): Promise<TipoMaterialPublico[]> {
     .order('nombre', { ascending: true });
 
   if (error || !data) return [];
-  return (data as TipoMaterialRow[]).map(toPublico);
+  const anclados = await categoriaIdsConProductosAnclados();
+  return (data as TipoMaterialRow[]).map(r => toPublico(r, anclados.has(r.id)));
 }
 
 export async function crearTipoMaterial(
@@ -86,7 +117,8 @@ export async function actualizarTipoMaterial(
     return { error: error.message };
   }
   if (!data) return { error: 'Categoría no encontrada.' };
-  return { tipo: toPublico(data as TipoMaterialRow) };
+  const anclados = await categoriaIdsConProductosAnclados([id]);
+  return { tipo: toPublico(data as TipoMaterialRow, anclados.has(id)) };
 }
 
 export async function desactivarTipoMaterial(id: string): Promise<boolean> {

@@ -5,6 +5,8 @@ interface EntidadConFoto {
   id: string;
   nombre: string;
   fotos?: string[];
+  /** Si es true se muestra marcada y agrupada primero (ej. lotes posibles de un producto). */
+  destacado?: boolean;
 }
 
 interface Props<T extends EntidadConFoto> {
@@ -12,16 +14,40 @@ interface Props<T extends EntidadConFoto> {
   entidades: T[];
   onClose: () => void;
   onSeleccionar: (entidadId: string) => void;
+  /** Texto del grupo de entidades destacadas (por defecto "Sugeridos"). */
+  etiquetaDestacados?: string;
 }
 
 /** Selector visual con foto: mismo patrón que SeleccionarMaterialModal de
  *  Pesaje, generalizado a cualquier entidad con {id, nombre, fotos}
  *  (cliente, proveedor). No reemplaza el <select>, conviven ambos. */
-function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar }: Props<T>) {
+function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos' }: Props<T>) {
   const [busqueda, setBusqueda] = useState('');
 
   const filtrados = entidades.filter(e =>
     e.nombre.toLowerCase().includes(busqueda.trim().toLowerCase())
+  );
+
+  const hayDestacados = filtrados.some(e => e.destacado);
+  const destacados = filtrados.filter(e => e.destacado);
+  const resto = filtrados.filter(e => !e.destacado);
+
+  const tarjeta = (e: T) => (
+    <button
+      key={e.id}
+      type="button"
+      onClick={() => onSeleccionar(e.id)}
+      className={`text-left rounded-xl border overflow-hidden hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all ${e.destacado ? 'border-brand-400 ring-1 ring-brand-100' : 'border-border'}`}
+    >
+      <div className="w-full aspect-square bg-brand-100 flex items-center justify-center text-brand-700">
+        {e.fotos?.[0] ? (
+          <img src={e.fotos[0]} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
+        ) : (
+          <User size={28} />
+        )}
+      </div>
+      <p className="text-xs text-text-primary p-2 truncate">{e.destacado ? '★ ' : ''}{e.nombre}</p>
+    </button>
   );
 
   return (
@@ -52,25 +78,16 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
           {filtrados.length === 0 ? (
             <p className="text-center text-text-muted text-sm py-8">Nadie coincide con la búsqueda.</p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {filtrados.map(e => (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => onSeleccionar(e.id)}
-                  className="text-left rounded-xl border border-border overflow-hidden hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all"
-                >
-                  <div className="w-full aspect-square bg-brand-100 flex items-center justify-center text-brand-700">
-                    {e.fotos?.[0] ? (
-                      <img src={e.fotos[0]} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
-                    ) : (
-                      <User size={28} />
-                    )}
-                  </div>
-                  <p className="text-xs text-text-primary p-2 truncate">{e.nombre}</p>
-                </button>
-              ))}
-            </div>
+            <>
+              {hayDestacados && (
+                <>
+                  <p className="text-xs font-semibold text-brand-700 mb-2">{etiquetaDestacados}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">{destacados.map(tarjeta)}</div>
+                  {resto.length > 0 && <p className="text-xs font-semibold text-text-muted mb-2">Otros</p>}
+                </>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{resto.map(tarjeta)}</div>
+            </>
           )}
         </div>
       </div>

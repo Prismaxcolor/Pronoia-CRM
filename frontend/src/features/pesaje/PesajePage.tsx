@@ -23,12 +23,13 @@ import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SelectorOrden from '../../components/SelectorOrden';
 import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import { contarMaterialesDistintos, resumenMateriales as resumenMaterialesDistintos } from './resumen-materiales';
 import { obtenerVehiculos } from '../../services/vehiculo-service';
 import VehiculoSelector from '../../components/VehiculoSelector';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
-import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
+import { ordenarLotesPorAnclaje } from '@shared/types/lote.js';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario, type Vehiculo } from '@shared/types/index.js';
 
 /** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
@@ -134,6 +135,11 @@ function PesajePage() {
   const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
   const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
   const [filaLoteActivaUid, setFilaLoteActivaUid] = useState<number | null>(null);
+  // Lotes posibles (anclados) del material de la fila cuyo lote se está eligiendo.
+  const lotesPosiblesDeFilaActiva = useMemo(() => {
+    const fila = materiales.find(m => m.uid === filaLoteActivaUid);
+    return fila ? loteIdsPosiblesFila(fila, productos) : [];
+  }, [materiales, filaLoteActivaUid, productos]);
   const [mostrarSelectorAlmacenOrigen, setMostrarSelectorAlmacenOrigen] = useState(false);
   const [mostrarSelectorAlmacenDestino, setMostrarSelectorAlmacenDestino] = useState(false);
 
@@ -193,13 +199,13 @@ function PesajePage() {
   }, [proveedores, clientes]);
 
   const pesoNetoTotal = useMemo(
-    () => materiales.reduce((acc, f) => acc + netoFila(f, taras), 0),
+    () => redondearKg(materiales.reduce((acc, f) => acc + netoFila(f, taras), 0)),
     [materiales, taras]
   );
 
   // Diferencia = Peso Global - suma de materiales netos - devolución.
   const diferencia = useMemo(
-    () => sumaPesajesGlobales(pesajesGlobales) - pesoNetoTotal - (Number(devolucion) || 0),
+    () => calcularDiferenciaPeso({ pesoGlobal: sumaPesajesGlobales(pesajesGlobales), netoMateriales: pesoNetoTotal, devolucion: Number(devolucion) || 0 }),
     [pesajesGlobales, pesoNetoTotal, devolucion]
   );
 
@@ -1004,6 +1010,7 @@ function PesajePage() {
                   <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
                   <span className={`font-semibold ${colorClaseDiferencia(diferencia, sumaPesajesGlobales(pesajesGlobales), sinPesajeGlobal)}`}>
                     {fmt(diferencia)} kg
+                    <span className="ml-1 font-normal text-xs text-brand-700">({descripcionDiferencia(diferencia)})</span>
                   </span>
                 </div>
               )}
@@ -1148,7 +1155,8 @@ function PesajePage() {
       {mostrarSelectorLote && (
         <SeleccionarEntidadModal
           titulo={tipo === 'venta' ? 'Origen (inventario)' : 'Destino (inventario)'}
-          entidades={lotes.map(l => ({ id: l.id, nombre: l.nombre, activo: l.activo, fotos: l.fotos }))}
+          entidades={ordenarLotesPorAnclaje(lotes, lotesPosiblesDeFilaActiva).map(l => ({ id: l.id, nombre: l.nombre, activo: l.activo, fotos: l.fotos, destacado: l.anclado }))}
+          etiquetaDestacados="Lotes posibles de este material"
           onClose={() => setMostrarSelectorLote(false)}
           onSeleccionar={id => {
             if (filaLoteActivaUid !== null) setFila(filaLoteActivaUid, 'destino', id);

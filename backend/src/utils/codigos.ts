@@ -52,6 +52,18 @@ export function formatCodigoNotaDebitoCliente(numero: number): string {
   return `NDV-${String(numero).padStart(4, '0')}`;
 }
 
+/** Formatea el correlativo de un cruce con proveedor (compensación sin
+ *  movimiento de dinero): 1 → "CR-0001". */
+export function formatCodigoCruce(numero: number): string {
+  return `CR-${String(numero).padStart(4, '0')}`;
+}
+
+/** Formatea el correlativo de un cruce con cliente: 1 → "CRV-0001". Numeración
+ *  propia, separada de CR- (cruce con proveedor). */
+export function formatCodigoCruceCliente(numero: number): string {
+  return `CRV-${String(numero).padStart(4, '0')}`;
+}
+
 /** Formatea el correlativo de una transformación: 1 → "TR-0001". */
 export function formatCodigoTransformacion(numero: number): string {
   return `TR-${String(numero).padStart(4, '0')}`;

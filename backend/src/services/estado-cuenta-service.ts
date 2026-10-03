@@ -1,4 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { logger } from '../utils/logger.js';
+import { leerPaginado, trocear } from '../utils/paginacion.js';
 import {
   formatCodigoPagoProveedor,
   formatCodigoAdelanto,
@@ -8,6 +10,8 @@ import {
   formatCodigoAnticipoCliente,
   formatCodigoNotaCreditoCliente,
   formatCodigoNotaDebitoCliente,
+  formatCodigoCruce,
+  formatCodigoCruceCliente,
 } from '../utils/codigos.js';
 
 export type TipoEntidad = 'proveedor' | 'cliente';
@@ -22,7 +26,7 @@ function formatCodigo(tipoEntidad: TipoEntidad, numero: number): string {
 export interface EntradaEstadoCuenta {
   /** Fecha ISO (YYYY-MM-DD). */
   fecha: string;
-  tipo: 'factura' | 'pago' | 'adelanto' | 'nota_credito' | 'nota_debito';
+  tipo: 'factura' | 'pago' | 'adelanto' | 'nota_credito' | 'nota_debito' | 'cruce';
   descripcion: string;
   /** Correlativo formateado (C-0001, PG-0007, AD-0003, NC-0004...). */
   referencia: string | null;
@@ -40,10 +44,18 @@ export interface EntradaEstadoCuenta {
    *  grupo_id de la operación, o el id del movimiento si es una fila legacy
    *  sin grupo_id (mismo criterio que agruparPagos). Ausente para facturas/notas. */
   pagoId?: string;
-  /** Solo notas: ya fue reversada con una nota contraria. */
+  /** Solo notas: fue anulada (queda en historial; cargo/abono = 0, no afecta el saldo). */
   anulada?: boolean;
+  /** Solo notas anuladas: monto original, para mostrarlo tachado (cargo/abono van en 0). */
+  montoAnulado?: number;
   /** Solo notas de débito: ya se liquidó en un pago combinado ("Registrar pago"). */
   pagada?: boolean;
+  /** Solo cruces: total de facturas saldadas con adelantos/notas, sin mover dinero. */
+  montoCruzado?: number;
+  /** Solo adelantos: cuánto ya se aplicó a facturas (cruces). */
+  adelantoAplicado?: number;
+  /** Solo adelantos: lo que sigue disponible para cruzar (abono - aplicado). */
+  adelantoDisponible?: number;
   /** Solo notas: id de la factura de compra a la que está asociada (ajuste ligado a
    *  una factura puntual). Null si es un ajuste general sin factura de por medio. */
   facturaAsociadaId?: string | null;
@@ -55,6 +67,8 @@ export interface EstadoCuenta {
   entidad: { id: string; tipo: TipoEntidad; nombre: string };
   entradas: EntradaEstadoCuenta[];
   totales: { facturado: number; pagado: number; saldo: number };
+  /** true si los datos de cruces/adelantos aplicados no se pudieron cargar completos (el saldo no depende de ellos). */
+  datosCruceIncompletos?: true;
 }
 
 function soloFecha(valor: string): string {
@@ -81,6 +95,25 @@ export interface NotaCruda {
    *  vuelven a resolver acá — mismo patrón que FacturaCruda.codigo. */
   facturaAsociadaId?: string | null;
   facturaAsociadaCodigo?: string | null;
+}
+
+/** Cruce sin movimiento de dinero (tabla `cruces`): compensa facturas con adelantos y/o notas. */
+export interface CruceCrudo {
+  grupoId: string;
+  numero: number | null;
+  fecha: string;
+  descripcion: string | null;
+  /** Suma de las facturas saldadas por este cruce (USD). */
+  montoCruzado: number;
+}
+
+/** Datos del cruce de adelantos con facturas, ya cargados por obtenerEstadoCuenta. */
+export interface DatosCruce {
+  cruces: CruceCrudo[];
+  /** Monto ya aplicado de cada adelanto, por su pagoId (grupo_id, o id si es legacy). */
+  adelantoAplicadoPorId: Map<string, number>;
+  /** true si alguna consulta de cruces/aplicaciones falló: los datos de cruce son parciales. */
+  incompleto?: boolean;
 }
 
 /** Formatea el correlativo de un movimiento de pago/cobro según entidad y
@@ -140,7 +173,8 @@ export function construirEstadoCuenta(
   entidad: { id: string; tipo: TipoEntidad; nombre: string },
   facturas: FacturaCruda[],
   pagos: PagoCrudo[],
-  notas: NotaCruda[] = []
+  notas: NotaCruda[] = [],
+  datosCruce: DatosCruce = { cruces: [], adelantoAplicadoPorId: new Map() }
 ): EstadoCuenta {
   const entradas: EntradaEstadoCuenta[] = [];
 
@@ -158,6 +192,8 @@ export function construirEstadoCuenta(
   for (const p of pagos) {
     const codigo = formatCodigoPago(entidad.tipo, p.subtipo, p.numero);
     const esAnticipo = p.subtipo === 'adelanto' || p.subtipo === 'anticipo';
+    const pagoId = p.grupoId ?? p.id;
+    const aplicado = esAnticipo ? Math.round((datosCruce.adelantoAplicadoPorId.get(pagoId) ?? 0) * 100) / 100 : 0;
     entradas.push({
       fecha: soloFecha(p.fecha),
       tipo: esAnticipo ? 'adelanto' : 'pago',
@@ -166,22 +202,40 @@ export function construirEstadoCuenta(
       referenciaExterna: codigo ? p.referencia : null,
       cargo: 0,
       abono: Number(p.monto),
-      pagoId: p.grupoId ?? p.id,
+      pagoId,
+      ...(esAnticipo ? { adelantoAplicado: aplicado, adelantoDisponible: Math.max(0, Math.round((Number(p.monto) - aplicado) * 100) / 100) } : {}),
+    });
+  }
+  // Cruce sin movimiento de dinero: no cambia el saldo (cargo/abono = 0) — el
+  // adelanto o la nota ya estaban restando y la factura ya estaba sumando;
+  // solo se asignan entre sí. Se lista para dejar el historial completo.
+  for (const c of datosCruce.cruces) {
+    entradas.push({
+      fecha: soloFecha(c.fecha),
+      tipo: 'cruce',
+      descripcion: c.descripcion ?? 'Cruce de facturas con adelantos y notas',
+      referencia: c.numero != null ? (entidad.tipo === 'proveedor' ? formatCodigoCruce(c.numero) : formatCodigoCruceCliente(c.numero)) : null,
+      cargo: 0,
+      abono: 0,
+      pagoId: c.grupoId,
+      montoCruzado: c.montoCruzado,
     });
   }
   // Nota de crédito: descuento a favor de la empresa (proveedor) o del
   // cliente, resta del saldo (abono). Nota de débito: monto a favor de la
-  // entidad, suma al saldo (cargo). Una nota anulada sigue sumando/restando
-  // junto con su contraria: el efecto neto se cancela solo, sin borrar
-  // ninguna de las dos (auditoría).
+  // entidad, suma al saldo (cargo). Una nota anulada NO afecta el saldo
+  // (cargo/abono = 0): se lista con su monto original en montoAnulado para
+  // mostrarla tachada; anular no crea ninguna nota contraria.
   for (const n of notas) {
+    const vigente = !n.anulada;
     entradas.push({
       fecha: soloFecha(n.fecha),
       tipo: n.tipo === 'credito' ? 'nota_credito' : 'nota_debito',
       descripcion: n.motivo,
       referencia: n.numero != null ? formatCodigoNota(entidad.tipo, n.tipo, n.numero) : null,
-      cargo: n.tipo === 'debito' ? Number(n.monto) : 0,
-      abono: n.tipo === 'credito' ? Number(n.monto) : 0,
+      cargo: vigente && n.tipo === 'debito' ? Number(n.monto) : 0,
+      abono: vigente && n.tipo === 'credito' ? Number(n.monto) : 0,
+      ...(vigente ? {} : { montoAnulado: Number(n.monto) }),
       notaId: n.id,
       anulada: n.anulada,
       pagada: n.pagada,
@@ -195,7 +249,12 @@ export function construirEstadoCuenta(
   const facturado = entradas.reduce((s, e) => s + e.cargo, 0);
   const pagado = entradas.reduce((s, e) => s + e.abono, 0);
 
-  return { entidad, entradas, totales: { facturado, pagado, saldo: facturado - pagado } };
+  return {
+    entidad,
+    entradas,
+    totales: { facturado, pagado, saldo: facturado - pagado },
+    ...(datosCruce.incompleto ? { datosCruceIncompletos: true as const } : {}),
+  };
 }
 
 // ---- acceso a datos --------------------------------------------------------
@@ -267,6 +326,7 @@ export async function obtenerEstadoCuenta(
   // llega como varias filas de movimientos — se agrupan en una sola línea
   // por documento antes de armar el estado de cuenta (ver agruparPagos).
   const pagos = agruparPagos(pagosCrudos);
+  const datosCruce = await cargarDatosCruce(esProveedor, id, pagos, desde, hasta);
 
   // Notas de crédito/débito: notas_ajuste_proveedor / notas_ajuste_cliente
   // son tablas separadas (numeración propia cada una, Bloque 45), pero se
@@ -313,5 +373,78 @@ export async function obtenerEstadoCuenta(
     facturaAsociadaCodigo: n.factura_id ? (codigoPorFacturaId.get(n.factura_id) ?? null) : null,
   }));
 
-  return construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos, notas);
+  return construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos, notas, datosCruce);
+}
+
+/**
+ * Cruces sin movimiento de dinero de la entidad (tabla `cruces`) con el total de
+ * facturas que saldó cada uno, y cuánto de cada adelanto ya se aplicó a facturas
+ * (pago_aplicaciones tipo 'adelanto'). Si falla alguna consulta se degrada a
+ * "sin datos de cruce": el saldo del estado de cuenta no depende de esto.
+ */
+async function cargarDatosCruce(
+  esProveedor: boolean,
+  entidadId: string,
+  pagos: PagoCrudo[],
+  desde?: string,
+  hasta?: string
+): Promise<DatosCruce> {
+  const incompleto = (motivo: string, detalle: string): DatosCruce => {
+    logger.warn({ evento: 'estado_cuenta.cruce_incompleto', motivo, detalle, entidadId, esProveedor });
+    return { cruces: [], adelantoAplicadoPorId: new Map(), incompleto: true };
+  };
+  const columnaEntidad = esProveedor ? 'proveedor_id' : 'cliente_id';
+
+  let qCruces = supabaseAdmin.from('cruces').select('grupo_id, numero, fecha, descripcion').eq(columnaEntidad, entidadId);
+  if (desde) qCruces = qCruces.gte('fecha', desde);
+  if (hasta) qCruces = qCruces.lte('fecha', hasta);
+  const { data: crucesData, error: errCruces } = await qCruces;
+  if (errCruces) return incompleto('cruces', errCruces.message);
+  const crucesRows = (crucesData as Array<{ grupo_id: string; numero: number | null; fecha: string; descripcion: string | null }> | null) ?? [];
+
+  const adelantoIds = [...new Set(pagos.filter(p => p.subtipo === 'adelanto' || p.subtipo === 'anticipo').map(p => p.grupoId ?? p.id))];
+  const crucesIds = crucesRows.map(c => c.grupo_id);
+
+  try {
+    const adelantoAplicadoPorId = await sumarAplicaciones('adelanto', 'item_id', adelantoIds);
+    const cruzadoPorGrupo = await sumarAplicaciones('factura', 'grupo_id', crucesIds);
+    return {
+      cruces: crucesRows.map(c => ({
+        grupoId: c.grupo_id,
+        numero: c.numero,
+        fecha: c.fecha,
+        descripcion: c.descripcion,
+        montoCruzado: Math.round((cruzadoPorGrupo.get(c.grupo_id) ?? 0) * 100) / 100,
+      })),
+      adelantoAplicadoPorId,
+    };
+  } catch (e) {
+    return incompleto('pago_aplicaciones', e instanceof Error ? e.message : String(e));
+  }
+}
+
+/** Suma monto_usd de pago_aplicaciones de un tipo, agrupado por `columnaClave`,
+ *  consultando por lotes de ids y paginando. Lanza si alguna consulta falla. */
+async function sumarAplicaciones(
+  tipo: 'adelanto' | 'factura',
+  columnaClave: 'item_id' | 'grupo_id',
+  ids: string[]
+): Promise<Map<string, number>> {
+  const sumas = new Map<string, number>();
+  for (const lote of trocear(ids)) {
+    const filas = await leerPaginado<Record<string, string | number>>((desde, hasta) =>
+      supabaseAdmin
+        .from('pago_aplicaciones')
+        .select(`id, ${columnaClave}, monto_usd`)
+        .eq('tipo', tipo)
+        .in(columnaClave, lote)
+        .order('id', { ascending: true })
+        .range(desde, hasta)
+    );
+    for (const a of filas) {
+      const clave = String(a[columnaClave]);
+      sumas.set(clave, (sumas.get(clave) ?? 0) + Number(a.monto_usd));
+    }
+  }
+  return sumas;
 }

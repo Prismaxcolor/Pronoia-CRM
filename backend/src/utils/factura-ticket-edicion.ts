@@ -10,14 +10,22 @@ export interface EfectoFactura {
   total: number;
   montoPagado: number;
   estadoAnterior: string;
-  /** 'anulada': se anuló y el ticket quedó libre. 'pagada': tiene pagos, no se tocó. */
-  accion: 'anulada' | 'pagada';
+  /** 'anulada': se anuló y el ticket quedó libre. 'pagada': tiene pagos, no se tocó.
+   *  'con_notas': tiene notas de crédito/débito vigentes, no se tocó (hay que anular las
+   *  notas primero). */
+  accion: 'anulada' | 'pagada' | 'con_notas';
   ticketsLiberados: number;
+  /** Notas de ajuste vigentes (no anuladas) ligadas a la factura. */
+  notasVigentes?: number;
 }
 
 /** Aviso estructurado que el backend devuelve al editar un ticket facturado. */
 export interface AvisoFactura {
+  /** 'pagada' agrupa todo lo que NO se anuló y exige revisar el estado de cuenta (pagos o notas). */
   tipo: 'anulada' | 'pagada';
+  /** Por qué no se anuló (solo si tipo = 'pagada'): 'pagos' o 'notas'. */
+  razon: 'anulada' | 'pagos' | 'notas';
+  notasVigentes: number;
   facturaTipo: 'compra' | 'venta';
   facturaId: string;
   facturaNumero: number | null;
@@ -34,7 +42,7 @@ export interface AvisoFactura {
   mensaje: string;
 }
 
-const ACCIONES = ['anulada', 'pagada'] as const;
+const ACCIONES = ['anulada', 'pagada', 'con_notas'] as const;
 const TIPOS = ['compra', 'venta'] as const;
 
 function aEfecto(raw: unknown): EfectoFactura | null {
@@ -54,6 +62,7 @@ function aEfecto(raw: unknown): EfectoFactura | null {
     estadoAnterior: typeof r.estadoAnterior === 'string' ? r.estadoAnterior : '',
     accion,
     ticketsLiberados: Number(r.ticketsLiberados ?? 0),
+    notasVigentes: Number(r.notasVigentes ?? 0),
   };
 }
 
@@ -82,6 +91,13 @@ function mensajePagada(codigo: string, entidad: string | null, e: EfectoFactura)
     : `La factura N° ${codigo} tiene pagos aplicados, por eso no se anuló. ${revisar}`;
 }
 
+function mensajeConNotas(codigo: string, entidad: string | null, e: EfectoFactura): string {
+  const n = e.notasVigentes ?? 0;
+  const notas = n === 1 ? '1 nota de crédito/débito vigente' : `${n} notas de crédito/débito vigentes`;
+  const sujeto = e.tipo === 'compra' ? 'del proveedor' : 'del cliente';
+  return `La factura N° ${codigo} tiene ${notas}, por eso no se anuló. Anula primero esas notas en el estado de cuenta ${sujeto}${entidad ? ` ${entidad}` : ''} y vuelve a corregir el ticket.`;
+}
+
 /**
  * Convierte los efectos de la BD en avisos para el usuario. Las facturas con
  * pagos van primero: son las que exigen una acción (revisar el estado de cuenta).
@@ -97,7 +113,9 @@ export function construirAvisosFactura(
     const referencia = codigo ?? e.facturaId.slice(0, 8);
     const rutaBase = entidadTipo === 'proveedor' ? 'proveedores' : 'clientes';
     return {
-      tipo: e.accion,
+      tipo: e.accion === 'anulada' ? 'anulada' : 'pagada',
+      razon: e.accion === 'anulada' ? 'anulada' : e.accion === 'con_notas' ? 'notas' : 'pagos',
+      notasVigentes: e.notasVigentes ?? 0,
       facturaTipo: e.tipo,
       facturaId: e.facturaId,
       facturaNumero: e.numero,
@@ -111,7 +129,9 @@ export function construirAvisosFactura(
       rutaEstadoCuenta: e.entidadId ? `/${rutaBase}/${e.entidadId}/estado-cuenta` : null,
       mensaje: e.accion === 'anulada'
         ? mensajeAnulada(referencia, e)
-        : mensajePagada(referencia, entidadNombre, e),
+        : e.accion === 'con_notas'
+          ? mensajeConNotas(referencia, entidadNombre, e)
+          : mensajePagada(referencia, entidadNombre, e),
     };
   });
   return [...avisos].sort((a, b) => Number(b.tipo === 'pagada') - Number(a.tipo === 'pagada'));
@@ -122,6 +142,10 @@ export function cambiosAuditoriaFactura(avisos: ReadonlyArray<AvisoFactura>): Ca
   const cambios: Record<string, { antes: string; despues: string }> = {};
   for (const a of avisos) {
     const clave = `Factura ${a.facturaCodigo ?? a.facturaId.slice(0, 8)}`;
+    if (a.razon === 'notas') {
+      cambios[clave] = { antes: a.estadoAnterior || 'emitida', despues: 'NO anulada: tiene notas vigentes (anularlas primero)' };
+      continue;
+    }
     cambios[clave] = a.tipo === 'anulada'
       ? { antes: a.estadoAnterior || 'emitida', despues: 'anulada (ticket disponible para volver a facturar)' }
       : { antes: a.estadoAnterior === 'pagada' ? 'pagada' : 'con pagos aplicados', despues: 'pagada, NO anulada (revisar estado de cuenta)' };

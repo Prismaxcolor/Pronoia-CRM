@@ -14,10 +14,11 @@ import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
-import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import LoteOpciones from './LoteOpciones';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo } from '@shared/types/index.js';
 import { descargarTicketPDF } from '../../services/ticket-export';
@@ -49,6 +50,7 @@ function filasDesdeTicket(t: TicketPesaje): MaterialFila[] {
     taraCantidad: '',
     taraManual: String(m.tara),
     destino: m.loteId ?? '',
+    guardado: m.productoId ? { productoId: m.productoId, destinoTipo: m.destinoTipo } : undefined,
     fotos: m.fotos.map(url => ({ tipo: 'existente' as const, url })),
   }));
 }
@@ -113,12 +115,13 @@ function TicketDetallePage() {
   }, [id]);
 
   const pesoNetoTotal = useMemo(
-    () => materiales.reduce((acc, f) => acc + netoFila(f, taras), 0),
+    () => redondearKg(materiales.reduce((acc, f) => acc + netoFila(f, taras), 0)),
     [materiales, taras]
   );
+  const pesoGlobalEdit = pesajesTocados ? sumaPesajesGlobales(pesajesEdit) : (ticket?.pesoGlobal ?? 0);
   const diferencia = useMemo(
-    () => (pesajesTocados ? sumaPesajesGlobales(pesajesEdit) : (ticket?.pesoGlobal ?? 0)) - pesoNetoTotal - (Number(devolucionEdit) || 0),
-    [ticket, pesoNetoTotal, devolucionEdit, pesajesTocados, pesajesEdit]
+    () => calcularDiferenciaPeso({ pesoGlobal: pesoGlobalEdit, netoMateriales: pesoNetoTotal, devolucion: Number(devolucionEdit) || 0 }),
+    [pesoGlobalEdit, pesoNetoTotal, devolucionEdit]
   );
 
   /** Subtotal por material cuando el mismo material se pesó más de una vez
@@ -564,7 +567,7 @@ function TicketDetallePage() {
                       <label className={labelClass}>Destino (inventario) *</label>
                       <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
                         <option value="" disabled>-Selecciona-</option>
-                        {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                        <LoteOpciones lotes={lotes} loteIdsPosibles={loteIdsPosiblesFila(f, productos)} />
                       </select>
                     </div>
                   )}
@@ -657,7 +660,7 @@ function TicketDetallePage() {
             {!ticket.pesajeExterior && (
               <div className="flex items-center justify-between text-sm border-t border-brand-200 pt-2">
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
-                <span className={`font-semibold ${colorClaseDiferencia(diferencia, ticket?.pesoGlobal ?? 0, ticket?.pesajeExterior ?? false)}`}>{fmt(diferencia)} kg</span>
+                <span className={`font-semibold ${colorClaseDiferencia(diferencia, pesoGlobalEdit, ticket?.pesajeExterior ?? false)}`}>{fmt(diferencia)} kg<span className="ml-1 font-normal text-xs text-brand-700">({descripcionDiferencia(diferencia)})</span></span>
               </div>
             )}
           </div>

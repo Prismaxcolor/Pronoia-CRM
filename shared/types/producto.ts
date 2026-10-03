@@ -33,6 +33,9 @@ export interface ProductoBase {
    *  al pesarlo no se pide lote, va directo a inventario general (MPP).
    *  Resuelto vía join. Solo lectura (no se envía). */
   tipoMaterialSinLote?: boolean | null;
+  /** Lotes posibles de este producto (producto_lotes). Vacío = no pertenece a
+   *  ningún lote. En el pesaje, estos lotes se ofrecen primero. */
+  loteIds?: string[];
   creadoPor: string;
   creadoEn: string;
 }

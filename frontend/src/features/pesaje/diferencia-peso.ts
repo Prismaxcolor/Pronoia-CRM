@@ -31,3 +31,13 @@ export function colorClaseDiferencia(diferencia: number, pesoGlobal: number, pes
   const pct = Math.abs(porcentajeDiferencia(diferencia, pesoGlobal));
   return pct <= UMBRAL_PORCENTAJE ? 'text-green-600' : 'text-red-600';
 }
+
+export { calcularDiferenciaPeso, redondearKg } from '@shared/types/ticket-pesaje.js';
+
+/** Texto corto que aclara qué significa el signo de la diferencia (en kg,
+ *  ya redondeada a 3 decimales): positiva = merma / peso sin clasificar,
+ *  negativa = más material itemizado que el peso global. */
+export function descripcionDiferencia(diferencia: number): string {
+  if (Math.abs(diferencia) < 0.0005) return 'cuadrado';
+  return diferencia > 0 ? 'merma: el global pesa más que los materiales' : 'los materiales superan el global';
+}

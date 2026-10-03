@@ -19,6 +19,7 @@ import { auditarEdicionTicket } from './ticket-auditoria.js';
 import { errorEdicionFacturado, extrasEdicionRpc } from '../utils/edicion-ticket.js';
 import { avisosDeFacturasEditadas } from './factura-ticket-service.js';
 import type { AvisoFactura } from '../utils/factura-ticket-edicion.js';
+import { redondearKg, calcularDiferenciaPeso } from '../utils/peso-kg.js';
 
 /** Formatea el correlativo de pesaje: (1, 'compra') → "Compra-0001". Cada tipo
  *  tiene su propio contador desde el Bloque 35 (antes compra y venta
@@ -162,7 +163,7 @@ function detalleToPublico(d: DetalleRow): MaterialPublico {
 
 function toPublico(row: TicketRow): TicketPublico {
   const materiales = (row.detalle_tickets_pesaje ?? []).map(detalleToPublico);
-  const pesoNetoTotal = materiales.reduce((acc, m) => acc + m.pesoNeto, 0);
+  const pesoNetoTotal = redondearKg(materiales.reduce((acc, m) => acc + m.pesoNeto, 0));
   const pesoGlobal = Number(row.peso_global ?? 0);
   const devolucion = Number(row.devolucion ?? 0);
   return {
@@ -183,7 +184,7 @@ function toPublico(row: TicketRow): TicketPublico {
     pesajeExterior: row.pesaje_exterior ?? false,
     devolucion,
     fotosDevolucion: row.fotos_devolucion ?? [],
-    diferencia: pesoGlobal - pesoNetoTotal - devolucion,
+    diferencia: calcularDiferenciaPeso({ pesoGlobal, netoMateriales: pesoNetoTotal, devolucion }),
     fotos: row.fotos ?? [],
     observaciones: row.observaciones,
     facturado: row.facturado,
@@ -272,15 +273,15 @@ function notificarTicketSiCorresponde(ticket: TicketPublico): void {
 }
 
 function pesajesGlobalesARpc(pesajes: PesajeGlobalInput[]) {
-  return pesajes.map(p => ({ peso: p.peso, tara: p.tara, fotos: p.fotos }));
+  return pesajes.map(p => ({ peso: redondearKg(p.peso), tara: redondearKg(p.tara), fotos: p.fotos }));
 }
 
 function materialesARpc(materiales: CrearTicketInput['materiales']) {
   return materiales.map(m => ({
     producto_id: m.productoId,
     subcategoria: m.subcategoria,
-    peso_bruto: m.pesoBruto,
-    tara: m.tara,
+    peso_bruto: redondearKg(m.pesoBruto),
+    tara: redondearKg(m.tara),
     devolucion: m.devolucion,
     destino_tipo: m.destinoTipo,
     lote_id: m.destinoTipo === 'lote' ? m.loteId : null,
@@ -302,8 +303,8 @@ export async function crearTicket(
     p_materiales: materialesARpc(input.materiales),
     p_estado: input.estado,
     p_pesado_por: pesadoPor,
-    p_peso_global: input.pesajeExterior ? null : input.pesoGlobal,
-    p_devolucion: input.devolucion,
+    p_peso_global: input.pesajeExterior || input.pesoGlobal == null ? null : redondearKg(input.pesoGlobal),
+    p_devolucion: redondearKg(input.devolucion),
     p_pesaje_exterior: input.pesajeExterior,
     p_fotos_devolucion: input.fotosDevolucion,
     p_pesajes_globales: pesajesGlobalesARpc(input.pesajesGlobales),
@@ -347,7 +348,7 @@ export async function completarTicket(
     p_ticket_id: id,
     p_materiales: materialesARpc(input.materiales),
     p_completado_por: completadoPor,
-    p_devolucion: input.devolucion,
+    p_devolucion: redondearKg(input.devolucion),
     p_fotos_devolucion: input.fotosDevolucion,
   };
 
@@ -433,7 +434,7 @@ export async function editarTicket(
     p_materiales: materialesARpc(input.materiales),
     p_peso_global: null,
     p_observaciones: input.observaciones,
-    p_devolucion: input.devolucion,
+    p_devolucion: redondearKg(input.devolucion),
     p_fotos_devolucion: input.fotosDevolucion,
     p_vehiculo: input.vehiculo,
     ...extrasEdicionRpc(input, facturado),

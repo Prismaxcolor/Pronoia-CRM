@@ -4,6 +4,7 @@ import {
   validarAlcance,
   buscarTomaSolapada,
   lineasLotesSinContar,
+  categoriaSinLoteEfectivo,
 } from '../src/utils/toma-fisica-alcance.js';
 import { crearTomaFisicaSchema } from '../src/schemas/toma-fisica.js';
 
@@ -94,5 +95,18 @@ describe('crearTomaFisicaSchema alcance', () => {
   });
   it('sin alcance sigue válido (clientes viejos)', () => {
     expect(crearTomaFisicaSchema.safeParse(base).success).toBe(true);
+  });
+});
+
+describe('categoriaSinLoteEfectivo (lotes anclados a productos)', () => {
+  it('categoría sin lote y sin productos anclados sigue siendo por categoría', () => {
+    expect(categoriaSinLoteEfectivo(true, false)).toBe(true);
+  });
+  it('categoría sin lote con algún producto anclado pasa a inventariarse por lote', () => {
+    expect(categoriaSinLoteEfectivo(true, true)).toBe(false);
+  });
+  it('categoría marcada con lote sigue siendo por lote aunque no tenga anclajes', () => {
+    expect(categoriaSinLoteEfectivo(false, false)).toBe(false);
+    expect(categoriaSinLoteEfectivo(false, true)).toBe(false);
   });
 });

@@ -30,6 +30,7 @@ router.post(
       bancas: req.body.bancas.length,
       numeroCobro: result.numeroCobro,
       numeroAnticipo: result.numeroAnticipo,
+      numeroCruce: result.numeroCruce,
     });
     res.status(201).json(result);
   }

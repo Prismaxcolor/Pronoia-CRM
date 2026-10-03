@@ -51,13 +51,16 @@ export async function crearNotaAjuste(
   if (input.facturaId) {
     const { data: factura, error: errFactura } = await supabaseAdmin
       .from('facturas_compra')
-      .select('id')
+      .select('id, estado')
       .eq('id', input.facturaId)
       .eq('proveedor_id', proveedorId)
       .maybeSingle();
 
     if (errFactura || !factura) {
       return { error: 'La factura no pertenece a este proveedor.' };
+    }
+    if ((factura as { estado?: string }).estado === 'anulada') {
+      return { error: 'No se puede crear una nota sobre una factura anulada.' };
     }
   }
 
@@ -105,6 +108,10 @@ export interface NotaAjusteDetalle {
   /** Nombre del usuario que la registró, ya resuelto — nunca el uuid crudo. */
   registradoPor: string | null;
   anulaNotaId: string | null;
+  /** Datos de la anulación (solo si anulada): cuándo, quién (nombre ya resuelto) y por qué. */
+  anuladaAt: string | null;
+  anuladaPor: string | null;
+  anuladaMotivo: string | null;
   /** Factura de compra a la que se asocia la nota (opcional), ya resuelta. Null si es
    *  un ajuste general sin factura de por medio. */
   facturaAsociada: { id: string; codigo: string | null; total: number } | null;
@@ -123,6 +130,9 @@ interface NotaDetalleRow {
   registrado_por: string | null;
   anula_nota_id: string | null;
   factura_id: string | null;
+  anulada_at?: string | null;
+  anulada_por?: string | null;
+  anulada_motivo?: string | null;
 }
 
 /** Duplicado intencional de estado-cuenta-service.ts (mismo patrón que
@@ -138,7 +148,8 @@ export function construirNotaAjusteDetalle(
   row: NotaDetalleRow,
   nombreProveedor: string,
   nombreRegistradoPor: string | null,
-  facturaAsociada: NotaAjusteDetalle['facturaAsociada'] = null
+  facturaAsociada: NotaAjusteDetalle['facturaAsociada'] = null,
+  nombreAnuladaPor: string | null = null
 ): NotaAjusteDetalle {
   return {
     id: row.id,
@@ -156,6 +167,9 @@ export function construirNotaAjusteDetalle(
     nombreProveedor,
     registradoPor: nombreRegistradoPor,
     anulaNotaId: row.anula_nota_id,
+    anuladaAt: row.anulada ? (row.anulada_at ?? null) : null,
+    anuladaPor: row.anulada ? nombreAnuladaPor : null,
+    anuladaMotivo: row.anulada ? (row.anulada_motivo ?? null) : null,
     facturaAsociada,
   };
 }
@@ -172,7 +186,7 @@ export async function obtenerNotaAjuste(
 ): Promise<NotaAjusteDetalle | { error: string }> {
   const { data: nota, error: errNota } = await supabaseAdmin
     .from('notas_ajuste_proveedor')
-    .select('id, proveedor_id, tipo, monto, motivo, anulada, pagada, numero, fecha, registrado_por, anula_nota_id, factura_id')
+    .select('id, proveedor_id, tipo, monto, motivo, anulada, pagada, numero, fecha, registrado_por, anula_nota_id, factura_id, anulada_at, anulada_por, anulada_motivo')
     .eq('id', notaId)
     .eq('proveedor_id', proveedorId)
     .maybeSingle();
@@ -201,6 +215,16 @@ export async function obtenerNotaAjuste(
     nombreRegistradoPor = (usuario as { nombre: string } | null)?.nombre ?? null;
   }
 
+  let nombreAnuladaPor: string | null = null;
+  if (row.anulada && row.anulada_por) {
+    const { data: usuario } = await supabaseAdmin
+      .from('users')
+      .select('id, nombre')
+      .eq('id', row.anulada_por)
+      .maybeSingle();
+    nombreAnuladaPor = (usuario as { nombre: string } | null)?.nombre ?? null;
+  }
+
   let facturaAsociada: NotaAjusteDetalle['facturaAsociada'] = null;
   if (row.factura_id) {
     const { data: factura } = await supabaseAdmin
@@ -218,10 +242,12 @@ export async function obtenerNotaAjuste(
     }
   }
 
-  return construirNotaAjusteDetalle(row, nombreProveedor, nombreRegistradoPor, facturaAsociada);
+  return construirNotaAjusteDetalle(row, nombreProveedor, nombreRegistradoPor, facturaAsociada, nombreAnuladaPor);
 }
 
-/** Anula una nota ya creada: la RPC inserta la nota contraria (nunca se borra). */
+/** Anula una nota: la RPC solo la marca anulada (con fecha, usuario y motivo). No crea
+ *  ninguna nota contraria y la nota anulada deja de afectar el estado de cuenta. Devuelve
+ *  el id de la misma nota. La RPC rechaza notas ya anuladas o ya aplicadas a un pago. */
 export async function anularNotaAjuste(
   proveedorId: string,
   notaId: string,

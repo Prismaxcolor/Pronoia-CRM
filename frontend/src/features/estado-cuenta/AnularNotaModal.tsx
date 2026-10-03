@@ -61,7 +61,7 @@ function AnularNotaModal({ tipoEntidad, entidadId, nota, onClose, onAnulada }: P
           </div>
 
           <p className="text-xs text-text-muted">
-            No se borra: se crea una nota contraria por el mismo monto que cancela su efecto en el saldo, y esta queda marcada como anulada.
+            La nota queda marcada como anulada en el historial y deja de afectar el saldo del estado de cuenta. No se crea ninguna nota nueva. No se puede anular una nota que ya fue aplicada a un pago o cobro.
           </p>
 
           <div>

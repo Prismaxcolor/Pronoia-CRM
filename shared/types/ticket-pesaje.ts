@@ -128,3 +128,17 @@ export function formatCodigoPesaje(numero: number, tipo: 'compra' | 'venta'): st
   const prefijo = tipo === 'compra' ? 'Compra' : 'Venta';
   return `${prefijo}-${String(numero).padStart(4, '0')}`;
 }
+
+/** Redondea a 3 decimales (gramos): elimina el ruido de punto flotante
+ *  (0.2 * 3 = 0.6000000000000001) antes de sumar, guardar o comparar pesos.
+ *  Duplicado en backend/src/utils/peso-kg.ts (hay test de paridad). */
+export function redondearKg(n: number): number {
+  return Math.round((n + Number.EPSILON) * 1000) / 1000 || 0;
+}
+
+/** Diferencia de un ticket = peso global - suma neta de materiales - devolución.
+ *  Positiva: la báscula global registró más que lo itemizado (merma / peso sin
+ *  clasificar). Negativa: se itemizó más que el global. */
+export function calcularDiferenciaPeso(p: { pesoGlobal: number; netoMateriales: number; devolucion: number }): number {
+  return redondearKg(redondearKg(p.pesoGlobal) - redondearKg(p.netoMateriales) - redondearKg(p.devolucion));
+}

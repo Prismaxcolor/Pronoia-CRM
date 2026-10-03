@@ -26,6 +26,10 @@ export interface NotaAjusteDetalle {
   nombreProveedor: string;
   registradoPor: string | null;
   anulaNotaId: string | null;
+  /** Datos de la anulación (null si la nota no está anulada). */
+  anuladaAt: string | null;
+  anuladaPor: string | null;
+  anuladaMotivo: string | null;
   /** Factura de compra asociada (opcional). Null si es un ajuste general sin factura. */
   facturaAsociada: { id: string; codigo: string | null; total: number } | null;
 }
@@ -57,8 +61,8 @@ export async function crearNotaAjuste(
   }
 }
 
-/** Anula una nota ya creada: no se borra, se genera una nota contraria del
- *  mismo monto (regla del proyecto: en finanzas nunca se borra). */
+/** Anula una nota: queda marcada como anulada (no se borra ni se crea nota contraria)
+ *  y deja de afectar el estado de cuenta. Devuelve el id de la misma nota. */
 export async function anularNotaAjuste(
   proveedorId: string,
   notaId: string,

@@ -65,7 +65,12 @@ function NuevaTomaFisicaModal({
   // Por categoría solo ofrece categorías "sin lote" (se cuentan producto a
   // producto); por lote solo las "con lote" (PCB, PGM: se pesa el lote
   // completo, no se desarma material por material).
-  const categoriasDelAlcance = categorias.filter(c => (alcance === 'categoria' ? c.sinLote : !c.sinLote));
+  // Una categoría con algún producto anclado a un lote se cuenta por lote,
+  // aunque esté marcada "sin lote" (mismo criterio que el backend).
+  const categoriasDelAlcance = categorias.filter(c => {
+    const sinLoteEfectivo = c.sinLote && !c.tieneProductosAnclados;
+    return alcance === 'categoria' ? sinLoteEfectivo : !sinLoteEfectivo;
+  });
   // La toma física sirve justo para encontrar material que el sistema NO
   // sabe que está ahí — no se exige que el lote ya tenga stock en este
   // almacén para poder elegirlo. Se ofrecen todos los lotes activos y se
@@ -161,7 +166,7 @@ function NuevaTomaFisicaModal({
               {alcance === 'categoria' ? 'Categorías a inventariar *' : 'Categoría de los lotes *'}
             </label>
             {categoriasDelAlcance.length === 0 ? (
-              <p className="text-xs text-amber-700">No hay categorías {alcance === 'categoria' ? 'sin lote' : 'con lote'} configuradas.</p>
+              <p className="text-xs text-amber-700">No hay categorías {alcance === 'categoria' ? 'sin productos anclados a un lote' : 'con productos anclados a un lote'}.</p>
             ) : (
               <div className="border border-border rounded-lg divide-y divide-border max-h-40 overflow-y-auto">
                 {categoriasDelAlcance.map(c => (

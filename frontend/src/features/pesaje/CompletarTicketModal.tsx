@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale, ChevronDown } from 'lucide-react';
 import { completarTicket, obtenerTickets } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
-import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
+import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
+import LoteOpciones from './LoteOpciones';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
@@ -20,7 +21,7 @@ interface Props {
 
 /** Suma el peso global del ticket principal con el de los tickets unidos seleccionados. */
 function pesoGlobalTotal(pesoPrincipal: number, unidos: ReadonlyArray<{ pesoGlobal: number }>): number {
-  return unidos.reduce((acc, t) => acc + t.pesoGlobal, pesoPrincipal);
+  return redondearKg(unidos.reduce((acc, t) => acc + t.pesoGlobal, pesoPrincipal));
 }
 
 function fmt(n: number): string {
@@ -76,7 +77,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
     setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
 
   const pesoNetoTotal = useMemo(
-    () => materiales.reduce((acc, f) => acc + netoFila(f, taras), 0),
+    () => redondearKg(materiales.reduce((acc, f) => acc + netoFila(f, taras), 0)),
     [materiales, taras]
   );
 
@@ -86,7 +87,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   // Bugfix: el peso global se toma del ticket guardado en bruto (no de un input
   // nuevo) para que la diferencia se calcule en vivo mientras se cargan los materiales.
   const diferencia = useMemo(
-    () => pesoGlobalSumado - pesoNetoTotal - (Number(devolucion) || 0),
+    () => calcularDiferenciaPeso({ pesoGlobal: pesoGlobalSumado, netoMateriales: pesoNetoTotal, devolucion: Number(devolucion) || 0 }),
     [pesoGlobalSumado, pesoNetoTotal, devolucion]
   );
 
@@ -212,7 +213,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                         <label className={labelClass}>Destino (inventario) *</label>
                         <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
                           <option value="" disabled>-Selecciona-</option>
-                          {lotes.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                          <LoteOpciones lotes={lotes} loteIdsPosibles={loteIdsPosiblesFila(f, productos)} />
                         </select>
                       </>
                     )}
@@ -318,6 +319,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                 <span className="text-brand-800">Diferencia (global vs. neto + devolución)</span>
                 <span className={`font-semibold ${colorClaseDiferencia(diferencia, pesoGlobalSumado, ticket.pesajeExterior)}`}>
                   {fmt(diferencia)} kg
+                  <span className="ml-1 font-normal text-xs text-brand-700">({descripcionDiferencia(diferencia)})</span>
                 </span>
               </div>
             )}

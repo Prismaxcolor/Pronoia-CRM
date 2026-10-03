@@ -15,6 +15,7 @@ import { generarLinkTelegram } from '../services/telegram-link-service.js';
 import { crearNotaAjuste, anularNotaAjuste, obtenerNotaAjuste } from '../services/nota-ajuste-service.js';
 import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-ajuste.js';
 import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
+import { listarAdelantosDisponibles } from '../services/cruce-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -67,6 +68,16 @@ router.get('/:id/pagos/:grupoId', requirePermiso('proveedores', 'ver'), async (r
   res.json({ pago: result });
 });
 
+// Adelantos con saldo sin aplicar, para cruzarlos con facturas al registrar un pago.
+router.get('/:id/adelantos-disponibles', requirePermiso('proveedores', 'ver'), async (req, res) => {
+  const result = await listarAdelantosDisponibles('proveedor', String(req.params.id));
+  if ('error' in result) {
+    res.status(500).json(result);
+    return;
+  }
+  res.json({ adelantos: result });
+});
+
 // Ajuste manual del saldo (sin factura ni pago real) → mismo permiso que editar
 // el proveedor, no 'cochinito' porque no mueve dinero de ninguna banca.
 router.post(
@@ -110,8 +121,7 @@ router.post(
       ip: clienteIp(req),
       userId: req.user!.sub,
       proveedorId,
-      notaOriginalId: notaId,
-      notaNuevaId: result.id,
+      notaId,
     });
     res.status(201).json(result);
   }

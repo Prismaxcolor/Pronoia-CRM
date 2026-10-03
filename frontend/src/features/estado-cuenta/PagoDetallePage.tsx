@@ -6,6 +6,7 @@ import type { TipoEntidad } from '../../services/estado-cuenta-service';
 import { descargarPagoPDF } from '../../services/pago-export';
 import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
+import { calcularCruce } from '../../lib/cruce';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -19,7 +20,11 @@ const ETIQUETA_ITEM: Record<string, string> = {
   factura: 'Factura',
   nota_debito: 'Nota de débito',
   nota_credito: 'Nota de crédito',
+  adelanto: 'Adelanto',
 };
+
+/** Los créditos (notas de crédito y adelantos) restan de lo que se paga. */
+const esCredito = (tipo: string) => tipo === 'nota_credito' || tipo === 'adelanto';
 
 /** Comprobante imprimible de un pago (proveedor) o cobro (cliente) — mismo
  *  patrón que NotaDetallePage: una pantalla compartida entre ambos tipos de
@@ -61,7 +66,10 @@ function PagoDetallePage({ tipoEntidad }: Props) {
     );
   }
 
-  const titulo = esProveedor ? 'Comprobante de pago' : 'Comprobante de cobro';
+  const esCruce = pago.codigoCruce != null;
+  const titulo = esCruce ? 'Comprobante de cruce' : esProveedor ? 'Comprobante de pago' : 'Comprobante de cobro';
+  const resumen = calcularCruce(pago.items.map(i => ({ tipo: i.tipo, montoUsd: i.montoUsd })));
+  const usaCreditos = resumen.totalCreditos > 0;
 
   return (
     <div className="max-w-2xl print-documento print:max-w-none">
@@ -86,6 +94,11 @@ function PagoDetallePage({ tipoEntidad }: Props) {
                 {pago.codigoPago}
               </span>
             )}
+            {pago.codigoCruce && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 print:border print:border-black print:bg-transparent">
+                {pago.codigoCruce}
+              </span>
+            )}
             {pago.codigoAdelanto && (
               <span className="px-2 py-0.5 rounded-full text-xs bg-teal-100 text-teal-700 print:border print:border-black print:bg-transparent">
                 {pago.codigoAdelanto}
@@ -103,7 +116,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
             <Printer size={16} />
             Imprimir
           </button>
-          <CompartirBoton titulo={`${esProveedor ? 'Pago' : 'Cobro'} ${pago.codigoPago ?? pago.codigoAdelanto ?? pago.grupoId.slice(0, 8)}`} obtenerPdf={() => descargarPagoPDF(pago, esProveedor, 'blob')} />
+          <CompartirBoton titulo={`${esCruce ? 'Cruce' : esProveedor ? 'Pago' : 'Cobro'} ${pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? pago.grupoId.slice(0, 8)}`} obtenerPdf={() => descargarPagoPDF(pago, esProveedor, 'blob')} />
         </div>
       </div>
 
@@ -124,14 +137,33 @@ function PagoDetallePage({ tipoEntidad }: Props) {
                   <span className="text-text-primary font-medium">{item.codigo ?? '—'}</span>
                   <span className="text-text-muted"> · {ETIQUETA_ITEM[item.tipo]}</span>
                 </div>
-                <span className={item.tipo === 'nota_credito' ? 'text-green-600' : 'text-text-primary'}>
-                  {item.tipo === 'nota_credito' ? '-' : ''}${fmt(item.montoUsd)}
+                <span className={esCredito(item.tipo) ? 'text-green-600' : 'text-text-primary'}>
+                  {esCredito(item.tipo) ? '-' : ''}${fmt(item.montoUsd)}
                 </span>
               </div>
             ))}
+            {usaCreditos && (
+              <div className="mt-2 pt-2 border-t border-border print:border-black space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-text-secondary">Facturas y notas de débito</span><span className="text-text-primary">${fmt(resumen.totalCargos)}</span></div>
+                {resumen.totalAdelantos > 0 && (
+                  <div className="flex justify-between"><span className="text-text-secondary">- {esProveedor ? 'Adelantos' : 'Anticipos'} aplicados</span><span className="text-green-600">-${fmt(resumen.totalAdelantos)}</span></div>
+                )}
+                {resumen.totalNotasCredito > 0 && (
+                  <div className="flex justify-between"><span className="text-text-secondary">- Notas de crédito</span><span className="text-green-600">-${fmt(resumen.totalNotasCredito)}</span></div>
+                )}
+                <div className="flex justify-between font-medium"><span className="text-text-primary">= A {esProveedor ? 'pagar' : 'cobrar'} en efectivo/banco</span><span className="text-text-primary">${fmt(resumen.efectivo)}</span></div>
+              </div>
+            )}
           </div>
         )}
 
+        {esCruce && (
+          <p className="mt-4 pt-3 border-t border-border print:border-black text-sm text-text-secondary">
+            Cruce sin movimiento de dinero: no se usó banca ni método de {esProveedor ? 'pago' : 'cobro'}. El saldo de la cuenta no cambia.
+          </p>
+        )}
+
+        {!esCruce && (
         <div className="mt-4 pt-3 border-t border-border print:border-black">
           <p className="text-xs font-medium text-text-secondary mb-2">
             {pago.bancas.length > 1 ? 'Bancas' : 'Banca'}
@@ -152,9 +184,10 @@ function PagoDetallePage({ tipoEntidad }: Props) {
             </div>
           ))}
         </div>
+        )}
 
         <div className="flex justify-between items-baseline mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
-          <span className="font-semibold text-text-primary text-lg">Total</span>
+          <span className="font-semibold text-text-primary text-lg">{esCruce ? 'Total en efectivo/banco' : 'Total'}</span>
           <span className="text-2xl font-bold text-brand-700">${fmt(pago.totalUsd)}</span>
         </div>
       </div>

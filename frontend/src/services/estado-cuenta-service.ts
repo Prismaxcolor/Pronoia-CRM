@@ -4,7 +4,7 @@ export type TipoEntidad = 'proveedor' | 'cliente';
 
 export interface EntradaEstadoCuenta {
   fecha: string;
-  tipo: 'factura' | 'pago' | 'adelanto' | 'nota_credito' | 'nota_debito';
+  tipo: 'factura' | 'pago' | 'adelanto' | 'nota_credito' | 'nota_debito' | 'cruce';
   descripcion: string;
   /** Correlativo formateado (C-0001, PG-0007, AD-0003, NC-0004...). */
   referencia: string | null;
@@ -14,14 +14,22 @@ export interface EntradaEstadoCuenta {
   abono: number;
   /** Solo notas: id para poder anularla. Ausente para facturas/pagos. */
   notaId?: string;
-  /** Solo notas: ya fue reversada con una nota contraria. */
+  /** Solo notas: fue anulada (queda en historial; cargo/abono = 0, no afecta el saldo). */
   anulada?: boolean;
+  /** Solo notas anuladas: monto original, para mostrarlo tachado. */
+  montoAnulado?: number;
   /** Solo notas de débito: ya se liquidó en un pago combinado ("Registrar pago"). */
   pagada?: boolean;
   /** Solo facturas: id para abrir el detalle. Ausente para pagos/notas. */
   facturaId?: string;
   /** Solo pagos/adelantos: id para abrir el comprobante imprimible. Ausente para facturas/notas. */
   pagoId?: string;
+  /** Solo cruces: total de facturas saldadas con adelantos/notas, sin mover dinero. */
+  montoCruzado?: number;
+  /** Solo adelantos: cuánto ya se aplicó a facturas (cruces). */
+  adelantoAplicado?: number;
+  /** Solo adelantos: lo que sigue disponible para cruzar. */
+  adelantoDisponible?: number;
   /** Solo notas: id de la factura de compra a la que está asociada, ya resuelto. */
   facturaAsociadaId?: string | null;
   /** Solo notas: código de esa factura (C-0007). */
