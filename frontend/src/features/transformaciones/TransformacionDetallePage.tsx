@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, FileDown, ZoomIn, Pencil } from 'lucide-react';
-import { obtenerTransformacion } from '../../services/transformacion-service';
+import { obtenerTransformacion, type AvisoTransformacion } from '../../services/transformacion-service';
 import { obtenerAlmacenes } from '../../services/almacen-service';
 import { obtenerUsuarios } from '../../services/usuario-service';
 import { descargarTransformacionPDF } from '../../services/transformacion-export';
@@ -57,6 +57,8 @@ function TransformacionDetallePage() {
   const [fotoAmpliada, setFotoAmpliada] = useState<FotoGaleria | null>(null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
+  // Avisos del servidor tras editar pesos (ej. transformación anclada a una factura de compra).
+  const [avisos, setAvisos] = useState<AvisoTransformacion[]>([]);
   // El servidor exige llave a no-superadmin (llave activa por defecto).
   // Valor seguro hasta que responda el servidor: la llave está activa por defecto.
   const [requiereLlave, setRequiereLlave] = useState(true);
@@ -140,7 +142,7 @@ function TransformacionDetallePage() {
         <div className="print:hidden flex items-center gap-2 shrink-0">
           {esSuperadmin && puedeEditar && <GenerarLlaveEdicion entidadTipo="transformacion" entidadId={t.id} />}
           {(puedeEditar || (requiereLlave && !esSuperadmin)) && (
-            <button type="button" onClick={() => setEditando(true)} className={botonClass} title="Editar fecha y notas">
+            <button type="button" onClick={() => setEditando(true)} className={botonClass} title="Editar fecha, notas y pesos">
               <Pencil size={16} />
               Editar
             </button>
@@ -156,6 +158,13 @@ function TransformacionDetallePage() {
           <CompartirBoton titulo={`Transformación ${t.codigo ?? t.id.slice(0, 8)}`} obtenerPdf={() => descargarTransformacionPDF(t, nombres, 'blob')} className={botonClass} />
         </div>
       </div>
+
+      {avisos.length > 0 && (
+        <div role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 print:hidden">
+          {avisos.map((a, i) => <p key={i}>{a.mensaje}</p>)}
+          <button type="button" onClick={() => setAvisos([])} className="mt-1 font-medium underline">Entendido</button>
+        </div>
+      )}
 
       <div className="mb-6">
         <FilaDocumento label="Material de entrada" valor={t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '—'} />
@@ -262,8 +271,9 @@ function TransformacionDetallePage() {
           transformacion={t}
           requiereLlave={requiereLlave && !esSuperadmin}
           onClose={() => setEditando(false)}
-          onGuardada={nueva => {
+          onGuardada={(nueva, avisosServidor) => {
             setT(nueva);
+            setAvisos(avisosServidor);
             setEditando(false);
             setVersionHistorial(v => v + 1);
             toast.exito('Transformación actualizada.');

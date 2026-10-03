@@ -231,8 +231,8 @@ describe("esSuperadminVigente (rol releído de la BD)", () => {
 });
 
 describe("entidades con llave", () => {
-  it("hoy aceptan llave los tickets de pesaje y las transformaciones", () => {
-    expect([...ENTIDADES_CON_LLAVE]).toEqual(["ticket_pesaje", "transformacion"]);
+  it("hoy aceptan llave los tickets de pesaje, las transformaciones y los traslados", () => {
+    expect([...ENTIDADES_CON_LLAVE]).toEqual(["ticket_pesaje", "transformacion", "traslado"]);
   });
 
   it("crearLlaveSchema acepta transformación y rechaza facturas (no tienen edición)", () => {

@@ -1,9 +1,9 @@
 import { apiFetch } from './api-client';
 
-export type EntidadAuditable = 'ticket_pesaje' | 'factura_compra' | 'factura_venta' | 'transformacion';
+export type EntidadAuditable = 'ticket_pesaje' | 'factura_compra' | 'factura_venta' | 'transformacion' | 'traslado';
 
 /** Entidades que aceptan llave de edición (espejo de ENTIDADES_CON_LLAVE del backend; las facturas aún no). */
-export type EntidadConLlave = 'ticket_pesaje' | 'transformacion';
+export type EntidadConLlave = 'ticket_pesaje' | 'transformacion' | 'traslado';
 
 export interface CambioAuditoria {
   antes: string | number | boolean | null;

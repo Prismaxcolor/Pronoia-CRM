@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { obtenerTraslados } from '../../services/traslado-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import CompletarTrasladoModal from './CompletarTrasladoModal';
+import EditarTrasladoModal from './EditarTrasladoModal';
+import { obtenerConfigLlaves } from '../../services/llave-service';
+import { useToast } from '../../hooks/use-toast-context';
 import type { Traslado } from '@shared/types/index.js';
 
 function fmt(n: number): string {
@@ -19,17 +22,25 @@ function resumenMateriales(t: Traslado): string {
 }
 
 function TrasladosPanel() {
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
+  const toast = useToast();
   const puedeCompletar = tienePermiso('traslados', 'crear');
+  const esSuperadmin = usuario?.rol === 'superadmin';
+  // El servidor exige llave a no-superadmin (llave activa por defecto): quien no tiene el permiso
+  // 'editar' igual puede editar presentando una llave. Valor seguro hasta que responda el servidor.
+  const [requiereLlave, setRequiereLlave] = useState(true);
+  const puedeEditar = tienePermiso('traslados', 'editar') || (requiereLlave && !esSuperadmin);
 
   const [traslados, setTraslados] = useState<Traslado[]>([]);
   const [cargando, setCargando] = useState(true);
   const [aCompletar, setACompletar] = useState<Traslado | null>(null);
+  const [aEditar, setAEditar] = useState<Traslado | null>(null);
 
   const recargar = () => obtenerTraslados().then(setTraslados).finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };
 
   useEffect(() => { recargar(); }, []);
+  useEffect(() => { obtenerConfigLlaves().then(cfg => setRequiereLlave(cfg.requiereLlave)); }, []);
 
   const pendientes = traslados.filter(t => t.estado === 'pendiente');
   const completados = traslados.filter(t => t.estado === 'completo');
@@ -68,7 +79,7 @@ function TrasladosPanel() {
                   <th className="px-4 py-2.5 font-medium">Destino</th>
                   <th className="px-4 py-2.5 font-medium">Materiales</th>
                   <th className="px-4 py-2.5 font-medium text-right">Enviado (kg)</th>
-                  {puedeCompletar && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
+                  {(puedeCompletar || puedeEditar) && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
                 </tr>
               </thead>
               <tbody>
@@ -79,11 +90,18 @@ function TrasladosPanel() {
                     <td className="px-4 py-2.5 text-text-secondary">{t.nombreAlmacenDestino ?? '—'}</td>
                     <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
                     <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(t.pesoNetoEnviado)}</td>
-                    {puedeCompletar && (
-                      <td className="px-4 py-2.5 text-right">
-                        <button type="button" onClick={() => setACompletar(t)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
-                          Recepcionar
-                        </button>
+                    {(puedeCompletar || puedeEditar) && (
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        {puedeEditar && (
+                          <button type="button" onClick={() => setAEditar(t)} className="text-xs font-medium text-text-secondary hover:text-text-primary mr-3">
+                            Editar
+                          </button>
+                        )}
+                        {puedeCompletar && (
+                          <button type="button" onClick={() => setACompletar(t)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
+                            Recepcionar
+                          </button>
+                        )}
                       </td>
                     )}
                   </tr>
@@ -110,6 +128,7 @@ function TrasladosPanel() {
                   <th className="px-4 py-2.5 font-medium">Destino</th>
                   <th className="px-4 py-2.5 font-medium text-right">Enviado (kg)</th>
                   <th className="px-4 py-2.5 font-medium text-right">Recibido (kg)</th>
+                  {puedeEditar && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
                 </tr>
               </thead>
               <tbody>
@@ -126,6 +145,13 @@ function TrasladosPanel() {
                           {fmt(t.pesoNetoRecibido ?? 0)}
                         </span>
                       </td>
+                      {puedeEditar && (
+                        <td className="px-4 py-2.5 text-right">
+                          <button type="button" onClick={() => setAEditar(t)} className="text-xs font-medium text-text-secondary hover:text-text-primary">
+                            Editar
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -134,6 +160,20 @@ function TrasladosPanel() {
           </div>
         )}
       </div>
+
+      {aEditar && (
+        <EditarTrasladoModal
+          traslado={aEditar}
+          requiereLlave={requiereLlave && !esSuperadmin}
+          esSuperadmin={esSuperadmin}
+          onClose={() => setAEditar(null)}
+          onGuardado={() => {
+            setAEditar(null);
+            cargar();
+            toast.exito('Traslado actualizado.');
+          }}
+        />
+      )}
 
       {aCompletar && (
         <CompletarTrasladoModal

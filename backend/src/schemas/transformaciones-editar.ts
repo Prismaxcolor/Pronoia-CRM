@@ -7,7 +7,28 @@ function esFechaReal(valor: string): boolean {
   return d.getUTCFullYear() === anio && d.getUTCMonth() === mes - 1 && d.getUTCDate() === dia;
 }
 
-/** PATCH /api/transformaciones/:id/editar — solo fecha y notas (no pesos ni salidas: afectan stock). */
+/** Tope defensivo (kg) contra typos como 1e9; ninguna pesada real se acerca. */
+const MAX_PESO_KG = 10_000_000;
+
+const pesoBruto = z.number().positive('El peso bruto debe ser mayor a 0.').max(MAX_PESO_KG);
+const tara = z.number().min(0, 'La tara no puede ser negativa.').max(MAX_PESO_KG);
+
+const salidaEditadaSchema = z
+  .object({
+    id: z.string().uuid('Id de salida inválido.'),
+    pesoBruto: pesoBruto.optional(),
+    tara: tara.optional(),
+  })
+  .refine(s => s.pesoBruto !== undefined || s.tara !== undefined, {
+    message: 'Cada salida editada necesita peso bruto o tara.',
+  });
+
+/**
+ * PATCH /api/transformaciones/:id/editar — fecha, notas y pesos (bruto/tara de
+ * la entrada y de cada salida). El neto nunca se envía: es bruto - tara. Los
+ * pesos recalculan stock, así que la BD valida todo en una sola transacción
+ * (editar_transformacion_pesos). No se editan fotos, productos, lotes ni almacenes.
+ */
 export const editarTransformacionSchema = z
   .object({
     fecha: z
@@ -16,10 +37,20 @@ export const editarTransformacionSchema = z
       .refine(esFechaReal, 'La fecha no existe en el calendario.')
       .optional(),
     notas: z.string().max(2000, 'Las notas no pueden superar 2000 caracteres.').optional(),
+    pesoBruto: pesoBruto.optional(),
+    tara: tara.optional(),
+    salidas: z
+      .array(salidaEditadaSchema)
+      .max(200)
+      .refine(l => new Set(l.map(s => s.id)).size === l.length, { message: 'Hay salidas repetidas en la edición.' })
+      .optional(),
     llaveEdicion: z.string().trim().max(64).optional(),
   })
-  .refine(d => d.fecha !== undefined || d.notas !== undefined, {
-    message: 'Indica al menos un campo a editar (fecha o notas).',
-  });
+  .refine(
+    d =>
+      d.fecha !== undefined || d.notas !== undefined || d.pesoBruto !== undefined ||
+      d.tara !== undefined || (d.salidas?.length ?? 0) > 0,
+    { message: 'Indica al menos un campo a editar (fecha, notas o pesos).' }
+  );
 
 export type EditarTransformacionInput = z.infer<typeof editarTransformacionSchema>;

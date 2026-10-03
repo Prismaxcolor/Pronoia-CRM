@@ -79,3 +79,36 @@ export async function completarTraslado(
     return { error: err instanceof Error ? err.message : 'No se pudo completar el traslado.' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Edición de observaciones y pesos (protegida por llave y auditada en el servidor)
+// ---------------------------------------------------------------------------
+
+export interface EditarTrasladoLineaInput {
+  id: string;
+  pesoBruto?: number;
+  tara?: number;
+  /** Solo si el traslado ya fue recepcionado. */
+  pesoRecibido?: number;
+}
+
+export interface EditarTrasladoInput {
+  observaciones?: string;
+  /** Solo las líneas que cambian. El neto no se envía: es bruto - tara. */
+  lineas?: EditarTrasladoLineaInput[];
+  llaveEdicion?: string;
+}
+
+export async function editarTraslado(
+  id: string,
+  input: EditarTrasladoInput
+): Promise<{ traslado: Traslado; advertencia?: string } | { error: string }> {
+  try {
+    return await apiFetch<{ traslado: Traslado; advertencia?: string }>(`/api/traslados/${id}/editar`, {
+      method: 'PATCH',
+      body: input,
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo editar el traslado.' };
+  }
+}

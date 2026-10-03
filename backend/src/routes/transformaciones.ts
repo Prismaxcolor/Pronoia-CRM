@@ -124,7 +124,8 @@ router.patch(
   }
 );
 
-// Edición de fecha/notas (no pesos ni salidas): protegida por llave y auditada.
+// Edición de fecha, notas y pesos (entrada y salidas): protegida por llave y auditada.
+// Los pesos recalculan stock y se validan en una sola transacción (editar_transformacion_pesos).
 router.patch(
   '/:id/editar',
   requirePermisoOLlave('transformaciones', 'editar'),
@@ -143,7 +144,8 @@ router.patch(
       return;
     }
     logger.info({ evento: 'transformacion_editada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: id });
-    res.json({ transformacion: result.transformacion });
+    const { transformacion, avisos, advertencia } = result;
+    res.json({ transformacion, ...(avisos ? { avisos } : {}), ...(advertencia ? { advertencia } : {}) });
   }
 );
 

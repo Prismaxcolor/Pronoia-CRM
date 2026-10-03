@@ -314,25 +314,48 @@ export async function borrarTransformacion(id: string): Promise<{ ok: true } | {
 }
 
 // ---------------------------------------------------------------------------
-// Edición de fecha/notas (protegida por llave y auditada en el servidor)
+// Edición de fecha, notas y pesos (protegida por llave y auditada en el servidor)
 // ---------------------------------------------------------------------------
+
+export interface EditarSalidaInput {
+  id: string;
+  pesoBruto?: number;
+  tara?: number;
+}
 
 export interface EditarTransformacionInput {
   fecha?: string;
   notas?: string;
+  /** Peso bruto/tara de la entrada. El neto no se envía: es bruto - tara. */
+  pesoBruto?: number;
+  tara?: number;
+  /** Solo las salidas que cambian (bruto y/o tara). */
+  salidas?: EditarSalidaInput[];
   llaveEdicion?: string;
+}
+
+/** Aviso estructurado del servidor tras editar pesos de una transformación valorada. */
+export interface AvisoTransformacion {
+  tipo: 'valoracion';
+  facturaId: string | null;
+  facturaCodigo: string | null;
+  facturaPagada: boolean;
+  mensaje: string;
 }
 
 export async function editarTransformacion(
   id: string,
   input: EditarTransformacionInput
-): Promise<{ transformacion: Transformacion } | { error: string }> {
+): Promise<{ transformacion: Transformacion; avisos?: AvisoTransformacion[]; advertencia?: string } | { error: string }> {
   try {
-    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
+    const res = await apiFetch<{ transformacion: Transformacion | null; avisos?: AvisoTransformacion[]; advertencia?: string }>(
       `/api/transformaciones/${id}/editar`,
       { method: 'PATCH', body: input }
     );
-    return { transformacion };
+    // El cambio ya está guardado; si el servidor no pudo releerlo, se recarga aquí.
+    const transformacion = res.transformacion ?? (await obtenerTransformacion(id));
+    if (!transformacion) return { error: 'Los cambios se guardaron, pero no se pudo recargar la transformación. Actualiza la página.' };
+    return { ...res, transformacion };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo editar la transformación.' };
   }

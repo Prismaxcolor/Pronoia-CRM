@@ -24,9 +24,13 @@ describe('editarTransformacionSchema', () => {
     }
     expect(editarTransformacionSchema.safeParse({ fecha: '2028-02-29' }).success).toBe(true);
   });
-  it('rechaza pesos u otros campos no editables (se ignoran, no se propagan)', () => {
-    const r = editarTransformacionSchema.parse({ fecha: '2026-09-30', pesoBruto: 5 } as never);
-    expect(r).not.toHaveProperty('pesoBruto');
+  it('ignora campos no editables (fotos, productos, lotes, almacén, neto): no se propagan', () => {
+    const r = editarTransformacionSchema.parse({
+      fecha: '2026-09-30', fotosEntrada: ['x'], productoEntradaId: 'p', almacenId: 'a', loteOrigenId: 'l', pesoNeto: 9,
+    } as never);
+    for (const campo of ['fotosEntrada', 'productoEntradaId', 'almacenId', 'loteOrigenId', 'pesoNeto']) {
+      expect(r).not.toHaveProperty(campo);
+    }
   });
 });
 

@@ -6,22 +6,24 @@ export const ENTIDADES_AUDITABLES = [
   'factura_compra',
   'factura_venta',
   'transformacion',
+  'traslado',
 ] as const;
 export type EntidadAuditable = (typeof ENTIDADES_AUDITABLES)[number];
 
 /**
- * Entidades cuya edición exige llave. Ticket de pesaje y transformación llaman
+ * Entidades cuya edición exige llave. Ticket de pesaje, transformación y traslado llaman
  * a autorizarEdicion(). Las facturas son auditables pero hoy no tienen edición
  * (solo se crean), así que no aceptan llave; para conectarlas: agregar el tipo
  * aquí, su tabla en TABLA_POR_ENTIDAD y llamar a autorizarEdicion() al editar.
  */
-export const ENTIDADES_CON_LLAVE = ['ticket_pesaje', 'transformacion'] as const satisfies readonly EntidadAuditable[];
+export const ENTIDADES_CON_LLAVE = ['ticket_pesaje', 'transformacion', 'traslado'] as const satisfies readonly EntidadAuditable[];
 export type EntidadConLlave = (typeof ENTIDADES_CON_LLAVE)[number];
 
 /** Tabla donde vive cada entidad (para verificar que existe antes de emitir una llave). */
 export const TABLA_POR_ENTIDAD: Record<EntidadConLlave, string> = {
   ticket_pesaje: 'tickets_pesaje',
   transformacion: 'transformaciones',
+  traslado: 'tickets_traslado',
 };
 
 /** Recurso cuyo permiso 'ver' habilita leer el historial de cada entidad. */
@@ -30,6 +32,7 @@ export const RECURSO_POR_ENTIDAD: Record<EntidadAuditable, Recurso> = {
   factura_compra: 'facturacion',
   factura_venta: 'facturacion',
   transformacion: 'transformaciones',
+  traslado: 'traslados',
 };
 
 export type ValorAuditado = string | number | boolean | null;
