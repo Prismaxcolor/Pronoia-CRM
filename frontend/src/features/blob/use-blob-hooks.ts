@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { estadoInicial, reducirAnimo, type Animo, type EventoAnimo, type EstadoAnimo } from './animo';
-import { cargarConfig, guardarConfig, normalizarConfig, offsetPupila, type BlobConfig } from './config';
+import { cargarConfig, guardarConfig, normalizarConfig, type BlobConfig } from './config';
 
 /** Config persistida por usuario en localStorage (con try/catch dentro de config.ts). */
 export function useBlobConfig(userId: string | undefined) {
@@ -60,53 +60,6 @@ export function useBlobAnimo(inactividadMs: number, activo: boolean) {
   }, [activo, enviar]);
 
   return { animo, enviar };
-}
-
-const RADIO_PUPILA_PX = 4;
-const INCLINACION_MAX_PX = 5;
-
-/**
- * Hace que las pupilas sigan al cursor (o al último toque) escribiendo variables
- * CSS directamente en el DOM con requestAnimationFrame: cero re-renders de React.
- */
-export function useBlobOjos(rootRef: React.RefObject<HTMLElement | null>, activo: boolean) {
-  useEffect(() => {
-    if (!activo) return;
-    let raf = 0;
-    let punto: { x: number; y: number } | null = null;
-
-    const pintar = () => {
-      raf = 0;
-      const el = rootRef.current;
-      if (!el || !punto) return;
-      const r = el.getBoundingClientRect();
-      const centro = { x: r.left + r.width / 2, y: r.top + r.height * 0.6 };
-      const o = offsetPupila(centro, punto, RADIO_PUPILA_PX);
-      el.style.setProperty('--px', o.x.toFixed(2));
-      el.style.setProperty('--py', o.y.toFixed(2));
-      const lean = offsetPupila(centro, punto, INCLINACION_MAX_PX);
-      el.style.setProperty('--lx', `${lean.x.toFixed(1)}px`);
-    };
-    const programar = (x: number, y: number) => {
-      punto = { x, y };
-      if (!raf) raf = requestAnimationFrame(pintar);
-    };
-    const alMover = (e: PointerEvent) => programar(e.clientX, e.clientY);
-    const alTocar = (e: TouchEvent) => {
-      const t = e.touches[0];
-      if (t) programar(t.clientX, t.clientY);
-    };
-
-    window.addEventListener('pointermove', alMover, { passive: true });
-    window.addEventListener('touchstart', alTocar, { passive: true });
-    window.addEventListener('touchmove', alTocar, { passive: true });
-    return () => {
-      if (raf) cancelAnimationFrame(raf);
-      window.removeEventListener('pointermove', alMover);
-      window.removeEventListener('touchstart', alTocar);
-      window.removeEventListener('touchmove', alTocar);
-    };
-  }, [rootRef, activo]);
 }
 
 /** Animaciones elásticas por Web Animations API (sin estado de React). */

@@ -1,19 +1,27 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { Blobatar } from '@blobatar/react';
+import { useGaze } from '@blobatar/react/gaze';
 import { useAuth } from '../../hooks/use-auth-context';
 import { enviarMensajeAsistente, type MensajeChat } from '../../services/asistente-service';
 import { INACTIVIDAD_DEFECTO_MS } from './animo';
 import { BlobChat } from './BlobChat';
-import { BlobSvg } from './BlobSvg';
+import { BlobCara } from './BlobCara';
+import { expresionPorAnimo, semillaBlob } from './cara';
 import { PX_TAMANO } from './config';
 import { elegirFrase, fraseDeReaccion, intervaloFrases, paginaDesdeRuta, probabilidadCambioRuta } from './frases';
 import { aplicarEsquina, useBlobArrastre } from './use-blob-arrastre';
-import { animarBlob, useBlobAnimo, useBlobConfig, useBlobOjos } from './use-blob-hooks';
+import { animarBlob, useBlobAnimo, useBlobConfig } from './use-blob-hooks';
 import './blob.css';
 
 const DURACION_FRASE_MS = 6000;
 const MAX_HISTORIAL_ENVIADO = 6;
 const CLAVE_SALUDO = 'pronoia:blob:saludo';
+/** Excursión de los ojos en unidades del viewBox (la librería recomienda 1.5-4; BLOB es pequeño y usa más para que se note). */
+const RECORRIDO_OJOS = 6;
+const DURACION_GUINO_MS = 1300;
+const GUINO_MIN_MS = 9000;
+const GUINO_RANGO_MS = 11000;
 
 /** BLOB: mascota-asistente en una esquina. Va en el Layout (no en el portal público). */
 export default function Blob() {
@@ -25,7 +33,37 @@ export default function Blob() {
 
   const rootRef = useRef<HTMLDivElement>(null);
   const cuerpoRef = useRef<HTMLDivElement>(null);
-  useBlobOjos(rootRef, visible && animo !== 'dormido');
+  const { ref: gazeRef, lookAt } = useGaze({ travel: RECORRIDO_OJOS });
+  const dormido = animo === 'dormido';
+  const semilla = semillaBlob(config, usuario?.nombre);
+  // Los ojos siguen el cursor; dormido los deja quietos. En táctil siguen el último toque.
+  useEffect(() => {
+    lookAt(dormido ? 'rest' : 'pointer');
+  }, [lookAt, dormido]);
+  useEffect(() => {
+    if (!visible) return;
+    const alToque = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (t) lookAt({ x: t.clientX, y: t.clientY });
+    };
+    window.addEventListener('touchstart', alToque, { passive: true });
+    window.addEventListener('touchmove', alToque, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', alToque);
+      window.removeEventListener('touchmove', alToque);
+    };
+  }, [visible, lookAt]);
+
+  // Expresiones "de adorno" sobre el ánimo normal: guiño ocasional y carita de cariño al pasar el mouse.
+  const [guino, setGuino] = useState(false);
+  const [encima, setEncima] = useState(false);
+  const guinoTimer = useRef<number>(0);
+  const guinar = useCallback(() => {
+    setGuino(true);
+    window.clearTimeout(guinoTimer.current);
+    guinoTimer.current = window.setTimeout(() => setGuino(false), DURACION_GUINO_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(guinoTimer.current), []);
 
   const [chatAbierto, setChatAbierto] = useState(false);
   const [mensajes, setMensajes] = useState<MensajeChat[]>([]);
@@ -87,9 +125,27 @@ export default function Blob() {
       if (sessionStorage.getItem(CLAVE_SALUDO)) return;
       sessionStorage.setItem(CLAVE_SALUDO, '1');
     } catch { /* sin sessionStorage: saluda igual */ }
-    const t = window.setTimeout(() => decir(elegirFrase({ pagina: 'otra', contexto: 'saludo' })), 1500);
+    const t = window.setTimeout(() => {
+      decir(elegirFrase({ pagina: 'otra', contexto: 'saludo' }));
+      guinar();
+    }, 1500);
     return () => window.clearTimeout(t);
-  }, [visible, decir]);
+  }, [visible, decir, guinar]);
+
+  // Travesuras: un guiño cada tanto mientras está tranquilo.
+  useEffect(() => {
+    if (!visible) return;
+    let timer = 0;
+    const programar = () => {
+      timer = window.setTimeout(() => {
+        const v = vivo.current;
+        if (!document.hidden && v.animo === 'normal' && !v.chatAbierto) guinar();
+        programar();
+      }, GUINO_MIN_MS + Math.random() * GUINO_RANGO_MS);
+    };
+    programar();
+    return () => window.clearTimeout(timer);
+  }, [visible, guinar]);
 
   const alTocar = useCallback(() => {
     const nuevo = enviar({ tipo: 'toque' });
@@ -123,6 +179,8 @@ export default function Blob() {
   }, [mensajes, usuario?.nombre]);
 
   const tam = PX_TAMANO[config.tamano];
+  let expresion = expresionPorAnimo(animo, escribiendo);
+  if (expresion === 'idle') expresion = guino ? 'wink' : encima ? 'love' : 'idle';
   const arriba = config.esquina.startsWith('t');
   const izquierda = config.esquina.endsWith('l');
   const claseEmergente = `absolute ${arriba ? 'top-full mt-2' : 'bottom-full mb-2'} ${izquierda ? 'left-0' : 'right-0'}`;
@@ -135,15 +193,17 @@ export default function Blob() {
           onClick={() => cambiarConfig({ modo: 'activo' })}
           aria-label={`Mostrar a ${config.nombre}`}
           title={`Mostrar a ${config.nombre}`}
-          className="h-7 w-7 rounded-full border-2 border-white opacity-70 shadow-md transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
-          style={{ backgroundColor: config.color }}
-        />
+          className="rounded-full opacity-80 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
+        >
+          <Blobatar name={semilla} size={28} className="block" />
+        </button>
       ) : (
         <>
           {chatAbierto && (
             <div className={claseEmergente}>
               <BlobChat
                 config={config}
+                nombreUsuario={usuario?.nombre}
                 mensajes={mensajes}
                 escribiendo={escribiendo}
                 onEnviar={enviarMensaje}
@@ -172,13 +232,13 @@ export default function Blob() {
             onClick={e => { if (e.detail === 0) alTocar(); /* activación por teclado */ }}
             aria-label={`${config.nombre}: abrir o cerrar chat. Arrástralo para moverlo.`}
             aria-expanded={chatAbierto}
-            className={`block cursor-grab touch-none select-none rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:cursor-grabbing ${animo === 'dormido' ? 'blob-dormido' : ''}`}
+            onPointerEnter={e => { if (e.pointerType === 'mouse') setEncima(true); }}
+            onPointerLeave={() => setEncima(false)}
+            className={`block cursor-grab touch-none select-none rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:cursor-grabbing ${dormido ? 'blob-dormido' : ''}`}
             style={{ width: tam, height: tam }}
           >
-            <div className="transition-transform duration-100" style={{ transform: 'translateX(var(--lx, 0px))' }}>
-              <div ref={cuerpoRef} style={{ transformOrigin: '50% 90%' }}>
-                <BlobSvg forma={config.forma} color={config.color} ojos={config.ojos} boca={config.boca} animo={animo} size={tam} />
-              </div>
+            <div ref={cuerpoRef} className="blob-cuerpo" style={{ transformOrigin: '50% 90%' }}>
+              <BlobCara semilla={semilla} expresion={expresion} size={tam} gazeRef={gazeRef} />
             </div>
           </button>
         </>

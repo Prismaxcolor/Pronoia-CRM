@@ -20,9 +20,13 @@ import {
   guardarConfig,
   CONFIG_DEFECTO,
   esquinaMasCercana,
-  offsetPupila,
   claveStorage,
 } from '../../frontend/src/features/blob/config';
+import {
+  semillaBlob,
+  semillaAleatoria,
+  expresionPorAnimo,
+} from '../../frontend/src/features/blob/cara';
 import { PAGINAS_ASISTENTE } from '../src/utils/asistente-limites';
 
 describe('animo: máquina de estados', () => {
@@ -135,21 +139,19 @@ describe('config', () => {
   it('basura devuelve los valores por defecto', () => {
     expect(normalizarConfig(null)).toEqual(CONFIG_DEFECTO);
     expect(normalizarConfig('x')).toEqual(CONFIG_DEFECTO);
-    expect(normalizarConfig({ forma: 'dragon', color: 'rojo', tamano: 9 })).toEqual(CONFIG_DEFECTO);
+    expect(normalizarConfig({ semilla: 5, tamano: 9, personalidad: 'dragon' })).toEqual(CONFIG_DEFECTO);
   });
 
   it('conserva valores válidos y recorta frases propias', () => {
     const c = normalizarConfig({
       nombre: '  Blobby  ',
-      color: '#10b981',
-      forma: 'cuadrado',
+      semilla: '  luna-7  ',
       frecuencia: 'alta',
       iaActiva: false,
       frasesPropias: ['hola', 3, '', 'x'.repeat(200)],
     });
     expect(c.nombre).toBe('Blobby');
-    expect(c.color).toBe('#10b981');
-    expect(c.forma).toBe('cuadrado');
+    expect(c.semilla).toBe('luna-7');
     expect(c.iaActiva).toBe(false);
     expect(c.frasesPropias).toHaveLength(2);
     expect(c.frasesPropias[1]).toHaveLength(80);
@@ -158,8 +160,8 @@ describe('config', () => {
   it('guarda y carga por usuario; storage roto no lanza', () => {
     const mem = new Map<string, string>();
     const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
-    guardarConfig('u1', { ...CONFIG_DEFECTO, color: '#EF4444' }, storage);
-    expect(cargarConfig('u1', storage).color).toBe('#EF4444');
+    guardarConfig('u1', { ...CONFIG_DEFECTO, semilla: 'abc' }, storage);
+    expect(cargarConfig('u1', storage).semilla).toBe('abc');
     expect(cargarConfig('u2', storage)).toEqual(CONFIG_DEFECTO);
     expect(claveStorage('u1')).not.toBe(claveStorage('u2'));
     const roto = { getItem: () => { throw new Error('bloqueado'); }, setItem: () => { throw new Error('bloqueado'); } };
@@ -174,13 +176,42 @@ describe('config', () => {
     expect(esquinaMasCercana(900, 700, 1000, 800)).toBe('br');
   });
 
-  it('offset de pupila: 0 si cursor encima, acotado al radio, hacia el cursor', () => {
-    expect(offsetPupila({ x: 0, y: 0 }, { x: 0, y: 0 }, 5)).toEqual({ x: 0, y: 0 });
-    const lejos = offsetPupila({ x: 0, y: 0 }, { x: 1000, y: 0 }, 5);
-    expect(lejos.x).toBeCloseTo(5);
-    expect(lejos.y).toBeCloseTo(0);
-    const cerca = offsetPupila({ x: 0, y: 0 }, { x: 0, y: -12 }, 5);
-    expect(cerca.y).toBeLessThan(0);
-    expect(Math.abs(cerca.y)).toBeLessThan(5);
+  it('migra configs viejas (forma, color hex, boca) ignorando campos que ya no existen', () => {
+    const c = normalizarConfig({ nombre: 'Viejo', forma: 'gota', color: '#3399FF', boca: 'dientes' });
+    expect(c.nombre).toBe('Viejo');
+    expect(c.semilla).toBe('');
+    expect(c).not.toHaveProperty('forma');
+    expect(c).not.toHaveProperty('color');
+  });
+
+  it('la semilla se recorta a 40 caracteres', () => {
+    expect(normalizarConfig({ semilla: 'x'.repeat(100) }).semilla).toHaveLength(40);
+  });
+});
+
+describe('cara (semilla y expresiones)', () => {
+  it('semilla vacía usa el nombre del usuario; la propia gana; sin nada, una reserva estable', () => {
+    expect(semillaBlob({ semilla: '' }, 'Julio Cesar')).toBe('Julio Cesar');
+    expect(semillaBlob({ semilla: 'otra' }, 'Julio Cesar')).toBe('otra');
+    expect(semillaBlob({ semilla: '' }, undefined)).toBe(semillaBlob({ semilla: '  ' }, ''));
+    expect(semillaBlob({ semilla: '' }, undefined).length).toBeGreaterThan(0);
+  });
+
+  it('semilla aleatoria: no vacía, acotada y distinta entre llamadas', () => {
+    const a = semillaAleatoria(() => 0.123456);
+    const b = semillaAleatoria(() => 0.654321);
+    expect(a).not.toBe(b);
+    expect(a.length).toBeGreaterThan(0);
+    expect(a.length).toBeLessThanOrEqual(40);
+  });
+
+  it('cada ánimo tiene una expresión de la librería', () => {
+    for (const an of ['normal', 'feliz', 'sorprendido', 'risa', 'enojado', 'mareado', 'dormido'] as const) {
+      expect(expresionPorAnimo(an, false)).toMatch(/^[a-z]+$/);
+    }
+    expect(expresionPorAnimo('enojado', false)).toBe('mad');
+    expect(expresionPorAnimo('dormido', false)).toBe('sleepy');
+    expect(expresionPorAnimo('normal', true)).toBe('thinking');
+    expect(expresionPorAnimo('enojado', true)).toBe('mad');
   });
 });

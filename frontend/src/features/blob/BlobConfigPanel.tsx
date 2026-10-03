@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import Switch from '../../components/Switch';
-import {
-  BOCAS, COLORES_BLOB, CONFIG_DEFECTO, ESQUINAS, FORMAS, FRECUENCIAS, OJOS, PERSONALIDADES_BLOB, TAMANOS,
-  type BlobConfig,
-} from './config';
+import { BlobCara } from './BlobCara';
+import { semillaAleatoria, semillaBlob } from './cara';
+import { CONFIG_DEFECTO, ESQUINAS, FRECUENCIAS, PERSONALIDADES_BLOB, TAMANOS, type BlobConfig } from './config';
 import { MAX_FRASES_PROPIAS } from './frases';
 
 interface Props {
   config: BlobConfig;
+  /** Nombre del usuario logueado: semilla por defecto. */
+  nombreUsuario?: string;
   onCambiar: (parcial: Partial<BlobConfig>) => void;
 }
 
@@ -15,9 +16,6 @@ const campo = 'w-full rounded-md border border-border bg-surface px-2 py-1.5 tex
 const etiqueta = 'block text-xs font-medium text-text-secondary mb-1';
 
 const TEXTO: Record<string, string> = {
-  gota: 'Gota', redondo: 'Redondo', cuadrado: 'Cuadrado', triangulo: 'Triángulo',
-  normales: 'Normales', grandes: 'Grandes', chiquitos: 'Chiquitos', gafas: 'Gafas',
-  sonrisa: 'Sonrisa', boquita: 'Boquita', neutra: 'Neutra', dientes: 'Dientes',
   amigable: 'Amigable', sarcastico: 'Sarcástico', formal: 'Formal', misterioso: 'Misterioso',
   pequeno: 'Pequeño', mediano: 'Mediano', grande: 'Grande',
   br: 'Abajo derecha', bl: 'Abajo izquierda', tr: 'Arriba derecha', tl: 'Arriba izquierda',
@@ -37,7 +35,7 @@ function Selector<T extends string>({ etiquetaTexto, valor, opciones, onChange }
   );
 }
 
-export function BlobConfigPanel({ config, onCambiar }: Props) {
+export function BlobConfigPanel({ config, nombreUsuario, onCambiar }: Props) {
   // Las frases se editan como texto libre y se normalizan al salir del campo.
   const [textoFrases, setTextoFrases] = useState(config.frasesPropias.join('\n'));
   // El nombre se confirma al salir del campo (normalizar en cada tecla impediría escribir espacios).
@@ -45,39 +43,39 @@ export function BlobConfigPanel({ config, onCambiar }: Props) {
 
   return (
     <div className="space-y-3 text-left">
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-hover/50 p-3">
+        <BlobCara semilla={semillaBlob(config, nombreUsuario)} expresion="idle" size={72} />
+        <div className="flex flex-1 flex-col items-start gap-1.5">
+          <p className="text-xs text-text-secondary">
+            {config.semilla ? 'Aspecto sorteado' : 'Aspecto según tu nombre de usuario'}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => onCambiar({ semilla: semillaAleatoria() })}
+              className="rounded-md bg-surface-hover px-2 py-1 text-xs text-text-primary hover:bg-border"
+            >
+              Probar otro
+            </button>
+            {config.semilla && (
+              <button
+                type="button"
+                onClick={() => onCambiar({ semilla: '' })}
+                className="rounded-md px-2 py-1 text-xs text-text-secondary underline hover:text-text-primary"
+              >
+                Volver al mío
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <label className="block">
         <span className={etiqueta}>Nombre</span>
         <input className={campo} maxLength={20} value={textoNombre} onChange={e => setTextoNombre(e.target.value)} onBlur={() => onCambiar({ nombre: textoNombre })} />
       </label>
 
-      <div>
-        <span className={etiqueta}>Color</span>
-        <div className="flex items-center gap-2 flex-wrap">
-          {COLORES_BLOB.map(c => (
-            <button
-              key={c}
-              type="button"
-              aria-label={`Color ${c}`}
-              aria-pressed={config.color.toLowerCase() === c.toLowerCase()}
-              onClick={() => onCambiar({ color: c })}
-              className={`h-6 w-6 rounded-full border-2 ${config.color.toLowerCase() === c.toLowerCase() ? 'border-text-primary' : 'border-transparent'}`}
-              style={{ backgroundColor: c }}
-            />
-          ))}
-          <input
-            type="color"
-            aria-label="Color personalizado"
-            value={config.color}
-            onChange={e => onCambiar({ color: e.target.value })}
-            className="h-6 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
-          />
-        </div>
-      </div>
-
       <div className="grid grid-cols-2 gap-2">
-        <Selector etiquetaTexto="Forma" valor={config.forma} opciones={FORMAS} onChange={forma => onCambiar({ forma })} />
-        <Selector etiquetaTexto="Ojos" valor={config.ojos} opciones={OJOS} onChange={ojos => onCambiar({ ojos })} />
-        <Selector etiquetaTexto="Boca" valor={config.boca} opciones={BOCAS} onChange={boca => onCambiar({ boca })} />
         <Selector etiquetaTexto="Tamaño" valor={config.tamano} opciones={TAMANOS} onChange={tamano => onCambiar({ tamano })} />
         <Selector etiquetaTexto="Personalidad" valor={config.personalidad} opciones={PERSONALIDADES_BLOB} onChange={personalidad => onCambiar({ personalidad })} />
         <Selector etiquetaTexto="Posición" valor={config.esquina} opciones={ESQUINAS} onChange={esquina => onCambiar({ esquina })} />

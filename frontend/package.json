@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@blobatar/react": "^2.7.0",
+    "blobatar": "^2.7.0",
     "docx": "^9.7.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

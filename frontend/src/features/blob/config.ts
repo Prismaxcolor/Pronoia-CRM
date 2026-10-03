@@ -1,17 +1,12 @@
+import { MAX_SEMILLA } from './cara';
 import { MAX_FRASES_PROPIAS, MAX_LONGITUD_FRASE, type Frecuencia } from './frases';
 
-export const FORMAS = ['gota', 'redondo', 'cuadrado', 'triangulo'] as const;
-export const OJOS = ['normales', 'grandes', 'chiquitos', 'gafas'] as const;
-export const BOCAS = ['sonrisa', 'boquita', 'neutra', 'dientes'] as const;
 export const PERSONALIDADES_BLOB = ['amigable', 'sarcastico', 'formal', 'misterioso'] as const;
 export const TAMANOS = ['pequeno', 'mediano', 'grande'] as const;
 export const ESQUINAS = ['br', 'bl', 'tr', 'tl'] as const;
 export const FRECUENCIAS: readonly Frecuencia[] = ['nunca', 'baja', 'media', 'alta'];
 export const MODOS = ['activo', 'minimizado'] as const;
 
-export type Forma = (typeof FORMAS)[number];
-export type Ojos = (typeof OJOS)[number];
-export type Boca = (typeof BOCAS)[number];
 export type PersonalidadBlob = (typeof PERSONALIDADES_BLOB)[number];
 export type Tamano = (typeof TAMANOS)[number];
 export type Esquina = (typeof ESQUINAS)[number];
@@ -19,14 +14,11 @@ export type ModoBlob = (typeof MODOS)[number];
 
 export const PX_TAMANO: Record<Tamano, number> = { pequeno: 64, mediano: 88, grande: 116 };
 
-export const COLORES_BLOB = ['#3399FF', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-
 export interface BlobConfig {
+  /** Nombre de la mascota (solo etiqueta/chat). */
   nombre: string;
-  color: string;
-  forma: Forma;
-  ojos: Ojos;
-  boca: Boca;
+  /** Semilla propia de la librería; vacía = el nombre del usuario logueado. */
+  semilla: string;
   personalidad: PersonalidadBlob;
   /** 'minimizado' = solo una pastillita; se restaura con un clic. */
   modo: ModoBlob;
@@ -40,10 +32,7 @@ export interface BlobConfig {
 
 export const CONFIG_DEFECTO: BlobConfig = {
   nombre: 'BLOB',
-  color: COLORES_BLOB[0]!,
-  forma: 'gota',
-  ojos: 'normales',
-  boca: 'sonrisa',
+  semilla: '',
   personalidad: 'amigable',
   modo: 'activo',
   tamano: 'mediano',
@@ -70,10 +59,7 @@ export function normalizarConfig(raw: unknown): BlobConfig {
     : [];
   return {
     nombre: nombre || CONFIG_DEFECTO.nombre,
-    color: typeof r.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(r.color) ? r.color : CONFIG_DEFECTO.color,
-    forma: enumOr(r.forma, FORMAS, CONFIG_DEFECTO.forma),
-    ojos: enumOr(r.ojos, OJOS, CONFIG_DEFECTO.ojos),
-    boca: enumOr(r.boca, BOCAS, CONFIG_DEFECTO.boca),
+    semilla: typeof r.semilla === 'string' ? r.semilla.trim().slice(0, MAX_SEMILLA) : '',
     personalidad: enumOr(r.personalidad, PERSONALIDADES_BLOB, CONFIG_DEFECTO.personalidad),
     modo: enumOr(r.modo, MODOS, CONFIG_DEFECTO.modo),
     tamano: enumOr(r.tamano, TAMANOS, CONFIG_DEFECTO.tamano),
@@ -113,22 +99,4 @@ export function esquinaMasCercana(x: number, y: number, w: number, h: number): E
   const vertical = y < h / 2 ? 't' : 'b';
   const horizontal = x < w / 2 ? 'l' : 'r';
   return `${vertical}${horizontal}` as Esquina;
-}
-
-/**
- * Offset (px) de la pupila hacia el cursor, limitado a `radioMax`.
- * Distancia pequeña = movimiento proporcional (suave); lejos = tope en el borde del ojo.
- */
-export function offsetPupila(
-  centro: { x: number; y: number },
-  cursor: { x: number; y: number },
-  radioMax: number,
-): { x: number; y: number } {
-  const dx = cursor.x - centro.x;
-  const dy = cursor.y - centro.y;
-  const dist = Math.hypot(dx, dy);
-  if (dist === 0) return { x: 0, y: 0 };
-  const factor = Math.min(dist, 120) / 120;
-  const mag = radioMax * factor;
-  return { x: (dx / dist) * mag, y: (dy / dist) * mag };
 }

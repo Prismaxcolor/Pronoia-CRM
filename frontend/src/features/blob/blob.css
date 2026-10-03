@@ -1,20 +1,5 @@
-/* BLOB — animaciones ligeras (solo transform/opacity). */
-@keyframes blob-respirar {
-  0%, 100% { transform: scale(1, 1); }
-  50% { transform: scale(1.03, 0.97); }
-}
-@keyframes blob-parpadeo {
-  0%, 92%, 100% { transform: scaleY(1); }
-  96% { transform: scaleY(0.1); }
-}
-@keyframes blob-girar {
-  to { transform: rotate(360deg); }
-}
-@keyframes blob-flotar-z {
-  0% { opacity: 0; transform: translate(0, 0); }
-  30% { opacity: 1; }
-  100% { opacity: 0; transform: translate(6px, -12px); }
-}
+/* BLOB: la cara viene de la librería blobatar (motion.css / gaze.css); aquí solo van
+   el dormir/despertar del contenedor y los efectos de la burbuja y el chat. Solo transform/opacity. */
 @keyframes blob-escribiendo {
   0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
   40% { opacity: 1; transform: translateY(-3px); }
@@ -24,21 +9,14 @@
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.blob-cuerpo { animation: blob-respirar 3.2s ease-in-out infinite; transform-origin: 50% 90%; }
-.blob-dormido .blob-cuerpo { animation-duration: 5s; }
-.blob-ojo { animation: blob-parpadeo 5s infinite; transform-box: fill-box; transform-origin: center; }
-.blob-pupila {
-  transform: translate(calc(var(--px, 0) * 1px), calc(var(--py, 0) * 1px));
-  transition: transform 60ms linear;
-}
-.blob-remolino { animation: blob-girar 0.7s linear infinite; transform-box: fill-box; transform-origin: center; }
-.blob-z { animation: blob-flotar-z 2.4s ease-in-out infinite; }
+.blob-cuerpo { transition: opacity 0.6s ease, filter 0.6s ease; }
+.blob-dormido .blob-cuerpo { opacity: 0.7; filter: saturate(0.7); }
 .blob-punto { animation: blob-escribiendo 1s infinite; }
 .blob-punto:nth-child(2) { animation-delay: 0.15s; }
 .blob-punto:nth-child(3) { animation-delay: 0.3s; }
 .blob-burbuja { animation: blob-burbuja-in 0.18s ease-out; }
 
 @media (prefers-reduced-motion: reduce) {
-  .blob-cuerpo, .blob-ojo, .blob-remolino, .blob-z, .blob-punto, .blob-burbuja { animation: none !important; }
-  .blob-pupila { transition: none; }
+  .blob-punto, .blob-burbuja { animation: none !important; }
+  .blob-cuerpo { transition: none; }
 }
