@@ -10,6 +10,7 @@ import {
   type ProveedorIA,
 } from '../utils/asistente-ia.js';
 import {
+  HERRAMIENTAS_ASISTENTE,
   cargarContextoPermisos,
   herramientasPermitidas,
   type ContextoPermisos,
@@ -74,6 +75,7 @@ export function respuestaDeReserva(personalidad: Personalidad, semilla = Math.ra
 interface ExtraPrompt {
   modo?: 'datos' | 'charla';
   areas?: readonly string[];
+  areasNegadas?: readonly string[];
   razonCharla?: RazonCharla;
   hoy?: string;
 }
@@ -140,6 +142,16 @@ async function planificar(input: AsistenteChatInput, cadena: ProveedorIA[], op: 
 
 const unicas = (xs: string[]): string[] => [...new Set(xs)];
 
+/** Qué puede y qué no puede consultar esta persona (solo etiquetas, nunca datos). */
+export function areasDelPlan(
+  permitidas: readonly HerramientaAsistente[],
+  registro: readonly HerramientaAsistente[] = HERRAMIENTAS_ASISTENTE,
+): { areas: string[]; areasNegadas: string[] } {
+  const areas = unicas(permitidas.map(h => h.etiqueta));
+  const areasNegadas = unicas(registro.filter(h => !permitidas.includes(h)).map(h => h.etiqueta)).filter(e => !areas.includes(e));
+  return { areas, areasNegadas };
+}
+
 const respuestaReserva = (personalidad: Personalidad): RespuestaAsistente => ({
   respuesta: respuestaDeReserva(personalidad),
   origen: 'reserva',
@@ -160,7 +172,7 @@ export async function responderChat(input: AsistenteChatInput, opciones: Opcione
     try {
       const r = await ejecutarBucleHerramientas({
         proveedor: plan.proveedor,
-        mensajes: armarMensajes(input, { modo: 'datos', areas: unicas(plan.herramientas.map(h => h.etiqueta)), hoy }),
+        mensajes: armarMensajes(input, { modo: 'datos', ...areasDelPlan(plan.herramientas, opciones.registro), hoy }),
         herramientas: plan.herramientas,
         contexto: plan.contexto,
         userId: opciones.userId!,

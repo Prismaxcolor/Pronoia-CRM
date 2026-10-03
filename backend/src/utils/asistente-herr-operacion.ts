@@ -17,14 +17,19 @@ import {
   textoSeguro,
   type HerramientaAsistente,
 } from './asistente-herr-base.js';
+import { formatearKg } from './asistente-formato.js';
+import { coincidePorPalabras, sugerirParecidos } from './asistente-similitud.js';
+import {
+  HERRAMIENTAS_CATALOGO,
+  cargarAlmacenesActivos,
+  categoriaLegible,
+  ejemplosDeMateriales,
+  esLineaSinteticaDeLote,
+  loteDe,
+  resolverAlmacenEntre,
+} from './asistente-herr-catalogo.js';
 
-/** Minúsculas sin acentos, para comparar nombres sin depender de cómo se escribieron. */
-export function normalizar(texto: string): string {
-  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-}
-
-const coincide = (nombre: string, filtro: string | undefined): boolean =>
-  !filtro || normalizar(nombre).includes(normalizar(filtro));
+const coincide = coincidePorPalabras;
 
 const sumar = (valores: unknown[]): number => valores.reduce<number>((a, v) => a + (Number(v) || 0), 0);
 
@@ -33,120 +38,162 @@ const sumar = (valores: unknown[]): number => valores.reduce<number>((a, v) => a
 // ---------------------------------------------------------------------------
 
 const inventarioSchema = z.object({
-  producto: z.string().max(60).optional().describe('Parte del nombre del material/producto.'),
-  categoria: z.string().max(60).optional().describe('Parte del nombre de la categoría (p. ej. ferroso).'),
+  producto: z.string().max(60).optional().describe('Parte del nombre del material/producto (hierro, aluminio, latas...). Admite plural y varias palabras.'),
+  categoria: z.string().max(60).optional().describe('Parte del nombre de la categoría (ferroso, no ferroso, pcb, raee, basura...).'),
   limite: limiteSchema,
 });
+
+/** Cuántos materiales de ejemplo se ofrecen cuando lo pedido no existe. */
+const MAX_SUGERENCIAS = 5;
 
 export const consultarInventario = definirHerramienta({
   nombre: 'consultar_inventario',
   etiqueta: 'inventario',
   descripcion:
-    'Stock actual (kg) de los materiales en TODO el negocio, por producto y destino (lote o sin lote), con total por categoría. Úsala para "cuánto hay de X".',
+    'Stock actual en kg de TODO el negocio (suma de todos los almacenes) por material/producto, indicando si está "sin lote" o dentro de un LOTE, con totales por categoría. Úsala para "cuánto hay de X", "stock de hierro/aluminio", "cuántos kilos tenemos en total". NO dice en qué almacén está: para eso usa resumen_stock_por_almacen o consultar_stock_almacen. Si el material no existe devuelve sugerencias de nombres parecidos.',
   parametros: inventarioSchema,
   permisos: [{ recurso: 'productos', accion: 'ver' }],
   async ejecutar({ producto, categoria, limite }) {
     const grupos = await obtenerInventario({});
-    const articulos = grupos
-      .filter(g => coincide(g.nombreCategoria, categoria))
-      .flatMap(g => g.articulos.map(a => ({ categoria: g.nombreCategoria, ...a })))
-      .filter(a => coincide(a.nombre, producto));
+    const todos = grupos.flatMap(g => g.articulos.map(a => ({ ...a, categoria: categoriaLegible(a, g.nombreCategoria) })));
+    const articulos = todos
+      .filter(a => coincide(a.categoria, categoria))
+      .filter(a => coincide(`${a.nombre} ${a.categoria}`, producto));
     const ordenados = [...articulos].sort((a, b) => b.stock - a.stock);
     const porCategoria = new Map<string, number>();
     for (const a of articulos) porCategoria.set(a.categoria, (porCategoria.get(a.categoria) ?? 0) + a.stock);
+    const enLotes = sumar(articulos.filter(a => a.destinoTipo === 'lote').map(a => a.stock));
+    const total = sumar(articulos.map(a => a.stock));
     const filas = ordenados.slice(0, limiteEfectivo(limite)).map(a => ({
       producto: textoSeguro(a.nombre),
       categoria: textoSeguro(a.categoria),
-      destino: textoSeguro(a.destinoLabel),
+      lote: loteDe(a),
       stockKg: kgRedondeado(a.stock),
+      texto: formatearKg(kgRedondeado(a.stock)),
     }));
+    const sinResultados = articulos.length === 0 && Boolean(producto || categoria);
+    const nombresCatalogo = [...new Set(todos.filter(a => !esLineaSinteticaDeLote(a)).flatMap(a => [a.nombre, a.categoria]))];
     return {
       filas: filas.length,
       datos: {
         fuente: 'inventario',
-        totalKg: kgRedondeado(sumar(articulos.map(a => a.stock))),
+        totalKg: kgRedondeado(total),
+        totalTexto: formatearKg(kgRedondeado(total)),
+        sinLoteKg: kgRedondeado(total - enLotes),
+        sinLoteTexto: formatearKg(kgRedondeado(total - enLotes)),
+        enLotesKg: kgRedondeado(enLotes),
+        enLotesTexto: formatearKg(kgRedondeado(enLotes)),
         articulosEncontrados: articulos.length,
-        totalesPorCategoria: [...porCategoria].map(([c, kg]) => ({ categoria: textoSeguro(c), kg: kgRedondeado(kg) })),
+        totalesPorCategoria: [...porCategoria].map(([c, kg]) => ({ categoria: textoSeguro(c), kg: kgRedondeado(kg), texto: formatearKg(kgRedondeado(kg)) })),
         articulos: filas,
+        nota: 'Un "lote" NO es un almacén. Este resultado no indica almacén.',
+        ...(sinResultados
+          ? {
+              sinCoincidencias: true,
+              sugerencias: sugerirParecidos(producto ?? categoria ?? '', nombresCatalogo, MAX_SUGERENCIAS),
+              ejemplos: ejemplosDeMateriales(todos),
+              ayuda: 'Ese material/categoría no existe con ese nombre. Ofrece directamente las sugerencias/ejemplos (o llama a listar_materiales); no preguntes si quiere que busques.',
+            }
+          : {}),
       },
     };
   },
 });
 
 const stockAlmacenSchema = z.object({
-  almacen: z.string().min(1).max(60).describe('Parte del nombre del almacén.'),
-  producto: z.string().max(60).optional(),
+  almacen: z.string().min(1).max(60).describe('Nombre del almacén tal como lo dice el usuario: "G1", "G2", "almacén G1"...'),
+  producto: z.string().max(60).optional().describe('Parte del nombre del material para ver solo ese.'),
   limite: limiteSchema,
 });
 
 export const consultarStockAlmacen = definirHerramienta({
   nombre: 'consultar_stock_almacen',
   etiqueta: 'inventario por almacén',
-  descripcion: 'Stock (kg) de los materiales dentro de UN almacén concreto, indicado por nombre.',
+  descripcion:
+    'Stock (kg) de UN almacén concreto (G1, G2...) con sus materiales y el lote al que pertenecen (si lo hay). Úsala para "qué hay en G1", "cuántos kilos hay en el almacén G2". Si no sabes qué almacenes existen llama primero a listar_almacenes; para comparar todos los almacenes usa resumen_stock_por_almacen.',
   parametros: stockAlmacenSchema,
   permisos: [{ recurso: 'almacenes', accion: 'ver' }],
   async ejecutar({ almacen, producto, limite }) {
-    const { data } = await supabaseAdmin.from('almacenes').select('id, nombre').eq('activo', true).ilike('nombre', patronBusqueda(almacen)).limit(5);
-    const encontrados = (data ?? []) as Array<{ id: string; nombre: string }>;
-    if (encontrados.length !== 1) {
+    const resolucion = resolverAlmacenEntre(await cargarAlmacenesActivos(), almacen);
+    if ('error' in resolucion) {
       return {
         filas: 0,
         datos: {
           fuente: 'almacenes',
-          error: encontrados.length === 0 ? 'No encontré ese almacén.' : 'Hay varios almacenes con ese nombre; pregunta cuál.',
-          almacenesPosibles: encontrados.map(a => textoSeguro(a.nombre)),
+          error: resolucion.error === 'no_encontrado' ? 'No encontré ese almacén.' : 'Hay varios almacenes con ese nombre; pregunta cuál.',
+          almacenesDisponibles: resolucion.candidatos.map(a => textoSeguro(a.nombre)),
         },
       };
     }
-    const grupos = await obtenerInventarioAlmacen(encontrados[0]!.id, {});
+    const grupos = await obtenerInventarioAlmacen(resolucion.almacen.id, {});
     const articulos = grupos
-      .flatMap(g => g.articulos.map(a => ({ categoria: g.nombreCategoria, ...a })))
-      .filter(a => coincide(a.nombre, producto) && a.stock !== 0)
+      .flatMap(g => g.articulos.map(a => ({ ...a, categoria: categoriaLegible(a, g.nombreCategoria) })))
+      .filter(a => coincide(`${a.nombre} ${a.categoria}`, producto) && a.stock !== 0)
       .sort((a, b) => b.stock - a.stock);
+    const enLotes = sumar(articulos.filter(a => a.destinoTipo === 'lote').map(a => a.stock));
+    const total = sumar(articulos.map(a => a.stock));
     const filas = articulos.slice(0, limiteEfectivo(limite)).map(a => ({
       producto: textoSeguro(a.nombre),
       categoria: textoSeguro(a.categoria),
-      destino: textoSeguro(a.destinoLabel),
+      lote: loteDe(a),
       stockKg: kgRedondeado(a.stock),
+      texto: formatearKg(kgRedondeado(a.stock)),
     }));
     return {
       filas: filas.length,
       datos: {
         fuente: 'inventario del almacén',
-        almacen: textoSeguro(encontrados[0]!.nombre),
-        totalKg: kgRedondeado(sumar(articulos.map(a => a.stock))),
+        almacen: textoSeguro(resolucion.almacen.nombre),
+        totalKg: kgRedondeado(total),
+        totalTexto: formatearKg(kgRedondeado(total)),
+        sinLoteKg: kgRedondeado(total - enLotes),
+        enLotesKg: kgRedondeado(enLotes),
         articulosConStock: articulos.length,
         articulos: filas,
+        nota: 'El campo "lote" es el lote al que pertenece el material dentro de este almacén; no es otro almacén.',
       },
     };
   },
 });
 
 const lotesSchema = z.object({
-  nombre: z.string().max(60).optional().describe('Parte del nombre del lote.'),
+  nombre: z.string().max(60).optional().describe('Parte del nombre del lote (BGPP, LOTE 3, PCB LIGADO...).'),
   limite: limiteSchema,
 });
 
 export const consultarLotes = definirHerramienta({
   nombre: 'consultar_lotes',
   etiqueta: 'lotes',
-  descripcion: 'Lotes activos con su stock en kg total y repartido por almacén.',
+  descripcion:
+    'LOTES activos (BGPP, BGYP, LOTE 1, LOTE 2, PCB LIGADO...) con su stock en kg total y en qué almacén(es) está guardado cada uno. Úsala para "cuánto hay en el lote X", "qué lotes hay". Un lote NO es un almacén ni un producto: agrupa material y puede estar repartido en varios almacenes.',
   parametros: lotesSchema,
   permisos: [{ recurso: 'productos', accion: 'ver' }],
   async ejecutar({ nombre, limite }) {
-    const lotes = (await listarLotes()).filter(l => l.activo && coincide(l.nombre, nombre));
+    const activos = (await listarLotes()).filter(l => l.activo);
+    const lotes = activos.filter(l => coincide(l.nombre, nombre));
     const ordenados = [...lotes].sort((a, b) => b.stockKg - a.stockKg);
     const filas = ordenados.slice(0, limiteEfectivo(limite)).map(l => ({
       lote: textoSeguro(l.nombre),
       stockKg: kgRedondeado(l.stockKg),
-      porAlmacen: l.stockPorAlmacen
+      texto: formatearKg(kgRedondeado(l.stockKg)),
+      almacenesDondeEsta: l.stockPorAlmacen
         .filter(s => s.stockKg !== 0)
         .slice(0, 5)
-        .map(s => ({ almacen: textoSeguro(s.almacenNombre), kg: kgRedondeado(s.stockKg) })),
+        .map(s => ({ almacen: textoSeguro(s.almacenNombre), kg: kgRedondeado(s.stockKg), texto: formatearKg(kgRedondeado(s.stockKg)) })),
     }));
+    const sinResultados = lotes.length === 0 && Boolean(nombre);
     return {
       filas: filas.length,
-      datos: { fuente: 'lotes', lotesEncontrados: lotes.length, totalKg: kgRedondeado(sumar(lotes.map(l => l.stockKg))), lotes: filas },
+      datos: {
+        fuente: 'lotes',
+        lotesEncontrados: lotes.length,
+        totalKg: kgRedondeado(sumar(lotes.map(l => l.stockKg))),
+        totalTexto: formatearKg(kgRedondeado(sumar(lotes.map(l => l.stockKg)))),
+        lotes: filas,
+        ...(sinResultados
+          ? { sugerencias: sugerirParecidos(nombre ?? '', activos.map(l => textoSeguro(l.nombre)), MAX_SUGERENCIAS) }
+          : {}),
+      },
     };
   },
 });
@@ -194,7 +241,7 @@ export const consultarPesajes = definirHerramienta({
   nombre: 'consultar_pesajes',
   etiqueta: 'pesajes',
   descripcion:
-    'Tickets de pesaje recientes (compras y ventas) con fecha, estado, proveedor/cliente y kg netos. Filtra por tipo, estado, fechas o nombre.',
+    'Tickets de pesaje (báscula) recientes con fecha, estado, proveedor/cliente y kg netos, del más nuevo al más viejo. Úsala para "últimos pesajes", "qué pesó/entregó el proveedor X", "pesajes abiertos". tipo: compra = material que entra de un proveedor, venta = material que sale a un cliente. entidad = parte del nombre del proveedor o cliente (si dudas deja tipo vacío para buscar en ambos). Para totales de kg de un período usa resumen_pesajes.',
   parametros: pesajesSchema,
   permisos: [{ recurso: 'pesaje', accion: 'ver' }],
   async ejecutar({ tipo, estado, desde, hasta, entidad, limite }) {
@@ -230,6 +277,7 @@ export const consultarPesajes = definirHerramienta({
       facturado: Boolean(t.facturado),
       [t.tipo === 'compra' ? 'proveedor' : 'cliente']: (t.tipo === 'compra' ? provs : clis).get(t.entidad_id ?? '') ?? null,
       kgNetos: kgTicket(t),
+      kgNetosTexto: formatearKg(kgTicket(t)),
     }));
     return { filas: filas.length, datos: { fuente: 'pesajes', tickets: filas } };
   },
@@ -246,7 +294,8 @@ const MAX_TICKETS_RESUMEN = 1000;
 export const resumenPesajes = definirHerramienta({
   nombre: 'resumen_pesajes',
   etiqueta: 'resumen de pesajes',
-  descripcion: 'Cantidad de tickets de pesaje y kg netos del período (por defecto hoy), separados en compras y ventas.',
+  descripcion:
+    'Total de kilos pesados (kg netos) y cantidad de tickets de pesaje en un período, separados en compras (entradas) y ventas (salidas). Úsala para "cuántos kilos compramos/vendimos/pesamos hoy, esta semana, este mes". Por defecto es hoy; pasa desde/hasta (AAAA-MM-DD) usando las fechas de la sección de fechas del sistema.',
   parametros: resumenPesajesSchema,
   permisos: [{ recurso: 'pesaje', accion: 'ver' }],
   async ejecutar({ desde, hasta }, ctx) {
@@ -265,6 +314,7 @@ export const resumenPesajes = definirHerramienta({
         tickets: del.length,
         abiertos: del.filter(x => x.estado !== 'completo').length,
         kgNetos: kgRedondeado(sumar(del.map(kgTicket))),
+        kgNetosTexto: formatearKg(sumar(del.map(kgTicket))),
       };
     };
     return {
@@ -296,7 +346,7 @@ export const consultarTransformaciones = definirHerramienta({
   nombre: 'consultar_transformaciones',
   etiqueta: 'transformaciones',
   descripcion:
-    'Transformaciones completadas de material del período: kg de entrada, salida y merma (kg y %), con totales y las más recientes.',
+    'Transformaciones de material completadas (procesos que convierten un material en otro, códigos TR-0001...): kg de entrada, salida y MERMA (pérdida, en kg y %), con totales del período y las más recientes. Úsala para "qué transformaciones hubo", "cuánta merma tuvimos este mes/semana". Sin fechas cubre todo el historial; para "este mes" pasa desde/hasta.',
   parametros: transformacionesSchema,
   permisos: [{ recurso: 'transformaciones', accion: 'ver' }],
   async ejecutar({ desde, hasta, categoria, limite }) {
@@ -323,6 +373,9 @@ export const consultarTransformaciones = definirHerramienta({
           kgEntrada: kgRedondeado(reporte.totales.kgEntrada),
           kgSalida: kgRedondeado(reporte.totales.kgSalida),
           kgMerma: kgRedondeado(reporte.totales.kgMerma),
+          kgMermaTexto: formatearKg(kgRedondeado(reporte.totales.kgMerma)),
+          kgEntradaTexto: formatearKg(kgRedondeado(reporte.totales.kgEntrada)),
+          kgSalidaTexto: formatearKg(kgRedondeado(reporte.totales.kgSalida)),
           pctMerma: kgRedondeado(reporte.totales.pctMerma),
         },
         recientes: filas,
@@ -350,7 +403,8 @@ interface TrasladoFila {
 export const consultarTraslados = definirHerramienta({
   nombre: 'consultar_traslados',
   etiqueta: 'traslados',
-  descripcion: 'Traslados de material entre almacenes: código, fecha, origen, destino, estado y kg.',
+  descripcion:
+    'Traslados de material de un almacén a otro (Traslado-0001...): fecha, almacén de origen, almacén de destino, estado y kg enviados/recibidos. Úsala para "últimos traslados", "qué movimos de G1 a G2". Sin fechas devuelve los más recientes.',
   parametros: trasladosSchema,
   permisos: [{ recurso: 'traslados', accion: 'ver' }],
   async ejecutar({ estado, desde, hasta, limite }) {
@@ -377,6 +431,7 @@ export const consultarTraslados = definirHerramienta({
       destino: nombres.get(t.almacen_destino_id ?? '') ?? null,
       estado: t.estado,
       kgNetos: kgRedondeado(sumar((t.detalle_traslado ?? []).map(d => d.peso_neto))),
+      kgNetosTexto: formatearKg(sumar((t.detalle_traslado ?? []).map(d => d.peso_neto))),
       kgRecibidos: kgRedondeado(sumar((t.detalle_traslado ?? []).map(d => d.peso_recibido))),
     }));
     return { filas: filas.length, datos: { fuente: 'traslados', traslados: filas } };
@@ -391,5 +446,6 @@ export const HERRAMIENTAS_OPERACION: readonly HerramientaAsistente[] = [
   resumenPesajes,
   consultarTransformaciones,
   consultarTraslados,
+  ...HERRAMIENTAS_CATALOGO,
 ];
 

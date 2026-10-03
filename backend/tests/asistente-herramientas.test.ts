@@ -117,8 +117,8 @@ describe('matriz de permisos de las herramientas', () => {
 
   it('cada recurso con "ver" habilita exactamente sus herramientas', () => {
     const esperado: Record<string, string[]> = {
-      productos: ['consultar_inventario', 'consultar_lotes'],
-      almacenes: ['consultar_stock_almacen'],
+      productos: ['consultar_inventario', 'consultar_lotes', 'listar_materiales'],
+      almacenes: ['consultar_stock_almacen', 'listar_almacenes', 'resumen_stock_por_almacen'],
       pesaje: ['consultar_pesajes', 'resumen_pesajes'],
       transformaciones: ['consultar_transformaciones'],
       traslados: ['consultar_traslados'],
@@ -225,11 +225,11 @@ describe('herramientas de operación', () => {
     const todo = await datos('consultar_inventario', { limite: 15 });
     expect(todo.articulos).toHaveLength(15);
     expect(todo.articulosEncontrados).toBe(31);
-    expect(todo.articulos[0]).toEqual({ producto: 'Chatarra 29', categoria: 'Ferroso', destino: 'Sin lote', stockKg: 129 });
+    expect(todo.articulos[0]).toEqual({ producto: 'Chatarra 29', categoria: 'Ferroso', lote: null, stockKg: 129, texto: '129 kg' });
     expect(todo.consultadoEl).toBe('2026-10-03');
     expect(todo.fuente).toBe('inventario');
     const cobre = await datos('consultar_inventario', { producto: 'cobre' });
-    expect(cobre.articulos).toEqual([{ producto: 'Cobre', categoria: 'No Ferroso', destino: 'Sin lote', stockKg: 50.13 }]);
+    expect(cobre.articulos).toEqual([{ producto: 'Cobre', categoria: 'No Ferroso', lote: null, stockKg: 50.13, texto: '50,13 kg' }]);
     expect(cobre.totalKg).toBe(50.13);
   });
 
@@ -243,7 +243,7 @@ describe('herramientas de operación', () => {
     expect(ok.articulos).toHaveLength(1);
     const ambiguo = await datos('consultar_stock_almacen', { almacen: 'almacén' });
     expect(ambiguo.error).toMatch(/varios/);
-    expect(ambiguo.almacenesPosibles).toEqual(['Almacén Central', 'Almacén Norte']);
+    expect(ambiguo.almacenesDisponibles).toEqual(['Almacén Central', 'Almacén Norte']);
     expect(servicios.obtenerInventarioAlmacen).toHaveBeenCalledTimes(1);
   });
 
@@ -253,7 +253,7 @@ describe('herramientas de operación', () => {
       { nombre: 'LOTE VIEJO', activo: false, stockKg: 9, stockPorAlmacen: [] },
     ]);
     const r = await datos('consultar_lotes');
-    expect(r.lotes).toEqual([{ lote: 'LOTE A', stockKg: 500, porAlmacen: [{ almacen: 'Central', kg: 500 }] }]);
+    expect(r.lotes).toEqual([{ lote: 'LOTE A', stockKg: 500, texto: '500 kg', almacenesDondeEsta: [{ almacen: 'Central', kg: 500, texto: '500 kg' }] }]);
     expect(JSON.stringify(r)).not.toContain('foto.jpg');
   });
 
@@ -264,7 +264,7 @@ describe('herramientas de operación', () => {
       { numero: 3, tipo: 'venta', entidad_id: 'c1', fecha: '2026-10-01', estado: 'completo', facturado: false, detalle_tickets_pesaje: [{ peso_neto: 20 }] },
     ];
     const r = await datos('consultar_pesajes', { entidad: 'caribe' });
-    expect(r.tickets).toEqual([{ ticket: 'Compra-0007', tipo: 'compra', fecha: '2026-10-03', estado: 'completo', facturado: true, proveedor: 'Metales Caribe', kgNetos: 150.5 }]);
+    expect(r.tickets).toEqual([{ ticket: 'Compra-0007', tipo: 'compra', fecha: '2026-10-03', estado: 'completo', facturado: true, proveedor: 'Metales Caribe', kgNetos: 150.5, kgNetosTexto: '150,5 kg' }]);
     const venta = await datos('consultar_pesajes', { tipo: 'venta' });
     expect(venta.tickets[0]).toMatchObject({ ticket: 'Venta-0003', cliente: 'Fundición Oriente', kgNetos: 20 });
     await datos('consultar_pesajes', { limite: 3 });
@@ -290,8 +290,8 @@ describe('herramientas de operación', () => {
     ];
     const r = await datos('resumen_pesajes');
     expect(r.desde).toBe('2026-10-03');
-    expect(r.compras).toEqual({ tickets: 2, abiertos: 1, kgNetos: 100 });
-    expect(r.ventas).toEqual({ tickets: 1, abiertos: 0, kgNetos: 40 });
+    expect(r.compras).toEqual({ tickets: 2, abiertos: 1, kgNetos: 100, kgNetosTexto: '100 kg' });
+    expect(r.ventas).toEqual({ tickets: 1, abiertos: 0, kgNetos: 40, kgNetosTexto: '40 kg' });
   });
 
   it('consultar_transformaciones: totales y recientes acotados', async () => {
@@ -309,7 +309,7 @@ describe('herramientas de operación', () => {
   it('consultar_traslados: nombres de almacén y kg', async () => {
     tablas.tickets_traslado = [{ numero: 1, almacen_origen_id: 'a1', almacen_destino_id: 'a2', estado: 'completo', created_at: '2026-10-02T10:00:00Z', observaciones: 'nota interna delicada', detalle_traslado: [{ peso_neto: 80, peso_recibido: 79.5 }] }];
     const r = await datos('consultar_traslados');
-    expect(r.traslados).toEqual([{ traslado: 'Traslado-0001', fecha: '2026-10-02', origen: 'Almacén Central', destino: 'Almacén Norte', estado: 'completo', kgNetos: 80, kgRecibidos: 79.5 }]);
+    expect(r.traslados).toEqual([{ traslado: 'Traslado-0001', fecha: '2026-10-02', origen: 'Almacén Central', destino: 'Almacén Norte', estado: 'completo', kgNetos: 80, kgNetosTexto: '80 kg', kgRecibidos: 79.5 }]);
   });
 });
 
@@ -323,7 +323,7 @@ describe('herramientas de dinero', () => {
     const r = await datos('consultar_facturas', { tipo: 'compra' });
     expect(r.moneda).toBe('USD');
     expect(r.facturas).toHaveLength(2);
-    expect(r.facturas[0]).toEqual({ factura: 'C-0004', fecha: '2026-10-01', proveedor: 'Metales Caribe', estado: 'emitida', totalUsd: 1000, pagadoUsd: 250.5, pendienteUsd: 749.5 });
+    expect(r.facturas[0]).toEqual({ factura: 'C-0004', fecha: '2026-10-01', proveedor: 'Metales Caribe', estado: 'emitida', totalUsd: 1000, pagadoUsd: 250.5, pendienteUsd: 749.5, pendienteTexto: 'USD 749,50' });
     const pend = await datos('consultar_facturas', { tipo: 'compra', estado: 'emitida', entidad: 'caribe' });
     expect(pend.facturas.map((f: any) => f.factura)).toEqual(['C-0004']); // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(JSON.stringify(r)).not.toMatch(/motivo reservado|nota interna/);
@@ -337,8 +337,8 @@ describe('herramientas de dinero', () => {
     ];
     tablas.facturas_compra = [];
     const r = await datos('resumen_facturacion');
-    expect(r.ventas.periodo).toEqual({ facturas: 2, totalUsd: 700 });
-    expect(r.ventas.pendientesDePagoEnGeneral).toEqual({ facturas: 2, montoPendienteUsd: 1100 });
+    expect(r.ventas.periodo).toEqual({ facturas: 2, totalUsd: 700, totalTexto: 'USD 700,00' });
+    expect(r.ventas.pendientesDePagoEnGeneral).toEqual({ facturas: 2, montoPendienteUsd: 1100, montoPendienteTexto: 'USD 1.100,00' });
     expect(r.compras.periodo.facturas).toBe(0);
   });
 
@@ -415,7 +415,7 @@ describe('herramientas de dinero', () => {
       { nombre: 'Caja 2', tipo: 'efectivo', moneda: 'USD', saldo: 50, descripcion: '' },
     ]);
     const r = await datos('consultar_bancas');
-    expect(r.totalPorMoneda).toEqual([{ moneda: 'VES', total: 1000 }, { moneda: 'USD', total: 300.46 }]);
+    expect(r.totalPorMoneda).toEqual([{ moneda: 'VES', total: 1000, texto: 'VES 1.000,00' }, { moneda: 'USD', total: 300.46, texto: 'USD 300,46' }]);
     expect(JSON.stringify(r)).not.toContain('Cuenta 0102');
   });
 

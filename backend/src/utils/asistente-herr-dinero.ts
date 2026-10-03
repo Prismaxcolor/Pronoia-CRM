@@ -29,6 +29,8 @@ import {
   formatCodigoVenta,
 } from './codigos.js';
 import type { Permiso } from './permisos.js';
+import { formatearMonto } from './asistente-formato.js';
+import { coincidePorPalabras, sugerirParecidos } from './asistente-similitud.js';
 
 const MONEDA_FACTURAS = 'USD';
 const ESTADOS_FACTURA_VIGENTE = ['emitida', 'pagada'];
@@ -74,9 +76,32 @@ async function nombresPorId(tabla: 'proveedores' | 'clientes' | 'bancas', ids: s
   return new Map(((data ?? []) as Array<{ id: string; nombre: string }>).map(r => [r.id, textoSeguro(r.nombre)]));
 }
 
+/** Cuántos proveedores/clientes se muestran en el desglose de lo pendiente. */
+const MAX_ENTIDADES_PENDIENTE = 8;
+
+/** Total pendiente y desglose por proveedor/cliente de las facturas con saldo. */
+function resumenPendientes(facturas: FacturaFila[], col: 'proveedor_id' | 'cliente_id', nombres: Map<string, string>, tipo: TipoFactura) {
+  const porEntidad = new Map<string, number>();
+  for (const f of facturas) {
+    const nombre = nombres.get(String(f[col] ?? '')) ?? 'Sin nombre';
+    porEntidad.set(nombre, (porEntidad.get(nombre) ?? 0) + pendiente(f));
+  }
+  const total = sumar(facturas.map(pendiente));
+  return {
+    facturasConSaldo: facturas.length,
+    totalPendienteUsd: dinero(total),
+    totalPendienteTexto: formatearMonto(total),
+    [tipo === 'compra' ? 'pendientePorProveedor' : 'pendientePorCliente']: [...porEntidad]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_ENTIDADES_PENDIENTE)
+      .map(([nombre, monto]) => ({ nombre, pendienteUsd: dinero(monto), pendienteTexto: formatearMonto(monto) })),
+  };
+}
+
 const facturasSchema = z.object({
-  tipo: z.enum(['compra', 'venta']).describe('compra = a proveedores; venta = a clientes.'),
-  estado: z.enum(['emitida', 'pagada']).optional().describe("'emitida' = pendiente de pago; 'pagada' = saldada."),
+  tipo: z.enum(['compra', 'venta']).describe('compra = facturas de compra a PROVEEDORES (lo que debemos pagar); venta = facturas de venta a CLIENTES (lo que nos deben cobrar).'),
+  estado: z.enum(['emitida', 'pagada']).optional().describe("'emitida' = vigente (puede tener saldo pendiente); 'pagada' = saldada."),
+  soloPendientes: z.boolean().optional().describe('true = solo facturas con saldo pendiente (> 0), con el total pendiente y el desglose por proveedor/cliente. Úsalo para "facturas pendientes de pago/cobro" y "a quién le debemos/quién nos debe".'),
   desde: fechaSchema.optional(),
   hasta: fechaSchema.optional(),
   entidad: z.string().max(60).optional().describe('Parte del nombre del proveedor/cliente.'),
@@ -86,28 +111,30 @@ const facturasSchema = z.object({
 export const consultarFacturas = definirHerramienta({
   nombre: 'consultar_facturas',
   etiqueta: 'facturas',
-  descripcion: `Facturas de compra o venta recientes (monto total, pagado y pendiente en ${MONEDA_FACTURAS}). Filtra por estado, fechas o nombre del proveedor/cliente.`,
+  descripcion: `Facturas de compra (a proveedores) o de venta (a clientes) recientes: total, pagado y pendiente en ${MONEDA_FACTURAS}. Úsala para "facturas pendientes de pago" (tipo compra + soloPendientes), "facturas pendientes de cobro" (tipo venta + soloPendientes), "facturas de [proveedor/cliente]". Para el saldo total de UNA persona usa saldo_proveedor o saldo_cliente.`,
   parametros: facturasSchema,
   permisos: [{ recurso: 'facturacion', accion: 'ver' }],
-  async ejecutar({ tipo, estado, desde, hasta, entidad, limite }) {
+  async ejecutar({ tipo, estado, soloPendientes, desde, hasta, entidad, limite }) {
     let ids: string[] | null = null;
     if (entidad) {
       ids = await idsPorNombre(TABLA_ENTIDAD[tipo], entidad);
-      if (ids.length === 0) return { filas: 0, datos: { fuente: 'facturación', facturas: [], nota: 'No encontré a nadie con ese nombre.' } };
+      if (ids.length === 0) return { filas: 0, datos: { fuente: 'facturación', facturas: [], nota: `No encontré ningún ${TABLA_ENTIDAD[tipo] === 'proveedores' ? 'proveedor' : 'cliente'} con ese nombre (revisa si es del otro tipo).` } };
     }
     const col = COLUMNA_ENTIDAD[tipo];
     let q = supabaseAdmin
       .from(TABLA_FACTURAS[tipo])
       .select(`numero, total, monto_pagado, estado, created_at, ${col}`)
-      .in('estado', estado ? [estado] : ESTADOS_FACTURA_VIGENTE)
+      .in('estado', soloPendientes ? ['emitida'] : estado ? [estado] : ESTADOS_FACTURA_VIGENTE)
       .order('created_at', { ascending: false })
-      .limit(limiteEfectivo(limite));
+      .limit(soloPendientes ? MAX_FACTURAS_RESUMEN : limiteEfectivo(limite));
     if (desde) q = q.gte('created_at', desde);
     if (hasta) q = q.lte('created_at', `${hasta}T23:59:59`);
     if (ids) q = q.in(col, ids);
     const { data } = await q;
-    const facturas = (data ?? []) as unknown as FacturaFila[];
-    const nombres = await nombresPorId(TABLA_ENTIDAD[tipo], facturas.map(f => String(f[col] ?? '')).filter(Boolean));
+    const leidas = (data ?? []) as unknown as FacturaFila[];
+    const conSaldo = soloPendientes ? leidas.filter(f => pendiente(f) > 0.005) : leidas;
+    const facturas = conSaldo.slice(0, limiteEfectivo(limite));
+    const nombres = await nombresPorId(TABLA_ENTIDAD[tipo], conSaldo.map(f => String(f[col] ?? '')).filter(Boolean));
     const formato = tipo === 'compra' ? formatCodigoCompra : formatCodigoVenta;
     const filas = facturas.map(f => ({
       factura: f.numero != null ? formato(f.numero) : null,
@@ -117,8 +144,17 @@ export const consultarFacturas = definirHerramienta({
       totalUsd: dinero(f.total),
       pagadoUsd: dinero(f.monto_pagado),
       pendienteUsd: dinero(pendiente(f)),
+      pendienteTexto: formatearMonto(pendiente(f)),
     }));
-    return { filas: filas.length, datos: { fuente: 'facturación', moneda: MONEDA_FACTURAS, facturas: filas } };
+    return {
+      filas: filas.length,
+      datos: {
+        fuente: 'facturación',
+        moneda: MONEDA_FACTURAS,
+        facturas: filas,
+        ...(soloPendientes ? resumenPendientes(conSaldo, col, nombres, tipo) : {}),
+      },
+    };
   },
 });
 
@@ -142,15 +178,19 @@ async function resumenTipo(tipo: TipoFactura, desde: string, hasta: string) {
   const del = (periodo.data ?? []) as unknown as FacturaFila[];
   const pend = (abiertas.data ?? []) as unknown as FacturaFila[];
   return {
-    periodo: { facturas: del.length, totalUsd: dinero(sumar(del.map(f => f.total))) },
-    pendientesDePagoEnGeneral: { facturas: pend.length, montoPendienteUsd: dinero(sumar(pend.map(pendiente))) },
+    periodo: { facturas: del.length, totalUsd: dinero(sumar(del.map(f => f.total))), totalTexto: formatearMonto(sumar(del.map(f => f.total))) },
+    pendientesDePagoEnGeneral: {
+      facturas: pend.length,
+      montoPendienteUsd: dinero(sumar(pend.map(pendiente))),
+      montoPendienteTexto: formatearMonto(sumar(pend.map(pendiente))),
+    },
   };
 }
 
 export const resumenFacturacion = definirHerramienta({
   nombre: 'resumen_facturacion',
   etiqueta: 'resumen de facturación',
-  descripcion: `Total facturado en compras y ventas del período (por defecto hoy, en ${MONEDA_FACTURAS}) y lo que está pendiente de pago en general.`,
+  descripcion: `Total facturado en compras (a proveedores) y ventas (a clientes) del período (por defecto hoy, en ${MONEDA_FACTURAS}) y el monto pendiente de pago/cobro en general. Úsala para "cuánto facturamos hoy/este mes" y "cuánto tenemos pendiente". Para el detalle por factura o por proveedor/cliente usa consultar_facturas con soloPendientes.`,
   parametros: resumenFacturacionSchema,
   permisos: [{ recurso: 'facturacion', accion: 'ver' }],
   async ejecutar({ desde, hasta }, ctx) {
@@ -187,6 +227,8 @@ interface Perfil {
   tablaNotas: 'notas_ajuste_proveedor' | 'notas_ajuste_cliente';
   columnaNotas: 'proveedor_id' | 'cliente_id';
   permiso: Permiso;
+  /** Pista para el modelo cuando el nombre no existe en esta lista. */
+  ayudaNoEncontrado: string;
   codigoNota: (tipo: string, numero: number) => string;
 }
 
@@ -198,6 +240,7 @@ const PERFIL_PROVEEDOR: Perfil = {
   tablaNotas: 'notas_ajuste_proveedor',
   columnaNotas: 'proveedor_id',
   permiso: { recurso: 'proveedores', accion: 'ver' },
+  ayudaNoEncontrado: 'No existe como PROVEEDOR. Si podría ser un cliente (alguien a quien le vendemos), prueba con buscar_cliente / saldo_cliente.',
   codigoNota: (t, n) => (t === 'credito' ? formatCodigoNotaCredito(n) : formatCodigoNotaDebito(n)),
 };
 const PERFIL_CLIENTE: Perfil = {
@@ -208,6 +251,7 @@ const PERFIL_CLIENTE: Perfil = {
   tablaNotas: 'notas_ajuste_cliente',
   columnaNotas: 'cliente_id',
   permiso: { recurso: 'clientes', accion: 'ver' },
+  ayudaNoEncontrado: 'No existe como CLIENTE. Si podría ser un proveedor (alguien a quien le compramos, o a quien le debemos), prueba con buscar_proveedor / saldo_proveedor.',
   codigoNota: (t, n) => (t === 'credito' ? formatCodigoNotaCreditoCliente(n) : formatCodigoNotaDebitoCliente(n)),
 };
 
@@ -218,10 +262,39 @@ async function resolverEntidad(p: Perfil, nombre: string) {
     .select('id, nombre')
     .ilike('nombre', patronBusqueda(nombre))
     .limit(6);
-  const filas = (data ?? []) as Array<{ id: string; nombre: string }>;
+  let filas = (data ?? []) as Array<{ id: string; nombre: string }>;
+  if (filas.length === 0) filas = (await filtrarPorPalabras(p, nombre)).slice(0, 6);
   const exacta = filas.filter(f => f.nombre.trim().toLowerCase() === nombre.trim().toLowerCase());
   const elegida = filas.length === 1 ? filas[0] : exacta.length === 1 ? exacta[0] : undefined;
   return { elegida, opciones: filas.map(f => textoSeguro(f.nombre)) };
+}
+
+/** Tope de nombres que se leen para la búsqueda por palabras / sugerencias (catálogos pequeños). */
+const MAX_NOMBRES_BUSQUEDA = 300;
+const MAX_SUGERENCIAS_NOMBRE = 8;
+
+async function todosLosNombres(p: Perfil): Promise<Array<{ id: string; nombre: string; activo?: boolean }>> {
+  const { data } = await supabaseAdmin.from(p.tabla).select('id, nombre, activo').order('nombre').limit(MAX_NOMBRES_BUSQUEDA);
+  return ((data ?? []) as Array<{ id: string; nombre: string; activo?: boolean }>).filter(f => typeof f.nombre === 'string');
+}
+
+/** Coincidencia por palabras sueltas, sin importar el orden ni los acentos ("teques jesus"). */
+async function filtrarPorPalabras(p: Perfil, nombre: string) {
+  return (await todosLosNombres(p)).filter(f => coincidePorPalabras(f.nombre, nombre));
+}
+
+/** Nombres parecidos (o, si no hay, unos cuantos existentes) para ofrecer cuando no se encuentra a nadie. */
+async function sugerenciasDeNombre(p: Perfil, nombre: string): Promise<{ parecidos: string[]; ejemplos: string[] }> {
+  const nombres = (await todosLosNombres(p)).map(f => textoSeguro(f.nombre));
+  return { parecidos: sugerirParecidos(nombre, nombres, 5), ejemplos: nombres.slice(0, MAX_SUGERENCIAS_NOMBRE) };
+}
+
+/** Frase lista para el modelo: qué significa el signo del saldo (evita confundir deuda con saldo a favor). */
+export function lecturaSaldo(tipo: TipoEntidad, saldo: number): string {
+  const monto = formatearMonto(Math.abs(saldo));
+  if (Math.abs(saldo) < 0.005) return 'Saldo en cero: no hay deuda pendiente.';
+  if (tipo === 'proveedor') return saldo > 0 ? `Le debemos ${monto} al proveedor.` : `No le debemos nada: hemos pagado ${monto} de más (saldo a nuestro favor).`;
+  return saldo > 0 ? `El cliente nos debe ${monto}.` : `El cliente no nos debe nada: tiene ${monto} a su favor.`;
 }
 
 const CODIGO_CORRELATIVO = /^(?:PG|AD|NC|ND|CB|AC|NCV|NDV|CR|CRV|TR|C|V)-\d{4,9}$/;
@@ -235,7 +308,10 @@ function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
   const buscar = definirHerramienta({
     nombre: `buscar_${p.singular}`,
     etiqueta: p.plural,
-    descripcion: `Busca ${p.plural} por nombre (solo nombre y si está activo; sin datos de contacto).`,
+    descripcion:
+      p.tipo === 'proveedor'
+        ? 'Busca PROVEEDORES (a quienes les compramos material y a quienes les debemos) por nombre aproximado: solo nombre y si está activo. Úsala para confirmar cómo se escribe un nombre o cuando no sepas si una persona es proveedor o cliente (busca también con buscar_cliente). Sin datos de contacto.'
+        : 'Busca CLIENTES (a quienes les vendemos material y que nos deben a nosotros) por nombre aproximado: solo nombre y si está activo. Úsala para confirmar cómo se escribe un nombre o cuando no sepas si una persona es cliente o proveedor (busca también con buscar_proveedor). Sin datos de contacto.',
     parametros: buscarSchema,
     permisos: [p.permiso],
     async ejecutar({ nombre, limite }) {
@@ -245,29 +321,44 @@ function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
         .ilike('nombre', patronBusqueda(nombre))
         .order('nombre')
         .limit(limiteEfectivo(limite));
-      const filas = ((data ?? []) as Array<{ nombre: string; activo: boolean }>).map(r => ({
-        nombre: textoSeguro(r.nombre),
-        activo: Boolean(r.activo),
-      }));
-      return { filas: filas.length, datos: { fuente: p.plural, [p.plural]: filas } };
+      let encontrados = (data ?? []) as Array<{ nombre: string; activo: boolean }>;
+      if (encontrados.length === 0) {
+        const todos = await todosLosNombres(p);
+        const porPalabras = todos.filter(f => coincidePorPalabras(f.nombre, nombre)).slice(0, limiteEfectivo(limite));
+        encontrados = porPalabras.map(f => ({ nombre: f.nombre, activo: f.activo !== false }));
+      }
+      const filas = encontrados.map(r => ({ nombre: textoSeguro(r.nombre), activo: Boolean(r.activo) }));
+      return {
+        filas: filas.length,
+        datos: {
+          fuente: p.plural,
+          [p.plural]: filas,
+          ...(filas.length === 0 ? { ...(await sugerenciasDeNombre(p, nombre)), ayuda: p.ayudaNoEncontrado } : {}),
+        },
+      };
     },
   });
 
   const saldo = definirHerramienta({
     nombre: `saldo_${p.singular}`,
     etiqueta: `estado de cuenta de ${p.singular}`,
-    descripcion: `Estado de cuenta resumido de un ${p.singular} (en ${MONEDA_FACTURAS}): facturado, ${p.tipo === 'proveedor' ? 'pagado' : 'cobrado'}, saldo y sus últimos movimientos.`,
+    descripcion:
+      p.tipo === 'proveedor'
+        ? `Estado de cuenta de un PROVEEDOR en ${MONEDA_FACTURAS}: facturado, pagado, saldo y últimos movimientos. Úsala cuando pregunten "cuánto le debemos a X", "cuánto le hemos pagado/comprado a X", "saldo de X" y X sea alguien a quien le compramos. saldoUsd positivo = le debemos; negativo = tiene saldo a nuestro favor (le pagamos de más/adelantos). Si el nombre no existe aquí, prueba saldo_cliente.`
+        : `Estado de cuenta de un CLIENTE en ${MONEDA_FACTURAS}: facturado, cobrado, saldo y últimos movimientos. Úsala cuando pregunten "cuánto nos debe X", "cuánto le hemos vendido/cobrado a X" y X sea alguien a quien le vendemos. saldoUsd positivo = nos debe; negativo = tiene saldo a su favor. Si el nombre no existe aquí, prueba saldo_proveedor.`,
     parametros: saldoSchema,
     permisos: [p.permiso],
     async ejecutar({ nombre }) {
       const { elegida, opciones } = await resolverEntidad(p, nombre);
       if (!elegida) {
+        const sinNadie = opciones.length === 0;
         return {
           filas: 0,
           datos: {
             fuente: `estado de cuenta (${p.singular})`,
-            error: opciones.length === 0 ? `No encontré ese ${p.singular}.` : `Hay varios ${p.plural} con ese nombre; pregunta cuál.`,
+            error: sinNadie ? `No encontré ningún ${p.singular} con ese nombre.` : `Hay varios ${p.plural} con ese nombre; pregunta cuál.`,
             posibles: opciones,
+            ...(sinNadie ? { ...(await sugerenciasDeNombre(p, nombre)), ayuda: p.ayudaNoEncontrado } : {}),
           },
         };
       }
@@ -293,6 +384,8 @@ function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
           facturadoUsd: dinero(estado.totales.facturado),
           [p.tipo === 'proveedor' ? 'pagadoUsd' : 'cobradoUsd']: dinero(estado.totales.pagado),
           saldoUsd: dinero(estado.totales.saldo),
+          saldoTexto: formatearMonto(estado.totales.saldo),
+          lectura: lecturaSaldo(p.tipo, Number(estado.totales.saldo)),
           ultimosMovimientos: recientes,
         },
       };
@@ -302,7 +395,7 @@ function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
   const notas = definirHerramienta({
     nombre: `consultar_notas_${p.singular}`,
     etiqueta: `notas de crédito/débito de ${p.plural}`,
-    descripcion: `Notas de crédito y débito vigentes de ${p.plural} (número, tipo, monto en ${MONEDA_FACTURAS}, fecha, si ya se pagó). Sin el motivo.`,
+    descripcion: `Notas de crédito y débito (ajustes a la cuenta) vigentes de ${p.plural.toUpperCase()}: número, tipo, monto en ${MONEDA_FACTURAS}, fecha y si ya se pagó. Sin el motivo. Úsala para "notas de crédito/débito de X" o "qué ajustes tiene X".`,
     parametros: notasSchema,
     permisos: [p.permiso],
     async ejecutar({ entidad, incluirAnuladas, limite }) {
@@ -344,7 +437,7 @@ function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
 export const consultarBancas = definirHerramienta({
   nombre: 'consultar_bancas',
   etiqueta: 'bancas',
-  descripcion: 'Saldo actual de cada banca/caja activa (nombre, tipo, moneda, saldo) y total por moneda.',
+  descripcion: 'Saldo actual de cada banca/caja/cochinito activa (nombre, tipo, moneda, saldo) y el total por moneda. Úsala para "cuánto dinero/efectivo hay", "saldo de las bancas/cajas". Un saldo negativo es real (la caja está en sobregiro); repórtalo tal cual.',
   parametros: z.object({}),
   permisos: [{ recurso: 'cochinito', accion: 'ver' }],
   async ejecutar() {
@@ -362,7 +455,7 @@ export const consultarBancas = definirHerramienta({
       datos: {
         fuente: 'bancas',
         bancas: filas,
-        totalPorMoneda: [...porMoneda].map(([moneda, total]) => ({ moneda, total: dinero(total) })),
+        totalPorMoneda: [...porMoneda].map(([moneda, total]) => ({ moneda, total: dinero(total), texto: formatearMonto(total, moneda) })),
       },
     };
   },
@@ -394,7 +487,7 @@ export const consultarMovimientos = definirHerramienta({
   nombre: 'consultar_movimientos',
   etiqueta: 'movimientos de bancas',
   descripcion:
-    'Movimientos recientes del cochinito: ingresos, egresos y transferencias, incluyendo pagos, adelantos y cobros (monto, moneda, banca, proveedor/cliente, fecha).',
+    'Movimientos recientes de dinero de las bancas/cochinito, del más nuevo al más viejo: ingresos, egresos y transferencias (monto, moneda, banca, proveedor/cliente, fecha). Úsala para "qué pagos hicimos" (subtipo pago/adelanto = salidas a proveedores), "qué cobros recibimos" (subtipo cobro/anticipo = entradas de clientes), "últimos movimientos". Para "esta semana" pasa desde/hasta con las fechas de la sección de fechas.',
   parametros: movimientosSchema,
   permisos: [{ recurso: 'cochinito', accion: 'ver' }],
   async ejecutar({ tipo, subtipo, desde, hasta, entidad, limite }) {
