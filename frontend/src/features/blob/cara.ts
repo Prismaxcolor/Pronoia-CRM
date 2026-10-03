@@ -4,23 +4,19 @@
  * nombre usar y qué pose de la librería corresponde a cada ánimo. Lógica pura.
  */
 import type { Animo } from './animo';
-import type { BlobConfig } from './config';
 
 export type NombreExpresion =
   | 'idle' | 'happy' | 'sad' | 'mad' | 'surprised' | 'wink' | 'sleepy'
   | 'smug' | 'unsure' | 'scared' | 'love' | 'shy' | 'sick' | 'thinking';
 
-export const MAX_SEMILLA = 40;
 const SEMILLA_RESERVA = 'pronoia';
 
-/** Semilla: la propia si la hay; si no, el nombre del usuario logueado; si no, una reserva estable. */
-export function semillaBlob(config: Pick<BlobConfig, 'semilla'>, nombreUsuario: string | undefined): string {
-  return config.semilla.trim() || nombreUsuario?.trim() || SEMILLA_RESERVA;
-}
-
-/** Semilla nueva para "Probar otro". `azar` inyectable para testear. */
-export function semillaAleatoria(azar: () => number = Math.random): string {
-  return azar().toString(36).slice(2, 10) || 'x';
+/**
+ * Semilla del aspecto físico: depende SOLO del usuario logueado (nombre; si no hay,
+ * su email; si tampoco, una reserva estable). No lee ninguna configuración guardada.
+ */
+export function semillaBlob(usuario: { nombre?: string; email?: string } | null | undefined): string {
+  return usuario?.nombre?.trim() || usuario?.email?.trim() || SEMILLA_RESERVA;
 }
 
 /** Expresión de la librería para cada ánimo. `pensando` = esperando respuesta de la IA. */

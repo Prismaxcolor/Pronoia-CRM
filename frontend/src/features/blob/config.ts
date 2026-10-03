@@ -1,4 +1,3 @@
-import { MAX_SEMILLA } from './cara';
 import { MAX_FRASES_PROPIAS, MAX_LONGITUD_FRASE, type Frecuencia } from './frases';
 
 export const PERSONALIDADES_BLOB = ['amigable', 'sarcastico', 'formal', 'misterioso'] as const;
@@ -17,8 +16,6 @@ export const PX_TAMANO: Record<Tamano, number> = { pequeno: 64, mediano: 88, gra
 export interface BlobConfig {
   /** Nombre de la mascota (solo etiqueta/chat). */
   nombre: string;
-  /** Semilla propia de la librería; vacía = el nombre del usuario logueado. */
-  semilla: string;
   personalidad: PersonalidadBlob;
   /** 'minimizado' = solo una pastillita; se restaura con un clic. */
   modo: ModoBlob;
@@ -32,7 +29,6 @@ export interface BlobConfig {
 
 export const CONFIG_DEFECTO: BlobConfig = {
   nombre: 'BLOB',
-  semilla: '',
   personalidad: 'amigable',
   modo: 'activo',
   tamano: 'mediano',
@@ -46,7 +42,10 @@ function enumOr<T extends string>(valor: unknown, validos: readonly T[], defecto
   return typeof valor === 'string' && (validos as readonly string[]).includes(valor) ? (valor as T) : defecto;
 }
 
-/** Sanea cualquier cosa leída de localStorage: campos inválidos vuelven al valor por defecto. */
+/**
+ * Sanea cualquier cosa leída de localStorage: campos inválidos vuelven al valor por defecto.
+ * Solo copia campos conocidos, así que una `semilla` vieja se descarta (el aspecto es inmutable).
+ */
 export function normalizarConfig(raw: unknown): BlobConfig {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const nombre = typeof r.nombre === 'string' ? r.nombre.trim().slice(0, 20) : '';
@@ -59,7 +58,6 @@ export function normalizarConfig(raw: unknown): BlobConfig {
     : [];
   return {
     nombre: nombre || CONFIG_DEFECTO.nombre,
-    semilla: typeof r.semilla === 'string' ? r.semilla.trim().slice(0, MAX_SEMILLA) : '',
     personalidad: enumOr(r.personalidad, PERSONALIDADES_BLOB, CONFIG_DEFECTO.personalidad),
     modo: enumOr(r.modo, MODOS, CONFIG_DEFECTO.modo),
     tamano: enumOr(r.tamano, TAMANOS, CONFIG_DEFECTO.tamano),

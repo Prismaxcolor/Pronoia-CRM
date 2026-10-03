@@ -35,7 +35,7 @@ export default function Blob() {
   const cuerpoRef = useRef<HTMLDivElement>(null);
   const { ref: gazeRef, lookAt } = useGaze({ travel: RECORRIDO_OJOS });
   const dormido = animo === 'dormido';
-  const semilla = semillaBlob(config, usuario?.nombre);
+  const semilla = semillaBlob(usuario);
   // Los ojos siguen el cursor; dormido los deja quietos. En táctil siguen el último toque.
   useEffect(() => {
     lookAt(dormido ? 'rest' : 'pointer');
@@ -203,7 +203,7 @@ export default function Blob() {
             <div className={claseEmergente}>
               <BlobChat
                 config={config}
-                nombreUsuario={usuario?.nombre}
+                semilla={semilla}
                 mensajes={mensajes}
                 escribiendo={escribiendo}
                 onEnviar={enviarMensaje}

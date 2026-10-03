@@ -24,7 +24,6 @@ import {
 } from '../../frontend/src/features/blob/config';
 import {
   semillaBlob,
-  semillaAleatoria,
   expresionPorAnimo,
 } from '../../frontend/src/features/blob/cara';
 import { PAGINAS_ASISTENTE } from '../src/utils/asistente-limites';
@@ -139,19 +138,17 @@ describe('config', () => {
   it('basura devuelve los valores por defecto', () => {
     expect(normalizarConfig(null)).toEqual(CONFIG_DEFECTO);
     expect(normalizarConfig('x')).toEqual(CONFIG_DEFECTO);
-    expect(normalizarConfig({ semilla: 5, tamano: 9, personalidad: 'dragon' })).toEqual(CONFIG_DEFECTO);
+    expect(normalizarConfig({ tamano: 9, personalidad: 'dragon' })).toEqual(CONFIG_DEFECTO);
   });
 
   it('conserva valores válidos y recorta frases propias', () => {
     const c = normalizarConfig({
       nombre: '  Blobby  ',
-      semilla: '  luna-7  ',
       frecuencia: 'alta',
       iaActiva: false,
       frasesPropias: ['hola', 3, '', 'x'.repeat(200)],
     });
     expect(c.nombre).toBe('Blobby');
-    expect(c.semilla).toBe('luna-7');
     expect(c.iaActiva).toBe(false);
     expect(c.frasesPropias).toHaveLength(2);
     expect(c.frasesPropias[1]).toHaveLength(80);
@@ -160,8 +157,8 @@ describe('config', () => {
   it('guarda y carga por usuario; storage roto no lanza', () => {
     const mem = new Map<string, string>();
     const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
-    guardarConfig('u1', { ...CONFIG_DEFECTO, semilla: 'abc' }, storage);
-    expect(cargarConfig('u1', storage).semilla).toBe('abc');
+    guardarConfig('u1', { ...CONFIG_DEFECTO, nombre: 'Abc' }, storage);
+    expect(cargarConfig('u1', storage).nombre).toBe('Abc');
     expect(cargarConfig('u2', storage)).toEqual(CONFIG_DEFECTO);
     expect(claveStorage('u1')).not.toBe(claveStorage('u2'));
     const roto = { getItem: () => { throw new Error('bloqueado'); }, setItem: () => { throw new Error('bloqueado'); } };
@@ -179,30 +176,42 @@ describe('config', () => {
   it('migra configs viejas (forma, color hex, boca) ignorando campos que ya no existen', () => {
     const c = normalizarConfig({ nombre: 'Viejo', forma: 'gota', color: '#3399FF', boca: 'dientes' });
     expect(c.nombre).toBe('Viejo');
-    expect(c.semilla).toBe('');
+    expect(c).not.toHaveProperty('semilla');
     expect(c).not.toHaveProperty('forma');
     expect(c).not.toHaveProperty('color');
   });
 
-  it('la semilla se recorta a 40 caracteres', () => {
-    expect(normalizarConfig({ semilla: 'x'.repeat(100) }).semilla).toHaveLength(40);
+  it('descarta una semilla vieja guardada: ni se normaliza ni se conserva', () => {
+    const c = normalizarConfig({ nombre: 'Rosa', semilla: 'luna-7', tamano: 'grande' });
+    expect(c).not.toHaveProperty('semilla');
+    expect(c.tamano).toBe('grande');
+  });
+
+  it('cargarConfig ignora la semilla vieja de localStorage y se limpia al guardar de nuevo', () => {
+    const mem = new Map<string, string>([[claveStorage('u1'), JSON.stringify({ nombre: 'Rosa', semilla: 'otra' })]]);
+    const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+    const c = cargarConfig('u1', storage);
+    expect(c).not.toHaveProperty('semilla');
+    guardarConfig('u1', c, storage);
+    expect(mem.get(claveStorage('u1'))).not.toContain('semilla');
   });
 });
 
 describe('cara (semilla y expresiones)', () => {
-  it('semilla vacía usa el nombre del usuario; la propia gana; sin nada, una reserva estable', () => {
-    expect(semillaBlob({ semilla: '' }, 'Julio Cesar')).toBe('Julio Cesar');
-    expect(semillaBlob({ semilla: 'otra' }, 'Julio Cesar')).toBe('otra');
-    expect(semillaBlob({ semilla: '' }, undefined)).toBe(semillaBlob({ semilla: '  ' }, ''));
-    expect(semillaBlob({ semilla: '' }, undefined).length).toBeGreaterThan(0);
+  it('la semilla es el nombre del usuario; sin nombre, su email; sin nada, una reserva estable', () => {
+    expect(semillaBlob({ nombre: 'Julio Cesar', email: 'j@x.com' })).toBe('Julio Cesar');
+    expect(semillaBlob({ nombre: '  ', email: 'j@x.com' })).toBe('j@x.com');
+    expect(semillaBlob({ email: 'j@x.com' })).toBe('j@x.com');
+    expect(semillaBlob(undefined)).toBe('pronoia');
+    expect(semillaBlob(null)).toBe('pronoia');
+    expect(semillaBlob({ nombre: '', email: ' ' })).toBe('pronoia');
   });
 
-  it('semilla aleatoria: no vacía, acotada y distinta entre llamadas', () => {
-    const a = semillaAleatoria(() => 0.123456);
-    const b = semillaAleatoria(() => 0.654321);
-    expect(a).not.toBe(b);
-    expect(a.length).toBeGreaterThan(0);
-    expect(a.length).toBeLessThanOrEqual(40);
+  it('la semilla no depende de la config guardada: la firma solo recibe al usuario', () => {
+    const vieja = normalizarConfig({ semilla: 'sorteada' });
+    expect(semillaBlob({ nombre: 'Julio' })).toBe('Julio');
+    expect(semillaBlob.length).toBe(1);
+    expect(vieja).not.toHaveProperty('semilla');
   });
 
   it('cada ánimo tiene una expresión de la librería', () => {

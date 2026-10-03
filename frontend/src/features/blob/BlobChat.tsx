@@ -8,7 +8,8 @@ export const MAX_MENSAJE = 500;
 
 interface Props {
   config: BlobConfig;
-  nombreUsuario?: string;
+  /** Semilla del aspecto (inmutable, según el usuario). */
+  semilla: string;
   mensajes: MensajeChat[];
   escribiendo: boolean;
   onEnviar: (texto: string) => void;
@@ -18,7 +19,7 @@ interface Props {
 }
 
 /** Burbuja de chat + panel de configuración. Se abre solo por clic del usuario. */
-export function BlobChat({ config, nombreUsuario, mensajes, escribiendo, onEnviar, onBorrar, onCerrar, onCambiarConfig }: Props) {
+export function BlobChat({ config, semilla, mensajes, escribiendo, onEnviar, onBorrar, onCerrar, onCambiarConfig }: Props) {
   const [verConfig, setVerConfig] = useState(false);
   const [texto, setTexto] = useState('');
   const finRef = useRef<HTMLDivElement>(null);
@@ -80,7 +81,7 @@ export function BlobChat({ config, nombreUsuario, mensajes, escribiendo, onEnvia
 
       {verConfig ? (
         <div className="overflow-y-auto p-3">
-          <BlobConfigPanel config={config} nombreUsuario={nombreUsuario} onCambiar={onCambiarConfig} />
+          <BlobConfigPanel config={config} semilla={semilla} onCambiar={onCambiarConfig} />
         </div>
       ) : (
         <>

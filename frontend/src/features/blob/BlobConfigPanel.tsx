@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import Switch from '../../components/Switch';
 import { BlobCara } from './BlobCara';
-import { semillaAleatoria, semillaBlob } from './cara';
 import { CONFIG_DEFECTO, ESQUINAS, FRECUENCIAS, PERSONALIDADES_BLOB, TAMANOS, type BlobConfig } from './config';
 import { MAX_FRASES_PROPIAS } from './frases';
 
 interface Props {
   config: BlobConfig;
-  /** Nombre del usuario logueado: semilla por defecto. */
-  nombreUsuario?: string;
+  /** Semilla del aspecto: solo lectura, sale del usuario logueado. */
+  semilla: string;
   onCambiar: (parcial: Partial<BlobConfig>) => void;
 }
 
@@ -35,7 +34,7 @@ function Selector<T extends string>({ etiquetaTexto, valor, opciones, onChange }
   );
 }
 
-export function BlobConfigPanel({ config, nombreUsuario, onCambiar }: Props) {
+export function BlobConfigPanel({ config, semilla, onCambiar }: Props) {
   // Las frases se editan como texto libre y se normalizan al salir del campo.
   const [textoFrases, setTextoFrases] = useState(config.frasesPropias.join('\n'));
   // El nombre se confirma al salir del campo (normalizar en cada tecla impediría escribir espacios).
@@ -44,30 +43,10 @@ export function BlobConfigPanel({ config, nombreUsuario, onCambiar }: Props) {
   return (
     <div className="space-y-3 text-left">
       <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-hover/50 p-3">
-        <BlobCara semilla={semillaBlob(config, nombreUsuario)} expresion="idle" size={72} />
-        <div className="flex flex-1 flex-col items-start gap-1.5">
-          <p className="text-xs text-text-secondary">
-            {config.semilla ? 'Aspecto sorteado' : 'Aspecto según tu nombre de usuario'}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={() => onCambiar({ semilla: semillaAleatoria() })}
-              className="rounded-md bg-surface-hover px-2 py-1 text-xs text-text-primary hover:bg-border"
-            >
-              Probar otro
-            </button>
-            {config.semilla && (
-              <button
-                type="button"
-                onClick={() => onCambiar({ semilla: '' })}
-                className="rounded-md px-2 py-1 text-xs text-text-secondary underline hover:text-text-primary"
-              >
-                Volver al mío
-              </button>
-            )}
-          </div>
-        </div>
+        <BlobCara semilla={semilla} expresion="idle" size={72} />
+        <p className="flex-1 text-xs text-text-secondary">
+          Este es tu blob: sale según tu nombre y no se puede cambiar.
+        </p>
       </div>
 
       <label className="block">
