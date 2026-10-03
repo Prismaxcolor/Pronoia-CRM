@@ -4,7 +4,7 @@ import { logger } from '../utils/logger.js';
 import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
 import { buscarEvento, debeNotificar, type Metodo } from '../services/grupo-eventos.js';
 import {
-  notificarGrupo, construirPayloadGrupo, etiquetaPreviaParaBorrado, type PeticionEvento,
+  notificarGrupo, construirPayloadGrupo, etiquetaPreviaParaBorrado, fotoPreviaParaEdicion, type PeticionEvento,
 } from '../services/grupo-notificar-service.js';
 
 const METODOS_MUTANTES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -36,6 +36,9 @@ export function notificarGrupoMiddleware(req: Request, res: Response, next: Next
     // El body del request se captura ya: algunos handlers lo reutilizan/mutan después.
     const reqBody = copiaSuperficial(req.body);
     const etiquetaPrevia = etiquetaPreviaParaBorrado(encontrado);
+    // Foto del maestro ANTES del handler (la consulta sale ya, sin esperarla): permite avisar
+    // solo los campos que de verdad cambiaron. Nunca lanza; sin foto se usa el aviso genérico.
+    const fotoPrevia = fotoPreviaParaEdicion(encontrado);
     let resBody: unknown;
     const jsonOriginal = res.json.bind(res);
     res.json = (cuerpo: unknown) => {
@@ -60,6 +63,7 @@ export function notificarGrupoMiddleware(req: Request, res: Response, next: Next
         user: req.user,
         portalUser: req.portalUser,
         etiquetaPrevia,
+        fotoPrevia,
       };
       ejecutarEnSegundoPlano(() => procesar(encontrado, peticion), `grupo_${encontrado.evento.clave}`);
     };

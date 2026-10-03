@@ -26,10 +26,23 @@ const tablas: Record<string, Resultado> = {};
 const consultas: string[] = [];
 const subidas: string[] = [];
 
+// Consultas de "foto" de edición (select con la columna `activo`): una cola por tabla, en orden
+// de llamada (antes del handler, después de la respuesta). El resto usa `tablas`.
+const fotos: Record<string, Resultado[]> = {};
+const ordenLecturas: string[] = [];
+
 function builder(tabla: string) {
-  const resultado = (): Resultado => tablas[tabla] ?? { data: null };
+  let esFoto = false;
+  const resultado = (): Resultado => {
+    if (esFoto) {
+      const cola = fotos[tabla] ?? [];
+      ordenLecturas.push(`foto:${tabla}`);
+      return (cola.length > 1 ? cola.shift() : cola[0]) ?? { data: null };
+    }
+    return tablas[tabla] ?? { data: null };
+  };
   const b: Record<string, unknown> = {
-    select: () => b,
+    select: (cols?: string) => { esFoto = typeof cols === 'string' && cols.includes('activo'); return b; },
     eq: () => b,
     order: () => b,
     limit: () => b,
@@ -91,6 +104,8 @@ const cuerpoEnviado = (): Record<string, unknown> => JSON.parse(String(fetchMock
 
 beforeEach(() => {
   for (const k of Object.keys(tablas)) delete tablas[k];
+  for (const k of Object.keys(fotos)) delete fotos[k];
+  ordenLecturas.length = 0;
   consultas.length = 0;
   subidas.length = 0;
   limpiarCacheActores();
@@ -346,6 +361,8 @@ describe('notificarGrupoMiddleware en serverless (segundo plano)', () => {
       end: vi.fn(),
     });
     const finEnd = res.end;
+    const base = { nombre: 'Chatarra SA', rfc: null, telefono: null, email: null, activo: true, fotos: [] };
+    fotos.proveedores = [{ data: base }, { data: { ...base, rfc: 'J-12345678-9' } }];
     notificarGrupoMiddleware(
       { method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: { rfc: 'J-12345678-9', nombre: 'Nuevo' } } as never,
       res as never,
@@ -364,7 +381,8 @@ describe('notificarGrupoMiddleware en serverless (segundo plano)', () => {
     expect(texto).toContain('Se editó el proveedor');
     expect(texto).toContain('Chatarra SA');
     expect(texto).toContain('👤 Ana Pérez');
-    expect(texto).toContain('documento (cédula/RIF)');
+    expect(texto).toContain('• documento (cédula/RIF) modificado');
+    expect(texto).not.toContain('Cambió: nombre'); // el body traía nombre, pero no cambió
     expect(texto).not.toContain('J-12345678-9');
   });
 
@@ -373,5 +391,81 @@ describe('notificarGrupoMiddleware en serverless (segundo plano)', () => {
     notificarGrupoMiddleware({ method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: {} } as never, res as never, vi.fn());
     res.json();
     expect(waitUntil).not.toHaveBeenCalled();
+  });
+});
+
+describe('notificarGrupoMiddleware: edición de maestros avisa solo lo que cambió', () => {
+  const base = {
+    nombre: 'Chatarra SA', rfc: 'J-12345678-9', telefono: '0414-1111111', email: 'a@x.test', activo: true,
+    fotos: ['https://img.test/a.jpg', 'https://img.test/b.jpg'],
+  };
+  // El formulario del frontend manda el registro completo en cada guardado.
+  const bodyCompleto = { ...base, rfc: 'V-99999999' };
+
+  it('solo cambió la cédula: foto previa ANTES del handler, comparación al terminar, solo "documento"', async () => {
+    fotos.proveedores = [{ data: base }, { data: { ...base, rfc: 'V-99999999' } }];
+    const res = Object.assign(new EventEmitter(), { statusCode: 200, json(c: unknown) { this.end(JSON.stringify(c)); return this; }, end: vi.fn() });
+    notificarGrupoMiddleware({ method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: bodyCompleto } as never, res as never, vi.fn());
+    // la lectura previa ya salió, antes de que el handler responda
+    expect(ordenLecturas).toEqual(['foto:proveedores']);
+    res.statusCode = 200;
+    res.json({ id: 'p1' });
+    await waitUntil.mock.calls[0][0];
+
+    const texto = String(cuerpoEnviado().texto);
+    expect(texto).toContain('Cambió:\n• documento (cédula/RIF) modificado');
+    expect(texto).not.toMatch(/teléfono|correo|fotos/);
+    for (const secreto of ['J-12345678-9', 'V-99999999', '0414-1111111', 'a@x.test', 'img.test']) expect(texto).not.toContain(secreto);
+    expect(ordenLecturas.filter(x => x === 'foto:proveedores')).toHaveLength(2); // antes + después
+  });
+
+  it('PATCH sin cambios reales (fotos reordenadas, null vs ""): no envía aviso', async () => {
+    const antes = { ...base, telefono: null };
+    fotos.proveedores = [{ data: antes }, { data: { ...base, telefono: '', fotos: [...base.fotos].reverse() } }];
+    ejecutar({ method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: bodyCompleto }, 200, { id: 'p1' });
+    await vi.waitFor(() => expect(ordenLecturas.filter(x => x === 'foto:proveedores')).toHaveLength(2));
+    await new Promise(r => setTimeout(r, 20));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('si la foto previa falla o no existe, cae al aviso genérico sin romper', async () => {
+    fotos.proveedores = [{ data: null, error: { message: 'boom' } }];
+    ejecutar({ method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: { rfc: 'V-1', nombre: 'X' } }, 200, { id: 'p1' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(String(cuerpoEnviado().texto)).toContain('Cambió: nombre, documento (cédula/RIF)');
+  });
+
+  it('clientes: dirección y teléfono cambiados solo por nombre de campo', async () => {
+    const c = { nombre: 'Cli', identificacion: 'V-1', email: null, telefono: '0414-0000000', direccion: 'Av. Secreta 1', notas: null, activo: true, fotos: [] };
+    fotos.clientes = [{ data: c }, { data: { ...c, telefono: '0412-9999999', direccion: 'Av. Nueva 2' } }];
+    tablas.clientes = { data: { nombre: 'Cli' } };
+    ejecutar({ method: 'PATCH', originalUrl: '/api/clientes/c1', user: ana, body: c }, 200, { id: 'c1' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const texto = String(cuerpoEnviado().texto);
+    expect(texto).toContain('• teléfono modificado');
+    expect(texto).toContain('• dirección modificado');
+    for (const secreto of ['0414-0000000', '0412-9999999', 'Av. Secreta', 'Av. Nueva']) expect(texto).not.toContain(secreto);
+  });
+
+  it('usuarios: nunca muestra la contraseña; rol sí por valor', async () => {
+    const u = { nombre: 'Bob', email: 'b@x.test', rol: 'trabajador', permisos: [], activo: true };
+    fotos.users = [{ data: u }, { data: { ...u, rol: 'administracion' } }];
+    ejecutar(
+      { method: 'PATCH', originalUrl: '/api/usuarios/u9', user: ana, body: { password: 'NuevaClave123', rol: 'administracion' } },
+      200, { usuario: { id: 'u9', nombre: 'Bob' } },
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const crudo = String(fetchMock.mock.calls[0][1].body);
+    expect(crudo).toContain('• rol: trabajador → administracion');
+    expect(crudo).toContain('• contraseña restablecida');
+    expect(crudo).not.toContain('NuevaClave123');
+  });
+
+  it('no hace lectura previa si el evento está silenciado ni en rutas que no son ediciones de maestros', () => {
+    env.ENV.GRUPO_EVENTOS_SILENCIADOS = ['proveedor.editado'];
+    fotos.proveedores = [{ data: base }];
+    ejecutar({ method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: bodyCompleto }, 200, { id: 'p1' });
+    ejecutar({ method: 'POST', originalUrl: '/api/proveedores/p1/desactivar', user: ana, body: {} }, 200, { ok: true });
+    expect(ordenLecturas).toEqual([]);
   });
 });

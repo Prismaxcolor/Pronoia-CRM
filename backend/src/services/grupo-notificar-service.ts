@@ -7,6 +7,7 @@ import { formatearMensaje, type ActorEvento } from '../utils/grupo-formato.js';
 import type { CambiosAuditoria } from '../utils/auditoria.js';
 import { obtenerTicket } from './ticket-pesaje-service.js';
 import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
+import { columnasDiff, detallesDeCambios, esTablaDiff, type TablaDiff } from './grupo-diff.js';
 import {
   debeNotificar, resolverVariante, rec, txt, num,
   type ContextoEvento, type EventoEncontrado, type ExtraEvento, type TablaLookup, type ContextoRef,
@@ -191,6 +192,53 @@ export function etiquetaPreviaParaBorrado(encontrado: EventoEncontrado): Promise
   return id ? buscarEtiquetaEnTabla(spec.tabla, id) : null;
 }
 
+// ---------------------------------------------------------------------------
+// Diff de ediciones de maestros (foto ANTES / lectura DESPUÉS)
+// ---------------------------------------------------------------------------
+
+/** Tabla del maestro cuyo PATCH de edición se compara antes/después; null si el evento no aplica. */
+export function tablaParaDiff(encontrado: EventoEncontrado): TablaDiff | null {
+  const { evento } = encontrado;
+  const tabla = evento.entidad?.tabla;
+  if (evento.metodo !== 'PATCH' || !/\.(editado|editada)$/.test(evento.clave) || !esTablaDiff(tabla)) return null;
+  return tabla;
+}
+
+/** Una sola consulta por id con las columnas comparables. null si falla o no existe (nunca lanza). */
+async function leerFilaParaDiff(tabla: TablaDiff, id: string): Promise<Fila | null> {
+  if (!id) return null;
+  try {
+    const { data, error } = await supabaseAdmin.from(tabla).select(columnasDiff(tabla)).eq('id', id).maybeSingle();
+    return error || !data ? null : (data as unknown as Fila);
+  } catch {
+    return null;
+  }
+}
+
+/** Foto del registro ANTES de que corra el handler (se llama desde el middleware, sin await). */
+export function fotoPreviaParaEdicion(encontrado: EventoEncontrado): Promise<Fila | null> | null {
+  const tabla = tablaParaDiff(encontrado);
+  const id = encontrado.params.id;
+  return tabla && id ? leerFilaParaDiff(tabla, id) : null;
+}
+
+/**
+ * Detalles del aviso con solo lo que cambió. undefined = no hay foto previa (se cae al
+ * comportamiento anterior); [] = no cambió nada real (no se avisa).
+ */
+async function detallesPorDiff(
+  encontrado: EventoEncontrado, pet: PeticionEvento, reqBody: Readonly<Record<string, unknown>>
+): Promise<string[] | undefined> {
+  const tabla = tablaParaDiff(encontrado);
+  if (!tabla || !pet.fotoPrevia) return undefined;
+  const antes = await pet.fotoPrevia.catch(() => null);
+  if (!antes) return undefined;
+  const despues = await leerFilaParaDiff(tabla, encontrado.params.id ?? '');
+  if (!despues) return undefined;
+  const contrasena = tabla === 'users' && typeof reqBody.password === 'string' && reqBody.password !== '';
+  return detallesDeCambios(tabla, antes, despues, contrasena ? ['• contraseña restablecida'] : []);
+}
+
 async function resolverContexto(ref: ContextoRef | null): Promise<string | null> {
   if (!ref) return null;
   const n = await buscarEtiquetaEnTabla(ref.tabla, ref.id);
@@ -288,6 +336,8 @@ export interface PeticionEvento {
   portalUser?: { entidadTipo?: string; entidadId?: string };
   /** Etiqueta pedida antes de ejecutar un borrado (la fila ya no existe después). */
   etiquetaPrevia?: Promise<string | null> | null;
+  /** Fila del maestro pedida antes de ejecutar su edición, para mostrar solo lo que cambió. */
+  fotoPrevia?: Promise<Record<string, unknown> | null> | null;
 }
 
 async function actorDePeticion(pet: PeticionEvento): Promise<ActorEvento> {
@@ -318,14 +368,17 @@ export async function construirPayloadGrupo(
   const hallado: EventoEncontrado = { evento, params: encontrado.params };
 
   const previa = pet.etiquetaPrevia ? await pet.etiquetaPrevia.catch(() => null) : null;
-  const [actor, etiqueta, contexto, auditoria] = await Promise.all([
+  const [actor, etiqueta, contexto, auditoria, detallesDiff] = await Promise.all([
     actorDePeticion(pet),
     resolverEtiqueta(hallado, ctxBase, previa),
     resolverContexto(evento.contexto?.(ctxBase) ?? null),
     evento.enriquecer === 'auditoria'
       ? leerAuditoriaReciente(evento.clave, encontrado.params.id ?? '', ahora)
       : Promise.resolve<ExtraEvento>({}),
+    detallesPorDiff(hallado, pet, ctxBase.reqBody).catch((): undefined => undefined),
   ]);
+  // Edición que no cambió nada real: sin aviso (silencioso).
+  if (detallesDiff && detallesDiff.length === 0) return null;
 
   const ctx: ContextoEvento = { ...ctxBase, extra: { ...auditoria, contexto } };
   const entidad = [etiqueta, contexto].filter(Boolean).join(' · ') || null;
@@ -333,7 +386,7 @@ export async function construirPayloadGrupo(
     icono: evento.icono,
     accion: evento.accion,
     entidad,
-    detalles: evento.detalles?.(ctx) ?? [],
+    detalles: detallesDiff ?? evento.detalles?.(ctx) ?? [],
     actor,
     fecha: ahora,
     zona: ENV.GRUPO_ZONA_HORARIA,
