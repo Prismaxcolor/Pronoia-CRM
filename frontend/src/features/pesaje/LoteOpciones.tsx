@@ -1,29 +1,26 @@
 import type { Lote } from '@shared/types/index.js';
-import { ordenarLotesPorAnclaje } from '@shared/types/lote.js';
+import { lotesSeleccionables } from '@shared/types/lote.js';
 
 interface Props {
   lotes: Lote[];
-  /** Lotes posibles (anclados) del producto elegido; salen primero y marcados. */
+  /** Lotes anclados del producto elegido. Si hay, solo se pueden elegir esos (★). */
   loteIdsPosibles: string[];
+  /** Lote ya guardado en el ticket: se conserva como opción aunque no esté anclado. */
+  loteActualId?: string | null;
 }
 
-/** <option>s de un <select> de destino/origen: primero los lotes posibles del
- *  producto, luego el resto (ningún lote se bloquea). */
-function LoteOpciones({ lotes, loteIdsPosibles }: Props) {
-  const ordenados = ordenarLotesPorAnclaje(lotes, loteIdsPosibles);
-  const posibles = ordenados.filter(l => l.anclado);
-  const otros = ordenados.filter(l => !l.anclado);
-  if (posibles.length === 0) {
-    return <>{otros.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}</>;
-  }
+/** <option>s de un <select> de destino/origen. Con lotes anclados al producto
+ *  solo salen esos (★); sin anclajes, todos. */
+function LoteOpciones({ lotes, loteIdsPosibles, loteActualId }: Props) {
+  const { opciones, restringido, sinDisponibles } = lotesSeleccionables(lotes, loteIdsPosibles, loteActualId);
   return (
     <>
-      <optgroup label="Lotes posibles de este material">
-        {posibles.map(l => <option key={l.id} value={l.id}>★ {l.nombre}</option>)}
-      </optgroup>
-      <optgroup label="Otros lotes">
-        {otros.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-      </optgroup>
+      {sinDisponibles && <option value="" disabled>Sin lotes anclados disponibles</option>}
+      {opciones.map(l => (
+        <option key={l.id} value={l.id}>
+          {restringido && l.anclado ? '★ ' : ''}{l.nombre}{l.actualNoAnclado ? ' (actual, no anclado)' : ''}
+        </option>
+      ))}
     </>
   );
 }

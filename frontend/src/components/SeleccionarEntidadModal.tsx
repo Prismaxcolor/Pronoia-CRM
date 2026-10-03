@@ -16,12 +16,14 @@ interface Props<T extends EntidadConFoto> {
   onSeleccionar: (entidadId: string) => void;
   /** Texto del grupo de entidades destacadas (por defecto "Sugeridos"). */
   etiquetaDestacados?: string;
+  /** Mensaje cuando no hay ninguna entidad que mostrar (en vez de la búsqueda vacía). */
+  mensajeVacio?: string;
 }
 
 /** Selector visual con foto: mismo patrón que SeleccionarMaterialModal de
  *  Pesaje, generalizado a cualquier entidad con {id, nombre, fotos}
  *  (cliente, proveedor). No reemplaza el <select>, conviven ambos. */
-function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos' }: Props<T>) {
+function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos', mensajeVacio }: Props<T>) {
   const [busqueda, setBusqueda] = useState('');
 
   const filtrados = entidades.filter(e =>
@@ -75,7 +77,9 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
         </div>
 
         <div className="p-4 overflow-y-auto">
-          {filtrados.length === 0 ? (
+          {entidades.length === 0 && mensajeVacio ? (
+            <p className="text-center text-amber-700 text-sm py-8">{mensajeVacio}</p>
+          ) : filtrados.length === 0 ? (
             <p className="text-center text-text-muted text-sm py-8">Nadie coincide con la búsqueda.</p>
           ) : (
             <>

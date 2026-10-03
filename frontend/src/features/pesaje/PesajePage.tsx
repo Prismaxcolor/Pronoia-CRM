@@ -29,7 +29,7 @@ import { obtenerVehiculos } from '../../services/vehiculo-service';
 import VehiculoSelector from '../../components/VehiculoSelector';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
-import { ordenarLotesPorAnclaje } from '@shared/types/lote.js';
+import { lotesSeleccionables } from '@shared/types/lote.js';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario, type Vehiculo } from '@shared/types/index.js';
 
 /** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
@@ -140,6 +140,11 @@ function PesajePage() {
     const fila = materiales.find(m => m.uid === filaLoteActivaUid);
     return fila ? loteIdsPosiblesFila(fila, productos) : [];
   }, [materiales, filaLoteActivaUid, productos]);
+  const filaLoteActiva = materiales.find(m => m.uid === filaLoteActivaUid);
+  const lotesSelector = useMemo(
+    () => lotesSeleccionables(lotes, lotesPosiblesDeFilaActiva, filaLoteActiva?.destino),
+    [lotes, lotesPosiblesDeFilaActiva, filaLoteActiva?.destino]
+  );
   const [mostrarSelectorAlmacenOrigen, setMostrarSelectorAlmacenOrigen] = useState(false);
   const [mostrarSelectorAlmacenDestino, setMostrarSelectorAlmacenDestino] = useState(false);
 
@@ -1126,6 +1131,8 @@ function PesajePage() {
           onClose={() => setMostrarSelectorMaterial(false)}
           onSeleccionar={productoId => {
             const uid = filaActiva?.uid ?? materiales[0].uid;
+            const lotesDelProducto = productos.find(p => p.id === productoId)?.loteIds ?? [];
+            setMateriales(prev => prev.map(f => (f.uid === uid && lotesDelProducto.length > 0 && f.destino && !lotesDelProducto.includes(f.destino) ? { ...f, destino: '' } : f)));
             setFila(uid, 'productoId', productoId);
             setMostrarSelectorMaterial(false);
           }}
@@ -1155,7 +1162,8 @@ function PesajePage() {
       {mostrarSelectorLote && (
         <SeleccionarEntidadModal
           titulo={tipo === 'venta' ? 'Origen (inventario)' : 'Destino (inventario)'}
-          entidades={ordenarLotesPorAnclaje(lotes, lotesPosiblesDeFilaActiva).map(l => ({ id: l.id, nombre: l.nombre, activo: l.activo, fotos: l.fotos, destacado: l.anclado }))}
+          entidades={lotesSelector.opciones.map(l => ({ id: l.id, nombre: l.actualNoAnclado ? `${l.nombre} (actual, no anclado)` : l.nombre, activo: l.activo, fotos: l.fotos, destacado: l.anclado }))}
+          mensajeVacio={lotesSelector.sinDisponibles ? 'Los lotes anclados a este material no están disponibles (inactivos). Reactívalos o cambia el anclaje en Productos.' : undefined}
           etiquetaDestacados="Lotes posibles de este material"
           onClose={() => setMostrarSelectorLote(false)}
           onSeleccionar={id => {

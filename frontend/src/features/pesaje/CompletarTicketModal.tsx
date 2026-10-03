@@ -7,6 +7,7 @@ import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPe
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import LoteOpciones from './LoteOpciones';
+import AvisoSinLotesAnclados from './AvisoSinLotesAnclados';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
@@ -213,8 +214,9 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                         <label className={labelClass}>Destino (inventario) *</label>
                         <select required value={f.destino} onChange={e => setFila(f.uid, 'destino', e.target.value)} className={inputClass}>
                           <option value="" disabled>-Selecciona-</option>
-                          <LoteOpciones lotes={lotes} loteIdsPosibles={loteIdsPosiblesFila(f, productos)} />
+                          <LoteOpciones lotes={lotes} loteIdsPosibles={loteIdsPosiblesFila(f, productos)} loteActualId={f.destino} />
                         </select>
+                      <AvisoSinLotesAnclados lotes={lotes} loteIdsPosibles={loteIdsPosiblesFila(f, productos)} />
                       </>
                     )}
                   </div>

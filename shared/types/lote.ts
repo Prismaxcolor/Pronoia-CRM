@@ -69,3 +69,37 @@ export function ordenarLotesPorAnclaje<T extends { id: string; nombre: string }>
     (a, b) => Number(b.anclado) - Number(a.anclado) || a.nombre.localeCompare(b.nombre, 'es', { numeric: true })
   );
 }
+
+export type LoteSeleccionable<T> = T & { anclado: boolean; actualNoAnclado: boolean };
+
+export interface LotesSeleccionables<T> {
+  opciones: Array<LoteSeleccionable<T>>;
+  /** El producto tiene lotes anclados: solo se pueden elegir esos. */
+  restringido: boolean;
+  /** Hay anclajes pero ninguno está disponible (p. ej. todos inactivos). */
+  sinDisponibles: boolean;
+}
+
+/** Decide qué lotes se pueden elegir para un producto. Sin anclajes: todos.
+ *  Con anclajes: solo los anclados disponibles, más (si se pasa) el lote
+ *  actual de un ticket ya guardado aunque no esté anclado, marcado como
+ *  actualNoAnclado para no perderlo ni forzar su cambio. No muta la entrada. */
+export function lotesSeleccionables<T extends { id: string; nombre: string }>(
+  lotes: readonly T[],
+  loteIdsAnclados: readonly string[],
+  loteActualId?: string | null
+): LotesSeleccionables<T> {
+  const ordenados = ordenarLotesPorAnclaje(lotes, loteIdsAnclados);
+  if (loteIdsAnclados.length === 0) {
+    return { opciones: ordenados.map(l => ({ ...l, actualNoAnclado: false })), restringido: false, sinDisponibles: false };
+  }
+  const anclados = ordenados.filter(l => l.anclado).map(l => ({ ...l, actualNoAnclado: false }));
+  const actual = loteActualId
+    ? ordenados.find(l => !l.anclado && l.id === loteActualId)
+    : undefined;
+  return {
+    opciones: actual ? [...anclados, { ...actual, actualNoAnclado: true }] : anclados,
+    restringido: true,
+    sinDisponibles: anclados.length === 0,
+  };
+}

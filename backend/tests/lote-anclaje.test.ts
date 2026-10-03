@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ordenarLotesPorAnclaje } from '../../shared/types/lote.js';
+import { ordenarLotesPorAnclaje, lotesSeleccionables } from '../../shared/types/lote.js';
 
 const lotes = [
   { id: 'a', nombre: 'LOTE 3' },
@@ -24,6 +24,49 @@ describe('ordenarLotesPorAnclaje', () => {
     const copia = [...lotes];
     const r = ordenarLotesPorAnclaje(lotes, ['zzz']);
     expect(r).toHaveLength(4);
+    expect(lotes).toEqual(copia);
+  });
+});
+
+describe('lotesSeleccionables', () => {
+  it('sin anclajes devuelve todos los lotes ordenados, sin restringir', () => {
+    const r = lotesSeleccionables(lotes, []);
+    expect(r.restringido).toBe(false);
+    expect(r.sinDisponibles).toBe(false);
+    expect(r.opciones.map(l => l.id)).toEqual(['b', 'c', 'a', 'd']);
+    expect(r.opciones.every(l => !l.anclado && !l.actualNoAnclado)).toBe(true);
+  });
+  it('con anclajes solo devuelve los anclados (las estrellitas)', () => {
+    const r = lotesSeleccionables(lotes, ['d', 'c']);
+    expect(r.restringido).toBe(true);
+    expect(r.sinDisponibles).toBe(false);
+    expect(r.opciones.map(l => [l.id, l.anclado, l.actualNoAnclado])).toEqual([
+      ['c', true, false], ['d', true, false],
+    ]);
+  });
+  it('conserva el lote actual no anclado marcado como actualNoAnclado', () => {
+    const r = lotesSeleccionables(lotes, ['c'], 'a');
+    expect(r.opciones.map(l => [l.id, l.anclado, l.actualNoAnclado])).toEqual([
+      ['c', true, false], ['a', false, true],
+    ]);
+  });
+  it('si el lote actual ya está anclado no lo duplica ni lo marca', () => {
+    const r = lotesSeleccionables(lotes, ['c'], 'c');
+    expect(r.opciones.map(l => [l.id, l.actualNoAnclado])).toEqual([['c', false]]);
+  });
+  it('anclados todos no disponibles: sinDisponibles true y solo queda el actual', () => {
+    const vacio = lotesSeleccionables(lotes, ['zzz']);
+    expect(vacio.restringido).toBe(true);
+    expect(vacio.sinDisponibles).toBe(true);
+    expect(vacio.opciones).toEqual([]);
+    const conActual = lotesSeleccionables(lotes, ['zzz'], 'b');
+    expect(conActual.sinDisponibles).toBe(true);
+    expect(conActual.opciones.map(l => [l.id, l.actualNoAnclado])).toEqual([['b', true]]);
+  });
+  it('ignora un lote actual que no existe y no muta la entrada', () => {
+    const copia = [...lotes];
+    const r = lotesSeleccionables(lotes, ['c'], 'nope');
+    expect(r.opciones.map(l => l.id)).toEqual(['c']);
     expect(lotes).toEqual(copia);
   });
 });
