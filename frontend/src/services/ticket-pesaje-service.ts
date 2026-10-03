@@ -116,29 +116,44 @@ export async function completarTicket(
   }
 }
 
+/** Qué pasó con la factura del ticket editado (la decide el backend). */
+export interface AvisoFacturaTicket {
+  /** 'anulada': se anuló y el ticket quedó libre. 'pagada': tiene pagos, no se tocó. */
+  tipo: 'anulada' | 'pagada';
+  facturaCodigo: string | null;
+  entidadTipo: 'proveedor' | 'cliente';
+  entidadNombre: string | null;
+  /** Ruta al estado de cuenta de la entidad (null si no hay entidad). */
+  rutaEstadoCuenta: string | null;
+  mensaje: string;
+}
+
 export interface EditarTicketInput {
   materiales: CrearTicketMaterialInput[];
   devolucion?: number;
   fotosDevolucion?: string[];
   observaciones?: string | null;
   vehiculo?: string | null;
+  /** Corrige la fecha del ticket (YYYY-MM-DD). */
+  fecha?: string;
+  /** Reemplaza las pesadas del camión (recalcula el peso global). Omitido = no se tocan. */
+  pesajesGlobales?: Array<{ peso: number; tara: number; fotos: string[] }>;
   /** Llave de un solo uso del superadmin; solo se envía si el servidor la exige. */
   llaveEdicion?: string;
 }
 
-/** Corrige un ticket ya completo (material, pesos, observaciones). El peso
- *  global no se edita — se fija al crear el ticket.
- *  El backend rechaza la edición si el ticket ya está facturado. */
+/** Corrige un ticket completo (materiales, pesos, tara, pesajes globales, fecha).
+ *  Exige llave de edición a quien no es superadmin; en un ticket facturado
+ *  la factura no se recalcula. */
 export async function editarTicket(
   id: string,
   input: EditarTicketInput
-): Promise<{ ticket: TicketPesaje } | { error: string }> {
+): Promise<{ ticket: TicketPesaje; advertencia?: string; avisosFactura?: AvisoFacturaTicket[] } | { error: string }> {
   try {
-    const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}`, {
+    return await apiFetch<{ ticket: TicketPesaje; advertencia?: string; avisosFactura?: AvisoFacturaTicket[] }>(`/api/tickets-pesaje/${id}`, {
       method: 'PATCH',
       body: input,
     });
-    return { ticket };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo editar el ticket.' };
   }

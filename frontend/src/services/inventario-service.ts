@@ -11,6 +11,21 @@ export interface ArticuloInventario {
   transformaciones: number;
   ajustes: number;
   stock: number;
+  /** Solo con filtro por almacén: movimientos que explican el stock. */
+  desglose?: DesgloseArticulo;
+}
+
+/** stock = compras − ventas + trasladoEntrada − trasladoSalida − transfEntrada + transfSalida + ajustes */
+export interface DesgloseArticulo {
+  compras: number;
+  ventas: number;
+  trasladoEntrada: number;
+  trasladoSalida: number;
+  /** Material consumido por transformaciones. */
+  transfEntrada: number;
+  /** Material producido por transformaciones. */
+  transfSalida: number;
+  ajustes: number;
 }
 
 export interface GrupoInventario {

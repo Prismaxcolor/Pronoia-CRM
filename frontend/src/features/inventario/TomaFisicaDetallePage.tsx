@@ -14,6 +14,8 @@ import { useConfirm } from '../../hooks/use-confirm-context';
 import { descargarTomaFisicaPDF } from '../../services/toma-fisica-export';
 import FilaDocumento from '../../components/FilaDocumento';
 import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea, Lote } from '@shared/types/index.js';
+import CompartirBoton from '../../components/CompartirBoton';
+import VisorFotos from '../../components/VisorFotos';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -160,6 +162,7 @@ function TomaFisicaDetallePage() {
           <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
             <Printer size={16} />
           </button>
+          <CompartirBoton titulo={`Toma física ${tomaFisica.codigo}`} obtenerPdf={() => descargarTomaFisicaPDF(tomaFisica, detalle, lineas, 'blob')} />
         </div>
       </div>
 
@@ -167,6 +170,7 @@ function TomaFisicaDetallePage() {
        *  sin tarjeta — mismo patrón que factura/nota/pago/ticket. */}
       <div className="mb-6">
         <FilaDocumento label="Almacén" valor={tomaFisica.almacenNombre ?? '—'} />
+        <FilaDocumento label="Alcance" valor={tomaFisica.alcance === 'lote' ? 'Por lote' : 'Por categoría'} />
         <FilaDocumento label="Categorías" valor={tomaFisica.categoriaNombres.join(', ')} />
         {tomaFisica.loteNombres.length > 0 && (
           <FilaDocumento label="Lote(s)" valor={tomaFisica.loteNombres.join(', ')} />
@@ -372,12 +376,12 @@ function TomaFisicaDetallePage() {
       )}
 
       {fotoAmpliada && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4 print:hidden" onClick={() => setFotoAmpliada(null)}>
-          <button type="button" onClick={() => setFotoAmpliada(null)} className="absolute top-4 right-4 text-white/80 hover:text-white" title="Cerrar">
-            <X size={24} />
-          </button>
-          <img src={fotoAmpliada} alt="Foto ampliada" className="max-w-full max-h-[85vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
-        </div>
+        <VisorFotos
+          fotos={galeriaAbierta?.fotos ?? [fotoAmpliada]}
+          indice={Math.max(0, (galeriaAbierta?.fotos ?? [fotoAmpliada]).indexOf(fotoAmpliada))}
+          onCambiar={i => setFotoAmpliada((galeriaAbierta?.fotos ?? [fotoAmpliada])[i])}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
       )}
     </div>
   );

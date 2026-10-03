@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { ImagePlus, Camera, X, ZoomIn } from 'lucide-react';
 import { previewFotoLocal, type FotoLocal } from '../lib/foto-picker';
+import VisorFotos from './VisorFotos';
 
 interface Props {
   fotos: FotoLocal[];
@@ -75,25 +76,13 @@ function FotoMultiplePicker({ fotos, onAgregar, onQuitar, label = 'Fotos' }: Pro
       <input ref={camaraRef} type="file" accept="image/*" capture="environment" onChange={handleChange} className="hidden" />
 
       {fotoAmpliada !== null && fotos[fotoAmpliada] && (
-        <div
-          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4"
-          onClick={() => setFotoAmpliada(null)}
-        >
-          <button
-            type="button"
-            onClick={() => setFotoAmpliada(null)}
-            className="absolute top-4 right-4 text-white/80 hover:text-white"
-            title="Cerrar"
-          >
-            <X size={24} />
-          </button>
-          <img
-            src={previewFotoLocal(fotos[fotoAmpliada])}
-            alt={`Foto ${fotoAmpliada + 1} ampliada`}
-            className="max-w-full max-h-full object-contain rounded-lg"
-            onClick={e => e.stopPropagation()}
-          />
-        </div>
+        <VisorFotos
+          fotos={fotos.map(previewFotoLocal)}
+          indice={fotoAmpliada}
+          onCambiar={setFotoAmpliada}
+          onCerrar={() => setFotoAmpliada(null)}
+          alt={`Foto ${fotoAmpliada + 1} ampliada`}
+        />
       )}
     </div>
   );

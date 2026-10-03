@@ -73,6 +73,7 @@ async function validarFactura(facturaCompraId: string): Promise<boolean> {
     .from('facturas_compra')
     .select('id')
     .eq('id', facturaCompraId)
+    .neq('estado', 'anulada')
     .maybeSingle();
   return !!data;
 }
@@ -94,7 +95,7 @@ export async function guardarValoracion(
   actor?: Pick<ActorEdicion, 'userId' | 'email'>
 ): Promise<GuardarValoracionResult> {
   if (input.facturaCompraId && !(await validarFactura(input.facturaCompraId))) {
-    return { ok: false, status: 400, error: 'La factura de compra indicada no existe.' };
+    return { ok: false, status: 400, error: 'La factura de compra indicada no existe o está anulada.' };
   }
 
   const antes = actor ? await leerValoracion(transformacionId) : null;

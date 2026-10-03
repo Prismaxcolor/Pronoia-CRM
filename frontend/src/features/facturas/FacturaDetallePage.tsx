@@ -8,11 +8,13 @@ import { useAuth } from '../../hooks/use-auth-context';
 import FilaDocumento from '../../components/FilaDocumento';
 import HistorialEdiciones from '../../components/HistorialEdiciones';
 import { type TicketPesaje } from '@shared/types/index.js';
+import CompartirBoton from '../../components/CompartirBoton';
 
 const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
   borrador: { label: 'Borrador', clase: 'bg-gray-100 text-gray-600' },
   emitida: { label: 'Emitida', clase: 'bg-blue-100 text-blue-700' },
   pagada: { label: 'Pagada', clase: 'bg-green-100 text-green-700' },
+  anulada: { label: 'Anulada', clase: 'bg-red-100 text-red-700' },
 };
 
 function fmt(n: number): string {
@@ -103,10 +105,15 @@ function FacturaDetallePage({ tipo }: Props) {
             <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
             <span className={`px-2 py-0.5 rounded-full text-xs ${cfg.clase} print:border print:border-black print:bg-transparent`}>{cfg.label}</span>
           </div>
+          {factura.estado === 'anulada' && (
+            <p className="mt-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2 print:border-black print:bg-transparent print:text-black">
+              Factura anulada: se corrigió el ticket con la llave de edición. No es deuda ni se puede pagar; el ticket quedó disponible para volver a facturar.
+            </p>
+          )}
           <p className="text-sm text-text-muted mt-1">Ref. {factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
         </div>
         <div className="print:hidden flex flex-wrap items-center gap-2">
-          {puedePagar && factura.estado !== 'pagada' && factura.entidadId && (
+          {puedePagar && factura.estado !== 'pagada' && factura.estado !== 'anulada' && factura.entidadId && (
             <button
               type="button"
               onClick={() => navigate(`/${esCompra ? 'proveedores' : 'clientes'}/${factura.entidadId}/estado-cuenta`, {
@@ -131,6 +138,7 @@ function FacturaDetallePage({ tipo }: Props) {
             <Printer size={16} />
             Imprimir
           </button>
+          <CompartirBoton titulo={`Factura ${factura.codigo ?? factura.id.slice(0, 8)}`} obtenerPdf={() => descargarFacturaPDF(factura, tickets, 'blob')} />
         </div>
       </div>
 

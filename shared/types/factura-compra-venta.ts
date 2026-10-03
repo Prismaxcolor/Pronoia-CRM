@@ -4,9 +4,9 @@
  * OJO: es un modelo distinto al de `Factura`/`FacturaItem` (factura genérica con
  * varios items y estados 'borrador'|'confirmada'|'anulada'). Estas facturas son
  * de una sola línea, atadas opcionalmente a un ticket de pesaje, y su estado es
- * 'borrador'|'emitida'|'pagada'. Por eso el tipo de estado se llama distinto.
+ * 'borrador'|'emitida'|'pagada'|'anulada'. Por eso el tipo de estado se llama distinto.
  */
-export type EstadoFacturaCompraVenta = 'borrador' | 'emitida' | 'pagada';
+export type EstadoFacturaCompraVenta = 'borrador' | 'emitida' | 'pagada' | 'anulada';
 
 /** Una línea de una factura de compra/venta: un material con su peso y precio. */
 export interface FacturaLinea {

@@ -71,5 +71,6 @@ export async function obtenerDocumentosPortal(
     listarComprobantes(entidadTipo, entidadId),
   ]);
 
-  return { facturas, tickets, comprobantes };
+  // Una factura anulada ya no es un documento vigente para el proveedor/cliente.
+  return { facturas: facturas.filter(f => f.estado !== 'anulada'), tickets, comprobantes };
 }

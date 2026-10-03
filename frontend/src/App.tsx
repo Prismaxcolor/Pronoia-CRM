@@ -27,6 +27,7 @@ import TomaFisicaDetallePage from './features/inventario/TomaFisicaDetallePage';
 import ConteoTomaFisicaPage from './features/pesaje/ConteoTomaFisicaPage';
 import TransformacionesPage from './features/transformaciones/TransformacionesPage';
 import TransformacionDetallePage from './features/transformaciones/TransformacionDetallePage';
+import MermaPage from './features/transformaciones/MermaPage';
 import CochinitPage from './features/cochinito/CochinitPage';
 import UsuariosPage from './features/usuarios/UsuariosPage';
 import ClientesPage from './features/clientes/ClientesPage';
@@ -35,6 +36,7 @@ import EstadoCuentaPage from './features/estado-cuenta/EstadoCuentaPage';
 import ListasPreciosPage from './features/listas-precios/ListasPreciosPage';
 import ListaDetallePage from './features/listas-precios/ListaDetallePage';
 import TarasPage from './features/taras/TarasPage';
+import VehiculosPage from './features/vehiculos/VehiculosPage';
 import PesajePage from './features/pesaje/PesajePage';
 import TicketDetallePage from './features/pesaje/TicketDetallePage';
 import FacturaHistorialPage from './features/facturas/FacturaHistorialPage';
@@ -93,10 +95,12 @@ function AppRoutes() {
         <Route path="/listas-precios" element={<ProtectedRoute recurso="listas_precios"><ListasPreciosPage /></ProtectedRoute>} />
         <Route path="/listas-precios/:id" element={<ProtectedRoute recurso="listas_precios"><ListaDetallePage /></ProtectedRoute>} />
         <Route path="/taras" element={<ProtectedRoute recurso="taras"><TarasPage /></ProtectedRoute>} />
+        <Route path="/vehiculos" element={<ProtectedRoute recurso="vehiculos"><VehiculosPage /></ProtectedRoute>} />
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
         <Route path="/inventario/toma-fisica/:id" element={<ProtectedRoute recurso="toma_fisica"><TomaFisicaDetallePage /></ProtectedRoute>} />
         <Route path="/transformaciones" element={<ProtectedRoute recurso="transformaciones"><TransformacionesPage /></ProtectedRoute>} />
-        <Route path="/transformaciones/:id" element={<ProtectedRoute recurso="transformaciones"><TransformacionDetallePage /></ProtectedRoute>} />
+        <Route path="/transformaciones/merma" element={<ProtectedRoute recurso="transformaciones"><MermaPage /></ProtectedRoute>} />
+        <Route path="/transformaciones/:id"element={<ProtectedRoute recurso="transformaciones"><TransformacionDetallePage /></ProtectedRoute>} />
         {/* "Lotes" pasó a ser una pestaña dentro de Inventario — se mantiene el
          *  redirect por si alguien tiene el link viejo guardado. */}
         <Route path="/lotes" element={<Navigate to="/inventario" replace />} />

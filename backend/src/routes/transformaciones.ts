@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   listarTransformaciones,
+  reporteMerma,
   crearTransformacion,
   completarTransformacion,
   borrarTransformacion,
@@ -14,6 +15,7 @@ import {
 } from '../services/transformacion-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
+import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import {
   crearTransformacionSchema,
   completarTransformacionSchema,
@@ -48,6 +50,21 @@ router.get('/', requirePermiso('transformaciones', 'ver'), async (req, res) => {
   const categoria = req.query.categoria ? String(req.query.categoria) : undefined;
   const transformaciones = await listarTransformaciones({ desde, hasta, estado, categoria });
   res.json({ transformaciones });
+});
+
+// Histórico de merma derivado de transformaciones completas (antes de /:id).
+router.get('/merma', requirePermiso('transformaciones', 'ver'), async (req, res) => {
+  const q = (k: string) => (req.query[k] ? String(req.query[k]) : undefined);
+  const agrupar = req.query.agrupar === 'dia' || req.query.agrupar === 'semana' ? req.query.agrupar : 'mes';
+  const reporte = await reporteMerma({
+    desde: q('desde'),
+    hasta: q('hasta'),
+    almacenId: q('almacenId'),
+    productoId: q('productoId'),
+    categoria: q('categoria'),
+    agrupar,
+  });
+  res.json(reporte);
 });
 
 // ---------------------------------------------------------------------------
@@ -110,7 +127,7 @@ router.patch(
 // Edición de fecha/notas (no pesos ni salidas): protegida por llave y auditada.
 router.patch(
   '/:id/editar',
-  requirePermiso('transformaciones', 'editar'),
+  requirePermisoOLlave('transformaciones', 'editar'),
   validateBody(editarTransformacionSchema),
   async (req, res) => {
     const id = String(req.params.id);

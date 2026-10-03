@@ -19,6 +19,7 @@ const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
   borrador: { label: 'Borrador', clase: 'bg-gray-100 text-gray-600' },
   emitida: { label: 'Emitida', clase: 'bg-blue-100 text-blue-700' },
   pagada: { label: 'Pagada', clase: 'bg-green-100 text-green-700' },
+  anulada: { label: 'Anulada', clase: 'bg-red-100 text-red-700' },
 };
 
 function fmt(n: number): string {
@@ -58,7 +59,7 @@ function FacturaHistorialPage({ tipo }: Props) {
   const [cargando, setCargando] = useState(true);
   const [filtros, setFiltros] = useState<FiltrosFacturas>({});
   const [buscaCodigo, setBuscaCodigo] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'borrador' | 'emitida' | 'pagada'>('todos');
+  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'borrador' | 'emitida' | 'pagada' | 'anulada'>('todos');
 
   const facturasFiltradas = useMemo(
     () => facturas.filter(f =>
@@ -131,6 +132,7 @@ function FacturaHistorialPage({ tipo }: Props) {
             <option value="borrador">Borrador</option>
             <option value="emitida">Emitida</option>
             <option value="pagada">Pagada</option>
+            <option value="anulada">Anulada</option>
           </select>
         </div>
         {(buscaCodigo || filtros.desde || filtros.hasta || filtros.entidadId || filtros.productoId || filtroEstado !== 'todos') && (

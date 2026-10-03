@@ -223,7 +223,8 @@ export async function obtenerEstadoCuenta(
     .maybeSingle();
   if (errEnt || !entidad) return null;
 
-  let qFacturas = supabaseAdmin.from(tablaFacturas).select('id, numero, total, descripcion, created_at').eq(columnaEntidad, id);
+  // Las facturas anuladas (ticket corregido con llave de edición) no son deuda: no entran al estado de cuenta.
+  let qFacturas = supabaseAdmin.from(tablaFacturas).select('id, numero, total, descripcion, created_at').eq(columnaEntidad, id).neq('estado', 'anulada');
   if (desde) qFacturas = qFacturas.gte('created_at', desde);
   if (hasta) qFacturas = qFacturas.lte('created_at', `${hasta}T23:59:59`);
   const { data: facturasData } = await qFacturas;

@@ -1,4 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { almacenIdSchema } from '../schemas/inventario.js';
+import { leerPaginado } from '../utils/paginacion.js';
+import { calcularDesgloseAlmacen, type LineaDesgloseAlmacen, type MovimientoAlmacen } from './inventario-almacen-desglose.js';
 
 export interface ArticuloInventario {
   productoId: string;
@@ -18,6 +21,22 @@ export interface ArticuloInventario {
   transformaciones: number; // neto por transformaciones (salidas - entradas)
   ajustes: number;         // neto de ajustes de toma física (culminar_toma_fisica_inventario)
   stock: number;
+  /** Solo en la vista por almacén: relación de movimientos que explican el
+   *  stock (ver inventario-almacen-desglose.ts). */
+  desglose?: DesgloseArticulo;
+}
+
+/** stock = compras − ventas + trasladoEntrada − trasladoSalida − transfEntrada + transfSalida + ajustes */
+export interface DesgloseArticulo {
+  compras: number;
+  ventas: number;
+  trasladoEntrada: number;
+  trasladoSalida: number;
+  /** Material consumido por transformaciones. */
+  transfEntrada: number;
+  /** Material producido por transformaciones. */
+  transfSalida: number;
+  ajustes: number;
 }
 
 export interface GrupoInventario {
@@ -753,152 +772,255 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
 }
 
 const UMBRAL_STOCK_KG = 0.005;
+const LOTES_ALMACEN_CATEGORIA = 'Lotes';
+const LOTES_ALMACEN_CLAVE_GRUPO = '__lotes_almacen__';
 
-export interface LoteAlmacenParaDesglose {
-  loteId: string;
-  nombreLote: string | null;
-  /** Stock real del lote en el almacén (stock_lote_por_almacen). */
-  stockTotalAlmacen: number;
-  /** Stock del lote en el almacén atribuido a productos (stock_lote_almacen_por_producto). */
-  stockPorProducto: readonly number[];
+interface RangoFechas { desde?: string; hasta?: string }
+
+/** ¿La fecha (YYYY-MM-DD o ISO) cae dentro del rango? Sin fecha, no se filtra. */
+function enRango(fecha: string | null | undefined, rango: RangoFechas): boolean {
+  if (!fecha) return true;
+  const dia = fecha.slice(0, 10);
+  if (rango.desde && dia < rango.desde) return false;
+  if (rango.hasta && dia > rango.hasta) return false;
+  return true;
 }
 
-export interface LoteSinDesglose {
-  loteId: string;
-  nombreLote: string | null;
-  neto: number;
-}
+const ESTADOS_TRASLADO_QUE_DESCUENTAN = new Set(['pendiente', 'completo']);
 
-/** Kilos de cada lote en un almacén que ningún producto explica: total real
- *  menos la suma por producto. Función pura. Un resto negativo se conserva
- *  (es un faltante real); solo se descarta el ruido de redondeo. */
-export function calcularLotesSinDesglose(lotes: readonly LoteAlmacenParaDesglose[]): LoteSinDesglose[] {
-  return lotes
-    .map(l => ({
-      loteId: l.loteId,
-      nombreLote: l.nombreLote,
-      neto: l.stockTotalAlmacen - l.stockPorProducto.reduce((acc, kg) => acc + kg, 0),
-    }))
-    .filter(l => Math.abs(l.neto) >= UMBRAL_STOCK_KG);
-}
+/** Lee de la BD todos los movimientos que afectan a un almacén y los normaliza.
+ *  Mismas reglas de atribución que stock_almacen() / stock_lote_por_almacen():
+ *  compra/venta por el almacén del ticket; traslado saliente desde que se crea
+ *  (pendiente o completo) y entrante solo al completarse, por lo recibido;
+ *  transformación por el almacén de la salida (o el de la transformación si
+ *  la salida no lo indica) y solo si está completa; ajustes por su almacén. */
+async function cargarMovimientosAlmacen(almacenId: string, rango: RangoFechas): Promise<MovimientoAlmacen[]> {
+  // Defensa en profundidad: almacenId se interpola en un filtro .or() de PostgREST.
+  almacenIdSchema.parse(almacenId);
+  const movimientos: MovimientoAlmacen[] = [];
+  const empujar = (tipo: MovimientoAlmacen['tipo'], productoId: string | null, loteId: string | null, peso: unknown) =>
+    movimientos.push({ tipo, productoId, loteId, peso: Number(peso ?? 0) });
 
-const LOTES_POR_TANDA = 10;
-const MAX_LOTES_DESGLOSE = 5000;
-
-async function filaLoteAlmacen(l: { id: string; nombre: string | null }, almacenId: string): Promise<LoteAlmacenParaDesglose | null> {
-  const [totales, porProducto] = await Promise.all([
-    supabaseAdmin.rpc('stock_lote_por_almacen', { p_lote_id: l.id }),
-    supabaseAdmin.rpc('stock_lote_almacen_por_producto', { p_lote_id: l.id, p_almacen_id: almacenId }),
-  ]);
-  if (totales.error || porProducto.error) {
-    // Un lote que falla no debe tumbar el inventario completo del almacén.
-    console.error('[inventario] desglose de lote falló', l.id, totales.error ?? porProducto.error);
-    return null;
+  // Compras y ventas.
+  const tickets = await leerPaginado<{
+    tipo: 'compra' | 'venta';
+    fecha: string | null;
+    detalle_tickets_pesaje: Array<{ producto_id: string | null; peso_neto: number | null; destino_tipo: string | null; lote_id: string | null }> | null;
+  }>((d, h) =>
+    supabaseAdmin
+      .from('tickets_pesaje')
+      .select('tipo, fecha, detalle_tickets_pesaje(producto_id, peso_neto, destino_tipo, lote_id)')
+      .eq('almacen_id', almacenId)
+      .order('id')
+      .range(d, h)
+  );
+  for (const t of tickets) {
+    if (!enRango(t.fecha, rango)) continue;
+    for (const d of t.detalle_tickets_pesaje ?? []) {
+      const aLote = d.destino_tipo === 'lote';
+      if (aLote && !d.lote_id) continue;
+      empujar(t.tipo, d.producto_id, aLote ? d.lote_id : null, d.peso_neto);
+    }
   }
-  const enAlmacen = (totales.data as Array<{ almacen_id: string; stock: number }> | null)?.find(r => r.almacen_id === almacenId);
+
+  // Traslados.
+  const traslados = await leerPaginado<{
+    almacen_origen_id: string | null;
+    almacen_destino_id: string | null;
+    estado: string;
+    created_at: string | null;
+    completado_en: string | null;
+    detalle_traslado: Array<{ producto_id: string | null; lote_id: string | null; peso_neto: number | null; peso_recibido: number | null }> | null;
+  }>((d, h) =>
+    supabaseAdmin
+      .from('tickets_traslado')
+      .select('almacen_origen_id, almacen_destino_id, estado, created_at, completado_en, detalle_traslado(producto_id, lote_id, peso_neto, peso_recibido)')
+      .or(`almacen_origen_id.eq.${almacenId},almacen_destino_id.eq.${almacenId}`)
+      .order('id')
+      .range(d, h)
+  );
+  for (const t of traslados) {
+    for (const d of t.detalle_traslado ?? []) {
+      if (t.almacen_origen_id === almacenId && ESTADOS_TRASLADO_QUE_DESCUENTAN.has(t.estado) && enRango(t.created_at, rango)) {
+        empujar('traslado_salida', d.producto_id, d.lote_id, d.peso_neto);
+      }
+      if (t.almacen_destino_id === almacenId && t.estado === 'completo' && enRango(t.completado_en, rango)) {
+        empujar('traslado_entrada', d.producto_id, d.lote_id, d.peso_recibido);
+      }
+    }
+  }
+
+  // Transformaciones: consumo (entrada) de las hechas en este almacén.
+  const transformaciones = await leerPaginado<{
+    categoria: string;
+    fecha: string | null;
+    lote_origen_id: string | null;
+    peso_neto: number | null;
+    transformacion_entrada_detalle: Array<{ producto_id: string | null; peso_kg: number | null }> | null;
+  }>((d, h) =>
+    supabaseAdmin
+      .from('transformaciones')
+      .select('categoria, fecha, lote_origen_id, peso_neto, transformacion_entrada_detalle(producto_id, peso_kg)')
+      .eq('almacen_id', almacenId)
+      .order('id')
+      .range(d, h)
+  );
+  for (const t of transformaciones) {
+    if (!enRango(t.fecha, rango)) continue;
+    if (t.categoria === 'pcb' && t.lote_origen_id) {
+      empujar('transf_entrada', null, t.lote_origen_id, t.peso_neto);
+    } else if (t.categoria === 'ferroso_no_ferroso') {
+      for (const e of t.transformacion_entrada_detalle ?? []) empujar('transf_entrada', e.producto_id, null, e.peso_kg);
+    }
+  }
+
+  // Transformaciones: producción (salida) asignada a este almacén. Dos
+  // consultas: salidas con almacén propio, y salidas sin almacén cuya
+  // transformación es de este almacén.
+  type SalidaRow = {
+    producto_id: string | null;
+    lote_destino_id: string | null;
+    peso_neto: number | null;
+    transformaciones: { estado: string | null; fecha: string | null } | null;
+  };
+  const columnasSalida = 'producto_id, lote_destino_id, peso_neto';
+  const [salidasPropias, salidasHeredadas] = await Promise.all([
+    leerPaginado<SalidaRow>((d, h) =>
+      supabaseAdmin
+        .from('transformacion_salida_detalle')
+        .select(`${columnasSalida}, transformaciones(estado, fecha)`)
+        .eq('almacen_id', almacenId)
+        .order('id')
+        .range(d, h)
+    ),
+    leerPaginado<SalidaRow>((d, h) =>
+      supabaseAdmin
+        .from('transformacion_salida_detalle')
+        .select(`${columnasSalida}, transformaciones!inner(estado, fecha, almacen_id)`)
+        .is('almacen_id', null)
+        .eq('transformaciones.almacen_id', almacenId)
+        .order('id')
+        .range(d, h)
+    ),
+  ]);
+  for (const s of [...salidasPropias, ...salidasHeredadas]) {
+    if (s.transformaciones?.estado !== 'completa' || !enRango(s.transformaciones.fecha, rango)) continue;
+    empujar('transf_salida', s.producto_id, s.lote_destino_id, s.peso_neto);
+  }
+
+  // Ajustes de toma física / manuales.
+  const ajustes = await leerPaginado<{
+    producto_id: string | null;
+    lote_id: string | null;
+    diferencia: number | null;
+    created_at: string | null;
+  }>((d, h) =>
+    supabaseAdmin
+      .from('ajustes_inventario')
+      .select('producto_id, lote_id, diferencia, created_at')
+      .eq('almacen_id', almacenId)
+      .order('id')
+      .range(d, h)
+  );
+  for (const a of ajustes) {
+    if (!enRango(a.created_at, rango)) continue;
+    empujar('ajuste', a.producto_id, a.lote_id, a.diferencia);
+  }
+
+  return movimientos;
+}
+
+function aDesglose(l: LineaDesgloseAlmacen): DesgloseArticulo {
   return {
-    loteId: l.id,
-    nombreLote: l.nombre,
-    stockTotalAlmacen: Number(enAlmacen?.stock ?? 0),
-    stockPorProducto: ((porProducto.data as Array<{ stock: number }> | null) ?? []).map(r => Number(r.stock)),
+    compras: l.compras,
+    ventas: l.ventas,
+    trasladoEntrada: l.trasladoEntrada,
+    trasladoSalida: l.trasladoSalida,
+    transfEntrada: l.transfEntrada,
+    transfSalida: l.transfSalida,
+    ajustes: l.ajustes,
   };
 }
 
-async function cargarLotesSinDesglose(almacenId: string): Promise<LoteSinDesglose[]> {
-  const { data, error } = await supabaseAdmin.from('lotes').select('id, nombre').limit(MAX_LOTES_DESGLOSE);
-  if (error) throw error;
-  const lotes = (data as Array<{ id: string; nombre: string | null }> | null) ?? [];
+function tieneMovimiento(l: LineaDesgloseAlmacen): boolean {
+  return [l.compras, l.ventas, l.trasladoEntrada, l.trasladoSalida, l.transfEntrada, l.transfSalida, l.ajustes]
+    .some(kg => Math.abs(kg) >= UMBRAL_STOCK_KG);
+}
 
-  const filas: LoteAlmacenParaDesglose[] = [];
-  for (let i = 0; i < lotes.length; i += LOTES_POR_TANDA) {
-    const tanda = await Promise.all(lotes.slice(i, i + LOTES_POR_TANDA).map(l => filaLoteAlmacen(l, almacenId)));
-    for (const f of tanda) if (f) filas.push(f);
-  }
-  return calcularLotesSinDesglose(filas);
+function articuloDeLinea(l: LineaDesgloseAlmacen, nombre: string, esLote: boolean): ArticuloInventario {
+  return {
+    productoId: esLote ? `${LOTE_ADJ_CLAVE}${l.loteId}` : (l.productoId as string),
+    nombre,
+    destinoTipo: esLote ? 'lote' : 'mpp',
+    loteId: esLote ? l.loteId : null,
+    destinoLabel: esLote ? nombre : MPP_LABEL,
+    entradas: l.compras,
+    salidas: l.ventas,
+    transformaciones: l.transfSalida - l.transfEntrada,
+    ajustes: l.ajustes,
+    stock: l.stock,
+    desglose: aDesglose(l),
+  };
 }
 
 /**
- * Inventario propio de UN almacén — llama directamente a stock_almacen() en
- * SQL (fuente única corregida en la Fase 3 del plan de consolidación,
- * docs/PLAN_consolidacion_inventario.md) en vez de recalcular aparte.
- * Antes esta función reimplementaba en TS la misma lógica que stock_almacen()
- * en SQL, con su propio conjunto de bugs (RC-1, RC-13) que nunca se
- * mantenían sincronizados entre sí. Ahora son literalmente el mismo cálculo.
+ * Inventario propio de UN almacén, con el desglose de lo que lo explica:
+ * compras, ventas, traslados (entrada/salida), transformaciones (consumo/
+ * producción) y ajustes de toma física. Sale de los movimientos reales del
+ * almacén (ver cargarMovimientosAlmacen), con las mismas reglas de
+ * atribución que stock_almacen()/stock_lote_por_almacen() en SQL, así que la
+ * suma de todas las líneas coincide con stock_almacen() más el stock de lote
+ * que ningún producto explica.
  *
- * Colapsa MPP/lote — todo aparece como destino 'mpp' (D-3 del plan: lo
- * pedido es categoría → producto, no cruzarlo con destino); stock_almacen()
- * ya no distingue esto en su salida, así que este colapso queda implícito.
- * No lista productos sin movimiento: un almacén nuevo no debe mostrar todo
- * el catálogo del negocio en cero. Se muestra el stock negativo tal cual —
- * el sistema no bloquea movimientos por falta de stock, así que un número
- * negativo real debe verse, no ocultarse.
+ * Material sin lote: una fila por producto. Lotes: una fila por lote (sus
+ * movimientos no siempre traen producto, p. ej. toma física del lote entero o
+ * traslado de lote), con el stock real del lote en este almacén. Se muestra
+ * el stock negativo tal cual: el sistema no bloquea ventas por falta de
+ * stock, un negativo real debe verse. Un almacén nuevo no lista el catálogo
+ * en cero: solo aparecen productos/lotes con algún movimiento en él.
+ *
+ * Filtros: categoría/producto limitan las filas de producto; un lote solo se
+ * muestra si alguno de sus movimientos fue de un producto permitido. desde/
+ * hasta acotan los movimientos (el stock pasa a ser el neto de la ventana).
  */
 export async function obtenerInventarioAlmacen(
   almacenId: string,
-  filtros: Pick<FiltrosInventario, 'tipoMaterialId' | 'productoId'> = {}
+  filtros: Pick<FiltrosInventario, 'tipoMaterialId' | 'productoId' | 'desde' | 'hasta'> = {}
 ): Promise<GrupoInventario[]> {
-  const productos = await cargarProductos(filtros);
+  const [productos, movimientos, lotesData] = await Promise.all([
+    cargarProductos(filtros),
+    cargarMovimientosAlmacen(almacenId, { desde: filtros.desde, hasta: filtros.hasta }),
+    supabaseAdmin.from('lotes').select('id, nombre'),
+  ]);
+  if (lotesData.error) throw lotesData.error;
   const metaPorId = new Map(productos.map(p => [p.id, p]));
-
-  const { data, error } = await supabaseAdmin.rpc('stock_almacen', { p_almacen_id: almacenId });
-  if (error) throw error;
+  const nombreLote = new Map(((lotesData.data as Array<{ id: string; nombre: string | null }> | null) ?? []).map(l => [l.id, l.nombre]));
+  const hayFiltroProducto = Boolean(filtros.tipoMaterialId || filtros.productoId);
+  const lotesDeProductoPermitido = new Set(
+    movimientos.filter(m => m.loteId && m.productoId && metaPorId.has(m.productoId)).map(m => m.loteId as string)
+  );
 
   const grupos = new Map<string, GrupoInventario>();
-  for (const row of (data as Array<{ producto_id: string; stock: number }> | null) ?? []) {
-    const stock = Number(row.stock);
-    if (Math.abs(stock) < 0.005) continue;
-    const meta = metaPorId.get(row.producto_id);
-    if (!meta) continue;
-    const clave = meta.tipoMaterialId ?? '__sin__';
+  const agregar = (clave: string, tipoMaterialId: string | null, nombreCategoria: string, articulo: ArticuloInventario) => {
     let g = grupos.get(clave);
     if (!g) {
-      g = { tipoMaterialId: meta.tipoMaterialId, nombreCategoria: meta.nombreCategoria, totalKg: 0, articulos: [] };
+      g = { tipoMaterialId, nombreCategoria, totalKg: 0, articulos: [] };
       grupos.set(clave, g);
     }
-    g.articulos.push({
-      productoId: row.producto_id,
-      nombre: meta.nombre,
-      destinoTipo: 'mpp',
-      loteId: null,
-      destinoLabel: MPP_LABEL,
-      entradas: Math.max(stock, 0),
-      salidas: Math.max(-stock, 0),
-      transformaciones: 0,
-      ajustes: 0,
-      stock,
-    });
-    g.totalKg += stock;
-  }
+    g.articulos.push(articulo);
+    g.totalKg += articulo.stock;
+  };
 
-  // Kilos de lote que ningún producto puede atribuirse en este almacén
-  // (lote contado como un todo en una toma física, y los traslados de ese
-  // lote: sus filas de composición no traen producto). stock_almacen()
-  // solo devuelve producto_id reales, así que sin esto el filtro por
-  // almacén mostraba solo el ajuste y no el stock real (ej. BGPP en G1:
-  // ajuste 12293.9 − traslado 9 = 12284.9). Se calcula contra el stock
-  // real del lote en el almacén (mismo cálculo que stock_lote_por_almacen).
-  // Se muestra siempre, sin importar tipoMaterialId/productoId (esos
-  // filtros no aplican a una línea que no tiene producto).
-  const sinDesglose = await cargarLotesSinDesglose(almacenId);
-  for (const info of sinDesglose) {
-    let g = grupos.get(LOTE_ADJ_CLAVE);
-    if (!g) {
-      g = { tipoMaterialId: null, nombreCategoria: LOTE_ADJ_CATEGORIA, totalKg: 0, articulos: [] };
-      grupos.set(LOTE_ADJ_CLAVE, g);
+  for (const l of calcularDesgloseAlmacen(movimientos)) {
+    if (!tieneMovimiento(l)) continue;
+    if (l.loteId) {
+      if (hayFiltroProducto && !lotesDeProductoPermitido.has(l.loteId)) continue;
+      agregar(LOTES_ALMACEN_CLAVE_GRUPO, null, LOTES_ALMACEN_CATEGORIA, articuloDeLinea(l, nombreLote.get(l.loteId) ?? 'Lote', true));
+      continue;
     }
-    g.articulos.push({
-      productoId: `${LOTE_ADJ_CLAVE}${info.loteId}`,
-      nombre: `${info.nombreLote ?? 'Lote'} — sin desglose por material`,
-      destinoTipo: 'lote',
-      loteId: info.loteId,
-      destinoLabel: info.nombreLote ?? 'Lote',
-      entradas: 0,
-      salidas: 0,
-      transformaciones: 0,
-      ajustes: info.neto,
-      stock: info.neto,
-    });
-    g.totalKg += info.neto;
+    const meta = l.productoId ? metaPorId.get(l.productoId) : undefined;
+    if (!meta) continue;
+    agregar(meta.tipoMaterialId ?? '__sin__', meta.tipoMaterialId, meta.nombreCategoria, articuloDeLinea(l, meta.nombre, false));
   }
 
   for (const g of grupos.values()) g.articulos.sort((a, b) => a.nombre.localeCompare(b.nombre));

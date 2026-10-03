@@ -1,5 +1,5 @@
 import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea } from '@shared/types/index.js';
-import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, filaEncabezado, tablaPesaje } from './pdf-documento';
+import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, filaEncabezado, tablaPesaje } from './pdf-documento';
 
 function fmtFecha(iso: string | null): string {
   if (!iso) return '—';
@@ -11,8 +11,9 @@ function fmtFecha(iso: string | null): string {
 export async function descargarTomaFisicaPDF(
   tomaFisica: TomaFisicaInventario,
   detalle: DetalleTomaFisica[],
-  lineas: ResumenTomaFisicaLinea[]
-): Promise<void> {
+  lineas: ResumenTomaFisicaLinea[],
+  modo: ModoPdf = 'descargar'
+): Promise<ArchivoPdf | undefined> {
   const { default: jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -91,5 +92,5 @@ export async function descargarTomaFisicaPDF(
     doc.setTextColor(0);
   }
 
-  doc.save(`toma-fisica-${tomaFisica.codigo.replace(/\s+/g, '-').toLowerCase()}.pdf`);
+  return entregarPdf(doc, `toma-fisica-${tomaFisica.codigo.replace(/\s+/g, '-').toLowerCase()}.pdf`, modo);
 }

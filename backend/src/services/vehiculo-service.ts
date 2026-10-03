@@ -39,7 +39,7 @@ export async function crearVehiculo(
 ): Promise<{ vehiculo: VehiculoPublico } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('vehiculos')
-    .insert({ nombre: input.nombre })
+    .insert(input.descripcion ? { nombre: input.nombre, descripcion: input.descripcion } : { nombre: input.nombre })
     .select('*')
     .single();
 
@@ -56,6 +56,7 @@ export async function actualizarVehiculo(
 ): Promise<{ vehiculo: VehiculoPublico } | { error: string }> {
   const update: Record<string, unknown> = {};
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
+  if (cambios.descripcion !== undefined) update.descripcion = cambios.descripcion;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
 
   const { data, error } = await supabaseAdmin
@@ -77,5 +78,12 @@ export async function desactivarVehiculo(id: string): Promise<boolean> {
 
 export async function reactivarVehiculo(id: string): Promise<boolean> {
   const { error } = await supabaseAdmin.from('vehiculos').update({ activo: true }).eq('id', id);
+  return !error;
+}
+
+/** Borra el vehículo del catálogo. Los tickets guardan la placa como texto,
+ *  así que no hay referencias que se rompan. */
+export async function eliminarVehiculo(id: string): Promise<boolean> {
+  const { error } = await supabaseAdmin.from('vehiculos').delete().eq('id', id);
   return !error;
 }

@@ -36,11 +36,11 @@ function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   // La factura asociada es opcional (ajuste general de saldo) — se puede
-  // elegir cualquier factura de la entidad, incluso ya pagada (no se filtra
-  // por estado, a diferencia de PagoCobroModal que solo lista pendientes).
+  // elegir cualquier factura vigente de la entidad, incluso ya pagada (solo se
+  // excluyen las anuladas; PagoCobroModal además oculta las pagadas).
   useEffect(() => {
     obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista =>
-      setFacturas([...lista].sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
+      setFacturas(lista.filter(f => f.estado !== 'anulada').sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
     );
   }, [esProveedor, entidadId]);
 

@@ -7,10 +7,23 @@ import { crearProveedorSchema } from '../src/schemas/proveedores.js';
 import { crearTaraSchema, actualizarTaraSchema } from '../src/schemas/tara.js';
 import { registrarPagoSchema, registrarPagoMultipleSchema } from '../src/schemas/pagos.js';
 import { actualizarUsuarioSchema } from '../src/schemas/usuarios.js';
+import { parsearAlmacenId } from '../src/schemas/inventario.js';
 import { RECURSOS, ACCIONES } from '../src/utils/permisos.js';
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const UUID2 = '22222222-2222-4222-8222-222222222222';
+
+describe('parsearAlmacenId (inventario)', () => {
+  it('acepta UUID y ausencia', () => {
+    expect(parsearAlmacenId(UUID)).toEqual({ ok: true, almacenId: UUID });
+    expect(parsearAlmacenId(undefined)).toEqual({ ok: true });
+  });
+  it('rechaza valores que inyectarían filtros PostgREST', () => {
+    expect(parsearAlmacenId('x,almacen_destino_id.not.is.null').ok).toBe(false);
+    expect(parsearAlmacenId('abc').ok).toBe(false);
+    expect(parsearAlmacenId([UUID, UUID]).ok).toBe(false);
+  });
+});
 
 describe('crearFacturaSchema', () => {
   const item = { productoId: UUID2, peso: 10, precioUnitario: 5 };
@@ -154,6 +167,68 @@ describe('crearTicketSchema', () => {
     const { pesoGlobal: _pesoGlobal, ...sinPesoGlobal } = base;
     const r = crearTicketSchema.safeParse(sinPesoGlobal);
     expect(r.success).toBe(false);
+  });
+
+  describe('peso global obligatorio en compra y venta (excepción: peso exterior)', () => {
+    const sinGlobal = { entidadId: UUID, materiales: [material] };
+    const pesada = { peso: 90, tara: 0, fotos: ['https://x.com/p.jpg'] };
+
+    it('rechaza compra sin peso global ni peso exterior', () => {
+      expect(crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'compra' }).success).toBe(false);
+    });
+
+    it('rechaza compra con peso global 0 y sin peso exterior', () => {
+      expect(crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'compra', pesoGlobal: 0 }).success).toBe(false);
+    });
+
+    it('acepta compra con peso exterior y sin peso global', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'compra', pesajeExterior: true });
+      expect(r.success).toBe(true);
+    });
+
+    it('acepta compra con peso exterior y pesoGlobal null', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'compra', pesajeExterior: true, pesoGlobal: null });
+      expect(r.success).toBe(true);
+    });
+
+    it('rechaza peso exterior junto con peso global (contradictorio)', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, pesajeExterior: true, pesoGlobal: 90 });
+      expect(r.success).toBe(false);
+    });
+
+    it('rechaza peso exterior junto con pesadas globales (contradictorio)', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, pesajeExterior: true, pesajesGlobales: [pesada] });
+      expect(r.success).toBe(false);
+    });
+
+    it('acepta venta con peso exterior y sin peso global', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesajeExterior: true });
+      expect(r.success).toBe(true);
+    });
+
+    it('acepta venta con peso exterior y pesoGlobal null', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesajeExterior: true, pesoGlobal: null });
+      expect(r.success).toBe(true);
+    });
+
+    it('rechaza venta con peso exterior junto con peso global', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesajeExterior: true, pesoGlobal: 90 });
+      expect(r.success).toBe(false);
+    });
+
+    it('rechaza venta con peso exterior junto con pesadas globales', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesajeExterior: true, pesajesGlobales: [pesada] });
+      expect(r.success).toBe(false);
+    });
+
+    it('rechaza venta sin peso global ni peso exterior', () => {
+      expect(crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta' }).success).toBe(false);
+    });
+
+    it('acepta venta con peso global y sin peso exterior', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesoGlobal: 90, pesajesGlobales: [pesada] });
+      expect(r.success).toBe(true);
+    });
   });
 
   it('rechaza peso global negativo', () => {

@@ -6,6 +6,7 @@ import { obtenerNotaAjusteCliente, type NotaAjusteClienteDetalle } from '../../s
 import type { TipoEntidad } from '../../services/estado-cuenta-service';
 import { descargarNotaPDF } from '../../services/nota-export';
 import FilaDocumento from '../../components/FilaDocumento';
+import CompartirBoton from '../../components/CompartirBoton';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -117,6 +118,7 @@ function NotaDetallePage({ tipoEntidad }: Props) {
             <Printer size={16} />
             Imprimir
           </button>
+          <CompartirBoton titulo={`Nota ${nota.codigo ?? nota.id.slice(0, 8)}`} obtenerPdf={() => descargarNotaPDF(nota, esProveedor, 'blob')} />
         </div>
       </div>
 

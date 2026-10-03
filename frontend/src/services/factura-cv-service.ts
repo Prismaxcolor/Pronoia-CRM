@@ -1,6 +1,8 @@
 import { apiFetch } from './api-client';
 
 export type TipoFactura = 'compra' | 'venta';
+/** 'anulada': se conserva para historial, pero no es deuda ni se puede pagar. */
+export type EstadoFacturaCV = 'borrador' | 'emitida' | 'pagada' | 'anulada';
 
 export interface FacturaItemCV {
   id: string;
@@ -29,7 +31,7 @@ export interface FacturaCV {
   montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFacturaCV;
   createdAt: string;
 }
 

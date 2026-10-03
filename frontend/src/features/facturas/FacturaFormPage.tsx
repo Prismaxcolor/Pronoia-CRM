@@ -183,7 +183,7 @@ function FacturaFormPage({ tipo }: Props) {
     // En compra el precio puede ser 0 (material recibido sin costo); en venta no.
     const precioMinimoValido = (l: LineaFila) => l.precioUnitario !== '' && (esCompra ? Number(l.precioUnitario) >= 0 : Number(l.precioUnitario) > 0);
     if (lineas.some(l => !precioMinimoValido(l))) {
-      setError(esCompra ? 'Cada material debe tener un precio unitario (puede ser 0).' : 'Cada material debe tener un precio unitario mayor a 0.');
+      setError('Cada material debe tener un precio unitario (puede ser 0).');
       return;
     }
 

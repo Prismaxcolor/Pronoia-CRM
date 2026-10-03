@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Shield, UserX, UserCheck, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Shield, UserX, UserCheck, Trash2 } from 'lucide-react';
 import {
   obtenerUsuarios,
   desactivarUsuario,
@@ -11,6 +11,7 @@ import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import CrearUsuarioModal from './CrearUsuarioModal';
 import EditarPermisosModal from './EditarPermisosModal';
+import EditarUsuarioModal from './EditarUsuarioModal';
 import type { Usuario } from '@shared/types/index.js';
 
 const ROL_BADGE: Record<string, { bg: string; text: string }> = {
@@ -24,6 +25,7 @@ function UsuariosPage() {
   const [cargando, setCargando] = useState(true);
   const [mostrarCrear, setMostrarCrear] = useState(false);
   const [editando, setEditando] = useState<Usuario | null>(null);
+  const [editandoDatos, setEditandoDatos] = useState<Usuario | null>(null);
   const { usuario: currentUser } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
@@ -164,6 +166,14 @@ function UsuariosPage() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"
+                        onClick={() => setEditandoDatos(u)}
+                        className="p-2 text-text-muted hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                        title="Editar usuario"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setEditando(u)}
                         className="p-2 text-text-muted hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
                         title="Editar permisos"
@@ -225,6 +235,14 @@ function UsuariosPage() {
           usuario={editando}
           onClose={() => setEditando(null)}
           onGuardado={() => { setEditando(null); cargar(); }}
+        />
+      )}
+
+      {editandoDatos && (
+        <EditarUsuarioModal
+          usuario={editandoDatos}
+          onClose={() => setEditandoDatos(null)}
+          onGuardado={() => { setEditandoDatos(null); cargar(); }}
         />
       )}
     </div>

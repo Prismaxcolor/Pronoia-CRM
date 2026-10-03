@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, FileDown, ZoomIn, X, Pencil } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown, ZoomIn, Pencil } from 'lucide-react';
 import { obtenerTransformacion } from '../../services/transformacion-service';
 import { obtenerAlmacenes } from '../../services/almacen-service';
 import { obtenerUsuarios } from '../../services/usuario-service';
@@ -15,6 +15,8 @@ import { obtenerConfigLlaves } from '../../services/llave-service';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Transformacion } from '@shared/types/index.js';
 import { etiquetaSalida } from '../../lib/salida-mixta';
+import CompartirBoton from '../../components/CompartirBoton';
+import VisorFotos from '../../components/VisorFotos';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -137,7 +139,7 @@ function TransformacionDetallePage() {
         </div>
         <div className="print:hidden flex items-center gap-2 shrink-0">
           {esSuperadmin && puedeEditar && <GenerarLlaveEdicion entidadTipo="transformacion" entidadId={t.id} />}
-          {puedeEditar && (
+          {(puedeEditar || (requiereLlave && !esSuperadmin)) && (
             <button type="button" onClick={() => setEditando(true)} className={botonClass} title="Editar fecha y notas">
               <Pencil size={16} />
               Editar
@@ -151,6 +153,7 @@ function TransformacionDetallePage() {
             <Printer size={16} />
             Imprimir
           </button>
+          <CompartirBoton titulo={`Transformación ${t.codigo ?? t.id.slice(0, 8)}`} obtenerPdf={() => descargarTransformacionPDF(t, nombres, 'blob')} className={botonClass} />
         </div>
       </div>
 
@@ -269,17 +272,13 @@ function TransformacionDetallePage() {
       )}
 
       {fotoAmpliada && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4 print:hidden" onClick={() => setFotoAmpliada(null)}>
-          <button type="button" onClick={() => setFotoAmpliada(null)} className="absolute top-4 right-4 text-white/80 hover:text-white" title="Cerrar">
-            <X size={24} />
-          </button>
-          <div className="flex flex-col items-center gap-2 max-w-full max-h-full" onClick={e => e.stopPropagation()}>
-            <img src={fotoAmpliada.url} alt="Foto ampliada" className="max-w-full max-h-[80vh] object-contain rounded-lg" />
-            <p className="text-white text-sm bg-black/60 px-3 py-1.5 rounded-lg">
-              {fotoAmpliada.label}{fotoAmpliada.peso != null && ` — ${fmt(fotoAmpliada.peso)} kg`}
-            </p>
-          </div>
-        </div>
+        <VisorFotos
+          fotos={galeria.map(f => f.url)}
+          indice={Math.max(0, galeria.findIndex(f => f.key === fotoAmpliada.key))}
+          onCambiar={i => setFotoAmpliada(galeria[i])}
+          onCerrar={() => setFotoAmpliada(null)}
+          pie={<>{fotoAmpliada.label}{fotoAmpliada.peso != null && ` — ${fmt(fotoAmpliada.peso)} kg`}</>}
+        />
       )}
     </div>
   );

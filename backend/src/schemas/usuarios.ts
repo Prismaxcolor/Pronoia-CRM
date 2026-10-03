@@ -17,7 +17,14 @@ export const crearUsuarioSchema = z.object({
 });
 
 export const actualizarUsuarioSchema = z.object({
-  nombre: z.string().trim().min(2).max(80).optional(),
+  nombre: z.string().trim().min(2, 'Nombre demasiado corto.').max(80, 'Nombre demasiado largo.').optional(),
+  email: z.string().trim().toLowerCase().email('Email inválido.').optional(),
+  /** Restablecer contraseña (opcional). */
+  password: z
+    .string()
+    .min(8, 'La contraseña debe tener al menos 8 caracteres.')
+    .max(200, 'La contraseña es demasiado larga.')
+    .optional(),
   rol: z.enum(ROLES).optional(),
   permisos: z.array(permisoSchema).optional(),
   activo: z.boolean().optional(),

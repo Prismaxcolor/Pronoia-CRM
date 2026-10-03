@@ -13,6 +13,7 @@ import PagoCobroModal from './PagoCobroModal';
 import NotaAjusteModal from './NotaAjusteModal';
 import AnularNotaModal from './AnularNotaModal';
 import type { ResultadoCobroMultiple } from '../../services/cobro-service';
+import CompartirBoton from '../../components/CompartirBoton';
 
 interface Props {
   /** Define de dónde se jalan los datos. La pantalla es idéntica para ambos. */
@@ -210,6 +211,7 @@ function EstadoCuentaPage({ tipo }: Props) {
             <Printer size={16} />
             Imprimir
           </button>
+          <CompartirBoton titulo="Estado de cuenta" />
         </div>
       </div>
 

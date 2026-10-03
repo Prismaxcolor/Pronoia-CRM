@@ -24,7 +24,9 @@ import FotoMaterialPicker from './FotoMaterialPicker';
 import SelectorOrden from '../../components/SelectorOrden';
 import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
 import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
-import { obtenerVehiculos, crearVehiculo } from '../../services/vehiculo-service';
+import { contarMaterialesDistintos, resumenMateriales as resumenMaterialesDistintos } from './resumen-materiales';
+import { obtenerVehiculos } from '../../services/vehiculo-service';
+import VehiculoSelector from '../../components/VehiculoSelector';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia } from './diferencia-peso';
 import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario, type Vehiculo } from '@shared/types/index.js';
@@ -106,16 +108,15 @@ function PesajePage() {
   // las rutas (usePesajeBorrador), no en useState local, para no perderse si
   // el usuario navega a otra pantalla (Dashboard, Cochinito, etc.) y vuelve.
   const {
-    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, devolucion, fotosDevolucion, materiales, observaciones, vehiculo },
+    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones, vehiculo },
     setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
-    setPesajesGlobales, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones, setVehiculo,
+    setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones, setVehiculo,
     limpiarBorrador,
   } = usePesajeBorrador();
 
-  // En venta el pesaje global es opcional: si no se registró ningún peso ni
-  // foto, el ticket queda sin peso global propio.
-  const sinPesajeGlobal = tipo === 'venta'
-    && pesajesGlobales.every(g => !(Number(g.peso) > 0) && !(Number(g.tara) > 0) && g.fotos.length === 0);
+  // En compra y venta el pesaje global es obligatorio, salvo que se active
+  // explícitamente "Peso exterior / sin pesaje global". Traslado no aplica.
+  const sinPesajeGlobal = tipo !== 'traslado' && pesajeExterior;
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +125,6 @@ function PesajePage() {
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [loteFilas, setLoteFilas] = useState<LoteTrasladoFila[]>([]);
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
-  const [nuevoVehiculo, setNuevoVehiculo] = useState('');
   const [buscaCodigo, setBuscaCodigo] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'compra' | 'venta' | 'traslado'>('todos');
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
@@ -242,16 +242,6 @@ function PesajePage() {
       : f)));
   const quitarFotoLoteFila = (uid: number, idx: number) =>
     setLoteFilas(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
-
-  const crearVehiculoInline = async () => {
-    const nombre = nuevoVehiculo.trim();
-    if (!nombre) return;
-    const result = await crearVehiculo({ nombre });
-    if ('error' in result) { toast.errorMsg(result.error); return; }
-    setVehiculos(prev => [...prev, result.vehiculo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
-    setVehiculo(result.vehiculo.nombre);
-    setNuevoVehiculo('');
-  };
 
   const guardarTraslado = async () => {
     setError(null);
@@ -554,7 +544,7 @@ function PesajePage() {
                 <button type="button" onClick={() => { setTipo('venta'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
                   Venta <span className="hidden sm:inline">(cliente)</span>
                 </button>
-                <button type="button" onClick={() => { setTipo('traslado'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'traslado' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                <button type="button" onClick={() => { setTipo('traslado'); setEntidadId(''); setPesajeExterior(false); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'traslado' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
                   Traslado <span className="hidden sm:inline">(almacén)</span>
                 </button>
               </div>
@@ -644,8 +634,20 @@ function PesajePage() {
             {tipo !== 'traslado' && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className={labelClass + ' mb-0'}>Pesaje global {tipo === 'venta' ? '(opcional)' : '*'}</label>
+                <label className={labelClass + ' mb-0'}>Pesaje global {pesajeExterior ? '' : '*'}</label>
               </div>
+              <label className="flex items-center gap-2 mb-2 text-sm text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pesajeExterior}
+                  onChange={e => setPesajeExterior(e.target.checked)}
+                  className="rounded border-border"
+                />
+                Peso exterior / sin pesaje global
+              </label>
+              {pesajeExterior ? (
+                <p className="text-xs text-text-muted">Sin pesaje global: {tipo === 'venta' ? 'la venta' : 'la compra'} se registra con el peso exterior, sin peso global para reconciliar.</p>
+              ) : (
               <div className="space-y-2">
                 {pesajesGlobales.map((f, idx) => {
                   const neto = netoPesajeGlobalFila(f);
@@ -724,6 +726,7 @@ function PesajePage() {
                   )}
                 </div>
               </div>
+              )}
             </div>
             )}
 
@@ -1008,26 +1011,7 @@ function PesajePage() {
               )}
             </div>
 
-            <div>
-              <label className={labelClass}>Vehículo</label>
-              <select value={vehiculo} onChange={e => setVehiculo(e.target.value)} className={inputClass}>
-                <option value="">— Sin vehículo —</option>
-                {vehiculos.map(v => <option key={v.id} value={v.nombre}>{v.nombre}</option>)}
-              </select>
-              <div className="flex items-center gap-2 mt-1.5">
-                <input
-                  type="text"
-                  value={nuevoVehiculo}
-                  onChange={e => setNuevoVehiculo(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); crearVehiculoInline(); } }}
-                  className={`${inputClass} text-xs py-1.5`}
-                  placeholder="Agregar vehículo nuevo (placa)"
-                />
-                <button type="button" onClick={crearVehiculoInline} disabled={!nuevoVehiculo.trim()} className="shrink-0 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-                  Guardar
-                </button>
-              </div>
-            </div>
+            <VehiculoSelector value={vehiculo} onChange={setVehiculo} vehiculos={vehiculos} inputClass={inputClass} labelClass={labelClass} />
 
             <div>
               <label className={labelClass}>Observaciones</label>
@@ -1551,18 +1535,12 @@ function FilaTicketTraslado({
 
 /** Resumen de los materiales de un ticket: nombre si es uno, "N materiales" si varios. */
 function resumenMateriales(t: TicketPesaje): string {
-  if (t.materiales.length === 0) return '—';
-  if (t.materiales.length === 1) return t.materiales[0].nombreProducto ?? 'material';
-  return `${t.materiales.length} materiales`;
+  return resumenMaterialesDistintos(t.materiales);
 }
 
 function resumenMaterialesTraslado(t: Traslado): string {
-  if (t.materiales.length === 0) return '—';
-  if (t.materiales.length === 1) {
-    const m = t.materiales[0];
-    return m.loteId ? `${m.nombreLote ?? 'Lote'} (lote completo)` : m.nombreProducto ?? 'material';
-  }
-  return `${t.materiales.length} ítems`;
+  const distintos = contarMaterialesDistintos(t.materiales);
+  return distintos > 1 ? `${distintos} ítems` : resumenMaterialesDistintos(t.materiales);
 }
 
 export default PesajePage;

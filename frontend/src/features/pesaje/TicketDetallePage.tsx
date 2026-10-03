@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, FileDown, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, X, ChevronDown } from 'lucide-react';
-import { obtenerTicket, editarTicket } from '../../services/ticket-pesaje-service';
+import { ArrowLeft, Printer, FileDown, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, ChevronDown } from 'lucide-react';
+import { obtenerTicket, editarTicket, type AvisoFacturaTicket } from '../../services/ticket-pesaje-service';
+import AvisoFacturaBanner from './AvisoFacturaBanner';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
-import { obtenerVehiculos, crearVehiculo } from '../../services/vehiculo-service';
+import { obtenerVehiculos } from '../../services/vehiculo-service';
+import VehiculoSelector from '../../components/VehiculoSelector';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -21,6 +23,10 @@ import FilaDocumento from '../../components/FilaDocumento';
 import HistorialEdiciones from '../../components/HistorialEdiciones';
 import GenerarLlaveEdicion from '../../components/GenerarLlaveEdicion';
 import { obtenerConfigLlaves } from '../../services/llave-service';
+import CompartirBoton from '../../components/CompartirBoton';
+import PesajesGlobalesEditor from './PesajesGlobalesEditor';
+import { pesajeGlobalVacio, sumaPesajesGlobales, subirFotosPesajeGlobal, type PesajeGlobalFila } from './pesaje-global-fila';
+import VisorFotos from '../../components/VisorFotos';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -64,14 +70,18 @@ function TicketDetallePage() {
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
-  const [nuevoVehiculo, setNuevoVehiculo] = useState('');
 
   const [editando, setEditando] = useState(false);
+  const [avisosFactura, setAvisosFactura] = useState<AvisoFacturaTicket[]>([]);
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [devolucionEdit, setDevolucionEdit] = useState('');
   const [fotosDevolucionEdit, setFotosDevolucionEdit] = useState<FotoMaterial[]>([]);
   const [observacionesEdit, setObservacionesEdit] = useState('');
   const [vehiculoEdit, setVehiculoEdit] = useState('');
+  const [fechaEdit, setFechaEdit] = useState('');
+  const [pesajesEdit, setPesajesEdit] = useState<PesajeGlobalFila[]>([]);
+  // Solo se envían las pesadas si el usuario las tocó (tickets viejos pueden no tener desglose ni fotos por pesada).
+  const [pesajesTocados, setPesajesTocados] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ocultarDestino, setOcultarDestino] = useState(false);
@@ -99,23 +109,13 @@ function TicketDetallePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const crearVehiculoInline = async () => {
-    const nombre = nuevoVehiculo.trim();
-    if (!nombre) return;
-    const result = await crearVehiculo({ nombre });
-    if ('error' in result) { toast.errorMsg(result.error); return; }
-    setVehiculos(prev => [...prev, result.vehiculo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
-    setVehiculoEdit(result.vehiculo.nombre);
-    setNuevoVehiculo('');
-  };
-
   const pesoNetoTotal = useMemo(
     () => materiales.reduce((acc, f) => acc + netoFila(f, taras), 0),
     [materiales, taras]
   );
   const diferencia = useMemo(
-    () => (ticket?.pesoGlobal ?? 0) - pesoNetoTotal - (Number(devolucionEdit) || 0),
-    [ticket, pesoNetoTotal, devolucionEdit]
+    () => (pesajesTocados ? sumaPesajesGlobales(pesajesEdit) : (ticket?.pesoGlobal ?? 0)) - pesoNetoTotal - (Number(devolucionEdit) || 0),
+    [ticket, pesoNetoTotal, devolucionEdit, pesajesTocados, pesajesEdit]
   );
 
   /** Subtotal por material cuando el mismo material se pesó más de una vez
@@ -144,6 +144,14 @@ function TicketDetallePage() {
     setFotosDevolucionEdit(ticket.fotosDevolucion.map(url => ({ tipo: 'existente' as const, url })));
     setObservacionesEdit(ticket.observaciones ?? '');
     setVehiculoEdit(ticket.vehiculo ?? '');
+    setFechaEdit(ticket.fecha ?? ticket.createdAt.slice(0, 10));
+    setPesajesEdit(ticket.pesajesGlobales.map(p => ({
+      ...pesajeGlobalVacio(),
+      peso: String(p.peso),
+      tara: p.tara ? String(p.tara) : '',
+      fotos: p.fotos.map(url => ({ tipo: 'existente' as const, url })),
+    })));
+    setPesajesTocados(false);
     setError(null);
     setEditando(true);
   };
@@ -168,6 +176,17 @@ function TicketDetallePage() {
     setFotosDevolucionEdit(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
   const quitarFotoDevolucion = (idx: number) =>
     setFotosDevolucionEdit(prev => prev.filter((_, i) => i !== idx));
+
+  /** Sube las fotos nuevas de cada pesaje; null si alguna falla o un pesaje queda sin foto. */
+  const pesajesParaEnviar = async () => {
+    const salida = [];
+    for (const f of pesajesEdit) {
+      const fotos = await subirFotosPesajeGlobal(f);
+      if (!fotos || fotos.length === 0) return null;
+      salida.push({ peso: Number(f.peso) || 0, tara: Number(f.tara) || 0, fotos });
+    }
+    return salida;
+  };
 
   const guardarEdicion = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -208,18 +227,29 @@ function TicketDetallePage() {
       return;
     }
 
+    const pesajesPayload = pesajesTocados ? await pesajesParaEnviar() : undefined;
+    if (pesajesTocados && !pesajesPayload) {
+      setError('No se pudo subir una foto del pesaje global, o falta una foto en algún pesaje.');
+      setGuardando(false);
+      return;
+    }
+
     const result = await editarTicket(ticket.id, {
       observaciones: observacionesEdit.trim() || null,
       vehiculo: vehiculoEdit.trim() || null,
       devolucion: Number(devolucionEdit) || 0,
       fotosDevolucion: urlsDevolucion,
       materiales: materialesConFotos,
+      fecha: fechaEdit || undefined,
+      pesajesGlobales: pesajesPayload ?? undefined,
       llaveEdicion: requiereLlave && llaveEdicion.trim() ? llaveEdicion.trim() : undefined,
     });
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
     toast.exito(`${result.ticket.codigo} actualizado.`);
+    if (result.advertencia) toast.errorMsg(result.advertencia);
+    setAvisosFactura(result.avisosFactura ?? []);
     setLlaveEdicion('');
     setEditando(false);
     cargarTicket();
@@ -248,7 +278,9 @@ function TicketDetallePage() {
   }
 
   const esCompra = ticket.tipo === 'compra';
-  const puedeEditarEsteTicket = puedeEditar && !ticket.facturado && ticket.estado !== 'bruto' && !ticket.ticketPrincipalId;
+  // Con llave se edita aunque el rol no tenga 'pesaje:editar' y aunque el ticket esté facturado.
+  const puedeUsarLlave = requiereLlave && !esSuperadmin;
+  const puedeEditarEsteTicket = (puedeEditar || puedeUsarLlave) && ticket.estado !== 'bruto' && !ticket.ticketPrincipalId;
 
   // Todas las fotos del ticket (por material + generales) en una sola galería
   // con etiqueta de material, en vez de un bloque apilado por material
@@ -277,6 +309,8 @@ function TicketDetallePage() {
           Pesaje
         </button>
       </div>
+
+      <AvisoFacturaBanner avisos={avisosFactura} onIrEstadoCuenta={ruta => navigate(ruta)} onCerrar={() => setAvisosFactura([])} />
 
       {/* Encabezado de marca — solo el logo, estándar en todo documento impreso. */}
       <div className="hidden print:flex items-center justify-end mb-6">
@@ -330,6 +364,7 @@ function TicketDetallePage() {
               <Printer size={16} />
               Imprimir
             </button>
+            <CompartirBoton titulo={`Ticket de pesaje ${ticket.codigo}`} obtenerPdf={() => descargarTicketPDF(ticket, ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—', esCompra, 'blob')} />
           </div>
         )}
       </div>
@@ -456,15 +491,32 @@ function TicketDetallePage() {
         </>
       ) : (
         <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
+          {ticket.facturado && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+              Este ticket ya está facturado. Al guardar con la llave de edición, la factura se anula si aún no tiene pagos (el ticket queda disponible para volver a facturar con los datos corregidos). Si ya fue pagada, no se anula: te avisaremos para que revises el estado de cuenta.
+            </p>
+          )}
+
+          <div>
+            <label className={labelClass}>Fecha</label>
+            <input type="date" value={fechaEdit} onChange={e => setFechaEdit(e.target.value)} className={inputClass} required />
+          </div>
+
           {ticket.pesajeExterior ? (
             <p className="text-xs text-text-muted bg-surface-alt border border-border rounded-lg px-4 py-2.5">
               Sin pesaje global — no hay peso global para reconciliar.
             </p>
           ) : (
-            <div className="flex items-center justify-between text-sm bg-surface-alt border border-border rounded-lg px-4 py-2.5">
-              <span className="text-text-secondary">Peso global (fijado al crear el ticket)</span>
-              <span className="font-semibold text-text-primary">{fmt(ticket.pesoGlobal)} kg</span>
-            </div>
+            <>
+              <div className="flex items-center justify-between text-sm bg-surface-alt border border-border rounded-lg px-4 py-2.5">
+                <span className="text-text-secondary">Peso global</span>
+                <span className="font-semibold text-text-primary">{fmt(pesajesTocados ? sumaPesajesGlobales(pesajesEdit) : ticket.pesoGlobal)} kg</span>
+              </div>
+              <PesajesGlobalesEditor
+                pesajes={pesajesEdit}
+                onChange={siguiente => { setPesajesEdit(siguiente); setPesajesTocados(true); }}
+              />
+            </>
           )}
 
           <div className="space-y-3">
@@ -604,26 +656,7 @@ function TicketDetallePage() {
             )}
           </div>
 
-          <div>
-            <label className={labelClass}>Vehículo</label>
-            <select value={vehiculoEdit} onChange={e => setVehiculoEdit(e.target.value)} className={inputClass}>
-              <option value="">— Sin vehículo —</option>
-              {vehiculos.map(v => <option key={v.id} value={v.nombre}>{v.nombre}</option>)}
-            </select>
-            <div className="flex items-center gap-2 mt-1.5">
-              <input
-                type="text"
-                value={nuevoVehiculo}
-                onChange={e => setNuevoVehiculo(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); crearVehiculoInline(); } }}
-                className={`${inputClass} text-xs py-1.5`}
-                placeholder="Agregar vehículo nuevo (placa)"
-              />
-              <button type="button" onClick={crearVehiculoInline} disabled={!nuevoVehiculo.trim()} className="shrink-0 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-                Guardar
-              </button>
-            </div>
-          </div>
+          <VehiculoSelector value={vehiculoEdit} onChange={setVehiculoEdit} vehiculos={vehiculos} inputClass={inputClass} labelClass={labelClass} />
 
           <div>
             <label className={labelClass}>Observaciones</label>
@@ -659,30 +692,13 @@ function TicketDetallePage() {
       )}
 
       {fotoAmpliada && (
-        <div
-          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4 print:hidden"
-          onClick={() => setFotoAmpliada(null)}
-        >
-          <button
-            type="button"
-            onClick={() => setFotoAmpliada(null)}
-            className="absolute top-4 right-4 text-white/80 hover:text-white"
-            title="Cerrar"
-          >
-            <X size={24} />
-          </button>
-          <div className="flex flex-col items-center gap-2 max-w-full max-h-full" onClick={e => e.stopPropagation()}>
-            <img
-              src={fotoAmpliada.url}
-              alt="Foto ampliada"
-              className="max-w-full max-h-[80vh] object-contain rounded-lg"
-            />
-            <p className="text-white text-sm bg-black/60 px-3 py-1.5 rounded-lg">
-              {fotoAmpliada.label}
-              {fotoAmpliada.peso != null && ` — ${fmt(fotoAmpliada.peso)} kg`}
-            </p>
-          </div>
-        </div>
+        <VisorFotos
+          fotos={fotosGaleria.map(f => f.url)}
+          indice={Math.max(0, fotosGaleria.findIndex(f => f.url === fotoAmpliada.url))}
+          onCambiar={i => setFotoAmpliada(fotosGaleria[i])}
+          onCerrar={() => setFotoAmpliada(null)}
+          pie={<>{fotoAmpliada.label}{fotoAmpliada.peso != null && ` — ${fmt(fotoAmpliada.peso)} kg`}</>}
+        />
       )}
 
       {mostrarSelectorMaterial && (

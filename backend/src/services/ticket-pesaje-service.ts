@@ -14,8 +14,11 @@ import {
   MENSAJE_UNION_NO_HABILITADA,
 } from './ticket-principal.js';
 import { validarUnionTickets, type TicketUnibleRow } from './ticket-union.js';
-import { autorizarEdicion, type ActorEdicion } from './edicion-autorizada-service.js';
+import { autorizarEdicion, esSuperadminEnBd, type ActorEdicion } from './edicion-autorizada-service.js';
 import { auditarEdicionTicket } from './ticket-auditoria.js';
+import { errorEdicionFacturado, extrasEdicionRpc } from '../utils/edicion-ticket.js';
+import { avisosDeFacturasEditadas } from './factura-ticket-service.js';
+import type { AvisoFactura } from '../utils/factura-ticket-edicion.js';
 
 /** Formatea el correlativo de pesaje: (1, 'compra') → "Compra-0001". Cada tipo
  *  tiene su propio contador desde el Bloque 35 (antes compra y venta
@@ -370,24 +373,62 @@ export async function completarTicket(
   return { ticket };
 }
 
-/** Corrige un ticket ya completo (material, pesos, observaciones). El peso
- *  global se fija al crear el ticket y no se edita después (es la lectura
- *  física de báscula de entrada) — el RPC hace coalesce(null, peso_global).
- *  La RPC rechaza tickets facturados o en bruto. */
+const MENSAJE_EDICION_NO_HABILITADA =
+  'Falta aplicar la migración de edición de tickets (docs/migration_edicion_ticket_poderes.sql y docs/migration_anular_factura_por_edicion_ticket.sql) para esta corrección.';
+
+/** Errores de negocio que se detectan ANTES de gastar la llave. */
+async function errorPreviaEdicion(id: string, antes: TicketPublico | null, input: EditarTicketInput): Promise<{ error: string; codigo: number } | null> {
+  if (!antes) return { error: 'Ticket no encontrado.', codigo: 404 };
+  if (antes.estado !== 'completo') {
+    return { error: 'Solo se pueden editar tickets completos (un ticket en bruto se completa desde su pantalla).', codigo: 400 };
+  }
+  if (!input.pesajesGlobales) return null;
+  if (antes.pesajeExterior) return { error: 'Este ticket no tiene pesaje global (báscula externa).', codigo: 400 };
+  if ((await contarSecundarios(id)) > 0) {
+    return { error: 'Este ticket tiene tickets unidos: su pesaje global es la suma de todos y no se edita aquí.', codigo: 409 };
+  }
+  return null;
+}
+
+export type EditarTicketResult =
+  | { ticket: TicketPublico; advertencia?: string; avisosFactura?: AvisoFactura[] }
+  | { error: string; codigo?: number };
+
+/** Corrige un ticket completo con llave de edición (o como superadmin):
+ *  materiales (peso bruto, tara, producto, destino), pesajes globales del
+ *  camión, fecha, devolución, vehículo y observaciones. En un ticket ya
+ *  facturado, editar_ticket_con_factura edita y trata la factura en la MISMA
+ *  transacción: si está emitida y sin pagos se anula (el ticket queda libre
+ *  para refacturar); si tiene pagos no se toca y la respuesta trae
+ *  `avisosFactura` para que el usuario revise el estado de cuenta.
+ *  Cada edición queda en auditoria_ediciones campo por campo. */
 export async function editarTicket(
   id: string,
   input: EditarTicketInput,
   actor: ActorEdicion
-): Promise<{ ticket: TicketPublico } | { error: string; codigo?: number }> {
+): Promise<EditarTicketResult> {
   // Un ticket unido (secundario) no tiene detalle propio: se edita el principal.
   if (await esSecundarioUnido(id)) return { error: MENSAJE_TICKET_UNIDO_EDITAR, codigo: 409 };
+
+  const antes = await obtenerTicket(id).catch(() => null);
+  const previo = await errorPreviaEdicion(id, antes, input);
+  if (previo) return previo;
 
   const auth = await autorizarEdicion(actor, 'ticket_pesaje', id);
   if (!auth.ok) return { error: auth.error, codigo: auth.codigo };
 
-  const antes = await obtenerTicket(id).catch(() => null);
-
-  const { error } = await supabaseAdmin.rpc('editar_ticket_pesaje', {
+  const facturado = antes?.facturado ?? false;
+  const errorFacturado = errorEdicionFacturado({
+    facturado,
+    autorizadoPor: auth.autorizadoPor,
+    esSuperadmin: facturado && auth.autorizadoPor === null ? await esSuperadminEnBd(actor.userId) : false,
+  });
+  if (errorFacturado) {
+    await auth.liberar();
+    return errorFacturado;
+  }
+  // Facturado: una sola función SQL edita y anula/avisa la factura (atómico).
+  const { data, error } = await supabaseAdmin.rpc(facturado ? 'editar_ticket_con_factura' : 'editar_ticket_pesaje', {
     p_ticket_id: id,
     p_materiales: materialesARpc(input.materiales),
     p_peso_global: null,
@@ -395,17 +436,24 @@ export async function editarTicket(
     p_devolucion: input.devolucion,
     p_fotos_devolucion: input.fotosDevolucion,
     p_vehiculo: input.vehiculo,
+    ...extrasEdicionRpc(input, facturado),
+    ...(facturado ? { p_motivo_anulacion: `Edición del ticket ${antes?.codigo ?? id} con llave de edición` } : {}),
   });
 
   if (error) {
     await auth.liberar();
-    return { error: error.message };
+    return esErrorFuncionInexistente(error) ? { error: MENSAJE_EDICION_NO_HABILITADA, codigo: 409 } : { error: error.message };
   }
 
   const ticket = await obtenerTicket(id);
   if (!ticket) return { error: 'El ticket se editó pero no se pudo leer de vuelta.' };
-  await auditarEdicionTicket(id, actor, auth.autorizadoPor, antes, ticket);
-  return { ticket };
+  const avisosFactura = facturado ? await avisosDeFacturasEditadas((data as { facturas?: unknown } | null)?.facturas) : [];
+  const registrada = await auditarEdicionTicket(id, actor, auth.autorizadoPor, antes, ticket, { facturado, avisosFactura });
+  return {
+    ticket,
+    ...(avisosFactura.length > 0 ? { avisosFactura } : {}),
+    ...(registrada ? {} : { advertencia: 'El ticket se guardó, pero no se pudo registrar en el historial de ediciones. Avisa al administrador.' }),
+  };
 }
 
 export interface BorrarTicketResult { ok: boolean; razon?: string; noEncontrado?: boolean }

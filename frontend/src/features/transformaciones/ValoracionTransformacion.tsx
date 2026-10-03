@@ -62,7 +62,7 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
   const elegirProveedor = async (id: string) => {
     setProveedorId(id);
     setFacturaId('');
-    setFacturas(id ? await obtenerFacturas('compra', { entidadId: id }) : []);
+    setFacturas(id ? (await obtenerFacturas('compra', { entidadId: id })).filter(f => f.estado !== 'anulada') : []);
   };
 
   const elegirFactura = (id: string) => {

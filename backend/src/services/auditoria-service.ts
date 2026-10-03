@@ -48,9 +48,10 @@ export async function nombreDeUsuario(id: string): Promise<string | null> {
 /**
  * Registra una entrada de auditoría. NUNCA lanza: si la tabla aún no existe
  * (migración sin aplicar) o la BD falla, solo se loguea — la operación de
- * negocio que la invoca no debe fallar por esto.
+ * negocio que la invoca no debe fallar por esto. Devuelve false si no quedó
+ * registrada, para que quien llama pueda avisar al usuario.
  */
-export async function registrarAuditoria(input: RegistrarAuditoriaInput): Promise<void> {
+export async function registrarAuditoria(input: RegistrarAuditoriaInput): Promise<boolean> {
   try {
     const usuarioNombre =
       input.usuarioNombre ?? (await nombreDeUsuario(input.usuarioId)) ?? input.usuarioEmail ?? 'desconocido';
@@ -67,6 +68,7 @@ export async function registrarAuditoria(input: RegistrarAuditoriaInput): Promis
       cambios: input.cambios,
     });
     if (error) throw new Error(error.message);
+    return true;
   } catch (err) {
     logger.error({
       evento: 'auditoria_no_registrada',
@@ -76,6 +78,7 @@ export async function registrarAuditoria(input: RegistrarAuditoriaInput): Promis
       userId: input.usuarioId,
       motivo: err instanceof Error ? err.message : String(err),
     });
+    return false;
   }
 }
 

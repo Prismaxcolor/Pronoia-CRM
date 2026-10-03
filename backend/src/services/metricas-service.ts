@@ -35,14 +35,14 @@ interface DetalleRow {
 
 /** Compras entre `desde` y `hasta` (inclusive, YYYY-MM-DD), una fila por
  *  línea de factura (proveedor + material + kg + costo). Excluye facturas en
- *  'borrador' — no son compras confirmadas todavía. Toda factura tiene al
+ *  'borrador' (no confirmadas) y 'anulada' (ticket corregido; se refactura). Toda factura tiene al
  *  menos una línea en detalle_facturas_compra (backfill del Bloque 17), así
  *  que no hace falta contemplar el caso "factura sin detalle". */
 export async function obtenerMetricasCompras(desde: string, hasta: string): Promise<MetricaCompraLinea[]> {
   const { data: facturasData, error: errFacturas } = await supabaseAdmin
     .from('facturas_compra')
     .select('id, numero, proveedor_id, created_at')
-    .neq('estado', 'borrador')
+    .not('estado', 'in', '(borrador,anulada)')
     .gte('created_at', desde)
     .lte('created_at', `${hasta}T23:59:59`);
 

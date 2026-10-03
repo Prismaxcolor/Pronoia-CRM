@@ -43,6 +43,22 @@ export function descargarBlob(blob: Blob, nombre: string): void {
   URL.revokeObjectURL(url);
 }
 
+export interface ArchivoPdf {
+  blob: Blob;
+  nombre: string;
+}
+
+/** Modo de salida de los generadores de PDF: 'descargar' guarda el archivo
+ *  (comportamiento histórico), 'blob' lo devuelve para poder compartirlo. */
+export type ModoPdf = 'descargar' | 'blob';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function entregarPdf(doc: any, nombre: string, modo: ModoPdf): ArchivoPdf | undefined {
+  if (modo === 'blob') return { blob: doc.output('blob') as Blob, nombre };
+  doc.save(nombre);
+  return undefined;
+}
+
 export const BOX_LEFT = 56;
 export const BOX_RIGHT = 539;
 export const BOX_PAD = 16;

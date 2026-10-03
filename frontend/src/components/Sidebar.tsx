@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, Weight, CalendarClock, BarChart3, X } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, X } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
 import type { Recurso } from '@shared/types/index.js';
@@ -34,6 +34,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Productos', to: '/productos', icon: <Package size={20} />, recurso: 'productos' },
       { label: 'Inventario', to: '/inventario', icon: <Boxes size={20} />, recurso: 'productos' },
       { label: 'Transformaciones', to: '/transformaciones', icon: <Recycle size={20} />, recurso: 'transformaciones' },
+      { label: 'Merma', to: '/transformaciones/merma', icon: <TrendingDown size={20} />, recurso: 'transformaciones' },
     ],
   },
   {
@@ -68,6 +69,7 @@ const NAV_SECTIONS: NavSection[] = [
     header: 'Configuración',
     items: [
       { label: 'Listas de precios', to: '/listas-precios', icon: <Tag size={20} />, recurso: 'listas_precios', recordable: true },
+      { label: 'Vehículos', to: '/vehiculos', icon: <Car size={20} />, recurso: 'vehiculos' },
       { label: 'Usuarios', to: '/usuarios', icon: <Users size={20} />, recurso: 'usuarios' },
     ],
   },
@@ -182,9 +184,12 @@ function Sidebar({ abierto, onCerrar }: Props) {
             )}
             {sec.items.map(item => {
               const destino = item.recordable ? (ultimasRutas[item.to] ?? item.to) : item.to;
+              const enMerma = location.pathname.startsWith('/transformaciones/merma');
               const activo = item.to === '/'
                 ? location.pathname === '/'
-                : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                : item.to === '/transformaciones' && enMerma
+                  ? false // "Merma" es un ítem aparte: no marcar también Transformaciones
+                  : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
               return (
                 <Link
                   key={item.to}

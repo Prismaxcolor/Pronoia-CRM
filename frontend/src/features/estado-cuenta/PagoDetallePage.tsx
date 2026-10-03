@@ -5,6 +5,7 @@ import { obtenerPagoDetalle, type PagoDetalle } from '../../services/pago-detall
 import type { TipoEntidad } from '../../services/estado-cuenta-service';
 import { descargarPagoPDF } from '../../services/pago-export';
 import FilaDocumento from '../../components/FilaDocumento';
+import CompartirBoton from '../../components/CompartirBoton';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -102,6 +103,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
             <Printer size={16} />
             Imprimir
           </button>
+          <CompartirBoton titulo={`${esProveedor ? 'Pago' : 'Cobro'} ${pago.codigoPago ?? pago.codigoAdelanto ?? pago.grupoId.slice(0, 8)}`} obtenerPdf={() => descargarPagoPDF(pago, esProveedor, 'blob')} />
         </div>
       </div>
 

@@ -13,6 +13,9 @@ export const crearTomaFisicaSchema = z.object({
   almacenId: z.string().uuid('Elige un almacén.'),
   categoriaIds: z.array(z.string().uuid()).min(1, 'Elige al menos una categoría a inventariar.'),
   loteIds: z.array(z.string().uuid()).optional().default([]),
+  /** 'categoria' (productos sin lote) o 'lote' (lotes completos). Opcional por
+   *  compatibilidad: si falta, el servicio lo deduce de loteIds/categorías. */
+  alcance: z.enum(['categoria', 'lote']).optional(),
   descripcion: textoOpcional(200),
 });
 

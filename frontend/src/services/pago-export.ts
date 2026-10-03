@@ -1,5 +1,5 @@
 import type { PagoDetalle } from './pago-detalle-service';
-import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaMonetaria } from './pdf-documento';
+import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaMonetaria } from './pdf-documento';
 
 const ETIQUETA_ITEM: Record<string, string> = {
   factura: 'Factura',
@@ -9,7 +9,7 @@ const ETIQUETA_ITEM: Record<string, string> = {
 
 /** Documento puramente monetario: filas de encabezado + desglose (si lo
  *  hay) + bancas + total — esquinas cuadradas en todo. */
-export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean): Promise<void> {
+export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean, modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
   const { default: jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -76,5 +76,5 @@ export async function descargarPagoPDF(pago: PagoDetalle, esProveedor: boolean):
   doc.text(`$${fmt(pago.totalUsd)}`, 539, y, { align: 'right' });
 
   const nombreArchivo = (pago.codigoPago ?? pago.codigoAdelanto ?? pago.grupoId.slice(0, 8)).replace(/\s+/g, '-').toLowerCase();
-  doc.save(`${esProveedor ? 'pago' : 'cobro'}-${nombreArchivo}.pdf`);
+  return entregarPdf(doc, `${esProveedor ? 'pago' : 'cobro'}-${nombreArchivo}.pdf`, modo);
 }

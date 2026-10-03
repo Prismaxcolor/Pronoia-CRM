@@ -1,5 +1,7 @@
 export type EstadoTomaFisica = 'abierta' | 'cerrada' | 'cancelada';
 
+export type AlcanceTomaFisica = 'categoria' | 'lote';
+
 /** Una toma física de inventario: conteo físico periódico de un almacén
  *  que reconcilia el stock teórico del sistema contra lo realmente
  *  contado. Mientras está "abierta", el almacén queda bloqueado para
@@ -19,6 +21,9 @@ export interface TomaFisicaInventario {
    *  (ej. PCB) — null/vacío significa "todos los lotes de ese almacén". */
   loteIds: string[];
   loteNombres: string[];
+  /** Qué se cuenta: 'categoria' = productos de categorías sin lote;
+   *  'lote' = lotes completos (PCB, PGM). Se elige al iniciar la toma. */
+  alcance: AlcanceTomaFisica;
   estado: EstadoTomaFisica;
   abiertaPor: string;
   abiertaEn: string;

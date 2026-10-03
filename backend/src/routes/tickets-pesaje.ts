@@ -9,6 +9,7 @@ import {
 } from '../services/ticket-pesaje-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
+import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import { crearTicketSchema, completarTicketSchema, editarTicketSchema } from '../schemas/tickets-pesaje.js';
 import type { EditarTicketInput } from '../schemas/tickets-pesaje.js';
 import { logger, clienteIp } from '../utils/logger.js';
@@ -79,7 +80,7 @@ router.patch(
 
 router.patch(
   '/:id',
-  requirePermiso('pesaje', 'editar'),
+  requirePermisoOLlave('pesaje', 'editar'),
   validateBody(editarTicketSchema),
   async (req, res) => {
     const { llaveEdicion, ...datos } = req.body as EditarTicketInput;

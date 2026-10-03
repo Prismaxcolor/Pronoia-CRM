@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Scale, DollarSign, TrendingUp, Receipt, Printer, Search, X } from 'lucide-react';
 import { obtenerMetricasCompras, type MetricaCompraLinea } from '../../services/metricas-service';
 import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
+import CompartirBoton from '../../components/CompartirBoton';
 
 type Vista = 'material' | 'proveedor';
 type Preset = 7 | 15 | 30 | 60 | 90 | 'custom';
@@ -416,6 +417,7 @@ function MetricasPage() {
           <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
             <Printer size={16} />
           </button>
+          <CompartirBoton titulo="Métricas" soloIcono />
           <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit shrink-0">
             {PRESETS.map(p => (
               <button

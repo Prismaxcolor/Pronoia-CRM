@@ -55,6 +55,8 @@ export async function crearUsuario(
 }
 
 export interface ActualizarUsuarioCambios {
+  email?: string;
+  password?: string;
   nombre?: string;
   rol?: RolUsuario;
   permisos?: Permiso[];

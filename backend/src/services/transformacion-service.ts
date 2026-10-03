@@ -1,7 +1,17 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { formatCodigoTransformacion } from '../utils/codigos.js';
+import { leerPaginado } from '../utils/paginacion.js';
 import { esErrorFuncionInexistente } from './ticket-principal.js';
 import { validarSalidasMixtasPorCategoria } from '../schemas/transformaciones.js';
+import {
+  construirFilaMerma,
+  filtrarPorProducto,
+  resumirMerma,
+  type AgrupacionMerma,
+  type FilaMerma,
+  type PeriodoMerma,
+  type ResumenMerma,
+} from '../utils/merma-transformacion.js';
 import type {
   CrearTransformacionInput,
   CompletarTransformacionInput,
@@ -175,19 +185,68 @@ export interface ListarTransformacionesOpts {
 export async function listarTransformaciones(
   opts: ListarTransformacionesOpts = {}
 ): Promise<TransformacionPublica[]> {
-  let query = supabaseAdmin
-    .from('transformaciones')
-    .select(SELECT_TRANSFORMACION)
-    .order('created_at', { ascending: false });
+  // PostgREST corta en 1000 filas: se pagina con orden estable (created_at, id)
+  // para que ni el listado ni el reporte de merma se trunquen en silencio.
+  const filas = await leerPaginado<TransformacionRow>((desde, hasta) => {
+    let query = supabaseAdmin
+      .from('transformaciones')
+      .select(SELECT_TRANSFORMACION)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
 
-  if (opts.desde) query = query.gte('fecha', opts.desde);
-  if (opts.hasta) query = query.lte('fecha', opts.hasta);
-  if (opts.estado) query = query.eq('estado', opts.estado);
-  if (opts.categoria) query = query.eq('categoria', opts.categoria);
+    if (opts.desde) query = query.gte('fecha', opts.desde);
+    if (opts.hasta) query = query.lte('fecha', opts.hasta);
+    if (opts.estado) query = query.eq('estado', opts.estado);
+    if (opts.categoria) query = query.eq('categoria', opts.categoria);
 
-  const { data, error } = await query;
-  if (error || !data) return [];
-  return (data as unknown as TransformacionRow[]).map(toPublico);
+    return query.range(desde, hasta);
+  });
+  return filas.map(toPublico);
+}
+
+export interface ReporteMermaOpts extends ListarTransformacionesOpts {
+  almacenId?: string;
+  productoId?: string;
+  agrupar?: AgrupacionMerma;
+}
+
+export interface FilaMermaPublica extends FilaMerma {
+  nombreAlmacen: string | null;
+}
+
+export interface ReporteMerma {
+  agrupar: AgrupacionMerma;
+  filas: FilaMermaPublica[];
+  periodos: PeriodoMerma[];
+  totales: ResumenMerma;
+}
+
+/** Histórico de merma derivado de las transformaciones completas (sin tabla propia):
+ *  merma = neto de entrada - suma del neto de todas las salidas (materiales y/o lotes).
+ *  El rango desde/hasta filtra por la fecha de la transformación. */
+export async function reporteMerma(opts: ReporteMermaOpts = {}): Promise<ReporteMerma> {
+  const agrupar = opts.agrupar ?? 'mes';
+  const todas = await listarTransformaciones({
+    desde: opts.desde,
+    hasta: opts.hasta,
+    categoria: opts.categoria,
+    estado: 'completa',
+  });
+  const porAlmacen = opts.almacenId ? todas.filter(t => t.almacenId === opts.almacenId) : todas;
+  const seleccion = filtrarPorProducto(porAlmacen, opts.productoId)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.numero ?? 0) - (a.numero ?? 0));
+
+  const { data: almacenes } = await supabaseAdmin.from('almacenes').select('id, nombre');
+  const nombres = new Map(((almacenes ?? []) as Array<{ id: string; nombre: string }>).map(a => [a.id, a.nombre]));
+
+  const filas = seleccion.map(construirFilaMerma);
+  const { periodos, totales } = resumirMerma(filas, agrupar);
+  return {
+    agrupar,
+    filas: filas.map(f => ({ ...f, nombreAlmacen: f.almacenId ? nombres.get(f.almacenId) ?? null : null })),
+    periodos,
+    totales,
+  };
 }
 
 /** Legacy: retira de lote-pool. */

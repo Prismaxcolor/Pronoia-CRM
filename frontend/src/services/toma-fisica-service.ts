@@ -33,6 +33,7 @@ export async function crearTomaFisica(input: {
   almacenId: string;
   categoriaIds: string[];
   loteIds?: string[];
+  alcance: 'categoria' | 'lote';
   descripcion?: string | null;
 }): Promise<{ tomaFisica: TomaFisicaInventario } | { error: string }> {
   try {

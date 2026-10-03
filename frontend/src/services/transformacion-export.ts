@@ -1,5 +1,5 @@
 import type { Transformacion } from '@shared/types/index.js';
-import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
+import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
 import { etiquetaSalida } from '../lib/salida-mixta';
 
 export interface NombresTransformacion {
@@ -21,7 +21,7 @@ function fechaHora(iso: string | null): string {
 /** Documento de la transformación: encabezado universal + tabla de salidas en
  *  caja redondeada (mismo patrón que ticket-export.ts). No incluye la
  *  valoración (precios/ganancia): es información interna, no del documento. */
-export async function descargarTransformacionPDF(t: Transformacion, nombres: NombresTransformacion): Promise<void> {
+export async function descargarTransformacionPDF(t: Transformacion, nombres: NombresTransformacion, modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
   const { default: jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -71,5 +71,5 @@ export async function descargarTransformacionPDF(t: Transformacion, nombres: Nom
     });
   }
 
-  doc.save(`transformacion-${codigo.replace(/\s+/g, '-').toLowerCase()}.pdf`);
+  return entregarPdf(doc, `transformacion-${codigo.replace(/\s+/g, '-').toLowerCase()}.pdf`, modo);
 }

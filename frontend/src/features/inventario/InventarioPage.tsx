@@ -24,6 +24,65 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Columnas de movimientos. Con filtro por almacén (a.desglose presente) se
+ *  relacionan compras, ventas, traslados y transformaciones; en la vista
+ *  global se mantienen las columnas netas de siempre. */
+function CabeceraMovimientos({ detallado }: { detallado: boolean }) {
+  const th = 'px-4 py-2 font-medium text-right';
+  if (!detallado) {
+    return (
+      <>
+        <th className={th}>Entradas</th>
+        <th className={th}>Salidas</th>
+        <th className={th}>Transf.</th>
+        <th className={th}>Ajuste</th>
+      </>
+    );
+  }
+  return (
+    <>
+      <th className={th} title="Pesajes de compra">Compras</th>
+      <th className={th} title="Pesajes de venta">Ventas</th>
+      <th className={th} title="Traslados recibidos desde otro almacén">Tras. entra</th>
+      <th className={th} title="Traslados enviados a otro almacén">Tras. sale</th>
+      <th className={th} title="Material consumido por transformaciones">Transf. consumo</th>
+      <th className={th} title="Material producido por transformaciones">Transf. produce</th>
+      <th className={th} title="Ajustes de toma física">Ajuste</th>
+    </>
+  );
+}
+
+function CeldasMovimientos({ a, detallado }: { a: ArticuloInventario; detallado: boolean }) {
+  const base = 'px-4 py-2.5 text-right text-text-secondary';
+  const ajuste = (kg: number) => (
+    <td className={`px-4 py-2.5 text-right ${kg !== 0 ? 'font-semibold text-purple-700' : 'text-text-secondary'}`}>
+      {kg > 0 ? '+' : ''}{fmt(kg)}
+    </td>
+  );
+  if (!detallado || !a.desglose) {
+    return (
+      <>
+        <td className={base}>{fmt(a.entradas)}</td>
+        <td className={base}>{fmt(a.salidas)}</td>
+        <td className={base}>{fmt(a.transformaciones)}</td>
+        {ajuste(a.ajustes)}
+      </>
+    );
+  }
+  const d = a.desglose;
+  return (
+    <>
+      <td className={base}>{fmt(d.compras)}</td>
+      <td className={base}>{fmt(d.ventas)}</td>
+      <td className={base}>{fmt(d.trasladoEntrada)}</td>
+      <td className={base}>{fmt(d.trasladoSalida)}</td>
+      <td className={base}>{fmt(d.transfEntrada)}</td>
+      <td className={base}>{fmt(d.transfSalida)}</td>
+      {ajuste(d.ajustes)}
+    </>
+  );
+}
+
 interface ArticuloConCategoria extends ArticuloInventario { categoria: string }
 interface GrupoDestino {
   clave: string;
@@ -170,6 +229,8 @@ function InventarioPage() {
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [agrupacion, setAgrupacion] = useState<Agrupacion>('categoria');
 
+  const hayDesglose = grupos.some(g => g.articulos.some(a => a.desglose));
+
   const gruposPorDestino = useMemo(
     () => agruparPorDestino(grupos, lotes, tomasFisicas, transformaciones, categorias),
     [grupos, lotes, tomasFisicas, transformaciones, categorias]
@@ -205,7 +266,7 @@ function InventarioPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Inventario</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Stock por material y destino (MPP / lote): entradas (pesaje compra) − salidas (pesaje venta) ± transformaciones.
+          Stock por material y destino (sin lote / lote): compras − ventas ± transformaciones. Al filtrar por almacén se suman también los traslados y los ajustes de toma física, y se detalla cada movimiento.
         </p>
       </div>
 
@@ -316,10 +377,7 @@ function InventarioPage() {
                     <tr className="text-left text-xs text-text-muted bg-surface-alt">
                       <th className="px-5 py-2 font-medium">Artículo</th>
                       <th className="px-4 py-2 font-medium">Destino</th>
-                      <th className="px-4 py-2 font-medium text-right">Entradas</th>
-                      <th className="px-4 py-2 font-medium text-right">Salidas</th>
-                      <th className="px-4 py-2 font-medium text-right">Transf.</th>
-                      <th className="px-4 py-2 font-medium text-right">Ajuste</th>
+                      <CabeceraMovimientos detallado={hayDesglose} />
                       <th className="px-5 py-2 font-medium text-right">Stock (kg)</th>
                     </tr>
                   </thead>
@@ -354,12 +412,7 @@ function InventarioPage() {
                             {a.destinoLabel}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
-                        <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
-                        <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.transformaciones)}</td>
-                        <td className={`px-4 py-2.5 text-right ${a.ajustes !== 0 ? 'font-semibold text-purple-700' : 'text-text-secondary'}`}>
-                          {a.ajustes > 0 ? '+' : ''}{fmt(a.ajustes)}
-                        </td>
+                        <CeldasMovimientos a={a} detallado={hayDesglose} />
                         <td className={`px-5 py-2.5 text-right font-semibold ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
                           {fmt(a.stock)}
                         </td>
@@ -425,17 +478,14 @@ function InventarioPage() {
                   <tr className="text-left text-xs text-text-muted bg-surface-alt">
                     <th className="px-5 py-2 font-medium">Artículo</th>
                     <th className="px-4 py-2 font-medium">Categoría</th>
-                    <th className="px-4 py-2 font-medium text-right">Entradas</th>
-                    <th className="px-4 py-2 font-medium text-right">Salidas</th>
-                    <th className="px-4 py-2 font-medium text-right">Transf.</th>
-                    <th className="px-4 py-2 font-medium text-right">Ajuste</th>
+                    <CabeceraMovimientos detallado={hayDesglose} />
                     <th className="px-5 py-2 font-medium text-right">Stock (kg)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {g.articulos.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-5 py-3 text-text-muted text-xs">
+                      <td colSpan={hayDesglose ? 10 : 7} className="px-5 py-3 text-text-muted text-xs">
                         Todavía no se pesó ningún artículo hacia este lote.
                       </td>
                     </tr>
@@ -443,12 +493,7 @@ function InventarioPage() {
                     <tr key={a.productoId} className="border-t border-border">
                       <td className="px-5 py-2.5 text-text-primary">{a.nombre}</td>
                       <td className="px-4 py-2.5 text-text-secondary">{a.categoria}</td>
-                      <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.entradas)}</td>
-                      <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.salidas)}</td>
-                      <td className="px-4 py-2.5 text-right text-text-secondary">{fmt(a.transformaciones)}</td>
-                      <td className={`px-4 py-2.5 text-right ${a.ajustes !== 0 ? 'font-semibold text-purple-700' : 'text-text-secondary'}`}>
-                        {a.ajustes > 0 ? '+' : ''}{fmt(a.ajustes)}
-                      </td>
+                      <CeldasMovimientos a={a} detallado={hayDesglose} />
                       <td className={`px-5 py-2.5 text-right font-semibold ${a.stock < 0 ? 'text-red-600' : 'text-text-primary'}`}>
                         {fmt(a.stock)}
                       </td>

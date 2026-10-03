@@ -5,6 +5,7 @@ import {
   actualizarVehiculo,
   desactivarVehiculo,
   reactivarVehiculo,
+  eliminarVehiculo,
 } from '../services/vehiculo-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -89,6 +90,22 @@ router.post('/:id/reactivar', requirePermiso('vehiculos', 'editar'), async (req,
   }
   logger.info({
     evento: 'vehiculo_reactivado',
+    ip: clienteIp(req),
+    userId: req.user!.sub,
+    vehiculoId: id,
+  });
+  res.json({ ok: true });
+});
+
+router.delete('/:id', requirePermiso('vehiculos', 'eliminar'), async (req, res) => {
+  const id = String(req.params.id);
+  const ok = await eliminarVehiculo(id);
+  if (!ok) {
+    res.status(500).json({ error: 'No se pudo eliminar el vehículo.' });
+    return;
+  }
+  logger.info({
+    evento: 'vehiculo_eliminado',
     ip: clienteIp(req),
     userId: req.user!.sub,
     vehiculoId: id,

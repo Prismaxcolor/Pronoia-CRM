@@ -6,6 +6,8 @@ import { idsTicketsUnidos } from './ticket-principal.js';
 import { formatCodigoCompra, formatCodigoVenta } from '../utils/codigos.js';
 
 export type TipoFactura = 'compra' | 'venta';
+/** 'anulada': se conserva para historial, pero ya no es deuda ni se puede pagar. */
+export type EstadoFactura = 'borrador' | 'emitida' | 'pagada' | 'anulada';
 
 interface Config {
   tabla: 'facturas_compra' | 'facturas_venta';
@@ -60,7 +62,7 @@ interface FacturaRow {
   monto_pagado?: number | null;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFactura;
   created_at: string;
   proveedores?: { nombre: string } | null;
   clientes?: { nombre: string } | null;
@@ -98,7 +100,7 @@ export interface FacturaPublica {
   montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFactura;
   createdAt: string;
 }
 
@@ -207,10 +209,6 @@ export async function crearFactura(
 ): Promise<{ factura: FacturaPublica } | { error: string }> {
   const cfg = CONFIG[tipo];
   const ticketIds = input.ticketIds ?? [];
-
-  if (tipo === 'venta' && input.items.some(i => i.precioUnitario <= 0)) {
-    return { error: 'El precio unitario debe ser mayor a 0 en una factura de venta.' };
-  }
 
   // Si la factura agrupa tickets, validar que existan, sean del mismo
   // proveedor/cliente y no estén ya facturados.

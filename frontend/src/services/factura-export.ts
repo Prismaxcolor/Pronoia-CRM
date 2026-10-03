@@ -1,7 +1,7 @@
 import { consolidarItems, type FacturaCV } from './factura-cv-service';
 import { type TicketPesaje } from '@shared/types/index.js';
 import {
-  fmt, sanitizarPdf, descargarBlob,
+  fmt, sanitizarPdf, descargarBlob, entregarPdf, type ArchivoPdf, type ModoPdf,
   encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaMonetaria, tablaPesaje,
 } from './pdf-documento';
 
@@ -44,7 +44,7 @@ function lineaTexto(it: FacturaCV['items'][number]): string {
   return `${it.nombreProducto ?? 'material'} · ${fmt(it.peso)} kg × ${fmt(it.precioUnitario)} = ${fmt(it.subtotal)}`;
 }
 
-export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] = []): Promise<void> {
+export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] = [], modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
   const { default: jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
   const esCompra = f.tipo === 'compra';
@@ -127,7 +127,7 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
     }
   }
 
-  doc.save(nombreArchivo(f, 'pdf'));
+  return entregarPdf(doc, nombreArchivo(f, 'pdf'), modo);
 }
 
 export async function descargarFacturaWord(f: FacturaCV): Promise<void> {

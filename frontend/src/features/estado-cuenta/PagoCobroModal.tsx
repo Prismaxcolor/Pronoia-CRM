@@ -85,7 +85,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     });
     obtenerTasaOficial().then(t => setTasa(t?.tasa ?? null));
     obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista =>
-      setFacturasPendientes(lista.filter(f => f.estado !== 'pagada'))
+      setFacturasPendientes(lista.filter(f => f.estado !== 'pagada' && f.estado !== 'anulada'))
     );
   }, [esProveedor, entidadId]);
 

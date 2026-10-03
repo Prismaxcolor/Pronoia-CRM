@@ -38,8 +38,8 @@ export const materialSchema = z
  *  varias veces por la báscula). El total es la suma de (peso - tara) de
  *  cada una — el frontend calcula la suma y la manda también en pesoGlobal;
  *  esta lista es el desglose para trazabilidad (foto + tara por pesada), no
- *  se recalcula ni se valida contra pesoGlobal en el backend. Solo se carga
- *  al crear el ticket, no se edita después (como el peso global mismo). */
+ *  se recalcula ni se valida contra pesoGlobal en el backend al crear. Se
+ *  puede reemplazar después solo con llave de edición (editarTicketSchema). */
 export const pesajeGlobalSchema = z.object({
   peso: z.number().nonnegative('El peso no puede ser negativo.'),
   tara: z.number().nonnegative('La tara no puede ser negativa.').default(0),
@@ -63,8 +63,8 @@ export const crearTicketSchema = z
       .nullable()
       .transform(v => (v && v.length > 0 ? v : null)),
     /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor.
-     *  Obligatorio salvo que sea un pesaje exterior (báscula externa a la que
-     *  Pronoia no tiene acceso). */
+     *  Obligatorio en compra y venta salvo pesaje exterior / sin pesaje global
+     *  (opción explícita, igual en compra y venta). */
     pesoGlobal: z.number().nonnegative('El peso global no puede ser negativo.').optional().nullable(),
     /** Desglose de pesadas individuales que suman pesoGlobal. */
     pesajesGlobales: z.array(pesajeGlobalSchema).default([]),
@@ -107,8 +107,12 @@ export const crearTicketSchema = z
     path: ['estado'],
   })
   .refine(d => d.pesajeExterior || (d.pesoGlobal != null && d.pesoGlobal > 0), {
-    message: 'Registra el peso global de la pesada (solo la venta puede ir sin pesaje global).',
+    message: 'Registra el peso global de la pesada (o marca peso exterior / sin pesaje global).',
     path: ['pesoGlobal'],
+  })
+  .refine(d => !d.pesajeExterior || ((d.pesoGlobal ?? 0) <= 0 && d.pesajesGlobales.length === 0), {
+    message: 'Un ticket con peso exterior (sin pesaje global) no puede traer peso global ni pesadas globales.',
+    path: ['pesajeExterior'],
   })
   .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {
     message: 'Agrega al menos una foto de la devolución.',
@@ -160,6 +164,10 @@ export const editarTicketSchema = z
       .transform(v => (v && v.length > 0 ? v : null)),
     /** Llave de un solo uso entregada por el superadmin; se exige a todo rol distinto de superadmin (salvo REQUIRE_EDIT_KEY=false). */
     llaveEdicion: z.string().trim().max(32).optional(),
+    /** Corrige la fecha del ticket (opcional). */
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).').optional(),
+    /** Reemplaza las pesadas del camión y recalcula el peso global. Omitido = no se tocan. */
+    pesajesGlobales: z.array(pesajeGlobalSchema).min(1, 'Agrega al menos un pesaje global.').optional(),
   })
   .refine(d => d.devolucion <= 0 || d.fotosDevolucion.length >= 1, {
     message: 'Agrega al menos una foto de la devolución.',

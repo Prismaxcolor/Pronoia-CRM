@@ -3,6 +3,7 @@ import type { Vehiculo } from '@shared/types/index.js';
 
 export interface VehiculoInput {
   nombre: string;
+  descripcion?: string | null;
 }
 
 export async function obtenerVehiculos(): Promise<Vehiculo[]> {
@@ -47,6 +48,15 @@ export async function desactivarVehiculo(id: string): Promise<{ ok: true } | { e
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo desactivar el vehículo.' };
+  }
+}
+
+export async function eliminarVehiculo(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/vehiculos/${id}`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo eliminar el vehículo.' };
   }
 }
 

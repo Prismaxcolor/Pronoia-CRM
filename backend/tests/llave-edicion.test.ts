@@ -188,7 +188,7 @@ describe('calcularCambios / resumirTicket', () => {
       ],
     });
     const cambios = calcularCambios(resumirTicket(ticket()), resumirTicket(despues));
-    expect(Object.keys(cambios).sort()).toEqual(['Material: Cobre', 'Peso neto total (kg)', 'Vehículo']);
+    expect(Object.keys(cambios).sort()).toEqual(['Material: Cobre · Peso neto (kg)', 'Material: Cobre · Tara (kg)', 'Peso neto total (kg)', 'Vehículo']);
     expect(cambios['Vehículo']).toEqual({ antes: 'Camión 1', despues: 'Camión 2' });
   });
 
@@ -200,8 +200,8 @@ describe('calcularCambios / resumirTicket', () => {
       ],
     });
     const cambios = calcularCambios(resumirTicket(ticket()), resumirTicket(extra));
-    expect(cambios['Material: Bronce'].antes).toBeNull();
-    expect(cambios['Material: Bronce'].despues).toContain('neto 5');
+    expect(cambios['Material: Bronce · Peso neto (kg)'].antes).toBeNull();
+    expect(cambios['Material: Bronce · Peso neto (kg)'].despues).toBe(5);
   });
 
   it('no muta las instantáneas de entrada', () => {

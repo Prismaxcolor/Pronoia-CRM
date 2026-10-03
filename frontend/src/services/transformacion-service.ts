@@ -37,6 +37,63 @@ export interface CompletarTransformacionFerrosoSalidaInput {
   fotos: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Histórico de merma (GET /api/transformaciones/merma)
+// ---------------------------------------------------------------------------
+
+export type AgrupacionMerma = 'dia' | 'semana' | 'mes';
+
+export interface ResumenMerma {
+  transformaciones: number;
+  kgEntrada: number;
+  kgSalida: number;
+  kgMerma: number;
+  pctMerma: number;
+}
+
+export interface PeriodoMerma extends ResumenMerma {
+  /** Primer día del período (YYYY-MM-DD). */
+  periodo: string;
+}
+
+export interface FilaMerma {
+  id: string;
+  numero: number | null;
+  codigo: string | null;
+  categoria: string;
+  fecha: string;
+  almacenId: string | null;
+  nombreAlmacen: string | null;
+  entrada: string;
+  kgEntrada: number;
+  kgSalida: number;
+  kgMerma: number;
+  pctMerma: number;
+}
+
+export interface ReporteMerma {
+  agrupar: AgrupacionMerma;
+  filas: FilaMerma[];
+  periodos: PeriodoMerma[];
+  totales: ResumenMerma;
+}
+
+export interface ObtenerReporteMermaOpts {
+  desde?: string;
+  hasta?: string;
+  almacenId?: string;
+  productoId?: string;
+  categoria?: string;
+  agrupar?: AgrupacionMerma;
+}
+
+export async function obtenerReporteMerma(opts: ObtenerReporteMermaOpts = {}): Promise<ReporteMerma> {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(opts)) if (v) params.set(k, v);
+  const qs = params.toString();
+  return apiFetch<ReporteMerma>(`/api/transformaciones/merma${qs ? `?${qs}` : ''}`);
+}
+
 export interface ObtenerTransformacionesOpts {
   desde?: string;
   hasta?: string;

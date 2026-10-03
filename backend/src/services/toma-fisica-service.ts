@@ -1,5 +1,12 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearTomaFisicaInput, RegistrarPesajeTomaFisicaInput } from '../schemas/toma-fisica.js';
+import {
+  derivarAlcance,
+  validarAlcance,
+  buscarTomaSolapada,
+  lineasLotesSinContar,
+  type AlcanceToma,
+} from '../utils/toma-fisica-alcance.js';
 
 /** Duplicado intencional de shared/types/toma-fisica.ts (mismo patrón que
  *  formatCodigoPesaje / formatCodigoTraslado — @shared no resuelve limpio
@@ -36,6 +43,9 @@ export interface TomaFisicaPublica {
   categoriaNombres: string[];
   loteIds: string[];
   loteNombres: string[];
+  /** 'categoria' = productos de categorías sin lote; 'lote' = lotes completos.
+   *  Derivado (sin columna): las tomas anteriores no cambian. */
+  alcance: AlcanceToma;
   estado: 'abierta' | 'cerrada' | 'cancelada';
   abiertaPor: string;
   abiertaEn: string;
@@ -79,11 +89,18 @@ async function nombresDeTabla(tabla: 'tipos_material' | 'lotes', ids: string[]):
   return new Map((data ?? []).map(r => [r.id as string, r.nombre as string]));
 }
 
+async function categoriasSinLote(ids: string[]): Promise<Map<string, boolean>> {
+  if (ids.length === 0) return new Map();
+  const { data } = await supabaseAdmin.from('tipos_material').select('id, sin_lote').in('id', ids);
+  return new Map((data ?? []).map(r => [r.id as string, r.sin_lote === true]));
+}
+
 async function toPublico(row: TomaFisicaRow): Promise<TomaFisicaPublica> {
   const loteIds = row.lote_ids ?? [];
-  const [nombresCat, nombresLote] = await Promise.all([
+  const [nombresCat, nombresLote, sinLotePorCat] = await Promise.all([
     nombresDeTabla('tipos_material', row.categorias ?? []),
     nombresDeTabla('lotes', loteIds),
+    categoriasSinLote(row.categorias ?? []),
   ]);
   return {
     id: row.id,
@@ -96,6 +113,7 @@ async function toPublico(row: TomaFisicaRow): Promise<TomaFisicaPublica> {
     categoriaNombres: (row.categorias ?? []).map(id => nombresCat.get(id) ?? '—'),
     loteIds,
     loteNombres: loteIds.map(id => nombresLote.get(id) ?? '—'),
+    alcance: derivarAlcance(loteIds, (row.categorias ?? []).map(id => sinLotePorCat.get(id) ?? true)),
     estado: row.estado,
     abiertaPor: row.abierta_por,
     abiertaEn: row.abierta_en,
@@ -141,16 +159,64 @@ export async function obtenerTomaFisica(id: string): Promise<TomaFisicaPublica |
   return toPublico(data as TomaFisicaRow);
 }
 
+/** Valida alcance, almacén, lotes y solape con tomas abiertas antes de llamar
+ *  al RPC (que sigue siendo la barrera final contra solapes). */
+async function validarCreacion(input: CrearTomaFisicaInput): Promise<{ error: string } | { alcance: AlcanceToma }> {
+  const [{ data: almacen }, { data: cats }] = await Promise.all([
+    supabaseAdmin.from('almacenes').select('id, activo').eq('id', input.almacenId).maybeSingle(),
+    supabaseAdmin.from('tipos_material').select('id, sin_lote').in('id', input.categoriaIds),
+  ]);
+  if (!almacen || almacen.activo === false) return { error: 'El almacén elegido no existe o está inactivo.' };
+
+  const categorias = (cats ?? []).map(c => ({ id: c.id as string, sinLote: c.sin_lote === true }));
+  if (categorias.length !== new Set(input.categoriaIds).size) return { error: 'Alguna categoría elegida no existe.' };
+
+  const loteIds = input.loteIds ?? [];
+  const alcance = input.alcance ?? derivarAlcance(loteIds, categorias.map(c => c.sinLote));
+  const errorAlcance = validarAlcance({ alcance, categorias, loteIds });
+  if (errorAlcance) return { error: errorAlcance };
+
+  if (alcance === 'lote') {
+    const { data: lotes } = await supabaseAdmin.from('lotes').select('id').eq('activo', true).in('id', loteIds);
+    if ((lotes ?? []).length !== new Set(loteIds).size) return { error: 'Algún lote elegido no existe o está inactivo.' };
+  }
+
+  const { data: abiertas } = await supabaseAdmin
+    .from('tomas_fisicas_inventario')
+    .select('id, numero, almacen_id, categorias, estado')
+    .eq('estado', 'abierta')
+    .eq('almacen_id', input.almacenId);
+  const solapada = buscarTomaSolapada(
+    { almacenId: input.almacenId, categoriaIds: input.categoriaIds },
+    (abiertas ?? []).map(t => ({
+      id: t.id as string,
+      codigo: codigoTomaFisica(Number(t.numero)),
+      almacenId: t.almacen_id as string,
+      categoriaIds: (t.categorias as string[]) ?? [],
+      estado: t.estado as 'abierta',
+    }))
+  );
+  if (solapada) {
+    return { error: `Ya hay una toma física abierta (${solapada.codigo}) que incluye alguna de estas categorías en este almacén. Culmínala o cancélala primero.` };
+  }
+  return { alcance };
+}
+
 export async function crearTomaFisica(
   input: CrearTomaFisicaInput,
   abiertaPor: string
 ): Promise<{ tomaFisica: TomaFisicaPublica } | { error: string }> {
+  const validacion = await validarCreacion(input);
+  if ('error' in validacion) return validacion;
+
+  // Por categoría nunca guarda lote_ids; por lote siempre (lista explícita).
+  const loteIds = validacion.alcance === 'lote' ? (input.loteIds ?? []) : [];
   const { data, error } = await supabaseAdmin.rpc('crear_toma_fisica_inventario', {
     p_almacen_id: input.almacenId,
     p_categorias: input.categoriaIds,
     p_descripcion: input.descripcion,
     p_abierta_por: abiertaPor,
-    p_lote_ids: input.loteIds && input.loteIds.length > 0 ? input.loteIds : null,
+    p_lote_ids: loteIds.length > 0 ? loteIds : null,
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la toma física.' };
@@ -224,7 +290,7 @@ export async function resumenTomaFisica(tomaFisicaId: string): Promise<ResumenTo
 
   const { data, error } = await supabaseAdmin.rpc('resumen_toma_fisica', { p_toma_fisica_id: tomaFisicaId });
   if (error || !data) return [];
-  return (data as Array<Record<string, unknown>>).map(r => ({
+  const lineas = (data as Array<Record<string, unknown>>).map(r => ({
     productoId: r.producto_id as string | null,
     productoNombre: r.producto_nombre as string | null,
     loteId: r.lote_id as string | null,
@@ -234,6 +300,34 @@ export async function resumenTomaFisica(tomaFisicaId: string): Promise<ResumenTo
     diferencia: Number(r.diferencia),
     cantidadPesajes: Number(r.cantidad_pesajes),
   }));
+  return row ? [...lineas, ...(await lotesDelAlcanceSinContar(tomaFisicaId, lineas))] : lineas;
+}
+
+/** En alcance "Por lote" el resumen del RPC solo lista lotes ya pesados; esto
+ *  agrega los demás lotes elegidos (sin contar, diferencia 0) para que el
+ *  checklist muestre todo el alcance. No altera lo que ajusta culminar. */
+async function lotesDelAlcanceSinContar(
+  tomaFisicaId: string,
+  lineas: ResumenTomaFisicaLinea[]
+): Promise<ResumenTomaFisicaLinea[]> {
+  const { data: toma } = await supabaseAdmin
+    .from('tomas_fisicas_inventario')
+    .select('almacen_id, lote_ids')
+    .eq('id', tomaFisicaId)
+    .maybeSingle();
+  const loteIds = (toma?.lote_ids as string[] | null) ?? [];
+  if (!toma || loteIds.length === 0) return [];
+
+  const pendientes = loteIds.filter(id => !lineas.some(l => l.productoId === null && l.loteId === id));
+  if (pendientes.length === 0) return [];
+  const [nombres, teoricos] = await Promise.all([
+    nombresDeTabla('lotes', pendientes),
+    Promise.all(pendientes.map(async id => {
+      const { data } = await supabaseAdmin.rpc('stock_lote_almacen_total', { p_lote_id: id, p_almacen_id: toma.almacen_id });
+      return [id, Number(data ?? 0)] as const;
+    })),
+  ]);
+  return lineasLotesSinContar(loteIds, lineas, new Map(teoricos), nombres);
 }
 
 export async function cancelarTomaFisica(

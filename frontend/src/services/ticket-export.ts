@@ -1,6 +1,6 @@
 import type { TicketPesaje } from '@shared/types/index.js';
 import { destinoLabel } from '@shared/types/index.js';
-import { fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
+import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
 
 /** "Borrador" es naranja en el ticket (no gris, que es lo que le tocaría
  *  por la clave compartida 'borrador' que usa factura) — por eso lleva
@@ -19,7 +19,7 @@ function badges(ticket: TicketPesaje): Badge[] {
  *  redondeada — mismas 4 columnas (Material/Bruto/Tara/Neto) que el ticket
  *  embebido dentro de una factura, para que todo el sistema use exactamente
  *  el mismo formato de ticket de pesaje. */
-export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: string, esCompra: boolean): Promise<void> {
+export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: string, esCompra: boolean, modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
   const { default: jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -77,5 +77,5 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
       .text('Ticket en borrador — materiales pendientes de registro. No contabilizado en inventario.', 56, y);
   }
 
-  doc.save(`ticket-pesaje-${ticket.codigo.replace(/\s+/g, '-').toLowerCase()}.pdf`);
+  return entregarPdf(doc, `ticket-pesaje-${ticket.codigo.replace(/\s+/g, '-').toLowerCase()}.pdf`, modo);
 }

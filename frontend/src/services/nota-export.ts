@@ -1,6 +1,6 @@
 import type { NotaAjusteDetalle } from './nota-ajuste-service';
 import type { NotaAjusteClienteDetalle } from './nota-ajuste-cliente-service';
-import { fmt, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, type Badge } from './pdf-documento';
+import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, type Badge } from './pdf-documento';
 
 type Nota = NotaAjusteDetalle | NotaAjusteClienteDetalle;
 
@@ -22,7 +22,7 @@ function badges(nota: Nota, esProveedor: boolean, titulo: string): Badge[] {
 
 /** Documento puramente monetario: solo filas de encabezado + monto, sin
  *  tabla — esquinas cuadradas (no aplica la caja redondeada de pesaje). */
-export async function descargarNotaPDF(nota: Nota, esProveedor: boolean): Promise<void> {
+export async function descargarNotaPDF(nota: Nota, esProveedor: boolean, modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
   const { default: jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
@@ -58,5 +58,5 @@ export async function descargarNotaPDF(nota: Nota, esProveedor: boolean): Promis
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(130).text(leyenda, 56, y);
 
   const ref = (nota.codigo ?? nota.id.slice(0, 8)).replace(/\s+/g, '-').toLowerCase();
-  doc.save(`nota-${nota.tipo}-${ref}.pdf`);
+  return entregarPdf(doc, `nota-${nota.tipo}-${ref}.pdf`, modo);
 }

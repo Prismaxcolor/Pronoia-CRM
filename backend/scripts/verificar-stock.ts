@@ -44,9 +44,32 @@ async function main() {
       if (Math.abs(Number(r.stock)) > 0.005) sqlPorProducto.set(r.producto_id, Number(r.stock));
     }
 
+    // stock_almacen() suma por producto lo sin lote MÁS lo que cada lote
+    // atribuye a ese producto; la vista por almacén separa ambos (filas de
+    // producto = sin lote, filas de lote = stock real del lote). Para
+    // comparar, se reconstruye la parte de lote desde SQL.
+    const { data: lotes } = await supabaseAdmin.from('lotes').select('id');
+    const loteSqlPorProducto = new Map<string, number>();
+    let loteRealTotal = 0;
+    for (const l of lotes ?? []) {
+      const [porProd, porAlm] = await Promise.all([
+        supabaseAdmin.rpc('stock_lote_almacen_por_producto', { p_lote_id: l.id, p_almacen_id: almacen.id }),
+        supabaseAdmin.rpc('stock_lote_por_almacen', { p_lote_id: l.id }),
+      ]);
+      if (porProd.error || porAlm.error) throw porProd.error ?? porAlm.error;
+      for (const r of (porProd.data as Array<{ producto_id: string; stock: number }>) ?? []) {
+        loteSqlPorProducto.set(r.producto_id, (loteSqlPorProducto.get(r.producto_id) ?? 0) + Number(r.stock));
+      }
+      loteRealTotal += Number(
+        (porAlm.data as Array<{ almacen_id: string; stock: number }> | null)?.find(r => r.almacen_id === almacen.id)?.stock ?? 0
+      );
+    }
+
     const grupos = await obtenerInventarioAlmacen(almacen.id);
     const tsPorProducto = new Map<string, number>();
+    let tsTotal = 0;
     for (const g of grupos) for (const a of g.articulos) {
+      tsTotal += a.stock;
       if (esSintetico(a.productoId)) continue;
       tsPorProducto.set(a.productoId, a.stock);
     }
@@ -54,13 +77,21 @@ async function main() {
     const idsTodos = new Set([...sqlPorProducto.keys(), ...tsPorProducto.keys()]);
     for (const productoId of idsTodos) {
       const sql = sqlPorProducto.get(productoId) ?? 0;
-      const ts = tsPorProducto.get(productoId) ?? 0;
+      const ts = (tsPorProducto.get(productoId) ?? 0) + (loteSqlPorProducto.get(productoId) ?? 0);
       if (Math.abs(sql - ts) > 0.01) {
         discrepancias++;
         console.log(
-          `[DIFERENCIA] almacén "${almacen.nombre}" producto ${productoId}: SQL=${sql.toFixed(3)} vs TS=${ts.toFixed(3)}`
+          `[DIFERENCIA] almacén "${almacen.nombre}" producto ${productoId}: SQL=${sql.toFixed(3)} vs TS(sin lote + lote)=${ts.toFixed(3)}`
         );
       }
+    }
+
+    // Total del almacén: filas de producto sin lote + stock real de todos los lotes.
+    const sqlSinLote = [...sqlPorProducto.entries()].reduce((acc, [id, kg]) => acc + kg - (loteSqlPorProducto.get(id) ?? 0), 0);
+    const esperado = sqlSinLote + loteRealTotal;
+    if (Math.abs(esperado - tsTotal) > 0.01) {
+      discrepancias++;
+      console.log(`[DIFERENCIA] almacén "${almacen.nombre}" total: SQL=${esperado.toFixed(3)} vs TS=${tsTotal.toFixed(3)}`);
     }
   }
 
