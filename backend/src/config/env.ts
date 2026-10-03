@@ -23,9 +23,29 @@ export const ENV = {
    *  (no rompe el flujo de negocio que lo dispara). */
   N8N_WEBHOOK_ENVIAR_DOCUMENTO:
     process.env.N8N_WEBHOOK_ENVIAR_DOCUMENTO || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/enviar-documento-pronoia',
+  /** Webhook del workflow v2 de n8n ("Enviar Contenido a Proveedor/Cliente"): entrega por
+   *  Telegram documentos, fotos/álbumes y mensajes de texto (campo `accion`). Variable
+   *  nueva a propósito: N8N_WEBHOOK_ENVIAR_DOCUMENTO sigue apuntando al workflow v1 (solo
+   *  documentos) y puede estar fijada así en Vercel. */
+  N8N_WEBHOOK_ENVIAR_CONTENIDO:
+    process.env.N8N_WEBHOOK_ENVIAR_CONTENIDO || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/enviar-contenido-pronoia',
   /** Webhook de n8n que manda el link de acceso al portal por Telegram. */
   N8N_WEBHOOK_PORTAL_LOGIN:
     process.env.N8N_WEBHOOK_PORTAL_LOGIN || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/portal-enviar-link-acceso',
+  /** Webhook de n8n ("Notificar Grupo Pronoia") que recibe {texto, parseMode, documentoUrl?,
+   *  nombreArchivo?, fotos?[]} y lo manda al grupo interno de Telegram. El chat id del grupo
+   *  vive en el workflow de n8n, no aquí. */
+  N8N_WEBHOOK_GRUPO:
+    process.env.N8N_WEBHOOK_GRUPO || 'https://evo-n8n-pronoia.xgwlbt.easypanel.host/webhook/notificar-grupo-pronoia',
+  /** Interruptor general de las notificaciones al grupo ('false' las apaga). Apagado en tests. */
+  GRUPO_NOTIFICACIONES_ACTIVAS: process.env.GRUPO_NOTIFICACIONES !== 'false' && process.env.NODE_ENV !== 'test',
+  /** Eventos a silenciar, separados por coma: claves ("ticket.editado") o categorías ("maestros"). */
+  GRUPO_EVENTOS_SILENCIADOS: (process.env.GRUPO_EVENTOS_SILENCIADOS || '')
+    .split(',').map(s => s.trim()).filter(Boolean),
+  /** true = también se avisan los eventos ruidosos (cada pesada de una toma física, etc.). */
+  GRUPO_INCLUIR_RUIDOSOS: process.env.GRUPO_INCLUIR_RUIDOSOS === 'true',
+  /** Zona horaria (IANA) con la que se muestra la hora en los mensajes del grupo. */
+  GRUPO_ZONA_HORARIA: process.env.GRUPO_ZONA_HORARIA || 'America/Caracas',
   /** Base del portal para armar el link de acceso (ej. https://portal.pronoiascrap.com). */
   PORTAL_URL: process.env.PORTAL_URL || 'https://pronoia-crm.vercel.app',
   /** Secreto para firmar sesiones del portal de proveedores/clientes — deliberadamente

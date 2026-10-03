@@ -32,6 +32,7 @@ import metricasRouter from './routes/metricas.js';
 import tomasFisicasRouter from './routes/toma-fisica.js';
 import auditoriaRouter from './routes/auditoria.js';
 import llavesEdicionRouter from './routes/llaves-edicion.js';
+import { notificarGrupoMiddleware } from './middlewares/notificar-grupo.js';
 import asistenteRouter from './routes/asistente.js';
 
 const app = express();
@@ -66,6 +67,8 @@ app.use(express.json({ limit: '100kb' }));
 // Solo para la cookie httpOnly de sesión del portal — el staff sigue usando
 // Bearer token, no depende de esto.
 app.use(cookieParser());
+// Avisos al grupo interno de Telegram por cada acción importante (observa respuestas, no las altera).
+app.use(notificarGrupoMiddleware);
 
 app.use(healthRouter);
 app.use('/api/auth', authRouter);
