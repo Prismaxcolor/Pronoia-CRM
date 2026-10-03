@@ -18,6 +18,8 @@ const env = vi.hoisted(() => ({
   },
 }));
 vi.mock('../src/config/env.js', () => env);
+const waitUntil = vi.hoisted(() => vi.fn());
+vi.mock('@vercel/functions', () => ({ waitUntil }));
 
 type Resultado = { data: unknown; error?: unknown };
 const tablas: Record<string, Resultado> = {};
@@ -92,6 +94,7 @@ beforeEach(() => {
   consultas.length = 0;
   subidas.length = 0;
   limpiarCacheActores();
+  waitUntil.mockReset();
   env.ENV.GRUPO_NOTIFICACIONES_ACTIVAS = true;
   env.ENV.GRUPO_EVENTOS_SILENCIADOS = [];
   env.ENV.GRUPO_INCLUIR_RUIDOSOS = false;
@@ -332,5 +335,43 @@ describe('integración con Express real', () => {
     } finally {
       await new Promise(r => servidor.close(r));
     }
+  });
+});
+
+describe('notificarGrupoMiddleware en serverless (segundo plano)', () => {
+  it('registra el trabajo en waitUntil al llamar res.end, ANTES de que termine la respuesta (finish)', async () => {
+    const res = Object.assign(new EventEmitter(), {
+      statusCode: 200,
+      json(c: unknown) { this.end(JSON.stringify(c)); return this; },
+      end: vi.fn(),
+    });
+    const finEnd = res.end;
+    notificarGrupoMiddleware(
+      { method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: { rfc: 'J-12345678-9', nombre: 'Nuevo' } } as never,
+      res as never,
+      vi.fn(),
+    );
+    res.statusCode = 200;
+    res.json({ id: 'p1' });
+    expect(finEnd).toHaveBeenCalledTimes(1); // la respuesta original sigue saliendo
+    expect(waitUntil).toHaveBeenCalledTimes(1); // registrado sin esperar a 'finish'
+    res.emit('finish');
+    expect(waitUntil).toHaveBeenCalledTimes(1); // 'finish' no lo duplica
+
+    await waitUntil.mock.calls[0][0];
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const texto = String(cuerpoEnviado().texto);
+    expect(texto).toContain('Se editó el proveedor');
+    expect(texto).toContain('Chatarra SA');
+    expect(texto).toContain('👤 Ana Pérez');
+    expect(texto).toContain('documento (cédula/RIF)');
+    expect(texto).not.toContain('J-12345678-9');
+  });
+
+  it('no registra nada si la respuesta no es 2xx', () => {
+    const res = Object.assign(new EventEmitter(), { statusCode: 400, json() { this.end(); return this; }, end: vi.fn() });
+    notificarGrupoMiddleware({ method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: {} } as never, res as never, vi.fn());
+    res.json();
+    expect(waitUntil).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,10 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
-import { notificarDocumento, notificarMensaje, type FotoEnvio } from './telegram-notify-service.js';
+import {
+  notificarDocumento, notificarMensaje, type FotoEnvio,
+  type NotificarDocumentoParams, type NotificarMensajeParams,
+} from './telegram-notify-service.js';
+import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
 import {
   generarFacturaPdf,
   generarTicketPdf,
@@ -95,6 +99,12 @@ async function fotosDelVehiculo(nombre: string | null): Promise<string[]> {
   return Array.isArray(fotos) ? fotos : [];
 }
 
+/** Envíos tras responder: en serverless se registran con waitUntil para que terminen. */
+const enviarDocumento = (p: NotificarDocumentoParams): void =>
+  ejecutarEnSegundoPlano(notificarDocumento(p), 'telegram_documento');
+const enviarMensaje = (p: NotificarMensajeParams): void =>
+  ejecutarEnSegundoPlano(notificarMensaje(p), 'telegram_mensaje');
+
 function fechaTicket(t: TicketPublico): string {
   return (t.fecha ?? t.createdAt).slice(0, 10);
 }
@@ -109,7 +119,7 @@ function notificarTicketInterno(ticket: TicketPublico, opciones: OpcionesNotific
   if (ticket.estado !== 'completo' || !ticket.entidadId) return;
   const corregido = opciones.corregido === true;
   const nombreBase = nombreArchivoTicket(ticket);
-  void notificarDocumento({
+  enviarDocumento({
     entidadTipo: entidadDeTicket(ticket),
     entidadId: ticket.entidadId,
     tipoDocumento: 'ticket',
@@ -153,7 +163,7 @@ function mensajeFactura(f: FacturaPublica, anulada: boolean): string {
 /** Factura recién emitida. */
 function notificarFacturaEmitidaInterno(factura: FacturaPublica): void {
   if (factura.estado !== 'emitida' || !factura.entidadId) return;
-  void notificarDocumento({
+  enviarDocumento({
     entidadTipo: entidadDeFactura(factura.tipo),
     entidadId: factura.entidadId,
     tipoDocumento: 'factura',
@@ -172,7 +182,7 @@ function notificarFacturasAnuladasInterno(
 ): void {
   for (const e of efectos) {
     if (e.accion !== 'anulada' || !e.entidadId) continue;
-    void notificarDocumento({
+    enviarDocumento({
       entidadTipo: entidadDeFactura(e.tipo),
       entidadId: e.entidadId,
       tipoDocumento: 'factura',
@@ -196,7 +206,7 @@ function notificarNotaInterno(
   cargar: () => Promise<NotaParaPdf | { error: string }>,
   evento: 'creada' | 'anulada'
 ): void {
-  void notificarDocumento({
+  enviarDocumento({
     entidadTipo,
     entidadId,
     tipoDocumento: 'nota',
@@ -228,7 +238,7 @@ function notificarPagoInterno(
   grupoId: string,
   opciones: { comprobantes?: string[]; esCruce?: boolean } = {}
 ): void {
-  void notificarDocumento({
+  enviarDocumento({
     entidadTipo,
     entidadId,
     tipoDocumento: opciones.esCruce ? 'cruce' : 'pago',
@@ -255,7 +265,7 @@ function notificarPagoInterno(
 /** Estado de cuenta (versión externa) enviado a pedido del equipo. */
 function notificarEstadoCuentaInterno(entidadTipo: EntidadTelegram, entidadId: string, estado: EstadoCuentaPortal): void {
   const hoy = new Date().toISOString().slice(0, 10);
-  void notificarDocumento({
+  enviarDocumento({
     entidadTipo,
     entidadId,
     tipoDocumento: 'estado_cuenta',
@@ -282,7 +292,7 @@ function notificarCitaInterno(
 ): void {
   const texto = TEXTO_CITA[cita.estado];
   if (!texto) return;
-  void notificarMensaje({
+  enviarMensaje({
     entidadTipo,
     entidadId,
     tipoDocumento: 'cita',

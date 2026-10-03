@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { ENV } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
 import { buscarEvento, debeNotificar, type Metodo } from '../services/grupo-eventos.js';
 import {
   notificarGrupo, construirPayloadGrupo, etiquetaPreviaParaBorrado, type PeticionEvento,
@@ -12,10 +13,10 @@ const METODOS_MUTANTES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * Middleware global (se monta UNA vez en app.ts, antes de los routers). Cuando una ruta
  * mutante catalogada termina con 2xx, arma y manda el aviso al grupo de Telegram.
  *
- * - Nunca altera la respuesta: solo observa res.json() y actúa en el evento 'finish',
- *   cuando el cliente ya recibió su respuesta (no la retrasa).
+ * - Nunca altera la respuesta: solo observa res.json() y res.end(); el trabajo corre en segundo
+ *   plano (waitUntil en Vercel) y no la retrasa.
  * - Todo error queda logueado; jamás se propaga.
- * - req.user lo pone requireAuth de cada router; se lee recién en 'finish'.
+ * - req.user lo pone requireAuth de cada router; se lee al cerrar la respuesta.
  */
 export function notificarGrupoMiddleware(req: Request, res: Response, next: NextFunction): void {
   try {
@@ -42,7 +43,13 @@ export function notificarGrupoMiddleware(req: Request, res: Response, next: Next
       return jsonOriginal(cuerpo);
     };
 
-    res.on('finish', () => {
+    // El trabajo se registra (waitUntil) cuando la respuesta empieza a cerrarse (res.end),
+    // no en 'finish': en serverless la función puede congelarse apenas se responde.
+    // 'finish' queda como respaldo; `iniciado` evita registrarlo dos veces.
+    let iniciado = false;
+    const iniciar = (): void => {
+      if (iniciado) return;
+      iniciado = true;
       if (res.statusCode < 200 || res.statusCode >= 300) return;
       const peticion: PeticionEvento = {
         metodo: req.method as Metodo,
@@ -54,8 +61,17 @@ export function notificarGrupoMiddleware(req: Request, res: Response, next: Next
         portalUser: req.portalUser,
         etiquetaPrevia,
       };
-      void procesar(encontrado, peticion);
-    });
+      ejecutarEnSegundoPlano(() => procesar(encontrado, peticion), `grupo_${encontrado.evento.clave}`);
+    };
+
+    if (typeof res.end === 'function') {
+      const endOriginal = res.end.bind(res) as (...args: unknown[]) => Response;
+      res.end = ((...args: unknown[]) => {
+        try { iniciar(); } catch (err) { logger.error({ evento: 'grupo_middleware_error', mensaje: err instanceof Error ? err.message : String(err) }); }
+        return endOriginal(...args);
+      }) as Response['end'];
+    }
+    res.on('finish', iniciar);
   } catch (err) {
     logger.error({ evento: 'grupo_middleware_error', mensaje: err instanceof Error ? err.message : String(err) });
   }

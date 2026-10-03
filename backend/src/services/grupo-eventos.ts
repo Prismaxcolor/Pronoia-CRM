@@ -221,6 +221,22 @@ function detallesUsuarioEditado(ctx: ContextoEvento): string[] {
   return cambios.length > 0 ? [`Cambió: ${cambios.join(', ')}`] : [];
 }
 
+/**
+ * Campos editados de un proveedor/cliente. Solo NOMBRES de campo: el documento (cédula/RIF),
+ * teléfono y correo son datos personales y no se muestran.
+ */
+const CAMPOS_ENTIDAD_COMERCIAL: ReadonlyArray<readonly [string, string]> = [
+  ['nombre', 'nombre'], ['rfc', 'documento (cédula/RIF)'], ['telefono', 'teléfono'], ['email', 'correo'],
+  ['direccion', 'dirección'], ['fotos', 'fotos'],
+];
+
+function detallesEntidadComercialEditada(ctx: ContextoEvento): string[] {
+  const b = ctx.reqBody;
+  const cambios = CAMPOS_ENTIDAD_COMERCIAL.filter(([clave]) => clave in b).map(([, rotulo]) => rotulo);
+  if ('activo' in b) cambios.push(b.activo === false ? 'desactivado' : 'activo');
+  return cambios.length > 0 ? [`Cambió: ${cambios.join(', ')}`] : [];
+}
+
 const ENTIDAD_LLAVE: Record<string, string> = {
   ticket_pesaje: 'ticket de pesaje',
   transformacion: 'transformación',
@@ -264,7 +280,8 @@ function entidadComercial(
   tablaNota: 'notas_ajuste_proveedor' | 'notas_ajuste_cliente', articulo: 'el' | 'la', nombre: string
 ): EventoCatalogo[] {
   return [
-    ...maestro(base, prefijo, 'maestros', rotulo, tabla, articulo, nombre),
+    ...maestro(base, prefijo, 'maestros', rotulo, tabla, articulo, nombre).map(fila =>
+      fila.clave === `${prefijo}.editado` ? { ...fila, detalles: detallesEntidadComercialEditada } : fila),
     ev(`${prefijo}.nota_creada`, 'POST', `${base}/:id/notas-ajuste`, 'facturacion', 'normal', '🧾', 'Se creó una nota de ajuste (crédito/débito)', {
       contexto: ctx => ({ rotulo, tabla, id: ctx.params.id ?? '' }),
       etiqueta: ctx => (txt(ctx.resBody.codigo) ? `Nota ${txt(ctx.resBody.codigo)}` : 'Nota de ajuste'), detalles: detallesNota,

@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { RegistrarPagoInput, RegistrarPagoMultipleInput } from '../schemas/pagos.js';
 import { notificarPago } from './telegram-eventos-service.js';
 import { logger } from '../utils/logger.js';
+import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
 
 /** Guarda las fotos del comprobante en el movimiento. El pago ya quedó registrado antes
  *  de llamar esto — si guardarlas falla, no se deshace el pago, solo se loguea. La plata
@@ -43,9 +44,12 @@ export async function registrarPago(
 
   if (input.comprobantes.length > 0) await adjuntarComprobante(movimientoId, input.comprobantes);
   // Telegram (fire-and-forget): comprobante PDF del pago + fotos del comprobante bancario.
-  void grupoDeMovimiento(movimientoId)
-    .then(grupoId => notificarPago('proveedor', input.proveedorId, grupoId, { comprobantes: input.comprobantes }))
-    .catch(err => logger.error({ evento: 'pago_telegram_error', mensaje: err instanceof Error ? err.message : String(err) }));
+  ejecutarEnSegundoPlano(
+    grupoDeMovimiento(movimientoId)
+      .then(grupoId => notificarPago('proveedor', input.proveedorId, grupoId, { comprobantes: input.comprobantes }))
+      .catch(err => logger.error({ evento: 'pago_telegram_error', mensaje: err instanceof Error ? err.message : String(err) })),
+    'pago_telegram'
+  );
 
   return { movimientoId };
 }
