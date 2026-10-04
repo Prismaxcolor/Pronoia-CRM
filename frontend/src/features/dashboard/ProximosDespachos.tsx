@@ -1,74 +1,77 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { CalendarClock, Truck, Contact } from 'lucide-react';
-import { listarCitas, type Cita, type EstadoCita } from '../../services/citas-service';
+import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { CalendarClock, Contact, Truck } from 'lucide-react';
+import type { EstadoCita } from '../../services/citas-service';
+import { useAuth } from '../../hooks/use-auth-context';
+import { Bloque, EstadoVacio, Insignia, SkeletonBloque, formatearFecha, type Tono } from '../../components/ui';
+import { fechaLocalIso } from '../../lib/dashboard-kpis';
+import { ErrorDeBloque } from './DashboardComun';
+import { cargarProximosDespachos } from './dashboardFuentes';
+import { useDashboardCarga } from './useDashboardCarga';
 
-const ESTADO_CLASE: Record<EstadoCita, string> = {
-  pendiente: 'bg-amber-100 text-amber-700',
-  confirmada: 'bg-green-100 text-green-700',
-  reprogramada: 'bg-blue-100 text-blue-700',
-  cancelada: 'bg-red-100 text-red-700',
-  completada: 'bg-gray-100 text-gray-600',
+const TONO_ESTADO: Record<EstadoCita, Tono> = {
+  pendiente: 'aviso',
+  confirmada: 'exito',
+  reprogramada: 'info',
+  cancelada: 'neutral',
+  completada: 'neutral',
+};
+const ETIQUETA_ESTADO: Record<EstadoCita, string> = {
+  pendiente: 'Pendiente',
+  confirmada: 'Confirmada',
+  reprogramada: 'Reprogramada',
+  cancelada: 'Cancelada',
+  completada: 'Completada',
 };
 
-function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Widget de solo lectura: próximas 5 citas desde hoy. Enlaza a /citas para
- *  cualquier acción — duplicar los botones de estado acá multiplicaría el
- *  código de mantenimiento sin ganancia real. */
+/** Bloque de solo lectura. Enlaza a /citas para cualquier acción (cambiar estados desde aquí duplicaría la pantalla de citas).
+ *  Conserva su permiso: despachos:ver. */
 function ProximosDespachos() {
-  const navigate = useNavigate();
-  const [citas, setCitas] = useState<Cita[]>([]);
-  const [cargando, setCargando] = useState(true);
-
-  useEffect(() => {
-    listarCitas(hoyISO())
-      .then(lista => setCitas(lista.filter(c => c.estado !== 'cancelada' && c.estado !== 'completada').slice(0, 5)))
-      .finally(() => setCargando(false));
-  }, []);
-
-  if (cargando) return null;
+  const { tienePermiso } = useAuth();
+  const hoy = useMemo(() => fechaLocalIso(new Date()), []);
+  const carga = useDashboardCarga({ permitido: tienePermiso('despachos', 'ver'), cargar: () => cargarProximosDespachos(hoy) });
 
   return (
-    <div className="bg-surface rounded-xl p-5 shadow-sm border border-border">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-text-primary flex items-center gap-2">
-          <CalendarClock size={16} className="text-brand-600" />
-          Próximos despachos
-        </h3>
-        <button type="button" onClick={() => navigate('/citas')} className="text-xs text-brand-600 hover:underline">
-          Ver todos
-        </button>
-      </div>
-
-      {citas.length === 0 ? (
-        <p className="text-sm text-text-muted py-4 text-center">No hay despachos agendados próximamente.</p>
-      ) : (
-        <div className="space-y-1">
-          {citas.map(c => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => navigate('/citas')}
-              className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-alt transition-colors text-left"
-            >
-              <div className="w-7 h-7 rounded-md bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
-                {c.entidadTipo === 'proveedor' ? <Truck size={13} /> : <Contact size={13} />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-text-primary truncate">{c.nombreEntidad}</p>
-                <p className="text-xs text-text-muted">{c.fecha} · {c.hora}</p>
-              </div>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${ESTADO_CLASE[c.estado]}`}>
-                {c.estado}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <Bloque
+      titulo="Próximos despachos"
+      queEstasViendo="las próximas citas de despacho de proveedores y clientes (pendientes, confirmadas o reprogramadas), desde hoy."
+      acciones={carga.estado === 'listo' || carga.estado === 'error'
+        ? <Link to="/citas" className="text-sm font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">Ver todas →</Link>
+        : undefined}
+    >
+      {carga.estado === 'cargando' && <SkeletonBloque alto="h-40" etiqueta="Cargando despachos" />}
+      {carga.estado === 'sinPermiso' && <EstadoVacio mensaje="Sin permiso para ver los despachos" />}
+      {carga.estado === 'error' && <ErrorDeBloque mensaje={carga.mensaje} onReintentar={carga.recargar} />}
+      {carga.estado === 'listo' && (carga.dato.length === 0
+        ? (
+          <EstadoVacio
+            icono={<CalendarClock size={22} />}
+            mensaje="No hay despachos agendados próximamente"
+            descripcion="Aquí aparecen las citas que agenden los proveedores y clientes desde el portal, o que se creen en la pantalla de despachos."
+            accion={{ etiqueta: 'Ir a despachos', to: '/citas' }}
+          />
+        )
+        : (
+          <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+            {carga.dato.map(c => (
+              <li key={c.id}>
+                <Link to="/citas" className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700" aria-hidden="true">
+                    {c.entidadTipo === 'proveedor' ? <Truck size={15} /> : <Contact size={15} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-text-primary">{c.nombreEntidad}</span>
+                    <span className="block text-xs tabular-nums text-text-secondary">
+                      {c.fecha === hoy ? 'Hoy' : formatearFecha(c.fecha)} · {c.hora} · {c.entidadTipo === 'proveedor' ? 'proveedor' : 'cliente'}
+                    </span>
+                  </span>
+                  <Insignia tono={TONO_ESTADO[c.estado]}>{ETIQUETA_ESTADO[c.estado]}</Insignia>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ))}
+    </Bloque>
   );
 }
 
