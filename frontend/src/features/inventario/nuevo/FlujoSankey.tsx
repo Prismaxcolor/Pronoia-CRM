@@ -13,7 +13,7 @@ import { claveParametros, parametrosPantalla } from '../../../lib/inventario-pan
 import { agruparClasificaciones, calcularLayoutSankey, listaFlujoMovil, listaLotesMovil, type EnlacePosicionado, type LayoutSankey, type NodoPosicionado } from '../../../lib/sankey-layout';
 import { obtenerFlujoPantalla } from '../../../services/inventario-pantalla-service';
 import type { ResumenInventario } from '../../../services/inventario-resumen-service';
-import Bloque from './Bloque';
+import { Bloque } from '../../../components/ui';
 import { AvisosMeta, ChipFiltro, ErrorBloque, SkeletonBloque } from './PantallaComun';
 import { useCambiarFiltros, useDatosPantalla } from './useDatosPantalla';
 

@@ -4,7 +4,6 @@
  *  En móvil las filas se apilan como tarjetas. Se carga con React.lazy: export default. */
 
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import type { DetallePantalla, FilaDetalleInventario } from '@shared/types/inventario-pantalla.js';
 import { formatearKg, formatearNumero, formatearUsd, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
@@ -16,8 +15,7 @@ import {
 } from '../../../lib/inventario-pantalla';
 import { obtenerDetallePantalla } from '../../../services/inventario-pantalla-service';
 import type { ResumenInventario } from '../../../services/inventario-resumen-service';
-import Bloque from './Bloque';
-import InfoTooltip from './InfoTooltip';
+import { Bloque, EstadoVacio, InfoTooltip, Insignia, exportarCsv } from '../../../components/ui';
 import { AvisosMeta, ChipFiltro, ErrorBloque, EXPLICACION_BASURA, EXPLICACION_DIAS, EXPLICACION_LIMPIEZA, SinPermiso, SkeletonBloque } from './PantallaComun';
 import { useCambiarFiltros, useDatosPantalla } from './useDatosPantalla';
 
@@ -43,33 +41,25 @@ const COLUMNAS: Array<{ clave: ColumnaTabla; etiqueta: string; derecha?: boolean
 ];
 
 function descargarCsv(filas: FilaDetalleInventario[], valorOculto: boolean) {
-  const blob = new Blob([armarCsv(filas, { valorOculto })], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = nombreArchivoCsv(new Date());
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  exportarCsv(nombreArchivoCsv(new Date()), armarCsv(filas, { valorOculto }));
 }
 
 function Insignias({ f }: { f: FilaDetalleInventario }) {
   const base = 'rounded px-1.5 py-0.5 text-[10px] font-medium';
   return (
     <span className="ml-1.5 inline-flex flex-wrap gap-1 align-middle">
-      {f.fase && <span className={`${base} bg-brand-50 text-brand-800`}>{f.fase === 'por_procesar' ? 'Por procesar' : 'Ya procesado'}</span>}
+      {f.fase && <Insignia forma="cuadrada" tono="marca">{f.fase === 'por_procesar' ? 'Por procesar' : 'Ya procesado'}</Insignia>}
       {f.limpieza && (
-        <span className={`${base} bg-slate-100 text-slate-700`} title={EXPLICACION_LIMPIEZA}>
+        <Insignia forma="cuadrada" title={EXPLICACION_LIMPIEZA}>
           {f.limpieza === 'limpio' ? 'Limpio' : 'Sucio'} ({f.limpiezaOrigen === 'producto' ? 'del producto' : 'del nombre'})
-        </span>
+        </Insignia>
       )}
       {f.destinoBasura && (
-        <span className={`${base} bg-slate-100 text-slate-700`} title={EXPLICACION_BASURA}>
+        <Insignia forma="cuadrada" title={EXPLICACION_BASURA}>
           {f.destinoBasura === 'recuperable' ? 'Recuperable' : 'Desecho'} (del nombre)
-        </span>
+        </Insignia>
       )}
-      {f.esClasificacionCompra && <span className={`${base} bg-amber-100 text-amber-900`}>Clasificación de compra</span>}
+      {f.esClasificacionCompra && <Insignia forma="cuadrada" tono="aviso">Clasificación de compra</Insignia>}
       {!f.enGalpon && <span className={`${base} bg-surface-hover text-text-secondary`}>{f.etapa === 'despachado' ? 'Despachado (ya salió)' : 'En transformación (fuera del galpón)'}</span>}
     </span>
   );
@@ -289,17 +279,13 @@ function TablaDetalleInventario({ filtros }: TablaDetalleInventarioProps) {
             )}
 
             {filas.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border-strong bg-surface px-4 py-8 text-center">
-                <p className="text-sm text-text-primary">
-                  {hayFiltrosTabla ? 'Ningún material ni lote coincide con estos filtros.' : 'Aún no hay inventario para mostrar.'}
-                </p>
-                {filtros.categoria?.toLowerCase() === 'pcb' && (
-                  <p className="mx-auto mt-1 max-w-md text-xs text-text-secondary">El inventario de PCB son sus lotes de trabajo y de exportación. Las clasificaciones de compra solo se ven activando «Ver clasificaciones de compra PCB».</p>
-                )}
-                {hayFiltrosTabla
-                  ? <button type="button" onClick={() => cambiar({ categoria: undefined, q: undefined, etapa: undefined, almacen: undefined })} className="mt-2 text-sm font-medium text-brand-700 underline underline-offset-2">Quitar estos filtros →</button>
-                  : <Link to="/inventario-legacy?pestana=almacenes" className="mt-2 inline-block text-sm font-medium text-brand-700 underline underline-offset-2">Ver almacenes →</Link>}
-              </div>
+              <EstadoVacio
+                mensaje={hayFiltrosTabla ? 'Ningún material ni lote coincide con estos filtros.' : 'Aún no hay inventario para mostrar.'}
+                descripcion={filtros.categoria?.toLowerCase() === 'pcb' ? 'El inventario de PCB son sus lotes de trabajo y de exportación. Las clasificaciones de compra solo se ven activando «Ver clasificaciones de compra PCB».' : undefined}
+                accion={hayFiltrosTabla
+                  ? { etiqueta: 'Quitar estos filtros', onClick: () => cambiar({ categoria: undefined, q: undefined, etapa: undefined, almacen: undefined }) }
+                  : { etiqueta: 'Ver almacenes', to: '/inventario-legacy?pestana=almacenes' }}
+              />
             ) : (
               <>
                 <div className="mb-2 flex gap-3 text-xs">

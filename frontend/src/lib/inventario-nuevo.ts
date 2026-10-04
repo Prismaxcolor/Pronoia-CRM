@@ -4,21 +4,9 @@
 import type { ResumenInventario } from '../services/inventario-resumen-service';
 
 // ---------------------------------------------------------------- formateo
-
-/** Separador de miles "." y decimal "," (es-VE). Manual a propósito: Intl en es omite el separador en 4 cifras. */
-export function formatearNumero(n: number, decimales = 0): string {
-  if (!Number.isFinite(n)) return '—';
-  const factor = 10 ** decimales;
-  const redondeado = Math.round((Math.abs(n) + Number.EPSILON) * factor) / factor;
-  const [entera, dec] = redondeado.toFixed(decimales).split('.');
-  const conMiles = entera.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  const signo = n < 0 && redondeado !== 0 ? '-' : '';
-  return `${signo}${conMiles}${dec ? `,${dec}` : ''}`;
-}
-
-export const formatearKg = (n: number): string => `${formatearNumero(n, 0)} kg`;
-export const formatearUsd = (n: number): string => `USD ${formatearNumero(n, 0)}`;
-export const formatearPct = (n: number, decimales = 1): string => `${formatearNumero(n, decimales)} %`;
+// La implementación vive en lib/formato.ts (formato es-VE unificado); se re-exporta aquí para no romper importadores.
+import { esFechaIso } from './formato';
+export { formatearNumero, formatearKg, formatearUsd, formatearPct, esFechaIso } from './formato';
 
 // ---------------------------------------------------------------- contenedor
 
@@ -37,35 +25,9 @@ export function calcularProgresoPct(metaKg: number, listoKg: number): number {
 }
 
 // ---------------------------------------------------------------- comparación vs periodo anterior
-
-export type TonoComparacion = 'bueno' | 'malo' | 'neutro';
-export type MejorCuando = 'sube' | 'baja';
-
-export interface ComparacionPeriodo {
-  direccion: 'sube' | 'baja' | 'igual';
-  delta: number;
-  /** null si el periodo anterior era 0 (no se puede dividir). */
-  deltaPct: number | null;
-  tono: TonoComparacion;
-}
-
-const EPS_IGUAL = 1e-9;
-
-/** Compara el valor actual con el del periodo anterior. Sin dato anterior (null/undefined/NaN) devuelve null:
- *  la pantalla muestra "—" y no inventa nada. */
-export function compararConPeriodoAnterior(
-  actual: number,
-  anterior: number | null | undefined,
-  mejorCuando: MejorCuando,
-): ComparacionPeriodo | null {
-  if (anterior == null || !Number.isFinite(anterior) || !Number.isFinite(actual)) return null;
-  const delta = actual - anterior;
-  if (Math.abs(delta) < EPS_IGUAL) return { direccion: 'igual', delta: 0, deltaPct: anterior === 0 ? null : 0, tono: 'neutro' };
-  const direccion = delta > 0 ? 'sube' : 'baja';
-  const deltaPct = anterior === 0 ? null : (delta / Math.abs(anterior)) * 100;
-  const esBueno = (direccion === 'sube') === (mejorCuando === 'sube');
-  return { direccion, delta, deltaPct, tono: esBueno ? 'bueno' : 'malo' };
-}
+// La implementación vive en lib/comparacion.ts; se re-exporta aquí.
+export { compararConPeriodoAnterior } from './comparacion';
+export type { ComparacionPeriodo, MejorCuando, TonoComparacion } from './comparacion';
 
 // ---------------------------------------------------------------- KPIs derivados del resumen
 
@@ -156,14 +118,6 @@ export const CLAVES_FILTRO = ['desde', 'hasta', 'categoria', 'q', 'almacen', 'pr
 /** Filtros que viven en "Más filtros" (el resto son los 3 visibles: fechas, categoría, buscador). */
 export const CLAVES_FILTRO_AVANZADO = ['almacen', 'proveedor', 'etapa', 'lote'] as const;
 
-const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-export function esFechaIso(valor: string | null | undefined): valor is string {
-  if (!valor || !FECHA_RE.test(valor)) return false;
-  const d = new Date(`${valor}T00:00:00Z`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === valor;
-}
-
 /** Lee los filtros de la URL. Descarta valores inválidos (fecha mal formada, rango invertido, etapa desconocida). */
 export function filtrosDesdeUrl(params: URLSearchParams): FiltrosPantalla {
   const limpio = (k: string) => {
@@ -209,28 +163,6 @@ export function parametrosResumen(f: FiltrosPantalla): { desde?: string; hasta?:
 }
 
 // ---------------------------------------------------------------- atajos de fechas
-
-export type AtajoRango = '7d' | '30d' | 'mes' | 'todo';
-export const INICIO_HISTORICO = '2020-01-01';
-
-const aIso = (d: Date) => d.toISOString().slice(0, 10);
-
-/** Rango de un atajo. `hoy` se pasa de afuera (UTC, sin tocar el reloj aquí) para poder probarlo. */
-export function rangoDeAtajo(atajo: AtajoRango, hoy: Date): { desde: string; hasta: string } {
-  const hasta = aIso(hoy);
-  if (atajo === 'todo') return { desde: INICIO_HISTORICO, hasta };
-  if (atajo === 'mes') return { desde: `${hasta.slice(0, 7)}-01`, hasta };
-  const dias = atajo === '7d' ? 6 : 29;
-  const ini = new Date(hoy.getTime() - dias * 86400000);
-  return { desde: aIso(ini), hasta };
-}
-
-/** Atajo que corresponde al rango actual. Sin rango en la URL equivale al valor por defecto del endpoint (30 días). */
-export function atajoActivo(f: FiltrosPantalla, hoy: Date): AtajoRango | null {
-  if (!f.desde || !f.hasta) return '30d';
-  for (const a of ['7d', '30d', 'mes', 'todo'] as const) {
-    const r = rangoDeAtajo(a, hoy);
-    if (r.desde === f.desde && r.hasta === f.hasta) return a;
-  }
-  return null;
-}
+// La implementación vive en lib/rango-fechas.ts; se re-exporta aquí.
+export { INICIO_HISTORICO, atajoActivo, rangoDeAtajo } from './rango-fechas';
+export type { AtajoRango } from './rango-fechas';

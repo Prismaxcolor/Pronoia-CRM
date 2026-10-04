@@ -4,14 +4,13 @@
  *  Se carga con React.lazy: export default. */
 
 import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { AlertOctagon, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
-import type { AlertaInventario, AlertasPantalla, SeveridadAlerta } from '@shared/types/inventario-pantalla.js';
+import { CheckCircle2 } from 'lucide-react';
+import type { AlertaInventario, AlertasPantalla } from '@shared/types/inventario-pantalla.js';
 import { formatearNumero, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
 import { ESTILO_CONTEO_ALERTA, ESTILO_SEVERIDAD, claveParametros, enlaceAlerta, formatearValorAlerta, ordenarAlertas, parametrosPantalla } from '../../../lib/inventario-pantalla';
 import { obtenerAlertasPantalla } from '../../../services/inventario-pantalla-service';
 import type { ResumenInventario } from '../../../services/inventario-resumen-service';
-import Bloque from './Bloque';
+import { AlertaItem, Bloque } from '../../../components/ui';
 import { AvisosMeta, ErrorBloque, SkeletonBloque } from './PantallaComun';
 import { useDatosPantalla } from './useDatosPantalla';
 
@@ -21,8 +20,6 @@ export interface AlertasInventarioProps {
   /** Resumen cargado (GET /api/inventario/resumen). No se usa: este bloque pide sus propios datos. */
   resumen: ResumenInventario | null;
 }
-
-const ICONO: Record<SeveridadAlerta, typeof Info> = { roja: AlertOctagon, amarilla: AlertTriangle, info: Info };
 
 function ExplicacionUmbrales({ c }: { c: AlertasPantalla['configuracion'] }) {
   return (
@@ -35,25 +32,21 @@ function ExplicacionUmbrales({ c }: { c: AlertasPantalla['configuracion'] }) {
 }
 
 function ItemAlerta({ a }: { a: AlertaInventario }) {
-  const e = ESTILO_SEVERIDAD[a.severidad];
-  const Icono = ICONO[a.severidad];
   const enlace = enlaceAlerta(a);
   return (
-    <li className={`flex flex-wrap items-start gap-x-3 gap-y-1 rounded-lg border p-3 ${e.contenedor}`}>
-      <span className={`mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${e.insignia}`}>
-        <Icono size={12} aria-hidden="true" /> {e.etiqueta}
-      </span>
-      <div className="min-w-0 flex-1 basis-full sm:basis-0">
-        <p className="text-sm text-text-primary">{a.texto}</p>
-        <p className="mt-0.5 text-xs text-text-secondary">
+    <AlertaItem
+      severidad={a.severidad}
+      texto={a.texto}
+      enlace={{ to: enlace.ruta, etiqueta: enlace.etiqueta }}
+      detalle={
+        <>
           {a.material && <span className="font-medium">{a.material}</span>}
           {a.material && ' · '}
           {formatearValorAlerta(a)}
           {a.umbral !== null && <> (umbral {formatearNumero(a.umbral, 0)}{a.unidad === 'pct' ? ' %' : a.unidad === 'dias' ? ' días' : ' kg'})</>}
-        </p>
-      </div>
-      <Link to={enlace.ruta} className="shrink-0 text-xs font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">{enlace.etiqueta} →</Link>
-    </li>
+        </>
+      }
+    />
   );
 }
 

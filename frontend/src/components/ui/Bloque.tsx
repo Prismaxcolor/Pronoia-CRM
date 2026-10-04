@@ -1,6 +1,8 @@
 import { useId, type ReactNode } from 'react';
 
-interface BloqueProps {
+/** CUÁNDO USARLO: cada sección de una pantalla (indicadores, gráfica, tabla, alertas). Regla de estilo: un bloque =
+ *  un título + UNA línea "Qué estás viendo" que dice, en lenguaje llano, qué muestra y cómo leerlo. */
+export interface BloqueProps {
   titulo: string;
   /** Una línea que explica qué se está viendo (se rotula "Qué estás viendo"). */
   queEstasViendo: string;

@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { HelpCircle } from 'lucide-react';
 
-interface InfoTooltipProps {
+/** CUÁNDO USARLO: junto a un título, cifra o encabezado de columna que necesita una explicación corta
+ *  ("Qué significa: Valor total"). No lo uses para texto largo ni para información esencial: lo esencial va visible. */
+export interface InfoTooltipProps {
   /** Texto accesible del botón ("Qué significa: Valor total"). */
   etiqueta: string;
   children: ReactNode;

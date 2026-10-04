@@ -1,12 +1,10 @@
-import { AlertTriangle, Lock, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, Lock, RefreshCw } from 'lucide-react';
 import type { MetaPantalla } from '@shared/types/inventario-pantalla.js';
-import InfoTooltip from './InfoTooltip';
+import { Chip, InfoTooltip, SkeletonBloque as SkeletonKit } from '../../../components/ui';
 
 /** Piezas compartidas por los cuatro bloques pesados de la pantalla de inventario. */
 
-export function SkeletonBloque({ alto = 'h-40' }: { alto?: string }) {
-  return <div className={`${alto} animate-pulse rounded-xl border border-border bg-surface-alt`} aria-busy="true" aria-label="Cargando" />;
-}
+export const SkeletonBloque = SkeletonKit;
 
 /** Error de carga de un bloque (no tumba el resto de la pantalla). */
 export function ErrorBloque({ mensaje, onReintentar }: { mensaje: string; onReintentar: () => void }) {
@@ -62,12 +60,5 @@ export const EXPLICACION_DIAS = 'Estimado: el sistema no lleva capas FIFO. Se as
 
 /** Chip del filtro de categoría activo, con botón para quitarlo. */
 export function ChipFiltro({ etiqueta, onQuitar }: { etiqueta: string; onQuitar: () => void }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-brand-300 bg-brand-50 py-0.5 pl-2.5 pr-1 text-xs font-medium text-brand-800">
-      Filtrando: {etiqueta}
-      <button type="button" onClick={onQuitar} aria-label={`Quitar filtro ${etiqueta}`} className="rounded-full p-0.5 hover:bg-brand-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-        <X size={12} aria-hidden="true" />
-      </button>
-    </span>
-  );
+  return <Chip onQuitar={onQuitar} etiquetaQuitar={`Quitar filtro ${etiqueta}`}>Filtrando: {etiqueta}</Chip>;
 }

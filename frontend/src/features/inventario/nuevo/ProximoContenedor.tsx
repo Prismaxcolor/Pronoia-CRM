@@ -9,7 +9,7 @@ import { useAuth } from '../../../hooks/use-auth-context';
 import { useConfirm } from '../../../hooks/use-confirm-context';
 import { useToast } from '../../../hooks/use-toast-context';
 import type { Lote } from '@shared/types/index.js';
-import Bloque from './Bloque';
+import { BarraProgreso, Bloque } from '../../../components/ui';
 
 const META_MAXIMA_KG = 1_000_000;
 const ENLACE_LOTES = '/inventario-legacy?pestana=lotes';
@@ -129,13 +129,7 @@ function ProximoContenedor({ resumen, onCambio }: Props) {
               </p>
               <p className="text-sm font-medium tabular-nums text-brand-700">{formatearNumero(pct, 1)} %</p>
             </div>
-            <div
-              role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}
-              aria-label="Progreso hacia la meta del contenedor"
-              className="mt-2 h-3 w-full overflow-hidden rounded-full bg-brand-100"
-            >
-              <div className="h-full rounded-full bg-brand-600 transition-[width]" style={{ width: `${pct}%` }} />
-            </div>
+            <div className="mt-2"><BarraProgreso valor={pct} etiqueta="Progreso hacia la meta del contenedor" /></div>
             <p className="mt-2 text-sm text-text-secondary">
               {completo ? '¡Meta cumplida! El contenedor está completo.' : `Faltan ${formatearKg(faltan)} para completar el contenedor.`}
             </p>

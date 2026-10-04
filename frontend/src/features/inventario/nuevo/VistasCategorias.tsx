@@ -3,10 +3,9 @@
  *  un clic en una tarjeta filtra la tabla por URL (?categoria=). La vista vive en ?vista=.
  *  Se carga con React.lazy: export default. Props {filtros, resumen}: el resumen ya no hace falta, los datos son propios. */
 
-import { useMemo, type KeyboardEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo, type ReactNode } from 'react';
 import type { CategoriasPantalla, TarjetaInventario } from '@shared/types/inventario-pantalla.js';
-import { formatearKg, formatearNumero, formatearPct, formatearUsd, type FiltrosPantalla, type VistaUrl } from '../../../lib/inventario-nuevo';
+import { formatearKg, formatearPct, formatearUsd, type FiltrosPantalla, type VistaUrl } from '../../../lib/inventario-nuevo';
 import { estiloCategoria } from '../../../lib/colores-categoria';
 import {
   ETIQUETA_OTRAS, MENSAJE_VACIO_VISTA, VISTAS_PRINCIPALES, claveParametros, formatearDiasEstimados, formatearUsdKg, parametrosPantalla,
@@ -14,8 +13,7 @@ import {
 } from '../../../lib/inventario-pantalla';
 import { obtenerCategoriasPantalla } from '../../../services/inventario-pantalla-service';
 import type { ResumenInventario } from '../../../services/inventario-resumen-service';
-import Bloque from './Bloque';
-import InfoTooltip from './InfoTooltip';
+import { BarraApilada, Bloque, ControlSegmentado, EstadoVacio, InfoTooltip } from '../../../components/ui';
 import { AvisosMeta, ChipFiltro, ErrorBloque, EtiquetaDerivada, EXPLICACION_BASURA, EXPLICACION_DIAS, EXPLICACION_LIMPIEZA, SinPermiso, SkeletonBloque } from './PantallaComun';
 import { useCambiarFiltros, useDatosPantalla } from './useDatosPantalla';
 
@@ -31,29 +29,13 @@ const COLOR_ETAPA = { recibido: '#B8C2CC', en_proceso: '#78C497', listo: '#1B6B3
 const COLOR_DESGLOSE = ['#1B6B3A', '#8A8F98', '#D1D5DB'] as const;
 
 function BarraEtapas({ tarjeta }: { tarjeta: TarjetaInventario }) {
-  const { segmentos, totalKg } = segmentosEtapas(tarjeta.etapas);
-  const descripcion = segmentos.map(s => `${s.etiqueta} ${formatearKg(s.kg)}`).join(', ');
+  const { segmentos } = segmentosEtapas(tarjeta.etapas);
   return (
-    <div>
-      {totalKg > 0 ? (
-        <div role="img" aria-label={`Kilos por etapa: ${descripcion}`} className="flex h-3 w-full overflow-hidden rounded-full bg-surface-hover">
-          {segmentos.filter(s => s.kg > 0).map(s => (
-            <div key={s.clave} style={{ width: `${s.pct}%`, backgroundColor: COLOR_ETAPA[s.clave] }} />
-          ))}
-        </div>
-      ) : (
-        <div className="h-3 w-full rounded-full bg-surface-hover" aria-hidden="true" />
-      )}
-      <ul className="mt-1.5 grid grid-cols-3 gap-1 text-[11px] leading-tight text-text-secondary">
-        {segmentos.map(s => (
-          <li key={s.clave}>
-            <span className="mr-1 inline-block h-2 w-2 rounded-sm align-middle" style={{ backgroundColor: COLOR_ETAPA[s.clave] }} aria-hidden="true" />
-            {s.etiqueta}
-            <span className="block font-medium tabular-nums text-text-primary">{formatearKg(s.kg)}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <BarraApilada
+      rotulo="Kilos por etapa"
+      formatoValor={formatearKg}
+      segmentos={segmentos.map(s => ({ clave: s.clave, etiqueta: s.etiqueta, valor: s.kg, color: COLOR_ETAPA[s.clave] }))}
+    />
   );
 }
 
@@ -65,17 +47,12 @@ function Desglose({ titulo, partes, ayuda }: { titulo: string; partes: Array<{ c
       <p className="mb-1.5 text-[11px] font-medium text-text-secondary">
         {ayuda ? <EtiquetaDerivada explicacion={ayuda} rotulo={titulo.startsWith('Limpio') ? 'producto o nombre' : undefined}>{titulo}</EtiquetaDerivada> : titulo}
       </p>
-      <div role="img" aria-label={p.map(x => `${x.etiqueta} ${formatearKg(x.kg)}`).join(', ')} className="flex h-2 w-full overflow-hidden rounded-full bg-surface-hover">
-        {p.map((x, i) => <div key={x.clave} style={{ width: `${x.pct}%`, backgroundColor: COLOR_DESGLOSE[i % COLOR_DESGLOSE.length] }} />)}
-      </div>
-      <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-text-secondary">
-        {p.map((x, i) => (
-          <li key={x.clave}>
-            <span className="mr-1 inline-block h-2 w-2 rounded-sm align-middle" style={{ backgroundColor: COLOR_DESGLOSE[i % COLOR_DESGLOSE.length] }} aria-hidden="true" />
-            {x.etiqueta} <span className="font-medium tabular-nums text-text-primary">{formatearKg(x.kg)}</span> <span className="tabular-nums">({formatearNumero(x.pct, 0)} %)</span>
-          </li>
-        ))}
-      </ul>
+      <BarraApilada
+        alto="h-2"
+        leyenda="fila"
+        formatoValor={formatearKg}
+        segmentos={p.map((x, i) => ({ clave: x.clave, etiqueta: x.etiqueta, valor: x.kg, color: COLOR_DESGLOSE[i % COLOR_DESGLOSE.length] }))}
+      />
     </div>
   );
 }
@@ -226,50 +203,23 @@ function irAProximoContenedor() {
   document.getElementById('proximo-contenedor')?.scrollIntoView({ block: 'start' });
 }
 
-function EstadoVacio({ vista }: { vista: VistaUrl }) {
+function EstadoVacioVista({ vista }: { vista: VistaUrl }) {
   const m = MENSAJE_VACIO_VISTA[vista];
-  return (
-    <div className="rounded-xl border border-dashed border-border-strong bg-surface px-4 py-8 text-center">
-      <p className="text-sm text-text-primary">{m.texto}</p>
-      {m.enlace && (m.enlace.ruta.startsWith('#')
-        ? <button type="button" onClick={irAProximoContenedor} className="mt-2 text-sm font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">{m.enlace.etiqueta} →</button>
-        : <Link to={m.enlace.ruta} className="mt-2 inline-block text-sm font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">{m.enlace.etiqueta} →</Link>)}
-    </div>
-  );
+  const accion = m.enlace
+    ? (m.enlace.ruta.startsWith('#') ? { etiqueta: m.enlace.etiqueta, onClick: irAProximoContenedor } : { etiqueta: m.enlace.etiqueta, to: m.enlace.ruta })
+    : undefined;
+  return <EstadoVacio mensaje={m.texto} accion={accion} />;
 }
 
 function ControlVistas({ vista, resumenKg, hayOtras, onElegir }: { vista: VistaUrl; resumenKg: Record<VistaUrl, number>; hayOtras: boolean; onElegir: (v: VistaUrl) => void }) {
   const opciones = hayOtras || vista === 'otras' ? [...VISTAS_PRINCIPALES, ETIQUETA_OTRAS] : VISTAS_PRINCIPALES;
-  const alTecla = (e: KeyboardEvent<HTMLDivElement>) => {
-    const i = opciones.findIndex(o => o.clave === vista);
-    const paso = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
-    if (!paso) return;
-    e.preventDefault();
-    const nueva = opciones[(i + paso + opciones.length) % opciones.length].clave;
-    onElegir(nueva);
-    requestAnimationFrame(() => document.getElementById(`vista-${nueva}`)?.focus());
-  };
   return (
-    <div role="radiogroup" aria-label="Vista del inventario" onKeyDown={alTecla} className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-surface-hover p-1">
-      {opciones.map(o => {
-        const activa = o.clave === vista;
-        return (
-          <button
-            key={o.clave}
-            id={`vista-${o.clave}`}
-            type="button"
-            role="radio"
-            aria-checked={activa}
-            tabIndex={activa ? 0 : -1}
-            onClick={() => onElegir(o.clave)}
-            className={`rounded-lg px-3.5 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${activa ? 'bg-brand-600 text-white shadow-sm' : 'text-text-secondary hover:bg-surface hover:text-text-primary'}`}
-          >
-            {o.etiqueta}
-            <span className={`ml-1.5 text-xs tabular-nums ${activa ? 'text-brand-100' : 'text-text-muted'}`}>{formatearKg(resumenKg[o.clave] ?? 0)}</span>
-          </button>
-        );
-      })}
-    </div>
+    <ControlSegmentado
+      etiquetaAria="Vista del inventario"
+      valor={vista}
+      onCambiar={onElegir}
+      opciones={opciones.map(o => ({ valor: o.clave, etiqueta: o.etiqueta, sufijo: formatearKg(resumenKg[o.clave] ?? 0) }))}
+    />
   );
 }
 
@@ -313,7 +263,7 @@ function VistasCategorias({ filtros }: VistasCategoriasProps) {
           )}
 
           {tarjetas.length === 0 ? (
-            <EstadoVacio vista={vista} />
+            <EstadoVacioVista vista={vista} />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {tarjetas.map(t => (
