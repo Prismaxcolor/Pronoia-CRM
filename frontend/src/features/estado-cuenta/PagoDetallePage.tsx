@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Printer, FileDown } from 'lucide-react';
+import { useParams, useLocation } from 'react-router-dom';
+import { Printer, FileDown } from 'lucide-react';
+import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonBloque } from '../../components/ui';
 import { obtenerPagoDetalle, type PagoDetalle } from '../../services/pago-detalle-service';
 import type { TipoEntidad } from '../../services/estado-cuenta-service';
 import { descargarPagoPDF } from '../../services/pago-export';
@@ -32,7 +33,6 @@ const esCredito = (tipo: string) => tipo === 'nota_credito' || tipo === 'adelant
 function PagoDetallePage({ tipoEntidad }: Props) {
   const esProveedor = tipoEntidad === 'proveedor';
   const { entidadId = '', grupoId = '' } = useParams();
-  const navigate = useNavigate();
   const location = useLocation();
 
   const navState = location.state as { volverA?: string; volverALabel?: string } | null;
@@ -49,19 +49,21 @@ function PagoDetallePage({ tipoEntidad }: Props) {
 
   if (cargando) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-2xl" aria-busy="true">
+        <SkeletonBloque alto="h-16" conMargen etiqueta="Cargando encabezado" />
+        <SkeletonBloque alto="h-72" etiqueta="Cargando comprobante" />
       </div>
     );
   }
 
   if (!pago) {
     return (
-      <div className="text-center py-12">
-        <p className="text-text-muted mb-4">No se encontró el {esProveedor ? 'pago' : 'cobro'}.</p>
-        <button type="button" onClick={() => navigate(ruta)} className="text-brand-600 hover:underline text-sm">
-          Volver a {etiquetaVolver}
-        </button>
+      <div className="max-w-xl">
+        <EstadoVacio
+          mensaje={`No se encontró el ${esProveedor ? 'pago' : 'cobro'}`}
+          descripcion="Puede que se haya eliminado o que el enlace sea incorrecto."
+          accion={{ etiqueta: `Volver a ${etiquetaVolver}`, to: ruta }}
+        />
       </div>
     );
   }
@@ -73,52 +75,46 @@ function PagoDetallePage({ tipoEntidad }: Props) {
 
   return (
     <div className="max-w-2xl print-documento print:max-w-none">
-      <div className="print:hidden">
-        <button type="button" onClick={() => navigate(ruta)} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
-          <ArrowLeft size={16} />
-          {etiquetaVolver}
-        </button>
-      </div>
-
       {/* Encabezado de marca — solo el logo, estándar en todo documento impreso. */}
       <div className="hidden print:flex items-center justify-end mb-6">
         <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
       </div>
 
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
-            {pago.codigoPago && (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 print:border print:border-black print:bg-transparent">
-                {pago.codigoPago}
-              </span>
-            )}
-            {pago.codigoCruce && (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 print:border print:border-black print:bg-transparent">
-                {pago.codigoCruce}
-              </span>
-            )}
-            {pago.codigoAdelanto && (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-teal-100 text-teal-700 print:border print:border-black print:bg-transparent">
-                {pago.codigoAdelanto}
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-text-muted mt-1">{pago.fecha}</p>
-        </div>
-        <div className="print:hidden flex items-center gap-2 shrink-0">
-          <button type="button" onClick={() => descargarPagoPDF(pago, esProveedor)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
-            <FileDown size={16} />
-            PDF
-          </button>
-          <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
-            <Printer size={16} />
-            Imprimir
-          </button>
-          <CompartirBoton titulo={`${esCruce ? 'Cruce' : esProveedor ? 'Pago' : 'Cobro'} ${pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? pago.grupoId.slice(0, 8)}`} obtenerPdf={() => descargarPagoPDF(pago, esProveedor, 'blob')} />
-        </div>
+      {/* Cabecera del estándar. Las migas son navegación: no se imprimen. */}
+      <div className="print:[&_nav]:hidden">
+        <EncabezadoPagina
+          migas={[{ etiqueta: etiquetaVolver, to: ruta }, { etiqueta: titulo }]}
+          titulo={titulo}
+          subtitulo={pago.fecha}
+          acciones={(
+            <div className="print:hidden flex flex-wrap items-center gap-2">
+              <BotonAccion variante="secundario" onClick={() => descargarPagoPDF(pago, esProveedor)} icono={<FileDown size={16} />}>PDF</BotonAccion>
+              <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
+              <CompartirBoton titulo={`${esCruce ? 'Cruce' : esProveedor ? 'Pago' : 'Cobro'} ${pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? pago.grupoId.slice(0, 8)}`} obtenerPdf={() => descargarPagoPDF(pago, esProveedor, 'blob')} />
+            </div>
+          )}
+        />
       </div>
+
+      {(pago.codigoPago || pago.codigoCruce || pago.codigoAdelanto) && (
+        <div className="-mt-3 mb-6 flex flex-wrap items-center gap-2">
+          {pago.codigoPago && (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 print:border print:border-black print:bg-transparent">
+              {pago.codigoPago}
+            </span>
+          )}
+          {pago.codigoCruce && (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 print:border print:border-black print:bg-transparent">
+              {pago.codigoCruce}
+            </span>
+          )}
+          {pago.codigoAdelanto && (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-teal-100 text-teal-700 print:border print:border-black print:bg-transparent">
+              {pago.codigoAdelanto}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Documento puramente monetario: sin tarjeta redondeada, solo filas
        *  con divisor — el mismo patrón de encabezado de todo el sistema. */}

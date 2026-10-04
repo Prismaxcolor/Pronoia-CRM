@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, DollarSign, FileEdit, Ban, Send } from 'lucide-react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { useParams, useLocation } from 'react-router-dom';
+import { Printer, DollarSign, FileEdit, Send } from 'lucide-react';
 import {
   obtenerEstadoCuenta,
   enviarEstadoCuentaTelegram,
@@ -15,47 +15,37 @@ import NotaAjusteModal from './NotaAjusteModal';
 import AnularNotaModal from './AnularNotaModal';
 import type { ResultadoCobroMultiple } from '../../services/cobro-service';
 import CompartirBoton from '../../components/CompartirBoton';
+import {
+  Bloque, BotonAccion, EncabezadoPagina, EstadoVacio, ListaAlertas, SkeletonBloque, SkeletonKpis, SkeletonTabla, useFiltrosUrl,
+} from '../../components/ui';
+import type { EsquemaFiltros } from '../../lib/filtros-url';
+import { hoyLocal } from '../../lib/rango-fechas';
+import {
+  TIPOS_ENTRADA, alertasAntiguedadEstadoCuenta, facturasPendientesEstimadas, filtrarEntradasPorTipo, kpisEstadoCuenta, saldoCorrido,
+} from '../../lib/terceros-kpis';
+import EstadoCuentaFiltros from './EstadoCuentaFiltros';
+import EstadoCuentaKpis from './EstadoCuentaKpis';
+import EstadoCuentaTablaImpresion from './EstadoCuentaTablaImpresion';
+
+// Lo pesado se carga aparte y después de los indicadores.
+const EstadoCuentaTabla = lazy(() => import('./EstadoCuentaTabla'));
+const EstadoCuentaGrafica = lazy(() => import('./EstadoCuentaGrafica'));
+
+/** Filtros compartibles en la URL. Desde y Hasta son independientes (sin ninguno se ve todo el historial). */
+const ESQUEMA_FILTROS: EsquemaFiltros = {
+  campos: {
+    desde: { tipo: 'fecha' },
+    hasta: { tipo: 'fecha' },
+    tipo: { tipo: 'opcion', opciones: TIPOS_ENTRADA },
+  },
+};
+
+/** Espera antes de montar los bloques pesados, para que los indicadores pinten primero. */
+const RETARDO_BLOQUES_PESADOS_MS = 150;
 
 interface Props {
   /** Define de dónde se jalan los datos. La pantalla es idéntica para ambos. */
   tipo: TipoEntidad;
-}
-
-function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
-  factura: 'Factura',
-  pago: 'Pago',
-  adelanto: 'Adelanto',
-  nota_credito: 'Nota crédito',
-  nota_debito: 'Nota débito',
-  cruce: 'Cruce',
-};
-
-const BADGE_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
-  factura: 'bg-amber-100 text-amber-700',
-  pago: 'bg-green-100 text-green-700',
-  adelanto: 'bg-teal-100 text-teal-700',
-  nota_credito: 'bg-blue-100 text-blue-700',
-  nota_debito: 'bg-purple-100 text-purple-700',
-  cruce: 'bg-indigo-100 text-indigo-700',
-};
-
-/** Ruta destino del detalle imprimible de una entrada del estado de cuenta,
- *  o null si esa fila no tiene detalle propio (pago, adelanto). */
-function rutaDetalle(tipo: TipoEntidad, entidadId: string, e: EntradaEstadoCuenta): string | null {
-  if (e.tipo === 'factura' && e.facturaId) {
-    return `${tipo === 'proveedor' ? '/compras' : '/ventas'}/${e.facturaId}`;
-  }
-  if ((e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && e.notaId) {
-    return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/notas/${e.notaId}`;
-  }
-  if ((e.tipo === 'pago' || e.tipo === 'adelanto' || e.tipo === 'cruce') && e.pagoId) {
-    return `${tipo === 'proveedor' ? '/proveedores' : '/clientes'}/${entidadId}/pagos/${e.pagoId}`;
-  }
-  return null;
 }
 
 /** Correlativo del pago/adelanto (proveedor, PG-/AD-) o cobro/anticipo
@@ -75,14 +65,17 @@ function formatCodigoAdelanto(tipo: TipoEntidad, numero: number | null): string 
 
 function EstadoCuentaPage({ tipo }: Props) {
   const { id = '' } = useParams();
-  const navigate = useNavigate();
+  const location = useLocation();
   const { tienePermiso } = useAuth();
   const toast = useToast();
+  const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
+  const desde = (filtros.desde as string | undefined) ?? '';
+  const hasta = (filtros.hasta as string | undefined) ?? '';
+  const tipoEntrada = filtros.tipo as string | undefined;
 
   const [estado, setEstado] = useState<EstadoCuenta | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
+  const [mostrarPesados, setMostrarPesados] = useState(false);
   const [pagoAbierto, setPagoAbierto] = useState(false);
   const [notaAbierta, setNotaAbierta] = useState(false);
   const [notaAAnular, setNotaAAnular] = useState<EntradaEstadoCuenta | null>(null);
@@ -118,6 +111,12 @@ function EstadoCuentaPage({ tipo }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { recargar(); }, [tipo, id, desde, hasta]);
 
+  useEffect(() => {
+    if (!estado) return;
+    const t = setTimeout(() => setMostrarPesados(true), RETARDO_BLOQUES_PESADOS_MS);
+    return () => clearTimeout(t);
+  }, [estado]);
+
   const notasDebitoPendientes = useMemo(
     () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_debito' && !e.anulada && !e.pagada),
     [estado]
@@ -125,6 +124,18 @@ function EstadoCuentaPage({ tipo }: Props) {
   const notasCreditoPendientes = useMemo(
     () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_credito' && !e.anulada && !e.pagada),
     [estado]
+  );
+
+  // El saldo corrido se calcula con TODAS las entradas del periodo; el filtro por tipo solo decide qué filas se ven.
+  const conSaldo = useMemo(() => saldoCorrido(estado?.entradas ?? []), [estado]);
+  const visibles = useMemo(() => filtrarEntradasPorTipo(conSaldo, tipoEntrada), [conSaldo, tipoEntrada]);
+  const kpis = useMemo(() => (estado ? kpisEstadoCuenta(estado.totales, estado.entradas) : null), [estado]);
+  const fechaReferencia = hasta ? new Date(`${hasta}T00:00:00Z`) : hoyLocal();
+  const alertas = useMemo(
+    () => (estado && !desde ? alertasAntiguedadEstadoCuenta(facturasPendientesEstimadas(estado.entradas, fechaReferencia)) : []),
+    // fechaReferencia se deriva de `hasta`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [estado, desde, hasta]
   );
 
   const handlePagoRegistrado = (resultado: ResultadoCobroMultiple) => {
@@ -158,221 +169,129 @@ function EstadoCuentaPage({ tipo }: Props) {
 
   if (cargando && !estado) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-7xl" aria-busy="true">
+        <SkeletonBloque alto="h-16" conMargen etiqueta="Cargando encabezado" />
+        <SkeletonKpis />
+        <SkeletonTabla />
       </div>
     );
   }
 
-  if (!estado) {
+  if (!estado || !kpis) {
     return (
-      <div className="text-center py-12">
-        <p className="text-text-muted mb-4">No se encontró {tipo === 'proveedor' ? 'el proveedor' : 'el cliente'}.</p>
-        <button type="button" onClick={() => navigate(volverA)} className="text-brand-600 hover:underline text-sm">
-          Volver a {etiquetaEntidad}
-        </button>
+      <div className="max-w-xl">
+        <EstadoVacio
+          mensaje={`No se encontró ${tipo === 'proveedor' ? 'el proveedor' : 'el cliente'}`}
+          descripcion="Puede que se haya eliminado o que el enlace sea incorrecto."
+          accion={{ etiqueta: `Volver a ${etiquetaEntidad}`, to: volverA }}
+        />
       </div>
     );
   }
 
-  const { totales } = estado;
-  const saldoEnRojo = totales.saldo > 0;
-  const inputClass = "px-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
+  const rutaVuelta = `${volverA}/${id}/estado-cuenta${location.search}`;
+  const hayFiltros = Boolean(desde || hasta || tipoEntrada);
+  const vacioTabla = {
+    mensaje: hayFiltros ? 'Ningún movimiento coincide con los filtros' : 'Aún no hay movimientos en esta cuenta',
+    descripcion: hayFiltros ? 'Amplía las fechas o quita el tipo de movimiento para ver más.' : 'Aparecerán aquí las facturas, pagos, adelantos y notas.',
+  };
 
   return (
-    <div>
-      {/* Controles (no se imprimen) */}
-      <div className="print:hidden">
-        <button
-          type="button"
-          onClick={() => navigate(volverA)}
-          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4"
+    <div className="max-w-7xl">
+      {/* Las migas son navegación: no se imprimen (el título y el nombre sí). */}
+      <div className="print:[&_nav]:hidden">
+        <EncabezadoPagina
+          migas={[{ etiqueta: etiquetaEntidad, to: volverA }, { etiqueta: estado.entidad.nombre }]}
+          titulo="Estado de cuenta"
+          subtitulo={estado.entidad.nombre}
+          acciones={(
+            <div className="print:hidden flex flex-wrap items-center gap-2">
+              {puedeAjustar && (
+                <BotonAccion variante="secundario" onClick={() => setNotaAbierta(true)} icono={<FileEdit size={16} />}>Nota crédito/débito</BotonAccion>
+              )}
+              {puedePagar && (
+                <span title="Selecciona facturas y/o notas, cruzalas con adelantos y notas de crédito, o regístralo como adelanto">
+                  <BotonAccion onClick={() => setPagoAbierto(true)} icono={<DollarSign size={16} />}>{etiquetaAccionPago}</BotonAccion>
+                </span>
+              )}
+              <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
+              {puedeAjustar && (
+                <span title="Manda el estado de cuenta (PDF) al Telegram vinculado">
+                  <BotonAccion variante="secundario" onClick={enviarPorTelegram} disabled={enviandoTelegram} icono={<Send size={16} />}>
+                    {enviandoTelegram ? 'Enviando...' : 'Enviar por Telegram'}
+                  </BotonAccion>
+                </span>
+              )}
+              <CompartirBoton titulo="Estado de cuenta" />
+            </div>
+          )}
+        />
+      </div>
+
+      <EstadoCuentaFiltros
+        filtros={{ desde: desde || undefined, hasta: hasta || undefined, tipo: tipoEntrada }}
+        onCambiar={cambiar}
+        onLimpiar={limpiar}
+      />
+
+      <div className={`print:hidden ${cargando ? 'opacity-60 transition-opacity' : ''}`}>
+        <section aria-label="Indicadores principales">
+          <EstadoCuentaKpis tipo={tipo} kpis={kpis} conFiltroFechas={Boolean(desde || hasta)} />
+        </section>
+      </div>
+
+      <div className={`print:hidden ${cargando ? 'opacity-60 transition-opacity' : ''}`}>
+        <Bloque
+          titulo="Movimientos"
+          queEstasViendo={`Cada factura, ${tipo === 'proveedor' ? 'pago' : 'cobro'}, adelanto y nota en orden de fecha, con el saldo acumulado después de cada uno${desde ? ' (solo del periodo filtrado: arranca en 0)' : ''}.`}
         >
-          <ArrowLeft size={16} />
-          {etiquetaEntidad}
-        </button>
-      </div>
+          <Suspense fallback={<SkeletonTabla />}>
+            <EstadoCuentaTabla
+              tipo={tipo}
+              entidadId={id}
+              nombreEntidad={estado.entidad.nombre}
+              filas={visibles}
+              rutaVuelta={rutaVuelta}
+              puedeAjustar={puedeAjustar}
+              onAnular={setNotaAAnular}
+              vacio={vacioTabla}
+            />
+          </Suspense>
+        </Bloque>
 
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Estado de cuenta</h1>
-          <p className="text-sm text-text-secondary mt-1">{estado.entidad.nombre}</p>
-        </div>
-        <div className="print:hidden flex flex-wrap items-center gap-2">
-          {puedeAjustar && (
-            <button
-              type="button"
-              onClick={() => setNotaAbierta(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
+        {mostrarPesados ? (
+          <>
+            <Bloque
+              titulo="Evolución del saldo"
+              queEstasViendo="El saldo de la cuenta día a día: sube con cada factura o nota de débito y baja con cada pago, adelanto o nota de crédito."
             >
-              <FileEdit size={16} />
-              Nota crédito/débito
-            </button>
-          )}
-          {puedePagar && (
-            <button
-              type="button"
-              onClick={() => setPagoAbierto(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-              title="Selecciona facturas y/o notas, cruzalas con adelantos y notas de crédito, o regístralo como adelanto"
-            >
-              <DollarSign size={16} />
-              {etiquetaAccionPago}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
-          >
-            <Printer size={16} />
-            Imprimir
-          </button>
-          {puedeAjustar && (
-            <button
-              type="button"
-              onClick={enviarPorTelegram}
-              disabled={enviandoTelegram}
-              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors disabled:opacity-50"
-              title="Manda el estado de cuenta (PDF) al Telegram vinculado"
-            >
-              <Send size={16} />
-              {enviandoTelegram ? 'Enviando...' : 'Enviar por Telegram'}
-            </button>
-          )}
-          <CompartirBoton titulo="Estado de cuenta" />
-        </div>
-      </div>
+              <Suspense fallback={<SkeletonBloque alto="h-56" etiqueta="Cargando gráfica" />}>
+                <EstadoCuentaGrafica entradas={conSaldo} />
+              </Suspense>
+            </Bloque>
 
-      {/* Filtro de fechas */}
-      <div className="print:hidden flex flex-wrap items-end gap-3 mb-6">
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Desde</label>
-          <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className={inputClass} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Hasta</label>
-          <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className={inputClass} />
-        </div>
-        {(desde || hasta) && (
-          <button
-            type="button"
-            onClick={() => { setDesde(''); setHasta(''); }}
-            className="text-xs text-text-muted hover:text-text-primary underline pb-2"
-          >
-            Limpiar
-          </button>
+            <Bloque
+              titulo="Facturas sin pagar por antigüedad"
+              queEstasViendo="Estimación: los pagos y notas de crédito se aplican a las facturas más antiguas primero. No hay fecha de vencimiento: los días se cuentan desde la fecha de cada factura."
+            >
+              {desde ? (
+                <EstadoVacio
+                  mensaje="La estimación necesita el historial completo"
+                  descripcion="Con el filtro Desde se pierden los pagos y facturas anteriores, y la antigüedad saldría mal."
+                  accion={{ etiqueta: 'Quitar el filtro Desde', onClick: () => cambiar({ desde: undefined }) }}
+                />
+              ) : (
+                <ListaAlertas alertas={alertas} vacio={<EstadoVacio mensaje="Sin facturas pendientes de más de 30 días (estimado)" />} />
+              )}
+            </Bloque>
+          </>
+        ) : (
+          <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando bloques" />
         )}
       </div>
 
-      {/* Movimientos */}
-      <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6">
-        <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-xs text-text-muted">
-              <th className="px-5 py-3 font-medium">Fecha</th>
-              <th className="px-5 py-3 font-medium">Concepto</th>
-              <th className="px-5 py-3 font-medium">Referencia</th>
-              <th className="px-5 py-3 font-medium text-right">Cargo</th>
-              <th className="px-5 py-3 font-medium text-right">Abono</th>
-              {puedeAjustar && <th className="px-5 py-3 font-medium text-right print:hidden">Acción</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {estado.entradas.map((e, i) => (
-              <tr key={i} className={`border-b border-border last:border-b-0 ${e.anulada ? 'opacity-50' : ''}`}>
-                <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{e.fecha}</td>
-                <td className="px-5 py-3 text-text-primary">
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs mr-2 ${BADGE_POR_TIPO[e.tipo]}`}>
-                    {LABEL_POR_TIPO[e.tipo]}
-                  </span>
-                  <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
-                  {e.anulada && <span className="text-xs font-medium text-red-600 ml-2">Anulada</span>}
-                  {e.pagada && !e.anulada && <span className="text-xs text-text-muted ml-2">(pagada)</span>}
-                  {e.facturaAsociadaCodigo && (
-                    <span className="block text-xs text-text-muted mt-0.5">→ {e.facturaAsociadaCodigo}</span>
-                  )}
-                  {e.tipo === 'cruce' && (
-                    <span className="block text-xs text-text-muted mt-0.5">Saldó ${fmt(e.montoCruzado ?? 0)} en facturas sin mover dinero (el saldo no cambia)</span>
-                  )}
-                  {e.tipo === 'adelanto' && e.adelantoAplicado != null && e.adelantoAplicado > 0 && (
-                    <span className="block text-xs text-text-muted mt-0.5">Aplicado ${fmt(e.adelantoAplicado)} a facturas · disponible ${fmt(e.adelantoDisponible ?? 0)}</span>
-                  )}
-                </td>
-                <td className="px-5 py-3 text-text-muted">
-                  {(() => {
-                    const destino = rutaDetalle(tipo, id, e);
-                    if (!destino) return e.referencia ?? '—';
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => navigate(destino, {
-                          state: { volverA: `/${tipo === 'proveedor' ? 'proveedores' : 'clientes'}/${id}/estado-cuenta`, volverALabel: 'Estado de cuenta' },
-                        })}
-                        className="text-brand-600 hover:underline print:text-inherit print:no-underline"
-                      >
-                        {e.referencia ?? '—'}
-                      </button>
-                    );
-                  })()}
-                  {e.referenciaExterna && (
-                    <span className="block text-xs text-text-muted">{e.referenciaExterna}</span>
-                  )}
-                </td>
-                <td className="px-5 py-3 text-right text-text-primary">
-                  {e.anulada && e.tipo === 'nota_debito' && e.montoAnulado
-                    ? <span className="line-through text-text-muted">{fmt(e.montoAnulado)}</span>
-                    : (e.cargo ? fmt(e.cargo) : '—')}
-                </td>
-                <td className="px-5 py-3 text-right text-text-primary">
-                  {e.anulada && e.tipo === 'nota_credito' && e.montoAnulado
-                    ? <span className="line-through text-text-muted">{fmt(e.montoAnulado)}</span>
-                    : (e.abono ? fmt(e.abono) : '—')}
-                </td>
-                {puedeAjustar && (
-                  <td className="px-5 py-3 text-right print:hidden">
-                    {(e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && !e.pagada && (
-                      <button
-                        type="button"
-                        onClick={() => setNotaAAnular(e)}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700"
-                        title="Anular nota"
-                      >
-                        <Ban size={13} />
-                        Anular
-                      </button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
-
-        {estado.entradas.length === 0 && (
-          <p className="text-center text-text-muted py-12 text-sm">
-            Sin movimientos en este período.
-          </p>
-        )}
-      </div>
-
-      {/* Totales */}
-      <div className="flex flex-col items-end gap-2">
-        <div className="flex justify-between w-full max-w-xs text-sm">
-          <span className="text-text-secondary">Total facturado</span>
-          <span className="font-medium text-text-primary">{fmt(totales.facturado)}</span>
-        </div>
-        <div className="flex justify-between w-full max-w-xs text-sm">
-          <span className="text-text-secondary">Total pagado</span>
-          <span className="font-medium text-text-primary">{fmt(totales.pagado)}</span>
-        </div>
-        <div className="flex justify-between w-full max-w-xs text-base pt-2 border-t border-border">
-          <span className="font-semibold text-text-primary">Saldo pendiente</span>
-          <span className={`font-bold ${saldoEnRojo ? 'text-red-600' : 'text-text-primary'}`}>
-            {fmt(totales.saldo)}
-          </span>
-        </div>
-      </div>
+      {/* Versión impresa: la tabla clásica y los totales, igual que antes del rediseño. */}
+      <EstadoCuentaTablaImpresion entradas={visibles} totales={estado.totales} />
 
       {pagoAbierto && (
         <PagoCobroModal
