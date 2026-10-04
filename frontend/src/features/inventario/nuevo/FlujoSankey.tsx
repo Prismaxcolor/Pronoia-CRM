@@ -157,7 +157,7 @@ function ListaFlujo({ flujo, visibleEnEscritorio }: { flujo: FlujoPantalla; visi
                     <li key={`a-${d.nombre}`} className="flex justify-between gap-2"><span>→ {d.nombre}</span><span className="whitespace-nowrap font-medium tabular-nums text-text-primary">{formatearKg(d.kg)}</span></li>
                   ))}
                 </ul>
-                {l.destinos.length === 0 && <p className="mt-1.5 text-xs text-text-muted">Sin salidas registradas en el período.</p>}
+                {l.destinos.length === 0 && <p className="mt-1.5 text-xs text-text-muted">Sin salidas registradas en el rango de fechas elegido.</p>}
               </li>
             ))}
           </ul>
@@ -181,7 +181,7 @@ function ListaFlujo({ flujo, visibleEnEscritorio }: { flujo: FlujoPantalla; visi
                   ))}
                 </ul>
               ) : (
-                <p className="mt-1.5 text-xs text-text-muted">Sin salidas registradas: el flujo termina aquí.</p>
+                <p className="mt-1.5 text-xs text-text-muted">Sin salidas registradas en el rango de fechas elegido: el flujo termina aquí.</p>
               )}
             </li>
           ))}
@@ -221,7 +221,7 @@ function Notas({ flujo }: { flujo: FlujoPantalla }) {
         <div className="flex gap-2 rounded-lg bg-surface-alt p-2.5">
           <Info size={14} className="mt-0.5 shrink-0 text-text-muted" aria-hidden="true" />
           <div>
-            <p className="font-medium text-text-primary">Este tramo aún no tiene datos registrados</p>
+            <p className="font-medium text-text-primary">Este tramo todavía no tiene datos registrados</p>
             <ul className="mt-0.5 space-y-0.5">
               {tramosAgrupados.map(g => <li key={g.motivo}><strong>{g.tramos.join(' · ')}:</strong> {g.motivo}</li>)}
             </ul>
@@ -233,19 +233,19 @@ function Notas({ flujo }: { flujo: FlujoPantalla }) {
         <p>{flujo.mensajeSinDatos} <Link to="/transformaciones" className="font-medium text-brand-700 underline underline-offset-2">Registrar transformación →</Link></p>
       )}
       {flujo.categoriasSinTransformaciones.length > 0 && !flujo.sinTransformaciones && (
-        <p>Sin transformaciones en el período: {flujo.categoriasSinTransformaciones.map(c => c.nombre).join(', ')}. Su flujo termina en la categoría.</p>
+        <p>Sin transformaciones completas en el rango de fechas elegido: {flujo.categoriasSinTransformaciones.map(c => c.nombre).join(', ')}. Su flujo termina en la categoría.</p>
       )}
       {incoherentes.length > 0 && (
         <details>
-          <summary className="cursor-pointer font-medium text-amber-800">{incoherentes.length} {incoherentes.length === 1 ? 'tramo' : 'tramos'} ({formatearKg(omitidosKg)}) no se dibujaron por datos incoherentes</summary>
+          <summary className="cursor-pointer font-medium text-amber-800">{incoherentes.length} {incoherentes.length === 1 ? 'tramo' : 'tramos'} ({formatearKg(omitidosKg)}) no se dibujaron porque sus datos no cuadran</summary>
           <ul className="mt-1 list-disc pl-5">{incoherentes.map(e => <li key={`${e.origen}>${e.destino}`}>{e.origen} → {e.destino}: {formatearKg(e.kg)} ({e.motivo})</li>)}</ul>
         </details>
       )}
       {despreciables.length > 0 && (
-        <p>{despreciables.length} {despreciables.length === 1 ? 'tramo' : 'tramos'} de menos de 0,5 kg ({formatearKg(despreciablesKg)} en total) no se dibujan, pero sí cuentan en los totales.</p>
+        <p>{despreciables.length} {despreciables.length === 1 ? 'tramo' : 'tramos'} de menos de 0,5 kg ({formatearKg(despreciablesKg)} en total) no se dibujan (son muy pequeños para verse), pero sí cuentan en los totales.</p>
       )}
       <p>
-        En el período: {formatearKg(flujo.totales.kgComprado)} comprados · {formatearKg(flujo.totales.kgTransformado)} transformados ({flujo.totales.transformaciones}) · {formatearKg(flujo.totales.kgMerma)} de merma · {formatearKg(flujo.totales.kgDespachado)} despachados. Las franjas son proporcionales a los kg.
+        En el rango de fechas elegido: {formatearKg(flujo.totales.kgComprado)} comprados · {formatearKg(flujo.totales.kgTransformado)} transformados en {flujo.totales.transformaciones} {flujo.totales.transformaciones === 1 ? 'transformación' : 'transformaciones'} · {formatearKg(flujo.totales.kgMerma)} de merma · {formatearKg(flujo.totales.kgDespachado)} despachados. Cuanto más ancha la franja, más kg.
       </p>
     </div>
   );
@@ -278,7 +278,7 @@ function FlujoSankey({ filtros }: FlujoSankeyProps) {
   ) : undefined;
 
   return (
-    <Bloque titulo="Flujo del material" queEstasViendo="de dónde viene el material y en qué se convierte: compra, categoría, lote de trabajo, lote de exportación, venta directa o merma. Haz clic en una franja para filtrar." acciones={acciones}>
+    <Bloque titulo="Flujo del material" queEstasViendo="por dónde pasaron los kg en el rango de fechas elegido: de dónde entraron (compras o ajustes), en qué categoría, por qué lotes de trabajo y de exportación pasaron, y cuántos terminaron vendidos o perdidos como merma. El ancho de cada franja es proporcional a los kg. Solo se dibuja lo que está registrado: compras, ventas, ajustes positivos de toma física y transformaciones completas. Haz clic en una franja para filtrar." acciones={acciones}>
       {!dato && !error && <SkeletonBloque alto="h-80" />}
       {error && !dato && <ErrorBloque mensaje={error} onReintentar={recargar} />}
       {dato && (
@@ -287,7 +287,7 @@ function FlujoSankey({ filtros }: FlujoSankeyProps) {
           {error && <p role="alert" className="mb-3 text-xs text-red-700">No se pudo actualizar: {error}</p>}
           {filtros.categoria && <div className="mb-2"><ChipFiltro etiqueta={filtros.categoria} onQuitar={() => cambiar({ categoria: undefined })} /></div>}
           {dato.sinDatos || !hayDiagrama ? (
-            <EstadoSinDatos mensaje={dato.mensajeSinDatos ?? 'Aún no hay movimientos para dibujar el flujo en este período.'} />
+            <EstadoSinDatos mensaje={dato.mensajeSinDatos ?? 'Aún no hay movimientos para dibujar el flujo en el rango de fechas elegido.'} />
           ) : (
             <>
               <div className="rounded-xl border border-border bg-surface p-3">

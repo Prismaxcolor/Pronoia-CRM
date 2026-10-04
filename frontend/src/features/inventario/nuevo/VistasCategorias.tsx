@@ -14,7 +14,7 @@ import {
 import { obtenerCategoriasPantalla } from '../../../services/inventario-pantalla-service';
 import type { ResumenInventario } from '../../../services/inventario-resumen-service';
 import { BarraApilada, Bloque, ControlSegmentado, EstadoVacio, InfoTooltip } from '../../../components/ui';
-import { AvisosMeta, ChipFiltro, ErrorBloque, EtiquetaDerivada, EXPLICACION_BASURA, EXPLICACION_DIAS, EXPLICACION_LIMPIEZA, SinPermiso, SkeletonBloque } from './PantallaComun';
+import { AvisosMeta, ChipFiltro, ErrorBloque, EtiquetaDerivada, EXPLICACION_BASURA, EXPLICACION_DIAS_TARJETA, EXPLICACION_ETAPAS_BARRA, EXPLICACION_LIMPIEZA, SinPermiso, SkeletonBloque } from './PantallaComun';
 import { useCambiarFiltros, useDatosPantalla } from './useDatosPantalla';
 
 export interface VistasCategoriasProps {
@@ -57,14 +57,24 @@ function Desglose({ titulo, partes, ayuda }: { titulo: string; partes: Array<{ c
   );
 }
 
-function Dato({ etiqueta, children }: { etiqueta: string; children: ReactNode }) {
+function Dato({ etiqueta, ayuda, children }: { etiqueta: string; ayuda?: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-[11px] text-text-secondary">{etiqueta}</dt>
+      <dt className="flex items-center gap-1 text-[11px] text-text-secondary">
+        {etiqueta}
+        {ayuda && <InfoTooltip etiqueta={`Qué significa: ${etiqueta}`}>{ayuda}</InfoTooltip>}
+      </dt>
       <dd className="text-sm font-semibold tabular-nums text-text-primary">{children}</dd>
     </div>
   );
 }
+
+const AYUDA_VALOR_MATERIALES = 'Kg del material suelto de esta categoría × su costo promedio por kg (sale de las facturas de compra), en USD. Solo cuentan los kg que tienen costo registrado.';
+const AYUDA_VALOR_LOTES = 'Kg de los lotes × el precio estimado de venta por kg que alguien cargó a mano, en USD. Es una proyección de venta, no un costo. Solo cuentan los lotes que tienen precio.';
+const AYUDA_COSTO_MATERIALES = 'Valor a costo ÷ kg con costo registrado, en USD por kg.';
+const AYUDA_PRECIO_LOTES = 'Valor estimado de venta ÷ kg de lotes con precio, en USD por kg.';
+const AYUDA_RENDIMIENTO = 'De cada 100 kg que entraron a transformaciones de esta categoría, cuántos salieron como material o lote: kg que salieron ÷ kg que entraron. Cuenta solo transformaciones completas del rango de fechas elegido. Por ejemplo: entran 1.000 kg y salen 920 kg → 92 %.';
+const AYUDA_MERMA = 'Lo que no salió de la transformación: (kg que entraron − kg que salieron) ÷ kg que entraron. Rendimiento + merma = 100 %.';
 
 function BloqueValor({ t, valorOculto }: { t: TarjetaInventario; valorOculto: boolean }) {
   const esLotes = t.tipo === 'lotes';
@@ -73,10 +83,10 @@ function BloqueValor({ t, valorOculto }: { t: TarjetaInventario; valorOculto: bo
   const sinDato = esLotes ? t.kgSinPrecio : t.kgSinCosto;
   return (
     <>
-      <Dato etiqueta={esLotes ? 'Valor estimado de venta' : 'Valor a costo'}>
+      <Dato etiqueta={esLotes ? 'Valor estimado de venta' : 'Valor a costo'} ayuda={esLotes ? AYUDA_VALOR_LOTES : AYUDA_VALOR_MATERIALES}>
         {valorOculto ? <SinPermiso corto /> : valor !== null && !(esLotes && valor === 0 && (sinDato ?? 0) > 0) ? formatearUsd(valor) : <span className="font-normal text-text-muted">{esLotes && valor === 0 ? 'Sin precios cargados' : 'Sin dato'}</span>}
       </Dato>
-      <Dato etiqueta={esLotes ? 'Precio estimado promedio' : 'Costo promedio'}>
+      <Dato etiqueta={esLotes ? 'Precio estimado promedio' : 'Costo promedio'} ayuda={esLotes ? AYUDA_PRECIO_LOTES : AYUDA_COSTO_MATERIALES}>
         {valorOculto ? <SinPermiso corto /> : precio !== null ? formatearUsdKg(precio) : <span className="font-normal text-text-muted">Sin dato</span>}
       </Dato>
       {!valorOculto && sinDato !== null && sinDato > 0 && (
@@ -116,46 +126,52 @@ function TarjetaCategoria({ t, valorOculto, seleccionada, onElegir }: TarjetaPro
           <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-bold" style={{ backgroundColor: estilo.fondo, color: estilo.color }}>{estilo.simbolo}</span>
           <span className="truncate text-base font-semibold text-text-primary">{t.nombre}</span>
         </button>
-        <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-[10px] font-medium text-text-secondary">{t.tipo === 'lotes' ? 'Lotes' : 'Materiales'}</span>
+        <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-[10px] font-medium text-text-secondary" title={t.tipo === 'lotes' ? 'Esta tarjeta suma lotes (mezclas de varios materiales)' : 'Esta tarjeta suma material suelto, sin lote'}>{t.tipo === 'lotes' ? 'Lotes' : 'Materiales'}</span>
       </div>
 
       <p className="mt-3 text-2xl font-bold tabular-nums text-text-primary">{formatearKg(t.kgEnGalpon)}</p>
       <p className="text-[11px] text-text-secondary">en galpón ahora</p>
       {t.enTransformacionKg > 0 && (
         <p className="mt-0.5 text-[11px] text-text-secondary">
-          + {formatearKg(t.enTransformacionKg)} retirados a transformación (cuentan como «En proceso»)
+          + {formatearKg(t.enTransformacionKg)} retirados para una transformación que aún no termina (ya no están en el galpón; cuentan como «En proceso»)
         </p>
       )}
 
-      <div className="mt-3"><BarraEtapas tarjeta={t} /></div>
+      <div className="mt-3">
+        <p className="mb-1 flex items-center gap-1 text-[11px] font-medium text-text-secondary">
+          Kilos por etapa
+          <InfoTooltip etiqueta="Qué significa: kilos por etapa">{EXPLICACION_ETAPAS_BARRA}</InfoTooltip>
+        </p>
+        <BarraEtapas tarjeta={t} />
+      </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
         <BloqueValor t={t} valorOculto={valorOculto} />
-        <Dato etiqueta="Días en inventario">
+        <Dato etiqueta="Días en inventario (estimado)">
           {t.dias ? (
             <span className="inline-flex items-center gap-1">
               {formatearDiasEstimados(t.dias.diasPromedio)}
               <span className="text-[10px] font-medium uppercase text-text-secondary">estimado</span>
-              <InfoTooltip etiqueta="Qué significa: días en inventario estimado">{EXPLICACION_DIAS}</InfoTooltip>
+              <InfoTooltip etiqueta="Qué significa: días en inventario estimado">{EXPLICACION_DIAS_TARJETA}</InfoTooltip>
             </span>
-          ) : <span className="font-normal text-text-muted">Sin entradas registradas</span>}
+          ) : <span className="font-normal text-text-muted" title="No hay compras, transformaciones ni ajustes registrados que expliquen este stock, así que no se pueden calcular los días.">Sin dato: sin entradas registradas</span>}
         </Dato>
-        {t.despachadoKg > 0 && <Dato etiqueta="Despachado en el período">{formatearKg(t.despachadoKg)}</Dato>}
+        {t.despachadoKg > 0 && <Dato etiqueta="Despachado en el rango de fechas" ayuda="Kg de esta categoría que salieron en ventas (tickets de venta) dentro del rango de fechas elegido. Ya no están en el galpón.">{formatearKg(t.despachadoKg)}</Dato>}
       </dl>
 
       {esExportacion && t.tipo === 'categoria' && (
         <div className="mt-3 rounded-lg border border-brand-100 bg-brand-50/60 p-2.5">
           {t.rendimiento ? (
             <dl className="grid grid-cols-2 gap-x-3">
-              <Dato etiqueta="Rendimiento">{formatearPct(t.rendimiento.rendimientoPct)}</Dato>
-              <Dato etiqueta="Merma">{formatearPct(t.rendimiento.mermaPct)}</Dato>
+              <Dato etiqueta="Rendimiento" ayuda={AYUDA_RENDIMIENTO}>{formatearPct(t.rendimiento.rendimientoPct)}</Dato>
+              <Dato etiqueta="Merma" ayuda={AYUDA_MERMA}>{formatearPct(t.rendimiento.mermaPct)}</Dato>
               <p className="col-span-2 mt-1 text-[11px] text-text-secondary">
                 {formatearKg(t.rendimiento.kgEntrada)} entraron, {formatearKg(t.rendimiento.kgSalida)} salieron en {t.rendimiento.transformaciones} {t.rendimiento.transformaciones === 1 ? 'transformación' : 'transformaciones'}.
               </p>
             </dl>
           ) : (
             <p className="text-[11px] text-text-secondary">
-              {t.sinTransformaciones ? 'Sin transformaciones registradas en el período: no se calcula rendimiento ni merma.' : 'Rendimiento y merma sin datos.'}
+              {t.sinTransformaciones ? 'Sin transformaciones completas en el rango de fechas elegido: no se puede calcular rendimiento ni merma.' : 'Rendimiento y merma sin datos.'}
             </p>
           )}
         </div>
@@ -243,7 +259,7 @@ function VistasCategorias({ filtros }: VistasCategoriasProps) {
   const elegir = (t: TarjetaInventario) => cambiar({ categoria: filtros.categoria === t.nombre ? undefined : t.nombre });
 
   return (
-    <Bloque titulo="Vistas y categorías" queEstasViendo="el inventario separado en Exportación, Venta nacional y Trabajo interno. Haz clic en una categoría para filtrar la tabla de abajo.">
+    <Bloque titulo="Vistas y categorías" queEstasViendo="el inventario separado en Exportación, Venta nacional y Trabajo interno, con una tarjeta por categoría: kg en galpón, kg por etapa, valor y días en inventario. Los kg son los de hoy; el rendimiento, la merma y lo despachado dependen del rango de fechas. Haz clic en una categoría para filtrar la tabla de abajo.">
       {!dato && !error && <SkeletonBloque alto="h-72" />}
       {error && !dato && <ErrorBloque mensaje={error} onReintentar={recargar} />}
       {dato && (
@@ -258,7 +274,7 @@ function VistasCategorias({ filtros }: VistasCategoriasProps) {
 
           {vistaResumen && vista === 'exportacion' && vistaResumen.rendimiento && (
             <p className="mb-3 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2 text-xs text-text-secondary">
-              En el período, la exportación rindió <strong className="text-text-primary">{formatearPct(vistaResumen.rendimiento.rendimientoPct)}</strong> con una merma de <strong className="text-text-primary">{formatearPct(vistaResumen.rendimiento.mermaPct)}</strong> ({formatearKg(vistaResumen.rendimiento.kgMerma)}).
+              En el rango de fechas elegido, de cada 100 kg que entraron a transformaciones de exportación salieron <strong className="text-text-primary">{formatearPct(vistaResumen.rendimiento.rendimientoPct)}</strong> como material o lote (rendimiento) y se perdió una merma de <strong className="text-text-primary">{formatearPct(vistaResumen.rendimiento.mermaPct)}</strong> ({formatearKg(vistaResumen.rendimiento.kgMerma)} en total).
             </p>
           )}
 
@@ -273,7 +289,7 @@ function VistasCategorias({ filtros }: VistasCategoriasProps) {
           )}
           {dato.kgClasificacionesCompraOcultas > 0 && (
             <p className="mt-3 text-[11px] text-text-secondary">
-              Hay {formatearKg(dato.kgClasificacionesCompraOcultas)} de clasificaciones de compra PCB sin lote que no se muestran como tarjeta: el inventario de PCB son sus lotes. Se ven en la tabla activando «Ver clasificaciones de compra PCB».
+              Hay {formatearKg(dato.kgClasificacionesCompraOcultas)} en clasificaciones de compra PCB sin lote que no se muestran como tarjeta (el inventario de PCB se lleva en lotes). Se ven en la tabla activando «Ver clasificaciones de compra PCB».
             </p>
           )}
         </div>

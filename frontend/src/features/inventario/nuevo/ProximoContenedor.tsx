@@ -89,7 +89,7 @@ function ProximoContenedor({ resumen, onCambio }: Props) {
   return (
     <Bloque
       titulo="Próximo contenedor"
-      queEstasViendo="cuántos kilos de lotes de exportación ya están embalados frente a la meta para completar el contenedor."
+      queEstasViendo="cuántos kg de los lotes de exportación (Lote 1 a 4) ya están embalados frente a la meta de kg de un contenedor (por defecto 18.000 kg; la cambia un superadmin). El porcentaje es kg embalados ÷ meta, y «Faltan» es meta − kg embalados."
       acciones={
         esSuperadmin && !editando ? (
           <button type="button" onClick={abrirEdicion} className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text-secondary hover:bg-brand-50">
@@ -148,9 +148,9 @@ function ProximoContenedor({ resumen, onCambio }: Props) {
               <thead>
                 <tr className="border-b border-border text-left text-xs text-text-secondary">
                   <th scope="col" className="py-1.5 pr-2 font-medium">Lote</th>
-                  <th scope="col" className="px-2 py-1.5 text-right font-medium">Embalado</th>
-                  <th scope="col" className="px-2 py-1.5 text-right font-medium">En saca</th>
-                  <th scope="col" className="py-1.5 pl-2 text-right font-medium"><span className="sm:hidden" title="Valor estimado de venta">Valor est.</span><span className="hidden sm:inline">Valor estimado de venta</span></th>
+                  <th scope="col" className="px-2 py-1.5 text-right font-medium" title="Kg que una persona marcó como embalados y que el stock del lote todavía respalda. Cuentan para la meta."><span>Embalado (cuenta para la meta)</span></th>
+                  <th scope="col" className="px-2 py-1.5 text-right font-medium" title="Kg que hay en el lote pero todavía no están embalados. No cuentan para la meta."><span>En saca (sin embalar)</span></th>
+                  <th scope="col" className="py-1.5 pl-2 text-right font-medium"><span className="sm:hidden" title="Kg del lote × precio estimado de venta por kg, en USD">Valor est.</span><span className="hidden sm:inline" title="Kg del lote × precio estimado de venta por kg, en USD">Valor estimado de venta (USD)</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -162,7 +162,7 @@ function ProximoContenedor({ resumen, onCambio }: Props) {
                       <td className="px-2 py-2 text-right tabular-nums">{formatearKg(l.listoKg)}</td>
                       <td className="px-2 py-2 text-right tabular-nums text-text-secondary">{formatearKg(l.enSacaKg)}</td>
                       <td className="py-2 pl-2 text-right tabular-nums text-text-secondary">
-                        {resumen.valorOculto ? <span className="text-text-muted">Sin permiso</span> : valor == null ? <span className="text-text-muted" title="Este lote no tiene precio estimado">Sin precio</span> : formatearUsd(valor)}
+                        {resumen.valorOculto ? <span className="text-text-muted">Sin permiso</span> : valor == null ? <span className="text-text-muted" title="A este lote todavía no se le cargó un precio estimado de venta por kg">Sin precio</span> : formatearUsd(valor)}
                       </td>
                     </tr>
                   );

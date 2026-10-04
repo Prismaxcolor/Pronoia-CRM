@@ -21,7 +21,7 @@ export function KpisLotesGrilla({ kpis, puedeVerValor, puedeConfigurarPrecio, ha
       <TarjetaKpi
         titulo="Kg en lotes"
         icono={<Boxes size={16} />}
-        ayuda="Todos los kilos que hay hoy en lotes activos (suma de lo que tiene cada lote en todos los almacenes). Los lotes con stock negativo no restan: se avisan aparte."
+        ayuda="Todos los kg que hay hoy en los lotes activos, sumando lo que tiene cada lote en todos los almacenes. Un lote con stock negativo se cuenta como 0 (no resta) y se avisa aparte."
         valor={formatearKg(kpis.kgTotal)}
         subtitulo={`${formatearNumero(kpis.lotesConStock, 0)} lote${kpis.lotesConStock === 1 ? '' : 's'} con stock de ${formatearNumero(kpis.lotesActivos, 0)} activos`}
         comparacion={null}
@@ -33,7 +33,7 @@ export function KpisLotesGrilla({ kpis, puedeVerValor, puedeConfigurarPrecio, ha
       <TarjetaKpi
         titulo="Kg embalados (listos)"
         icono={<PackageCheck size={16} />}
-        ayuda="Kilos que una persona marcó como embalados y que el stock actual todavía respalda. Un mismo lote puede estar parte embalado y parte en saca sin embalar."
+        ayuda="Kg que una persona marcó como embalados y que el stock del lote todavía respalda; si parte ya se despachó o se transformó, se descuenta. Un mismo lote puede estar en parte embalado y en parte en saca, sin embalar. Suma los lotes activos."
         estado={hayEmbalado ? 'listo' : 'vacio'}
         mensajeVacio="El embalado por kilos aún no está habilitado en este sistema"
         valor={formatearKg(kpis.embaladoKg)}
@@ -45,7 +45,7 @@ export function KpisLotesGrilla({ kpis, puedeVerValor, puedeConfigurarPrecio, ha
       <TarjetaKpi
         titulo="Valor estimado de venta"
         icono={<Coins size={16} />}
-        ayuda="Kilos de cada lote por el precio estimado de venta (USD/kg) que un superadmin cargó a mano. Los lotes mezclan materiales y no tienen costo de compra: esta cifra es una proyección de venta, no un costo."
+        ayuda="Kg de cada lote × el precio estimado de venta por kg (USD/kg) que un superadmin cargó a mano. Suma solo los lotes que tienen precio. Los lotes mezclan materiales y no tienen costo de compra: esta cifra es una proyección de venta, no un costo."
         estado={!puedeVerValor ? 'sinPermiso' : kpis.kgConPrecio === 0 ? 'vacio' : 'listo'}
         mensajeVacio={puedeConfigurarPrecio ? 'Ningún lote tiene precio estimado: cárgalo en el detalle de cada lote' : 'Ningún lote tiene precio estimado todavía'}
         valor={kpis.valorEstimadoUsd != null ? formatearUsd(kpis.valorEstimadoUsd) : undefined}
@@ -57,7 +57,7 @@ export function KpisLotesGrilla({ kpis, puedeVerValor, puedeConfigurarPrecio, ha
       <TarjetaKpi
         titulo="Lotes activos"
         icono={<Scale size={16} />}
-        ayuda="Lotes que hoy reciben material. Los de exportación (Lote 1 a 4) son los que se embalan y se venden; los de trabajo interno (por procesar, procesados) se transforman antes."
+        ayuda="Cantidad de lotes marcados como activos. Los de exportación (Lote 1 a 4) son los que se embalan y se venden; los de trabajo interno (por procesar, procesados) se transforman antes."
         valor={formatearNumero(kpis.lotesActivos, 0)}
         subtitulo={`${formatearNumero(lotesExportacion, 0)} de exportación · ${formatearNumero(lotesTrabajo, 0)} de trabajo interno`}
         comparacion={null}
@@ -88,7 +88,7 @@ export function BloqueFases({ porFase, errorFase, onReintentar }: BarraProps) {
   return (
     <Bloque
       titulo="Kilos por fase"
-      queEstasViendo="De los kilos que hay hoy en lotes, cuántos están por procesar, ya procesados o ya en un lote de exportación. «Sin fase» es trabajo interno al que aún no se le definió la fase."
+      queEstasViendo="De los kg que hay hoy en lotes (los de stock negativo no cuentan), cuántos están por procesar, ya procesados o ya en un lote de exportación. «Sin fase / otros» suma el trabajo interno al que aún no se le definió la fase y los lotes de otra clase."
     >
       {errorFase ? (
         <EstadoVacio

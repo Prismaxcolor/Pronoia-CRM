@@ -51,7 +51,7 @@ function alertasAntiguedad(filas: readonly FilaDetalleInventario[], c: Configura
     const fase = f.fase === 'por_procesar' ? ' (lote por procesar)' : f.fase === 'procesado' ? ' (lote procesado)' : '';
     alertas.push({
       id: `antiguedad:${f.id}`, tipo: 'antiguedad', severidad,
-      texto: `${f.material}${fase}: ${fmt(f.kg)} kg con unos ${fmt(dias)} días en inventario (estimado, desde ${f.dias.fechaEntradaMasAntigua}); supera ${umbral} días.`,
+      texto: `${f.material}${fase}: ${fmt(f.kg)} kg llevan unos ${fmt(dias)} días en inventario (estimado; la entrada más antigua que se cuenta es del ${f.dias.fechaEntradaMasAntigua}). Pasa el límite de ${umbral} días.`,
       material: f.material, productoId: f.productoId, loteId: f.loteId, transformacionId: null, categoriaClave: f.categoriaClave,
       valor: dias, umbral, unidad: 'dias', fase: f.fase, enlace: enlaceMaterial(f),
     });
@@ -88,7 +88,7 @@ function alertasMerma(
     const codigo = t.numero != null ? `TR-${String(t.numero).padStart(4, '0')}` : 'Transformación';
     alertas.push({
       id: `merma_transformacion:${t.id}`, tipo: 'merma_transformacion', severidad,
-      texto: `${codigo} (${t.fecha}): merma de ${fmt(fila.pctMerma)} % (${fmt(fila.kgMerma)} kg de ${fmt(fila.kgEntrada)} kg); el umbral es ${umbral} %.`,
+      texto: `${codigo} (${t.fecha}): merma de ${fmt(fila.pctMerma)} %. De ${fmt(fila.kgEntrada)} kg que entraron, ${fmt(fila.kgMerma)} kg no salieron como material. Pasa el límite de ${umbral} %.`,
       material: null, productoId: null, loteId: t.loteOrigenId, transformacionId: t.id, categoriaClave: null,
       valor: fila.pctMerma, umbral, unidad: 'pct', fase: null, enlace: { ruta: `/transformaciones/${t.id}`, etiqueta: 'Ver transformación' },
     });
@@ -98,7 +98,7 @@ function alertasMerma(
   if (sev) {
     alertas.push({
       id: 'merma_periodo', tipo: 'merma_periodo', severidad: sev,
-      texto: `Merma del período (${rango.desde} a ${rango.hasta}): ${fmt(pctPeriodo)} %, por encima del umbral de ${umbral} %.`,
+      texto: `Merma del período (${rango.desde} a ${rango.hasta}): ${fmt(pctPeriodo)} % de los kg que entraron a transformaciones no salieron como material. Pasa el límite de ${umbral} %.`,
       material: null, productoId: null, loteId: null, transformacionId: null, categoriaClave: null,
       valor: pctPeriodo, umbral, unidad: 'pct', fase: null, enlace: { ruta: '/transformaciones/merma', etiqueta: 'Ver merma' },
     });
@@ -120,7 +120,7 @@ function alertasEmbaladoSinContenedor(filas: readonly FilaDetalleInventario[], e
     if (kg <= MIN_KG) continue;
     alertas.push({
       id: `embalado_sin_contenedor:${f.loteId}`, tipo: 'embalado_sin_contenedor', severidad: 'info',
-      texto: `${f.material}: ${fmt(kg)} kg embalados (listos) sin contenedor asignado.`,
+      texto: `${f.material}: ${fmt(kg)} kg embalados (listos) que todavía no tienen contenedor asignado.`,
       material: f.material, productoId: null, loteId: f.loteId, transformacionId: null, categoriaClave: f.categoriaClave,
       valor: kg, umbral: null, unidad: 'kg', fase: null, enlace: enlaceMaterial(f),
     });

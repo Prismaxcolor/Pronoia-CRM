@@ -36,7 +36,7 @@ export function AvisosMeta({ meta }: { meta: Pick<MetaPantalla, 'parcial' | 'avi
 /** Valor que el usuario no puede ver (sin facturacion:ver). Con candado y texto: no depende solo del ícono. */
 export function SinPermiso({ corto = false }: { corto?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 text-text-muted" title="Tu usuario no tiene permiso para ver valores en dinero">
+    <span className="inline-flex items-center gap-1 text-text-muted" title="Tu usuario no tiene permiso para ver valores en dinero (USD)">
       <Lock size={12} aria-hidden="true" />
       <span className="text-xs font-medium">{corto ? 'Sin permiso' : 'Sin permiso para ver valores'}</span>
     </span>
@@ -44,7 +44,7 @@ export function SinPermiso({ corto = false }: { corto?: boolean }) {
 }
 
 /** Rótulo de cifra derivada del nombre del material, con el "?" que lo explica. */
-export function EtiquetaDerivada({ children, explicacion, rotulo = 'derivado del nombre' }: { children: string; explicacion: string; rotulo?: string }) {
+export function EtiquetaDerivada({ children, explicacion, rotulo = 'se deduce del nombre' }: { children: string; explicacion: string; rotulo?: string }) {
   return (
     <span className="inline-flex items-center gap-1">
       {children}
@@ -54,9 +54,11 @@ export function EtiquetaDerivada({ children, explicacion, rotulo = 'derivado del
   );
 }
 
-export const EXPLICACION_LIMPIEZA = 'Material limpio: ya sin residuos, listo para vender. Material sucio: trae residuos y hay que limpiarlo antes. Se toma del estado que se marcó en el producto; si el producto no lo tiene, se deduce de si el nombre dice SUCIO o LIMPIO. Si no hay ninguna pista, queda sin clasificar.';
-export const EXPLICACION_BASURA = 'Basura recuperable: todavía tiene material aprovechable (BASURA BUENA y BASURA DE RECEPCION). Desecho: no se puede recuperar y va al vertedero (BASURA MALA y DESECHOS). No es un dato guardado: se deduce del nombre; lo demás queda sin clasificar.';
-export const EXPLICACION_DIAS = 'Estimado: el sistema no lleva capas FIFO. Se asume que el stock actual se formó con las entradas más recientes (compras, salidas de transformación, ajustes positivos) y se promedia por kg. Los datos empiezan el 16-09-2026: no se inventa antigüedad anterior.';
+export const EXPLICACION_LIMPIEZA = 'Limpio: ya no trae residuos y se puede vender. Sucio: trae residuos y hay que limpiarlo antes. Se toma del estado marcado en el producto; si no tiene, se deduce de si su nombre dice LIMPIO o SUCIO. Sin ninguna de las dos pistas queda «sin clasificar».';
+export const EXPLICACION_BASURA = 'Recuperable: todavía tiene material aprovechable (productos BASURA BUENA y BASURA DE RECEPCION). Desecho: no se puede recuperar y va al vertedero (BASURA MALA y DESECHOS). Esto no es un dato guardado: se deduce del nombre del producto; los demás nombres quedan «sin clasificar».';
+export const EXPLICACION_DIAS = 'Días que lleva en el galpón el material que hay hoy, contados desde la fecha en que entró hasta hoy. Es un estimado: el sistema no sabe de qué compra salió cada kilo vendido, así que supone que lo que queda es lo que entró más recientemente y promedia los días de esas entradas según sus kg. Por ejemplo: quedan 100 kg; entraron 60 kg hace 10 días y 80 kg hace 40 días → se cuentan 60 kg de hace 10 días y 40 kg de hace 40 días → (60×10 + 40×40) ÷ 100 = 22 días. Cuentan como entradas las compras, las salidas de transformaciones y los ajustes positivos de toma física. Los registros empiezan el 16-09-2026: los kg que ninguna entrada registrada explica no se cuentan. No cambia con el rango de fechas elegido arriba. Por defecto se avisa desde 60 días (atención) y desde 90 días (urgente).';
+export const EXPLICACION_ETAPAS_BARRA = 'Reparte los kg de la categoría en tres etapas. Recibido: material que llegó y aún no se trabaja (incluye lotes de trabajo por procesar). En proceso: lotes ya procesados, lotes de exportación armados pero sin embalar y kg retirados para una transformación. Listo: kg embalados de lotes de exportación y material de venta nacional disponible.';
+export const EXPLICACION_DIAS_TARJETA = 'Días promedio que llevan en el galpón los materiales y lotes de esta categoría que tienen stock hoy. Para cada uno se cuentan los días desde la fecha en que entró lo que queda (se supone que es lo último que entró) y luego se promedian por kg, así que lo que tiene más kilos pesa más. Es un estimado y no cuenta los kg sin entrada registrada. Por defecto se avisa desde 60 días (atención) y desde 90 días (urgente).';
 
 /** Chip del filtro de categoría activo, con botón para quitarlo. */
 export function ChipFiltro({ etiqueta, onQuitar }: { etiqueta: string; onQuitar: () => void }) {

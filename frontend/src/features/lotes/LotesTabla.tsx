@@ -37,7 +37,7 @@ function columnas(puedeVerValor: boolean, hayEmbalado: boolean, seleccionado: st
       clave: 'fase', titulo: 'Fase', valorOrden: l => (l.fase ? FASE[l.fase] : null),
       celda: l => (l.fase ? FASE[l.fase] : <span className="text-text-muted" title="Solo los lotes de trabajo con movimiento tienen fase">—</span>),
       valorCsv: l => (l.fase ? FASE[l.fase] : ''), claseCelda: 'whitespace-nowrap',
-      ayuda: 'Etapa de un lote de trabajo interno: por procesar o ya procesado. Los lotes de exportación no tienen fase.',
+      ayuda: 'En qué paso está un lote de trabajo interno: por procesar (material sin tratar) o ya procesado. Los lotes de exportación no tienen fase.',
     },
     {
       clave: 'ancla', titulo: 'Producto ancla', valorOrden: l => l.ancla[0] ?? null,
@@ -49,6 +49,7 @@ function columnas(puedeVerValor: boolean, hayEmbalado: boolean, seleccionado: st
       clave: 'kg', titulo: 'Stock (kg)', alinear: 'derecha', valorOrden: l => l.stockKg,
       celda: l => <span className={l.stockKg < 0 ? 'font-semibold text-red-700' : ''}>{kg2(l.stockKg)}{l.stockKg < 0 ? ' (negativo)' : ''}</span>,
       decimalesCsv: 2, total: ls => kg2(ls.reduce((s, l) => s + l.stockKg, 0)),
+      ayuda: 'Kg que hay hoy en el lote, sumando todos los almacenes. En rojo si es negativo (hay que revisarlo).',
     },
   ];
   if (hayEmbalado) {
@@ -56,7 +57,7 @@ function columnas(puedeVerValor: boolean, hayEmbalado: boolean, seleccionado: st
       clave: 'embalado', titulo: 'Embalado (kg)', alinear: 'derecha', valorOrden: l => l.embaladoKg,
       celda: l => (l.embaladoKg != null ? kg2(l.embaladoKg) : '—'), decimalesCsv: 2,
       total: ls => kg2(ls.reduce((s, l) => s + (l.embaladoKg ?? 0), 0)),
-      ayuda: 'Kilos marcados como embalados (listos). El resto del stock sigue en saca.',
+      ayuda: 'Kg marcados como embalados (listos) que el stock del lote respalda. El resto del stock sigue en saca, sin embalar.',
     });
   }
   if (puedeVerValor) {
@@ -65,7 +66,7 @@ function columnas(puedeVerValor: boolean, hayEmbalado: boolean, seleccionado: st
       celda: l => (l.valorEstimadoUsd != null ? formatearUsd(l.valorEstimadoUsd) : <span className="text-text-muted" title="Sin precio estimado cargado">Sin precio</span>),
       valorCsv: l => l.valorEstimadoUsd, decimalesCsv: 2,
       total: ls => (ls.some(l => l.valorEstimadoUsd != null) ? formatearUsd(ls.reduce((s, l) => s + (l.valorEstimadoUsd ?? 0), 0)) : '—'),
-      ayuda: 'Stock por el precio estimado de venta (USD/kg). Los lotes no tienen costo de compra: es una proyección de venta.',
+      ayuda: 'Kg del lote × precio estimado de venta por kg, en USD. Los lotes no tienen costo de compra: es una proyección de venta, no un costo.',
     });
   }
   return base;

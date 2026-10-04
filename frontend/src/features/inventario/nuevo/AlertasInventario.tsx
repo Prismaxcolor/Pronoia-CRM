@@ -24,9 +24,9 @@ export interface AlertasInventarioProps {
 function ExplicacionUmbrales({ c }: { c: AlertasPantalla['configuracion'] }) {
   return (
     <p className="text-xs text-text-secondary">
-      Se avisa cuando un material lleva más de <strong>{formatearNumero(c.alertaDiasAmarilla, 0)} días</strong> en inventario (amarillo) o más de{' '}
-      <strong>{formatearNumero(c.alertaDiasRoja, 0)} días</strong> (rojo), cuando la merma de una transformación pasa del umbral de{' '}
-      <strong>{formatearNumero(c.umbralMermaPct, 0)} %</strong>, y cuando hay kg embalados sin contenedor asignado. Los días son estimados y los umbrales son configurables.
+      Se avisa cuando un material o lote lleva más de <strong>{formatearNumero(c.alertaDiasAmarilla, 0)} días</strong> en inventario (atención, amarillo) o más de{' '}
+      <strong>{formatearNumero(c.alertaDiasRoja, 0)} días</strong> (urgente, rojo); cuando la merma de una transformación pasa de{' '}
+      <strong>{formatearNumero(c.umbralMermaPct, 0)} %</strong> de lo que entró (urgente si pasa del doble) y es de al menos <strong>{formatearNumero(c.alertaMermaMinKg, 0)} kg</strong>; y cuando hay kg embalados sin contenedor asignado. Los días en inventario son un estimado: se cuentan desde la fecha de entrada del material que queda (por defecto, los límites son 60 y 90 días). Los límites se pueden configurar.
     </p>
   );
 }
@@ -43,7 +43,7 @@ function ItemAlerta({ a }: { a: AlertaInventario }) {
           {a.material && <span className="font-medium">{a.material}</span>}
           {a.material && ' · '}
           {formatearValorAlerta(a)}
-          {a.umbral !== null && <> (umbral {formatearNumero(a.umbral, 0)}{a.unidad === 'pct' ? ' %' : a.unidad === 'dias' ? ' días' : ' kg'})</>}
+          {a.umbral !== null && <> (límite {formatearNumero(a.umbral, 0)}{a.unidad === 'pct' ? ' %' : a.unidad === 'dias' ? ' días' : ' kg'})</>}
         </>
       }
     />
@@ -56,7 +56,7 @@ function AlertasInventario({ filtros }: AlertasInventarioProps) {
   const alertas = useMemo(() => ordenarAlertas(dato?.alertas ?? []), [dato]);
 
   return (
-    <Bloque titulo="Alertas" queEstasViendo="lo que pide atención: material con muchos días en inventario, merma por encima del umbral y embalado sin contenedor.">
+    <Bloque titulo="Alertas" queEstasViendo="lo que pide atención: material o lotes con muchos días en inventario (estimado), merma por encima del límite y kg embalados que todavía no tienen contenedor. Rojo significa urgente, amarillo atención y gris solo aviso.">
       {!dato && !error && <SkeletonBloque alto="h-32" />}
       {error && !dato && <ErrorBloque mensaje={error} onReintentar={recargar} />}
       {dato && (

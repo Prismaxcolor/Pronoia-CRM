@@ -15,12 +15,12 @@ import { VISTA_POR_DEFECTO, formatearNumero, type EtapaFiltro, type FiltrosPanta
 // ---------------------------------------------------------------- vistas
 
 export const VISTAS_PRINCIPALES: Array<{ clave: VistaUrl; etiqueta: string; descripcion: string }> = [
-  { clave: 'exportacion', etiqueta: 'Exportación', descripcion: 'Lotes 1 a 4 y la ruta del PGM: lo que se embala y se envía al exterior.' },
-  { clave: 'venta_nacional', etiqueta: 'Venta nacional', descripcion: 'Ferroso, No ferroso y Basura: se venden tal cual en el mercado nacional.' },
-  { clave: 'trabajo_interno', etiqueta: 'Trabajo interno', descripcion: 'Lotes de trabajo (por procesar / procesado), desarme RAEE y Procesadores: ni se exportan ni se venden tal cual.' },
+  { clave: 'exportacion', etiqueta: 'Exportación', descripcion: 'Lotes 1 a 4 y la ruta del PGM: lo que se embala en contenedores y se envía al exterior.' },
+  { clave: 'venta_nacional', etiqueta: 'Venta nacional', descripcion: 'Ferroso, No ferroso y Basura: material que se vende tal cual en el mercado nacional, sin transformarlo.' },
+  { clave: 'trabajo_interno', etiqueta: 'Trabajo interno', descripcion: 'Lotes de trabajo (por procesar / procesado), desarme RAEE y Procesadores: material que primero se trabaja en casa y ni se exporta ni se vende tal cual.' },
 ];
 
-export const ETIQUETA_OTRAS = { clave: 'otras' as const, etiqueta: 'Otras', descripcion: 'Material que no encaja en las tres vistas anteriores.' };
+export const ETIQUETA_OTRAS = { clave: 'otras' as const, etiqueta: 'Otras', descripcion: 'Material que no encaja en Exportación, Venta nacional ni Trabajo interno.' };
 
 export function vistaActiva(f: Pick<FiltrosPantalla, 'vista'>): VistaUrl {
   return f.vista ?? VISTA_POR_DEFECTO;
@@ -29,7 +29,7 @@ export function vistaActiva(f: Pick<FiltrosPantalla, 'vista'>): VistaUrl {
 /** Texto del estado vacío de cada vista (siempre explica qué hacer). */
 export const MENSAJE_VACIO_VISTA: Record<VistaUrl, { texto: string; enlace?: { ruta: string; etiqueta: string } }> = {
   exportacion: {
-    texto: 'Aún no hay kg embalados: márcalos en Próximo contenedor.',
+    texto: 'Aún no hay kg embalados en lotes de exportación: márcalos en «Próximo contenedor».',
     enlace: { ruta: '#proximo-contenedor', etiqueta: 'Ir a Próximo contenedor' },
   },
   venta_nacional: {
@@ -80,7 +80,7 @@ export function claveParametros(p: URLSearchParams): string {
 // ---------------------------------------------------------------- formato
 
 export const formatearUsdKg = (n: number): string => `USD ${formatearNumero(n, 2)}/kg`;
-export const formatearDiasEstimados = (d: number): string => `${formatearNumero(d, 0)} d`;
+export const formatearDiasEstimados = (d: number): string => `${formatearNumero(d, 0)} días`;
 
 export const ETIQUETA_ETAPA: Record<EtapaInventario, string> = {
   recibido: 'Recibido',
@@ -154,7 +154,7 @@ export function etapaVisible(f: Pick<FilaDetalleInventario, 'tipo' | 'clase' | '
   return ETIQUETA_ETAPA[f.etapa] as EtapaVisible;
 }
 
-export const EXPLICACION_ETAPAS_PCB = 'Etapas de un lote de PCB: por procesar (lote de trabajo con material sin tratar) → procesado (ya desarmado o clasificado) → en saca (lote de exportación armado, aún sin embalar) → embalado (listo para despachar). El resto de materiales usan Recibido, En proceso, Listo y Despachado.';
+export const EXPLICACION_ETAPAS_PCB = 'En qué paso está cada fila. Lotes de PCB: por procesar (lote de trabajo con material sin tratar) → procesado (ya desarmado o clasificado) → en saca (lote de exportación armado, todavía sin embalar) → embalado (listo para despachar). El resto de los materiales usa Recibido (llegó y no se ha trabajado), En proceso, Listo (disponible para vender o embalado) y Despachado (ya salió).';
 
 const ORDEN_ETAPA = (f: FilaDetalleInventario): number => ETAPAS_VISIBLES.indexOf(etapaVisible(f));
 
@@ -351,7 +351,7 @@ export function numeroCsv(n: number | null | undefined, decimales = 2): string {
 export interface OpcionesCsv { valorOculto: boolean }
 
 export const ENCABEZADO_CSV_BASE = ['Material', 'Categoría', 'Tipo', 'Etapa', 'En galpón', 'Kg', 'Días en inventario (estimado)', 'Ubicación'] as const;
-export const ENCABEZADO_CSV_VALOR = ['Costo USD/kg (materiales)', 'Valor a costo USD (materiales)', 'Precio estimado de venta USD/kg (lotes)', 'Valor estimado de venta USD (lotes)'] as const;
+export const ENCABEZADO_CSV_VALOR = ['Costo de compra USD/kg (materiales)', 'Valor a costo USD (materiales: kg × costo)', 'Precio estimado de venta USD/kg (lotes)', 'Valor estimado de venta USD (lotes: kg × precio)'] as const;
 
 export function armarCsv(filas: FilaDetalleInventario[], op: OpcionesCsv): string {
   const encabezado = op.valorOculto ? [...ENCABEZADO_CSV_BASE] : [...ENCABEZADO_CSV_BASE, ...ENCABEZADO_CSV_VALOR];
@@ -380,7 +380,7 @@ export function armarCsv(filas: FilaDetalleInventario[], op: OpcionesCsv): strin
 
 export const nombreArchivoCsv = (hoy: Date): string => `inventario-${hoy.toISOString().slice(0, 10)}.csv`;
 
-export const AVISO_CSV_SIN_VALOR = 'No tienes permiso para ver valores: el archivo incluye solo kilos, etapa, días y ubicación (sin costos, precios ni USD).';
+export const AVISO_CSV_SIN_VALOR = 'No tienes permiso para ver valores en dinero: el archivo incluye solo kg, etapa, días en inventario y ubicación, sin costos, precios ni USD.';
 
 // ---------------------------------------------------------------- alertas
 

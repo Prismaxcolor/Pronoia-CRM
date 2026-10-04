@@ -33,11 +33,11 @@ const COLUMNAS: Array<{ clave: ColumnaTabla; etiqueta: string; derecha?: boolean
   { clave: 'material', etiqueta: 'Material' },
   { clave: 'categoria', etiqueta: 'Categoría' },
   { clave: 'etapa', etiqueta: 'Etapa', ayuda: EXPLICACION_ETAPAS_PCB },
-  { clave: 'kg', etiqueta: 'Kg', derecha: true },
-  { clave: 'precioKg', etiqueta: '$/kg', derecha: true, ocultaSinValor: true, ayuda: 'En materiales es el costo promedio por kg de las compras; en lotes, el precio estimado de venta por kg. Son cifras distintas: no se suman.' },
-  { clave: 'usd', etiqueta: 'USD', derecha: true, ocultaSinValor: true, ayuda: 'En materiales es el valor a costo (kg x costo); en lotes, el valor estimado de venta. Nunca se suman entre sí.' },
-  { clave: 'dias', etiqueta: 'Días (estim.)', derecha: true, ayuda: EXPLICACION_DIAS },
-  { clave: 'ubicacion', etiqueta: 'Ubicación' },
+  { clave: 'kg', etiqueta: 'Kg', derecha: true, ayuda: 'Kg que hay hoy de ese material o lote, sumando todos los almacenes. Las filas en cursiva ya no están en el galpón (están en una transformación o se despacharon en el período) y no suman al total.' },
+  { clave: 'precioKg', etiqueta: '$/kg', derecha: true, ocultaSinValor: true, ayuda: 'En materiales es el costo promedio por kg de las facturas de compra (total pagado ÷ kg facturados), en USD/kg. En lotes es el precio estimado de venta por kg, cargado a mano. Son cifras distintas: no se suman.' },
+  { clave: 'usd', etiqueta: 'USD', derecha: true, ocultaSinValor: true, ayuda: 'En materiales es el valor a costo: kg × costo promedio por kg. En lotes es el valor estimado de venta: kg × precio estimado por kg. En USD. Nunca se suman entre sí.' },
+  { clave: 'dias', etiqueta: 'Días en inventario (est.)', derecha: true, ayuda: EXPLICACION_DIAS },
+  { clave: 'ubicacion', etiqueta: 'Ubicación', ayuda: 'Almacén o almacenes donde está el material o lote y cuántos kg hay en cada uno.' },
 ];
 
 function descargarCsv(filas: FilaDetalleInventario[], valorOculto: boolean) {
@@ -59,7 +59,7 @@ function Insignias({ f }: { f: FilaDetalleInventario }) {
           {f.destinoBasura === 'recuperable' ? 'Basura recuperable' : 'Desecho (no se recupera)'} · según el nombre
         </Insignia>
       )}
-      {f.esClasificacionCompra && <Insignia forma="cuadrada" tono="aviso">Clasificación de compra</Insignia>}
+      {f.esClasificacionCompra && <Insignia forma="cuadrada" tono="aviso" title="Tipo de tarjeta PCB que solo sirve para registrar la compra. El inventario de PCB se lleva en lotes.">Clasificación de compra</Insignia>}
       {!f.enGalpon && <span className={`${base} bg-surface-hover text-text-secondary`}>{f.etapa === 'despachado' ? 'Despachado (ya salió)' : 'En transformación (fuera del galpón)'}</span>}
     </span>
   );
@@ -83,8 +83,16 @@ function CeldaPrecio({ f, valorOculto }: { f: FilaDetalleInventario; valorOculto
   return v === null ? <span className="text-text-muted">—</span> : <span>{formatearUsdKg(v)}</span>;
 }
 
+/** Texto del detalle de la antigüedad estimada: de qué entradas sale el promedio y cuántos kg quedaron sin fecha. */
+function detalleDias(d: NonNullable<FilaDetalleInventario['dias']>): string {
+  const sinFecha = d.kgSinFecha > 0 ? ` Otros ${formatearKg(d.kgSinFecha)} no tienen entrada registrada y no cuentan en el promedio.` : '';
+  return `Estimado: promedio de días desde la entrada de ${formatearKg(d.kgConFecha)} (entradas del ${d.fechaEntradaMasAntigua} al ${d.fechaEntradaMasReciente}).${sinFecha}`;
+}
+
 function CeldaDias({ f }: { f: FilaDetalleInventario }) {
-  return f.dias ? <span>{formatearDiasEstimados(f.dias.diasPromedio)}</span> : <span className="text-text-muted" title="Sin entradas registradas que expliquen este stock">—</span>;
+  return f.dias
+    ? <span title={detalleDias(f.dias)}>{formatearDiasEstimados(f.dias.diasPromedio)}</span>
+    : <span className="text-text-muted" title="Sin dato: no hay compras, transformaciones ni ajustes registrados que expliquen este stock, así que no se pueden calcular los días.">—</span>;
 }
 
 function EncabezadoOrdenable({ columna, orden, valorOculto, onOrdenar }: { columna: (typeof COLUMNAS)[number]; orden: OrdenTabla; valorOculto: boolean; onOrdenar: (c: ColumnaTabla) => void }) {
@@ -152,9 +160,9 @@ function TarjetaMovil({ f, valorOculto }: { f: FilaDetalleInventario; valorOcult
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
         <div><dt className="text-text-secondary">Etapa</dt><dd className="font-medium">{etapaVisible(f)}</dd></div>
         <div><dt className="text-text-secondary">Kg</dt><dd className="font-medium tabular-nums">{formatearKg(f.kg)}</dd></div>
-        <div><dt className="text-text-secondary">{f.tipo === 'lote' ? 'Precio est. $/kg' : 'Costo $/kg'}</dt><dd className="font-medium tabular-nums"><CeldaPrecio f={f} valorOculto={valorOculto} /></dd></div>
+        <div><dt className="text-text-secondary">{f.tipo === 'lote' ? 'Precio estimado de venta $/kg' : 'Costo de compra $/kg'}</dt><dd className="font-medium tabular-nums"><CeldaPrecio f={f} valorOculto={valorOculto} /></dd></div>
         <div><dt className="text-text-secondary">USD</dt><dd className="font-medium tabular-nums"><CeldaUsd f={f} valorOculto={valorOculto} /></dd></div>
-        <div><dt className="text-text-secondary">Días (estimado)</dt><dd className="font-medium tabular-nums"><CeldaDias f={f} /></dd></div>
+        <div><dt className="text-text-secondary">Días en inventario (estimado)</dt><dd className="font-medium tabular-nums"><CeldaDias f={f} /></dd></div>
         <div><dt className="text-text-secondary">Ubicación</dt><dd className="font-medium">{textoUbicacion(f) || '—'}</dd></div>
       </dl>
     </li>
@@ -244,7 +252,7 @@ function TablaDetalleInventario({ filtros }: TablaDetalleInventarioProps) {
         />
         Ver clasificaciones de compra PCB
         <InfoTooltip etiqueta="Qué son las clasificaciones de compra PCB">
-          Las ~15 clasificaciones de tarjetas (mixto 1, RAM dorada, teléfono...) solo sirven para comprar: toda tarjeta se guarda en un lote de trabajo. Por eso el inventario de PCB son sus lotes. Esta opción muestra además cualquier clasificación que tenga stock sin lote.
+          Las ~15 clasificaciones de tarjetas (mixto 1, RAM dorada, teléfono...) solo sirven para registrar la compra: toda tarjeta se guarda en un lote de trabajo. Por eso el inventario de PCB son sus lotes. Esta opción muestra además cualquier clasificación que tenga stock sin lote.
         </InfoTooltip>
       </label>
       <button
@@ -260,7 +268,7 @@ function TablaDetalleInventario({ filtros }: TablaDetalleInventarioProps) {
 
   return (
     <div id="detalle-inventario">
-      <Bloque titulo="Detalle del inventario" queEstasViendo="cada material y lote con su stock, etapa, costo y ubicación, agrupado por categoría. Haz clic en un encabezado para ordenar." acciones={acciones}>
+      <Bloque titulo="Detalle del inventario" queEstasViendo="cada material y lote con sus kg, etapa, costo o precio estimado, días en inventario y ubicación, agrupado por categoría. La fila de cada categoría suma los kg que hay en el galpón. Haz clic en un encabezado para ordenar." acciones={acciones}>
         {!dato && !error && <SkeletonBloque alto="h-64" />}
         {error && !dato && <ErrorBloque mensaje={error} onReintentar={recargar} />}
         {dato && (
@@ -331,7 +339,7 @@ function TablaDetalleInventario({ filtros }: TablaDetalleInventarioProps) {
                 </div>
 
                 <div className="mt-2 space-y-1 text-[11px] text-text-secondary">
-                  <p>Los $/kg y USD de materiales son a costo; los de lotes, a precio estimado de venta (no se suman). Los días en inventario son estimados. Limpio/sucio y recuperable/desecho se toman del producto o se deducen del nombre del material.</p>
+                  <p>Los $/kg y USD de materiales son a costo de compra; los de lotes, a precio estimado de venta cargado a mano (no se suman). Los días en inventario son un estimado (el «?» del encabezado explica cómo se calcula). Limpio/sucio y recuperable/desecho se toman del producto o se deducen del nombre del material.</p>
                   {(totales.kgEnTransformacion > 0 || totales.kgDespachado > 0) && (
                     <p>Fuera del galpón (no suman al total): {formatearKg(totales.kgEnTransformacion)} en transformación y {formatearKg(totales.kgDespachado)} despachados en el período.</p>
                   )}
