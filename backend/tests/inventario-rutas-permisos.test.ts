@@ -44,6 +44,10 @@ const servicios = vi.hoisted(() => ({
   leerConfiguracionInventario: vi.fn(),
   actualizarConfiguracionInventario: vi.fn(),
   editarMermaTransformacion: vi.fn(),
+  obtenerDetallePantalla: vi.fn(),
+  obtenerCategoriasPantalla: vi.fn(),
+  obtenerFlujoPantalla: vi.fn(),
+  obtenerAlertasPantalla: vi.fn(),
 }));
 
 vi.mock('../src/services/lote-embalaje-service.js', () => ({
@@ -58,6 +62,12 @@ vi.mock('../src/services/lote-service.js', () => ({
   MENSAJE_CLASIFICACION_NO_HABILITADA: 'no habilitada',
 }));
 vi.mock('../src/services/inventario-resumen-service.js', () => ({ obtenerResumenInventario: servicios.obtenerResumenInventario }));
+vi.mock('../src/services/inventario-pantalla-service.js', () => ({
+  obtenerDetallePantalla: servicios.obtenerDetallePantalla,
+  obtenerCategoriasPantalla: servicios.obtenerCategoriasPantalla,
+  obtenerFlujoPantalla: servicios.obtenerFlujoPantalla,
+  obtenerAlertasPantalla: servicios.obtenerAlertasPantalla,
+}));
 vi.mock('../src/services/configuracion-inventario-service.js', () => ({
   leerConfiguracionInventario: servicios.leerConfiguracionInventario,
   actualizarConfiguracionInventario: servicios.actualizarConfiguracionInventario,
@@ -162,6 +172,93 @@ describe('GET /api/inventario/resumen', () => {
     const r = await llamar('GET', '/api/inventario/resumen', 'trabajador');
     expect(r.status).toBe(500);
     expect(JSON.stringify(r.json)).not.toContain('secreto');
+  });
+});
+
+const PANTALLA = [
+  ['detalle', 'obtenerDetallePantalla'],
+  ['categorias', 'obtenerCategoriasPantalla'],
+  ['flujo', 'obtenerFlujoPantalla'],
+  ['alertas', 'obtenerAlertasPantalla'],
+] as const;
+
+describe.each(PANTALLA)('GET /api/inventario/pantalla/%s', (ruta, servicio) => {
+  const url = `/api/inventario/pantalla/${ruta}`;
+  it('sin sesion 401; usuario inactivo 401', async () => {
+    expect((await llamar('GET', url, null)).status).toBe(401);
+    expect((await llamar('GET', url, 'inactivo')).status).toBe(401);
+    expect(servicios[servicio]).not.toHaveBeenCalled();
+  });
+  it('matriz de permisos: superadmin y administracion piden valor; el trabajador ve kilos pero sin valor', async () => {
+    servicios[servicio].mockResolvedValue({ marca: ruta });
+    const esperado: Record<string, boolean> = { admin: true, administracion: true, trabajador: false };
+    for (const [u, incluirValor] of Object.entries(esperado)) {
+      servicios[servicio].mockClear();
+      const r = await llamar('GET', url, u);
+      expect(r.status, u).toBe(200);
+      expect(r.json).toEqual({ [ruta]: { marca: ruta } });
+      expect(servicios[servicio], u).toHaveBeenCalledWith({ incluirValor });
+    }
+  });
+  it('sin productos:ver no entra, aunque tenga facturacion:ver', async () => {
+    usuarios.contable = { rol: 'trabajador', permisos: [{ recurso: 'facturacion', accion: 'ver' }], activo: true };
+    expect((await llamar('GET', url, 'contable')).status).toBe(403);
+    expect(servicios[servicio]).not.toHaveBeenCalled();
+  });
+  it('un cliente no puede forzar incluirValor por la query', async () => {
+    servicios[servicio].mockResolvedValue({});
+    await llamar('GET', `${url}?incluirValor=true`, 'trabajador');
+    expect(servicios[servicio]).toHaveBeenLastCalledWith({ incluirValor: false });
+  });
+  it('pasa los filtros validados y rechaza los invalidos con 400', async () => {
+    servicios[servicio].mockResolvedValue({});
+    const alm = '11111111-1111-4111-8111-111111111111';
+    await llamar('GET', `${url}?desde=2026-09-01&hasta=2026-09-30&categoria=PCB&almacen=${alm}&q=bgpp`, 'admin');
+    expect(servicios[servicio]).toHaveBeenLastCalledWith({ desde: '2026-09-01', hasta: '2026-09-30', categoria: 'PCB', almacen: alm, q: 'bgpp', incluirValor: true });
+    servicios[servicio].mockClear();
+    for (const q of ['desde=2026-09-01', 'desde=2026-10-02&hasta=2026-10-01', 'almacen=no-uuid', 'limite=0', 'limite=999999', 'vista=otra', 'categoria=', 'desde=2020-01-01&hasta=2026-10-01']) {
+      expect((await llamar('GET', `${url}?${q}`, 'admin')).status, q).toBe(400);
+    }
+    expect(servicios[servicio]).not.toHaveBeenCalled();
+  });
+  it('un error interno responde 500 sin filtrar detalles', async () => {
+    servicios[servicio].mockRejectedValue(new Error('tabla secreta'));
+    const r = await llamar('GET', url, 'trabajador');
+    expect(r.status).toBe(500);
+    expect(JSON.stringify(r.json)).not.toContain('secreta');
+  });
+});
+
+describe('GET /api/inventario/pantalla/detalle: parametros propios del detalle', () => {
+  it('limite, vista e incluirClasificaciones llegan al servicio', async () => {
+    servicios.obtenerDetallePantalla.mockResolvedValue({});
+    await llamar('GET', '/api/inventario/pantalla/detalle?limite=50&vista=exportacion&incluirClasificaciones=true', 'trabajador');
+    expect(servicios.obtenerDetallePantalla).toHaveBeenLastCalledWith({ limite: 50, vista: 'exportacion', incluirClasificaciones: true, incluirValor: false });
+  });
+});
+
+describe('precio estimado de los lotes solo con facturacion:ver (/api/lotes)', () => {
+  const lote = { id: LOTE, nombre: 'LOTE 1', precioEstimadoKg: 2.5, precioEstimadoActualizadoEn: '2026-10-01T00:00:00Z', precioEstimadoActualizadoPorNombre: 'Julio', stockKg: 100 };
+  it('GET: el trabajador no recibe precio, fecha ni autor del precio; superadmin y administracion si', async () => {
+    servicios.listarLotes.mockResolvedValue([lote]);
+    for (const u of ['admin', 'administracion']) {
+      expect((await llamar('GET', '/api/lotes', u)).json, u).toEqual({ lotes: [lote] });
+    }
+    const r = await llamar('GET', '/api/lotes', 'trabajador');
+    expect(r.json).toEqual({ lotes: [{ ...lote, precioEstimadoKg: null, precioEstimadoActualizadoEn: null, precioEstimadoActualizadoPorNombre: null }] });
+    expect(JSON.stringify(r.json)).not.toContain('2.5');
+  });
+  it('PATCH de nombre por el trabajador no devuelve el precio; POST tampoco', async () => {
+    servicios.actualizarLote.mockResolvedValue({ lote });
+    servicios.crearLote.mockResolvedValue({ lote });
+    const patch = await llamar('PATCH', `/api/lotes/${LOTE}`, 'trabajador', { nombre: 'LOTE 9' });
+    expect((patch.json as { lote: { precioEstimadoKg: unknown } }).lote.precioEstimadoKg).toBeNull();
+    const patchAdmin = await llamar('PATCH', `/api/lotes/${LOTE}`, 'admin', { nombre: 'LOTE 9' });
+    expect((patchAdmin.json as { lote: { precioEstimadoKg: unknown } }).lote.precioEstimadoKg).toBe(2.5);
+    usuarios.creador = { rol: 'trabajador', permisos: [{ recurso: 'productos', accion: 'ver' }, { recurso: 'productos', accion: 'crear' }], activo: true };
+    const post = await llamar('POST', '/api/lotes', 'creador', { nombre: 'LOTE NUEVO' });
+    expect(post.status).toBe(201);
+    expect((post.json as { lote: { precioEstimadoKg: unknown } }).lote.precioEstimadoKg).toBeNull();
   });
 });
 

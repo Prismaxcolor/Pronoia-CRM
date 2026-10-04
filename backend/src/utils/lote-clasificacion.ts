@@ -63,3 +63,13 @@ export function construirUpdateClasificacion(
   }
   return { update, cambios: auditoria };
 }
+
+/**
+ * Quita de un lote todo lo que revela el precio estimado de venta (usuarios sin facturacion:ver): el precio,
+ * cuándo se actualizó y quién. Devuelve una copia; el resto (kilos, embalado, clase) no cambia.
+ */
+export function sinPrecioDeLote<T extends { precioEstimadoKg: number | null; precioEstimadoActualizadoEn: string | null; precioEstimadoActualizadoPorNombre: string | null }>(
+  lote: T
+): T {
+  return { ...lote, precioEstimadoKg: null, precioEstimadoActualizadoEn: null, precioEstimadoActualizadoPorNombre: null };
+}

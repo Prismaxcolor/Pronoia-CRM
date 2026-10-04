@@ -12,6 +12,7 @@ import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import ProductoForm from './ProductoForm';
 import CategoriasModal from './CategoriasModal';
+import { admiteEstadoLimpieza, ETIQUETA_ESTADO_LIMPIEZA } from './estado-limpieza';
 import type { Producto, TipoProducto } from '@shared/types/index.js';
 
 const SIN_CATEGORIA = 'Sin categoría';
@@ -22,6 +23,9 @@ const TIPO_CONFIG: Record<TipoProducto, { label: string; color: string; bg: stri
   verde: { label: 'Compuesto', color: 'text-green-700', bg: 'bg-green-100' },
 };
 
+/** Ferroso / No ferroso activo cuyo estado limpio/sucio aún no se definió. */
+const faltaEstado = (p: Producto) => p.activo && admiteEstadoLimpieza(p.tipoMaterialNombre) && !p.estadoLimpieza;
+
 function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -30,6 +34,8 @@ function ProductosPage() {
   const [busqueda, setBusqueda] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('');
   const [tipoFiltro, setTipoFiltro] = useState<TipoProducto | null>(null);
+  // Modo rápido: solo Ferroso / No ferroso cuyo estado (limpio/sucio) aún no se definió.
+  const [soloSinEstado, setSoloSinEstado] = useState(false);
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
@@ -44,10 +50,13 @@ function ProductosPage() {
     return Array.from(set).sort();
   }, [productos]);
 
+  const cantidadSinEstado = useMemo(() => productos.filter(faltaEstado).length, [productos]);
+
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     return productos.filter(p => {
       const cat = p.tipoMaterialNombre ?? SIN_CATEGORIA;
+      if (soloSinEstado && !faltaEstado(p)) return false;
       if (tipoFiltro && p.tipo !== tipoFiltro) return false;
       if (categoriaFiltro && cat !== categoriaFiltro) return false;
       if (!q) return true;
@@ -57,7 +66,7 @@ function ProductosPage() {
         cat.toLowerCase().includes(q)
       );
     });
-  }, [productos, busqueda, categoriaFiltro, tipoFiltro]);
+  }, [productos, busqueda, categoriaFiltro, tipoFiltro, soloSinEstado]);
 
   const recargar = () => obtenerProductos().then(setProductos).finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };
@@ -214,6 +223,19 @@ function ProductosPage() {
             Quitar filtro
           </button>
         )}
+        {(cantidadSinEstado > 0 || soloSinEstado) && (
+          <button
+            type="button"
+            onClick={() => setSoloSinEstado(v => !v)}
+            aria-pressed={soloSinEstado}
+            title="Ferroso y No ferroso sin definir si son limpios o sucios (para clasificarlos en el inventario)"
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 transition-all ${
+              soloSinEstado ? 'ring-2 ring-offset-1 ring-brand-400' : 'opacity-80 hover:opacity-100'
+            }`}
+          >
+            Sin definir limpio/sucio ({cantidadSinEstado})
+          </button>
+        )}
       </div>
 
       {/* Grid de productos */}
@@ -316,6 +338,15 @@ function ProductosPage() {
                   <span className="text-xs text-text-muted">{p.variantes.length} variante(s)</span>
                 )}
               </div>
+              {admiteEstadoLimpieza(p.tipoMaterialNombre) && (
+                <span
+                  className={`mt-2 inline-block px-2 py-0.5 text-xs rounded-full ${
+                    p.estadoLimpieza ? 'bg-surface-alt text-text-secondary' : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {ETIQUETA_ESTADO_LIMPIEZA[p.estadoLimpieza ?? '']}
+                </span>
+              )}
               {!p.activo && (
                 <span className="mt-2 inline-block px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">Inactivo</span>
               )}

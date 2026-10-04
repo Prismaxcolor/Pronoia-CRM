@@ -54,7 +54,7 @@ export interface ResumenInventario extends ResumenInventarioBase {
   parcial: boolean;
 }
 
-interface AlmacenRow {
+export interface AlmacenRow {
   id: string;
   nombre: string;
   activo: boolean;
@@ -68,7 +68,7 @@ interface LineaCompraRow {
 
 /** TODOS los almacenes, también los inactivos: stock_lote_total() y los embalajes no distinguen por
  *  activo, así que filtrarlos aquí haría que el resumen no cuadre con /api/lotes. */
-async function cargarAlmacenes(): Promise<AlmacenRow[]> {
+export async function cargarAlmacenes(): Promise<AlmacenRow[]> {
   const { data, error } = await supabaseAdmin.from('almacenes').select('id, nombre, activo').order('nombre');
   if (error) throw new Error(error.message);
   return ((data ?? []) as Array<{ id: string; nombre: string; activo: boolean | null }>).map(a => ({
@@ -78,7 +78,7 @@ async function cargarAlmacenes(): Promise<AlmacenRow[]> {
   }));
 }
 
-async function cargarLotes(): Promise<LoteEntrada[]> {
+export async function cargarLotes(): Promise<LoteEntrada[]> {
   const { data, error } = await supabaseAdmin.from('lotes').select('*').order('nombre');
   if (error) throw new Error(error.message);
   return ((data ?? []) as Array<Record<string, unknown>>).map(r => {
@@ -90,12 +90,13 @@ async function cargarLotes(): Promise<LoteEntrada[]> {
       clase: c.clase,
       precioEstimadoKg: c.precioEstimadoKg,
       precioEstimadoActualizadoEn: (r.precio_estimado_actualizado_en as string | null | undefined) ?? null,
+      fase: (r.fase as string | null | undefined) ?? null,
     };
   });
 }
 
 /** Productos marcados como no vendibles (productos.vendible = false). Vacío si la columna aún no existe. */
-async function cargarNoVendibles(avisos: string[]): Promise<Set<string>> {
+export async function cargarNoVendibles(avisos: string[]): Promise<Set<string>> {
   const { data, error } = await supabaseAdmin.from('productos').select('id').eq('vendible', false);
   if (error) {
     // 42703 = columna inexistente (migración pendiente): no es un fallo, simplemente nada está marcado.
@@ -106,7 +107,7 @@ async function cargarNoVendibles(avisos: string[]): Promise<Set<string>> {
 }
 
 /** Costo promedio ponderado (USD/kg) por producto de las facturas de compra NO anuladas. */
-async function cargarCostos(avisos: string[]): Promise<Map<string, CostoProducto>> {
+export async function cargarCostos(avisos: string[]): Promise<Map<string, CostoProducto>> {
   try {
     const filas = await leerPaginado<LineaCompraRow>((desde, hasta) =>
       supabaseAdmin
@@ -145,14 +146,14 @@ const MERMA_VACIA: ReporteMermaParaResumen = {
 };
 
 /** Estado compartido por las lecturas de una misma petición: avisos, si alguna quedó incompleta y el tiempo que resta. */
-interface Seguimiento {
+export interface Seguimiento {
   avisos: string[];
   parcial: boolean;
   restanteMs: () => number;
 }
 
 /** Espera una lectura dentro del presupuesto; si falla o vence usa `respaldo` y deja un aviso. */
-async function leerConRespaldo<T>(promesa: Promise<T>, respaldo: T, aviso: string, seg: Seguimiento): Promise<T> {
+export async function leerConRespaldo<T>(promesa: Promise<T>, respaldo: T, aviso: string, seg: Seguimiento): Promise<T> {
   const r = await conLimiteDeTiempo(promesa, seg.restanteMs());
   if (r.ok) return r.valor;
   seg.parcial = true;
@@ -168,7 +169,7 @@ async function leerConRespaldo<T>(promesa: Promise<T>, respaldo: T, aviso: strin
 }
 
 /** Lectura sin la cual no hay resumen (almacenes, lotes): si falla o vence, el resumen falla. */
-async function esencial<T>(promesa: Promise<T>, nombre: string, seg: Seguimiento): Promise<T> {
+export async function esencial<T>(promesa: Promise<T>, nombre: string, seg: Seguimiento): Promise<T> {
   const r = await conLimiteDeTiempo(promesa, seg.restanteMs());
   if (r.ok) return r.valor;
   if (r.motivo === 'error') throw r.error;
@@ -176,7 +177,7 @@ async function esencial<T>(promesa: Promise<T>, nombre: string, seg: Seguimiento
 }
 
 /** Inventario de un almacén con el presupuesto restante; si falla o vence, se omite con aviso. */
-async function inventarioDeAlmacen(a: AlmacenRow, seg: Seguimiento) {
+export async function inventarioDeAlmacen(a: AlmacenRow, seg: Seguimiento) {
   const grupos = await leerConRespaldo(
     obtenerInventarioAlmacen(a.id),
     [] as Awaited<ReturnType<typeof obtenerInventarioAlmacen>>,

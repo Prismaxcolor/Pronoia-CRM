@@ -60,3 +60,23 @@ export function calcularCambios(antes: Instantanea, despues: Instantanea): Cambi
   }
   return cambios;
 }
+
+/** Campos de auditoría de un lote que revelan el precio estimado de venta (se ocultan sin facturacion:ver). */
+export const CAMPOS_PRECIO_ESTIMADO = [
+  'precio_estimado_kg',
+  'precio_estimado_actualizado_en',
+  'precio_estimado_actualizado_por',
+] as const;
+
+/**
+ * Copia de las entradas sin los campos del precio estimado en `cambios`. Un registro que solo cambiaba el
+ * precio se conserva (con `cambios` vacío): se sabe que hubo una edición, no cuál fue el valor.
+ */
+export function quitarPrecioEstimado<T extends { cambios: CambiosAuditoria }>(entradas: readonly T[]): T[] {
+  return entradas.map(entrada => ({
+    ...entrada,
+    cambios: Object.fromEntries(
+      Object.entries(entrada.cambios).filter(([campo]) => !(CAMPOS_PRECIO_ESTIMADO as readonly string[]).includes(campo))
+    ),
+  }));
+}

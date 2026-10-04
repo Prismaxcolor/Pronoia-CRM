@@ -1,5 +1,8 @@
 export type TipoProducto = 'amarillo' | 'azul' | 'verde';
 
+/** Estado del material (Ferroso / No ferroso): limpio o sucio. */
+export type EstadoLimpiezaProducto = 'limpio' | 'sucio';
+
 export interface VarianteProducto {
   id: string;
   nombre: string;
@@ -36,6 +39,9 @@ export interface ProductoBase {
   /** Lotes posibles de este producto (producto_lotes). Vacío = no pertenece a
    *  ningún lote. En el pesaje, estos lotes se ofrecen primero. */
   loteIds?: string[];
+  /** Estado del material para separar limpio/sucio en el inventario. Solo aplica a las categorías
+   *  Ferroso y No ferroso. null = sin definir. Al guardar: omitido = no se toca; null = se borra. */
+  estadoLimpieza?: EstadoLimpiezaProducto | null;
   creadoPor: string;
   creadoEn: string;
 }

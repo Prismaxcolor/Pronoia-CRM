@@ -31,6 +31,10 @@ export const DEFINICIONES_CONFIG_INVENTARIO = {
     clave: 'alerta_dias_roja', defecto: 90, minimo: 1, maximo: 3650, tipo: 'entero',
     descripcion: 'Días sin movimiento para la alerta roja.',
   },
+  alertaMermaMinKg: {
+    clave: 'alerta_merma_min_kg', defecto: 5, minimo: 0, maximo: 100000, tipo: 'decimal',
+    descripcion: 'Merma mínima en kg para que una transformación genere alerta de merma (evita ruido en pesos muy pequeños).',
+  },
 } as const satisfies Record<string, DefinicionConfig>;
 
 export type NombreConfigInventario = keyof typeof DEFINICIONES_CONFIG_INVENTARIO;
@@ -44,6 +48,7 @@ export function configuracionPorDefecto(): ConfiguracionInventario {
     umbralMermaPct: DEFINICIONES_CONFIG_INVENTARIO.umbralMermaPct.defecto,
     alertaDiasAmarilla: DEFINICIONES_CONFIG_INVENTARIO.alertaDiasAmarilla.defecto,
     alertaDiasRoja: DEFINICIONES_CONFIG_INVENTARIO.alertaDiasRoja.defecto,
+    alertaMermaMinKg: DEFINICIONES_CONFIG_INVENTARIO.alertaMermaMinKg.defecto,
   };
 }
 
@@ -62,6 +67,7 @@ export const actualizarConfiguracionInventarioSchema = z
     umbralMermaPct: numeroConLimites(DEFINICIONES_CONFIG_INVENTARIO.umbralMermaPct).optional(),
     alertaDiasAmarilla: numeroConLimites(DEFINICIONES_CONFIG_INVENTARIO.alertaDiasAmarilla).optional(),
     alertaDiasRoja: numeroConLimites(DEFINICIONES_CONFIG_INVENTARIO.alertaDiasRoja).optional(),
+    alertaMermaMinKg: numeroConLimites(DEFINICIONES_CONFIG_INVENTARIO.alertaMermaMinKg).optional(),
   })
   .strict()
   .refine(d => Object.values(d).some(v => v !== undefined), { message: 'Envía al menos un parámetro a actualizar.' });

@@ -38,6 +38,7 @@ router.post(
       userId: req.user!.sub,
       productoId: result.producto.id,
       tipo: result.producto.tipo,
+      estadoLimpieza: result.producto.estadoLimpieza,
     });
     res.status(201).json(result);
   }
@@ -81,6 +82,8 @@ router.patch(
       ip: clienteIp(req),
       userId: req.user!.sub,
       productoId: id,
+      // undefined = no se tocó; null = se dejó sin definir
+      estadoLimpieza: req.body.estadoLimpieza,
     });
     res.json(result);
   }

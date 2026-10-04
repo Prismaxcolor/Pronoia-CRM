@@ -102,7 +102,7 @@ describe('anularEmbalaje', () => {
 describe('configuracion de inventario', () => {
   it('sin tabla (migracion pendiente) usa los valores por defecto', async () => {
     bdFalsa.errores.configuracion_inventario = { code: '42P01', message: 'relation "configuracion_inventario" does not exist' };
-    expect(await leerConfiguracionInventario()).toEqual({ metaContenedorKg: 18000, umbralMermaPct: 8, alertaDiasAmarilla: 60, alertaDiasRoja: 90 });
+    expect(await leerConfiguracionInventario()).toEqual({ metaContenedorKg: 18000, umbralMermaPct: 8, alertaDiasAmarilla: 60, alertaDiasRoja: 90, alertaMermaMinKg: 5 });
   });
   it('lee los valores guardados y completa los que faltan con el defecto', async () => {
     bdFalsa.tablas.configuracion_inventario = [{ clave: 'meta_contenedor_kg', valor: '20000' }, { clave: 'clave_rara', valor: '1' }];
@@ -161,7 +161,7 @@ describe('configuracion de inventario', () => {
     expect(JSON.stringify(r)).not.toContain('secreta');
   });
   it('calcularCambiosConfiguracion compara contra el valor actual', () => {
-    const actual = { metaContenedorKg: 18000, umbralMermaPct: 8, alertaDiasAmarilla: 60, alertaDiasRoja: 90 };
+    const actual = { metaContenedorKg: 18000, umbralMermaPct: 8, alertaDiasAmarilla: 60, alertaDiasRoja: 90, alertaMermaMinKg: 5 };
     expect(calcularCambiosConfiguracion(actual, { umbralMermaPct: 10, alertaDiasRoja: 90 })).toEqual({ umbralMermaPct: { antes: 8, despues: 10 } });
   });
 });

@@ -1,8 +1,8 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
 import { listarAuditoria } from '../services/auditoria-service.js';
 import { paramsAuditoriaSchema } from '../schemas/auditoria.js';
-import { RECURSO_POR_ENTIDAD } from '../utils/auditoria.js';
+import { RECURSO_POR_ENTIDAD, quitarPrecioEstimado } from '../utils/auditoria.js';
 
 const router = Router();
 
@@ -21,7 +21,9 @@ function requireLecturaDeEntidad(req: Request, res: Response, next: NextFunction
 router.get('/:entidadTipo/:entidadId', requireLecturaDeEntidad, async (req, res) => {
   const { entidadTipo, entidadId } = paramsAuditoriaSchema.parse(req.params);
   const entradas = await listarAuditoria(entidadTipo, entidadId);
-  res.json({ entradas });
+  // El historial de un lote pide solo productos:ver, pero trae el precio estimado: va con facturacion:ver.
+  const verPrecio = entidadTipo !== 'lote' || reqTienePermiso(req, 'facturacion', 'ver');
+  res.json({ entradas: verPrecio ? entradas : quitarPrecioEstimado(entradas) });
 });
 
 export default router;

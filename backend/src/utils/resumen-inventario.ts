@@ -55,6 +55,8 @@ export interface LoteEntrada {
   clase: ClaseLote;
   precioEstimadoKg: number | null;
   precioEstimadoActualizadoEn: string | null;
+  /** lotes.fase tal como está en la BD (por_procesar | procesado); ausente/null si no se definió. */
+  fase?: string | null;
 }
 
 export interface CostoProducto {

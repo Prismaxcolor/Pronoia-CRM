@@ -11,6 +11,8 @@ export interface ConfiguracionInventario {
   umbralMermaPct: number;
   alertaDiasAmarilla: number;
   alertaDiasRoja: number;
+  /** Merma mínima (kg) para que una transformación genere alerta (por defecto 5). Opcional: backends anteriores no lo envían. */
+  alertaMermaMinKg?: number;
 }
 
 export interface CategoriaResumen {

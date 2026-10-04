@@ -11,6 +11,8 @@ export interface OpcionesCacheCorto<T> {
   ahora?: () => number;
   /** Si devuelve false, el resultado se entrega pero no se guarda (p. ej. un resumen parcial). */
   guardar?: (valor: T) => boolean;
+  /** TTL propio de cada resultado (p. ej. más corto para uno parcial); 0 o menos = no se guarda. Por defecto, ttlMs. */
+  ttlPara?: (valor: T) => number;
 }
 
 export interface CacheCorto<T> {
@@ -22,7 +24,7 @@ export interface CacheCorto<T> {
 const MAX_ENTRADAS_POR_DEFECTO = 20;
 
 export function crearCacheCorto<T>(opts: OpcionesCacheCorto<T>): CacheCorto<T> {
-  const ahora = opts.ahora ?? Date.now;
+  const ahora = opts.ahora ?? (() => Date.now());
   const maxEntradas = opts.maxEntradas ?? MAX_ENTRADAS_POR_DEFECTO;
   const guardadas = new Map<string, { valor: T; vence: number }>();
   const enCurso = new Map<string, Promise<T>>();
@@ -49,8 +51,9 @@ export function crearCacheCorto<T>(opts: OpcionesCacheCorto<T>): CacheCorto<T> {
       const promesa = calcular()
         .then(valor => {
           // Si se invalidó mientras se calculaba, el resultado puede estar viejo: no se guarda.
-          if (miGeneracion === generacion && (opts.guardar?.(valor) ?? true)) {
-            guardadas.set(clave, { valor, vence: ahora() + opts.ttlMs });
+          const ttl = opts.ttlPara?.(valor) ?? opts.ttlMs;
+          if (miGeneracion === generacion && ttl > 0 && (opts.guardar?.(valor) ?? true)) {
+            guardadas.set(clave, { valor, vence: ahora() + ttl });
             podar();
           }
           return valor;

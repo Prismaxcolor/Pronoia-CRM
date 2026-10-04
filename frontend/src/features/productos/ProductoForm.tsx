@@ -12,6 +12,7 @@ import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import { TTL_ALTA_BORRADOR_MS, difiereEstado, huellaDocumento } from '../../lib/borrador';
+import { admiteEstadoLimpieza, estadoLimpiezaAApi, ETIQUETA_ESTADO_LIMPIEZA, type EstadoLimpiezaForm } from './estado-limpieza';
 import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial, Lote } from '@shared/types/index.js';
 
 interface Props {
@@ -53,6 +54,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     );
   }, [producto?.loteIds]);
   const [activo, setActivo] = useState(producto?.activo ?? true);
+  const [estadoLimpieza, setEstadoLimpieza] = useState<EstadoLimpiezaForm>(producto?.estadoLimpieza ?? '');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,12 +79,12 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
 
   // Borrador del formulario (uno por producto, o uno para "nuevo"): sobrevive a F5. La base
   // para detectar cambios se captura una sola vez, con los valores con que arrancó el formulario.
-  const estadoBorrador = { tipo, nombre, descripcion, tipoMaterialId, moneda, loteIds, activo, fotos, peso, variantes, subProductos };
+  const estadoBorrador = { tipo, nombre, descripcion, tipoMaterialId, moneda, loteIds, activo, fotos, peso, variantes, subProductos, estadoLimpieza };
   const [estadoInicial] = useState(() => estadoBorrador);
   const aplicarEstado = (e: typeof estadoBorrador) => {
     setTipo(e.tipo); setNombre(e.nombre); setDescripcion(e.descripcion); setTipoMaterialId(e.tipoMaterialId);
     setMoneda(e.moneda); setLoteIds(e.loteIds); setActivo(e.activo); setFotos(e.fotos);
-    setPeso(e.peso); setVariantes(e.variantes); setSubProductos(e.subProductos);
+    setPeso(e.peso); setVariantes(e.variantes); setSubProductos(e.subProductos); setEstadoLimpieza(e.estadoLimpieza);
   };
   const borrador = useBorradorPersistente<typeof estadoBorrador>({
     formulario: 'producto',
@@ -106,6 +108,8 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       peso: d.peso ?? estadoInicial.peso,
       variantes: d.variantes && d.variantes.length > 0 ? d.variantes : estadoInicial.variantes,
       subProductos: d.subProductos && d.subProductos.length > 0 ? d.subProductos : estadoInicial.subProductos,
+      // Borradores guardados antes de este campo no lo traen: se usa el valor inicial ('' = sin definir es un valor válido).
+      estadoLimpieza: d.estadoLimpieza ?? estadoInicial.estadoLimpieza,
     }),
     restablecer: () => aplicarEstado(estadoInicial),
   });
@@ -124,6 +128,8 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     () => catalogo.filter(p => p.tipo !== 'verde' && p.id !== producto?.id && p.activo),
     [catalogo, producto?.id]
   );
+
+  const admiteLimpieza = admiteEstadoLimpieza(categorias.find(c => c.id === tipoMaterialId)?.nombre ?? producto?.tipoMaterialNombre);
 
   const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
   const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
@@ -173,7 +179,11 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       return;
     }
 
-    const base = { nombre, descripcion, tipoMaterialId, moneda, activo, fotos: urls, loteIds };
+    // Fuera de Ferroso / No ferroso el estado no aplica: viaja null (borra un valor viejo si cambió de categoría).
+    const base = {
+      nombre, descripcion, tipoMaterialId, moneda, activo, fotos: urls, loteIds,
+      estadoLimpieza: admiteLimpieza ? estadoLimpiezaAApi(estadoLimpieza) : null,
+    };
 
     let payload;
     if (tipo === 'amarillo') {
@@ -284,6 +294,23 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
               </select>
             </div>
           </div>
+
+          {admiteLimpieza && (
+            <div>
+              <label className={labelClass} htmlFor="producto-estado-limpieza">Estado del material</label>
+              <select
+                id="producto-estado-limpieza"
+                value={estadoLimpieza}
+                onChange={e => setEstadoLimpieza(e.target.value as EstadoLimpiezaForm)}
+                className={inputClass}
+              >
+                {(Object.keys(ETIQUETA_ESTADO_LIMPIEZA) as EstadoLimpiezaForm[]).map(v => (
+                  <option key={v || 'sin-definir'} value={v}>{ETIQUETA_ESTADO_LIMPIEZA[v]}</option>
+                ))}
+              </select>
+              <p className="text-xs text-text-muted mt-1">Sirve para separar limpio y sucio en el inventario.</p>
+            </div>
+          )}
 
           <div>
             <label className={labelClass}>Lotes posibles</label>

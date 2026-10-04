@@ -10,6 +10,9 @@ const baseSchema = z.object({
   /** Lotes posibles del producto (producto_lotes). Vacío = no pertenece a ningún lote.
    *  Si se omite al actualizar, los anclajes actuales no se tocan. */
   loteIds: z.array(z.string().uuid('ID de lote inválido.')).max(100).optional(),
+  /** Estado del material para separar limpio/sucio en el inventario (solo Ferroso y No ferroso).
+   *  null = sin definir. Si se omite al actualizar, el valor actual no se toca. */
+  estadoLimpieza: z.enum(['limpio', 'sucio']).nullable().optional(),
 });
 
 const varianteSchema = z.object({

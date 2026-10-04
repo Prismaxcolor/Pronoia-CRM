@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { obtenerInventario, obtenerInventarioAlmacen } from '../services/inventario-service.js';
 import { requireAuth, requirePermiso, requireSuperadmin, reqTienePermiso } from '../middlewares/require-auth.js';
 import { parsearAlmacenId } from '../schemas/inventario.js';
@@ -10,6 +10,14 @@ import {
 } from '../services/configuracion-inventario-service.js';
 import { actualizarConfiguracionInventarioSchema } from '../schemas/configuracion-inventario.js';
 import { resumenQuerySchema } from '../schemas/inventario-resumen.js';
+import { pantallaQuerySchema } from '../schemas/inventario-pantalla.js';
+import {
+  obtenerAlertasPantalla,
+  obtenerCategoriasPantalla,
+  obtenerDetallePantalla,
+  obtenerFlujoPantalla,
+  type OpcionesPantalla,
+} from '../services/inventario-pantalla-service.js';
 import { validateBody } from '../middlewares/validate.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -59,6 +67,31 @@ router.get('/resumen', requirePermiso('productos', 'ver'), async (req, res) => {
     res.status(500).json({ error: 'No se pudo calcular el resumen del inventario.' });
   }
 });
+
+// Pantalla nueva de inventario (solo lectura): detalle, tarjetas, flujo y alertas. Permiso productos:ver para los
+// kilos; costos, precios y valores SOLO con facturacion:ver (sin él, valorOculto: true y ni se consultan los costos).
+// Los cuatro comparten una caché corta; ver services/inventario-pantalla-service.ts.
+function rutaPantalla(evento: string, clave: string, servicio: (opts: OpcionesPantalla) => Promise<unknown>) {
+  return async (req: Request, res: Response) => {
+    const query = pantallaQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ error: query.error.issues[0]?.message ?? 'Parámetros inválidos.' });
+      return;
+    }
+    try {
+      const incluirValor = reqTienePermiso(req, 'facturacion', 'ver');
+      res.json({ [clave]: await servicio({ ...query.data, incluirValor }) });
+    } catch (err) {
+      logger.error({ evento, ip: clienteIp(req), userId: req.user!.sub, motivo: err instanceof Error ? err.message : String(err) });
+      res.status(500).json({ error: 'No se pudo calcular esta parte del inventario. Intenta de nuevo.' });
+    }
+  };
+}
+
+router.get('/pantalla/detalle', requirePermiso('productos', 'ver'), rutaPantalla('pantalla_detalle_error', 'detalle', obtenerDetallePantalla));
+router.get('/pantalla/categorias', requirePermiso('productos', 'ver'), rutaPantalla('pantalla_categorias_error', 'categorias', obtenerCategoriasPantalla));
+router.get('/pantalla/flujo', requirePermiso('productos', 'ver'), rutaPantalla('pantalla_flujo_error', 'flujo', obtenerFlujoPantalla));
+router.get('/pantalla/alertas', requirePermiso('productos', 'ver'), rutaPantalla('pantalla_alertas_error', 'alertas', obtenerAlertasPantalla));
 
 // Parámetros no secretos del inventario (meta de contenedor, umbral de merma, alertas).
 router.get('/configuracion', requirePermiso('productos', 'ver'), async (_req, res) => {

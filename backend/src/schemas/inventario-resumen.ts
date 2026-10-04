@@ -7,13 +7,13 @@ function esFechaReal(valor: string): boolean {
   return d.getUTCFullYear() === anio && d.getUTCMonth() === mes - 1 && d.getUTCDate() === dia;
 }
 
-const fecha = z
+export const fecha = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).')
   .refine(esFechaReal, 'La fecha no existe en el calendario.');
 
 /** Máximo de días del rango de merma (evita comparar décadas por accidente). */
-const MAX_DIAS_RANGO = 800;
+export const MAX_DIAS_RANGO = 800;
 
 /** GET /api/inventario/resumen?desde=&hasta= — rango opcional (ambos o ninguno) para la merma. */
 export const resumenQuerySchema = z

@@ -3,7 +3,8 @@ import { listarLotes, crearLote, actualizarLote, MENSAJE_CLASIFICACION_NO_HABILI
 import { listarEmbalajes, marcarEmbalado, anularEmbalaje } from '../services/lote-embalaje-service.js';
 import { marcarEmbalajeSchema, anularEmbalajeSchema } from '../schemas/lote-embalajes.js';
 import { invalidarCacheResumen } from '../services/resumen-cache.js';
-import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
+import { sinPrecioDeLote } from '../utils/lote-clasificacion.js';
 import { validateBody, validateParams } from '../middlewares/validate.js';
 import { crearLoteSchema, actualizarLoteSchema, loteParamsSchema, embalajeParamsSchema } from '../schemas/lotes.js';
 import { logger, clienteIp } from '../utils/logger.js';
@@ -22,9 +23,13 @@ function errorInterno(req: Request, res: Response, evento: string, err: unknown,
   res.status(500).json({ error: mensaje });
 }
 
+// El precio estimado de venta es un dato de valor: solo con facturacion:ver (igual que en /api/inventario/resumen).
+const puedeVerPrecios = (req: Request) => reqTienePermiso(req, 'facturacion', 'ver');
+
 router.get('/', requirePermiso('productos', 'ver'), async (req, res) => {
   try {
-    res.json({ lotes: await listarLotes() });
+    const lotes = await listarLotes();
+    res.json({ lotes: puedeVerPrecios(req) ? lotes : lotes.map(sinPrecioDeLote) });
   } catch (err) {
     errorInterno(req, res, 'lotes_listado_error', err, 'No se pudieron leer los lotes. Intenta de nuevo.');
   }
@@ -41,7 +46,7 @@ router.post(
       return;
     }
     logger.info({ evento: 'lote_creado', ip: clienteIp(req), userId: req.user!.sub, loteId: result.lote.id });
-    res.status(201).json(result);
+    res.status(201).json(puedeVerPrecios(req) ? result : { ...result, lote: sinPrecioDeLote(result.lote) });
   }
 );
 
@@ -67,7 +72,7 @@ router.patch(
       }
       invalidarCacheResumen();
       logger.info({ evento: 'lote_actualizado', ip: clienteIp(req), userId: req.user!.sub, loteId: id });
-      res.json(result);
+      res.json(puedeVerPrecios(req) ? result : { ...result, lote: sinPrecioDeLote(result.lote) });
     } catch (err) {
       errorInterno(req, res, 'lote_actualizar_error', err, 'No se pudo actualizar el lote. Intenta de nuevo.');
     }

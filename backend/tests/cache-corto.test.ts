@@ -45,6 +45,31 @@ describe('crearCacheCorto', () => {
     expect(calcular).toHaveBeenCalledTimes(2);
   });
 
+  it('ttlPara da un TTL distinto por resultado (p. ej. mas corto para uno parcial) y 0 no guarda', async () => {
+    let ahora = 0;
+    const cache = crearCacheCorto<{ tipo: string }>({
+      ttlMs: 20_000, ahora: () => ahora, ttlPara: v => (v.tipo === 'parcial' ? 5_000 : v.tipo === 'nada' ? 0 : 20_000),
+    });
+    const parcial = vi.fn(async () => ({ tipo: 'parcial' }));
+    await cache.obtener('p', parcial);
+    ahora = 4_999;
+    await cache.obtener('p', parcial);
+    expect(parcial).toHaveBeenCalledTimes(1);
+    ahora = 5_001;
+    await cache.obtener('p', parcial);
+    expect(parcial).toHaveBeenCalledTimes(2);
+    const completo = vi.fn(async () => ({ tipo: 'completo' }));
+    ahora = 10_000;
+    await cache.obtener('c', completo);
+    ahora = 29_999;
+    await cache.obtener('c', completo);
+    expect(completo).toHaveBeenCalledTimes(1);
+    const nada = vi.fn(async () => ({ tipo: 'nada' }));
+    await cache.obtener('n', nada);
+    await cache.obtener('n', nada);
+    expect(nada).toHaveBeenCalledTimes(2);
+  });
+
   it('invalidar vacia todo y el tamano esta acotado', async () => {
     const cache = crearCacheCorto<number>({ ttlMs: 20_000, maxEntradas: 2 });
     await cache.obtener('a', async () => 1);

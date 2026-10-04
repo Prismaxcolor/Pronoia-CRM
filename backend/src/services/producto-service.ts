@@ -1,6 +1,8 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearProductoInput, ActualizarProductoInput } from '../schemas/productos.js';
 import { logger } from '../utils/logger.js';
+import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { esCategoriaConLimpieza, esLimpiezaMaterial } from '../utils/inventario-vistas.js';
 
 type TipoProducto = 'amarillo' | 'azul' | 'verde';
 
@@ -18,6 +20,8 @@ interface ProductoRow {
   peso: number | null;
   variantes: unknown;
   sub_productos: unknown;
+  /** Ausente si la migración migration_productos_estado_limpieza.sql aún no se aplicó. */
+  estado_limpieza?: string | null;
   // join con tipos_material(nombre, sin_lote)
   tipos_material?: { nombre: string; sin_lote: boolean } | null;
   // join con producto_lotes(lote_id)
@@ -36,6 +40,8 @@ export interface ProductoPublico {
   tipoMaterialSinLote: boolean | null;
   /** Lotes posibles del producto; vacío = no está anclado a ningún lote. */
   loteIds: string[];
+  /** 'limpio' | 'sucio' (Ferroso y No ferroso); null = sin definir. */
+  estadoLimpieza: 'limpio' | 'sucio' | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
@@ -56,6 +62,7 @@ function toPublico(row: ProductoRow): ProductoPublico {
     tipoMaterialNombre: row.tipos_material?.nombre ?? null,
     tipoMaterialSinLote: row.tipos_material?.sin_lote ?? null,
     loteIds: (row.producto_lotes ?? []).map(r => r.lote_id),
+    estadoLimpieza: esLimpiezaMaterial(row.estado_limpieza) ? row.estado_limpieza : null,
     moneda: row.moneda,
     activo: row.activo,
     tipo: row.tipo,
@@ -83,6 +90,11 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
     fotos: input.fotos ?? [],
   };
   if (creadoPor !== undefined) row.creado_por = creadoPor;
+  // Al crear solo se envía si hay valor (null = sin definir ya es el defecto de la columna);
+  // al editar, undefined no toca el campo y null lo borra.
+  if (input.estadoLimpieza !== undefined && (creadoPor === undefined || input.estadoLimpieza !== null)) {
+    row.estado_limpieza = input.estadoLimpieza;
+  }
 
   if (input.tipo === 'amarillo') {
     row.peso = input.peso;
@@ -99,6 +111,39 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
   }
 
   return row;
+}
+
+/**
+ * Rechaza un estado de limpieza (limpio/sucio) en una categoría que no es Ferroso ni No ferroso.
+ * null y ausente siempre se permiten. Devuelve el mensaje de error o null si todo está bien.
+ */
+async function validarEstadoLimpieza(input: CrearProductoInput): Promise<string | null> {
+  if (input.estadoLimpieza == null) return null;
+  const { data, error } = await supabaseAdmin
+    .from('tipos_material')
+    .select('nombre')
+    .eq('id', input.tipoMaterialId)
+    .maybeSingle();
+  if (error) return error.message;
+  if (!esCategoriaConLimpieza((data as { nombre: string } | null)?.nombre)) {
+    return 'El estado de limpieza (limpio/sucio) solo aplica a las categorías Ferroso y No ferroso.';
+  }
+  return null;
+}
+
+/**
+ * Ejecuta una escritura de productos; si falla porque la columna estado_limpieza aún no existe
+ * (migración pendiente), reintenta sin ese campo en vez de dar error: el resto del producto se guarda.
+ */
+async function conToleranciaLimpieza<R extends { error: { code?: string; message?: string } | null }>(
+  row: Record<string, unknown>,
+  ejecutar: (fila: Record<string, unknown>) => PromiseLike<R>
+): Promise<R> {
+  const resultado = await ejecutar(row);
+  if (!resultado.error || !('estado_limpieza' in row) || !esObjetoInexistente(resultado.error)) return resultado;
+  logger.warn({ evento: 'producto_sin_columna_estado_limpieza', motivo: resultado.error.message });
+  const { estado_limpieza: _omitido, ...sinLimpieza } = row;
+  return ejecutar(sinLimpieza);
 }
 
 /** Reemplaza de forma atómica los lotes posibles de un producto (RPC). */
@@ -124,6 +169,8 @@ export async function crearProducto(
   input: CrearProductoInput,
   creadoPor: string
 ): Promise<{ producto: ProductoPublico } | { error: string }> {
+  const errorLimpieza = await validarEstadoLimpieza(input);
+  if (errorLimpieza) return { error: errorLimpieza };
   const row = inputToRow(input, creadoPor);
 
   // Los productos nuevos aparecen primero (orden más bajo), igual que antes
@@ -137,11 +184,9 @@ export async function crearProducto(
     .maybeSingle();
   row.orden = ((primero as { orden: number } | null)?.orden ?? 0) - 1;
 
-  const { data, error } = await supabaseAdmin
-    .from('productos')
-    .insert(row)
-    .select(SELECT_PRODUCTO)
-    .single();
+  const { data, error } = await conToleranciaLimpieza(row, fila =>
+    supabaseAdmin.from('productos').insert(fila).select(SELECT_PRODUCTO).single()
+  );
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el producto.' };
   const creado = data as unknown as ProductoRow;
@@ -193,6 +238,8 @@ export async function actualizarProducto(
     return { error: `No se puede cambiar el tipo de un producto existente (era "${existente.tipo}", recibido "${input.tipo}").` };
   }
 
+  const errorLimpieza = await validarEstadoLimpieza(input);
+  if (errorLimpieza) return { error: errorLimpieza };
   const row = inputToRow(input);
 
   // Los lotes (RPC atómico, puede rechazar el cambio) se guardan primero: si
@@ -212,12 +259,9 @@ export async function actualizarProducto(
     if (errorLotes) return { error: errorLotes };
   }
 
-  const { data, error } = await supabaseAdmin
-    .from('productos')
-    .update(row)
-    .eq('id', id)
-    .select(SELECT_PRODUCTO)
-    .maybeSingle();
+  const { data, error } = await conToleranciaLimpieza(row, fila =>
+    supabaseAdmin.from('productos').update(fila).eq('id', id).select(SELECT_PRODUCTO).maybeSingle()
+  );
 
   if (error || !data) {
     const mensaje = error?.message ?? 'Producto no encontrado al actualizar.';

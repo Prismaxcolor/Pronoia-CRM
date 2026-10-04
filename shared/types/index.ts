@@ -37,3 +37,4 @@ export type {
   ResumenTomaFisicaLinea,
 } from './toma-fisica.js';
 export { codigoTomaFisica } from './toma-fisica.js';
+export type * from './inventario-pantalla.js';
