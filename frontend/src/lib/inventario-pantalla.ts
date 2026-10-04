@@ -140,7 +140,23 @@ export interface OrdenTabla { columna: ColumnaTabla; sentido: SentidoOrden }
 
 export const ORDEN_TABLA_POR_DEFECTO: OrdenTabla = { columna: 'kg', sentido: 'desc' };
 
-const ORDEN_ETAPA: Record<EtapaInventario, number> = { recibido: 0, en_proceso: 1, listo: 2, despachado: 3 };
+/** Texto de la columna Etapa. La etapa del contrato (recibido/en_proceso/listo/despachado) es una agrupación interna:
+ *  en lotes con fase o de exportación se muestra el paso real del PCB para no contradecir las insignias. */
+const ETAPAS_VISIBLES = ['Recibido', 'Por procesar', 'En proceso', 'Procesado', 'En saca', 'Listo', 'Embalado (Listo)', 'Despachado'] as const;
+export type EtapaVisible = (typeof ETAPAS_VISIBLES)[number];
+
+export function etapaVisible(f: Pick<FilaDetalleInventario, 'tipo' | 'clase' | 'fase' | 'etapa'>): EtapaVisible {
+  if (f.tipo === 'lote' && f.etapa !== 'despachado') {
+    if (f.clase === 'trabajo' && f.fase === 'por_procesar') return 'Por procesar';
+    if (f.clase === 'trabajo' && f.fase === 'procesado') return 'Procesado';
+    if (f.clase === 'exportacion') return f.etapa === 'listo' ? 'Embalado (Listo)' : 'En saca';
+  }
+  return ETIQUETA_ETAPA[f.etapa] as EtapaVisible;
+}
+
+export const EXPLICACION_ETAPAS_PCB = 'Etapas de un lote de PCB: por procesar (lote de trabajo con material sin tratar) → procesado (ya desarmado o clasificado) → en saca (lote de exportación armado, aún sin embalar) → embalado (listo para despachar). El resto de materiales usan Recibido, En proceso, Listo y Despachado.';
+
+const ORDEN_ETAPA = (f: FilaDetalleInventario): number => ETAPAS_VISIBLES.indexOf(etapaVisible(f));
 
 /** $/kg de la fila: costo promedio en materiales, precio estimado de venta en lotes (cifras distintas: ver `usdFila`). */
 export const precioKgFila = (f: FilaDetalleInventario): number | null => (f.tipo === 'lote' ? f.precioEstimadoKg : f.costoPromedioKg);
@@ -162,7 +178,7 @@ function valorDeColumna(f: FilaDetalleInventario, c: ColumnaTabla): ValorOrden {
   switch (c) {
     case 'material': return f.material;
     case 'categoria': return f.categoria;
-    case 'etapa': return ORDEN_ETAPA[f.etapa];
+    case 'etapa': return ORDEN_ETAPA(f);
     case 'kg': return f.kg;
     case 'precioKg': return precioKgFila(f);
     case 'usd': return usdFila(f);
@@ -310,7 +326,7 @@ export function armarCsv(filas: FilaDetalleInventario[], op: OpcionesCsv): strin
       escaparCampoCsv(f.material),
       escaparCampoCsv(f.categoria),
       f.tipo === 'lote' ? 'Lote' : 'Material',
-      ETIQUETA_ETAPA[f.etapa],
+      etapaVisible(f),
       f.enGalpon ? 'Sí' : 'No',
       numeroCsv(f.kg, 3),
       numeroCsv(f.dias?.diasPromedio, 1),

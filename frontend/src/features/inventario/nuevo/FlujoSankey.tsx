@@ -200,8 +200,15 @@ function EstadoSinDatos({ mensaje }: { mensaje: string }) {
   );
 }
 
+/** Debe coincidir con MOTIVO_DESPRECIABLE del backend (utils/flujo-inventario.ts); shared solo lleva tipos. */
+const MOTIVO_DESPRECIABLE = 'menor a 0,5 kg';
+
 function Notas({ flujo }: { flujo: FlujoPantalla }) {
-  const omitidosKg = flujo.enlacesOmitidos.reduce((a, e) => a + e.kg, 0);
+  // Los tramos menores a 0,5 kg no se dibujan por ser ruido: se resumen aparte de los de datos incoherentes.
+  const despreciables = flujo.enlacesOmitidos.filter(e => e.motivo === MOTIVO_DESPRECIABLE);
+  const incoherentes = flujo.enlacesOmitidos.filter(e => e.motivo !== MOTIVO_DESPRECIABLE);
+  const despreciablesKg = despreciables.reduce((a, e) => a + e.kg, 0);
+  const omitidosKg = incoherentes.reduce((a, e) => a + e.kg, 0);
   // Varios tramos suelen compartir el mismo motivo: se muestra una sola vez para no repetir el párrafo.
   const tramosAgrupados = flujo.tramosSinDatos.reduce<Array<{ motivo: string; tramos: string[] }>>((acc, t) => {
     const tramo = `${t.desde} → ${t.hacia}`;
@@ -228,11 +235,14 @@ function Notas({ flujo }: { flujo: FlujoPantalla }) {
       {flujo.categoriasSinTransformaciones.length > 0 && !flujo.sinTransformaciones && (
         <p>Sin transformaciones en el período: {flujo.categoriasSinTransformaciones.map(c => c.nombre).join(', ')}. Su flujo termina en la categoría.</p>
       )}
-      {flujo.enlacesOmitidos.length > 0 && (
+      {incoherentes.length > 0 && (
         <details>
-          <summary className="cursor-pointer font-medium text-amber-800">{flujo.enlacesOmitidos.length} {flujo.enlacesOmitidos.length === 1 ? 'tramo' : 'tramos'} ({formatearKg(omitidosKg)}) no se dibujaron por datos incoherentes</summary>
-          <ul className="mt-1 list-disc pl-5">{flujo.enlacesOmitidos.map(e => <li key={`${e.origen}>${e.destino}`}>{e.origen} → {e.destino}: {formatearKg(e.kg)} ({e.motivo})</li>)}</ul>
+          <summary className="cursor-pointer font-medium text-amber-800">{incoherentes.length} {incoherentes.length === 1 ? 'tramo' : 'tramos'} ({formatearKg(omitidosKg)}) no se dibujaron por datos incoherentes</summary>
+          <ul className="mt-1 list-disc pl-5">{incoherentes.map(e => <li key={`${e.origen}>${e.destino}`}>{e.origen} → {e.destino}: {formatearKg(e.kg)} ({e.motivo})</li>)}</ul>
         </details>
+      )}
+      {despreciables.length > 0 && (
+        <p>{despreciables.length} {despreciables.length === 1 ? 'tramo' : 'tramos'} de menos de 0,5 kg ({formatearKg(despreciablesKg)} en total) no se dibujan, pero sí cuentan en los totales.</p>
       )}
       <p>
         En el período: {formatearKg(flujo.totales.kgComprado)} comprados · {formatearKg(flujo.totales.kgTransformado)} transformados ({flujo.totales.transformaciones}) · {formatearKg(flujo.totales.kgMerma)} de merma · {formatearKg(flujo.totales.kgDespachado)} despachados. Las franjas son proporcionales a los kg.

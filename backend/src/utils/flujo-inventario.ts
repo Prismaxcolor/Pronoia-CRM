@@ -25,6 +25,9 @@ const redondear = (n: number, d: number): number => Math.round((n + Number.EPSIL
 const kg3 = (n: number) => redondear(n, 3);
 /** Enlaces por debajo de esto son ruido de redondeo. */
 const MIN_KG = 0.0005;
+/** Enlaces por debajo de esto no se dibujan en el diagrama (salen como '0 kg'); se informan en enlacesOmitidos. */
+export const MIN_KG_DIBUJABLE = 0.5;
+export const MOTIVO_DESPRECIABLE = 'menor a 0,5 kg';
 
 const ID_COMPRA = 'compra';
 const ID_AJUSTE = 'ajuste';
@@ -265,6 +268,10 @@ function resultado(c: Constructor, e: EntradaFlujo, categoriasTransformadas: Rea
     const abajo = nodosAlcanzables(enlaces, semillas);
     enlaces = enlaces.filter(en => abajo.has(en.origen) || semillas.has(en.destino));
   }
+  // Los totales cuentan todos los enlaces; el diagrama solo dibuja los de al menos MIN_KG_DIBUJABLE.
+  const enlacesTotales = enlaces;
+  const despreciables = enlacesTotales.filter(en => en.kg < MIN_KG_DIBUJABLE);
+  enlaces = enlacesTotales.filter(en => en.kg >= MIN_KG_DIBUJABLE);
   const usados = new Set(enlaces.flatMap(en => [en.origen, en.destino]));
   const nodos: NodoFlujo[] = [...c.nodos.values()]
     .filter(n => usados.has(n.id))
@@ -280,7 +287,8 @@ function resultado(c: Constructor, e: EntradaFlujo, categoriasTransformadas: Rea
     .sort((a, b) => b.kg - a.kg);
 
   const suma = (xs: EnlaceFlujo[]) => kg3(xs.reduce((a, en) => a + en.kg, 0));
-  const transformaciones = new Set(enlaces.flatMap(en => [...en.transformaciones]));
+  const enlacesTotalesFinales: EnlaceFlujo[] = enlacesTotales.map(({ origen, destino, kg }) => ({ origen, destino, kg: kg3(kg) }));
+  const transformaciones = new Set(enlacesTotales.flatMap(en => [...en.transformaciones]));
   const sinTransformaciones = transformaciones.size === 0;
   const sinDatos = enlacesFinales.length === 0;
   const categoriasSinTransformaciones = e.categoriasConActividad
@@ -307,16 +315,19 @@ function resultado(c: Constructor, e: EntradaFlujo, categoriasTransformadas: Rea
     mensajeSinDatos,
     categoriasSinTransformaciones,
     tramosSinDatos,
-    enlacesOmitidos: [...c.omitidos.values()].map(o => ({ ...o, kg: kg3(o.kg) })),
+    enlacesOmitidos: [
+      ...[...c.omitidos.values()].map(o => ({ ...o, kg: kg3(o.kg) })),
+      ...despreciables.map(({ origen, destino, kg }) => ({ origen, destino, kg: kg3(kg), motivo: MOTIVO_DESPRECIABLE })),
+    ],
     totales: {
-      kgComprado: suma(enlacesFinales.filter(en => en.origen === ID_COMPRA)),
+      kgComprado: suma(enlacesTotalesFinales.filter(en => en.origen === ID_COMPRA)),
       kgTransformado: kg3(
         [...e.movimientos.transformaciones]
           .filter(t => transformaciones.has(t.id))
           .reduce((a, t) => a + t.pesoNeto, 0)
       ),
-      kgMerma: suma(enlacesFinales.filter(en => en.destino.startsWith('merma:'))),
-      kgDespachado: suma(enlacesFinales.filter(en => en.destino === ID_DESPACHO)),
+      kgMerma: suma(enlacesTotalesFinales.filter(en => en.destino.startsWith('merma:'))),
+      kgDespachado: suma(enlacesTotalesFinales.filter(en => en.destino === ID_DESPACHO)),
       transformaciones: transformaciones.size,
     },
   };

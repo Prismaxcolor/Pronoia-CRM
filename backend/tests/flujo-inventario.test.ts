@@ -180,11 +180,11 @@ describe('construirFlujo: transformaciones', () => {
 
   it('un lote de exportacion como origen hacia basura es valido (ultima columna)', () => {
     const t = transf({
-      id: 't4', categoria: 'pcb', loteOrigenId: 'L1', pesoNeto: 0.215,
-      salidas: [{ productoId: 'desecho', loteDestinoId: null, pesoNeto: 0.215 }],
+      id: 't4', categoria: 'pcb', loteOrigenId: 'L1', pesoNeto: 215,
+      salidas: [{ productoId: 'desecho', loteDestinoId: null, pesoNeto: 215 }],
     });
     const f = construirFlujo(entrada(mov({ transformaciones: [t] })));
-    expect(enlace(f, 'lote:L1', 'venta:bas')).toBe(0.215);
+    expect(enlace(f, 'lote:L1', 'venta:bas')).toBe(215);
     expect(f.enlacesOmitidos).toEqual([]);
   });
 
@@ -323,5 +323,32 @@ describe('construirFlujo: lote de trabajo -> lote de trabajo (por procesar -> pr
   it('un lote sin fase definida cae en por procesar (columna 2)', () => {
     const r = construirFlujo(conLotes(mov({ transformaciones: [t({ id: 'f', loteOrigenId: 'RARO', pesoNeto: 4, salidas: [{ productoId: null, loteDestinoId: 'BGYP', pesoNeto: 4 }] })] })));
     expect(enlace(r, 'lote:RARO', 'lote:BGYP')).toBe(4);
+  });
+});
+
+describe('construirFlujo: enlaces menores a 0,5 kg', () => {
+  const grande = transf({ id: 'g', categoria: 'ferroso_no_ferroso', pesoNeto: 100, entradas: [{ productoId: 'perfil', pesoKg: 100 }], salidas: [{ productoId: 'plastico', loteDestinoId: null, pesoNeto: 99.7 }] });
+  const tiny = transf({ id: 'p', categoria: 'ferroso_no_ferroso', pesoNeto: 0.4, entradas: [{ productoId: 'raee', pesoKg: 0.4 }], salidas: [{ productoId: 'raee', loteDestinoId: null, pesoNeto: 0.4 }] });
+
+  it('no se dibujan, se informan en enlacesOmitidos con su motivo y los nodos sin enlaces desaparecen', () => {
+    const r = construirFlujo(entrada(mov({ transformaciones: [grande, tiny] })));
+    expect(r.enlaces.every(e => e.kg >= 0.5)).toBe(true);
+    expect(enlace(r, 'cat:raee', 'venta:raee')).toBeUndefined();
+    expect(r.nodos.some(n => n.id === 'venta:raee')).toBe(false);
+    expect(r.enlacesOmitidos).toContainEqual({ origen: 'cat:raee', destino: 'venta:raee', kg: 0.4, motivo: 'menor a 0,5 kg' });
+  });
+
+  it('los totales siguen contando los enlaces despreciables (merma 0,3 kg no se pierde)', () => {
+    const r = construirFlujo(entrada(mov({ transformaciones: [grande] })));
+    expect(r.enlacesOmitidos).toEqual([expect.objectContaining({ destino: 'merma:sin_clasificar', kg: 0.3, motivo: 'menor a 0,5 kg' })]);
+    expect(r.totales.kgMerma).toBe(0.3);
+    expect(r.totales.kgTransformado).toBe(100);
+  });
+
+  it('un enlace de exactamente 0,5 kg se dibuja', () => {
+    const t = transf({ id: 'e', pesoNeto: 0.5, entradas: [{ productoId: 'perfil', pesoKg: 0.5 }], salidas: [{ productoId: 'plastico', loteDestinoId: null, pesoNeto: 0.5 }] });
+    const r = construirFlujo(entrada(mov({ transformaciones: [t] })));
+    expect(enlace(r, 'cat:nf', 'venta:nf')).toBe(0.5);
+    expect(r.enlacesOmitidos).toEqual([]);
   });
 });

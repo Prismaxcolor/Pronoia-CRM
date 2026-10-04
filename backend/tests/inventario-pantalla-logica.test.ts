@@ -11,6 +11,7 @@ import {
   claveParametros,
   enlaceAlerta,
   escaparCampoCsv,
+  etapaVisible,
   filtrarPorEtapa,
   formatearValorAlerta,
   numeroCsv,
@@ -357,5 +358,34 @@ describe('layout del Sankey con 6 columnas', () => {
     expect(l.columnas.map(c => c.etiqueta)).toEqual(['Compra', 'Categoría', 'Por procesar', 'Procesado', 'Exportación', 'Venta / Merma']);
     expect(l.nodos).toHaveLength(6);
     expect(l.descartados).toBe(0);
+  });
+});
+
+describe('etapa visible de la tabla (no contradice la insignia de fase)', () => {
+  const lote = (p: Partial<FilaDetalleInventario>) => fila({ id: 'l', tipo: 'lote', ...p });
+  it('lotes de trabajo con fase muestran Por procesar / Procesado aunque la etapa interna sea recibido o en proceso', () => {
+    expect(etapaVisible(lote({ clase: 'trabajo', fase: 'por_procesar', etapa: 'recibido' }))).toBe('Por procesar');
+    expect(etapaVisible(lote({ clase: 'trabajo', fase: 'procesado', etapa: 'en_proceso' }))).toBe('Procesado');
+  });
+  it('lotes de exportación: En saca o Embalado (Listo) según etapa', () => {
+    expect(etapaVisible(lote({ clase: 'exportacion', etapa: 'en_proceso' }))).toBe('En saca');
+    expect(etapaVisible(lote({ clase: 'exportacion', etapa: 'listo' }))).toBe('Embalado (Listo)');
+  });
+  it('el resto usa las etapas normales, incluido un lote despachado o de trabajo sin fase', () => {
+    expect(etapaVisible(lote({ clase: 'trabajo', fase: null, etapa: 'recibido' }))).toBe('Recibido');
+    expect(etapaVisible(lote({ clase: 'exportacion', etapa: 'despachado' }))).toBe('Despachado');
+    expect(etapaVisible(fila({ id: 'm', etapa: 'en_proceso' }))).toBe('En proceso');
+    expect(etapaVisible(fila({ id: 'm', etapa: 'listo' }))).toBe('Listo');
+  });
+  it('ordenar por etapa sigue el recorrido del PCB y el filtro por etapa del contrato no cambia', () => {
+    const a = lote({ id: 'a', clase: 'exportacion', etapa: 'listo' });
+    const b = lote({ id: 'b', clase: 'trabajo', fase: 'por_procesar', etapa: 'recibido', kgPorEtapa: { recibido: 10, enProceso: 0, listo: 0, despachado: 0 } });
+    const c = lote({ id: 'c', clase: 'trabajo', fase: 'procesado', etapa: 'en_proceso', kgPorEtapa: { recibido: 0, enProceso: 10, listo: 0, despachado: 0 } });
+    expect(ordenarFilas([a, c, b], { columna: 'etapa', sentido: 'asc' }).map(f => f.id)).toEqual(['b', 'c', 'a']);
+    expect(filtrarPorEtapa([a, b, c], 'materia_prima').map(f => f.id)).toEqual(['b']);
+  });
+  it('el CSV exporta la etapa visible', () => {
+    const csv = armarCsv([lote({ clase: 'trabajo', fase: 'por_procesar', etapa: 'recibido' })], { valorOculto: true });
+    expect(csv).toContain(';Por procesar;');
   });
 });

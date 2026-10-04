@@ -198,6 +198,8 @@ export interface DetallePantalla extends MetaPantalla {
     valorEstimadoUsd: number | null;
     /** Kg de clasificaciones de compra PCB sin lote que no salen entre las filas (kgEnGalpon + esto = /resumen). */
     kgClasificacionesCompraOcultas: number;
+    /** Valor a costo (USD) de esas clasificaciones ocultas; null si no tienen costo o valorOculto. Opcional por compatibilidad. */
+    valorClasificacionesCompraOcultasUsd?: number | null;
   };
   limite: { maxFilas: number; totalFilas: number; truncado: boolean };
 }

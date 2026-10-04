@@ -334,12 +334,15 @@ describe('PCB: lotes de trabajo por fase, clasificaciones, limpieza y basura', (
 
   it('un producto PCB sin lote es una clasificacion de compra: se separa y sus kg se informan aparte', () => {
     expect(porId(filas, 'mat:p-tel')).toMatchObject({ esClasificacionCompra: true, kg: 7 });
-    const { visibles, kgOcultos } = separarClasificaciones(filas);
+    const { visibles, kgOcultos, valorOcultoUsd } = separarClasificaciones(filas);
     expect(kgOcultos).toBe(7);
+    expect(valorOcultoUsd === null || typeof valorOcultoUsd === 'number').toBe(true);
     expect(visibles.some(f => f.id === 'mat:p-tel')).toBe(false);
     const total = filas.filter(f => f.enGalpon).reduce((a, f) => a + f.kg, 0);
     expect(visibles.filter(f => f.enGalpon).reduce((a, f) => a + f.kg, 0) + kgOcultos).toBeCloseTo(total, 3);
     expect(armarDetalle(visibles, 100, false, kgOcultos).totales.kgClasificacionesCompraOcultas).toBe(7);
+    expect(armarDetalle(visibles, 100, false, kgOcultos, 21.5).totales.valorClasificacionesCompraOcultasUsd).toBe(21.5);
+    expect(armarDetalle(visibles, 100, true, kgOcultos, 21.5).totales.valorClasificacionesCompraOcultasUsd).toBeNull();
   });
 
   it('No ferroso: limpio / sucio / sin clasificar derivados del nombre', () => {

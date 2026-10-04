@@ -10,7 +10,7 @@ import type { DetallePantalla, FilaDetalleInventario } from '@shared/types/inven
 import { formatearKg, formatearNumero, formatearUsd, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
 import { estiloCategoria } from '../../../lib/colores-categoria';
 import {
-  AVISO_CSV_SIN_VALOR, ETIQUETA_ETAPA, LIMITE_FILAS_INICIAL, ORDEN_TABLA_POR_DEFECTO, PASOS_LIMITE, agruparFilas, alternarOrden, ariaSort,
+  AVISO_CSV_SIN_VALOR, ETIQUETA_ETAPA, EXPLICACION_ETAPAS_PCB, etapaVisible, LIMITE_FILAS_INICIAL, ORDEN_TABLA_POR_DEFECTO, PASOS_LIMITE, agruparFilas, alternarOrden, ariaSort,
   armarCsv, claveParametros, filtrarPorEtapa, formatearDiasEstimados, formatearUsdKg, nombreArchivoCsv, parametrosPantalla, precioKgFila,
   textoUbicacion, totalizarFilas, usdFila, type ColumnaTabla, type GrupoTabla, type OrdenTabla, type TotalesFilas,
 } from '../../../lib/inventario-pantalla';
@@ -34,7 +34,7 @@ const MAX_FILAS_ABIERTAS_POR_DEFECTO = 40;
 const COLUMNAS: Array<{ clave: ColumnaTabla; etiqueta: string; derecha?: boolean; ayuda?: string; ocultaSinValor?: boolean }> = [
   { clave: 'material', etiqueta: 'Material' },
   { clave: 'categoria', etiqueta: 'Categoría' },
-  { clave: 'etapa', etiqueta: 'Etapa' },
+  { clave: 'etapa', etiqueta: 'Etapa', ayuda: EXPLICACION_ETAPAS_PCB },
   { clave: 'kg', etiqueta: 'Kg', derecha: true },
   { clave: 'precioKg', etiqueta: '$/kg', derecha: true, ocultaSinValor: true, ayuda: 'En materiales es el costo promedio por kg de las compras; en lotes, el precio estimado de venta por kg. Son cifras distintas: no se suman.' },
   { clave: 'usd', etiqueta: 'USD', derecha: true, ocultaSinValor: true, ayuda: 'En materiales es el valor a costo (kg x costo); en lotes, el valor estimado de venta. Nunca se suman entre sí.' },
@@ -137,7 +137,7 @@ function FilaMaterial({ f, valorOculto }: { f: FilaDetalleInventario; valorOcult
       <td className="px-3 py-2 pl-9 font-medium text-text-primary">{f.material}<Insignias f={f} /></td>
       <td className="px-3 py-2 text-xs text-text-secondary"><span aria-hidden="true" style={{ color: estilo.color }}>{estilo.simbolo}</span> {f.categoria}</td>
       <td className="px-3 py-2 text-xs">
-        {ETIQUETA_ETAPA[f.etapa]}
+        {etapaVisible(f)}
         {f.tipo === 'lote' && f.embaladoKg !== null && f.enSacaKg !== null && (
           <span className="block text-[10px] text-text-secondary"><span className="whitespace-nowrap">{formatearNumero(f.embaladoKg, 0)} embalados</span> · <span className="whitespace-nowrap">{formatearNumero(f.enSacaKg, 0)} en saca</span></span>
         )}
@@ -160,7 +160,7 @@ function TarjetaMovil({ f, valorOculto }: { f: FilaDetalleInventario; valorOcult
     <li className={`rounded-lg border border-border bg-surface p-3 ${f.enGalpon ? '' : 'italic'}`}>
       <p className="text-sm font-medium text-text-primary">{f.material}<Insignias f={f} /></p>
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-        <div><dt className="text-text-secondary">Etapa</dt><dd className="font-medium">{ETIQUETA_ETAPA[f.etapa]}</dd></div>
+        <div><dt className="text-text-secondary">Etapa</dt><dd className="font-medium">{etapaVisible(f)}</dd></div>
         <div><dt className="text-text-secondary">Kg</dt><dd className="font-medium tabular-nums">{formatearKg(f.kg)}</dd></div>
         <div><dt className="text-text-secondary">{f.tipo === 'lote' ? 'Precio est. $/kg' : 'Costo $/kg'}</dt><dd className="font-medium tabular-nums"><CeldaPrecio f={f} valorOculto={valorOculto} /></dd></div>
         <div><dt className="text-text-secondary">USD</dt><dd className="font-medium tabular-nums"><CeldaUsd f={f} valorOculto={valorOculto} /></dd></div>
@@ -350,7 +350,12 @@ function TablaDetalleInventario({ filtros }: TablaDetalleInventarioProps) {
                     <p>Fuera del galpón (no suman al total): {formatearKg(totales.kgEnTransformacion)} en transformación y {formatearKg(totales.kgDespachado)} despachados en el período.</p>
                   )}
                   {dato.totales.kgClasificacionesCompraOcultas > 0 && !verClasificaciones && (
-                    <p>Hay {formatearKg(dato.totales.kgClasificacionesCompraOcultas)} de clasificaciones de compra PCB sin lote que no se listan. Activa «Ver clasificaciones de compra PCB» para verlas.</p>
+                    <p>
+                      Hay {formatearKg(dato.totales.kgClasificacionesCompraOcultas)}
+                      {!valorOculto && dato.totales.valorClasificacionesCompraOcultasUsd != null && dato.totales.valorClasificacionesCompraOcultasUsd > 0 && <> ({formatearUsd(dato.totales.valorClasificacionesCompraOcultasUsd)} a costo)</>}
+                      {' '}de clasificaciones de compra PCB sin lote que no se listan: explican la diferencia de kg
+                      {!valorOculto && dato.totales.valorClasificacionesCompraOcultasUsd != null && dato.totales.valorClasificacionesCompraOcultasUsd > 0 && ' y de USD'} con el KPI. Activa «Ver clasificaciones de compra PCB» para verlas.
+                    </p>
                   )}
                   {dato.limite.truncado && (
                     <p className="text-amber-800">

@@ -177,9 +177,11 @@ function filasDelContexto(c: Contexto) {
 export async function obtenerDetallePantalla(opts: OpcionesPantalla = {}): Promise<DetallePantalla> {
   const c = await prepararContexto(opts);
   const filtradas = filtrarFilas(filasDelContexto(c), { categoria: opts.categoria, q: opts.q, vista: opts.vista });
-  const { visibles, kgOcultos } = opts.incluirClasificaciones ? { visibles: filtradas, kgOcultos: 0 } : separarClasificaciones(filtradas);
+  const { visibles, kgOcultos, valorOcultoUsd } = opts.incluirClasificaciones
+    ? { visibles: filtradas, kgOcultos: 0, valorOcultoUsd: null }
+    : separarClasificaciones(filtradas);
   const maxFilas = Math.min(opts.limite ?? FILAS_DETALLE_POR_DEFECTO, MAX_FILAS_DETALLE);
-  const d = armarDetalle(visibles, maxFilas, c.valorOculto, kgOcultos);
+  const d = armarDetalle(visibles, maxFilas, c.valorOculto, kgOcultos, valorOcultoUsd);
   if (d.limite.truncado) {
     c.avisos.push(`Se muestran ${d.limite.maxFilas} de ${d.limite.totalFilas} filas: afina los filtros o sube el límite. Los totales cuentan todas.`);
   }

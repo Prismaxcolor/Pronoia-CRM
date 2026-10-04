@@ -356,6 +356,7 @@ export interface DetalleArmado {
     valorCostoUsd: number | null;
     valorEstimadoUsd: number | null;
     kgClasificacionesCompraOcultas: number;
+    valorClasificacionesCompraOcultasUsd: number | null;
   };
   limite: { maxFilas: number; totalFilas: number; truncado: boolean };
 }
@@ -367,7 +368,8 @@ export function armarDetalle(
   filas: readonly FilaDetalleInventario[],
   maxFilas: number,
   valorOculto: boolean,
-  kgClasificacionesCompraOcultas = 0
+  kgClasificacionesCompraOcultas = 0,
+  valorClasificacionesCompraOcultasUsd: number | null = null
 ): DetalleArmado {
   const ordenadas = [...filas].sort(porCategoriaYKg);
   const grupos = new Map<string, GrupoDetalle>();
@@ -399,6 +401,7 @@ export function armarDetalle(
       valorCostoUsd: valorOculto ? null : usd2(suma(ordenadas.map(f => f.valorCostoUsd))),
       valorEstimadoUsd: valorOculto ? null : usd2(suma(ordenadas.map(f => f.valorEstimadoUsd))),
       kgClasificacionesCompraOcultas: kg3(kgClasificacionesCompraOcultas),
+      valorClasificacionesCompraOcultasUsd: valorOculto ? null : valorClasificacionesCompraOcultasUsd,
     },
     limite: { maxFilas, totalFilas: ordenadas.length, truncado: ordenadas.length > maxFilas },
   };
@@ -468,7 +471,13 @@ function desgloseFase(galpon: readonly FilaDetalleInventario[]) {
 export function separarClasificaciones(filas: readonly FilaDetalleInventario[]) {
   const visibles = filas.filter(f => !f.esClasificacionCompra);
   const ocultas = filas.filter(f => f.esClasificacionCompra && f.enGalpon);
-  return { visibles, kgOcultos: kg3(suma(ocultas.map(f => f.kg))) };
+  const conValor = ocultas.filter(f => f.valorCostoUsd != null);
+  return {
+    visibles,
+    kgOcultos: kg3(suma(ocultas.map(f => f.kg))),
+    /** Valor a costo de las ocultas; null si ninguna trae costo (o el usuario no ve valores). */
+    valorOcultoUsd: conValor.length > 0 ? usd2(suma(conValor.map(f => f.valorCostoUsd))) : null,
+  };
 }
 
 const sinAgregadosInternos = ({ kgConCosto: _c, kgConPrecio: _p, ...resto }: Agregado) => resto;
