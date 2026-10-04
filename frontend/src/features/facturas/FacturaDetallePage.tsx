@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Printer, FileDown, FileText, DollarSign } from 'lucide-react';
+import { Printer, FileDown, FileText, DollarSign } from 'lucide-react';
 import { obtenerFactura, consolidarItems, type FacturaCV, type TipoFactura } from '../../services/factura-cv-service';
 import { descargarFacturaPDF, descargarFacturaWord } from '../../services/factura-export';
 import { obtenerTicket } from '../../services/ticket-pesaje-service';
@@ -9,7 +9,13 @@ import FilaDocumento from '../../components/FilaDocumento';
 import HistorialEdiciones from '../../components/HistorialEdiciones';
 import { type TicketPesaje } from '@shared/types/index.js';
 import CompartirBoton from '../../components/CompartirBoton';
+import {
+  BarraProgreso, BotonAccion, EstadoVacio, GrillaKpis, SkeletonBloque, SkeletonKpis, TarjetaKpi, formatearFecha, formatearNumero, formatearUsdDecimales,
+} from '../../components/ui';
+import { porcentajeEntero, porcentajePagado, saldoCompra } from '../../lib/facturas-kpis';
+import { CabeceraFactura, TituloSeccion } from './factura-cabecera';
 
+/** Etiqueta del estado en el encabezado impreso (la insignia de pantalla vive en CabeceraFactura). */
 const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
   borrador: { label: 'Borrador', clase: 'bg-gray-100 text-gray-600' },
   emitida: { label: 'Emitida', clase: 'bg-blue-100 text-blue-700' },
@@ -20,6 +26,8 @@ const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+const TEXTO_ANULADA = 'Factura anulada: se corrigió el ticket con la llave de edición. No es deuda ni se puede pagar; el ticket quedó disponible para volver a facturar.';
 
 interface Props {
   tipo: TipoFactura;
@@ -41,6 +49,7 @@ function FacturaDetallePage({ tipo }: Props) {
   const labelEntidad = esCompra ? 'Proveedor' : 'Cliente';
   const titulo = esCompra ? 'Factura de compra' : 'Factura de venta';
   const puedePagar = tienePermiso('cochinito', 'crear');
+  const puedeVerImportes = tienePermiso('facturacion', 'ver');
 
   const [factura, setFactura] = useState<FacturaCV | null>(null);
   const [tickets, setTickets] = useState<TicketPesaje[]>([]);
@@ -65,194 +74,256 @@ function FacturaDetallePage({ tipo }: Props) {
 
   if (cargando) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-4xl" aria-busy="true">
+        <SkeletonBloque alto="h-16" conMargen etiqueta="Cargando encabezado de la factura" />
+        <SkeletonKpis cantidad={esCompra ? 4 : 3} />
+        <SkeletonBloque alto="h-72" conMargen etiqueta="Cargando documento" />
       </div>
     );
   }
 
   if (!factura) {
     return (
-      <div className="text-center py-12">
-        <p className="text-text-muted mb-4">No se encontró la factura.</p>
-        <button type="button" onClick={() => navigate(ruta)} className="text-brand-600 hover:underline text-sm">
-          Volver a {etiquetaLista}
-        </button>
+      <div className="max-w-4xl">
+        <EstadoVacio
+          mensaje="No se encontró la factura."
+          descripcion="Puede que se haya borrado o que el enlace no sea correcto."
+          accion={{ etiqueta: `Volver a ${etiquetaLista}`, onClick: () => navigate(ruta) }}
+        />
       </div>
     );
   }
 
   const cfg = ESTADO_CFG[factura.estado] ?? ESTADO_CFG.emitida;
-  const totalPesoFacturado = consolidarItems(factura.items).reduce((acc, it) => acc + it.peso, 0);
+  const itemsConsolidados = consolidarItems(factura.items);
+  const totalPesoFacturado = itemsConsolidados.reduce((acc, it) => acc + it.peso, 0);
+  const codigoVisible = factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`;
+  const fecha = factura.createdAt.slice(0, 10);
+  const anulada = factura.estado === 'anulada';
+  const saldo = saldoCompra(factura);
+  const pctPagado = porcentajePagado(factura.total, factura.montoPagado);
+  const estadoImporte = puedeVerImportes ? 'listo' : 'sinPermiso';
+  const textoSaldo = anulada
+    ? 'Anulada: no es deuda'
+    : factura.estado === 'pagada' ? 'Factura pagada por completo' : factura.estado === 'borrador' ? 'Borrador: aún no es deuda' : 'Por pagar de esta factura';
+
+  const acciones = (
+    <>
+      {puedePagar && factura.estado !== 'pagada' && factura.estado !== 'anulada' && factura.entidadId && (
+        <BotonAccion
+          icono={<DollarSign size={16} />}
+          onClick={() => navigate(`/${esCompra ? 'proveedores' : 'clientes'}/${factura.entidadId}/estado-cuenta`, {
+            state: { volverA: ruta, volverALabel: etiquetaLista },
+          })}
+        >
+          {esCompra ? 'IR A PAGAR' : 'IR A COBRAR'}
+        </BotonAccion>
+      )}
+      <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => descargarFacturaPDF(factura, tickets)}>PDF</BotonAccion>
+      <BotonAccion variante="secundario" icono={<FileText size={16} />} onClick={() => descargarFacturaWord(factura)}>Word</BotonAccion>
+      <BotonAccion variante="secundario" icono={<Printer size={16} />} onClick={() => window.print()}>Imprimir</BotonAccion>
+      <CompartirBoton titulo={`Factura ${factura.codigo ?? factura.id.slice(0, 8)}`} obtenerPdf={() => descargarFacturaPDF(factura, tickets, 'blob')} />
+    </>
+  );
 
   return (
-    <div className="max-w-2xl print-documento print:max-w-none">
-      <div className="print:hidden">
-        <button type="button" onClick={() => navigate(ruta)} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
-          <ArrowLeft size={16} />
-          {etiquetaLista}
-        </button>
-      </div>
+    <div className="max-w-4xl print-documento print:max-w-none">
+      {/* ---- Solo pantalla: cabecera, aviso, indicadores y progreso de pago (nada de esto se imprime). ---- */}
+      <CabeceraFactura
+        titulo={`${titulo} ${factura.codigo ?? ''}`.trim()}
+        estado={factura.estado}
+        subtitulo={`${labelEntidad}: ${factura.nombreEntidad ?? '—'} · Emitida el ${formatearFecha(fecha)}`}
+        migas={[{ etiqueta: etiquetaLista, to: ruta }, { etiqueta: codigoVisible }]}
+        acciones={acciones}
+      />
 
-      {/* Encabezado de marca — solo el logo, estándar en todo documento impreso. */}
-      <div className="hidden print:flex items-center justify-end mb-6">
-        <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
-      </div>
+      {anulada && (
+        <p role="status" className="mb-6 rounded-lg border border-border-strong bg-surface-alt px-3 py-2 text-sm text-text-primary print:hidden">
+          {TEXTO_ANULADA}
+        </p>
+      )}
 
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-        <div>
+      <section aria-label="Indicadores de la factura" className="print:hidden">
+        <GrillaKpis>
+          <TarjetaKpi
+            titulo="Total"
+            ayuda="Monto total de la factura: suma de los subtotales de cada material (peso facturable por precio unitario)."
+            valor={formatearUsdDecimales(factura.total)}
+            subtitulo={`${itemsConsolidados.length} ${itemsConsolidados.length === 1 ? 'material' : 'materiales'}`}
+            estado={estadoImporte}
+          />
+          {esCompra && (
+            <>
+              <TarjetaKpi
+                titulo="Pagado"
+                ayuda="Lo que ya se pagó de esta factura. Los pagos se aplican desde el estado de cuenta del proveedor."
+                valor={formatearUsdDecimales(factura.montoPagado)}
+                subtitulo={`${formatearNumero(porcentajeEntero(pctPagado), 0)} % del total`}
+                estado={estadoImporte}
+              >
+                <div className="mt-2"><BarraProgreso valor={pctPagado} etiqueta="Porcentaje pagado de esta factura" /></div>
+              </TarjetaKpi>
+              <TarjetaKpi
+                titulo="Saldo pendiente"
+                ayuda="Lo que falta por pagar: total menos lo pagado. Una factura pagada o anulada no tiene saldo."
+                valor={formatearUsdDecimales(saldo)}
+                subtitulo={textoSaldo}
+                estado={estadoImporte}
+              />
+            </>
+          )}
+          <TarjetaKpi
+            titulo="Kg facturados"
+            ayuda="Suma de los kilos de la factura, ya sin los descuentos aplicados al facturar."
+            valor={formatearNumero(totalPesoFacturado, 2)}
+            unidad="kg"
+            subtitulo={`${itemsConsolidados.length} ${itemsConsolidados.length === 1 ? 'ítem' : 'ítems'} · ${factura.ticketIds.length === 0 ? 'peso manual' : `${factura.ticketIds.length} ${factura.ticketIds.length === 1 ? 'ticket' : 'tickets'}`}`}
+          />
+        </GrillaKpis>
+      </section>
+
+      <TituloSeccion
+        titulo="Documento"
+        queEstasViendo="la factura tal como se imprime o se envía (PDF o Word): a quién, de dónde sale el peso, cada material con su precio y el total."
+      />
+
+      {/* ---- El documento imprimible. En pantalla es una tarjeta; al imprimir queda igual que antes. ---- */}
+      <div className="mb-8 rounded-xl border border-border bg-surface p-4 sm:p-6 print:mb-0 print:rounded-none print:border-0 print:bg-transparent print:p-0">
+        {/* Encabezado de marca — solo el logo, estándar en todo documento impreso. */}
+        <div className="hidden print:flex items-center justify-end mb-6">
+          <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
+        </div>
+
+        {/* Encabezado impreso (en pantalla ya está arriba, en la cabecera). */}
+        <div className="hidden print:block mb-6">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
             <span className={`px-2 py-0.5 rounded-full text-xs ${cfg.clase} print:border print:border-black print:bg-transparent`}>{cfg.label}</span>
           </div>
-          {factura.estado === 'anulada' && (
-            <p className="mt-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2 print:border-black print:bg-transparent print:text-black">
-              Factura anulada: se corrigió el ticket con la llave de edición. No es deuda ni se puede pagar; el ticket quedó disponible para volver a facturar.
-            </p>
+          {anulada && (
+            <p className="mt-2 text-xs print:border print:border-black print:px-3 print:py-2">{TEXTO_ANULADA}</p>
           )}
-          <p className="text-sm text-text-muted mt-1">Ref. {factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {factura.createdAt.slice(0, 10)}</p>
+          <p className="text-sm text-text-muted mt-1">Ref. {factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`} · {fecha}</p>
         </div>
-        <div className="print:hidden flex flex-wrap items-center gap-2">
-          {puedePagar && factura.estado !== 'pagada' && factura.estado !== 'anulada' && factura.entidadId && (
-            <button
-              type="button"
-              onClick={() => navigate(`/${esCompra ? 'proveedores' : 'clientes'}/${factura.entidadId}/estado-cuenta`, {
-                state: { volverA: ruta, volverALabel: etiquetaLista },
-              })}
-              className="flex items-center gap-2 px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-              title={esCompra ? 'Ir a pagar' : 'Ir a cobrar'}
-            >
-              <DollarSign size={16} />
-              {esCompra ? 'IR A PAGAR' : 'IR A COBRAR'}
-            </button>
-          )}
-          <button type="button" onClick={() => descargarFacturaPDF(factura, tickets)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
-            <FileDown size={16} />
-            PDF
-          </button>
-          <button type="button" onClick={() => descargarFacturaWord(factura)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar Word">
-            <FileText size={16} />
-            Word
-          </button>
-          <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
-            <Printer size={16} />
-            Imprimir
-          </button>
-          <CompartirBoton titulo={`Factura ${factura.codigo ?? factura.id.slice(0, 8)}`} obtenerPdf={() => descargarFacturaPDF(factura, tickets, 'blob')} />
+
+        <div className="mb-6">
+          <FilaDocumento label={labelEntidad} valor={factura.nombreEntidad ?? '—'} />
+          <FilaDocumento label="Origen del peso" valor={origenPeso(factura, tickets)} />
+          {factura.descripcion && <FilaDocumento label="Descripción" valor={factura.descripcion} />}
+          {factura.observaciones && <FilaDocumento label="Observaciones" valor={factura.observaciones} />}
         </div>
-      </div>
 
-      <div className="mb-6">
-        <FilaDocumento label={labelEntidad} valor={factura.nombreEntidad ?? '—'} />
-        <FilaDocumento label="Origen del peso" valor={origenPeso(factura, tickets)} />
-        {factura.descripcion && <FilaDocumento label="Descripción" valor={factura.descripcion} />}
-        {factura.observaciones && <FilaDocumento label="Observaciones" valor={factura.observaciones} />}
-      </div>
-
-      {/* Bloque monetario: tabla de grid completo, esquinas cuadradas — a
-       *  diferencia de los tickets de pesaje (redondeados), lo financiero
-       *  se presenta siempre así en todo el sistema. */}
-      <div className="overflow-x-auto mb-4">
-        <table className="w-full text-sm border border-border print:border-black">
-          <thead>
-            <tr className="bg-surface-alt text-left text-xs text-text-secondary">
-              <th className="py-2.5 px-3 font-semibold border border-border print:border-black">Ítem</th>
-              <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Cantidad (kg)</th>
-              <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Precio unitario</th>
-              <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Monto total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {consolidarItems(factura.items).map(it => (
-              <tr key={it.id}>
-                <td className="py-2.5 px-3 text-text-primary border border-border print:border-black">
-                  {it.nombreProducto ?? '—'}
-                  {it.descuentoKg > 0 && (
-                    <span className="block text-xs text-text-muted font-normal">Descuento aplicado: {fmt(it.descuentoKg)} kg</span>
-                  )}
-                </td>
-                <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.peso)}</td>
-                <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.precioUnitario)}</td>
-                <td className="py-2.5 px-3 text-right font-medium text-text-primary border border-border print:border-black">{fmt(it.subtotal)}</td>
+        {/* Bloque monetario: tabla de grid completo, esquinas cuadradas — a
+         *  diferencia de los tickets de pesaje (redondeados), lo financiero
+         *  se presenta siempre así en todo el sistema. */}
+        <div className="overflow-x-auto mb-4">
+          <table className="w-full text-sm border border-border print:border-black">
+            <thead>
+              <tr className="bg-surface-alt text-left text-xs text-text-secondary">
+                <th className="py-2.5 px-3 font-semibold border border-border print:border-black">Ítem</th>
+                <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Cantidad (kg)</th>
+                <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Precio unitario</th>
+                <th className="py-2.5 px-3 font-semibold text-right border border-border print:border-black">Monto total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mb-6">
-        <div className="flex justify-between items-baseline pt-3">
-          <span className="font-semibold text-text-primary text-lg">Total</span>
-          <span className="text-2xl font-bold text-brand-700">{fmt(factura.total)}</span>
+            </thead>
+            <tbody>
+              {itemsConsolidados.map(it => (
+                <tr key={it.id}>
+                  <td className="py-2.5 px-3 text-text-primary border border-border print:border-black">
+                    {it.nombreProducto ?? '—'}
+                    {it.descuentoKg > 0 && (
+                      <span className="block text-xs text-text-muted font-normal">Descuento aplicado: {fmt(it.descuentoKg)} kg</span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.peso)}</td>
+                  <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.precioUnitario)}</td>
+                  <td className="py-2.5 px-3 text-right font-medium text-text-primary border border-border print:border-black">{fmt(it.subtotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        {esCompra && factura.montoPagado > 0 && (
-          <>
-            <div className="flex justify-between pt-1 text-sm">
-              <span className="text-text-secondary">Pagado</span>
-              <span className="text-text-primary font-medium">{fmt(factura.montoPagado)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-text-secondary">Saldo pendiente</span>
-              <span className="text-text-primary font-medium">{fmt(Math.max(factura.total - factura.montoPagado, 0))}</span>
-            </div>
-          </>
-        )}
+        <div>
+          <div className="flex justify-between items-baseline pt-3">
+            <span className="font-semibold text-text-primary text-lg">Total</span>
+            <span className="text-2xl font-bold text-brand-700">{fmt(factura.total)}</span>
+          </div>
 
-        <div className="flex justify-between items-center mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
-          <span className="font-bold text-text-primary text-base">Total de kilos facturados</span>
-          <span className="text-lg font-bold text-brand-700">{fmt(totalPesoFacturado)} kg</span>
+          {esCompra && factura.montoPagado > 0 && (
+            <>
+              <div className="flex justify-between pt-1 text-sm">
+                <span className="text-text-secondary">Pagado</span>
+                <span className="text-text-primary font-medium">{fmt(factura.montoPagado)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-secondary">Saldo pendiente</span>
+                <span className="text-text-primary font-medium">{fmt(Math.max(factura.total - factura.montoPagado, 0))}</span>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-between items-center mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
+            <span className="font-bold text-text-primary text-base">Total de kilos facturados</span>
+            <span className="text-lg font-bold text-brand-700">{fmt(totalPesoFacturado)} kg</span>
+          </div>
         </div>
       </div>
 
       {tickets.length > 0 && (
-        <div className="space-y-4">
-          {tickets.map(ticket => {
-            const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
-            return (
-              <div key={ticket.id} className="bg-surface rounded-xl border border-border p-5">
-                <h2 className="text-lg font-bold text-text-primary mb-3">Ticket de pesaje · {ticket.codigo}</h2>
-                <div className="overflow-x-auto mb-4">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left text-xs">
-                        <th className="py-2 font-bold text-text-primary">Material</th>
-                        <th className="py-2 font-bold text-text-primary text-right">Bruto</th>
-                        <th className="py-2 font-bold text-text-primary text-right">Tara</th>
-                        <th className="py-2 font-bold text-text-primary text-right">Neto (kg)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ticket.materiales.map(m => (
-                        <tr key={m.id} className="border-b border-border last:border-b-0">
-                          <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
-                          <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
-                          <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
-                          <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
+        <section className="mb-8 print:mt-6">
+          <TituloSeccion
+            titulo="Tickets de pesaje"
+            queEstasViendo="los pesajes de donde sale el peso de esta factura, con bruto, tara y neto de cada material y sus fotos de evidencia."
+          />
+          <div className="space-y-4">
+            {tickets.map(ticket => {
+              const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
+              return (
+                <div key={ticket.id} className="bg-surface rounded-xl border border-border p-5">
+                  <h2 className="text-lg font-bold text-text-primary mb-3">Ticket de pesaje · {ticket.codigo}</h2>
+                  <div className="overflow-x-auto mb-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left text-xs">
+                          <th className="py-2 font-bold text-text-primary">Material</th>
+                          <th className="py-2 font-bold text-text-primary text-right">Bruto</th>
+                          <th className="py-2 font-bold text-text-primary text-right">Tara</th>
+                          <th className="py-2 font-bold text-text-primary text-right">Neto (kg)</th>
                         </tr>
+                      </thead>
+                      <tbody>
+                        {ticket.materiales.map(m => (
+                          <tr key={m.id} className="border-b border-border last:border-b-0">
+                            <td className="py-2 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                            <td className="py-2 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
+                            <td className="py-2 text-right text-text-secondary">{fmt(m.tara)}</td>
+                            <td className="py-2 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {totalDevolucion > 0 && (
+                    <div className="flex justify-between items-center text-sm pt-2 border-t border-border">
+                      <span className="text-text-secondary">Devolución</span>
+                      <span className="font-medium text-text-primary">{fmt(totalDevolucion)} kg</span>
+                    </div>
+                  )}
+                  {ticket.fotos && ticket.fotos.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      {ticket.fotos.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
+                          <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
+                        </a>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  )}
                 </div>
-                {totalDevolucion > 0 && (
-                  <div className="flex justify-between items-center text-sm pt-2 border-t border-border">
-                    <span className="text-text-secondary">Devolución</span>
-                    <span className="font-medium text-text-primary">{fmt(totalDevolucion)} kg</span>
-                  </div>
-                )}
-                {ticket.fotos && ticket.fotos.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-4">
-                    {ticket.fotos.map((url, i) => (
-                      <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
-                        <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       <HistorialEdiciones entidadTipo={esCompra ? 'factura_compra' : 'factura_venta'} entidadId={factura.id} />

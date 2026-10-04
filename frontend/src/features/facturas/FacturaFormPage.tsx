@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, Loader2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
@@ -14,6 +14,8 @@ import { difiereEstado, restaurarFilas } from '../../lib/borrador';
 import { intersectarIds } from '../../lib/borrador-vigentes';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import type { Producto, TicketPesaje, ListaPrecios } from '@shared/types/index.js';
+import { EncabezadoPagina } from '../../components/ui';
+import { FacturaPaso, FacturaResumen } from './factura-formulario-partes';
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotos: string[] }
 
@@ -300,172 +302,175 @@ function FacturaFormPage({ tipo }: Props) {
   const fmtMoneda = (n: number) => (esCompra ? `$ ${fmt(n)}` : fmt(n));
   const nombreProducto = (id: string) => productos.find(p => p.id === id)?.nombre ?? 'material';
 
+  // Datos del resumen fijo (solo lectura de lo ya calculado arriba; no cambia ninguna lógica).
+  const kgFacturables = lineas.reduce((acc, l) => acc + pesoFacturableLinea(l), 0);
+  const materialesEnFactura = ticketsSel.length > 0 ? lineas.length : 0;
+
   return (
-    <div className="max-w-2xl">
-      <button type="button" onClick={() => navigate(ruta)} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
-        <ArrowLeft size={16} />
-        {esCompra ? 'Compras' : 'Ventas'}
-      </button>
+    <div className="max-w-6xl">
+      <EncabezadoPagina
+        titulo={titulo}
+        subtitulo={`Elige el ${labelEntidad.toLowerCase()}, marca los tickets de pesaje que vas a facturar y confirma los precios.`}
+        migas={[{ etiqueta: esCompra ? 'Compras' : 'Ventas', to: ruta }, { etiqueta: 'Nueva factura' }]}
+      />
 
-      <h1 className="text-2xl font-bold text-text-primary mb-6">{titulo}</h1>
-
-      <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4">
+      <form onSubmit={handleSubmit}>
         <AvisoBorrador formulario="esta factura" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
-        {avisoSaneo && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
-        <div>
-          <label className={labelClass}>{labelEntidad} *</label>
-          <button
-            type="button"
-            onClick={() => setMostrarSelectorEntidad(true)}
-            className={`${inputClass} flex items-center justify-between gap-2 text-left`}
-          >
-            <span className={entidadId ? 'text-text-primary truncate' : 'text-text-muted'}>
-              {entidades.find(e => e.id === entidadId)?.nombre ?? '— Selecciona —'}
-            </span>
-            <ChevronDown size={14} className="text-text-muted shrink-0" />
-          </button>
-        </div>
+        {avisoSaneo && <p role="alert" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
 
-        <div>
-          <label className={labelClass}>Lista de precios</label>
-          <select value={listaSelId} onChange={e => aplicarLista(e.target.value)} className={inputClass}>
-            <option value="">Seleccionar lista de precios</option>
-            {listas.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-          </select>
-          <p className="text-xs text-text-muted mt-1">
-            Autocompleta el precio de cada material según la lista. Puedes editarlo después a mano.
-          </p>
-        </div>
-
-        <div>
-          <label className={labelClass}>Tickets de pesaje *</label>
-
-          {!entidadId ? (
-            <p className="text-xs text-text-muted">Elige primero un {labelEntidad.toLowerCase()}.</p>
-          ) : ticketsPendientes.length === 0 ? (
-            <p className="text-xs text-text-muted">Sin tickets pendientes para este {labelEntidad.toLowerCase()}.</p>
-          ) : (
-            <div className="border border-border rounded-lg divide-y divide-border max-h-56 overflow-y-auto">
-              {ticketsPendientes.map(t => (
-                <label key={t.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-alt transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={ticketIds.includes(t.id)}
-                    onChange={() => toggleTicket(t.id)}
-                    className="w-4 h-4 accent-brand-600 shrink-0"
-                  />
-                  <span className="text-sm text-text-primary">
-                    <span className="font-medium">{t.codigo}</span>
-                    <span className="text-text-muted"> · {t.fecha ?? '—'} · {t.materiales.length === 1 ? (t.materiales[0].nombreProducto ?? 'material') : `${t.materiales.length} materiales`} · {fmt(t.pesoNetoTotal)} kg</span>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
+          <div className="space-y-6">
+            <FacturaPaso numero={1} titulo={`${labelEntidad} y lista de precios`} ayuda="A quién se le factura y, si quieres, de qué lista salen los precios.">
+              <div>
+                <label className={labelClass}>{labelEntidad} *</label>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSelectorEntidad(true)}
+                  className={`${inputClass} flex items-center justify-between gap-2 text-left`}
+                >
+                  <span className={entidadId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                    {entidades.find(e => e.id === entidadId)?.nombre ?? '— Selecciona —'}
                   </span>
-                </label>
-              ))}
-            </div>
-          )}
-          {ticketIds.length > 0 && (
-            <p className="text-xs text-text-muted mt-2">{ticketIds.length} ticket{ticketIds.length === 1 ? '' : 's'} seleccionado{ticketIds.length === 1 ? '' : 's'}.</p>
-          )}
-        </div>
+                  <ChevronDown size={14} className="text-text-muted shrink-0" />
+                </button>
+              </div>
 
-        {/* Líneas de la factura */}
-        <div className="space-y-3">
-          <label className={labelClass + ' mb-0'}>Materiales {ticketsSel.length > 0 ? '(de los tickets)' : ''}</label>
+              <div>
+                <label className={labelClass}>Lista de precios</label>
+                <select value={listaSelId} onChange={e => aplicarLista(e.target.value)} className={inputClass}>
+                  <option value="">Seleccionar lista de precios</option>
+                  {listas.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                </select>
+                <p className="text-xs text-text-muted mt-1">
+                  Autocompleta el precio de cada material según la lista. Puedes editarlo después a mano.
+                </p>
+              </div>
+            </FacturaPaso>
 
-          {ticketsSel.length === 0 ? (
-            <p className="text-xs text-text-muted">Selecciona uno o más tickets para cargar sus materiales.</p>
-          ) : (
-            lineas.map((l, idx) => (
-              <div key={l.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-text-secondary">
-                    Material {idx + 1}{l.desdeTicket ? ` · ${nombreProducto(l.productoId)}` : ''}
-                  </span>
-                </div>
-
-                <div className="grid gap-3 grid-cols-3">
-                  <div>
-                    <label className={labelClass}>Peso (kg) {l.desdeTicket && <span className="text-text-muted">· del ticket</span>}</label>
-                    <input type="number" step="0.001" min="0" value={l.peso} onChange={e => setLinea(l.uid, 'peso', e.target.value)} className={inputClass} placeholder="0.00" disabled={l.desdeTicket} />
+            <FacturaPaso numero={2} titulo="Tickets de pesaje *" ayuda="Marca los pesajes que entran en esta factura; sus materiales y pesos se cargan solos en el paso 3.">
+              <div>
+                {!entidadId ? (
+                  <p className="text-xs text-text-muted">Elige primero un {labelEntidad.toLowerCase()}.</p>
+                ) : ticketsPendientes.length === 0 ? (
+                  <p className="text-xs text-text-muted">
+                    Sin tickets pendientes para este {labelEntidad.toLowerCase()}.{' '}
+                    <Link to="/pesaje" className="font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">Registrar un pesaje →</Link>
+                  </p>
+                ) : (
+                  <div className="border border-border rounded-lg divide-y divide-border max-h-72 overflow-y-auto">
+                    {ticketsPendientes.map(t => (
+                      <label key={t.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-alt transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={ticketIds.includes(t.id)}
+                          onChange={() => toggleTicket(t.id)}
+                          className="w-4 h-4 accent-brand-600 shrink-0"
+                        />
+                        <span className="text-sm text-text-primary">
+                          <span className="font-medium">{t.codigo}</span>
+                          <span className="text-text-muted"> · {t.fecha ?? '—'} · {t.materiales.length === 1 ? (t.materiales[0].nombreProducto ?? 'material') : `${t.materiales.length} materiales`} · {fmt(t.pesoNetoTotal)} kg</span>
+                        </span>
+                      </label>
+                    ))}
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className={labelClass + ' mb-0'}>Descuento ({l.descuentoModo === 'porcentaje' ? '%' : 'kg'})</label>
-                      <div className="flex rounded-md border border-border overflow-hidden text-[11px]">
-                        <button
-                          type="button"
-                          onClick={() => setLinea(l.uid, 'descuentoModo', 'kg')}
-                          className={`px-1.5 py-0.5 ${l.descuentoModo === 'kg' ? 'bg-brand-400 text-white' : 'bg-surface-alt text-text-muted'}`}
-                        >
-                          kg
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLinea(l.uid, 'descuentoModo', 'porcentaje')}
-                          className={`px-1.5 py-0.5 ${l.descuentoModo === 'porcentaje' ? 'bg-brand-400 text-white' : 'bg-surface-alt text-text-muted'}`}
-                        >
-                          %
-                        </button>
+                )}
+                {ticketIds.length > 0 && (
+                  <p className="text-xs text-text-muted mt-2">{ticketIds.length} ticket{ticketIds.length === 1 ? '' : 's'} seleccionado{ticketIds.length === 1 ? '' : 's'}.</p>
+                )}
+              </div>
+            </FacturaPaso>
+
+            <FacturaPaso numero={3} titulo={`Materiales y precios ${ticketsSel.length > 0 ? '(de los tickets)' : ''}`.trim()} ayuda="Confirma el precio de cada material y, si hace falta, un descuento de peso por merma o tara.">
+              {ticketsSel.length === 0 ? (
+                <p className="text-xs text-text-muted">Selecciona uno o más tickets para cargar sus materiales.</p>
+              ) : (
+                lineas.map((l, idx) => (
+                  <div key={l.uid} className="border border-border rounded-lg p-3 space-y-3 bg-surface-alt/40">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-text-secondary">
+                        Material {idx + 1}{l.desdeTicket ? ` · ${nombreProducto(l.productoId)}` : ''}
+                      </span>
+                    </div>
+
+                    <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+                      <div>
+                        <label className={labelClass}>Peso (kg) {l.desdeTicket && <span className="text-text-muted">· del ticket</span>}</label>
+                        <input type="number" step="0.001" min="0" value={l.peso} onChange={e => setLinea(l.uid, 'peso', e.target.value)} className={inputClass} placeholder="0.00" disabled={l.desdeTicket} />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className={labelClass + ' mb-0'}>Descuento ({l.descuentoModo === 'porcentaje' ? '%' : 'kg'})</label>
+                          <div className="flex rounded-md border border-border overflow-hidden text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => setLinea(l.uid, 'descuentoModo', 'kg')}
+                              className={`px-1.5 py-0.5 ${l.descuentoModo === 'kg' ? 'bg-brand-400 text-white' : 'bg-surface-alt text-text-muted'}`}
+                            >
+                              kg
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLinea(l.uid, 'descuentoModo', 'porcentaje')}
+                              className={`px-1.5 py-0.5 ${l.descuentoModo === 'porcentaje' ? 'bg-brand-400 text-white' : 'bg-surface-alt text-text-muted'}`}
+                            >
+                              %
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          type="number"
+                          step="0.001"
+                          min="0"
+                          max={l.descuentoModo === 'porcentaje' ? 100 : undefined}
+                          value={l.descuento}
+                          onChange={e => setLinea(l.uid, 'descuento', e.target.value)}
+                          className={inputClass}
+                          placeholder="0.00"
+                          title={l.descuentoModo === 'porcentaje' ? 'Porcentaje del peso a descontar al facturar.' : 'Merma o tara adicional (kg) a descontar al facturar.'}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Precio {esCompra ? '($/kg)' : '(kg)'} *</label>
+                        <input type="number" step="0.01" min="0" value={l.precioUnitario} onChange={e => setLinea(l.uid, 'precioUnitario', e.target.value)} className={inputClass} placeholder="0.00" />
                       </div>
                     </div>
-                    <input
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      max={l.descuentoModo === 'porcentaje' ? 100 : undefined}
-                      value={l.descuento}
-                      onChange={e => setLinea(l.uid, 'descuento', e.target.value)}
-                      className={inputClass}
-                      placeholder="0.00"
-                      title={l.descuentoModo === 'porcentaje' ? 'Porcentaje del peso a descontar al facturar.' : 'Merma o tara adicional (kg) a descontar al facturar.'}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Precio {esCompra ? '($/kg)' : '(kg)'} *</label>
-                    <input type="number" step="0.01" min="0" value={l.precioUnitario} onChange={e => setLinea(l.uid, 'precioUnitario', e.target.value)} className={inputClass} placeholder="0.00" />
-                  </div>
-                </div>
 
-                {descuentoKgLinea(l) > 0 && (
-                  <p className="text-xs text-text-muted">
-                    Descuento: {fmt(descuentoKgLinea(l))} kg · Peso facturable: {fmt(pesoFacturableLinea(l))} kg
-                  </p>
-                )}
+                    {descuentoKgLinea(l) > 0 && (
+                      <p className="text-xs text-text-muted">
+                        Descuento: {fmt(descuentoKgLinea(l))} kg · Peso facturable: {fmt(pesoFacturableLinea(l))} kg
+                      </p>
+                    )}
 
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-text-muted">Subtotal</span>
-                  <span className="font-semibold text-text-primary">{fmtMoneda(subtotalLinea(l))}</span>
-                </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-text-muted">Subtotal</span>
+                      <span className="font-semibold text-text-primary">{fmtMoneda(subtotalLinea(l))}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </FacturaPaso>
+
+            <FacturaPaso numero={4} titulo="Notas (opcional)" ayuda="Texto libre que aparece en la factura impresa.">
+              <div>
+                <label className={labelClass}>Descripción</label>
+                <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} className={inputClass} placeholder="Opcional" />
               </div>
-            ))
-          )}
-
-        </div>
-
-        <div>
-          <label className={labelClass}>Descripción</label>
-          <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} className={inputClass} placeholder="Opcional" />
-        </div>
-        <div>
-          <label className={labelClass}>Observaciones</label>
-          <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Opcional" />
-        </div>
-
-        <div className="flex items-center justify-end bg-brand-50 border border-brand-200 rounded-lg px-4 py-3">
-          <div className="text-right">
-            <p className="text-xs text-brand-700">Total ({lineas.length} {lineas.length === 1 ? 'material' : 'materiales'})</p>
-            <p className="text-xl font-bold text-brand-700">{fmtMoneda(total)}</p>
+              <div>
+                <label className={labelClass}>Observaciones</label>
+                <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Opcional" />
+              </div>
+            </FacturaPaso>
           </div>
-        </div>
 
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-
-        <div className="flex gap-3 pt-2">
-          <button type="button" onClick={() => { borrador.limpiar(); navigate(ruta); }} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-            Cancelar
-          </button>
-          <button type="submit" disabled={guardando} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-            {guardando ? <><Loader2 size={16} className="animate-spin" /> Emitiendo...</> : 'Emitir factura'}
-          </button>
+          <FacturaResumen
+            total={fmtMoneda(total)}
+            kgFacturables={`${fmt(kgFacturables)} kg`}
+            tickets={ticketIds.length}
+            materiales={materialesEnFactura}
+            error={error}
+            guardando={guardando}
+            onCancelar={() => { borrador.limpiar(); navigate(ruta); }}
+          />
         </div>
       </form>
 
