@@ -2,6 +2,7 @@
  *  backend/tests/dashboard-metricas-kpis.test.ts). Agrupa las líneas de GET /api/metricas/compras. */
 
 import type { MetricaCompraLinea } from '../services/metricas-service';
+import type { EsquemaFiltros, ValoresFiltros } from './filtros-url';
 import { compararConPeriodoAnterior, type ComparacionPeriodo, type MejorCuando } from './comparacion';
 import { FECHA_INICIO_DATOS_REALES, sumarDiasIso, type PuntoDia } from './dashboard-kpis';
 
@@ -164,4 +165,25 @@ export function filtrarLineas(
   proveedor: string | undefined,
 ): MetricaCompraLinea[] {
   return lineas.filter(l => (!material || claveMaterial(l) === material) && (!proveedor || l.proveedorId === proveedor));
+}
+
+// ---------------------------------------------------------------- secciones de Métricas
+
+export const SECCIONES_METRICAS = ['compras', 'inventario'] as const;
+export type SeccionMetricas = (typeof SECCIONES_METRICAS)[number];
+
+/** Esquema de la URL para cambiar de sección. Incluye los filtros propios de cada sección (q, categoria, soloSinCosto)
+ *  para que `escribirFiltros` pueda BORRARLOS al cambiar: las claves fuera del esquema se ignoran en los cambios. */
+export const ESQUEMA_SECCION_METRICAS: EsquemaFiltros = {
+  campos: {
+    seccion: { tipo: 'opcion', opciones: SECCIONES_METRICAS },
+    q: { tipo: 'texto' },
+    categoria: { tipo: 'texto' },
+    soloSinCosto: { tipo: 'bandera' },
+  },
+};
+
+/** Cambios de URL al elegir una sección: fija la sección y limpia los filtros que significan cosas distintas en cada una. */
+export function cambiosAlElegirSeccion(seccion: SeccionMetricas): ValoresFiltros {
+  return { seccion, q: undefined, categoria: undefined, soloSinCosto: undefined };
 }

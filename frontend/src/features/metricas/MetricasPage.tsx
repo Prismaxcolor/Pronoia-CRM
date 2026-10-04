@@ -5,14 +5,15 @@ import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import { useAuth } from '../../hooks/use-auth-context';
 import CompartirBoton from '../../components/CompartirBoton';
 import {
-  BotonAccion, Bloque, EncabezadoPagina, EstadoVacio, FiltrosBarra, SkeletonBloque, SkeletonKpis, formatearFecha, useFiltrosUrl,
+  BotonAccion, Bloque, ControlSegmentado, EncabezadoPagina, EstadoVacio, FiltrosBarra, SkeletonBloque, SkeletonKpis, formatearFecha, useFiltrosUrl,
 } from '../../components/ui';
 import type { EsquemaFiltros } from '../../lib/filtros-url';
 import { rangoDeAtajo, hoyLocal } from '../../lib/rango-fechas';
 import { FECHA_INICIO_DATOS_REALES } from '../../lib/dashboard-kpis';
-import { anteriorEsComparable, diasEntre, rangoAnterior, resumirCompras } from '../../lib/metricas-kpis';
+import { ESQUEMA_SECCION_METRICAS, SECCIONES_METRICAS, anteriorEsComparable, cambiosAlElegirSeccion, diasEntre, rangoAnterior, resumirCompras, type SeccionMetricas } from '../../lib/metricas-kpis';
 import { useDashboardCarga } from '../dashboard/useDashboardCarga';
 import { ErrorDeBloque } from '../dashboard/DashboardComun';
+import MetricasInventarioValor from './MetricasInventarioValor';
 import MetricasKpis from './MetricasKpis';
 import MetricasListas, { type VistaMetricas } from './MetricasListas';
 
@@ -41,7 +42,53 @@ interface DatosPeriodo { actual: MetricaCompraLinea[]; anterior: MetricaCompraLi
 
 const texto = (v: string | boolean | undefined): string | undefined => (typeof v === 'string' ? v : undefined);
 
+const CLAVE_SECCION = 'pronoia:metricas:seccion';
+
+function leerSeccionGuardada(): SeccionMetricas {
+  try {
+    const v = localStorage.getItem(CLAVE_SECCION);
+    return (SECCIONES_METRICAS as readonly string[]).includes(v ?? '') ? (v as SeccionMetricas) : 'compras';
+  } catch {
+    return 'compras';
+  }
+}
+
+/** Métricas tiene dos secciones: Compras (la pantalla de siempre) e Inventario valorizado (costos y valores del galpón).
+ *  La elegida va en la URL (?seccion=) y se recuerda en localStorage; sin URL manda lo recordado. */
 function MetricasPage() {
+  const { filtros, cambiar } = useFiltrosUrl(ESQUEMA_SECCION_METRICAS);
+  const [guardada] = useState<SeccionMetricas>(leerSeccionGuardada);
+  const seccion = (typeof filtros.seccion === 'string' ? filtros.seccion : guardada) as SeccionMetricas;
+
+  const elegir = useCallback((s: SeccionMetricas) => {
+    try { localStorage.setItem(CLAVE_SECCION, s); } catch { /* sin almacenamiento: solo se pierde la memoria de la sección */ }
+    // `q` significa cosas distintas en cada sección: se limpia al cambiar para no arrastrar una búsqueda ajena.
+    cambiar(cambiosAlElegirSeccion(s));
+  }, [cambiar]);
+
+  return (
+    <div className="max-w-7xl print:max-w-none">
+      <div className="mb-4 print:hidden">
+        <ControlSegmentado
+          etiquetaAria="Sección de Métricas"
+          valor={seccion}
+          onCambiar={elegir}
+          opciones={[{ valor: 'compras', etiqueta: 'Compras' }, { valor: 'inventario', etiqueta: 'Inventario valorizado' }]}
+        />
+      </div>
+      {seccion === 'inventario' ? (
+        <>
+          <div className="print:hidden">
+            <EncabezadoPagina titulo="Inventario valorizado" subtitulo="Cuánto dinero hay en los galpones hoy: kilos por costo por kg, por categoría y por almacén." />
+          </div>
+          <MetricasInventarioValor />
+        </>
+      ) : <MetricasCompras />}
+    </div>
+  );
+}
+
+function MetricasCompras() {
   const { tienePermiso } = useAuth();
   const puedeVerCostos = tienePermiso('facturacion', 'ver');
   const puedeRegistrar = tienePermiso('pesaje', 'crear');

@@ -20,7 +20,9 @@ import {
   type TicketMinimo,
 } from '../../frontend/src/lib/dashboard-kpis';
 import {
+  ESQUEMA_SECCION_METRICAS,
   anteriorEsComparable,
+  cambiosAlElegirSeccion,
   compararMetrica,
   diasEntre,
   filtrarLineas,
@@ -33,6 +35,7 @@ import {
   tendenciaCompras,
 } from '../../frontend/src/lib/metricas-kpis';
 import type { MetricaCompraLinea } from '../../frontend/src/services/metricas-service';
+import { escribirFiltros } from '../../frontend/src/lib/filtros-url';
 
 const linea = (o: Partial<MetricaCompraLinea>): MetricaCompraLinea => ({
   facturaId: 'f1', codigoFactura: 'C-1', proveedorId: 'p1', nombreProveedor: 'Prov Uno',
@@ -220,5 +223,21 @@ describe('métricas de compras', () => {
     expect(filtrarLineas(lineas, 'm1', 'p1')).toHaveLength(2);
     expect(filtrarLineas(lineas, 'm2', 'p1')).toHaveLength(0);
     expect(filtrarLineas(lineas, undefined, undefined)).toHaveLength(3);
+  });
+});
+
+describe('cambio de sección de Métricas', () => {
+  const actual = new URLSearchParams('seccion=inventario&q=cobre&categoria=PCB&soloSinCosto=1&desde=2026-09-01&hasta=2026-09-30&otra=x');
+  it('al cambiar de sección se borran q, categoria y soloSinCosto y se conserva el resto de la URL', () => {
+    const nueva = escribirFiltros(actual, ESQUEMA_SECCION_METRICAS, cambiosAlElegirSeccion('compras'));
+    expect(nueva.get('seccion')).toBe('compras');
+    for (const k of ['q', 'categoria', 'soloSinCosto']) expect(nueva.has(k), k).toBe(false);
+    expect(nueva.get('desde')).toBe('2026-09-01');
+    expect(nueva.get('hasta')).toBe('2026-09-30');
+    expect(nueva.get('otra')).toBe('x');
+  });
+  it('no modifica los parámetros de entrada', () => {
+    escribirFiltros(actual, ESQUEMA_SECCION_METRICAS, cambiosAlElegirSeccion('compras'));
+    expect(actual.get('q')).toBe('cobre');
   });
 });
