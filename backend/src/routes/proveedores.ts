@@ -20,6 +20,7 @@ import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-
 import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
 import { listarAdelantosDisponibles } from '../services/cruce-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { responderSaldos } from './saldos-handler.js';
 
 const router = Router();
 
@@ -29,6 +30,9 @@ router.get('/', requirePermiso('proveedores', 'ver'), async (_req, res) => {
   const proveedores = await listarProveedores();
   res.json({ proveedores });
 });
+
+// Saldos de todos los proveedores (misma cifra que el estado de cuenta). Antes de las rutas '/:id'.
+router.get('/saldos', requirePermiso('proveedores', 'ver'), responderSaldos('proveedor'));
 
 router.get('/:id/estado-cuenta', requirePermiso('proveedores', 'ver'), async (req, res) => {
   const { desde, hasta } = req.query;

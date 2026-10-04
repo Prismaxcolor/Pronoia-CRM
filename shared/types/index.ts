@@ -38,3 +38,4 @@ export type {
 } from './toma-fisica.js';
 export { codigoTomaFisica } from './toma-fisica.js';
 export type * from './inventario-pantalla.js';
+export type * from './saldos.js';

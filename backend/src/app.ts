@@ -33,6 +33,7 @@ import tomasFisicasRouter from './routes/toma-fisica.js';
 import auditoriaRouter from './routes/auditoria.js';
 import llavesEdicionRouter from './routes/llaves-edicion.js';
 import { notificarGrupoMiddleware } from './middlewares/notificar-grupo.js';
+import { invalidarSaldosMiddleware } from './middlewares/invalidar-saldos.js';
 import asistenteRouter from './routes/asistente.js';
 
 const app = express();
@@ -69,6 +70,8 @@ app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 // Avisos al grupo interno de Telegram por cada acción importante (observa respuestas, no las altera).
 app.use(notificarGrupoMiddleware);
+// Vacía la caché de saldos tras cualquier escritura (pagos, cobros, notas, facturas, cruces).
+app.use(invalidarSaldosMiddleware);
 
 app.use(healthRouter);
 app.use('/api/auth', authRouter);
