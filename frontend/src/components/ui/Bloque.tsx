@@ -4,7 +4,7 @@ import { useId, type ReactNode } from 'react';
  *  un título + UNA línea "Qué estás viendo" que dice, en lenguaje llano, qué muestra y cómo leerlo. */
 export interface BloqueProps {
   titulo: string;
-  /** Una línea que explica qué se está viendo (se rotula "Qué estás viendo"). */
+  /** Una o dos frases simples: qué se muestra y cómo se calcula o se lee (se rotula "Qué estás viendo"). */
   queEstasViendo: string;
   /** Acciones a la derecha del título (botones, selector). */
   acciones?: ReactNode;

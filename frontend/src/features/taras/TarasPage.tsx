@@ -106,7 +106,7 @@ function TarasPage() {
     {
       clave: 'peso', titulo: 'Peso (kg)', alinear: 'derecha', valorOrden: t => t.peso, decimalesCsv: 2,
       celda: t => <span className="tabular-nums">{kgTara(t.peso)}</span>,
-      ayuda: 'Peso de referencia que se descuenta al pesar (el recipiente o vehículo vacío).',
+      ayuda: 'Peso, en kg, del recipiente o vehículo vacío. Al pesar se resta del peso total para obtener el peso del material.',
     },
     { clave: 'estado', titulo: 'Estado', valorOrden: t => (t.activo ? 'Activa' : 'Inactiva'), celda: insigniaEstado },
     ...(puedeEditar ? [{ clave: 'acciones', titulo: 'Acciones', alinear: 'derecha' as const, valorCsv: false as const, celda: botonesFila }] : []),
@@ -130,7 +130,7 @@ function TarasPage() {
     <div>
       <EncabezadoPagina
         titulo="Taras"
-        subtitulo="Pesos de referencia predefinidos (globales), disponibles para todos los usuarios."
+        subtitulo="La tara es el peso de un recipiente o vehículo vacío. Al pesar se resta para quedarse solo con el peso del material. Estas taras están disponibles para todos los usuarios."
         acciones={puedeCrear ? (
           <BotonAccion onClick={() => setFormAbierto({ abierto: true, tara: null })} icono={<Plus size={18} aria-hidden="true" />}>Nueva tara</BotonAccion>
         ) : undefined}
@@ -147,23 +147,23 @@ function TarasPage() {
         <>
           <GrillaKpis>
             <TarjetaKpi
-              titulo="Taras activas" ayuda="Cuántas taras aparecen para elegir al pesar. Las inactivas se conservan pero no se ofrecen."
+              titulo="Taras activas" ayuda="Cuántas taras están activas, es decir, disponibles para elegirlas al pesar. Las inactivas se guardan, pero no se ofrecen."
               valor={formatearNumero(kpis.activas)} unidad={kpis.activas === 1 ? 'tara' : 'taras'}
               subtitulo={`de ${formatearNumero(kpis.total)} registradas · ${formatearNumero(kpis.inactivas)} inactivas`}
             />
             <TarjetaKpi
-              titulo="Tara más liviana" ayuda="Menor peso entre las taras activas."
+              titulo="Tara más liviana" ayuda="El peso más bajo, en kg, entre las taras activas. No cuenta las inactivas."
               valor={kpis.pesoMin === null ? '—' : kgTara(kpis.pesoMin)} subtitulo="Entre las taras activas"
               estado={kpis.pesoMin === null ? 'vacio' : 'listo'} mensajeVacio="No hay taras activas"
             />
             <TarjetaKpi
-              titulo="Tara más pesada" ayuda="Mayor peso entre las taras activas."
+              titulo="Tara más pesada" ayuda="El peso más alto, en kg, entre las taras activas. No cuenta las inactivas."
               valor={kpis.pesoMax === null ? '—' : kgTara(kpis.pesoMax)} subtitulo="Entre las taras activas"
               estado={kpis.pesoMax === null ? 'vacio' : 'listo'} mensajeVacio="No hay taras activas"
             />
           </GrillaKpis>
 
-          <Bloque titulo="Listado de taras" queEstasViendo="Cada tara con su peso y estado. Ordena por columna o exporta la lista a CSV.">
+          <Bloque titulo="Listado de taras" queEstasViendo="Cada tara con su peso en kg y su estado (activa o inactiva). Ordena por columna o exporta la lista a CSV.">
             <div className="mb-3">
               <FiltrosBarra
                 buscador={{ id: 'taras-q', valor: q, onCambiar: v => cambiar({ q: v }), placeholder: 'Buscar por nombre', etiqueta: 'Buscar tara' }}

@@ -32,6 +32,14 @@ const ESTADO_LABEL: Record<EstadoCita, { texto: string; tono: Tono }> = {
   completada: { texto: 'Completada', tono: 'neutral' },
 };
 
+const ESTADO_AYUDA: Record<EstadoCita, string> = {
+  pendiente: 'Pediste la cita y falta que Pronoia la confirme.',
+  confirmada: 'Pronoia confirmó la cita.',
+  reprogramada: 'La cita se movió a otra fecha u hora.',
+  cancelada: 'La cita se canceló.',
+  completada: 'El despacho ya se realizó.',
+};
+
 const CANCELABLES: EstadoCita[] = ['pendiente', 'confirmada'];
 
 function PortalAgendarPage() {
@@ -112,7 +120,7 @@ function PortalAgendarPage() {
         <SkeletonBloque alto="h-48" />
       ) : (
         <>
-          <Bloque titulo="Elige el día y la hora" queEstasViendo="Los horarios libres del día elegido. Toca uno para pedir tu despacho; te pediremos confirmar antes de agendarlo.">
+          <Bloque titulo="Elige el día y la hora" queEstasViendo="Las horas del día elegido. Las que están tachadas ya están ocupadas; toca una libre para pedir tu despacho y te pediremos confirmar antes de agendarlo.">
             <div className="rounded-xl border border-border bg-surface p-4">
               <label htmlFor="portal-agendar-fecha" className="mb-2 block text-xs font-medium text-text-secondary">Día del despacho</label>
               <input
@@ -150,7 +158,7 @@ function PortalAgendarPage() {
             </div>
           </Bloque>
 
-          <Bloque titulo="Tus citas" queEstasViendo="Los despachos que has agendado y su estado. Puedes cancelar los pendientes o confirmados.">
+          <Bloque titulo="Tus citas" queEstasViendo="Los despachos que has pedido, con su estado. Puedes cancelar los que están pendientes o confirmados.">
             {misCitas.length ? (
               <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
                 {misCitas.map(c => (
@@ -163,7 +171,7 @@ function PortalAgendarPage() {
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <Insignia tono={ESTADO_LABEL[c.estado].tono}>{ESTADO_LABEL[c.estado].texto}</Insignia>
+                      <Insignia tono={ESTADO_LABEL[c.estado].tono} title={ESTADO_AYUDA[c.estado]}>{ESTADO_LABEL[c.estado].texto}</Insignia>
                       {CANCELABLES.includes(c.estado) && (
                         <button
                           type="button"

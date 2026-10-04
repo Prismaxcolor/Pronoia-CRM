@@ -39,7 +39,7 @@ function TercerosTopSaldos({ tipo, filas, totalPorSaldar, accionVacia }: Props) 
                 <Link to={`/${t.ruta}/${f.id}/estado-cuenta`} className="text-sm font-medium text-text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">{f.nombre}</Link>
                 <span className="text-sm tabular-nums text-text-primary">
                   <span className="font-semibold">{formatearUsdDecimales(valor, 2)}</span>
-                  <span className="ml-2 text-xs text-text-secondary">{parte < 1 ? '<1' : formatearNumero(parte, 0)} % del total</span>
+                  <span className="ml-2 text-xs text-text-secondary">{parte < 1 ? '<1' : formatearNumero(parte, 0)} % de lo que hay por {t.verbo}</span>
                 </span>
               </li>
             );

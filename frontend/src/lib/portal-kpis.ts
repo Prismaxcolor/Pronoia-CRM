@@ -28,6 +28,14 @@ export function mensajeSaldo(tipo: TipoTercero, saldo: number): MensajeSaldo {
     : { texto: 'Le debes a Pronoia', situacion: 'por_pagar' };
 }
 
+/** Texto del "?" del saldo en el portal. Sin tipo conocido (aún cargando) usa una versión neutra. */
+export function ayudaSaldoPortal(tipo: TipoTercero | undefined): string {
+  const base = 'Lo que queda pendiente entre tú y Pronoia, en USD, con todo tu historial: facturas y notas de débito, menos pagos, adelantos y notas de crédito. Se muestra sin signo; el texto de abajo dice quién debe a quién.';
+  if (tipo === 'proveedor') return `${base} Si Pronoia te debe, dirá "Pronoia te debe"; si le pagaron de más a Pronoia, dirá "Le debes a Pronoia".`;
+  if (tipo === 'cliente') return `${base} Si falta que pagues, dirá "Le debes a Pronoia"; si pagaste de más, dirá "Pronoia te debe".`;
+  return base;
+}
+
 /** Facturas y notas de débito suman al saldo (cargo); el resto lo reduce (abono). Los cruces muestran el monto cruzado. */
 export function importeMovimiento(e: MovimientoPortal): number {
   if (e.tipo === 'cruce') return e.montoCruzado ?? 0;

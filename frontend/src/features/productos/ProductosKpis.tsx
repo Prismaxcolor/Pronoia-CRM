@@ -17,15 +17,15 @@ function ProductosKpis({ kpis }: { kpis: KpisProductos }) {
       <TarjetaKpi
         titulo="Productos en el catálogo"
         icono={<Package size={16} />}
-        ayuda="Todos los productos registrados, activos e inactivos. Un producto es un material que se puede pesar, comprar o vender."
+        ayuda="Cuántos productos hay registrados en total, contando los activos y los inactivos. Un producto es un material que se pesa, se compra o se vende. No cambia al usar los filtros."
         valor={plural(kpis.total, 'producto', 'productos')}
-        subtitulo="catálogo completo, activos e inactivos"
+        subtitulo="todo el catálogo, activos e inactivos"
         comparacion={null}
       />
       <TarjetaKpi
         titulo="Activos"
         icono={<CheckCircle2 size={16} />}
-        ayuda="Productos que se pueden elegir al pesar y facturar. Un producto inactivo se conserva en el historial pero ya no aparece en el catálogo de facturación."
+        ayuda="Cuántos productos están activos, es decir, disponibles para usarse al pesar y facturar. Un producto inactivo se guarda en el historial, pero ya no se ofrece."
         valor={plural(kpis.activos, 'activo', 'activos')}
         subtitulo={kpis.inactivos > 0 ? `${plural(kpis.inactivos, 'inactivo', 'inactivos')} (no aparecen al facturar)` : 'ninguno inactivo'}
         comparacion={null}
@@ -33,7 +33,7 @@ function ProductosKpis({ kpis }: { kpis: KpisProductos }) {
       <TarjetaKpi
         titulo="Con lote ancla"
         icono={<Anchor size={16} />}
-        ayuda="Productos que tienen al menos un lote posible asignado. En el pesaje, esos lotes se ofrecen primero. Los demás no pertenecen a ningún lote."
+        ayuda="Cuántos productos tienen al menos un lote ancla, es decir, un lote fijo al que pertenecen. Al pesar un producto con lote ancla, solo se pueden elegir sus lotes ancla. Los demás pueden ir a cualquier lote. El porcentaje es sobre todo el catálogo."
         valor={plural(kpis.conLoteAncla, 'producto', 'productos')}
         subtitulo={kpis.pctConLoteAncla === null ? 'sin productos todavía' : `${formatearPct(kpis.pctConLoteAncla, 0)} del catálogo`}
         comparacion={null}
@@ -41,7 +41,7 @@ function ProductosKpis({ kpis }: { kpis: KpisProductos }) {
       <TarjetaKpi
         titulo="Por categoría"
         icono={<Tags size={16} />}
-        ayuda="Cuántos productos hay en cada categoría de material. Las categorías con más productos van primero; el color de cada una es el mismo en toda la app."
+        ayuda="Cuántas categorías de material (por ejemplo Ferroso) tienen al menos un producto. Abajo se listan las 3 con más productos; cada categoría tiene siempre el mismo color y símbolo en toda la app."
         valor={plural(kpis.porCategoria.length, 'categoría', 'categorías')}
         subtitulo="con al menos un producto"
         comparacion={null}

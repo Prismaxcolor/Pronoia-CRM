@@ -32,22 +32,25 @@ function TercerosTabla({ tipo, filas, acciones, hayCifras, vacio }: Props) {
     ];
     const cifras: Array<ColumnaTabla<FilaTerceroConExtra>> = hayCifras ? [
       {
-        clave: 'saldo', titulo: 'Saldo', alinear: 'derecha', valorOrden: f => f.saldo?.saldo,
-        celda: f => (f.saldo ? <span title={f.saldo.saldo < -0.005 ? 'Saldo a favor' : undefined}>{formatearUsdDecimales(f.saldo.saldo, 2)}</span> : '—'),
+        clave: 'saldo', titulo: 'Saldo (USD)', alinear: 'derecha',
+        ayuda: tipo === 'proveedor'
+          ? 'Lo facturado menos lo pagado, de todo el historial. Positivo: se le debe pagar. Negativo: se le pagó de más (saldo a favor nuestro). Es la misma cifra de su estado de cuenta.'
+          : 'Lo facturado menos lo cobrado, de todo el historial. Positivo: el cliente nos debe. Negativo: pagó de más (saldo a favor del cliente). Es la misma cifra de su estado de cuenta.', valorOrden: f => f.saldo?.saldo,
+        celda: f => (f.saldo ? <span title={f.saldo.saldo < -0.005 ? t.saldoAFavor : undefined}>{formatearUsdDecimales(f.saldo.saldo, 2)}</span> : '—'),
         valorCsv: f => f.saldo?.saldo, decimalesCsv: 2,
         total: filas2 => formatearUsdDecimales(sumaSaldos(filas2), 2),
       },
-      { clave: 'ultima', titulo: 'Última op.', valorOrden: f => f.saldo?.ultimaOperacion, celda: f => formatearFecha(f.saldo?.ultimaOperacion) },
-      { clave: 'pendientes', titulo: 'Pendientes', alinear: 'derecha', valorOrden: f => f.saldo?.cantidadFacturasPendientes, celda: f => (f.saldo ? formatearNumero(f.saldo.cantidadFacturasPendientes, 0) : '—') },
+      { clave: 'ultima', titulo: 'Última operación', ayuda: 'Fecha del último movimiento de su cuenta: factura, pago, adelanto o nota.', valorOrden: f => f.saldo?.ultimaOperacion, celda: f => formatearFecha(f.saldo?.ultimaOperacion) },
+      { clave: 'pendientes', titulo: 'Facturas pendientes', ayuda: `Cuántas facturas todavía tienen algo sin ${t.verbo}. No cuenta las anuladas, en borrador ni ya pagadas.`, alinear: 'derecha', valorOrden: f => f.saldo?.cantidadFacturasPendientes, celda: f => (f.saldo ? formatearNumero(f.saldo.cantidadFacturasPendientes, 0) : '—') },
       {
-        clave: 'antiguedad', titulo: 'Antigüedad', alinear: 'derecha', valorOrden: f => f.saldo?.antiguedadMasVieja,
+        clave: 'antiguedad', titulo: 'Antigüedad (días)', ayuda: `Días desde la fecha de su factura más vieja que aún tiene algo sin ${t.verbo}, hasta hoy. No hay fecha de vencimiento: se cuenta desde que se creó la factura. Vacío si no tiene facturas pendientes.`, alinear: 'derecha', valorOrden: f => f.saldo?.antiguedadMasVieja,
         celda: f => (f.saldo?.antiguedadMasVieja != null ? `${formatearNumero(f.saldo.antiguedadMasVieja, 0)} d` : '—'),
         valorCsv: f => f.saldo?.antiguedadMasVieja,
       },
     ] : [];
     const resto: Array<ColumnaTabla<FilaTerceroConExtra>> = [
       {
-        clave: 'telegram', titulo: 'Telegram', valorOrden: f => Boolean(f.telegramChatId),
+        clave: 'telegram', titulo: 'Telegram', ayuda: 'Si ya vinculó su Telegram. Con Telegram vinculado se le puede enviar su estado de cuenta.', valorOrden: f => Boolean(f.telegramChatId),
         celda: f => (f.telegramChatId || !acciones.onVincularTelegram ? <InsigniaTelegram fila={f} corto /> : (
           <button type="button" onClick={() => acciones.onVincularTelegram?.(f)} className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs font-medium text-text-secondary hover:bg-surface-alt hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
             <Send size={12} aria-hidden="true" /> Vincular
@@ -71,7 +74,7 @@ function TercerosTabla({ tipo, filas, acciones, hayCifras, vacio }: Props) {
       claveFila={f => f.id}
       etiquetaFila={f => f.nombre}
       ordenInicial={{ columna: 'nombre', sentido: 'asc' }}
-      totales={hayCifras ? { etiqueta: `Saldo neto (${formatearNumero(filas.length, 0)} ${filas.length === 1 ? t.singular : t.plural})` } : false}
+      totales={hayCifras ? { etiqueta: `Suma de saldos de los ${formatearNumero(filas.length, 0)} ${filas.length === 1 ? t.singular : t.plural} de la lista (los saldos a favor restan)` } : false}
       exportar={{ nombreArchivo: t.plural }}
       vacio={vacio}
       anchoMinimo="min-w-[44rem]"

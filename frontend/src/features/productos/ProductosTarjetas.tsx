@@ -51,7 +51,7 @@ function ProductosTarjetas({ productos, catalogo, acciones }: Props) {
             <InsigniaTipo tipo={p.tipo} />
             <InsigniaLimpieza producto={p} />
             {tieneLoteAncla(p) && (
-              <Insignia tono="marca" title="Tiene lotes posibles asignados: en el pesaje se ofrecen primero">
+              <Insignia tono="marca" title="Lote ancla: lote fijo al que pertenece el producto. Al pesarlo solo se pueden elegir sus lotes ancla.">
                 {p.loteIds!.length === 1 ? '1 lote ancla' : `${p.loteIds!.length} lotes ancla`}
               </Insignia>
             )}

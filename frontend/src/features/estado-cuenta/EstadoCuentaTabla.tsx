@@ -4,7 +4,7 @@ import { Ban } from 'lucide-react';
 import { Insignia, TablaDatos, formatearFecha, type ColumnaTabla } from '../../components/ui';
 import type { EntradaConSaldo } from '../../lib/terceros-kpis';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
-import { LABEL_POR_TIPO, TONO_POR_TIPO, fmt, rutaDetalle } from './estado-cuenta-comun';
+import { AYUDA_POR_TIPO, LABEL_POR_TIPO, TONO_POR_TIPO, fmt, rutaDetalle } from './estado-cuenta-comun';
 
 interface Props {
   tipo: TipoEntidad;
@@ -25,7 +25,7 @@ const slug = (v: string) => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 function Concepto({ e }: { e: EntradaEstadoCuenta }) {
   return (
     <div className="min-w-[12rem]">
-      <Insignia tono={TONO_POR_TIPO[e.tipo]} forma="cuadrada">{LABEL_POR_TIPO[e.tipo]}</Insignia>
+      <Insignia tono={TONO_POR_TIPO[e.tipo]} forma="cuadrada" title={AYUDA_POR_TIPO[e.tipo]}>{LABEL_POR_TIPO[e.tipo]}</Insignia>
       <span className={`ml-2 ${e.anulada ? 'line-through' : ''}`}>{e.descripcion}</span>
       {e.anulada && <span className="ml-2 text-xs font-medium text-text-secondary">Anulada</span>}
       {e.pagada && !e.anulada && <span className="ml-2 text-xs text-text-secondary">(pagada)</span>}
@@ -76,17 +76,17 @@ function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, rutaVuelta, 
       { clave: 'referencia', titulo: 'Referencia', valorOrden: e => e.referencia, celda: referencia, valorCsv: e => e.referencia ?? '', claseCelda: 'align-top' },
       {
         clave: 'cargo', titulo: 'Cargo', alinear: 'derecha', valorOrden: e => e.cargo, celda: e => <Importe e={e} lado="cargo" />, valorCsv: e => e.cargo, decimalesCsv: 2,
-        ayuda: 'Lo que aumenta el saldo: facturas y notas de débito vigentes.',
+        ayuda: 'Lo que hace subir el saldo, en USD: facturas y notas de débito (las notas anuladas no cuentan).',
         total: lista => fmt(lista.reduce((s, e) => s + e.cargo, 0)), claseCelda: 'align-top',
       },
       {
         clave: 'abono', titulo: 'Abono', alinear: 'derecha', valorOrden: e => e.abono, celda: e => <Importe e={e} lado="abono" />, valorCsv: e => e.abono, decimalesCsv: 2,
-        ayuda: 'Lo que reduce el saldo: pagos o cobros, adelantos y notas de crédito vigentes.',
+        ayuda: 'Lo que hace bajar el saldo, en USD: pagos o cobros, adelantos y notas de crédito (las notas anuladas no cuentan).',
         total: lista => fmt(lista.reduce((s, e) => s + e.abono, 0)), claseCelda: 'align-top',
       },
       {
         clave: 'saldo', titulo: 'Saldo', alinear: 'derecha', valorOrden: e => e.saldoCorrido, celda: e => <span className="font-medium">{fmt(e.saldoCorrido)}</span>, valorCsv: e => e.saldoCorrido, decimalesCsv: 2,
-        ayuda: 'Saldo acumulado después de ese movimiento (cargos menos abonos), contando solo el periodo consultado.', claseCelda: 'align-top',
+        ayuda: 'Lo que queda por pagar o cobrar justo después de ese movimiento, en USD. Va sumando los cargos y restando los abonos desde la primera fila del periodo consultado. Si filtras por tipo de movimiento, el saldo sigue contando todos los movimientos.', claseCelda: 'align-top',
       },
     ];
     return puedeAjustar

@@ -6,7 +6,7 @@ import { obtenerEstadoCuentaPortal, type EstadoCuentaPortal } from '../../servic
 import { obtenerDocumentosPortal, type PortalDocumentos } from '../../services/portal-documentos-service';
 import { Bloque, GrillaKpis, TarjetaKpi } from '../../components/ui';
 import { formatearNumero, formatearUsdDecimales } from '../../lib/formato';
-import { fechaCorta, importeMovimiento, mensajeSaldo, resumenDocumentos, ultimoMovimiento } from '../../lib/portal-kpis';
+import { ayudaSaldoPortal, fechaCorta, importeMovimiento, mensajeSaldo, resumenDocumentos, ultimoMovimiento } from '../../lib/portal-kpis';
 import PortalLayout from './PortalLayout';
 
 interface Opcion {
@@ -63,7 +63,7 @@ function PortalHomePage() {
       <GrillaKpis>
         <TarjetaKpi
           titulo="Saldo actual" icono={<Wallet size={16} />}
-          ayuda="Facturado menos pagado. Si eres proveedor, un saldo a favor significa que Pronoia te debe; si eres cliente, que le debes a Pronoia."
+          ayuda={ayudaSaldoPortal(cuenta.estado === 'listo' ? cuenta.datos.entidad.tipo : undefined)}
           estado={cuenta.estado === 'cargando' ? 'cargando' : errorCuenta ? 'vacio' : 'listo'}
           mensajeVacio="No pudimos cargar tu saldo"
           valor={saldo ? formatearUsdDecimales(Math.abs(saldo.valor)) : undefined}
@@ -71,7 +71,7 @@ function PortalHomePage() {
         />
         <TarjetaKpi
           titulo="Último movimiento" icono={<History size={16} />}
-          ayuda="El movimiento más reciente registrado en tu estado de cuenta."
+          ayuda="La fecha del movimiento más reciente de tu cuenta (factura, pago, adelanto o nota) y su importe en USD."
           estado={cuenta.estado === 'cargando' ? 'cargando' : errorCuenta ? 'vacio' : ultimo ? 'listo' : 'vacio'}
           mensajeVacio={errorCuenta ? 'No pudimos cargar tus movimientos' : 'Aún no hay movimientos'}
           valor={ultimo ? fechaCorta(ultimo.fecha) : undefined}
@@ -79,7 +79,7 @@ function PortalHomePage() {
         />
         <TarjetaKpi
           titulo="Documentos" icono={<FileText size={16} />}
-          ayuda="Cantidad de facturas, tickets de pesaje y comprobantes de pago que puedes consultar."
+          ayuda="Cuántos documentos puedes abrir en total: tus facturas (sin las anuladas), tus tickets de pesaje y tus comprobantes de pago. Debajo está el detalle de cada tipo."
           estado={docs.estado === 'cargando' ? 'cargando' : resumen ? 'listo' : 'vacio'}
           mensajeVacio={docs.estado === 'error' ? 'No pudimos cargar tus documentos' : 'Aún no hay documentos'}
           valor={resumen ? formatearNumero(resumen.total) : undefined}
@@ -87,7 +87,7 @@ function PortalHomePage() {
         />
       </GrillaKpis>
 
-      <Bloque titulo="¿Qué necesitas hoy?" queEstasViendo="Los accesos a todo lo que puedes consultar o pedir desde el portal.">
+      <Bloque titulo="¿Qué necesitas hoy?" queEstasViendo="Los accesos a todo lo que puedes consultar o pedir desde el portal: tus documentos, tu saldo, los precios, tus entregas y tus guías.">
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {OPCIONES.map(({ to, label, descripcion, icon: Icon }) => (
             <li key={to}>

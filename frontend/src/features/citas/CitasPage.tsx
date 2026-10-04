@@ -118,19 +118,19 @@ function CitasPage() {
       ) : (
         <GrillaKpis>
           <TarjetaKpi
-            titulo="Citas de hoy" ayuda="Citas con fecha de hoy que no están canceladas ni completadas."
+            titulo="Citas de hoy" ayuda="Cuántas citas tienen fecha de hoy y siguen vivas, es decir, que no están canceladas ni completadas (cuenta las pendientes, confirmadas y reprogramadas)."
             valor={kpis ? formatearNumero(kpis.hoy) : '—'} unidad={kpis?.hoy === 1 ? 'cita' : 'citas'}
-            subtitulo="Pendientes de atender hoy" estado={kpis ? 'listo' : 'vacio'} mensajeVacio="No se pudo cargar"
+            subtitulo="Por atender hoy" estado={kpis ? 'listo' : 'vacio'} mensajeVacio="No se pudo cargar"
           />
           <TarjetaKpi
-            titulo="Próximos 7 días" ayuda="Citas desde hoy hasta dentro de 6 días (hoy incluido) que no están canceladas ni completadas."
+            titulo="Próximos 7 días" ayuda="Cuántas citas vivas hay desde hoy hasta dentro de 6 días (7 días contando hoy). No cuenta las canceladas ni las completadas."
             valor={kpis ? formatearNumero(kpis.proximos7) : '—'} unidad={kpis?.proximos7 === 1 ? 'cita' : 'citas'}
             subtitulo="Incluye las de hoy" estado={kpis ? 'listo' : 'vacio'} mensajeVacio="No se pudo cargar"
           />
           <TarjetaKpi
-            titulo="Por confirmar" ayuda="Citas desde hoy en adelante que siguen en estado Pendiente: falta que alguien las confirme."
+            titulo="Por confirmar" ayuda="Cuántas citas de hoy en adelante están en estado Pendiente: se pidieron, pero todavía falta que alguien del equipo las confirme."
             valor={kpis ? formatearNumero(kpis.pendientes) : '—'} unidad={kpis?.pendientes === 1 ? 'cita' : 'citas'}
-            subtitulo="Estado Pendiente, de hoy en adelante" estado={kpis ? 'listo' : 'vacio'} mensajeVacio="No se pudo cargar"
+            subtitulo="Sin confirmar, de hoy en adelante" estado={kpis ? 'listo' : 'vacio'} mensajeVacio="No se pudo cargar"
           />
         </GrillaKpis>
       )}
@@ -138,7 +138,7 @@ function CitasPage() {
       <Bloque
         titulo={vista === 'semana' ? 'Agenda de la semana' : verHistorico ? 'Histórico de citas' : 'Próximas citas'}
         queEstasViendo={vista === 'semana'
-          ? 'Una cuadrícula con horas en filas y días en columnas; cada casilla ocupada muestra quién agendó y su estado.'
+          ? 'Una cuadrícula con las horas en filas y los días en columnas. Cada casilla ocupada muestra quién agendó la cita y en qué estado está.'
           : verHistorico
             ? 'Todas las citas, desde las más antiguas, agrupadas por día.'
             : 'Las citas de hoy en adelante, agrupadas por día y con su estado.'}
@@ -206,7 +206,7 @@ function CitasPage() {
                         <p className="truncate text-sm font-medium text-text-primary">{c.nombreEntidad}</p>
                         <p className="text-xs text-text-secondary tabular-nums">{c.hora} · {c.entidadTipo === 'proveedor' ? 'Proveedor' : 'Cliente'}</p>
                       </div>
-                      <Insignia tono={INFO_ESTADO_CITA[c.estado].tono}>{INFO_ESTADO_CITA[c.estado].texto}</Insignia>
+                      <Insignia tono={INFO_ESTADO_CITA[c.estado].tono} title={INFO_ESTADO_CITA[c.estado].ayuda}>{INFO_ESTADO_CITA[c.estado].texto}</Insignia>
                       {puedeEditar && !['cancelada', 'completada'].includes(c.estado) && (
                         <div className="flex shrink-0 items-center gap-1">
                           {c.estado === 'pendiente' && (

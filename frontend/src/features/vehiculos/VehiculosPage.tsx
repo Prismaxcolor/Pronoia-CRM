@@ -101,26 +101,26 @@ function VehiculosPage() {
         <>
           <GrillaKpis>
             <TarjetaKpi
-              titulo="Vehículos propios" ayuda="Vehículos guardados en esta lista (activos e inactivos). Son los que se eligen al pesar."
+              titulo="Vehículos propios" ayuda="Cuántos vehículos de la empresa hay guardados en esta lista, activos e inactivos. Son los que se pueden elegir al pesar."
               valor={formatearNumero(kpis.total)} unidad={kpis.total === 1 ? 'vehículo' : 'vehículos'} subtitulo="Registrados en la lista"
             />
             <TarjetaKpi
-              titulo="Disponibles para pesar" ayuda="Vehículos activos: son los que aparecen al elegir vehículo en el pesaje. Los inactivos se conservan pero no se ofrecen."
+              titulo="Disponibles para pesar" ayuda="Cuántos vehículos están activos, es decir, los que aparecen al elegir vehículo en el pesaje. Los inactivos se guardan, pero no se ofrecen."
               valor={formatearNumero(kpis.activos)} unidad={kpis.activos === 1 ? 'activo' : 'activos'}
               subtitulo={`${formatearNumero(kpis.inactivos)} ${kpis.inactivos === 1 ? 'inactivo' : 'inactivos'}`}
             />
             <TarjetaKpi
-              titulo="Sin foto" ayuda="Vehículos sin ninguna foto. Una foto ayuda a reconocerlos al elegirlos en el pesaje."
+              titulo="Sin foto" ayuda="Cuántos vehículos de la lista no tienen ninguna foto (cuenta activos e inactivos). Una foto ayuda a reconocerlos al elegirlos en el pesaje."
               valor={formatearNumero(kpis.sinFoto)} unidad={kpis.sinFoto === 1 ? 'vehículo' : 'vehículos'}
               subtitulo={kpis.sinFoto === 0 ? 'Todos tienen foto' : 'Puedes agregarla al editarlos'}
             />
             <TarjetaKpi
-              titulo="De terceros" ayuda="Los vehículos de terceros se escriben a mano en cada pesaje y no se guardan en esta lista, por eso aquí no hay una cifra."
+              titulo="De terceros" ayuda="Los vehículos de otras personas o empresas se escriben a mano en cada pesaje y no se guardan en esta lista, por eso aquí no hay una cifra."
               estado="vacio" mensajeVacio="No se guardan aquí: se escriben a mano en el pesaje"
             />
           </GrillaKpis>
 
-          <Bloque titulo="Vehículos propios" queEstasViendo="Cada vehículo con su placa, foto y datos. Toca la foto para verla ampliada. Busca por placa, nombre, marca o chofer.">
+          <Bloque titulo="Vehículos propios" queEstasViendo="Cada vehículo propio con su placa, foto y datos. Toca la foto para verla ampliada. Puedes buscar por placa, nombre, marca o chofer.">
             <div className="mb-3">
               <FiltrosBarra
                 buscador={{ id: 'vehiculos-q', valor: q, onCambiar: v => cambiar({ q: v }), placeholder: 'Buscar por placa, nombre, marca o chofer', etiqueta: 'Buscar vehículo' }}

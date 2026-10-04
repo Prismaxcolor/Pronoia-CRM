@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ayudaSaldoPortal,
   fechaCorta,
   importeMovimiento,
   mensajeSaldo,
@@ -67,5 +68,13 @@ describe('fechaCorta', () => {
   it('devuelve — si no es fecha', () => {
     expect(fechaCorta(null)).toBe('—');
     expect(fechaCorta('abc')).toBe('—');
+  });
+});
+
+describe('ayudaSaldoPortal', () => {
+  it('explica el saldo según el tipo de tercero y tiene versión neutra', () => {
+    expect(ayudaSaldoPortal('proveedor')).toContain('Pronoia te debe');
+    expect(ayudaSaldoPortal('cliente')).toContain('Le debes a Pronoia');
+    expect(ayudaSaldoPortal(undefined)).toContain('quién debe a quién');
   });
 });

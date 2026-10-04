@@ -308,12 +308,12 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
                   <option key={v || 'sin-definir'} value={v}>{ETIQUETA_ESTADO_LIMPIEZA[v]}</option>
                 ))}
               </select>
-              <p className="text-xs text-text-muted mt-1">Material limpio: sin residuos, listo para vender. Material sucio: trae residuos y hay que limpiarlo antes. Se usa para separarlos en el inventario.</p>
+              <p className="text-xs text-text-muted mt-1">Material limpio: sin residuos. Material sucio: trae residuos. Sirve para separarlos en el inventario; si no lo indicas queda como “Sin definir”.</p>
             </div>
           )}
 
           <div>
-            <label className={labelClass}>Lotes posibles</label>
+            <label className={labelClass}>Lotes ancla <span className="text-text-muted">(opcional)</span></label>
             <LotesPosiblesPicker lotes={lotesDisponibles} seleccionados={loteIds} onChange={setLoteIds} />
           </div>
 

@@ -243,7 +243,7 @@ function EstadoCuentaPage({ tipo }: Props) {
       <div className={`print:hidden ${cargando ? 'opacity-60 transition-opacity' : ''}`}>
         <Bloque
           titulo="Movimientos"
-          queEstasViendo={`Cada factura, ${tipo === 'proveedor' ? 'pago' : 'cobro'}, adelanto y nota en orden de fecha, con el saldo acumulado después de cada uno${desde ? ' (solo del periodo filtrado: arranca en 0)' : ''}.`}
+          queEstasViendo={`Cada factura, ${tipo === 'proveedor' ? 'pago' : 'cobro'}, adelanto y nota, de la más antigua a la más reciente. La columna Saldo muestra cuánto quedaba por ${tipo === 'proveedor' ? 'pagar' : 'cobrar'} después de cada movimiento${desde ? ' (con el filtro Desde, el saldo arranca en 0 en la primera fila)' : ''}.`}
         >
           <Suspense fallback={<SkeletonTabla />}>
             <EstadoCuentaTabla
@@ -263,7 +263,7 @@ function EstadoCuentaPage({ tipo }: Props) {
           <>
             <Bloque
               titulo="Evolución del saldo"
-              queEstasViendo="El saldo de la cuenta día a día: sube con cada factura o nota de débito y baja con cada pago, adelanto o nota de crédito."
+              queEstasViendo="Cómo cambió el saldo de la cuenta, día por día, en USD. Sube con cada factura o nota de débito y baja con cada pago, adelanto o nota de crédito."
             >
               <Suspense fallback={<SkeletonBloque alto="h-56" etiqueta="Cargando gráfica" />}>
                 <EstadoCuentaGrafica entradas={conSaldo} />
@@ -272,16 +272,16 @@ function EstadoCuentaPage({ tipo }: Props) {
 
             <Bloque
               titulo="Facturas sin pagar por antigüedad"
-              queEstasViendo="Estimación: los pagos y notas de crédito se aplican a las facturas más antiguas primero. No hay fecha de vencimiento: los días se cuentan desde la fecha de cada factura."
+              queEstasViendo="Estimado: se suma todo lo pagado (pagos, adelantos y notas de crédito) y se resta de las facturas empezando por la más antigua; lo que sobra queda como factura sin pagar. Los días se cuentan desde la fecha de cada factura hasta hoy, porque no hay fecha de vencimiento."
             >
               {desde ? (
                 <EstadoVacio
                   mensaje="La estimación necesita el historial completo"
-                  descripcion="Con el filtro Desde se pierden los pagos y facturas anteriores, y la antigüedad saldría mal."
+                  descripcion="Con el filtro Desde se dejan fuera las facturas y pagos anteriores, y los días sin pagar saldrían mal."
                   accion={{ etiqueta: 'Quitar el filtro Desde', onClick: () => cambiar({ desde: undefined }) }}
                 />
               ) : (
-                <ListaAlertas alertas={alertas} vacio={<EstadoVacio mensaje="Sin facturas pendientes de más de 30 días (estimado)" />} />
+                <ListaAlertas alertas={alertas} vacio={<EstadoVacio mensaje="Ninguna factura lleva 30 días o más sin pagar (estimado)" />} />
               )}
             </Bloque>
           </>

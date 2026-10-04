@@ -86,6 +86,7 @@ function ListasPreciosPage() {
       {
         clave: 'vigencia',
         titulo: 'Vigente desde',
+        ayuda: 'Fecha desde la que se usa esta lista. “Sin fecha” significa que no se indicó.',
         valorOrden: l => l.vigenteDesde,
         celda: l => (l.vigenteDesde ? formatearFecha(l.vigenteDesde) : <span className="text-text-muted">Sin fecha</span>),
         valorCsv: l => formatearFecha(l.vigenteDesde),
@@ -99,6 +100,7 @@ function ListasPreciosPage() {
       {
         clave: 'creada',
         titulo: 'Creada',
+        ayuda: 'Fecha en que se creó la lista en el sistema (no es la fecha de vigencia).',
         valorOrden: l => l.createdAt,
         celda: l => formatearFecha(l.createdAt),
         valorCsv: l => formatearFecha(l.createdAt),
@@ -165,7 +167,7 @@ function ListasPreciosPage() {
           <TarjetaKpi
             titulo="Listas de precios"
             icono={<ListChecks size={16} />}
-            ayuda="Cuántas listas existen, de compra (lo que se paga a proveedores) y de venta (lo que se cobra a clientes). Cuenta las activas y las inactivas."
+            ayuda="Cuántas listas de precios hay en total, activas e inactivas. Una lista de compra dice cuánto se paga por kilo a los proveedores; una de venta, cuánto se cobra por kilo a los clientes."
             valor={`${formatearNumero(kpis.total, 0)} ${kpis.total === 1 ? 'lista' : 'listas'}`}
             subtitulo={`${formatearNumero(kpis.compra, 0)} de compra · ${formatearNumero(kpis.venta, 0)} de venta`}
             comparacion={null}
@@ -173,19 +175,19 @@ function ListasPreciosPage() {
           <TarjetaKpi
             titulo="Listas activas"
             icono={<ListChecks size={16} />}
-            ayuda="Las listas activas son las que se pueden elegir al facturar. Una lista inactiva se conserva pero ya no se ofrece."
+            ayuda="Cuántas listas están activas, es decir, disponibles para elegirlas al facturar. Una lista inactiva se guarda, pero ya no se ofrece."
             valor={`${formatearNumero(kpis.activas, 0)} ${kpis.activas === 1 ? 'activa' : 'activas'}`}
             subtitulo={kpis.inactivas > 0 ? `${formatearNumero(kpis.inactivas, 0)} inactivas` : 'ninguna inactiva'}
             comparacion={null}
           />
           <TarjetaKpi
-            titulo="Última vigencia"
+            titulo="Vigencia más reciente"
             icono={<CalendarClock size={16} />}
-            ayuda="La fecha de vigencia más reciente entre todas las listas. Cada lista declara desde qué fecha aplica; las que no tienen fecha no cuentan. Los precios de cada material se ven dentro de cada lista."
+            ayuda="De todas las listas, la fecha “Vigente desde” más reciente. Cada lista indica desde qué día aplica; las que no tienen fecha no cuentan. No es la fecha de la última actualización de precios: esa se ve dentro de cada lista, en “Último precio cargado”."
             estado={kpis.ultimaVigencia ? 'listo' : 'vacio'}
             mensajeVacio="Ninguna lista tiene fecha de vigencia"
             valor={formatearFecha(kpis.ultimaVigencia)}
-            subtitulo={listaMasReciente ? `lista «${listaMasReciente.nombre}»` : undefined}
+            subtitulo={listaMasReciente ? `es la de la lista «${listaMasReciente.nombre}»` : undefined}
             comparacion={null}
           />
         </GrillaKpis>

@@ -20,7 +20,7 @@ export interface ComparacionKpiProps {
 /** Comparación vs periodo anterior con flecha, texto y semántica bueno/malo (no depende solo del color: lleva flecha y aria-label). */
 export function ComparacionKpi({ cmp, formato }: ComparacionKpiProps) {
   if (!cmp) {
-    return <p className="mt-2 text-xs text-text-muted" title="Aún no hay un periodo anterior con el cual comparar">vs periodo anterior: —</p>;
+    return <p className="mt-2 text-xs text-text-muted" title="No hay datos de un periodo anterior para comparar, por eso no se muestra si subió o bajó.">vs periodo anterior: —</p>;
   }
   const Icono = cmp.direccion === 'sube' ? ArrowUp : cmp.direccion === 'baja' ? ArrowDown : Minus;
   const texto = cmp.direccion === 'igual' ? 'Sin cambio' : formato ? formato(Math.abs(cmp.delta)) : formatearNumero(Math.abs(cmp.delta), 1);
@@ -35,13 +35,13 @@ export function ComparacionKpi({ cmp, formato }: ComparacionKpiProps) {
 export interface TarjetaKpiProps {
   titulo: string;
   icono?: ReactNode;
-  /** Explicación del "?" (qué significa y cómo se calcula). */
+  /** Explicación del "?": 1 a 3 frases cortas con qué muestra la cifra y cómo se calcula (qué se suma o compara, desde qué fecha, con unidad). */
   ayuda?: ReactNode;
   /** Valor grande, ya formateado con su unidad. */
   valor?: ReactNode;
   /** Unidad pequeña junto al valor, cuando no va incluida en `valor` (p. ej. "kg"). */
   unidad?: string;
-  /** Línea bajo el valor: de dónde sale la cifra. */
+  /** Línea bajo el valor: aclara a qué se refiere la cifra (periodo, filtro o base del cálculo). */
   subtitulo?: ReactNode;
   /** Contenido extra (desgloses, mini gráfica). */
   children?: ReactNode;

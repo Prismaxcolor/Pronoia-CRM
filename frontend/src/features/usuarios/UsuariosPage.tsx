@@ -142,25 +142,25 @@ function UsuariosPage() {
         <>
           <GrillaKpis>
             <TarjetaKpi
-              titulo="Usuarios activos" ayuda="Cuántas personas pueden iniciar sesión hoy. Los usuarios desactivados no cuentan."
+              titulo="Usuarios activos" ayuda="Cuántas personas con la cuenta activa pueden iniciar sesión. Los usuarios desactivados no se cuentan aquí; aparecen en el subtítulo como inactivos."
               valor={formatearNumero(kpis.activos)} unidad={kpis.activos === 1 ? 'usuario' : 'usuarios'}
               subtitulo={`de ${formatearNumero(kpis.total)} registrados · ${formatearNumero(kpis.inactivos)} inactivos`}
             />
             <TarjetaKpi
-              titulo="Superadmin" ayuda="Usuarios activos con acceso total al sistema."
+              titulo="Superadmin" ayuda="Cuántos usuarios activos tienen el rol Superadmin: pueden ver y hacer todo en el sistema y no admiten permisos personalizados."
               valor={formatearNumero(activosDe('superadmin'))} unidad={activosDe('superadmin') === 1 ? 'activo' : 'activos'} subtitulo="Acceso total"
             />
             <TarjetaKpi
-              titulo="Administración" ayuda="Usuarios activos con rol de administración (permisos según lo asignado)."
+              titulo="Administración" ayuda="Cuántos usuarios activos tienen el rol Administración. Por defecto manejan facturación, clientes, proveedores, pesaje y cochinito, sin acceso a usuarios y sin poder eliminar; sus permisos se pueden personalizar."
               valor={formatearNumero(activosDe('administracion'))} unidad={activosDe('administracion') === 1 ? 'activo' : 'activos'} subtitulo="Permisos según su configuración"
             />
             <TarjetaKpi
-              titulo="Trabajadores" ayuda="Usuarios activos con rol de trabajador."
+              titulo="Trabajadores" ayuda="Cuántos usuarios activos tienen el rol Trabajador. Por defecto trabajan en productos, almacenes, pesaje, traslados y transformaciones, sin acceso a facturación ni usuarios; sus permisos se pueden personalizar."
               valor={formatearNumero(activosDe('trabajador'))} unidad={activosDe('trabajador') === 1 ? 'activo' : 'activos'} subtitulo="Operación diaria"
             />
           </GrillaKpis>
 
-          <Bloque titulo="Equipo" queEstasViendo="Cada persona con su rol, estado, cantidad de permisos y color del sistema. Los botones de cada tarjeta editan sus datos y permisos o la desactivan.">
+          <Bloque titulo="Equipo" queEstasViendo="Cada persona con su rol (que define qué puede hacer), si está activa, sus permisos y el color con el que ve el sistema. Los botones de cada tarjeta editan sus datos y permisos, o la desactivan.">
             <div className="mb-3">
               <FiltrosBarra
                 buscador={{ id: 'usuarios-q', valor: q, onCambiar: v => cambiar({ q: v }), placeholder: 'Buscar por nombre o correo', etiqueta: 'Buscar usuario' }}
@@ -206,13 +206,13 @@ function UsuariosPage() {
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <dt className="text-text-secondary">Permisos</dt>
+                          <dt className="text-text-secondary" title="Qué puede ver y hacer. “Los de su rol” significa que no se le personalizó nada; un número indica cuántos permisos sueltos se le asignaron en lugar de los del rol.">Permisos</dt>
                           <dd className="font-medium text-text-primary">
-                            {u.rol === 'superadmin' ? 'Todos (acceso total)' : `${u.permisos.length} permiso${u.permisos.length !== 1 ? 's' : ''}`}
+                            {u.rol === 'superadmin' ? 'Todos (acceso total)' : u.permisos.length === 0 ? 'Los de su rol' : `${u.permisos.length} personalizado${u.permisos.length !== 1 ? 's' : ''}`}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-text-secondary">Color del sistema</dt>
+                          <dt className="text-text-secondary" title="Color de la interfaz que ve esta persona. No cambia lo que puede hacer.">Color del sistema</dt>
                           <dd className="flex items-center gap-1 font-medium text-text-primary">
                             <Palette size={12} aria-hidden="true" />
                             {u.temaMarca === 'azul' ? 'Azul' : 'Verde (predeterminado)'}

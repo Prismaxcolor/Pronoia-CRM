@@ -26,7 +26,7 @@ function PortalGuiasPage() {
     { clave: 'guia', titulo: 'Guía', valorOrden: g => g.numeroGuia ?? g.id, celda: g => g.numeroGuia ?? `Guía ${g.id.slice(0, 8)}` },
     { clave: 'fecha', titulo: 'Solicitada', valorOrden: g => g.createdAt, celda: g => fechaCorta(g.createdAt), valorCsv: g => fechaCorta(g.createdAt) },
     {
-      clave: 'estado', titulo: 'Estado', valorOrden: g => ESTADO[g.estado].texto,
+      clave: 'estado', titulo: 'Estado', ayuda: 'Solicitada: pedida y aún sin atender. En trámite: se está gestionando. Lista: ya puedes descargar el PDF. Rechazada: no fue aprobada.', valorOrden: g => ESTADO[g.estado].texto,
       celda: g => <Insignia tono={ESTADO[g.estado].tono}>{ESTADO[g.estado].texto}</Insignia>, valorCsv: g => ESTADO[g.estado].texto,
     },
     {
@@ -47,7 +47,7 @@ function PortalGuiasPage() {
       {cargando ? (
         <SkeletonTabla filas={3} columnas={3} />
       ) : (
-        <Bloque titulo="Mis guías" queEstasViendo="Cada guía que solicitaste, de la más reciente a la más antigua. Cuando está lista puedes descargar el PDF.">
+        <Bloque titulo="Mis guías" queEstasViendo="Cada guía (permiso de traslado) que se solicitó a tu nombre, con su estado. Cuando está lista puedes descargar el PDF.">
           <TablaDatos
             titulo="Guías CORPOEZ" columnas={columnas} filas={guias} claveFila={g => g.id}
             ordenInicial={{ columna: 'fecha', sentido: 'desc' }} anchoMinimo="min-w-[28rem]"

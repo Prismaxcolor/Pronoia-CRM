@@ -248,7 +248,7 @@ function ProductosPage() {
 
       <Bloque
         titulo="Catálogo"
-        queEstasViendo={`${filtrados.length === productos.length ? 'todos los productos' : `${filtrados.length} de ${productos.length} productos, según los filtros`}. Cambia entre tarjetas y tabla; en la tabla puedes ordenar por columna y exportar a CSV.`}
+        queEstasViendo={`${filtrados.length === productos.length ? 'todos los productos' : `${filtrados.length} de ${productos.length} productos, según los filtros`}. Puedes verlos como tarjetas o como tabla; en la tabla se ordena por columna y se exporta a CSV.`}
         acciones={
           <ControlSegmentado<Vista>
             etiquetaAria="Vista del catálogo"
@@ -268,7 +268,7 @@ function ProductosPage() {
             </Chip>
           ))}
           {(kpis.sinEstado > 0 || filtros.sinEstado) && (
-            <span title="Ferroso y No ferroso sin definir si son limpios o sucios (para clasificarlos en el inventario)">
+            <span title="Productos Ferroso y No ferroso a los que todavía no se les indicó si son limpios (sin residuos) o sucios (con residuos)">
               <Chip seleccionado={Boolean(filtros.sinEstado)} onClick={() => cambiar({ sinestado: filtros.sinEstado ? undefined : true })}>
                 Sin definir limpio/sucio ({kpis.sinEstado})
               </Chip>

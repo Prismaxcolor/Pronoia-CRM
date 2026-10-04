@@ -156,7 +156,7 @@ function ListadoTerceros(props: Props) {
 
       <Bloque
         titulo={`Listado de ${t.plural}`}
-        queEstasViendo={`Cada ${t.singular} con sus datos${hayCifras ? ', su saldo en USD (misma cifra de su estado de cuenta) y desde cuándo debe' : ''}. Los filtros de arriba solo cambian esta lista, no los indicadores.`}
+        queEstasViendo={`Cada ${t.singular} con sus datos de contacto${hayCifras ? `, su saldo en USD (lo facturado menos lo ${tipo === 'proveedor' ? 'pagado' : 'cobrado'}, igual que en su estado de cuenta) y los días que lleva su factura pendiente más vieja` : ''}. Los filtros de arriba solo cambian esta lista, no los indicadores.`}
         acciones={(
           <div className="hidden md:block">
             <ControlSegmentado
@@ -192,7 +192,7 @@ function ListadoTerceros(props: Props) {
         <>
           <Bloque
             titulo={tipo === 'proveedor' ? "A quién se le debe más" : "Quién debe más"}
-            queEstasViendo={`Los 5 ${t.plural} con más saldo por ${t.verbo}, en USD. Solo cuentan saldos positivos; un saldo a favor no aparece.`}
+            queEstasViendo={`Los 5 ${t.plural} con el saldo más alto por ${t.verbo}, en USD, y qué parte del total por ${t.verbo} es de cada uno. Solo entran los que tienen saldo positivo: quien tiene saldo a favor no aparece.`}
           >
             {saldos.estado === 'listo' ? (
               <Suspense fallback={<SkeletonBloque alto="h-40" etiqueta="Cargando gráfica" />}>
@@ -207,7 +207,7 @@ function ListadoTerceros(props: Props) {
 
           <Bloque
             titulo="Alertas"
-            queEstasViendo={`Saldos muy concentrados, facturas pendientes de hace más de 30 días (urgente desde 90) y ${t.plural} activos sin Telegram. Rojo solo si hay algo urgente.`}
+            queEstasViendo={`Avisos automáticos: un ${t.singular} que concentra la mitad o más de lo que hay por ${t.verbo}, ${t.plural} con una factura pendiente de 30 días o más (rojo desde 90 días) y ${t.plural} activos sin Telegram vinculado.`}
           >
             {saldos.estado === 'cargando' ? (
               <SkeletonBloque alto="h-24" etiqueta="Cargando alertas" />

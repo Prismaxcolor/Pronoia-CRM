@@ -20,7 +20,7 @@ const BOTON_ICONO = 'rounded-md bg-surface-alt p-1.5 text-text-muted transition-
 function textoSaldo(tipo: TipoTercero, saldo: number | undefined): { etiqueta: string; valor: string } | null {
   if (saldo === undefined) return null;
   if (saldo > 0.005) return { etiqueta: TEXTO_TERCERO[tipo].saldo, valor: `USD ${formatearNumero(saldo, 2)}` };
-  if (saldo < -0.005) return { etiqueta: 'Saldo a favor', valor: `USD ${formatearNumero(-saldo, 2)}` };
+  if (saldo < -0.005) return { etiqueta: TEXTO_TERCERO[tipo].saldoAFavor, valor: `USD ${formatearNumero(-saldo, 2)}` };
   return { etiqueta: 'Saldo', valor: 'Al día' };
 }
 
@@ -28,12 +28,12 @@ function textoSaldo(tipo: TipoTercero, saldo: number | undefined): { etiqueta: s
 export function InsigniaTelegram({ fila, corto = false }: { fila: Pick<FilaTercero, 'telegramChatId' | 'telegramLinkedAt'>; corto?: boolean }) {
   if (fila.telegramChatId) {
     return (
-      <Insignia tono="exito" icono={<CheckCircle2 size={12} />} title={fila.telegramLinkedAt ? `Vinculado el ${formatearFecha(fila.telegramLinkedAt)}` : undefined}>
+      <Insignia tono="exito" icono={<CheckCircle2 size={12} />} title={fila.telegramLinkedAt ? `Telegram vinculado el ${formatearFecha(fila.telegramLinkedAt)}. Se le puede enviar su estado de cuenta.` : 'Telegram vinculado. Se le puede enviar su estado de cuenta.'}>
         {corto ? 'Vinculado' : 'Telegram vinculado'}
       </Insignia>
     );
   }
-  return <Insignia tono="neutral">Sin Telegram</Insignia>;
+  return <Insignia tono="neutral" title="Todavía no tiene Telegram vinculado, así que no se le puede enviar su estado de cuenta por ahí.">Sin Telegram</Insignia>;
 }
 
 /** Botones de edición (lápiz, ojo, papelera) con nombre accesible. Visibles siempre en móvil; en escritorio al pasar o enfocar. */
@@ -107,17 +107,17 @@ function TarjetaTercero({ tipo, fila, acciones, hayCifras, incrustada = false }:
       {hayCifras && (
         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-border pt-3 text-xs">
           <div>
-            <dt className="text-text-secondary">{saldo?.etiqueta ?? 'Saldo'}</dt>
+            <dt className="text-text-secondary" title="Lo facturado menos lo pagado o cobrado, en USD, de todo el historial. Es la misma cifra de su estado de cuenta.">{saldo?.etiqueta ?? 'Saldo'}</dt>
             <dd className="text-sm font-semibold tabular-nums text-text-primary">{saldo?.valor ?? '—'}</dd>
           </div>
           <div>
-            <dt className="text-text-secondary">Última operación</dt>
+            <dt className="text-text-secondary" title="Fecha del último movimiento de su cuenta: factura, pago, adelanto o nota.">Última operación</dt>
             <dd className="font-medium tabular-nums text-text-primary">{formatearFecha(s?.ultimaOperacion)}</dd>
           </div>
           {s && s.cantidadFacturasPendientes > 0 && (
             <div className="col-span-2 text-text-secondary">
               {s.cantidadFacturasPendientes} {s.cantidadFacturasPendientes === 1 ? 'factura pendiente' : 'facturas pendientes'}
-              {s.antiguedadMasVieja != null && <> · la más vieja, {formatearNumero(s.antiguedadMasVieja, 0)} {s.antiguedadMasVieja === 1 ? 'día' : 'días'}</>}
+              {s.antiguedadMasVieja != null && <> · la más vieja tiene {formatearNumero(s.antiguedadMasVieja, 0)} {s.antiguedadMasVieja === 1 ? 'día' : 'días'} desde su fecha</>}
             </div>
           )}
         </dl>

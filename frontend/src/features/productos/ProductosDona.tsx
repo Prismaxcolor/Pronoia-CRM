@@ -12,7 +12,7 @@ function ProductosDona({ kpis }: { kpis: KpisProductos }) {
     <div className="print:hidden">
       <Bloque
         titulo="Productos por categoría"
-        queEstasViendo="qué parte del catálogo ocupa cada categoría de material. Cada color y símbolo es el mismo en todas las pantallas."
+        queEstasViendo="qué porcentaje de los productos del catálogo pertenece a cada categoría de material (cuenta productos, no kilos). Cada color y símbolo es el mismo en todas las pantallas."
       >
         {kpis.porCategoria.length < MIN_CATEGORIAS_DONA ? (
           <EstadoVacio

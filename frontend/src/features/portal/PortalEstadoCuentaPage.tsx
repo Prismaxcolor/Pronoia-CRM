@@ -7,7 +7,7 @@ import {
 } from '../../services/portal-estado-cuenta-service';
 import { Bloque, EstadoVacio, GrillaKpis, Insignia, SkeletonKpis, SkeletonTabla, TarjetaKpi, TablaDatos } from '../../components/ui';
 import { formatearUsdDecimales } from '../../lib/formato';
-import { fechaCorta, importeMovimiento, mensajeSaldo, ultimoMovimiento } from '../../lib/portal-kpis';
+import { ayudaSaldoPortal, fechaCorta, importeMovimiento, mensajeSaldo, ultimoMovimiento } from '../../lib/portal-kpis';
 import type { ColumnaTabla } from '../../lib/tabla-datos';
 import type { Tono } from '../../lib/paleta';
 import PortalLayout from './PortalLayout';
@@ -21,19 +21,17 @@ const TIPO: Record<EntradaEstadoCuenta['tipo'], { texto: string; tono: Tono }> =
   cruce: { texto: 'Cruce', tono: 'info' },
 };
 
-const AYUDA_SALDO =
-  'Facturado menos pagado. Si es un proveedor, un saldo a favor significa que Pronoia te debe; si es un cliente, que tú le debes a Pronoia.';
 
 type Fila = EntradaEstadoCuenta & { indice: number };
 
 const COLUMNAS: ColumnaTabla<Fila>[] = [
   { clave: 'fecha', titulo: 'Fecha', valorOrden: e => e.fecha, celda: e => fechaCorta(e.fecha), valorCsv: e => fechaCorta(e.fecha) },
-  { clave: 'tipo', titulo: 'Tipo', valorOrden: e => TIPO[e.tipo].texto, celda: e => <Insignia tono={TIPO[e.tipo].tono}>{TIPO[e.tipo].texto}</Insignia>, valorCsv: e => TIPO[e.tipo].texto },
+  { clave: 'tipo', titulo: 'Tipo', ayuda: 'Qué clase de movimiento es. Factura y nota de débito aumentan el saldo; pago, adelanto y nota de crédito lo reducen; un cruce solo aplica adelantos o notas a facturas y no cambia el saldo.', valorOrden: e => TIPO[e.tipo].texto, celda: e => <Insignia tono={TIPO[e.tipo].tono}>{TIPO[e.tipo].texto}</Insignia>, valorCsv: e => TIPO[e.tipo].texto },
   { clave: 'descripcion', titulo: 'Descripción', valorOrden: e => e.descripcion, claseCelda: 'min-w-[10rem]' },
   {
     clave: 'importe', titulo: 'Importe', alinear: 'derecha', valorOrden: importeMovimiento,
     celda: e => formatearUsdDecimales(importeMovimiento(e)), valorCsv: importeMovimiento, decimalesCsv: 2,
-    ayuda: 'Las facturas y notas de débito suman a lo que se debe; los pagos, adelantos y notas de crédito lo reducen.',
+    ayuda: 'Monto en USD, siempre sin signo. Las facturas y notas de débito aumentan lo que se debe; los pagos, adelantos y notas de crédito lo reducen. En un cruce es el monto de facturas saldadas con adelantos o notas, sin mover dinero.',
   },
 ];
 
@@ -82,28 +80,28 @@ function PortalEstadoCuentaPage() {
         <>
           <GrillaKpis>
             <TarjetaKpi
-              titulo="Saldo actual" icono={<Wallet size={16} />} ayuda={AYUDA_SALDO}
+              titulo="Saldo actual" icono={<Wallet size={16} />} ayuda={ayudaSaldoPortal(datos?.entidad.tipo)}
               valor={formatearUsdDecimales(Math.abs(saldo))}
               subtitulo={mensaje.texto}
             />
             <TarjetaKpi
               titulo="Facturado" icono={<Receipt size={16} />} valor={formatearUsdDecimales(datos?.totales.facturado ?? 0)}
-              ayuda="Suma de todas las facturas vigentes a tu nombre." subtitulo="Total acumulado"
+              ayuda="Suma en USD de tus facturas (sin las anuladas) y de las notas de débito, con todo tu historial. Es lo que hace subir tu saldo." subtitulo="Todo el historial"
             />
             <TarjetaKpi
               titulo="Pagado" icono={<HandCoins size={16} />} valor={formatearUsdDecimales(datos?.totales.pagado ?? 0)}
-              ayuda="Suma de los pagos aplicados a tus facturas." subtitulo="Total acumulado"
+              ayuda="Suma en USD de todo lo que ya se pagó o se descontó en tu cuenta: pagos, adelantos y notas de crédito, con todo tu historial. Es lo que hace bajar tu saldo." subtitulo="Todo el historial"
             />
             <TarjetaKpi
               titulo="Último movimiento" icono={<CalendarClock size={16} />}
-              ayuda="El movimiento más reciente registrado en tu cuenta."
+              ayuda="La fecha del movimiento más reciente de tu cuenta (factura, pago, adelanto o nota) y su importe en USD."
               estado={ultimo ? 'listo' : 'vacio'} mensajeVacio="Aún no hay movimientos"
               valor={ultimo ? fechaCorta(ultimo.fecha) : undefined}
               subtitulo={ultimo ? `${TIPO[ultimo.tipo].texto} · ${formatearUsdDecimales(importeMovimiento(ultimo))}` : undefined}
             />
           </GrillaKpis>
 
-          <Bloque titulo="Movimientos" queEstasViendo="Facturas, pagos y ajustes de tu cuenta, del más reciente al más antiguo. El importe es siempre positivo; el tipo dice si suma o resta a tu saldo.">
+          <Bloque titulo="Movimientos" queEstasViendo="Cada factura, pago y ajuste de tu cuenta, empezando por el más reciente. El importe va siempre sin signo: la columna Tipo dice si aumenta lo que se debe o lo reduce.">
             <TablaDatos
               titulo="Movimientos del estado de cuenta" columnas={COLUMNAS} filas={filas}
               claveFila={e => String(e.indice)}

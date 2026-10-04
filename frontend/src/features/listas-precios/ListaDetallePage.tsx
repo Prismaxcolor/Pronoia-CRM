@@ -150,6 +150,7 @@ function ListaDetallePage() {
       ? {
           clave: 'precio',
           titulo: 'Precio por kg',
+          ayuda: 'Cuánto vale cada kilo de este material en esta lista, en USD. Es el que se usa al facturar con esta lista.',
           alinear: 'derecha',
           valorOrden: p => p.precio,
           decimalesCsv: 2,
@@ -187,6 +188,7 @@ function ListaDetallePage() {
     {
       clave: 'cargado',
       titulo: 'Cargado el',
+      ayuda: 'Fecha en que se agregó este precio a la lista. No cambia si después modificas el precio.',
       valorOrden: p => p.createdAt,
       celda: p => formatearFecha(p.createdAt),
       valorCsv: p => formatearFecha(p.createdAt),
@@ -252,7 +254,7 @@ function ListaDetallePage() {
           <TarjetaKpi
             titulo="Materiales con precio"
             icono={<PackageCheck size={16} />}
-            ayuda="Cuántos materiales tienen precio en esta lista. Debajo se ve cuántos productos activos del catálogo aún no tienen precio aquí."
+            ayuda="Cuántos materiales tienen un precio por kilo en esta lista. Debajo se indica cuántos productos activos del catálogo todavía no tienen precio en ella."
             valor={`${formatearNumero(kpis.conPrecio, 0)} ${kpis.conPrecio === 1 ? 'material' : 'materiales'}`}
             subtitulo={kpis.activosSinPrecio > 0
               ? `${formatearNumero(kpis.activosSinPrecio, 0)} productos activos sin precio`
@@ -262,7 +264,7 @@ function ListaDetallePage() {
           <TarjetaKpi
             titulo="Precio promedio"
             icono={<Coins size={16} />}
-            ayuda="Promedio simple de los precios por kg de esta lista (cada material pesa igual, no se pondera por kilos). Solo se ve con permiso de facturación."
+            ayuda="Se suman los precios por kilo de todos los materiales de esta lista y se divide entre cuántos son (USD por kg). Todos los materiales valen igual: no importa cuántos kilos se compren o vendan de cada uno. Debajo se muestran el precio más bajo y el más alto. Solo se ve con permiso de facturación."
             estado={!puedeVerPrecios ? 'sinPermiso' : kpis.promedio === null ? 'vacio' : 'listo'}
             mensajeVacio="Todavía no hay precios cargados"
             valor={kpis.promedio === null ? undefined : `${formatearUsdDecimales(kpis.promedio)} / kg`}
@@ -274,11 +276,11 @@ function ListaDetallePage() {
           <TarjetaKpi
             titulo="Último precio cargado"
             icono={<CalendarClock size={16} />}
-            ayuda="Fecha en que se cargó el precio más reciente de esta lista. Si se cambia un precio que ya existía, esta fecha no se mueve: el sistema no guarda la fecha de cada modificación."
+            ayuda="Fecha en que se agregó a esta lista el precio más nuevo (la columna “Cargado el” de la tabla). Si cambias un precio que ya existía, esta fecha no se mueve: el sistema guarda cuándo se agregó cada precio, no cuándo se modificó."
             estado={kpis.ultimoPrecioCargado ? 'listo' : 'vacio'}
             mensajeVacio="Todavía no hay precios cargados"
             valor={formatearFecha(kpis.ultimoPrecioCargado)}
-            subtitulo="fecha de alta del precio más nuevo"
+            subtitulo="cuándo se agregó el precio más nuevo"
             comparacion={null}
           />
         </GrillaKpis>
@@ -287,7 +289,7 @@ function ListaDetallePage() {
       {/* Alta de material */}
       {puedeEditar && (
         <div className="print:hidden">
-          <Bloque titulo="Agregar material" queEstasViendo="elige un material que todavía no tiene precio en esta lista y escribe cuánto vale por kilo.">
+          <Bloque titulo="Agregar material" queEstasViendo="elige un material que todavía no tiene precio en esta lista y escribe cuánto vale cada kilo, en USD.">
             <form
               onSubmit={handleAgregar}
               className="bg-surface rounded-xl border border-border p-4 flex flex-col sm:flex-row gap-3 sm:items-end"
@@ -335,7 +337,7 @@ function ListaDetallePage() {
       <Bloque
         titulo="Precios de la lista"
         queEstasViendo={puedeVerPrecios
-          ? 'cuánto vale por kilo cada material. Ordena por cualquier columna y exporta a CSV.'
+          ? 'cuánto vale cada kilo de cada material, en USD, en esta lista. Ordena por cualquier columna y exporta a CSV.'
           : 'los materiales de esta lista. Los precios solo los ve quien tiene permiso de facturación.'}
       >
         <Suspense fallback={<SkeletonBloque alto="h-56" etiqueta="Cargando tabla de precios" />}>

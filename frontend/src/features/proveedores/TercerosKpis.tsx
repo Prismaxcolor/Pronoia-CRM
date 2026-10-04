@@ -28,7 +28,7 @@ function TercerosKpis({ tipo, filas, estadoSaldos, totales }: Props) {
       <TarjetaKpi
         titulo={t.plural.charAt(0).toUpperCase() + t.plural.slice(1)}
         icono={<Users size={16} />}
-        ayuda={`Cuántos ${t.plural} hay registrados y cuántos están activos. Un ${t.singular} inactivo conserva su historial pero ya no aparece en los selectores.`}
+        ayuda={`Cuántos ${t.plural} hay registrados, y debajo cuántos de ellos están activos. Un ${t.singular} inactivo conserva su historial, pero ya no aparece para elegirlo en facturas y pagos.`}
         valor={formatearNumero(r.total, 0)}
         unidad={r.total === 1 ? 'registrado' : 'registrados'}
         subtitulo={`${formatearNumero(r.activos, 0)} ${r.activos === 1 ? 'activo' : 'activos'}`}
@@ -37,7 +37,7 @@ function TercerosKpis({ tipo, filas, estadoSaldos, totales }: Props) {
       <TarjetaKpi
         titulo="Con Telegram vinculado"
         icono={<Send size={16} />}
-        ayuda={`Cuántos ${t.plural} ya vincularon su Telegram. Con Telegram vinculado se les puede enviar el estado de cuenta desde su pantalla.`}
+        ayuda={`Cuántos ${t.plural} tienen su Telegram vinculado, contando activos e inactivos. Con Telegram vinculado el sistema puede enviarles su estado de cuenta desde la pantalla de su estado de cuenta. Abajo se cuentan los activos que todavía no lo tienen.`}
         valor={formatearNumero(r.conTelegram, 0)}
         unidad={`de ${formatearNumero(r.total, 0)}`}
         subtitulo={r.activosSinTelegram > 0 ? `${formatearNumero(r.activosSinTelegram, 0)} activos sin vincular` : 'Todos los activos están vinculados'}
@@ -46,11 +46,13 @@ function TercerosKpis({ tipo, filas, estadoSaldos, totales }: Props) {
       <TarjetaKpi
         titulo={`${t.saldo} a ${t.plural}`}
         icono={<HandCoins size={16} />}
-        ayuda={`Suma de los saldos positivos de todos los ${t.plural}, en USD: lo que ${tipo === 'proveedor' ? 'se les debe pagar' : 'nos deben'}. Es la misma cifra del saldo de cada estado de cuenta. Los saldos a favor (se ${tipo === 'proveedor' ? 'pagó' : 'cobró'} de más) no se restan: se muestran aparte.`}
+        ayuda={tipo === 'proveedor'
+          ? 'Lo que se les debe pagar en total a los proveedores, en USD. De cada proveedor se toma lo facturado (facturas y notas de débito) menos lo pagado (pagos, adelantos y notas de crédito), y se suman solo los que quedan debiendo. Incluye todo el historial. Lo pagado de más se muestra aparte, no se resta.'
+          : 'Lo que los clientes nos deben en total, en USD. De cada cliente se toma lo facturado (facturas y notas de débito) menos lo cobrado (cobros, anticipos y notas de crédito), y se suman solo los que quedan debiendo. Incluye todo el historial. Lo cobrado de más se muestra aparte, no se resta.'}
         estado={estadoCifras}
         mensajeVacio={mensajeSinCifras}
         valor={formatearUsdDecimales(porSaldar, 2)}
-        subtitulo="Foto actual de las cuentas"
+        subtitulo="Todo el historial, calculado a hoy"
         comparacion={null}
       >
         <p className="mt-1 text-xs text-text-secondary">
@@ -59,9 +61,9 @@ function TercerosKpis({ tipo, filas, estadoSaldos, totales }: Props) {
         </p>
       </TarjetaKpi>
       <TarjetaKpi
-        titulo="Factura pendiente más antigua"
+        titulo={`Factura más antigua sin ${t.verbo}`}
         icono={<Clock size={16} />}
-        ayuda="Días desde la fecha de la factura pendiente más vieja de todos. El sistema no guarda fecha de vencimiento: se cuenta desde la fecha en que se emitió la factura."
+        ayuda={`Los días que lleva la factura más vieja que todavía tiene algo sin ${t.verbo}, entre todos los ${t.plural}. Se cuentan desde la fecha en que se creó la factura hasta hoy, porque el sistema no guarda fecha de vencimiento. No cuenta facturas anuladas, en borrador ni ya pagadas. Debajo aparece de quién es.`}
         estado={estadoCifras === 'listo' && !vieja ? 'vacio' : estadoCifras}
         mensajeVacio={estadoCifras === 'listo' ? 'No hay facturas pendientes.' : mensajeSinCifras}
         valor={vieja ? formatearNumero(vieja.dias, 0) : undefined}

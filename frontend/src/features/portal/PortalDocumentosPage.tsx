@@ -74,9 +74,9 @@ function PortalDocumentosPage() {
   const columnasTickets = useMemo<ColumnaTabla<PortalTicket>[]>(() => [
     { clave: 'codigo', titulo: 'Ticket', valorOrden: t => t.codigo },
     { clave: 'fecha', titulo: 'Fecha', valorOrden: t => t.createdAt, celda: t => fechaCorta(t.createdAt), valorCsv: t => fechaCorta(t.createdAt) },
-    { clave: 'estado', titulo: 'Estado', valorOrden: t => t.estado, celda: t => <InsigniaEstado estado={t.estado} />, valorCsv: t => t.estado },
-    { clave: 'fotos', titulo: 'Fotos', alinear: 'derecha', valorOrden: t => t.fotos.length, ocultaEnMovil: true },
-    { clave: 'peso', titulo: 'Peso neto', alinear: 'derecha', valorOrden: t => t.pesoNetoTotal, celda: t => `${formatearNumero(t.pesoNetoTotal, 2)} kg`, valorCsv: t => t.pesoNetoTotal, decimalesCsv: 2 },
+    { clave: 'estado', titulo: 'Estado', ayuda: 'Completo: el pesaje ya terminó. Solo bruto: todavía falta completar el pesaje.', valorOrden: t => t.estado, celda: t => <InsigniaEstado estado={t.estado} />, valorCsv: t => t.estado },
+    { clave: 'fotos', titulo: 'Fotos', ayuda: 'Cuántas fotos se guardaron del pesaje.', alinear: 'derecha', valorOrden: t => t.fotos.length, ocultaEnMovil: true },
+    { clave: 'peso', titulo: 'Peso neto', ayuda: 'Kilos de material pesado, ya sin la tara (el peso del recipiente o vehículo). Es la suma de todos los materiales del ticket.', alinear: 'derecha', valorOrden: t => t.pesoNetoTotal, celda: t => `${formatearNumero(t.pesoNetoTotal, 2)} kg`, valorCsv: t => t.pesoNetoTotal, decimalesCsv: 2 },
     {
       clave: 'pdf', titulo: 'Documento', valorCsv: false,
       celda: t => <BotonAbrir id={t.id} abriendo={abriendo} etiqueta={`Ver PDF del ticket ${t.codigo}`} onAbrir={id => abrir(id, abrirTicketPdf)} />,
@@ -131,19 +131,19 @@ function PortalDocumentosPage() {
           <GrillaKpis>
             <TarjetaKpi
               titulo="Facturas" icono={<FileText size={16} />} valor={formatearNumero(resumen?.facturas ?? 0)}
-              ayuda="Cantidad de facturas emitidas a tu nombre que puedes abrir en PDF." subtitulo="Documentos disponibles"
+              ayuda="Cuántas facturas a tu nombre puedes abrir en PDF. No cuenta las facturas anuladas." subtitulo="Disponibles para ti"
             />
             <TarjetaKpi
               titulo="Tickets de pesaje" icono={<Scale size={16} />} valor={formatearNumero(resumen?.tickets ?? 0)}
-              ayuda="Cantidad de pesajes registrados a tu nombre, cada uno con su ticket en PDF." subtitulo="Documentos disponibles"
+              ayuda="Cuántos tickets de pesaje hay a tu nombre. El ticket es el papel que se genera cada vez que se pesa tu material en la planta, y se abre en PDF." subtitulo="Disponibles para ti"
             />
             <TarjetaKpi
               titulo="Comprobantes de pago" icono={<Receipt size={16} />} valor={formatearNumero(resumen?.comprobantes ?? 0)}
-              ayuda="Cantidad de pagos que tienen una imagen de comprobante adjunta." subtitulo="Documentos disponibles"
+              ayuda="Cuántos pagos que Pronoia te hizo tienen una foto del comprobante adjunta (por ejemplo, de una transferencia). Hoy solo se muestran para proveedores." subtitulo="Disponibles para ti"
             />
           </GrillaKpis>
 
-          <Bloque titulo="Facturas" queEstasViendo="Facturas emitidas a tu nombre, de la más reciente a la más antigua. Toca “Ver PDF” para abrir la factura.">
+          <Bloque titulo="Facturas" queEstasViendo="Las facturas a tu nombre, sin las anuladas. Toca “Ver PDF” para abrir la factura; el total está en USD.">
             <TablaDatos
               titulo="Facturas" columnas={columnasFacturas} filas={datos?.facturas ?? []} claveFila={f => f.id}
               ordenInicial={{ columna: 'fecha', sentido: 'desc' }} paginacion={{ tamano: 15 }} anchoMinimo="min-w-[32rem]"
@@ -152,7 +152,7 @@ function PortalDocumentosPage() {
             />
           </Bloque>
 
-          <Bloque titulo="Tickets de pesaje" queEstasViendo="Cada vez que se pesa tu material se genera un ticket con el peso neto. Aquí están los tuyos.">
+          <Bloque titulo="Tickets de pesaje" queEstasViendo="Un ticket por cada pesaje de tu material en la planta. El peso neto es el peso del material en kg, sin la tara (el peso del recipiente o vehículo).">
             <TablaDatos
               titulo="Tickets de pesaje" columnas={columnasTickets} filas={datos?.tickets ?? []} claveFila={t => t.id}
               ordenInicial={{ columna: 'fecha', sentido: 'desc' }} paginacion={{ tamano: 15 }} anchoMinimo="min-w-[36rem]"
@@ -165,7 +165,7 @@ function PortalDocumentosPage() {
             />
           </Bloque>
 
-          <Bloque titulo="Comprobantes de pago" queEstasViendo="Pagos registrados a tu nombre con la imagen del comprobante. Toca una imagen para verla completa.">
+          <Bloque titulo="Comprobantes de pago" queEstasViendo="Los pagos que Pronoia te hizo y que tienen foto del comprobante, con su monto total en USD. Toca una imagen para verla completa.">
             <TablaDatos
               titulo="Comprobantes de pago" columnas={columnasComprobantes} filas={datos?.comprobantes ?? []} claveFila={c => c.id}
               ordenInicial={{ columna: 'fecha', sentido: 'desc' }} paginacion={{ tamano: 15 }} anchoMinimo="min-w-[28rem]"

@@ -15,6 +15,16 @@ export const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   cruce: 'Cruce',
 };
 
+/** Qué significa cada tipo de movimiento (texto del title de su insignia). */
+export const AYUDA_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
+  factura: 'Factura emitida: hace subir el saldo.',
+  pago: 'Pago o cobro de dinero: hace bajar el saldo.',
+  adelanto: 'Dinero entregado por adelantado y aún sin aplicar a facturas: hace bajar el saldo y se puede usar en un cruce.',
+  nota_credito: 'Ajuste a favor de la cuenta: hace bajar el saldo.',
+  nota_debito: 'Ajuste en contra de la cuenta: hace subir el saldo.',
+  cruce: 'Facturas saldadas con adelantos o notas de crédito sin mover dinero: el saldo no cambia.',
+};
+
 /** Tono de la insignia de cada tipo (el texto de la etiqueta es lo que lo distingue; el color solo acompaña). */
 export const TONO_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], Tono> = {
   factura: 'aviso',

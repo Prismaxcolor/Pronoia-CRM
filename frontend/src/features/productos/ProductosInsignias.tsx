@@ -18,7 +18,7 @@ export function InsigniaLimpieza({ producto }: { producto: Pick<Producto, 'tipoM
   const tono: Tono = estado === 'limpio' ? 'exito' : estado === 'sucio' ? 'neutral' : 'aviso';
   const simbolo = estado === 'limpio' ? '✓' : estado === 'sucio' ? '●' : '?';
   return (
-    <Insignia tono={tono} title="Material limpio: ya sin residuos, listo para vender. Material sucio: trae residuos y hay que limpiarlo antes. Sin definir: todavía no se ha indicado.">
+    <Insignia tono={tono} title="Estado del material, solo para Ferroso y No ferroso: limpio es sin residuos, sucio es que trae residuos. Sirve para separarlos en el inventario. Sin definir: todavía no se indicó.">
       <span aria-hidden="true">{simbolo}</span>{ETIQUETA_ESTADO_LIMPIEZA[estado]}
     </Insignia>
   );

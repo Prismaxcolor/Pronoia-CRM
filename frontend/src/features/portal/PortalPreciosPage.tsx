@@ -33,7 +33,7 @@ function PortalPreciosPage() {
           <Bloque
             key={lista.id}
             titulo={lista.nombre}
-            queEstasViendo={lista.vigenteDesde ? `Precios por kilo vigentes desde el ${fechaCorta(lista.vigenteDesde)}.` : 'Precios por kilo vigentes.'}
+            queEstasViendo={lista.vigenteDesde ? `Cuánto vale cada kilo de cada material, en USD, según la lista que Pronoia publicó para ti. Rige desde el ${fechaCorta(lista.vigenteDesde)}.` : 'Cuánto vale cada kilo de cada material, en USD, según la lista que Pronoia publicó para ti.'}
           >
             <TablaDatos
               titulo={`Precios de ${lista.nombre}`} columnas={columnas} filas={precios} claveFila={p => p.id}

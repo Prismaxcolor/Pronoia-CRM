@@ -27,8 +27,8 @@ export type TipoTercero = 'proveedor' | 'cliente';
 
 /** Vocabulario por tipo (el saldo de un proveedor se "paga"; el de un cliente se "cobra"). */
 export const TEXTO_TERCERO = {
-  proveedor: { singular: 'proveedor', plural: 'proveedores', verbo: 'pagar', saldo: 'Por pagar', saldoAFavor: 'A favor nuestro', ruta: 'proveedores' },
-  cliente: { singular: 'cliente', plural: 'clientes', verbo: 'cobrar', saldo: 'Por cobrar', saldoAFavor: 'A favor del cliente', ruta: 'clientes' },
+  proveedor: { singular: 'proveedor', plural: 'proveedores', verbo: 'pagar', saldo: 'Por pagar', saldoAFavor: 'Pagado de más (a favor nuestro)', ruta: 'proveedores' },
+  cliente: { singular: 'cliente', plural: 'clientes', verbo: 'cobrar', saldo: 'Por cobrar', saldoAFavor: 'Cobrado de más (a favor del cliente)', ruta: 'clientes' },
 } as const;
 
 const redondear = (n: number): number => Math.round(n * 100) / 100;
@@ -148,7 +148,7 @@ export function alertasTerceros(tipo: TipoTercero, filas: readonly FilaTercero[]
         id: `concentracion-${f.id}`,
         severidad: 'amarilla',
         texto: `${f.nombre} concentra el ${formatearNumero(parte * 100, 0)} % de lo que hay por ${t.verbo}`,
-        detalle: `USD ${formatearNumero(f.saldo?.saldo ?? 0, 2)} de USD ${formatearNumero(totalPorSaldar, 2)} en total.`,
+        detalle: `USD ${formatearNumero(f.saldo?.saldo ?? 0, 2)} de un total de USD ${formatearNumero(totalPorSaldar, 2)} por ${t.verbo} entre todos los ${t.plural} con saldo.`,
         enlace: { to: `/${t.ruta}/${f.id}/estado-cuenta`, etiqueta: 'Ver estado de cuenta' },
       });
     }
@@ -163,7 +163,7 @@ export function alertasTerceros(tipo: TipoTercero, filas: readonly FilaTercero[]
     alertas.push({
       id: 'antiguedad-urgente',
       severidad: 'roja',
-      texto: `${urgentes.length} ${urgentes.length === 1 ? t.singular : t.plural} con facturas pendientes de más de ${DIAS_ANTIGUEDAD_URGENTE} días`,
+      texto: `${urgentes.length} ${urgentes.length === 1 ? t.singular : t.plural} con una factura sin ${t.verbo} desde hace ${DIAS_ANTIGUEDAD_URGENTE} días o más`,
       detalle: nombresResumidos(urgentes.map(f => f.nombre)),
     });
   }
@@ -171,7 +171,7 @@ export function alertasTerceros(tipo: TipoTercero, filas: readonly FilaTercero[]
     alertas.push({
       id: 'antiguedad-atencion',
       severidad: 'amarilla',
-      texto: `${atencion.length} ${atencion.length === 1 ? t.singular : t.plural} con facturas pendientes de más de ${DIAS_ANTIGUEDAD_ATENCION} días`,
+      texto: `${atencion.length} ${atencion.length === 1 ? t.singular : t.plural} con una factura sin ${t.verbo} desde hace ${DIAS_ANTIGUEDAD_ATENCION} días o más (menos de ${DIAS_ANTIGUEDAD_URGENTE})`,
       detalle: nombresResumidos(atencion.map(f => f.nombre)),
     });
   }
@@ -182,7 +182,7 @@ export function alertasTerceros(tipo: TipoTercero, filas: readonly FilaTercero[]
       id: 'sin-telegram',
       severidad: 'info',
       texto: `${r.activosSinTelegram} de ${r.activos} ${r.activos === 1 ? `${t.singular} activo` : `${t.plural} activos`} sin Telegram vinculado`,
-      detalle: 'Con Telegram vinculado puedes enviarle su estado de cuenta desde la pantalla de estado de cuenta.',
+      detalle: 'Cuando vinculan Telegram, puedes enviarles su estado de cuenta desde la pantalla del estado de cuenta.',
     });
   }
   return alertas;
@@ -279,14 +279,14 @@ export function alertasAntiguedadEstadoCuenta(pendientes: readonly FacturaPendie
   const alertas: AlertaTercero[] = [];
   const grupo = (min: number, max: number) => pendientes.filter(p => p.dias >= min && p.dias < max);
   const describir = (lista: readonly FacturaPendienteEstimada[]) =>
-    `${nombresResumidos(lista.map(p => `${p.referencia ?? 'Factura'} (${p.dias} d)`))} · USD ${formatearNumero(lista.reduce((s, p) => s + p.pendiente, 0), 2)} estimados`;
+    `${nombresResumidos(lista.map(p => `${p.referencia ?? 'Factura'} (${p.dias} ${p.dias === 1 ? 'día' : 'días'})`))} · USD ${formatearNumero(lista.reduce((s, p) => s + p.pendiente, 0), 2)} pendientes (estimado)`;
   const urgentes = grupo(DIAS_ANTIGUEDAD_URGENTE, Infinity);
   const atencion = grupo(DIAS_ANTIGUEDAD_ATENCION, DIAS_ANTIGUEDAD_URGENTE);
   if (urgentes.length > 0) {
     alertas.push({
       id: 'facturas-urgentes',
       severidad: 'roja',
-      texto: `${urgentes.length} ${urgentes.length === 1 ? 'factura' : 'facturas'} sin pagar hace más de ${DIAS_ANTIGUEDAD_URGENTE} días`,
+      texto: `${urgentes.length} ${urgentes.length === 1 ? 'factura' : 'facturas'} sin pagar desde hace ${DIAS_ANTIGUEDAD_URGENTE} días o más`,
       detalle: describir(urgentes),
     });
   }
@@ -294,7 +294,7 @@ export function alertasAntiguedadEstadoCuenta(pendientes: readonly FacturaPendie
     alertas.push({
       id: 'facturas-atencion',
       severidad: 'amarilla',
-      texto: `${atencion.length} ${atencion.length === 1 ? 'factura' : 'facturas'} sin pagar hace más de ${DIAS_ANTIGUEDAD_ATENCION} días`,
+      texto: `${atencion.length} ${atencion.length === 1 ? 'factura' : 'facturas'} sin pagar desde hace ${DIAS_ANTIGUEDAD_ATENCION} días o más (menos de ${DIAS_ANTIGUEDAD_URGENTE})`,
       detalle: describir(atencion),
     });
   }

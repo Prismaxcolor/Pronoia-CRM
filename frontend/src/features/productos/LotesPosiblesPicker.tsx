@@ -59,8 +59,8 @@ function LotesPosiblesPicker({ lotes, seleccionados, onChange }: Props) {
       )}
       <p className="text-xs text-text-muted">
         {seleccionados.length === 0
-          ? 'Sin lotes: este producto no pertenece a ningún lote.'
-          : `${seleccionados.length} lote${seleccionados.length > 1 ? 's' : ''} posible${seleccionados.length > 1 ? 's' : ''}.`}
+          ? 'Sin lote ancla: al pesar este producto se podrá elegir cualquier lote.'
+          : `${seleccionados.length} lote${seleccionados.length > 1 ? 's' : ''} ancla: al pesar este producto solo se ${seleccionados.length > 1 ? 'podrán elegir esos lotes' : 'podrá elegir ese lote'}.`}
       </p>
     </div>
   );
