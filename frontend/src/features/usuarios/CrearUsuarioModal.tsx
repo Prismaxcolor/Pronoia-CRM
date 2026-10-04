@@ -63,7 +63,7 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
             <label className="block text-xs font-medium text-text-secondary mb-1">Rol</label>
             <select value={rol} onChange={e => setRol(e.target.value as RolUsuario)} className={inputClass}>
               <option value="trabajador">Trabajador — operación diaria (pesaje, traslados, productos)</option>
-              <option value="administracion">Administración — facturación, clientes, proveedores y cochinito</option>
+              <option value="administracion">Administración — facturación, clientes, proveedores y wallet</option>
               <option value="superadmin">Superadmin — acceso total</option>
             </select>
           </div>
@@ -76,7 +76,7 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
               {rol === 'superadmin' && <li>Acceso total a todas las secciones</li>}
               {rol === 'administracion' && (
                 <>
-                  <li>Facturación, cochinito, clientes, proveedores, pesaje, traslados, despachos y toma física: ver, crear y editar</li>
+                  <li>Facturación, wallet, clientes, proveedores, pesaje, traslados, despachos y toma física: ver, crear y editar</li>
                   <li>Dashboard, productos, categorías, taras, vehículos, almacenes, listas de precios y transformaciones: solo ver</li>
                   <li>No gestiona usuarios y no puede eliminar</li>
                 </>
@@ -86,7 +86,7 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
                   <li>Productos, categorías, taras, vehículos, almacenes y listas de precios: ver, crear y editar</li>
                   <li>Pesaje, traslados, transformaciones y toma física: ver y crear</li>
                   <li>Clientes, proveedores y despachos: solo ver</li>
-                  <li>No tiene facturación, cochinito ni usuarios, y no puede eliminar</li>
+                  <li>No tiene facturación, wallet ni usuarios, y no puede eliminar</li>
                 </>
               )}
             </ul>

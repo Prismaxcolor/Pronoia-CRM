@@ -68,7 +68,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio }: Props) {
 
   return (
     <TablaDatos
-      titulo="Movimientos del Cochinito"
+      titulo="Movimientos del Wallet"
       columnas={columnas}
       filas={filas}
       claveFila={m => m.id}

@@ -37,7 +37,7 @@ const RECURSOS: { recurso: Recurso; label: string }[] = [
   { recurso: 'traslados', label: 'Traslados' },
   { recurso: 'transformaciones', label: 'Transformaciones' },
   { recurso: 'facturacion', label: 'Facturacion' },
-  { recurso: 'cochinito', label: 'Cochinito (Tesoreria)' },
+  { recurso: 'cochinito', label: 'Wallet (Tesoreria)' },
   { recurso: 'clientes', label: 'Clientes' },
   { recurso: 'proveedores', label: 'Proveedores' },
   { recurso: 'despachos', label: 'Despachos' },

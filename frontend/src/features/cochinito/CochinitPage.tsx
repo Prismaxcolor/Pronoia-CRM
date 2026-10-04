@@ -186,7 +186,7 @@ function CochinitPage() {
   if (cargando) {
     return (
       <div className="max-w-7xl" aria-busy="true">
-        <EncabezadoPagina titulo="Cochinito" subtitulo="Cargando la tesorería de Pronoia…" />
+        <EncabezadoPagina titulo="Wallet" subtitulo="Cargando la tesorería de Pronoia…" />
         <SkeletonBloque alto="h-20" conMargen etiqueta="Cargando filtros" />
         <SkeletonKpis />
         <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando bancas" />
@@ -209,7 +209,7 @@ function CochinitPage() {
   return (
     <div className="max-w-7xl">
       <EncabezadoPagina
-        titulo="Cochinito"
+        titulo="Wallet"
         subtitulo={`Tesorería de Pronoia: cuánto hay en cada banca, qué se ha pagado y a cuánto está la tasa de cambio. ${bancas.filter(b => !b.archivada).length} bancas activas.`}
         acciones={puedeCrear ? <BotonAccion icono={<Plus size={16} />} onClick={() => setModalAbierto(true)}>Nuevo movimiento</BotonAccion> : undefined}
       />

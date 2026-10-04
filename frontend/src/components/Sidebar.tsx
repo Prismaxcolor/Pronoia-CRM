@@ -62,7 +62,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     header: 'Tesorería',
     items: [
-      { label: 'Cochinito', to: '/cochinito', icon: <Wallet size={20} />, recurso: 'cochinito' },
+      { label: 'Wallet', to: '/cochinito', icon: <Wallet size={20} />, recurso: 'cochinito' },
     ],
   },
   {

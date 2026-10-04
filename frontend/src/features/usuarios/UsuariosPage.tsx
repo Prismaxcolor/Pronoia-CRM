@@ -151,7 +151,7 @@ function UsuariosPage() {
               valor={formatearNumero(activosDe('superadmin'))} unidad={activosDe('superadmin') === 1 ? 'activo' : 'activos'} subtitulo="Acceso total"
             />
             <TarjetaKpi
-              titulo="Administración" ayuda="Cuántos usuarios activos tienen el rol Administración. Por defecto manejan facturación, clientes, proveedores, pesaje y cochinito, sin acceso a usuarios y sin poder eliminar; sus permisos se pueden personalizar."
+              titulo="Administración" ayuda="Cuántos usuarios activos tienen el rol Administración. Por defecto manejan facturación, clientes, proveedores, pesaje y wallet, sin acceso a usuarios y sin poder eliminar; sus permisos se pueden personalizar."
               valor={formatearNumero(activosDe('administracion'))} unidad={activosDe('administracion') === 1 ? 'activo' : 'activos'} subtitulo="Permisos según su configuración"
             />
             <TarjetaKpi

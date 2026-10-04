@@ -57,7 +57,7 @@ export const FRASES_POR_PAGINA: Partial<Record<PaginaBlob, string[]>> = {
   vehiculos: ['¡Camiones! Me encantan los camiones.', 'Placas, placas, placas.'],
   clientes: ['Cliente contento, blob contento.'],
   proveedores: ['Sin proveedores no hay chatarra. ¡Gracias, proveedores!'],
-  cochinito: ['Cuidando el cochinito, oink.', 'Cada moneda cuenta.'],
+  cochinito: ['Cuidando el wallet, sin gastar de más.', 'Cada moneda cuenta.'],
   usuarios: ['Con gran poder viene gran responsabilidad.'],
   citas: ['Puntualidad ante todo, ¡los camiones esperan!'],
 };

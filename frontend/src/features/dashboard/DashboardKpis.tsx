@@ -121,15 +121,15 @@ function KpiTickets({ tickets, puedeFacturar }: { tickets: Estado<ResumenTickets
 }
 
 function KpiCochinito({ bancas }: { bancas: Estado<BancaMinima[]> }) {
-  const titulo = 'Saldo del cochinito';
+  const titulo = 'Saldo del wallet';
   const icono = <PiggyBank size={16} />;
-  const ayuda = 'Dinero que hay ahora en las bancas activas (no archivadas) del cochinito. Se suma por moneda: los dólares (USD) y los bolívares (VES) nunca se mezclan. El saldo de cada banca es lo que entró (ingresos y transferencias recibidas) menos lo que salió (egresos y transferencias enviadas); puede dar negativo si salió más de lo que se registró como entrada.';
+  const ayuda = 'Dinero que hay ahora en las bancas activas (no archivadas) del wallet. Se suma por moneda: los dólares (USD) y los bolívares (VES) nunca se mezclan. El saldo de cada banca es lo que entró (ingresos y transferencias recibidas) menos lo que salió (egresos y transferencias enviadas); puede dar negativo si salió más de lo que se registró como entrada.';
   const pendiente = tarjetaNoLista(bancas, titulo, icono, ayuda, { dinero: true, mensaje: '' });
   if (pendiente || bancas.estado !== 'listo') return pendiente;
 
   const s = saldosPorMoneda(bancas.dato);
   if (!s.hayUsd && !s.hayVes) {
-    return <TarjetaKpi titulo={titulo} icono={icono} ayuda={ayuda} estado="vacio" mensajeVacio="No hay bancas activas en el cochinito" />;
+    return <TarjetaKpi titulo={titulo} icono={icono} ayuda={ayuda} estado="vacio" mensajeVacio="No hay bancas activas en el wallet" />;
   }
   return (
     <TarjetaKpi

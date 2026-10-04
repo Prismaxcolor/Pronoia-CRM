@@ -56,12 +56,12 @@ export function SaldoBancas({ bancas }: { bancas: EstadoBloque<BancaMinima[]> & 
   }, [bancas]);
 
   return (
-    <Bloque titulo="Saldo por banca" queEstasViendo="cuánto dinero tiene hoy cada banca del cochinito (su saldo actual). Las de dólares (USD) y las de bolívares (VES) van en gráficas separadas porque sus montos no se pueden comparar entre sí.">
+    <Bloque titulo="Saldo por banca" queEstasViendo="cuánto dinero tiene hoy cada banca del wallet (su saldo actual). Las de dólares (USD) y las de bolívares (VES) van en gráficas separadas porque sus montos no se pueden comparar entre sí.">
       {bancas.estado === 'cargando' && <SkeletonBloque alto="h-56" etiqueta="Cargando bancas" />}
-      {bancas.estado === 'sinPermiso' && <EstadoVacio mensaje="Sin permiso para ver el cochinito" />}
+      {bancas.estado === 'sinPermiso' && <EstadoVacio mensaje="Sin permiso para ver el wallet" />}
       {bancas.estado === 'error' && <ErrorDeBloque mensaje={bancas.mensaje} onReintentar={bancas.recargar} />}
       {bancas.estado === 'listo' && (grupos.length === 0
-        ? <EstadoVacio mensaje="Ninguna banca tiene saldo todavía" descripcion="Las bancas aparecen aquí cuando tienen saldo distinto de cero." accion={{ etiqueta: 'Ir al cochinito', to: '/cochinito' }} />
+        ? <EstadoVacio mensaje="Ninguna banca tiene saldo todavía" descripcion="Las bancas aparecen aquí cuando tienen saldo distinto de cero." accion={{ etiqueta: 'Ir al wallet', to: '/cochinito' }} />
         : (
           <div className="space-y-5 rounded-xl border border-border bg-surface p-4">
             {grupos.map(g => (
@@ -85,7 +85,7 @@ export function SaldoBancas({ bancas }: { bancas: EstadoBloque<BancaMinima[]> & 
                 )}
               </div>
             ))}
-            <p className="text-xs text-text-secondary"><Link to="/cochinito" className="font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">Ver el cochinito →</Link></p>
+            <p className="text-xs text-text-secondary"><Link to="/cochinito" className="font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">Ver el wallet →</Link></p>
           </div>
         ))}
     </Bloque>

@@ -22,7 +22,7 @@ const DESCRIPCION_PAGINA: Record<PaginaAsistente, string> = {
   vehiculos: 'los vehículos',
   clientes: 'los clientes',
   proveedores: 'los proveedores',
-  cochinito: 'el cochinito (caja chica)',
+  cochinito: 'el wallet (caja chica; antes se llamaba «cochinito»)',
   usuarios: 'la gestión de usuarios',
   citas: 'las citas de despacho',
   configuracion: 'la configuración',
