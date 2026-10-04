@@ -5,17 +5,20 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
 import AgendaSemana from './AgendaSemana';
+import { INFO_ESTADO_CITA } from './estados-cita';
 import NuevaCitaModal from './NuevaCitaModal';
-
-const ESTADO_LABEL: Record<EstadoCita, { texto: string; clase: string }> = {
-  pendiente: { texto: 'Pendiente', clase: 'bg-amber-100 text-amber-700' },
-  confirmada: { texto: 'Confirmada', clase: 'bg-green-100 text-green-700' },
-  reprogramada: { texto: 'Reprogramada', clase: 'bg-blue-100 text-blue-700' },
-  cancelada: { texto: 'Cancelada', clase: 'bg-red-100 text-red-700' },
-  completada: { texto: 'Completada', clase: 'bg-gray-100 text-gray-600' },
-};
+import {
+  EncabezadoPagina, Bloque, BotonAccion, GrillaKpis, TarjetaKpi, ControlSegmentado, FiltrosBarra, EstadoVacio,
+  SkeletonKpis, SkeletonBloque, Insignia, Chip, useFiltrosUrl, formatearNumero,
+} from '../../components/ui';
+import { kpisCitas } from '../../lib/catalogos-kpis';
 
 type Vista = 'lista' | 'semana';
+
+const ESTADOS_CITA: readonly EstadoCita[] = ['pendiente', 'confirmada', 'reprogramada', 'cancelada', 'completada'];
+const ESQUEMA_FILTROS = { campos: { estado: { tipo: 'opcion', opciones: ESTADOS_CITA } } } as const;
+const OPCIONES_ESTADO = ESTADOS_CITA.map(e => ({ valor: e, etiqueta: INFO_ESTADO_CITA[e].texto }));
+const BOTON_ICONO = 'inline-flex h-9 w-9 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -43,32 +46,47 @@ function CitasPage() {
   const [vista, setVista] = usePestanaRecordada<Vista>('pronoia:citas:vista', ['lista', 'semana'], 'lista');
   const [citas, setCitas] = useState<Cita[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState(false);
+  const [citasKpi, setCitasKpi] = useState<Cita[] | null>(null);
   const [horarios, setHorarios] = useState<string[]>([]);
   const [verHistorico, setVerHistorico] = useState(false);
   const [lunes, setLunes] = useState(lunesDeSemana(hoyISO()));
   const [nuevaCitaAbierta, setNuevaCitaAbierta] = useState(false);
+  const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
+  const estadoFiltro = typeof filtros.estado === 'string' ? filtros.estado : undefined;
 
   const rangoActivo = vista === 'semana'
     ? { desde: lunes, hasta: sumarDias(lunes, 6) }
     : { desde: verHistorico ? undefined : hoyISO(), hasta: undefined };
 
-  const recargar = () => listarCitas(rangoActivo.desde, rangoActivo.hasta).then(setCitas).finally(() => setCargando(false));
-  const cargar = () => { setCargando(true); recargar(); };
+  const recargar = () => listarCitas(rangoActivo.desde, rangoActivo.hasta)
+    .then(c => { setCitas(c); setErrorCarga(false); })
+    .catch(() => setErrorCarga(true))
+    .finally(() => setCargando(false));
+  const recargarKpis = () => listarCitas(hoyISO()).then(setCitasKpi).catch(() => setCitasKpi(null));
+  const cargar = () => { setCargando(true); recargar(); recargarKpis(); };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { recargar(); }, [vista, verHistorico, lunes]);
-  useEffect(() => { obtenerHorarios().then(setHorarios); }, []);
+  useEffect(() => { recargarKpis(); }, []);
+  useEffect(() => { obtenerHorarios().then(setHorarios).catch(() => setHorarios([])); }, []);
+
+  const kpis = useMemo(() => (citasKpi ? kpisCitas(citasKpi, hoyISO()) : null), [citasKpi]);
+  const citasFiltradas = useMemo(
+    () => (estadoFiltro ? citas.filter(c => c.estado === estadoFiltro) : citas),
+    [citas, estadoFiltro],
+  );
 
   const citasPorDia = useMemo(() => {
     const mapa = new Map<string, Cita[]>();
-    for (const c of citas) {
+    for (const c of citasFiltradas) {
       const lista = mapa.get(c.fecha) ?? [];
       lista.push(c);
       mapa.set(c.fecha, lista);
     }
     for (const lista of mapa.values()) lista.sort((a, b) => a.hora.localeCompare(b.hora));
     return [...mapa.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [citas]);
+  }, [citasFiltradas]);
 
   const cambiarEstado = async (cita: Cita, estado: EstadoCita) => {
     try {
@@ -83,120 +101,135 @@ function CitasPage() {
   const fmtFecha = (iso: string) =>
     new Date(`${iso}T00:00:00`).toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
 
+  const hoyIso = hoyISO();
+
   return (
-    <div className="max-w-3xl">
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Despachos agendados</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Citas que proveedores y clientes agendaron desde el portal, o agendadas por el staff.
-          </p>
-        </div>
-        {puedeCrear && (
-          <button
-            type="button"
-            onClick={() => setNuevaCitaAbierta(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shrink-0"
-          >
-            <Plus size={18} />
-            Agendar
-          </button>
-        )}
-      </div>
+    <div>
+      <EncabezadoPagina
+        titulo="Despachos agendados"
+        subtitulo="Citas que proveedores y clientes agendaron desde el portal, o agendadas por el staff."
+        acciones={puedeCrear ? (
+          <BotonAccion onClick={() => setNuevaCitaAbierta(true)} icono={<Plus size={18} aria-hidden="true" />}>Agendar</BotonAccion>
+        ) : undefined}
+      />
 
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
-          <button type="button" onClick={() => setVista('lista')} className={`px-4 py-1.5 ${vista === 'lista' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-            Lista
-          </button>
-          <button type="button" onClick={() => setVista('semana')} className={`px-4 py-1.5 ${vista === 'semana' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-            Semana
-          </button>
-        </div>
-
-        {vista === 'lista' && (
-          <button
-            type="button"
-            onClick={() => setVerHistorico(v => !v)}
-            className="text-xs text-text-muted hover:text-text-primary underline"
-          >
-            {verHistorico ? 'Ver solo próximas' : 'Ver histórico'}
-          </button>
-        )}
-      </div>
-
-      {cargando ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
-        </div>
-      ) : vista === 'semana' ? (
-        <AgendaSemana
-          lunes={lunes}
-          horarios={horarios}
-          citas={citas}
-          onSemanaAnterior={() => setLunes(l => sumarDias(l, -7))}
-          onSemanaSiguiente={() => setLunes(l => sumarDias(l, 7))}
-          onVerCita={() => setVista('lista')}
-        />
-      ) : citas.length === 0 ? (
-        <p className="text-center text-text-muted py-12 text-sm">No hay citas agendadas.</p>
+      {citasKpi === null && cargando ? (
+        <SkeletonKpis cantidad={3} />
       ) : (
-        <div className="space-y-6">
-          {citasPorDia.map(([fecha, citasDelDia]) => (
-            <div key={fecha}>
-              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2 sticky top-0 bg-surface-alt py-1">
-                {fmtFecha(fecha)}
-              </h3>
-              <div className="bg-surface rounded-xl border border-border overflow-hidden">
-                {citasDelDia.map(c => (
-                  <div key={c.id} className="flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0">
-                    <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
-                      {c.entidadTipo === 'proveedor' ? <Truck size={16} /> : <Contact size={16} />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-text-primary truncate">{c.nombreEntidad}</p>
-                      <p className="text-xs text-text-muted">{c.hora}</p>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${ESTADO_LABEL[c.estado].clase}`}>
-                      {ESTADO_LABEL[c.estado].texto}
-                    </span>
-                    {puedeEditar && !['cancelada', 'completada'].includes(c.estado) && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        {c.estado === 'pendiente' && (
-                          <button
-                            type="button"
-                            onClick={() => cambiarEstado(c, 'confirmada')}
-                            className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-green-600 transition-colors"
-                            title="Confirmar"
-                          >
-                            <Check size={15} />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => cambiarEstado(c, 'completada')}
-                          className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-brand-600 transition-colors"
-                          title="Marcar como completada"
-                        >
-                          <CheckCheck size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => cambiarEstado(c, 'cancelada')}
-                          className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-red-600 transition-colors"
-                          title="Cancelar"
-                        >
-                          <X size={15} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+        <GrillaKpis>
+          <TarjetaKpi
+            titulo="Citas de hoy" ayuda="Citas con fecha de hoy que no están canceladas ni completadas."
+            valor={kpis ? formatearNumero(kpis.hoy) : '—'} unidad={kpis?.hoy === 1 ? 'cita' : 'citas'}
+            subtitulo="Pendientes de atender hoy" estado={kpis ? 'listo' : 'vacio'} mensajeVacio="No se pudo cargar"
+          />
+          <TarjetaKpi
+            titulo="Próximos 7 días" ayuda="Citas desde hoy hasta dentro de 6 días (hoy incluido) que no están canceladas ni completadas."
+            valor={kpis ? formatearNumero(kpis.proximos7) : '—'} unidad={kpis?.proximos7 === 1 ? 'cita' : 'citas'}
+            subtitulo="Incluye las de hoy" estado={kpis ? 'listo' : 'vacio'} mensajeVacio="No se pudo cargar"
+          />
+          <TarjetaKpi
+            titulo="Por confirmar" ayuda="Citas desde hoy en adelante que siguen en estado Pendiente: falta que alguien las confirme."
+            valor={kpis ? formatearNumero(kpis.pendientes) : '—'} unidad={kpis?.pendientes === 1 ? 'cita' : 'citas'}
+            subtitulo="Estado Pendiente, de hoy en adelante" estado={kpis ? 'listo' : 'vacio'} mensajeVacio="No se pudo cargar"
+          />
+        </GrillaKpis>
       )}
+
+      <Bloque
+        titulo={vista === 'semana' ? 'Agenda de la semana' : verHistorico ? 'Histórico de citas' : 'Próximas citas'}
+        queEstasViendo={vista === 'semana'
+          ? 'Una cuadrícula con horas en filas y días en columnas; cada casilla ocupada muestra quién agendó y su estado.'
+          : verHistorico
+            ? 'Todas las citas, desde las más antiguas, agrupadas por día.'
+            : 'Las citas de hoy en adelante, agrupadas por día y con su estado.'}
+        acciones={(
+          <div className="flex flex-wrap items-center gap-2">
+            {vista === 'lista' && (
+              <Chip onClick={() => setVerHistorico(v => !v)} seleccionado={verHistorico}>
+                {verHistorico ? 'Mostrando histórico (quitar)' : 'Ver histórico'}
+              </Chip>
+            )}
+            <ControlSegmentado
+            etiquetaAria="Vista de las citas"
+            valor={vista}
+            onCambiar={setVista}
+            opciones={[{ valor: 'lista', etiqueta: 'Lista' }, { valor: 'semana', etiqueta: 'Semana' }]}
+          />
+          </div>
+        )}
+      >
+        <div className="mb-3">
+          <FiltrosBarra
+            selectores={[{ id: 'citas-estado', etiqueta: 'Estado', valor: estadoFiltro, opciones: OPCIONES_ESTADO, onCambiar: v => cambiar({ estado: v }), textoTodas: 'Todos' }]}
+            onLimpiar={limpiar}
+          />
+        </div>
+
+        {cargando ? (
+          <SkeletonBloque alto="h-64" etiqueta="Cargando citas" />
+        ) : errorCarga ? (
+          <EstadoVacio mensaje="No se pudieron cargar las citas." descripcion="Revisa tu conexión e inténtalo de nuevo." accion={{ etiqueta: 'Reintentar', onClick: cargar }} />
+        ) : vista === 'semana' ? (
+          <AgendaSemana
+            lunes={lunes}
+            horarios={horarios}
+            citas={citasFiltradas}
+            onSemanaAnterior={() => setLunes(l => sumarDias(l, -7))}
+            onSemanaSiguiente={() => setLunes(l => sumarDias(l, 7))}
+            onVerCita={() => setVista('lista')}
+          />
+        ) : citasFiltradas.length === 0 ? (
+          estadoFiltro ? (
+            <EstadoVacio mensaje="Ninguna cita coincide con el filtro." accion={{ etiqueta: 'Quitar filtro', onClick: limpiar }} />
+          ) : (
+            <EstadoVacio
+              mensaje={verHistorico ? 'Aún no hay citas registradas.' : 'No hay citas próximas.'}
+              descripcion="Las citas aparecen cuando un proveedor o cliente agenda desde el portal, o cuando el staff agenda una."
+              accion={puedeCrear ? { etiqueta: 'Agendar una cita', onClick: () => setNuevaCitaAbierta(true) } : undefined}
+            />
+          )
+        ) : (
+          <div className="space-y-6">
+            {citasPorDia.map(([fecha, citasDelDia]) => (
+              <section key={fecha} aria-label={fmtFecha(fecha)}>
+                <h3 className="sticky top-0 mb-2 flex items-center gap-2 bg-surface-alt py-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                  {fmtFecha(fecha)}
+                  {fecha === hoyIso && <Insignia tono="marca" forma="cuadrada">Hoy</Insignia>}
+                </h3>
+                <ul className="overflow-hidden rounded-xl border border-border bg-surface">
+                  {citasDelDia.map(c => (
+                    <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3 last:border-b-0">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                        {c.entidadTipo === 'proveedor' ? <Truck size={16} aria-label="Proveedor" /> : <Contact size={16} aria-label="Cliente" />}
+                      </div>
+                      <div className="min-w-0 flex-1 basis-40">
+                        <p className="truncate text-sm font-medium text-text-primary">{c.nombreEntidad}</p>
+                        <p className="text-xs text-text-secondary tabular-nums">{c.hora} · {c.entidadTipo === 'proveedor' ? 'Proveedor' : 'Cliente'}</p>
+                      </div>
+                      <Insignia tono={INFO_ESTADO_CITA[c.estado].tono}>{INFO_ESTADO_CITA[c.estado].texto}</Insignia>
+                      {puedeEditar && !['cancelada', 'completada'].includes(c.estado) && (
+                        <div className="flex shrink-0 items-center gap-1">
+                          {c.estado === 'pendiente' && (
+                            <button type="button" onClick={() => cambiarEstado(c, 'confirmada')} className={`${BOTON_ICONO} hover:text-green-600`} title="Confirmar" aria-label={`Confirmar cita de ${c.nombreEntidad}`}>
+                              <Check size={15} aria-hidden="true" />
+                            </button>
+                          )}
+                          <button type="button" onClick={() => cambiarEstado(c, 'completada')} className={`${BOTON_ICONO} hover:text-brand-600`} title="Marcar como completada" aria-label={`Marcar como completada la cita de ${c.nombreEntidad}`}>
+                            <CheckCheck size={15} aria-hidden="true" />
+                          </button>
+                          <button type="button" onClick={() => cambiarEstado(c, 'cancelada')} className={`${BOTON_ICONO} hover:text-red-600`} title="Cancelar" aria-label={`Cancelar cita de ${c.nombreEntidad}`}>
+                            <X size={15} aria-hidden="true" />
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )}
+      </Bloque>
 
       {nuevaCitaAbierta && (
         <NuevaCitaModal onClose={() => setNuevaCitaAbierta(false)} onAgendada={cargar} />

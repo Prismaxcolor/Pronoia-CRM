@@ -1,10 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, EyeOff, Eye, Weight } from 'lucide-react';
 import { obtenerTaras, desactivarTara, reactivarTara } from '../../services/tara-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import TaraFormModal from './TaraFormModal';
+import {
+  EncabezadoPagina, Bloque, BotonAccion, GrillaKpis, TarjetaKpi, TablaDatos, FiltrosBarra, EstadoVacio,
+  SkeletonKpis, SkeletonTabla, Insignia, useFiltrosUrl, formatearKgDecimales, formatearNumero,
+} from '../../components/ui';
+import type { ColumnaTabla } from '../../components/ui';
+import { coincideEstadoActivo, coincideTexto, kpisTaras } from '../../lib/catalogos-kpis';
 import type { Tara } from '@shared/types/index.js';
+
+const ESQUEMA_FILTROS = {
+  campos: { q: { tipo: 'texto' }, estado: { tipo: 'opcion', opciones: ['activos', 'inactivos'] } },
+} as const;
+
+/** Las taras son pesos chicos (0,10 kg): se muestran con hasta 2 decimales, nunca redondeadas a 0. */
+const kgTara = (n: number) => formatearKgDecimales(n, Number.isInteger(n) ? 0 : 2);
+
+const OPCIONES_ESTADO = [{ valor: 'activos', etiqueta: 'Activas' }, { valor: 'inactivos', etiqueta: 'Inactivas' }];
+const BOTON_ICONO = 'inline-flex h-9 w-9 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
+
+function MiniaturaTara({ t }: { t: Tara }) {
+  return (
+    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-brand-100 text-brand-700">
+      {t.fotos[0] ? <img src={t.fotos[0]} alt={`Foto de ${t.nombre}`} className="h-full w-full object-cover" /> : <Weight size={18} aria-hidden="true" />}
+    </div>
+  );
+}
 
 function TarasPage() {
   const { tienePermiso } = useAuth();
@@ -14,9 +38,14 @@ function TarasPage() {
 
   const [taras, setTaras] = useState<Tara[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState(false);
+  const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; tara: Tara | null } | { abierto: false }>({ abierto: false });
 
-  const recargar = () => obtenerTaras().then(setTaras).finally(() => setCargando(false));
+  const recargar = () => obtenerTaras()
+    .then(t => { setTaras(t); setErrorCarga(false); })
+    .catch(() => setErrorCarga(true))
+    .finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };
 
   useEffect(() => { recargar(); }, []);
@@ -35,87 +64,133 @@ function TarasPage() {
     cargar();
   };
 
-  if (cargando) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+  const kpis = useMemo(() => kpisTaras(taras), [taras]);
+  const q = typeof filtros.q === 'string' ? filtros.q : undefined;
+  const estado = typeof filtros.estado === 'string' ? filtros.estado : undefined;
+  const visibles = useMemo(
+    () => taras.filter(t => coincideEstadoActivo(t.activo, estado) && coincideTexto([t.nombre], q)),
+    [taras, q, estado],
+  );
+
+  const botonesFila = (t: Tara) => (puedeEditar ? (
+    <div className="flex items-center justify-end gap-1">
+      <button type="button" onClick={() => setFormAbierto({ abierto: true, tara: t })} className={`${BOTON_ICONO} hover:text-brand-600`} title="Editar tara" aria-label={`Editar tara ${t.nombre}`}>
+        <Pencil size={15} aria-hidden="true" />
+      </button>
+      {t.activo ? (
+        <button type="button" onClick={() => handleDesactivar(t)} className={`${BOTON_ICONO} hover:text-amber-600`} title="Desactivar" aria-label={`Desactivar tara ${t.nombre}`}>
+          <EyeOff size={15} aria-hidden="true" />
+        </button>
+      ) : (
+        <button type="button" onClick={() => handleReactivar(t)} className={`${BOTON_ICONO} hover:text-green-600`} title="Reactivar" aria-label={`Reactivar tara ${t.nombre}`}>
+          <Eye size={15} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  ) : null);
+
+  const insigniaEstado = (t: Tara) => (
+    <Insignia tono={t.activo ? 'exito' : 'neutral'}>{t.activo ? 'Activa' : 'Inactiva'}</Insignia>
+  );
+
+  const columnas: ColumnaTabla<Tara>[] = [
+    {
+      clave: 'nombre', titulo: 'Tara', valorOrden: t => t.nombre.toLowerCase(), valorCsv: t => t.nombre,
+      celda: t => (
+        <span className="flex items-center gap-3">
+          <MiniaturaTara t={t} />
+          <span className="font-medium text-text-primary">{t.nombre}</span>
+        </span>
+      ),
+    },
+    {
+      clave: 'peso', titulo: 'Peso (kg)', alinear: 'derecha', valorOrden: t => t.peso, decimalesCsv: 2,
+      celda: t => <span className="tabular-nums">{kgTara(t.peso)}</span>,
+      ayuda: 'Peso de referencia que se descuenta al pesar (el recipiente o vehículo vacío).',
+    },
+    { clave: 'estado', titulo: 'Estado', valorOrden: t => (t.activo ? 'Activa' : 'Inactiva'), celda: insigniaEstado },
+    ...(puedeEditar ? [{ clave: 'acciones', titulo: 'Acciones', alinear: 'derecha' as const, valorCsv: false as const, celda: botonesFila }] : []),
+  ];
+
+  const tarjetaMovil = (t: Tara) => (
+    <div className="flex items-center gap-3">
+      <MiniaturaTara t={t} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-text-primary">{t.nombre}</p>
+        <p className="text-xs text-text-secondary tabular-nums">{kgTara(t.peso)}</p>
+        <div className="mt-1">{insigniaEstado(t)}</div>
       </div>
-    );
-  }
+      {botonesFila(t)}
+    </div>
+  );
+
+  const hayFiltros = Boolean(q || estado);
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Taras</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Pesos de referencia predefinidos (globales), disponibles para todos los usuarios.
-          </p>
-        </div>
-        {puedeCrear && (
-          <button
-            type="button"
-            onClick={() => setFormAbierto({ abierto: true, tara: null })}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shrink-0"
-          >
-            <Plus size={18} />
-            Nueva tara
-          </button>
-        )}
-      </div>
+    <div>
+      <EncabezadoPagina
+        titulo="Taras"
+        subtitulo="Pesos de referencia predefinidos (globales), disponibles para todos los usuarios."
+        acciones={puedeCrear ? (
+          <BotonAccion onClick={() => setFormAbierto({ abierto: true, tara: null })} icono={<Plus size={18} aria-hidden="true" />}>Nueva tara</BotonAccion>
+        ) : undefined}
+      />
 
-      {taras.length === 0 ? (
-        <p className="text-center text-text-muted py-12 text-sm">No hay taras registradas.</p>
+      {cargando && taras.length === 0 ? (
+        <>
+          <SkeletonKpis cantidad={3} />
+          <SkeletonTabla filas={5} columnas={3} />
+        </>
+      ) : errorCarga && taras.length === 0 ? (
+        <EstadoVacio mensaje="No se pudieron cargar las taras." descripcion="Revisa tu conexión e inténtalo de nuevo." accion={{ etiqueta: 'Reintentar', onClick: cargar }} />
       ) : (
-        <div className="bg-surface rounded-xl border border-border overflow-hidden">
-          {taras.map(t => (
-            <div key={t.id} className={`flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0 ${!t.activo ? 'opacity-60' : ''}`}>
-              <div className="w-11 h-11 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0 overflow-hidden">
-                {t.fotos[0] ? <img src={t.fotos[0]} alt={t.nombre} className="w-full h-full object-cover" /> : <Weight size={18} />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-text-primary text-sm truncate">{t.nombre}</h3>
-                  {!t.activo && (
-                    <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full shrink-0">Inactiva</span>
-                  )}
-                </div>
-                <p className="text-xs text-text-muted">{t.peso.toLocaleString()} kg</p>
-              </div>
-              {puedeEditar && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setFormAbierto({ abierto: true, tara: t })}
-                    className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-brand-600 transition-colors"
-                    title="Editar tara"
-                  >
-                    <Pencil size={15} />
-                  </button>
-                  {t.activo ? (
-                    <button
-                      type="button"
-                      onClick={() => handleDesactivar(t)}
-                      className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-amber-600 transition-colors"
-                      title="Desactivar"
-                    >
-                      <EyeOff size={15} />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleReactivar(t)}
-                      className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-green-600 transition-colors"
-                      title="Reactivar"
-                    >
-                      <Eye size={15} />
-                    </button>
-                  )}
-                </div>
-              )}
+        <>
+          <GrillaKpis>
+            <TarjetaKpi
+              titulo="Taras activas" ayuda="Cuántas taras aparecen para elegir al pesar. Las inactivas se conservan pero no se ofrecen."
+              valor={formatearNumero(kpis.activas)} unidad={kpis.activas === 1 ? 'tara' : 'taras'}
+              subtitulo={`de ${formatearNumero(kpis.total)} registradas · ${formatearNumero(kpis.inactivas)} inactivas`}
+            />
+            <TarjetaKpi
+              titulo="Tara más liviana" ayuda="Menor peso entre las taras activas."
+              valor={kpis.pesoMin === null ? '—' : kgTara(kpis.pesoMin)} subtitulo="Entre las taras activas"
+              estado={kpis.pesoMin === null ? 'vacio' : 'listo'} mensajeVacio="No hay taras activas"
+            />
+            <TarjetaKpi
+              titulo="Tara más pesada" ayuda="Mayor peso entre las taras activas."
+              valor={kpis.pesoMax === null ? '—' : kgTara(kpis.pesoMax)} subtitulo="Entre las taras activas"
+              estado={kpis.pesoMax === null ? 'vacio' : 'listo'} mensajeVacio="No hay taras activas"
+            />
+          </GrillaKpis>
+
+          <Bloque titulo="Listado de taras" queEstasViendo="Cada tara con su peso y estado. Ordena por columna o exporta la lista a CSV.">
+            <div className="mb-3">
+              <FiltrosBarra
+                buscador={{ id: 'taras-q', valor: q, onCambiar: v => cambiar({ q: v }), placeholder: 'Buscar por nombre', etiqueta: 'Buscar tara' }}
+                selectores={[{ id: 'taras-estado', etiqueta: 'Estado', valor: estado, opciones: OPCIONES_ESTADO, onCambiar: v => cambiar({ estado: v }), textoTodas: 'Todas' }]}
+                onLimpiar={limpiar}
+              />
             </div>
-          ))}
-        </div>
+            <TablaDatos
+              titulo="Taras"
+              columnas={columnas}
+              filas={visibles}
+              claveFila={t => t.id}
+              etiquetaFila={t => t.nombre}
+              tarjetaMovil={tarjetaMovil}
+              claseFila={t => (t.activo ? '' : 'opacity-60')}
+              exportar={{ nombreArchivo: 'taras' }}
+              anchoMinimo="min-w-[32rem]"
+              vacio={hayFiltros
+                ? { mensaje: 'Ninguna tara coincide con los filtros.', accion: { etiqueta: 'Quitar filtros', onClick: limpiar } }
+                : {
+                  mensaje: 'Aún no hay taras registradas.',
+                  descripcion: 'Una tara es un peso de referencia (recipiente o vehículo vacío) que se descuenta al pesar.',
+                  ...(puedeCrear ? { accion: { etiqueta: 'Crear la primera tara', onClick: () => setFormAbierto({ abierto: true, tara: null }) } } : {}),
+                }}
+            />
+          </Bloque>
+        </>
       )}
 
       {formAbierto.abierto && (

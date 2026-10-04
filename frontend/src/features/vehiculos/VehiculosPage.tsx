@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, EyeOff, Eye, Trash2, Car } from 'lucide-react';
 import { obtenerVehiculos, desactivarVehiculo, reactivarVehiculo, eliminarVehiculo } from '../../services/vehiculo-service';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -6,6 +6,11 @@ import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import VehiculoFormModal from './VehiculoFormModal';
 import VisorFotos from '../../components/VisorFotos';
+import {
+  EncabezadoPagina, Bloque, BotonAccion, GrillaKpis, TarjetaKpi, FiltrosBarra, EstadoVacio, SkeletonKpis, SkeletonBloque,
+  Insignia, useFiltrosUrl, formatearNumero,
+} from '../../components/ui';
+import { coincideEstadoActivo, coincideTexto, kpisVehiculos } from '../../lib/catalogos-kpis';
 import { etiquetaVehiculo } from '../../lib/vehiculo';
 import type { Vehiculo } from '@shared/types/index.js';
 
@@ -14,7 +19,12 @@ function detalle(v: Vehiculo): string {
   return [v.marca, v.modelo, v.color, v.conductor ? `Chofer: ${v.conductor}` : null, v.descripcion].filter(Boolean).join(' · ');
 }
 
-const botonIcono = 'p-1.5 rounded-md hover:bg-surface-alt text-text-muted transition-colors';
+const ESQUEMA_FILTROS = {
+  campos: { q: { tipo: 'texto' }, estado: { tipo: 'opcion', opciones: ['activos', 'inactivos'] } },
+} as const;
+
+const OPCIONES_ESTADO = [{ valor: 'activos', etiqueta: 'Activos' }, { valor: 'inactivos', etiqueta: 'Inactivos' }];
+const botonIcono = 'inline-flex h-9 w-9 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
 function VehiculosPage() {
   const { tienePermiso } = useAuth();
@@ -26,10 +36,15 @@ function VehiculosPage() {
 
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState(false);
   const [visor, setVisor] = useState<{ fotos: string[]; indice: number } | null>(null);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; vehiculo: Vehiculo | null } | { abierto: false }>({ abierto: false });
+  const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
 
-  const recargar = () => obtenerVehiculos().then(setVehiculos).finally(() => setCargando(false));
+  const recargar = () => obtenerVehiculos()
+    .then(v => { setVehiculos(v); setErrorCarga(false); })
+    .catch(() => setErrorCarga(true))
+    .finally(() => setCargando(false));
   const cargar = () => { setCargando(true); recargar(); };
 
   useEffect(() => { recargar(); }, []);
@@ -55,93 +70,139 @@ function VehiculosPage() {
     cargar();
   };
 
-  if (cargando) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const kpis = useMemo(() => kpisVehiculos(vehiculos), [vehiculos]);
+  const q = typeof filtros.q === 'string' ? filtros.q : undefined;
+  const estado = typeof filtros.estado === 'string' ? filtros.estado : undefined;
+  const visibles = useMemo(
+    () => vehiculos.filter(v => coincideEstadoActivo(v.activo, estado)
+      && coincideTexto([v.placa, v.nombre, v.marca, v.modelo, v.color, v.conductor, v.descripcion], q)),
+    [vehiculos, q, estado],
+  );
+  const hayFiltros = Boolean(q || estado);
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Vehículos</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Lista de vehículos propios (global) para elegir al pesar. Los vehículos de terceros se escriben a mano en el pesaje y no se guardan aquí.
-          </p>
-        </div>
-        {puedeCrear && (
-          <button
-            type="button"
-            onClick={() => setFormAbierto({ abierto: true, vehiculo: null })}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shrink-0"
-          >
-            <Plus size={18} />
-            Nuevo vehículo
-          </button>
-        )}
-      </div>
+    <div>
+      <EncabezadoPagina
+        titulo="Vehículos"
+        subtitulo="Lista de vehículos propios (global) para elegir al pesar. Los vehículos de terceros se escriben a mano en el pesaje y no se guardan aquí."
+        acciones={puedeCrear ? (
+          <BotonAccion onClick={() => setFormAbierto({ abierto: true, vehiculo: null })} icono={<Plus size={18} aria-hidden="true" />}>Nuevo vehículo</BotonAccion>
+        ) : undefined}
+      />
 
-      {vehiculos.length === 0 ? (
-        <p className="text-center text-text-muted py-12 text-sm">No hay vehículos registrados.</p>
+      {cargando && vehiculos.length === 0 ? (
+        <>
+          <SkeletonKpis />
+          <SkeletonBloque alto="h-64" etiqueta="Cargando vehículos" />
+        </>
+      ) : errorCarga && vehiculos.length === 0 ? (
+        <EstadoVacio mensaje="No se pudieron cargar los vehículos." descripcion="Revisa tu conexión e inténtalo de nuevo." accion={{ etiqueta: 'Reintentar', onClick: cargar }} />
       ) : (
-        <div className="bg-surface rounded-xl border border-border overflow-hidden">
-          {vehiculos.map(v => (
-            <div key={v.id} className={`flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0 ${!v.activo ? 'opacity-60' : ''}`}>
-              {v.fotos[0] ? (
-                <button
-                  type="button"
-                  onClick={() => setVisor({ fotos: v.fotos, indice: 0 })}
-                  className="relative w-11 h-11 rounded-lg overflow-hidden border border-border shrink-0"
-                  title="Ver fotos"
-                >
-                  <img src={v.fotos[0]} alt={`Foto de ${etiquetaVehiculo(v)}`} className="w-full h-full object-cover" />
-                  {v.fotos.length > 1 && (
-                    <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1 rounded-tl">{v.fotos.length}</span>
-                  )}
-                </button>
-              ) : (
-                <div className="w-11 h-11 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
-                  <Car size={18} />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-text-primary text-sm truncate">{v.placa ?? v.nombre}</h3>
-                  {v.placa && <span className="text-sm text-text-secondary truncate">· {v.nombre}</span>}
-                  {!v.activo && (
-                    <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full shrink-0">Inactivo</span>
-                  )}
-                </div>
-                {detalle(v) && <p className="text-xs text-text-muted truncate">{detalle(v)}</p>}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {puedeEditar && (
-                  <>
-                    <button type="button" onClick={() => setFormAbierto({ abierto: true, vehiculo: v })} className={`${botonIcono} hover:text-brand-600`} title="Editar vehículo">
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => cambiarEstado(v, !v.activo)}
-                      className={`${botonIcono} ${v.activo ? 'hover:text-amber-600' : 'hover:text-green-600'}`}
-                      title={v.activo ? 'Desactivar' : 'Reactivar'}
-                    >
-                      {v.activo ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                  </>
-                )}
-                {puedeEliminar && (
-                  <button type="button" onClick={() => handleEliminar(v)} className={`${botonIcono} hover:text-red-600`} title="Eliminar">
-                    <Trash2 size={15} />
-                  </button>
-                )}
-              </div>
+        <>
+          <GrillaKpis>
+            <TarjetaKpi
+              titulo="Vehículos propios" ayuda="Vehículos guardados en esta lista (activos e inactivos). Son los que se eligen al pesar."
+              valor={formatearNumero(kpis.total)} unidad={kpis.total === 1 ? 'vehículo' : 'vehículos'} subtitulo="Registrados en la lista"
+            />
+            <TarjetaKpi
+              titulo="Disponibles para pesar" ayuda="Vehículos activos: son los que aparecen al elegir vehículo en el pesaje. Los inactivos se conservan pero no se ofrecen."
+              valor={formatearNumero(kpis.activos)} unidad={kpis.activos === 1 ? 'activo' : 'activos'}
+              subtitulo={`${formatearNumero(kpis.inactivos)} ${kpis.inactivos === 1 ? 'inactivo' : 'inactivos'}`}
+            />
+            <TarjetaKpi
+              titulo="Sin foto" ayuda="Vehículos sin ninguna foto. Una foto ayuda a reconocerlos al elegirlos en el pesaje."
+              valor={formatearNumero(kpis.sinFoto)} unidad={kpis.sinFoto === 1 ? 'vehículo' : 'vehículos'}
+              subtitulo={kpis.sinFoto === 0 ? 'Todos tienen foto' : 'Puedes agregarla al editarlos'}
+            />
+            <TarjetaKpi
+              titulo="De terceros" ayuda="Los vehículos de terceros se escriben a mano en cada pesaje y no se guardan en esta lista, por eso aquí no hay una cifra."
+              estado="vacio" mensajeVacio="No se guardan aquí: se escriben a mano en el pesaje"
+            />
+          </GrillaKpis>
+
+          <Bloque titulo="Vehículos propios" queEstasViendo="Cada vehículo con su placa, foto y datos. Toca la foto para verla ampliada. Busca por placa, nombre, marca o chofer.">
+            <div className="mb-3">
+              <FiltrosBarra
+                buscador={{ id: 'vehiculos-q', valor: q, onCambiar: v => cambiar({ q: v }), placeholder: 'Buscar por placa, nombre, marca o chofer', etiqueta: 'Buscar vehículo' }}
+                selectores={[{ id: 'vehiculos-estado', etiqueta: 'Estado', valor: estado, opciones: OPCIONES_ESTADO, onCambiar: v => cambiar({ estado: v }), textoTodas: 'Todos' }]}
+                onLimpiar={limpiar}
+              />
             </div>
-          ))}
-        </div>
+
+            {visibles.length === 0 ? (
+              hayFiltros ? (
+                <EstadoVacio mensaje="Ningún vehículo coincide con los filtros." accion={{ etiqueta: 'Quitar filtros', onClick: limpiar }} />
+              ) : (
+                <EstadoVacio
+                  mensaje="Aún no hay vehículos registrados."
+                  descripcion="Registra los vehículos de la empresa para elegirlos con un toque al pesar, en vez de escribir la placa cada vez."
+                  icono={<Car size={22} />}
+                  accion={puedeCrear ? { etiqueta: 'Registrar el primer vehículo', onClick: () => setFormAbierto({ abierto: true, vehiculo: null }) } : undefined}
+                />
+              )
+            ) : (
+              <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                {visibles.map(v => (
+                  <li key={v.id} className={`rounded-xl border border-border bg-surface p-3 ${!v.activo ? 'opacity-60' : ''}`}>
+                    <div className="flex items-start gap-3">
+                      {v.fotos[0] ? (
+                        <button
+                          type="button"
+                          onClick={() => setVisor({ fotos: v.fotos, indice: 0 })}
+                          className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                          title="Ver fotos"
+                          aria-label={`Ver fotos de ${etiquetaVehiculo(v)}`}
+                        >
+                          <img src={v.fotos[0]} alt={`Foto de ${etiquetaVehiculo(v)}`} className="h-full w-full object-cover" />
+                          {v.fotos.length > 1 && (
+                            <span className="absolute bottom-0 right-0 rounded-tl bg-black/60 px-1 text-[10px] text-white">{v.fotos.length}</span>
+                          )}
+                        </button>
+                      ) : (
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                          <Car size={22} aria-hidden="true" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <h3 className="truncate text-sm font-semibold text-text-primary">{v.placa ?? v.nombre}</h3>
+                          <Insignia tono={v.activo ? 'exito' : 'neutral'} forma="cuadrada">{v.activo ? 'Activo' : 'Inactivo'}</Insignia>
+                        </div>
+                        {v.placa && <p className="truncate text-sm text-text-secondary">{v.nombre}</p>}
+                        {detalle(v) && <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{detalle(v)}</p>}
+                      </div>
+                    </div>
+                    {(puedeEditar || puedeEliminar) && (
+                      <div className="mt-2 flex items-center justify-end gap-1 border-t border-border pt-2">
+                        {puedeEditar && (
+                          <>
+                            <button type="button" onClick={() => setFormAbierto({ abierto: true, vehiculo: v })} className={`${botonIcono} hover:text-brand-600`} title="Editar vehículo" aria-label={`Editar vehículo ${v.placa ?? v.nombre}`}>
+                              <Pencil size={15} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => cambiarEstado(v, !v.activo)}
+                              className={`${botonIcono} ${v.activo ? 'hover:text-amber-600' : 'hover:text-green-600'}`}
+                              title={v.activo ? 'Desactivar' : 'Reactivar'}
+                              aria-label={`${v.activo ? 'Desactivar' : 'Reactivar'} vehículo ${v.placa ?? v.nombre}`}
+                            >
+                              {v.activo ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
+                            </button>
+                          </>
+                        )}
+                        {puedeEliminar && (
+                          <button type="button" onClick={() => handleEliminar(v)} className={`${botonIcono} hover:text-red-600`} title="Eliminar" aria-label={`Eliminar vehículo ${v.placa ?? v.nombre}`}>
+                            <Trash2 size={15} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Bloque>
+        </>
       )}
 
       {visor && (
