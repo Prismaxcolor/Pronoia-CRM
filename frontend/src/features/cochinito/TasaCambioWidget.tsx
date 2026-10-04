@@ -115,7 +115,7 @@ function TasaCambioWidget({ fuenteKey, titulo, subtitulo, monedaOrigen, cacheMs 
             <h3 className="flex items-center gap-1.5 text-sm font-semibold leading-tight text-text-primary">
               {titulo}
               <InfoTooltip etiqueta={`Qué significa: ${titulo}`}>
-                Cuántos bolívares vale 1 {monedaOrigen} según esta fuente. La mini gráfica muestra las últimas lecturas guardadas y el porcentaje compara la primera con la última.
+                Cuántos bolívares (Bs) hay que pagar por 1 {monedaOrigen} según esta fuente; el número grande es la última lectura guardada. La mini gráfica muestra hasta las últimas 7 lecturas y el porcentaje compara la primera con la última (por ejemplo, de Bs 40 a Bs 42 es 5 %).
               </InfoTooltip>
             </h3>
             <p className="text-xs leading-tight text-text-secondary">{subtitulo}</p>

@@ -236,7 +236,7 @@ function CochinitPage() {
               severidad="amarilla"
               texto={`${kpis.bancasNegativas} ${kpis.bancasNegativas === 1 ? 'banca tiene' : 'bancas tienen'} saldo negativo`}
               detalle={hayIngresos
-                ? 'Se han registrado más egresos que ingresos en esas bancas. Revisa si falta registrar algún ingreso o transferencia.'
+                ? 'En esas bancas ha salido más dinero del que se registró como entrada. Revisa si falta registrar algún ingreso o transferencia.'
                 : 'Hasta ahora solo hay egresos registrados: falta registrar los ingresos (o el saldo inicial) para que el saldo refleje la realidad.'}
             />
           </ul>
@@ -245,7 +245,7 @@ function CochinitPage() {
 
       <Bloque
         titulo="Bancas"
-        queEstasViendo="El saldo actual de cada banca en su propia moneda. Pulsa una banca para ver solo sus movimientos en la tabla de abajo."
+        queEstasViendo="El saldo actual de cada banca en su propia moneda (lo que ha entrado menos lo que ha salido). Pulsa una banca para ver solo sus movimientos en la tabla de abajo."
         acciones={
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-text-secondary">
@@ -287,12 +287,12 @@ function CochinitPage() {
 
       <Bloque
         titulo="Tasas de cambio"
-        queEstasViendo="Cuántos bolívares vale hoy 1 USD (BCV y Binance) y 1 EUR (BCV), con su movimiento en las últimas lecturas y cuándo se actualizó."
+        queEstasViendo="Cuántos bolívares (Bs) cuesta hoy 1 USD (tasa oficial BCV y tasa de Binance) y 1 EUR (BCV). Cada tarjeta muestra cuánto cambió en las últimas lecturas, cuándo se actualizó y cuándo se vuelve a consultar."
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <TasaCambioWidget fuenteKey="bcv" titulo="Tasa BCV" subtitulo="Banco Central de Venezuela" monedaOrigen="USD" cacheMs={24 * 60 * 60 * 1000} acento="brand" />
-          <TasaCambioWidget fuenteKey="binance" titulo="Tasa Binance" subtitulo="Binance P2P — precio de venta" monedaOrigen="USD" cacheMs={15 * 60 * 1000} acento="binance" />
-          <TasaCambioWidget fuenteKey="euro" titulo="Tasa Euro" subtitulo="Banco Central de Venezuela" monedaOrigen="EUR" cacheMs={24 * 60 * 60 * 1000} acento="euro" />
+          <TasaCambioWidget fuenteKey="bcv" titulo="Tasa BCV" subtitulo="Dólar oficial · Banco Central de Venezuela" monedaOrigen="USD" cacheMs={24 * 60 * 60 * 1000} acento="brand" />
+          <TasaCambioWidget fuenteKey="binance" titulo="Tasa Binance" subtitulo="Dólar paralelo · Binance P2P, precio de venta" monedaOrigen="USD" cacheMs={15 * 60 * 1000} acento="binance" />
+          <TasaCambioWidget fuenteKey="euro" titulo="Tasa Euro" subtitulo="Euro oficial · Banco Central de Venezuela" monedaOrigen="EUR" cacheMs={24 * 60 * 60 * 1000} acento="euro" />
         </div>
       </Bloque>
 
@@ -307,7 +307,7 @@ function CochinitPage() {
 
       <Bloque
         titulo="Movimientos"
-        queEstasViendo={`Los movimientos del periodo (${bancaFiltro ? 'solo de la banca elegida, ' : ''}según los filtros de arriba), con su monto en la moneda de la banca y en USD. ${movFiltrados.length} ${movFiltrados.length === 1 ? 'resultado' : 'resultados'}.`}
+        queEstasViendo={`Los movimientos con fecha dentro del periodo (${bancaFiltro ? 'solo de la banca elegida, ' : ''}según los filtros de arriba), con su monto en la moneda de la banca y en USD. ${movFiltrados.length} ${movFiltrados.length === 1 ? 'resultado' : 'resultados'}.`}
       >
         <Suspense fallback={<SkeletonBloque alto="h-64" etiqueta="Cargando movimientos" />}>
           <TablaMovimientos filas={movFiltrados} bancas={bancas} nombreContraparte={nombreContraparte} vacio={vacioTabla} />

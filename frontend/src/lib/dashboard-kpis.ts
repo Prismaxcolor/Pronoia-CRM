@@ -212,7 +212,7 @@ export function construirAlertas(e: EntradaAlertas): AlertaDashboard[] {
       id: 'tickets-bruto',
       severidad: 'amarilla',
       texto: `${n} ${n === 1 ? 'pesaje lleva' : 'pesajes llevan'} más de ${horasAlerta} h sin recepcionarse`,
-      detalle: e.tickets.horasMasAntiguo !== null ? `El más antiguo lleva ${textoAntiguedadHoras(e.tickets.horasMasAntiguo)}. Mientras estén en bruto no mueven inventario ni se pueden facturar.` : undefined,
+      detalle: e.tickets.horasMasAntiguo !== null ? `El más antiguo lleva ${textoAntiguedadHoras(e.tickets.horasMasAntiguo)}. Recepcionar es completar la compra en el pesaje; mientras siga «en bruto» no suma al inventario ni se puede facturar.` : undefined,
       enlace: { to: '/pesaje', etiqueta: 'Ir a pesajes' },
     });
   }
@@ -236,7 +236,7 @@ export function construirAlertas(e: EntradaAlertas): AlertaDashboard[] {
       severidad: 'roja',
       texto: `La merma de los últimos 30 días (${fmtPct(e.merma.pct)} %) supera el umbral de ${fmtPct(e.merma.umbralPct)} %`,
       detalle: e.merma.transformacionesAltas > 0
-        ? `${e.merma.transformacionesAltas} ${e.merma.transformacionesAltas === 1 ? 'transformación' : 'transformaciones'} por encima del umbral.`
+        ? `${e.merma.transformacionesAltas} ${e.merma.transformacionesAltas === 1 ? 'transformación completada tiene' : 'transformaciones completadas tienen'} una merma mayor que el umbral. La merma es el peso que entra menos el peso que sale.`
         : undefined,
       enlace: { to: '/transformaciones/merma', etiqueta: 'Ver merma' },
     });

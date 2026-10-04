@@ -54,7 +54,7 @@ function SaldosBancas({ saldos }: { saldos: readonly SaldoBanca[] }) {
     <div className="rounded-xl border border-border bg-surface p-4">
       {grupos.map((g, i) => (
         <div key={g.moneda} className={i > 0 ? 'mt-3 border-t border-border pt-3' : ''}>
-          <p className="text-xs font-medium text-text-secondary">Bancas en {g.moneda}{grupos.length > 1 ? ' (escala propia)' : ''}</p>
+          <p className="text-xs font-medium text-text-secondary">Bancas en {g.moneda}{grupos.length > 1 ? ' (cada moneda tiene su propia escala)' : ''}</p>
           <ul className="divide-y divide-border/60">
             {g.filas.map(f => <Fila key={f.id} banca={f} minimo={g.minimo} maximo={g.maximo} />)}
           </ul>

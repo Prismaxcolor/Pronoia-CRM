@@ -56,7 +56,7 @@ function TarjetaBanca({ banca, seleccionada, onAlternarFiltro, onEditar, onArchi
           {simbolo} {formatearNumero(banca.saldo, 2)}
         </p>
         <p className="mt-0.5 text-xs text-text-secondary">
-          {negativo ? 'Saldo en negativo: se han registrado más egresos que ingresos.' : 'Saldo actual de la banca'}
+          {negativo ? 'Saldo en negativo: ha salido más dinero del que se registró como entrada.' : 'Saldo actual: lo que ha entrado menos lo que ha salido'}
         </p>
       </button>
       {hayAcciones && (

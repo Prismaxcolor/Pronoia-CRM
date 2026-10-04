@@ -65,7 +65,7 @@ function CeldaMermaPct({ f, umbral }: { f: FilaHistorial; umbral: UmbralMerma })
   const sev = f.m.kgMerma >= umbral.minimoKg ? severidadMerma(f.m.pctMerma, umbral.umbralPct) : null;
   return (
     <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-      {sev && <Insignia forma="cuadrada" tono={sev === 'roja' ? 'peligro' : 'aviso'} title={`Supera el umbral de ${formatearNumero(umbral.umbralPct, 0)} %`}>Sobre umbral</Insignia>}
+      {sev && <Insignia forma="cuadrada" tono={sev === 'roja' ? 'peligro' : 'aviso'} title={`La merma pasa de ${formatearNumero(umbral.umbralPct, 0)} % del peso que entró${sev === 'roja' ? ` (más del doble: ${formatearNumero(umbral.umbralPct * 2, 0)} %)` : ''} y es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg.`}>Sobre umbral</Insignia>}
       {formatearPct(f.m.pctMerma, 2)}
     </span>
   );
@@ -120,7 +120,7 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
     { clave: 'merma', titulo: 'Merma (kg)', alinear: 'derecha', valorOrden: f => f.m.kgMerma, celda: f => formatearNumero(f.m.kgMerma, 2), decimalesCsv: 3, total: filas => formatearNumero(filas.reduce((a, f) => a + f.m.kgMerma, 0), 2) },
     {
       clave: 'pct', titulo: 'Merma %', alinear: 'derecha', valorOrden: f => f.m.pctMerma, valorCsv: f => f.m.pctMerma, decimalesCsv: 2,
-      ayuda: `Merma sobre el peso de entrada. "Sobre umbral" aparece cuando pasa de ${formatearNumero(umbral.umbralPct, 0)} % y la merma es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg.`,
+      ayuda: `Qué porcentaje del peso que entró se perdió (merma ÷ entrada). "Sobre umbral" aparece cuando pasa de ${formatearNumero(umbral.umbralPct, 0)} % y la merma es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg; sale en rojo si pasa del doble.`,
       celda: f => <CeldaMermaPct f={f} umbral={umbral} />,
       total: filas => {
         const e = filas.reduce((a, f) => a + f.m.kgEntrada, 0);
@@ -150,7 +150,7 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
           <GrillaKpis>
             <TarjetaKpi
               titulo="Kg procesados"
-              ayuda="Suma del peso neto de entrada de las transformaciones completadas en el periodo elegido. Se compara con el periodo anterior de la misma duración."
+              ayuda="Kilos (kg) netos que entraron a procesarse: suma del peso de entrada de las transformaciones completadas cuya fecha cae en el periodo elegido. Las pendientes por completar no cuentan. Se compara con el periodo anterior de igual duración; si ese no tuvo transformaciones completadas, la comparación sale como «—» (sin historial comparable)."
               valor={formatearNumero(actual.kgEntrada, 0)}
               unidad="kg"
               subtitulo={`${formatearNumero(actual.transformaciones, 0)} ${actual.transformaciones === 1 ? 'transformación completada' : 'transformaciones completadas'}`}
@@ -161,10 +161,10 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
             />
             <TarjetaKpi
               titulo="Merma"
-              ayuda={`Lo que se pierde en el proceso: peso de entrada menos todo lo que salió, sobre el peso de entrada. Se pinta en rojo solo si pasa del umbral de ${formatearNumero(umbral.umbralPct, 0)} % con al menos ${formatearNumero(umbral.minimoKg, 0)} kg de merma.${umbral.esPorDefecto ? ' (Umbral por defecto: no se pudo leer la configuración del inventario.)' : ''}`}
+              ayuda={`Qué porcentaje del peso que entró se perdió: (kg que entraron − kg que salieron) ÷ kg que entraron, con los totales del periodo. Por ejemplo: entran 100 kg y salen 97 kg, la merma es 3 kg, o sea 3 %. Se pinta en rojo solo si pasa del umbral de ${formatearNumero(umbral.umbralPct, 0)} % y la merma es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg. El cambio frente al periodo anterior va en puntos porcentuales (pp): de 6 % a 8 % son 2 pp.${umbral.esPorDefecto ? ' (Umbral por defecto: no se pudo leer la configuración del inventario.)' : ''}`}
               valor={formatearNumero(actual.pctMerma, 2)}
               unidad="%"
-              subtitulo={`${kgFino(actual.kgMerma)} de merma · umbral ${formatearNumero(umbral.umbralPct, 0)} %`}
+              subtitulo={`${kgFino(actual.kgMerma)} de merma · umbral de aviso ${formatearNumero(umbral.umbralPct, 0)} %`}
               tonoValor={sobreUmbral ? 'peligro' : 'normal'}
               estado={sinCompletadas ? 'vacio' : 'listo'}
               mensajeVacio="Sin transformaciones completadas en este periodo"
@@ -173,10 +173,10 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
             />
             <TarjetaKpi
               titulo="Rendimiento"
-              ayuda="Lo que se aprovecha: 100 % menos la merma. Si de cada 100 kg que entran salen 99,3 kg de producto, el rendimiento es 99,3 %."
+              ayuda="Qué porcentaje del peso que entró se convirtió en producto: 100 % menos el % de merma. Por ejemplo: si de 100 kg que entran salen 99,3 kg de producto, el rendimiento es 99,3 %. Que suba es favorable."
               valor={formatearNumero(rendimientoPct(actual.pctMerma), 2)}
               unidad="%"
-              subtitulo="Producto obtenido sobre lo que entró"
+              subtitulo="100 % − merma · producto obtenido sobre lo que entró"
               estado={sinCompletadas ? 'vacio' : 'listo'}
               mensajeVacio="Sin transformaciones completadas en este periodo"
               comparacion={anterior ? compararConPeriodoAnterior(rendimientoPct(actual.pctMerma), rendimientoPct(anterior.pctMerma), 'sube') : null}
@@ -184,7 +184,7 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
             />
             <TarjetaKpi
               titulo="Completadas"
-              ayuda="Cantidad de transformaciones con salidas registradas en el periodo elegido."
+              ayuda="Cuántas transformaciones terminadas (con sus salidas ya registradas) tienen fecha dentro del periodo elegido. Se compara con el periodo anterior de igual duración."
               valor={formatearNumero(actual.transformaciones, 0)}
               unidad={actual.transformaciones === 1 ? 'transformación' : 'transformaciones'}
               subtitulo={`Del ${formatearFecha(rango.desde)} al ${formatearFecha(rango.hasta)}`}
@@ -195,7 +195,7 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
         )}
       </section>
 
-      <Bloque titulo="Alertas de merma" queEstasViendo={`transformaciones completadas del periodo cuya merma pasa del umbral de ${formatearNumero(umbral.umbralPct, 0)} % (amarillo; rojo si lo dobla). Solo cuentan mermas de al menos ${formatearNumero(umbral.minimoKg, 0)} kg.`}>
+      <Bloque titulo="Alertas de merma" queEstasViendo={`transformaciones completadas del periodo en las que se perdió más de ${formatearNumero(umbral.umbralPct, 0)} % del peso que entró (amarillo; rojo si pasa del doble, ${formatearNumero(umbral.umbralPct * 2, 0)} %). Solo se avisa si la merma es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg, para no alarmar por pesos pequeños.`}>
         {!datos ? null : (
           <ListaAlertas
             alertas={alertasUi}
@@ -222,7 +222,7 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
 
       <Bloque
         titulo="Transformaciones completadas"
-        queEstasViendo="cada transformación completada del periodo con lo que entró, lo que salió y su merma. Entra al código para ver el detalle completo."
+        queEstasViendo="cada transformación completada del periodo con los kg que entraron, los que salieron y su merma (en kg y en %). La fila Total suma las columnas; su % usa los kg totales. Pulsa el código para ver el detalle completo."
         acciones={<Link to="/transformaciones/merma" className="text-sm font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">Ver reporte de merma →</Link>}
       >
         {!datos ? <SkeletonTabla filas={4} columnas={6} /> : (

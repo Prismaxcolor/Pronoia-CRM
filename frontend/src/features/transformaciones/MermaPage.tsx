@@ -95,7 +95,7 @@ function CeldaPct({ pct, kgMerma, umbral }: { pct: number; kgMerma: number; umbr
   const sev = kgMerma >= umbral.minimoKg ? severidadMerma(pct, umbral.umbralPct) : null;
   return (
     <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-      {sev && <Insignia forma="cuadrada" tono={sev === 'roja' ? 'peligro' : 'aviso'} title={`Supera el umbral de ${formatearNumero(umbral.umbralPct, 0)} %`}>Sobre umbral</Insignia>}
+      {sev && <Insignia forma="cuadrada" tono={sev === 'roja' ? 'peligro' : 'aviso'} title={`La merma pasa de ${formatearNumero(umbral.umbralPct, 0)} % del peso que entró${sev === 'roja' ? ` (más del doble: ${formatearNumero(umbral.umbralPct * 2, 0)} %)` : ''} y es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg.`}>Sobre umbral</Insignia>}
       {formatearPct(pct, 2)}
     </span>
   );
@@ -147,6 +147,7 @@ function MermaPage() {
 
   const totales = reporte?.totales;
   const previos = anterior && anterior.totales.transformaciones > 0 ? anterior.totales : null;
+  const rangoPrevio = useMemo(() => rangoAnterior(rango), [rango]);
   const sinDatos = !totales || totales.transformaciones === 0;
   const sobreUmbral = Boolean(totales && totales.kgMerma >= umbral.minimoKg && totales.pctMerma > umbral.umbralPct);
   const hayFiltros = Boolean(desdeUrl || almacenId || productoId || categoria);
@@ -156,7 +157,7 @@ function MermaPage() {
 
   const columnasPeriodo: Array<ColumnaTabla<PeriodoMerma>> = useMemo(() => [
     { clave: 'periodo', titulo: 'Periodo', valorOrden: p => p.periodo, celda: p => etiquetaPeriodo(p.periodo, agrupar), valorCsv: p => p.periodo },
-    { clave: 'transf', titulo: 'Transf.', alinear: 'derecha', valorOrden: p => p.transformaciones, total: ps => formatearNumero(sumar(ps, p => p.transformaciones), 0) },
+    { clave: 'transf', titulo: 'Transf.', ayuda: 'Cantidad de transformaciones completadas en ese periodo.', alinear: 'derecha', valorOrden: p => p.transformaciones, total: ps => formatearNumero(sumar(ps, p => p.transformaciones), 0) },
     { clave: 'entrada', titulo: 'Entrada (kg)', alinear: 'derecha', valorOrden: p => p.kgEntrada, celda: p => formatearNumero(p.kgEntrada, 2), decimalesCsv: 3, total: ps => formatearNumero(sumar(ps, p => p.kgEntrada), 2) },
     { clave: 'salida', titulo: 'Salida (kg)', alinear: 'derecha', valorOrden: p => p.kgSalida, celda: p => formatearNumero(p.kgSalida, 2), decimalesCsv: 3, total: ps => formatearNumero(sumar(ps, p => p.kgSalida), 2) },
     { clave: 'merma', titulo: 'Merma (kg)', alinear: 'derecha', valorOrden: p => p.kgMerma, celda: p => formatearNumero(p.kgMerma, 2), decimalesCsv: 3, total: ps => formatearNumero(sumar(ps, p => p.kgMerma), 2) },
@@ -174,20 +175,20 @@ function MermaPage() {
       celda: f => <Link to={`/transformaciones/${f.id}`} className="font-medium text-text-primary hover:text-brand-700 hover:underline">{f.codigo ?? '—'}</Link>,
     },
     { clave: 'categoria', titulo: 'Categoría', valorOrden: f => etiquetaCategoria(f.categoria), ocultaEnMovil: true },
-    { clave: 'entrada', titulo: 'Entrada', valorOrden: f => f.entrada },
+    { clave: 'entrada', titulo: 'Material de entrada', valorOrden: f => f.entrada },
     { clave: 'almacen', titulo: 'Almacén', valorOrden: f => f.nombreAlmacen ?? '', celda: f => f.nombreAlmacen ?? '—', ocultaEnMovil: true },
     { clave: 'kgEntrada', titulo: 'Entrada (kg)', alinear: 'derecha', valorOrden: f => f.kgEntrada, celda: f => formatearNumero(f.kgEntrada, 2), decimalesCsv: 3, total: fs => formatearNumero(sumar(fs, f => f.kgEntrada), 2) },
     { clave: 'kgSalida', titulo: 'Salida (kg)', alinear: 'derecha', valorOrden: f => f.kgSalida, celda: f => formatearNumero(f.kgSalida, 2), decimalesCsv: 3, total: fs => formatearNumero(sumar(fs, f => f.kgSalida), 2) },
     { clave: 'kgMerma', titulo: 'Merma (kg)', alinear: 'derecha', valorOrden: f => f.kgMerma, celda: f => formatearNumero(f.kgMerma, 2), decimalesCsv: 3, total: fs => formatearNumero(sumar(fs, f => f.kgMerma), 2) },
     {
       clave: 'pct', titulo: 'Merma %', alinear: 'derecha', valorOrden: f => f.pctMerma, valorCsv: f => f.pctMerma,
-      ayuda: `"Sobre umbral" aparece cuando pasa de ${formatearNumero(umbral.umbralPct, 0)} % y la merma es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg.`,
+      ayuda: `Qué porcentaje del peso que entró se perdió (merma ÷ entrada). "Sobre umbral" aparece cuando pasa de ${formatearNumero(umbral.umbralPct, 0)} % y la merma es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg; sale en rojo si pasa del doble.`,
       celda: f => <CeldaPct pct={f.pctMerma} kgMerma={f.kgMerma} umbral={umbral} />,
       total: fs => pctDe(sumar(fs, f => f.kgMerma), sumar(fs, f => f.kgEntrada)),
     },
     {
       clave: 'clasificada', titulo: 'Clasificada (kg)', alinear: 'derecha', ocultaEnMovil: true, valorOrden: f => f.kgTipificado ?? 0, decimalesCsv: 3,
-      ayuda: 'Kg de la merma que se clasificaron por tipo (basura, plástico, tierra...) al completar la transformación.',
+      ayuda: 'Kilos (kg) de la merma a los que se les indicó de qué eran (basura, plástico, tierra, hierro u otro) al completar la transformación. Lo que no se clasificó queda como «sin clasificar».',
       celda: f => formatearNumero(f.kgTipificado ?? 0, 2),
     },
   ], [umbral]);
@@ -196,7 +197,7 @@ function MermaPage() {
     <div className="max-w-7xl">
       <EncabezadoPagina
         titulo="Merma"
-        subtitulo="Cuánto se pierde al transformar: peso neto de entrada menos todo lo que salió, de las transformaciones completadas."
+        subtitulo="Cuánto material se pierde al transformar: lo que entró (kg netos) menos todo lo que salió, solo de las transformaciones ya completadas, según la fecha de cada una."
         migas={[{ etiqueta: 'Transformaciones', to: '/transformaciones' }, { etiqueta: 'Merma' }]}
       />
 
@@ -223,7 +224,7 @@ function MermaPage() {
           <GrillaKpis>
             <TarjetaKpi
               titulo="Entrada"
-              ayuda="Suma del peso neto de entrada de las transformaciones completadas en el periodo y con los filtros elegidos."
+              ayuda="Kilos (kg) netos que entraron a procesarse: suma del peso de entrada de las transformaciones completadas cuya fecha cae en el periodo y cumplen los filtros. Las pendientes por completar no se cuentan. Se compara con el periodo anterior de igual duración; si ese no tuvo transformaciones completadas, la comparación sale como «—» (sin historial comparable)."
               valor={formatearNumero(totales.kgEntrada, 0)}
               unidad="kg"
               subtitulo={`${formatearNumero(totales.transformaciones, 0)} ${totales.transformaciones === 1 ? 'transformación completada' : 'transformaciones completadas'}`}
@@ -234,7 +235,7 @@ function MermaPage() {
             />
             <TarjetaKpi
               titulo="Salida"
-              ayuda="Suma del neto de todo lo que salió de esas transformaciones (materiales sueltos y lotes de destino)."
+              ayuda="Kilos (kg) netos de producto obtenido: suma de todo lo que salió de esas transformaciones, ya sea material suelto o lotes de destino."
               valor={formatearNumero(totales.kgSalida, 0)}
               unidad="kg"
               subtitulo="Producto obtenido"
@@ -245,10 +246,10 @@ function MermaPage() {
             />
             <TarjetaKpi
               titulo="Merma"
-              ayuda="Entrada menos salida: lo que se perdió en el proceso, en kilos."
+              ayuda="Kilos (kg) que se perdieron en el proceso: entrada menos salida. Por ejemplo: entran 100 kg y salen 97 kg, la merma es 3 kg. Que baje es favorable."
               valor={formatearNumero(totales.kgMerma, 0)}
               unidad="kg"
-              subtitulo="Entrada - salida"
+              subtitulo="Entrada − salida"
               estado={sinDatos ? 'vacio' : 'listo'}
               mensajeVacio="Sin transformaciones completadas con estos filtros"
               comparacion={previos ? compararConPeriodoAnterior(totales.kgMerma, previos.kgMerma, 'baja') : null}
@@ -256,10 +257,10 @@ function MermaPage() {
             />
             <TarjetaKpi
               titulo="Merma %"
-              ayuda={`Merma sobre el peso de entrada. Se pinta en rojo solo si pasa del umbral de ${formatearNumero(umbral.umbralPct, 0)} % con al menos ${formatearNumero(umbral.minimoKg, 0)} kg de merma.${umbral.esPorDefecto ? ' (Umbral por defecto: no se pudo leer la configuración del inventario.)' : ''}`}
+              ayuda={`Qué porcentaje del peso que entró se perdió: kg de merma ÷ kg de entrada, con los totales del periodo (no un promedio de porcentajes). Por ejemplo: entran 100 kg y se pierden 3 kg, la merma es 3 %. Se pinta en rojo solo si pasa del umbral de ${formatearNumero(umbral.umbralPct, 0)} % y la merma es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg. El cambio frente al periodo anterior va en puntos porcentuales (pp): de 6 % a 8 % son 2 pp.${umbral.esPorDefecto ? ' (Umbral por defecto: no se pudo leer la configuración del inventario.)' : ''}`}
               valor={formatearNumero(totales.pctMerma, 2)}
               unidad="%"
-              subtitulo={`Umbral ${formatearNumero(umbral.umbralPct, 0)} % · rendimiento ${formatearPct(100 - totales.pctMerma, 2)}`}
+              subtitulo={`Umbral de aviso ${formatearNumero(umbral.umbralPct, 0)} % · rendimiento (100 % − merma) ${formatearPct(100 - totales.pctMerma, 2)}`}
               tonoValor={sobreUmbral ? 'peligro' : 'normal'}
               estado={sinDatos ? 'vacio' : 'listo'}
               mensajeVacio="Sin transformaciones completadas con estos filtros"
@@ -268,11 +269,14 @@ function MermaPage() {
             />
           </GrillaKpis>
         )}
+        {totales && !sinDatos && !previos && (
+          <p className="-mt-4 mb-6 text-xs text-text-muted">Sin historial comparable: el periodo anterior ({formatearFecha(rangoPrevio.desde)} al {formatearFecha(rangoPrevio.hasta)}) no tiene transformaciones completadas con estos filtros, por eso no se muestra cuánto subió o bajó.</p>
+        )}
       </section>
 
       <Bloque
         titulo="Merma por periodo"
-        queEstasViendo="los kilos de merma de cada periodo. Cambia la agrupación para ver el detalle por día, semana o mes."
+        queEstasViendo="los kilos (kg) de merma de cada día, semana (que empieza el lunes) o mes, según la fecha de cada transformación completada. Cambia la agrupación arriba a la derecha."
         acciones={<ControlSegmentado opciones={OPCIONES_AGRUPAR} valor={agrupar} onCambiar={v => cambiar({ agrupar: v })} etiquetaAria="Agrupar por" />}
       >
         {!reporte ? (!error && <SkeletonBloque alto="h-56" />) : periodos.length < 2 ? (
@@ -301,7 +305,7 @@ function MermaPage() {
         !error && <SkeletonBloque alto="h-56" conMargen />
       )}
 
-      <Bloque titulo="Resumen por periodo" queEstasViendo="los totales de cada periodo en una tabla. Puedes ordenarla y exportarla.">
+      <Bloque titulo="Resumen por periodo" queEstasViendo="por cada día, semana o mes: cuántas transformaciones se completaron, los kg que entraron y salieron, la merma en kg y en %. La fila Total suma todo (su % usa los kg totales). Puedes ordenarla y exportarla.">
         {!reporte ? (!error && <SkeletonTabla filas={3} columnas={6} />) : (
           <TablaDatos
             titulo="Resumen de merma por periodo"
@@ -316,7 +320,7 @@ function MermaPage() {
         )}
       </Bloque>
 
-      <Bloque titulo="Detalle por transformación" queEstasViendo="cada transformación completada con su entrada, salida y merma. Entra al código para ver su detalle.">
+      <Bloque titulo="Detalle por transformación" queEstasViendo="cada transformación completada del periodo con los kg que entraron, los que salieron y su merma (en kg y en %). Pulsa el código para ver su detalle.">
         {!reporte ? (!error && <SkeletonTabla filas={4} columnas={6} />) : (
           <TablaDatos
             titulo="Merma por transformación"

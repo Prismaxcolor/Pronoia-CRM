@@ -38,7 +38,7 @@ function DashboardAlertas({ tickets, tomas, merma }: DashboardAlertasProps) {
   return (
     <Bloque
       titulo="Alertas"
-      queEstasViendo={`lo que pide atención hoy: pesajes en bruto con más de ${HORAS_TICKET_BRUTO_ALERTA} h, tomas físicas abiertas y merma por encima del umbral.`}
+      queEstasViendo={`lo que pide atención hoy: compras pesadas que llevan más de ${HORAS_TICKET_BRUTO_ALERTA} horas sin completarse, conteos de inventario (tomas físicas) que siguen abiertos y merma de los últimos 30 días por encima del umbral configurado. Solo la merma se marca en rojo.`}
     >
       {todasSinPermiso && <EstadoVacio mensaje="Sin permiso para ver las alertas" descripcion="Pídele a un administrador acceso a pesajes, inventario o toma física." />}
       {!todasSinPermiso && cargando && <SkeletonBloque alto="h-28" etiqueta="Cargando alertas" />}

@@ -1,7 +1,7 @@
 import { DollarSign, Scale, Truck, TrendingUp } from 'lucide-react';
 import { GrillaKpis, TarjetaKpi, formatearFecha, formatearKg, formatearNumero, formatearPct, formatearUsdDecimales } from '../../components/ui';
 import type { ComparacionPeriodo } from '../../lib/comparacion';
-import { formatoDeltaConPct } from '../../lib/dashboard-kpis';
+import { FECHA_INICIO_DATOS_REALES, formatoDeltaConPct } from '../../lib/dashboard-kpis';
 import { compararMetrica, type ResumenCompras } from '../../lib/metricas-kpis';
 
 export interface MetricasKpisProps {
@@ -18,7 +18,7 @@ export interface MetricasKpisProps {
 const conPorcentaje = (cmp: ComparacionPeriodo | null, formato: (d: number) => string) => formatoDeltaConPct(cmp, formato, p => formatearPct(p, 1));
 
 function SinHistorial() {
-  return <p className="mt-2 text-xs text-text-muted">Sin historial comparable en el periodo anterior.</p>;
+  return <p className="mt-2 text-xs text-text-muted">Sin historial comparable: el periodo anterior no tiene compras o empieza antes del {formatearFecha(FECHA_INICIO_DATOS_REALES)}, cuando comenzó el registro real.</p>;
 }
 
 function MetricasKpis({ resumen, anterior, comparable, puedeVerCostos, desde, hasta, dias }: MetricasKpisProps) {
@@ -33,7 +33,7 @@ function MetricasKpis({ resumen, anterior, comparable, puedeVerCostos, desde, ha
       <TarjetaKpi
         titulo="Kilos comprados"
         icono={<Scale size={16} />}
-        ayuda="Suma de los kilos de todas las líneas de compras confirmadas del periodo (se excluyen borradores y anuladas). Se compara con el periodo anterior de la misma duración."
+        ayuda="Kilos (kg) de todas las compras confirmadas del periodo: se suma el peso de cada línea de cada factura de compra. No cuentan las compras en borrador ni las anuladas, y cada compra cae en la fecha de su factura. Se compara con el periodo anterior de la misma duración."
         valor={formatearNumero(resumen.kgTotal, 0)}
         unidad="kg"
         subtitulo={`${formatearNumero(resumen.kgTotal / 1000, 1)} t · ${origen}`}
@@ -46,7 +46,7 @@ function MetricasKpis({ resumen, anterior, comparable, puedeVerCostos, desde, ha
       <TarjetaKpi
         titulo="Costo total"
         icono={<DollarSign size={16} />}
-        ayuda="Suma del subtotal de las líneas de compra del periodo, en USD. Solo lo ven quienes tienen permiso de facturación."
+        ayuda="Valor en USD de las compras confirmadas del periodo: se suma el subtotal de cada línea de compra (peso por precio). Solo lo ven quienes tienen permiso de facturación."
         estado={puedeVerCostos ? 'listo' : 'sinPermiso'}
         valor={formatearUsdDecimales(resumen.costoTotal)}
         subtitulo={`${resumen.comprasCount} ${resumen.comprasCount === 1 ? 'compra' : 'compras'} confirmadas`}
@@ -59,11 +59,11 @@ function MetricasKpis({ resumen, anterior, comparable, puedeVerCostos, desde, ha
       <TarjetaKpi
         titulo="Costo promedio por kg"
         icono={<TrendingUp size={16} />}
-        ayuda="Costo total entre kilos comprados (promedio ponderado: pesa más lo que más se compró). Bajar es favorable. Solo lo ven quienes tienen permiso de facturación."
+        ayuda="USD que costó cada kilo en promedio: costo total dividido entre los kilos comprados. Pesa más lo que más se compró. Por ejemplo: 1.000 USD por 2.000 kg dan 0,50 USD/kg. Que baje es favorable. Solo lo ven quienes tienen permiso de facturación."
         estado={puedeVerCostos ? 'listo' : 'sinPermiso'}
         valor={formatearUsdDecimales(resumen.costoPromedioKg)}
         unidad="/kg"
-        subtitulo="costo total ÷ kilos comprados"
+        subtitulo="costo total ÷ kilos comprados (USD por kg)"
         comparacion={cPromedio ?? undefined}
         formatoDelta={conPorcentaje(cPromedio, d => `${formatearUsdDecimales(d)}/kg`)}
       >
@@ -73,10 +73,10 @@ function MetricasKpis({ resumen, anterior, comparable, puedeVerCostos, desde, ha
       <TarjetaKpi
         titulo="Proveedores"
         icono={<Truck size={16} />}
-        ayuda="Cantidad de proveedores distintos a los que se les compró en el periodo."
+        ayuda="Cuántos proveedores distintos tuvieron al menos una compra confirmada en el periodo. Debajo, cuántos materiales distintos se compraron."
         valor={formatearNumero(resumen.proveedoresCount, 0)}
         unidad={resumen.proveedoresCount === 1 ? 'proveedor' : 'proveedores'}
-        subtitulo={`${resumen.materialesCount} ${resumen.materialesCount === 1 ? 'material' : 'materiales'}`}
+        subtitulo={`${resumen.materialesCount} ${resumen.materialesCount === 1 ? 'material distinto' : 'materiales distintos'}`}
         comparacion={cProv ?? undefined}
         formatoDelta={d => formatearNumero(d, 0)}
       >

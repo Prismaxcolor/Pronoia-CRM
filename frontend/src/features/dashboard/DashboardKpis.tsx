@@ -47,7 +47,7 @@ function tarjetaNoLista<T>(e: Estado<T>, titulo: string, icono: ReactNode, ayuda
 function KpiKgSemana({ semanas }: { semanas: Estado<SemanasKg> }) {
   const titulo = 'Kg comprados (7 días)';
   const icono = <Scale size={16} />;
-  const ayuda = 'Suma de los kilos de las compras confirmadas (se excluyen borradores y anuladas) de los últimos 7 días, incluido hoy. Se compara con los 7 días anteriores; si ese periodo no tiene datos fiables se dice "sin historial comparable" en vez de inventar un porcentaje.';
+  const ayuda = 'Kilos (kg) de todas las compras confirmadas en los últimos 7 días, contando hoy. No se cuentan las compras en borrador ni las anuladas, y cada compra cae en la fecha de su factura. Se compara con los 7 días justo antes; si esa semana no tuvo compras o empezó antes del 17/09/2026 (cuando comenzó el registro real), dice «sin historial comparable» porque el porcentaje sería engañoso.';
   const pendiente = tarjetaNoLista(semanas, titulo, icono, ayuda, { dinero: false, mensaje: 'Sin permiso para ver compras' });
   if (pendiente || semanas.estado !== 'listo') return pendiente;
 
@@ -68,7 +68,7 @@ function KpiKgSemana({ semanas }: { semanas: Estado<SemanasKg> }) {
       comparacion={cmp ?? undefined}
       formatoDelta={formatoDeltaConPct(cmp, formatearKg, p => formatearPct(p, 1))}
     >
-      {!cmp && <p className="mt-2 text-xs text-text-muted">Sin historial comparable: la semana anterior no tiene compras registradas completas.</p>}
+      {!cmp && <p className="mt-2 text-xs text-text-muted">Sin historial comparable: la semana anterior no tiene compras o empieza antes del 17/09/2026, cuando comenzó el registro real.</p>}
     </TarjetaKpi>
   );
 }
@@ -76,7 +76,7 @@ function KpiKgSemana({ semanas }: { semanas: Estado<SemanasKg> }) {
 function KpiPorPagar({ saldos }: { saldos: Estado<RespuestaSaldos> }) {
   const titulo = 'Por pagar a proveedores';
   const icono = <Landmark size={16} />;
-  const ayuda = 'Suma de lo que se les debe a los proveedores con saldo positivo: facturas y notas de débito vigentes, menos pagos, adelantos y notas de crédito. Es la misma cifra del estado de cuenta de cada proveedor. Es una foto que se recalcula cada ~20 segundos.';
+  const ayuda = 'Total en USD que se les debe a los proveedores. De cada proveedor se toman sus facturas (menos las anuladas) y notas de débito, y se restan sus pagos, adelantos y notas de crédito. Solo se suman los proveedores a quienes se les debe (saldo mayor a 0). Es la misma cifra del estado de cuenta de cada proveedor y se vuelve a calcular cada ~20 segundos.';
   const pendiente = tarjetaNoLista(saldos, titulo, icono, ayuda, { dinero: true, mensaje: '' });
   if (pendiente || saldos.estado !== 'listo') return pendiente;
 
@@ -85,7 +85,7 @@ function KpiPorPagar({ saldos }: { saldos: Estado<RespuestaSaldos> }) {
   const hora = new Date(calculadoEn).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
   return (
     <TarjetaKpi titulo={titulo} icono={icono} ayuda={ayuda} valor={formatearUsd(totales.porPagar ?? 0)} subtitulo={`${conDeuda} ${conDeuda === 1 ? 'proveedor con saldo' : 'proveedores con saldo'} · calculado ${hora}`} comparacion={null}>
-      {totales.aFavor > 0 && <p className="mt-1 text-xs text-text-muted">Aparte, {formatearUsd(totales.aFavor)} a favor (pagado de más), que no se resta de esta cifra.</p>}
+      {totales.aFavor > 0 && <p className="mt-1 text-xs text-text-muted">Aparte, {formatearUsd(totales.aFavor)} a favor: proveedores a quienes se les pagó o adelantó de más. Esa cifra no se resta del total por pagar.</p>}
       <p className="mt-1 text-xs"><Link to="/proveedores" className="font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">Ver proveedores →</Link></p>
     </TarjetaKpi>
   );
@@ -94,7 +94,7 @@ function KpiPorPagar({ saldos }: { saldos: Estado<RespuestaSaldos> }) {
 function KpiTickets({ tickets, puedeFacturar }: { tickets: Estado<ResumenTickets>; puedeFacturar: boolean }) {
   const titulo = 'Tickets pendientes';
   const icono = <Ticket size={16} />;
-  const ayuda = 'Por recepcionar: compras pesadas "en bruto" que aún no se completaron (no mueven inventario ni se pueden facturar). Sin facturar: compras ya completas que todavía no tienen factura.';
+  const ayuda = 'Por recepcionar: compras ya pesadas pero todavía «en bruto», es decir sin completar; mientras estén así no suman al inventario ni se pueden facturar. Sin facturar: compras ya completas que aún no tienen factura (un ticket unido a otro no se cuenta aparte).';
   const pendiente = tarjetaNoLista(tickets, titulo, icono, ayuda, { dinero: false, mensaje: 'Sin permiso para ver pesajes' });
   if (pendiente || tickets.estado !== 'listo') return pendiente;
 
@@ -123,7 +123,7 @@ function KpiTickets({ tickets, puedeFacturar }: { tickets: Estado<ResumenTickets
 function KpiCochinito({ bancas }: { bancas: Estado<BancaMinima[]> }) {
   const titulo = 'Saldo del cochinito';
   const icono = <PiggyBank size={16} />;
-  const ayuda = 'Suma del saldo de las bancas activas del cochinito, separada por moneda: el dólar y el bolívar nunca se suman entre sí.';
+  const ayuda = 'Dinero que hay ahora en las bancas activas (no archivadas) del cochinito. Se suma por moneda: los dólares (USD) y los bolívares (VES) nunca se mezclan. El saldo de cada banca es lo que entró (ingresos y transferencias recibidas) menos lo que salió (egresos y transferencias enviadas); puede dar negativo si salió más de lo que se registró como entrada.';
   const pendiente = tarjetaNoLista(bancas, titulo, icono, ayuda, { dinero: true, mensaje: '' });
   if (pendiente || bancas.estado !== 'listo') return pendiente;
 
@@ -140,7 +140,7 @@ function KpiCochinito({ bancas }: { bancas: Estado<BancaMinima[]> }) {
       subtitulo={s.hayUsd ? 'en dólares (USD)' : 'en bolívares (VES)'}
       comparacion={null}
     >
-      {(s.usd < 0 || s.ves < 0) && <p className="mt-1 text-xs text-amber-800">Saldo negativo: los egresos registrados superan lo ingresado en el cochinito.</p>}
+      {(s.usd < 0 || s.ves < 0) && <p className="mt-1 text-xs text-amber-800">Saldo negativo: ha salido más dinero del que se registró como entrada.</p>}
       {s.hayUsd && s.hayVes && (
         <p className="mt-1 text-sm font-medium text-text-secondary tabular-nums">Bs {formatearNumero(s.ves, 2)} <span className="text-xs font-normal text-text-muted">en bolívares (VES)</span></p>
       )}

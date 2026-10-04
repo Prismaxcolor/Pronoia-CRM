@@ -59,7 +59,7 @@ function GraficasMerma({ completas, rango, categoria, umbralPct, minimoKg, onIrA
       <div className="grid gap-x-6 lg:grid-cols-2">
         <Bloque
           titulo="Merma por transformación"
-          queEstasViendo={`el porcentaje de merma de las últimas ${MAX_TRANSFORMACIONES_GRAFICA} transformaciones completadas del periodo, de la más antigua a la más reciente. Las barras amarillas superan el umbral de ${formatearNumero(umbralPct, 0)} % con al menos ${formatearNumero(minimoKg, 0)} kg de merma.`}
+          queEstasViendo={`qué porcentaje del peso que entró se perdió en cada una de las últimas ${MAX_TRANSFORMACIONES_GRAFICA} transformaciones completadas del periodo, de la más antigua a la más reciente. Las barras amarillas pasan del umbral de ${formatearNumero(umbralPct, 0)} % y tienen al menos ${formatearNumero(minimoKg, 0)} kg de merma.`}
         >
           {recientes.length < MIN_PUNTOS_BARRAS ? (
             <EstadoVacio

@@ -32,7 +32,7 @@ function EgresosSemanales({ movimientos }: { movimientos: readonly Movimiento[] 
   return (
     <Bloque
       titulo="Egresos por semana"
-      queEstasViendo="Cuántos dólares salieron cada semana (cada barra empieza el lunes de la fecha indicada), separando pagos de adelantos. Respeta el periodo elegido arriba."
+      queEstasViendo="Cuántos dólares (USD) salieron cada semana, separando pagos de adelantos; cada barra va de lunes a domingo y su fecha es el lunes. Respeta el periodo elegido arriba y no incluye egresos sin equivalente en USD."
     >
       <div className="rounded-xl border border-border bg-surface p-3">
         <BarrasVerticales
@@ -55,7 +55,7 @@ function IngresosBloque({ movimientos, puedeCrear, hayIngresosEnHistorial, onReg
   return (
     <Bloque
       titulo="Ingresos y transferencias"
-      queEstasViendo="Dinero que entra a las bancas (cobros de clientes o aportes) y movimientos entre bancas propias en el periodo elegido."
+      queEstasViendo="Dinero que entró a las bancas en el periodo elegido, sumado por semana en USD. Debajo se cuenta cuántas transferencias entre bancas propias hubo; esas no se suman como ingreso ni como egreso."
     >
       {hayIngresos ? (
         <div className="rounded-xl border border-border bg-surface p-3">
@@ -102,7 +102,7 @@ function EvolucionTasa() {
   return (
     <Bloque
       titulo="Evolución de la tasa BCV"
-      queEstasViendo="Cuántos bolívares costó 1 USD según el Banco Central de Venezuela, una lectura por día desde que se guarda el historial."
+      queEstasViendo={`Cuántos bolívares (Bs) costó 1 USD según la tasa oficial del Banco Central de Venezuela (BCV). Se muestra una lectura por día (la última de ese día), tomando como máximo las últimas ${LECTURAS_TASA} lecturas guardadas.`}
     >
       {puntos === null ? (
         <SkeletonGrafica />

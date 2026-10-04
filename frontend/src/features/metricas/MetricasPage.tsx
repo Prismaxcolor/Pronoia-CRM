@@ -95,7 +95,7 @@ function MetricasPage() {
       <div className="print:hidden">
         <EncabezadoPagina
           titulo="Métricas de compras"
-          subtitulo="Cuántos kilos se compraron, a qué costo, a quién y de qué material, comparado con el periodo anterior."
+          subtitulo="Cuántos kilos se compraron, a qué costo, a quién y de qué material, comparado con el periodo anterior de la misma duración."
           acciones={
             <>
               <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
@@ -131,7 +131,7 @@ function MetricasPage() {
         <>
           <Bloque
             titulo="Resumen del periodo"
-            queEstasViendo={`del ${formatearFecha(desde)} al ${formatearFecha(hasta)} (${dias} ${dias === 1 ? 'día' : 'días'}), frente al periodo anterior de la misma duración (${formatearFecha(anterior.desde)} al ${formatearFecha(anterior.hasta)}). ${comparable ? '' : `No hay datos fiables para comparar: el registro real empieza el ${inicioReal}.`}`}
+            queEstasViendo={`del ${formatearFecha(desde)} al ${formatearFecha(hasta)} (${dias} ${dias === 1 ? 'día' : 'días'}), frente al periodo anterior de la misma duración (${formatearFecha(anterior.desde)} al ${formatearFecha(anterior.hasta)}). ${comparable ? '' : `No se puede comparar: el periodo anterior no tiene compras o empieza antes del ${inicioReal}, cuando comenzó el registro real.`}`}
           >
             <MetricasKpis resumen={resumen} anterior={resumenAnterior} comparable={comparable} puedeVerCostos={puedeVerCostos} desde={desde} hasta={hasta} dias={dias} />
           </Bloque>

@@ -105,7 +105,7 @@ function MetricasListas({ lineas, vista, material, proveedor, busqueda, puedeVer
   return (
     <Bloque
       titulo="Detalle de compras"
-      queEstasViendo={`cada ${vista === 'material' ? 'material' : 'proveedor'} ordenado por kilos comprados en el periodo. Elige uno para ver con quién (o qué) se compró, y elige los dos para llegar hasta las compras.`}
+      queEstasViendo={`cada ${vista === 'material' ? 'material' : 'proveedor'} ordenado de más a menos kilos comprados en el periodo. En cada fila: los kilos, el costo promedio por kg (costo ÷ kilos; solo con permiso de facturación), cuántas compras fueron y, si el precio varió, el rango entre el kg más barato y el más caro pagado. El punto marca los 3 con más kilos. Elige uno para ver ${vista === 'material' ? 'a qué proveedores se les compró' : 'qué materiales se le compraron'}, y elige los dos para llegar hasta las compras.`}
       acciones={
         <span className="print:hidden">
           <BotonAccion variante="secundario" onClick={exportar} disabled={filtrada.length === 0} icono={<Download size={16} />}>Exportar CSV</BotonAccion>

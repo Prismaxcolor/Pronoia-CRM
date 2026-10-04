@@ -61,7 +61,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio }: Props) {
       clave: 'montoUsd', titulo: 'Monto en USD', alinear: 'derecha', valorOrden: m => montoUsdDe(m), valorCsv: m => montoUsdDe(m),
       celda: m => { const v = montoUsdDe(m); return v == null ? '—' : `USD ${formatearNumero(v, 2)}`; },
       total: fs => `USD ${formatearNumero(fs.reduce((s, m) => s + (montoUsdDe(m) ?? 0), 0), 2)}`,
-      ayuda: 'Equivalente en dólares del movimiento. Es "—" si no se registró la conversión.',
+      ayuda: 'Equivalente en dólares (USD) del movimiento: el mismo monto si la banca es en USD, o el equivalente guardado en el movimiento si es en bolívares. Es "—" si no hay equivalente y entonces no se suma en el total de abajo.',
       claseCelda: 'whitespace-nowrap tabular-nums',
     },
   ], [textoContraparte, textoBanca]);

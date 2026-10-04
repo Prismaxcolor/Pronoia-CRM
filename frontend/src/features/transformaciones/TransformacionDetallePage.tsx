@@ -238,14 +238,14 @@ function TransformacionDetallePage() {
         <GrillaKpis>
           <TarjetaKpi
             titulo="Entrada neta"
-            ayuda="Peso neto de lo que entró a procesarse: peso bruto menos la tara."
+            ayuda="Kilos (kg) de material que entraron a procesarse: peso bruto (con envase o carga) menos la tara (el peso del envase o vehículo)."
             valor={fmt(t.pesoNeto)}
             unidad="kg"
             subtitulo={`Bruto ${fmt(t.pesoBruto)} kg − tara ${fmt(t.tara)} kg`}
           />
           <TarjetaKpi
             titulo="Salidas"
-            ayuda="Suma del neto de todo lo que salió de esta transformación (materiales sueltos y lotes de destino)."
+            ayuda="Kilos (kg) netos de producto obtenido: suma de todo lo que salió de esta transformación, ya sea material suelto o lotes de destino."
             valor={fmt(totalSalidas)}
             unidad="kg"
             subtitulo={`${formatearNumero(t.salidas.length, 0)} ${t.salidas.length === 1 ? 'salida registrada' : 'salidas registradas'}`}
@@ -254,7 +254,7 @@ function TransformacionDetallePage() {
           />
           <TarjetaKpi
             titulo="Merma"
-            ayuda={`Entrada neta menos todo lo que salió. Se pinta en rojo solo si pasa del umbral de ${formatearNumero(umbral.umbralPct, 0)} % con al menos ${formatearNumero(umbral.minimoKg, 0)} kg de merma.${umbral.esPorDefecto ? ' (Umbral por defecto: no se pudo leer la configuración del inventario.)' : ''}`}
+            ayuda={`Kilos (kg) que se perdieron en esta transformación: entrada neta menos todo lo que salió. Debajo, ese valor como % de la entrada. Por ejemplo: entran 100 kg y salen 97 kg, la merma es 3 kg (3 %). Se pinta en rojo solo si pasa del umbral de ${formatearNumero(umbral.umbralPct, 0)} % y es de al menos ${formatearNumero(umbral.minimoKg, 0)} kg.${umbral.esPorDefecto ? ' (Umbral por defecto: no se pudo leer la configuración del inventario.)' : ''}`}
             valor={fmt(merma.kgMerma)}
             unidad="kg"
             subtitulo={`${formatearPct(merma.pctMerma, 2)} de la entrada · umbral ${formatearNumero(umbral.umbralPct, 0)} %`}
@@ -263,11 +263,11 @@ function TransformacionDetallePage() {
             mensajeVacio="Se calcula al completarla"
           />
           {!puedeVerValores ? (
-            <TarjetaKpi titulo="Ganancia" ayuda="Valor de las salidas menos el costo de la entrada, según la valoración." estado="sinPermiso" />
+            <TarjetaKpi titulo="Ganancia" ayuda="Cuánto dinero (USD) se ganó o perdió al transformar: valor de lo que salió menos lo que costó lo que entró." estado="sinPermiso" />
           ) : ganancia?.ganancia != null ? (
             <TarjetaKpi
               titulo="Ganancia"
-              ayuda="Valor de las salidas (kg × precio) menos el costo de la entrada (kg × precio de compra), según la valoración de más abajo."
+              ayuda="Dinero (USD) que se ganó al transformar: valor de lo que salió menos lo que costó lo que entró. Valor de salidas = kg de cada salida × su precio por kg. Costo = kg de entrada × precio de compra por kg. Los precios salen de la valoración de más abajo. Si da negativo, se perdió dinero (sale en rojo)."
               valor={formatearUsdDecimales(ganancia.ganancia)}
               subtitulo={`Salidas ${formatearUsdDecimales(ganancia.valorSalidas)} − costo ${formatearUsdDecimales(ganancia.costo ?? 0)}`}
               tonoValor={ganancia.ganancia < 0 ? 'peligro' : 'normal'}
@@ -275,7 +275,7 @@ function TransformacionDetallePage() {
           ) : (
             <TarjetaKpi
               titulo="Ganancia"
-              ayuda="Valor de las salidas menos el costo de la entrada, según la valoración. Hace falta el costo de entrada y el precio de cada salida."
+              ayuda="Dinero (USD) que se gana al transformar: valor de lo que salió (kg × precio por kg de cada salida) menos lo que costó lo que entró (kg × precio de compra por kg). Solo se calcula cuando se conoce el costo de entrada y el precio de todas las salidas."
               estado="vacio"
               mensajeVacio={!completa ? 'Se calcula al completarla y valorarla' : t.valoracionDisponible === false ? 'La valoración aún no está habilitada' : 'Sin valoración completa: falta el costo de entrada o algún precio'}
             />
@@ -285,7 +285,7 @@ function TransformacionDetallePage() {
 
       {/* Diagrama entrada -> salidas -> merma (solo pantalla) */}
       {completa && t.salidas.length > 0 && (
-        <Seccion titulo="Flujo del material" queEstasViendo="los kg que entraron, cómo se repartieron entre las salidas y cuánto quedó como merma. El grosor de cada cinta es proporcional a los kg." soloPantalla>
+        <Seccion titulo="Flujo del material" queEstasViendo="los kg que entraron (izquierda), cómo se repartieron entre las salidas y cuántos quedaron como merma (derecha, con trama). El grosor de cada cinta es proporcional a los kg; el % de cada caja es su parte de lo que entró." soloPantalla>
           <div className="rounded-xl border border-border bg-surface p-4">
             <DiagramaFlujoTransformacion entrada={{ etiqueta: nombreEntrada(t), kg: t.pesoNeto }} salidas={salidasDiagrama} mermaKg={merma.kgMerma} />
             <MermaPorTipoDetalle t={t} mermaKg={merma.kgMerma} />

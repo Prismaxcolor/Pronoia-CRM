@@ -21,15 +21,15 @@ export const DEFINICIONES_CONFIG_INVENTARIO = {
   },
   umbralMermaPct: {
     clave: 'umbral_merma_pct', defecto: 8, minimo: 0.1, maximo: 100, tipo: 'decimal',
-    descripcion: 'Porcentaje de merma a partir del cual se marca una transformación como alta.',
+    descripcion: 'Porcentaje de merma (kg perdidos entre kg que entraron) a partir del cual se marca la merma como alta.',
   },
   alertaDiasAmarilla: {
     clave: 'alerta_dias_amarilla', defecto: 60, minimo: 1, maximo: 3650, tipo: 'entero',
-    descripcion: 'Días sin movimiento para la alerta amarilla.',
+    descripcion: 'Días estimados que lleva el material en inventario (desde su entrada más reciente) para mostrar la alerta amarilla.',
   },
   alertaDiasRoja: {
     clave: 'alerta_dias_roja', defecto: 90, minimo: 1, maximo: 3650, tipo: 'entero',
-    descripcion: 'Días sin movimiento para la alerta roja.',
+    descripcion: 'Días estimados que lleva el material en inventario (desde su entrada más reciente) para mostrar la alerta roja.',
   },
   alertaMermaMinKg: {
     clave: 'alerta_merma_min_kg', defecto: 5, minimo: 0, maximo: 100000, tipo: 'decimal',

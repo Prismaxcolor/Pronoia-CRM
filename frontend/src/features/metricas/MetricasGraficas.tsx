@@ -11,7 +11,7 @@ export function TendenciaCompras({ lineas, desde, hasta }: { lineas: readonly Me
   return (
     <Bloque
       titulo={`Tendencia de kilos comprados (${t.porSemana ? 'por semana' : 'por día'})`}
-      queEstasViendo={`los kilos comprados en cada ${t.porSemana ? 'semana (lunes a domingo)' : 'día'} del periodo. ${t.porSemana ? 'El periodo es largo, por eso se agrupa por semana.' : 'Pasa el cursor o usa las flechas para ver cada barra.'}`}
+      queEstasViendo={`los kilos (kg) comprados en cada ${t.porSemana ? 'semana (lunes a domingo; la fecha de abajo es el lunes)' : 'día'} del periodo; si no hubo compras, la barra vale 0. ${t.porSemana ? 'Como el periodo pasa de 35 días, se agrupa por semana.' : 'Pasa el cursor o usa las flechas para ver cada barra.'}`}
     >
       {hayDatosParaTendencia(t.puntos)
         ? (
@@ -45,7 +45,7 @@ export function RepartoKg({ lineas, vista }: { lineas: readonly MetricaCompraLin
   return (
     <Bloque
       titulo={`Reparto de kilos por ${nombre}`}
-      queEstasViendo={`qué parte de los kilos del periodo corresponde a cada ${nombre}. Se muestran los 5 mayores y el resto se agrupa en «Otros». Cambia entre material y proveedor en el detalle de abajo.`}
+      queEstasViendo={`qué porcentaje de los kilos (kg) comprados en el periodo corresponde a cada ${nombre}. Se muestran los 5 con más kilos y el resto se suma en «Otros». Cambia entre material y proveedor en el detalle de abajo.`}
     >
       {items.length >= 2
         ? (

@@ -21,7 +21,7 @@ export function TendenciaKg({ semanas }: { semanas: EstadoBloque<SemanasKg> & { 
   }, [semanas]);
 
   return (
-    <Bloque titulo="Kilos comprados por día" queEstasViendo="los kilos de compras confirmadas en cada uno de los últimos 14 días. Pasa el cursor o usa las flechas para ver cada día.">
+    <Bloque titulo="Kilos comprados por día" queEstasViendo="los kilos (kg) de compras confirmadas en cada uno de los últimos 14 días; un día sin compras vale 0. Pasa el cursor o usa las flechas para ver cada día.">
       {semanas.estado === 'cargando' && <SkeletonBloque alto="h-56" etiqueta="Cargando tendencia" />}
       {semanas.estado === 'sinPermiso' && <EstadoVacio mensaje="Sin permiso para ver las compras" />}
       {semanas.estado === 'error' && <ErrorDeBloque mensaje={semanas.mensaje} onReintentar={semanas.recargar} />}
@@ -56,7 +56,7 @@ export function SaldoBancas({ bancas }: { bancas: EstadoBloque<BancaMinima[]> & 
   }, [bancas]);
 
   return (
-    <Bloque titulo="Saldo por banca" queEstasViendo="cuánto tiene cada banca del cochinito. Las bancas en dólares y en bolívares van en gráficas separadas porque no se pueden comparar entre sí.">
+    <Bloque titulo="Saldo por banca" queEstasViendo="cuánto dinero tiene hoy cada banca del cochinito (su saldo actual). Las de dólares (USD) y las de bolívares (VES) van en gráficas separadas porque sus montos no se pueden comparar entre sí.">
       {bancas.estado === 'cargando' && <SkeletonBloque alto="h-56" etiqueta="Cargando bancas" />}
       {bancas.estado === 'sinPermiso' && <EstadoVacio mensaje="Sin permiso para ver el cochinito" />}
       {bancas.estado === 'error' && <ErrorDeBloque mensaje={bancas.mensaje} onReintentar={bancas.recargar} />}
@@ -77,7 +77,7 @@ export function SaldoBancas({ bancas }: { bancas: EstadoBloque<BancaMinima[]> & 
                 {g.negativas.length > 0 && (
                   <div role="note" className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
                     <p className="font-medium">Saldo negativo (no se puede dibujar como barra)</p>
-                    <p className="mt-0.5">Los egresos registrados superan lo ingresado en estas bancas.</p>
+                    <p className="mt-0.5">En estas bancas ha salido más dinero del que se registró como entrada.</p>
                     <ul className="mt-1 space-y-0.5">
                       {g.negativas.map(b => <li key={b.id} className="flex justify-between gap-3"><span>{b.nombre}</span><span className="font-medium tabular-nums">-{dinero(g.moneda)(Math.abs(b.saldo))}</span></li>)}
                     </ul>

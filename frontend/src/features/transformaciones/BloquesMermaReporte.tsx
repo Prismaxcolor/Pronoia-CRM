@@ -44,7 +44,7 @@ export function BloqueMermaPorCategoria({ estado }: { estado: EstadoReporte }) {
     })), [reporte]);
 
   return (
-    <Bloque titulo="Merma por categoría" queEstasViendo="el porcentaje de merma de cada categoría de transformación en el periodo (merma sobre kg de entrada).">
+    <Bloque titulo="Merma por categoría" queEstasViendo="qué porcentaje del peso que entró se perdió en cada categoría de transformación (ferroso / no ferroso y PCB) en el periodo: kg de merma ÷ kg de entrada de las transformaciones completadas.">
       {cargando && !reporte ? <SkeletonGrafica alto="h-48" /> : error && !reporte ? <ErrorBloque mensaje={error} onReintentar={reintentar} /> : categorias.length < 2 ? (
         <EstadoVacio
           mensaje={categorias.length === 1 ? `Solo hay una categoría con datos en el periodo: ${categorias[0].etiqueta}, ${formatearPct(categorias[0].valor, 2)} de merma.` : 'Sin transformaciones completadas en el periodo.'}
@@ -71,7 +71,7 @@ export function BloqueMermaPorTipo({ estado, onIrAPendientes }: { estado: Estado
   }, [reporte]);
 
   return (
-    <Bloque titulo="Merma por tipo" queEstasViendo="de qué está hecha la merma clasificada (basura, plástico, tierra, hierro u otro no vendible), en kg.">
+    <Bloque titulo="Merma por tipo" queEstasViendo="de qué estuvo hecha la merma del periodo, en kg, según lo que se indicó al completar cada transformación (basura, plástico, tierra, hierro u otro no vendible). «Sin clasificar» es la merma de la que nadie indicó el tipo.">
       {cargando && !reporte ? <SkeletonGrafica alto="h-48" /> : error && !reporte ? <ErrorBloque mensaje={error} onReintentar={reintentar} /> : tipos ? (
         <div className={`rounded-xl border border-border bg-surface p-4 ${cargando ? 'opacity-60 transition-opacity' : ''}`}>
           <Dona items={tipos} formatoValor={v => kgFino(v)} rotuloTotal="Merma" etiquetaAria="Merma por tipo en kg" />

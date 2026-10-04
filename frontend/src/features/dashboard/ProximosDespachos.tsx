@@ -34,7 +34,7 @@ function ProximosDespachos() {
   return (
     <Bloque
       titulo="Próximos despachos"
-      queEstasViendo="las próximas citas de despacho de proveedores y clientes (pendientes, confirmadas o reprogramadas), desde hoy."
+      queEstasViendo="las próximas 5 citas de entrega o retiro con proveedores y clientes, desde hoy en adelante y de la más cercana a la más lejana. No se muestran las canceladas ni las completadas."
       acciones={carga.estado === 'listo' || carga.estado === 'error'
         ? <Link to="/citas" className="text-sm font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800">Ver todas →</Link>
         : undefined}

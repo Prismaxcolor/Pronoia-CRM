@@ -103,7 +103,7 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
     <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:hidden">
       <h2 className="text-sm font-semibold text-text-primary mb-1">Valoración (opcional)</h2>
       <p className="text-xs text-text-muted mb-4">
-        Ancla la transformación a una factura de compra para tomar sus precios. Los precios se pueden editar.
+        Opcional: elige la factura de compra del material para tomar de ella los precios por kg (se pueden editar a mano). Con eso se calcula la ganancia: valor de lo que salió menos lo que costó lo que entró.
       </p>
 
       {!disponible && (
@@ -138,7 +138,7 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
 
       <div className="flex items-center justify-between text-sm mb-2">
         <span className="text-text-secondary">
-          Costo de entrada: {fmt(t.pesoNeto)} kg × precio de compra ($/kg)
+          Costo de lo que entró: {fmt(t.pesoNeto)} kg × precio de compra ($ por kg)
         </span>
         <input type="number" min="0" step="0.01" value={costo} disabled={!editable} onChange={e => setCosto(e.target.value)} className={inputClass} />
       </div>
@@ -163,8 +163,8 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
       )}
 
       <div className="border-t border-border pt-3 space-y-1 text-sm">
-        <div className="flex justify-between"><span className="text-text-secondary">Valor de salidas</span><span className="font-medium">${fmt(resultado.valorSalidas)}</span></div>
-        <div className="flex justify-between"><span className="text-text-secondary">Costo</span><span className="font-medium">{resultado.costo == null ? '—' : `$${fmt(resultado.costo)}`}</span></div>
+        <div className="flex justify-between"><span className="text-text-secondary">Valor de salidas (kg × $/kg)</span><span className="font-medium">${fmt(resultado.valorSalidas)}</span></div>
+        <div className="flex justify-between"><span className="text-text-secondary">Costo de la entrada</span><span className="font-medium">{resultado.costo == null ? '—' : `$${fmt(resultado.costo)}`}</span></div>
         <div className="flex justify-between text-base">
           <span className="font-semibold text-text-primary">Ganancia</span>
           <span className={`font-bold ${resultado.ganancia == null ? 'text-text-muted' : resultado.ganancia < 0 ? 'text-red-600' : 'text-green-700'}`}>
@@ -172,7 +172,7 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
           </span>
         </div>
         {!resultado.completo && disponible && (
-          <p className="text-xs text-text-muted">Falta el costo de entrada o el precio de alguna salida.</p>
+          <p className="text-xs text-text-muted">Para ver la ganancia falta el costo de la entrada o el precio de alguna salida.</p>
         )}
       </div>
 
