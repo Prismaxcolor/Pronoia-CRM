@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
-import { Tag } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { obtenerPreciosPortal, type ListaPreciosPortal } from '../../services/portal-precios-service';
-import PortalHeader from '../../components/PortalHeader';
-import PortalSkeleton from '../../components/PortalSkeleton';
+import { Bloque, EstadoVacio, SkeletonTabla, TablaDatos } from '../../components/ui';
+import { formatearUsdDecimales } from '../../lib/formato';
+import { fechaCorta } from '../../lib/portal-kpis';
+import type { ColumnaTabla } from '../../lib/tabla-datos';
+import PortalLayout from './PortalLayout';
 
-function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+type Precio = ListaPreciosPortal['precios'][number];
 
 function PortalPreciosPage() {
   const [listas, setListas] = useState<ListaPreciosPortal[]>([]);
@@ -16,51 +16,39 @@ function PortalPreciosPage() {
     obtenerPreciosPortal().then(setListas).finally(() => setCargando(false));
   }, []);
 
-  if (cargando) {
-    return (
-      <div className="min-h-screen bg-surface-alt">
-        <PortalHeader title="Lista de precios" backTo="/portal" />
-        <PortalSkeleton filas={3} />
-      </div>
-    );
-  }
+  const columnas = useMemo<ColumnaTabla<Precio>[]>(() => [
+    { clave: 'material', titulo: 'Material', valorOrden: p => p.nombreProducto ?? 'Material', celda: p => p.nombreProducto ?? 'Material' },
+    {
+      clave: 'precio', titulo: 'Precio por kg', alinear: 'derecha', valorOrden: p => p.precio,
+      celda: p => `${formatearUsdDecimales(p.precio)} / kg`, valorCsv: p => p.precio, decimalesCsv: 2,
+    },
+  ], []);
 
   return (
-    <div className="min-h-screen bg-surface-alt">
-      <PortalHeader title="Lista de precios" backTo="/portal" />
-
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        {listas.length ? (
-          listas.map(({ lista, precios }) => (
-            <section key={lista.id}>
-              <h2 className="text-sm font-semibold text-text-secondary mb-2">
-                {lista.nombre}
-                {lista.vigenteDesde && (
-                  <span className="text-text-muted font-normal"> · vigente desde {lista.vigenteDesde.slice(0, 10)}</span>
-                )}
-              </h2>
-              <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
-                {precios.length ? (
-                  precios.map(p => (
-                    <div key={p.id} className="flex items-center justify-between p-4">
-                      <p className="text-sm font-medium text-text-primary">{p.nombreProducto ?? 'Material'}</p>
-                      <p className="text-sm font-semibold text-text-primary">${fmt(p.precio)} / kg</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="p-4 text-sm text-text-muted">Sin precios cargados.</p>
-                )}
-              </div>
-            </section>
-          ))
-        ) : (
-          <div className="flex flex-col items-center gap-2 py-12 text-center">
-            <Tag size={22} className="text-text-muted" />
-            <p className="text-sm text-text-muted">No hay listas de precios vigentes por el momento.</p>
-          </div>
-        )}
-      </main>
-    </div>
+    <PortalLayout titulo="Lista de precios" subtitulo="Precios vigentes por material, en dólares por kilo.">
+      {cargando ? (
+        <SkeletonTabla filas={4} columnas={2} />
+      ) : listas.length ? (
+        listas.map(({ lista, precios }) => (
+          <Bloque
+            key={lista.id}
+            titulo={lista.nombre}
+            queEstasViendo={lista.vigenteDesde ? `Precios por kilo vigentes desde el ${fechaCorta(lista.vigenteDesde)}.` : 'Precios por kilo vigentes.'}
+          >
+            <TablaDatos
+              titulo={`Precios de ${lista.nombre}`} columnas={columnas} filas={precios} claveFila={p => p.id}
+              anchoMinimo="min-w-[20rem]" exportar={{ nombreArchivo: 'lista-de-precios' }}
+              vacio={{ mensaje: 'Esta lista aún no tiene precios cargados.', descripcion: 'Pronoia los publicará aquí cuando estén definidos.' }}
+            />
+          </Bloque>
+        ))
+      ) : (
+        <EstadoVacio
+          mensaje="No hay listas de precios vigentes por el momento."
+          descripcion="Cuando Pronoia publique una lista para ti, la verás aquí con los precios por material."
+        />
+      )}
+    </PortalLayout>
   );
 }
 

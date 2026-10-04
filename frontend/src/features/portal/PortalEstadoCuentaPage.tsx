@@ -1,119 +1,124 @@
-import { useEffect, useState } from 'react';
-import { Inbox } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CalendarClock, HandCoins, Receipt, Wallet } from 'lucide-react';
 import {
   obtenerEstadoCuentaPortal,
   type EstadoCuentaPortal,
   type EntradaEstadoCuenta,
 } from '../../services/portal-estado-cuenta-service';
-import PortalHeader from '../../components/PortalHeader';
-import PortalSkeleton from '../../components/PortalSkeleton';
+import { Bloque, EstadoVacio, GrillaKpis, Insignia, SkeletonKpis, SkeletonTabla, TarjetaKpi, TablaDatos } from '../../components/ui';
+import { formatearUsdDecimales } from '../../lib/formato';
+import { fechaCorta, importeMovimiento, mensajeSaldo, ultimoMovimiento } from '../../lib/portal-kpis';
+import type { ColumnaTabla } from '../../lib/tabla-datos';
+import type { Tono } from '../../lib/paleta';
+import PortalLayout from './PortalLayout';
 
-function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fecha(iso: string): string {
-  return iso.slice(0, 10);
-}
-
-/** El signo de "saldo" (facturado - pagado) significa cosas opuestas según quién
- *  es el dueño de la sesión: un proveedor le vende A Pronoia (saldo > 0 = Pronoia
- *  le debe), un cliente le compra A Pronoia (saldo > 0 = el cliente debe). */
-function mensajeSaldo(tipo: 'proveedor' | 'cliente', saldo: number): { texto: string; positivo: boolean } {
-  if (saldo === 0) return { texto: 'Sin saldo pendiente', positivo: true };
-
-  const pronoiaDebe = tipo === 'proveedor' ? saldo > 0 : saldo < 0;
-  return pronoiaDebe
-    ? { texto: 'Pronoia te debe', positivo: true }
-    : { texto: 'Le debes a Pronoia', positivo: false };
-}
-
-const ETIQUETA: Record<EntradaEstadoCuenta['tipo'], { texto: string; clase: string }> = {
-  factura: { texto: 'Factura', clase: 'bg-amber-100 text-amber-700' },
-  pago: { texto: 'Pago', clase: 'bg-green-100 text-green-700' },
-  adelanto: { texto: 'Adelanto', clase: 'bg-teal-100 text-teal-700' },
-  nota_credito: { texto: 'Nota de crédito', clase: 'bg-green-100 text-green-700' },
-  nota_debito: { texto: 'Nota de débito', clase: 'bg-amber-100 text-amber-700' },
-  cruce: { texto: 'Cruce', clase: 'bg-indigo-100 text-indigo-700' },
+const TIPO: Record<EntradaEstadoCuenta['tipo'], { texto: string; tono: Tono }> = {
+  factura: { texto: 'Factura', tono: 'aviso' },
+  pago: { texto: 'Pago', tono: 'exito' },
+  adelanto: { texto: 'Adelanto', tono: 'exito' },
+  nota_credito: { texto: 'Nota de crédito', tono: 'exito' },
+  nota_debito: { texto: 'Nota de débito', tono: 'aviso' },
+  cruce: { texto: 'Cruce', tono: 'info' },
 };
 
-/** Facturas y notas de débito suman al saldo (cargo); el resto lo reduce (abono). */
-function importeEntrada(e: EntradaEstadoCuenta): number {
-  if (e.tipo === 'cruce') return e.montoCruzado ?? 0;
-  return e.tipo === 'factura' || e.tipo === 'nota_debito' ? e.cargo : e.abono;
-}
+const AYUDA_SALDO =
+  'Facturado menos pagado. Si es un proveedor, un saldo a favor significa que Pronoia te debe; si es un cliente, que tú le debes a Pronoia.';
+
+type Fila = EntradaEstadoCuenta & { indice: number };
+
+const COLUMNAS: ColumnaTabla<Fila>[] = [
+  { clave: 'fecha', titulo: 'Fecha', valorOrden: e => e.fecha, celda: e => fechaCorta(e.fecha), valorCsv: e => fechaCorta(e.fecha) },
+  { clave: 'tipo', titulo: 'Tipo', valorOrden: e => TIPO[e.tipo].texto, celda: e => <Insignia tono={TIPO[e.tipo].tono}>{TIPO[e.tipo].texto}</Insignia>, valorCsv: e => TIPO[e.tipo].texto },
+  { clave: 'descripcion', titulo: 'Descripción', valorOrden: e => e.descripcion, claseCelda: 'min-w-[10rem]' },
+  {
+    clave: 'importe', titulo: 'Importe', alinear: 'derecha', valorOrden: importeMovimiento,
+    celda: e => formatearUsdDecimales(importeMovimiento(e)), valorCsv: importeMovimiento, decimalesCsv: 2,
+    ayuda: 'Las facturas y notas de débito suman a lo que se debe; los pagos, adelantos y notas de crédito lo reducen.',
+  },
+];
 
 function PortalEstadoCuentaPage() {
   const [datos, setDatos] = useState<EstadoCuentaPortal | null>(null);
   const [cargando, setCargando] = useState(true);
 
-  useEffect(() => {
+  const cargar = useCallback(() => {
+    setCargando(true);
     obtenerEstadoCuentaPortal().then(setDatos).finally(() => setCargando(false));
   }, []);
 
-  if (cargando) {
+  useEffect(() => {
+    let cancelado = false;
+    obtenerEstadoCuentaPortal()
+      .then(d => { if (!cancelado) setDatos(d); })
+      .finally(() => { if (!cancelado) setCargando(false); });
+    return () => { cancelado = true; };
+  }, []);
+
+  const saldo = datos?.totales.saldo ?? 0;
+  const mensaje = useMemo(() => mensajeSaldo(datos?.entidad.tipo ?? 'proveedor', saldo), [datos, saldo]);
+  const filas = useMemo<Fila[]>(() => (datos?.entradas ?? []).map((e, indice) => ({ ...e, indice })), [datos]);
+  const ultimo = useMemo(() => ultimoMovimiento(datos?.entradas ?? []), [datos]);
+
+  if (!cargando && !datos) {
     return (
-      <div className="min-h-screen bg-surface-alt">
-        <PortalHeader title="Estado de cuenta" backTo="/portal" />
-        <PortalSkeleton filas={3} />
-      </div>
+      <PortalLayout titulo="Estado de cuenta" subtitulo="Tu saldo y el historial de movimientos con Pronoia.">
+        <EstadoVacio
+          mensaje="No pudimos cargar tu estado de cuenta."
+          descripcion="Puede ser un problema de conexión. Tu saldo no cambió."
+          accion={{ etiqueta: 'Reintentar', onClick: cargar }}
+        />
+      </PortalLayout>
     );
   }
 
-  const saldo = datos?.totales.saldo ?? 0;
-  const mensaje = mensajeSaldo(datos?.entidad.tipo ?? 'proveedor', saldo);
-
   return (
-    <div className="min-h-screen bg-surface-alt">
-      <PortalHeader title="Estado de cuenta" backTo="/portal" />
+    <PortalLayout titulo="Estado de cuenta" subtitulo="Tu saldo y el historial de movimientos con Pronoia.">
+      {cargando ? (
+        <>
+          <SkeletonKpis cantidad={4} />
+          <SkeletonTabla filas={5} columnas={4} />
+        </>
+      ) : (
+        <>
+          <GrillaKpis>
+            <TarjetaKpi
+              titulo="Saldo actual" icono={<Wallet size={16} />} ayuda={AYUDA_SALDO}
+              valor={formatearUsdDecimales(Math.abs(saldo))}
+              subtitulo={mensaje.texto}
+            />
+            <TarjetaKpi
+              titulo="Facturado" icono={<Receipt size={16} />} valor={formatearUsdDecimales(datos?.totales.facturado ?? 0)}
+              ayuda="Suma de todas las facturas vigentes a tu nombre." subtitulo="Total acumulado"
+            />
+            <TarjetaKpi
+              titulo="Pagado" icono={<HandCoins size={16} />} valor={formatearUsdDecimales(datos?.totales.pagado ?? 0)}
+              ayuda="Suma de los pagos aplicados a tus facturas." subtitulo="Total acumulado"
+            />
+            <TarjetaKpi
+              titulo="Último movimiento" icono={<CalendarClock size={16} />}
+              ayuda="El movimiento más reciente registrado en tu cuenta."
+              estado={ultimo ? 'listo' : 'vacio'} mensajeVacio="Aún no hay movimientos"
+              valor={ultimo ? fechaCorta(ultimo.fecha) : undefined}
+              subtitulo={ultimo ? `${TIPO[ultimo.tipo].texto} · ${formatearUsdDecimales(importeMovimiento(ultimo))}` : undefined}
+            />
+          </GrillaKpis>
 
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        <div className="bg-surface rounded-2xl shadow-sm p-6 text-center">
-          <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">Saldo actual</p>
-          <p className={`text-4xl font-bold mt-2 ${mensaje.positivo ? 'text-green-600' : 'text-red-600'}`}>
-            ${fmt(Math.abs(saldo))}
-          </p>
-          <p className="text-sm text-text-muted mt-1">{mensaje.texto}</p>
-          <div className="flex justify-center gap-6 mt-5 pt-5 border-t border-border text-sm">
-            <div>
-              <p className="text-text-muted">Facturado</p>
-              <p className="font-semibold text-text-primary">${fmt(datos?.totales.facturado ?? 0)}</p>
-            </div>
-            <div>
-              <p className="text-text-muted">Pagado</p>
-              <p className="font-semibold text-text-primary">${fmt(datos?.totales.pagado ?? 0)}</p>
-            </div>
-          </div>
-        </div>
-
-        <section>
-          <h2 className="text-sm font-semibold text-text-secondary mb-2">Movimientos</h2>
-          <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
-            {datos?.entradas.length ? (
-              datos.entradas.map((e, i) => (
-                <div key={i} className="flex items-center justify-between p-4">
-                  <div>
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs mr-2 ${ETIQUETA[e.tipo].clase}`}>
-                      {ETIQUETA[e.tipo].texto}
-                    </span>
-                    <p className="text-sm font-medium text-text-primary mt-1">{e.descripcion}</p>
-                    <p className="text-xs text-text-muted">{fecha(e.fecha)}</p>
-                  </div>
-                  <p className="text-sm font-semibold text-text-primary">
-                    ${fmt(importeEntrada(e))}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <div className="flex flex-col items-center gap-2 p-8 text-center">
-                <Inbox size={22} className="text-text-muted" />
-                <p className="text-sm text-text-muted">Todavía no tienes movimientos.</p>
-              </div>
-            )}
-          </div>
-        </section>
-      </main>
-    </div>
+          <Bloque titulo="Movimientos" queEstasViendo="Facturas, pagos y ajustes de tu cuenta, del más reciente al más antiguo. El importe es siempre positivo; el tipo dice si suma o resta a tu saldo.">
+            <TablaDatos
+              titulo="Movimientos del estado de cuenta" columnas={COLUMNAS} filas={filas}
+              claveFila={e => String(e.indice)}
+              ordenInicial={{ columna: 'fecha', sentido: 'desc' }} paginacion={{ tamano: 20 }} anchoMinimo="min-w-[32rem]"
+              exportar={{ nombreArchivo: 'mi-estado-de-cuenta' }}
+              vacio={{
+                mensaje: 'Todavía no tienes movimientos.',
+                descripcion: 'Aquí aparecerán tus facturas y pagos en cuanto Pronoia los registre. Mientras tanto puedes coordinar una entrega.',
+                accion: { etiqueta: 'Agendar despacho', to: '/portal/agendar' },
+              }}
+            />
+          </Bloque>
+        </>
+      )}
+    </PortalLayout>
   );
 }
 

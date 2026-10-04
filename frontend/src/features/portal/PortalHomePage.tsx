@@ -1,85 +1,114 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LogOut, FileText, Wallet, Tag, CalendarClock, FileCheck2, ChevronRight } from 'lucide-react';
+import { FileText, Wallet, Tag, CalendarClock, FileCheck2, ChevronRight, History } from 'lucide-react';
 import { usePortalAuth } from '../../hooks/use-portal-auth-context';
+import { obtenerEstadoCuentaPortal, type EstadoCuentaPortal } from '../../services/portal-estado-cuenta-service';
+import { obtenerDocumentosPortal, type PortalDocumentos } from '../../services/portal-documentos-service';
+import { Bloque, GrillaKpis, TarjetaKpi } from '../../components/ui';
+import { formatearNumero, formatearUsdDecimales } from '../../lib/formato';
+import { fechaCorta, importeMovimiento, mensajeSaldo, resumenDocumentos, ultimoMovimiento } from '../../lib/portal-kpis';
+import PortalLayout from './PortalLayout';
 
 interface Opcion {
   to: string;
   label: string;
   descripcion: string;
   icon: typeof FileText;
-  disponible: boolean;
 }
 
 const OPCIONES: Opcion[] = [
-  { to: '/portal/documentos', label: 'Mis documentos', descripcion: 'Facturas, tickets de pesaje y comprobantes', icon: FileText, disponible: true },
-  { to: '/portal/estado-cuenta', label: 'Estado de cuenta', descripcion: 'Tu saldo y el historial de movimientos', icon: Wallet, disponible: true },
-  { to: '/portal/precios', label: 'Lista de precios', descripcion: 'Precios vigentes por material', icon: Tag, disponible: true },
-  { to: '/portal/agendar', label: 'Agendar despacho', descripcion: 'Elige el día y la hora de tu próxima entrega', icon: CalendarClock, disponible: true },
-  { to: '/portal/guias', label: 'Guías', descripcion: 'Permisos de traslado y su estado', icon: FileCheck2, disponible: true },
+  { to: '/portal/documentos', label: 'Mis documentos', descripcion: 'Facturas, tickets de pesaje y comprobantes', icon: FileText },
+  { to: '/portal/estado-cuenta', label: 'Estado de cuenta', descripcion: 'Tu saldo y el historial de movimientos', icon: Wallet },
+  { to: '/portal/precios', label: 'Lista de precios', descripcion: 'Precios vigentes por material', icon: Tag },
+  { to: '/portal/agendar', label: 'Agendar despacho', descripcion: 'Elige el día y la hora de tu próxima entrega', icon: CalendarClock },
+  { to: '/portal/guias', label: 'Guías', descripcion: 'Permisos de traslado y su estado', icon: FileCheck2 },
 ];
 
+const ETIQUETA_TIPO: Record<string, string> = {
+  factura: 'Factura', pago: 'Pago', adelanto: 'Adelanto', nota_credito: 'Nota de crédito', nota_debito: 'Nota de débito', cruce: 'Cruce',
+};
+
+type Carga<T> = { estado: 'cargando' } | { estado: 'error' } | { estado: 'listo'; datos: T };
+
+function aCarga<T>(datos: T | null): Carga<T> {
+  return datos ? { estado: 'listo', datos } : { estado: 'error' };
+}
+
 function PortalHomePage() {
-  const { entidad, logout } = usePortalAuth();
+  const { entidad } = usePortalAuth();
+  const [cuenta, setCuenta] = useState<Carga<EstadoCuentaPortal>>({ estado: 'cargando' });
+  const [docs, setDocs] = useState<Carga<PortalDocumentos>>({ estado: 'cargando' });
+
+  useEffect(() => {
+    // Dos consultas independientes: si una falla, la otra tarjeta sigue mostrándose.
+    obtenerEstadoCuentaPortal().then(d => setCuenta(aCarga(d)));
+    obtenerDocumentosPortal().then(d => setDocs(aCarga(d)));
+  }, []);
+
+  const saldo = useMemo(() => {
+    if (cuenta.estado !== 'listo') return null;
+    return { valor: cuenta.datos.totales.saldo, mensaje: mensajeSaldo(cuenta.datos.entidad.tipo, cuenta.datos.totales.saldo) };
+  }, [cuenta]);
+  const ultimo = useMemo(() => (cuenta.estado === 'listo' ? ultimoMovimiento(cuenta.datos.entradas) : null), [cuenta]);
+  const resumen = useMemo(() => (docs.estado === 'listo' ? resumenDocumentos(docs.datos) : null), [docs]);
+
+  const errorCuenta = cuenta.estado === 'error';
 
   return (
-    <div className="min-h-screen bg-surface-alt">
-      <header className="bg-brand-900 text-white px-4 pt-6 pb-10 shadow-md">
-        <div className="max-w-2xl mx-auto flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            <img src="/logo-pronoia.png" alt="Pronoia" className="w-9 h-9 shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <p className="text-brand-200 text-sm font-medium">Pronoia Scrap</p>
-              <h1 className="text-2xl font-bold tracking-tight mt-1 truncate">Hola, {entidad?.nombre}</h1>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => logout()}
-            className="p-2 rounded-lg text-brand-200 hover:text-white hover:bg-brand-800 transition-colors shrink-0"
-            title="Cerrar sesión"
-          >
-            <LogOut size={20} />
-          </button>
-        </div>
-      </header>
+    <PortalLayout
+      esInicio
+      titulo={`Hola, ${entidad?.nombre ?? ''}`.trim()}
+      subtitulo="Aquí ves cómo está tu cuenta con Pronoia y puedes entrar a tus documentos, precios y entregas."
+    >
+      <GrillaKpis>
+        <TarjetaKpi
+          titulo="Saldo actual" icono={<Wallet size={16} />}
+          ayuda="Facturado menos pagado. Si eres proveedor, un saldo a favor significa que Pronoia te debe; si eres cliente, que le debes a Pronoia."
+          estado={cuenta.estado === 'cargando' ? 'cargando' : errorCuenta ? 'vacio' : 'listo'}
+          mensajeVacio="No pudimos cargar tu saldo"
+          valor={saldo ? formatearUsdDecimales(Math.abs(saldo.valor)) : undefined}
+          subtitulo={saldo?.mensaje.texto}
+        />
+        <TarjetaKpi
+          titulo="Último movimiento" icono={<History size={16} />}
+          ayuda="El movimiento más reciente registrado en tu estado de cuenta."
+          estado={cuenta.estado === 'cargando' ? 'cargando' : errorCuenta ? 'vacio' : ultimo ? 'listo' : 'vacio'}
+          mensajeVacio={errorCuenta ? 'No pudimos cargar tus movimientos' : 'Aún no hay movimientos'}
+          valor={ultimo ? fechaCorta(ultimo.fecha) : undefined}
+          subtitulo={ultimo ? `${ETIQUETA_TIPO[ultimo.tipo] ?? ultimo.tipo} · ${formatearUsdDecimales(importeMovimiento(ultimo))}` : undefined}
+        />
+        <TarjetaKpi
+          titulo="Documentos" icono={<FileText size={16} />}
+          ayuda="Cantidad de facturas, tickets de pesaje y comprobantes de pago que puedes consultar."
+          estado={docs.estado === 'cargando' ? 'cargando' : resumen ? 'listo' : 'vacio'}
+          mensajeVacio={docs.estado === 'error' ? 'No pudimos cargar tus documentos' : 'Aún no hay documentos'}
+          valor={resumen ? formatearNumero(resumen.total) : undefined}
+          subtitulo={resumen ? `${resumen.facturas} facturas · ${resumen.tickets} tickets · ${resumen.comprobantes} comprobantes` : undefined}
+        />
+      </GrillaKpis>
 
-      <main className="max-w-2xl mx-auto px-4 -mt-6 pb-8">
-        <p className="text-xs font-semibold uppercase tracking-wide text-text-muted px-1 mb-3">
-          ¿Qué necesitas hoy?
-        </p>
-
-        <div className="space-y-3">
-          {OPCIONES.map(({ to, label, descripcion, icon: Icon, disponible }) =>
-            disponible ? (
+      <Bloque titulo="¿Qué necesitas hoy?" queEstasViendo="Los accesos a todo lo que puedes consultar o pedir desde el portal.">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {OPCIONES.map(({ to, label, descripcion, icon: Icon }) => (
+            <li key={to}>
               <Link
-                key={to}
                 to={to}
-                className="flex items-center gap-4 p-4 bg-surface rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all"
+                className="flex min-h-[64px] items-center gap-4 rounded-xl border border-border bg-surface p-4 transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
               >
-                <div className="w-11 h-11 rounded-xl bg-brand-50 flex items-center justify-center text-brand-700 shrink-0">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700" aria-hidden="true">
                   <Icon size={20} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-text-primary">{label}</p>
-                  <p className="text-xs text-text-muted mt-0.5 truncate">{descripcion}</p>
-                </div>
-                <ChevronRight size={18} className="text-text-muted shrink-0" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-text-primary">{label}</span>
+                  <span className="mt-0.5 block text-xs text-text-secondary">{descripcion}</span>
+                </span>
+                <ChevronRight size={18} className="shrink-0 text-text-muted" aria-hidden="true" />
               </Link>
-            ) : (
-              <div key={to} className="flex items-center gap-4 p-4 bg-surface rounded-2xl opacity-50">
-                <div className="w-11 h-11 rounded-xl bg-surface-alt flex items-center justify-center text-text-muted shrink-0">
-                  <Icon size={20} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-text-secondary">{label}</p>
-                  <p className="text-xs text-text-muted mt-0.5">Próximamente</p>
-                </div>
-              </div>
-            )
-          )}
-        </div>
-      </main>
-    </div>
+            </li>
+          ))}
+        </ul>
+      </Bloque>
+    </PortalLayout>
   );
 }
 
