@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
+import { normalizarTemaMarca, type TemaMarca } from '../utils/tema-marca.js';
 
 const TOKEN_EXPIRY = '7d';
 const BCRYPT_ROUNDS = 10;
@@ -15,6 +16,8 @@ export interface UsuarioRow {
   activo: boolean;
   password_hash: string;
   creado_en: string;
+  /** Ausente mientras no se aplique la migración de tema_marca (select '*'). */
+  tema_marca?: unknown;
 }
 
 export interface UsuarioPublico {
@@ -25,6 +28,7 @@ export interface UsuarioPublico {
   permisos: unknown;
   activo: boolean;
   creadoEn: string;
+  temaMarca: TemaMarca | null;
 }
 
 export interface JwtPayload {
@@ -42,6 +46,7 @@ function toPublico(row: UsuarioRow): UsuarioPublico {
     permisos: row.permisos,
     activo: row.activo,
     creadoEn: row.creado_en,
+    temaMarca: normalizarTemaMarca(row.tema_marca),
   };
 }
 

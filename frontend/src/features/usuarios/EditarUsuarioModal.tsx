@@ -22,6 +22,7 @@ function EditarUsuarioModal({ usuario, onClose, onGuardado }: Props) {
   const [email, setEmail] = useState(usuario.email);
   const [rol, setRol] = useState<RolUsuario>(usuario.rol);
   const [activo, setActivo] = useState(usuario.activo);
+  const [temaMarca, setTemaMarca] = useState<'azul' | null>(usuario.temaMarca ?? null);
   const [password, setPassword] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +44,7 @@ function EditarUsuarioModal({ usuario, onClose, onGuardado }: Props) {
     if (emailLimpio !== usuario.email) cambios.email = emailLimpio;
     if (rol !== usuario.rol) cambios.rol = rol;
     if (activo !== usuario.activo) cambios.activo = activo;
+    if (temaMarca !== (usuario.temaMarca ?? null)) cambios.temaMarca = temaMarca;
     if (password) cambios.password = password;
 
     if (Object.keys(cambios).length === 0) {
@@ -94,6 +96,19 @@ function EditarUsuarioModal({ usuario, onClose, onGuardado }: Props) {
             {esYo && usuario.rol === 'superadmin' && (
               <p className="text-xs text-text-muted mt-1">No puedes quitarte a ti mismo el rol de superadmin.</p>
             )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Color del sistema</label>
+            <select
+              value={temaMarca ?? ''}
+              onChange={e => setTemaMarca(e.target.value === 'azul' ? 'azul' : null)}
+              disabled={!esSuperadmin}
+              className={inputClass}
+            >
+              <option value="">Verde (por defecto)</option>
+              <option value="azul">Azul</option>
+            </select>
+            {!esSuperadmin && <p className="text-xs text-text-muted mt-1">Solo un superadmin puede cambiar el color del sistema.</p>}
           </div>
           <label className="flex items-center gap-2 text-sm text-text-primary">
             <input type="checkbox" checked={activo} onChange={e => setActivo(e.target.checked)} disabled={esYo} />

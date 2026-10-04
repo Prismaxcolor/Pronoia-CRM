@@ -1,6 +1,8 @@
 import { createContext, useContext, type Dispatch, type SetStateAction } from 'react';
 import type { MaterialFila, FotoMaterial } from '../features/pesaje/material-fila';
 import type { PesajeGlobalFila } from '../features/pesaje/pesaje-global-fila';
+import type { LoteTrasladoFila } from '../features/pesaje/lote-traslado-fila';
+import type { AvisoBorrador } from './use-borrador-persistente';
 
 export type TipoPesajeBorrador = 'compra' | 'venta' | 'traslado';
 
@@ -24,10 +26,24 @@ export interface PesajeBorrador {
   observaciones: string;
   /** Placa/identificador del vehículo — aplica a compra, venta y traslado. */
   vehiculo: string;
+  /** Lotes (PCB) a trasladar completos — solo aplica a traslado. */
+  loteFilas: LoteTrasladoFila[];
 }
 
 export interface PesajeBorradorContextType {
   borrador: PesajeBorrador;
+  setLoteFilas: Dispatch<SetStateAction<LoteTrasladoFila[]>>;
+  /** Datos del aviso "Recuperamos tu borrador…" (null si no se restauró nada). */
+  avisoRestauracion: AvisoBorrador | null;
+  descartarBorradorRestaurado: () => void;
+  /** true mientras un borrador restaurado espera validarse contra los catálogos vigentes
+   *  (ids de tara, lote, material, almacén… que pudieron dejar de existir). */
+  saneoPendiente: boolean;
+  /** Mensaje de lo que se reseteó al validar el borrador restaurado (null si nada). */
+  avisoSaneo: string | null;
+  /** La pantalla llama esto tras validar el borrador; el mensaje se muestra junto al aviso. */
+  finalizarSaneo: (mensaje: string | null) => void;
+  cerrarAvisoRestauracion: () => void;
   setTipo: Dispatch<SetStateAction<TipoPesajeBorrador>>;
   setEntidadId: Dispatch<SetStateAction<string>>;
   setAlmacenOrigenId: Dispatch<SetStateAction<string>>;

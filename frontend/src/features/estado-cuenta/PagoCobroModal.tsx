@@ -10,6 +10,9 @@ import { subirComprobantePago } from '../../services/storage-service';
 import { calcularCruce, redondear2, sugerirMontoCredito, validarMontoAplicable, type ItemCruce } from '../../lib/cruce';
 import { fotoLocalDeFile, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { fechaRestaurable, recortarSeleccionPago } from '../../lib/borrador-vigentes';
 import type { Banca } from '@shared/types/index.js';
 import type { FacturaCV } from '../../services/factura-cv-service';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
@@ -33,6 +36,10 @@ interface LineaBanca {
   montoUsd: string;
   /** Referencia propia de esta banca (ej. número de transferencia). */
   referencia: string;
+}
+
+function hoyISO(): string {
+  return new Date().toISOString().split('T')[0];
 }
 
 function fmt(n: number): string {
@@ -74,7 +81,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
    *  editó el monto a mano y deja de auto-sincronizarse con el total. */
   const [bancaLineaTocada, setBancaLineaTocada] = useState(false);
 
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [fecha, setFecha] = useState(hoyISO());
   const [descripcion, setDescripcion] = useState('');
   const [comprobantes, setComprobantes] = useState<FotoLocal[]>([]);
   const agregarComprobantes = (files: File[]) => setComprobantes(prev => [...prev, ...files.map(fotoLocalDeFile)]);
@@ -83,17 +90,104 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Un borrador restaurado puede traer ids de facturas, notas o adelantos que ya no están
+  // vigentes (se pagaron, anularon o aplicaron): se recortan cuando las listas terminan de cargar.
+  const [facturasCargadas, setFacturasCargadas] = useState(false);
+  const [adelantosCargados, setAdelantosCargados] = useState(false);
+  const [recortePendiente, setRecortePendiente] = useState(false);
+  const [avisoRecorte, setAvisoRecorte] = useState<string | null>(null);
+
+  // Borrador del pago/cobro: sobrevive a F5. Un pago a medias (facturas marcadas, montos, bancas)
+  // se recupera al volver a abrir el modal de la misma entidad.
+  const estadoBorrador = { montosFactura, notaIdsSel, notaCreditoIdsSel, montosAdelanto, totalEditadoManual, lineasBanca, bancaLineaTocada, fecha, descripcion, comprobantes };
+  const hayCambiosBorrador =
+    Object.keys(montosFactura).length > 0 || notaIdsSel.length > 0 || notaCreditoIdsSel.length > 0
+    || Object.keys(montosAdelanto).length > 0 || totalEditadoManual !== null || descripcion !== ''
+    || comprobantes.length > 0 || bancaLineaTocada || lineasBanca.length > 1
+    || lineasBanca.some(l => l.montoUsd !== '' || l.referencia !== '');
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: `${esProveedor ? 'pago' : 'cobro'}-registrar`,
+    docId: entidadId,
+    version: 1,
+    estado: estadoBorrador,
+    hayCambios: hayCambiosBorrador,
+    aplicar: d => {
+      setRecortePendiente(true);
+      setMontosFactura(d.montosFactura ?? {});
+      setNotaIdsSel(d.notaIdsSel ?? []);
+      setNotaCreditoIdsSel(d.notaCreditoIdsSel ?? []);
+      setMontosAdelanto(d.montosAdelanto ?? {});
+      setTotalEditadoManual(d.totalEditadoManual ?? null);
+      const lineas = d.lineasBanca ?? [];
+      nextLineaId.current = lineas.reduce((max, l) => Math.max(max, l.id + 1), nextLineaId.current);
+      setLineasBanca(lineas);
+      setBancaLineaTocada(!!d.bancaLineaTocada);
+      // Una fecha vieja no se restaura en silencio: el pago/cobro nuevo lleva la fecha de hoy.
+      setFecha(fechaRestaurable(d.fecha, hoyISO()));
+      setDescripcion(d.descripcion ?? '');
+      setComprobantes(d.comprobantes ?? []);
+    },
+    restablecer: () => {
+      setMontosFactura({});
+      setNotaIdsSel([]);
+      setNotaCreditoIdsSel([]);
+      setMontosAdelanto({});
+      setTotalEditadoManual(null);
+      setLineasBanca(bancas.length > 0 ? [{ id: nextLineaId.current++, bancaId: bancas[0].id, montoUsd: '', referencia: '' }] : []);
+      setBancaLineaTocada(false);
+      setDescripcion('');
+      setComprobantes([]);
+      setRecortePendiente(false);
+      setAvisoRecorte(null);
+    },
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
+
   useEffect(() => {
     obtenerBancas().then(lista => {
       setBancas(lista);
-      setLineasBanca([{ id: nextLineaId.current++, bancaId: lista[0]?.id ?? '', montoUsd: '', referencia: '' }]);
+      // Si ya hay líneas (borrador restaurado) se conservan; solo se crea la inicial cuando no hay ninguna.
+      setLineasBanca(prev => (prev.length > 0 ? prev : [{ id: nextLineaId.current++, bancaId: lista[0]?.id ?? '', montoUsd: '', referencia: '' }]));
     });
     obtenerTasaOficial().then(t => setTasa(t?.tasa ?? null));
-    obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista =>
-      setFacturasPendientes(lista.filter(f => f.estado === 'emitida'))
-    );
-    obtenerAdelantosDisponibles(tipoEntidad, entidadId).then(setAdelantos);
+    obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista => {
+      setFacturasPendientes(lista.filter(f => f.estado === 'emitida'));
+      setFacturasCargadas(true);
+    });
+    obtenerAdelantosDisponibles(tipoEntidad, entidadId).then(lista => {
+      setAdelantos(lista);
+      setAdelantosCargados(true);
+    });
   }, [esProveedor, tipoEntidad, entidadId]);
+
+  // Recorta a lo vigente la selección restaurada de un borrador. Si se quitó algo se anula el total
+  // fijado a mano: con ítems de menos, ese total dejaría un excedente que se registraría como
+  // adelanto/anticipo sin que el usuario lo hubiera decidido.
+  useEffect(() => {
+    if (!recortePendiente || !facturasCargadas || !adelantosCargados) return;
+    const r = recortarSeleccionPago(
+      { montosFactura, notaIdsSel, notaCreditoIdsSel, montosAdelanto },
+      {
+        facturaIds: facturasPendientes.map(f => f.id),
+        notaIds: notasDebitoPendientes.flatMap(n => (n.notaId ? [n.notaId] : [])),
+        notaCreditoIds: notasCreditoPendientes.flatMap(n => (n.notaId ? [n.notaId] : [])),
+        adelantoIds: adelantos.map(a => a.id),
+      },
+    );
+    // Validación única de lo restaurado contra datos que llegan de forma asíncrona: no se puede derivar en render sin perder la limpieza del estado.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRecortePendiente(false);
+    if (!r.recortado) return;
+    setMontosFactura(r.seleccion.montosFactura);
+    setNotaIdsSel(r.seleccion.notaIdsSel);
+    setNotaCreditoIdsSel(r.seleccion.notaCreditoIdsSel);
+    setMontosAdelanto(r.seleccion.montosAdelanto);
+    setTotalEditadoManual(null);
+    setAvisoRecorte(
+      `Del borrador recuperado se quitaron ${r.descartados} ${r.descartados === 1 ? 'selección' : 'selecciones'} que ya no están vigentes (facturas, notas o ${etiquetaAdelanto}s ya pagados, anulados o aplicados). El total a ${verbo} se recalculó: revísalo antes de registrar.`
+    );
+  }, [recortePendiente, facturasCargadas, adelantosCargados, facturasPendientes, adelantos, notasDebitoPendientes, notasCreditoPendientes, montosFactura, notaIdsSel, notaCreditoIdsSel, montosAdelanto, etiquetaAdelanto, verbo]);
 
   const toggleFactura = (f: FacturaCV) =>
     setMontosFactura(prev => {
@@ -303,6 +397,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       const result = await registrarPagoMultiple({ proveedorId: entidadId, ...datosComunes });
       setGuardando(false);
       if ('error' in result) { setError(result.error); return; }
+      borrador.limpiar();
       onRegistrado({
         movimientoPrincipalId: result.movimientoPrincipalId,
         movimientoIds: result.movimientoIds,
@@ -317,6 +412,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     const result = await registrarCobroMultiple({ clienteId: entidadId, ...datosComunes });
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
+    borrador.limpiar();
     onRegistrado(result);
   };
 
@@ -331,12 +427,14 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
             <h2 className="text-lg font-bold text-text-primary">{etiquetaAccion}</h2>
             <p className="text-sm text-text-secondary">Selecciona facturas y/o notas de débito y cruzalas con {esProveedor ? 'adelantos' : 'anticipos'} y notas de crédito, o regístralo como {etiquetaAdelanto}.</p>
           </div>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <AvisoBorrador formulario={esProveedor ? 'este pago' : 'este cobro'} aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+          {avisoRecorte && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoRecorte}</p>}
           <div>
             <label className={labelClass}>Facturas pendientes</label>
             {facturasPendientes.length === 0 ? (
@@ -665,7 +763,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
           )}
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">

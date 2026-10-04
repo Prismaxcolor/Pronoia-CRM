@@ -1,4 +1,5 @@
 import type { RolUsuario } from './permisos.js';
+import type { TemaMarca } from './tema-marca.js';
 
 export interface EdicionUsuarioContexto {
   actorId: string;
@@ -15,7 +16,7 @@ export interface PrivilegiosEdicionContexto {
   actorId: string;
   targetId: string;
   targetRol: RolUsuario;
-  cambios: { rol?: RolUsuario; email?: string; password?: string };
+  cambios: { rol?: RolUsuario; email?: string; password?: string; temaMarca?: TemaMarca | null };
 }
 
 export interface ErrorPrivilegios {
@@ -44,6 +45,9 @@ export function validarPrivilegiosEdicion(ctx: PrivilegiosEdicionContexto): Erro
   }
   if (cambios.password !== undefined || cambios.email !== undefined) {
     return prohibido('Solo un superadmin puede cambiar el correo o la contraseña de un usuario.');
+  }
+  if (cambios.temaMarca !== undefined) {
+    return prohibido('Solo un superadmin puede cambiar el color del sistema de un usuario.');
   }
   return null;
 }

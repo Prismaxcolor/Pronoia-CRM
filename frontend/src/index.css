@@ -31,6 +31,22 @@
   --color-tipo-verde: #10B981;
 }
 
+/* Marca azul (la anterior), solo para los usuarios con temaMarca = 'azul'.
+ * Sobrescribe la escala verde de @theme; las utilidades brand-* de Tailwind
+ * leen estas variables. La selección viene de public.users.tema_marca. */
+:root[data-marca='azul'] {
+  --color-brand-50: #EBF5FF;
+  --color-brand-100: #D6EBFF;
+  --color-brand-200: #ADD6FF;
+  --color-brand-300: #85C2FF;
+  --color-brand-400: #5CADFF;
+  --color-brand-500: #3399FF;
+  --color-brand-600: #1A80E6;
+  --color-brand-700: #0066CC;
+  --color-brand-800: #004D99;
+  --color-brand-900: #003366;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background-color: var(--color-surface-alt);

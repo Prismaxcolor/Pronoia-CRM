@@ -14,7 +14,11 @@ import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { difiereEstado, huellaDocumento } from '../../lib/borrador';
+import { mensajeReseteos, mensajeSaneoBorrador, sanearFilasRestauradas } from '../../lib/borrador-vigentes';
+import { filaVacia, filasDesdeBorrador, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
@@ -55,7 +59,33 @@ function filasDesdeTicket(t: TicketPesaje): MaterialFila[] {
   }));
 }
 
+/** Campos del formulario de edición de un ticket, a partir del ticket guardado. */
+function estadoEdicionDesdeTicket(t: TicketPesaje) {
+  return {
+    materiales: filasDesdeTicket(t),
+    devolucionEdit: t.devolucion ? String(t.devolucion) : '',
+    fotosDevolucionEdit: t.fotosDevolucion.map(url => ({ tipo: 'existente' as const, url })) as FotoMaterial[],
+    observacionesEdit: t.observaciones ?? '',
+    vehiculoEdit: t.vehiculo ?? '',
+    fechaEdit: t.fecha ?? t.createdAt.slice(0, 10),
+    pesajesEdit: t.pesajesGlobales.map(p => ({
+      ...pesajeGlobalVacio(),
+      peso: String(p.peso),
+      tara: p.tara ? String(p.tara) : '',
+      fotos: p.fotos.map(url => ({ tipo: 'existente' as const, url })),
+    })) as PesajeGlobalFila[],
+    pesajesTocados: false,
+  };
+}
+
+/** El contenido va con `key` = id: al pasar de un ticket a otro todo el estado (edición, borrador,
+ *  catálogos) se reinicia, y el estado de un ticket jamás se guarda bajo la clave de otro. */
 function TicketDetallePage() {
+  const { id = '' } = useParams();
+  return <TicketDetalleContenido key={id} />;
+}
+
+function TicketDetalleContenido() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const { tienePermiso, usuario } = useAuth();
@@ -94,6 +124,8 @@ function TicketDetallePage() {
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
+  const [catalogosListos, setCatalogosListos] = useState(false);
+  const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
 
   const cargarTicket = () => {
     obtenerTicket(id).then(t => { setTicket(t); setCargando(false); });
@@ -107,9 +139,11 @@ function TicketDetallePage() {
       [...proveedores, ...clientes].forEach(e => m.set(e.id, e.nombre));
       setNombrePorEntidad(m);
     });
-    obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
-    obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
-    obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
+    const productosP = obtenerProductos().then(lista => { setProductos(lista.filter(p => p.activo)); });
+    const lotesP = obtenerLotes().then(lista => { setLotes(lista.filter(l => l.activo)); });
+    const tarasP = obtenerTaras().then(lista => { setTaras(lista.filter(t => t.activo)); });
+    // Sin catálogos cargados no se puede validar un borrador restaurado.
+    Promise.all([productosP, lotesP, tarasP]).then(() => setCatalogosListos(true), () => { /* sin catálogos no se restaura */ });
     obtenerVehiculos().then(setCatalogoVehiculos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -145,24 +179,67 @@ function TicketDetallePage() {
 
   const iniciarEdicion = () => {
     if (!ticket) return;
-    setMateriales(filasDesdeTicket(ticket));
-    setDevolucionEdit(ticket.devolucion ? String(ticket.devolucion) : '');
-    setFotosDevolucionEdit(ticket.fotosDevolucion.map(url => ({ tipo: 'existente' as const, url })));
-    setObservacionesEdit(ticket.observaciones ?? '');
-    setVehiculoEdit(ticket.vehiculo ?? '');
-    setFechaEdit(ticket.fecha ?? ticket.createdAt.slice(0, 10));
-    setPesajesEdit(ticket.pesajesGlobales.map(p => ({
-      ...pesajeGlobalVacio(),
-      peso: String(p.peso),
-      tara: p.tara ? String(p.tara) : '',
-      fotos: p.fotos.map(url => ({ tipo: 'existente' as const, url })),
-    })));
-    setPesajesTocados(false);
+    aplicarEstadoEdicion(estadoEdicionDesdeTicket(ticket));
     setError(null);
     setEditando(true);
   };
 
-  const cancelarEdicion = () => setEditando(false);
+  const aplicarEstadoEdicion = (e: ReturnType<typeof estadoEdicionDesdeTicket>) => {
+    setMateriales(e.materiales);
+    setDevolucionEdit(e.devolucionEdit);
+    setFotosDevolucionEdit(e.fotosDevolucionEdit);
+    setObservacionesEdit(e.observacionesEdit);
+    setVehiculoEdit(e.vehiculoEdit);
+    setFechaEdit(e.fechaEdit);
+    setPesajesEdit(e.pesajesEdit);
+    setPesajesTocados(e.pesajesTocados);
+  };
+
+  // Borrador de la edición: sobrevive a F5 (el ticket se recarga y se reabre la edición). La llave
+  // de edición nunca forma parte del borrador.
+  const estadoEdicion = { materiales, devolucionEdit, fotosDevolucionEdit, observacionesEdit, vehiculoEdit, fechaEdit, pesajesEdit, pesajesTocados };
+  // Solo se guarda/restaura un borrador del ticket que está cargado (nunca el de otro id), si el
+  // usuario puede editarlo (permiso o llave, estado, ticket no unido) y con los catálogos listos.
+  const ticketCargado = ticket && ticket.id === id ? ticket : null;
+  const puedeEditarEsteTicket = !!ticketCargado
+    && (puedeEditar || (requiereLlave && !esSuperadmin))
+    && ticketCargado.estado !== 'bruto'
+    && !ticketCargado.ticketPrincipalId;
+  // Huella del ticket cargado: si cambió desde que se guardó el borrador, este se descarta con aviso.
+  const huellaTicket = useMemo(() => (ticketCargado ? huellaDocumento(ticketCargado) : null), [ticketCargado]);
+  const borrador = useBorradorPersistente<typeof estadoEdicion>({
+    formulario: 'ticket-edicion',
+    docId: id,
+    version: 1,
+    habilitado: puedeEditarEsteTicket && catalogosListos,
+    huellaBase: huellaTicket,
+    estado: estadoEdicion,
+    hayCambios: editando && !!ticket && difiereEstado(estadoEdicion, estadoEdicionDesdeTicket(ticket)),
+    aplicar: d => {
+      // Material, lote o tara que ya no existen (o se desactivaron) quedan sin elegir, con aviso.
+      const saneo = sanearFilasRestauradas(filasDesdeBorrador(d.materiales), {
+        productoIds: productos.map(p => p.id),
+        loteIds: lotes.map(l => l.id),
+        taraIds: taras.map(t => t.id),
+      });
+      const texto = mensajeReseteos(saneo.reseteos);
+      setAvisoSaneo(texto ? mensajeSaneoBorrador([texto]) : null);
+      aplicarEstadoEdicion({
+        materiales: saneo.filas,
+        devolucionEdit: d.devolucionEdit ?? '',
+        fotosDevolucionEdit: d.fotosDevolucionEdit ?? [],
+        observacionesEdit: d.observacionesEdit ?? '',
+        vehiculoEdit: d.vehiculoEdit ?? '',
+        fechaEdit: d.fechaEdit ?? '',
+        pesajesEdit: (d.pesajesEdit ?? []).map(f => ({ ...f, uid: pesajeGlobalVacio().uid, fotos: f.fotos ?? [] })),
+        pesajesTocados: !!d.pesajesTocados,
+      });
+      setEditando(true);
+    },
+    restablecer: () => { setEditando(false); setAvisoSaneo(null); },
+  });
+
+  const cancelarEdicion = () => { borrador.limpiar(); setAvisoSaneo(null); setEditando(false); };
 
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
@@ -205,6 +282,7 @@ function TicketDetallePage() {
       setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
       return;
     }
+    if (materiales.some(f => taraFilaNoVigente(f, taras))) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
     if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
     if (Number(devolucionEdit) > 0 && fotosDevolucionEdit.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
@@ -257,6 +335,7 @@ function TicketDetallePage() {
     if (result.advertencia) toast.errorMsg(result.advertencia);
     setAvisosFactura(result.avisosFactura ?? []);
     setLlaveEdicion('');
+    borrador.limpiar();
     setEditando(false);
     cargarTicket();
   };
@@ -286,9 +365,8 @@ function TicketDetallePage() {
   const esCompra = ticket.tipo === 'compra';
   const vehiculosActivos = catalogoVehiculos.filter(v => v.activo);
   const vehiculoDelCatalogo = buscarVehiculoPorTexto(ticket.vehiculo, catalogoVehiculos);
-  // Con llave se edita aunque el rol no tenga 'pesaje:editar' y aunque el ticket esté facturado.
-  const puedeUsarLlave = requiereLlave && !esSuperadmin;
-  const puedeEditarEsteTicket = (puedeEditar || puedeUsarLlave) && ticket.estado !== 'bruto' && !ticket.ticketPrincipalId;
+  // (puedeEditarEsteTicket, definido arriba: con llave se edita aunque el rol no tenga
+  // 'pesaje:editar' y aunque el ticket esté facturado.)
 
   // Todas las fotos del ticket (por material + generales) en una sola galería
   // con etiqueta de material, en vez de un bloque apilado por material
@@ -500,6 +578,8 @@ function TicketDetallePage() {
         </>
       ) : (
         <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
+          <AvisoBorrador formulario="la edición de este ticket" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+          {avisoSaneo && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
           {ticket.facturado && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
               Este ticket ya está facturado. Al guardar con la llave de edición, la factura se anula si aún no tiene pagos (el ticket queda disponible para volver a facturar con los datos corregidos). Si ya fue pagada, no se anula: te avisaremos para que revises el estado de cuenta.

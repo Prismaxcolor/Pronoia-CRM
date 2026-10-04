@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { difiereEstado } from '../../lib/borrador';
+import { idVigenteOVacio, mensajeSaneoBorrador, sanearTara } from '../../lib/borrador-vigentes';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, Trash2, CheckCircle2, Circle, Images, ZoomIn, X } from 'lucide-react';
 import { obtenerTomaFisica, obtenerResumenTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
-import { subirFotosFila, taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from './material-fila';
+import { subirFotosFila, taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
@@ -41,6 +45,9 @@ function ConteoTomaFisicaPage() {
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalogosListos, setCatalogosListos] = useState(false);
+  const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
+
   const [galeriaAbierta, setGaleriaAbierta] = useState<{ label: string; fotos: string[] } | null>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
 
@@ -58,6 +65,7 @@ function ConteoTomaFisicaPage() {
       setProductos(prods);
       setLotes(lts);
       setTaras(tars.filter(t => t.activo));
+      setCatalogosListos(true);
       setCargando(false);
     });
   };
@@ -107,6 +115,47 @@ function ConteoTomaFisicaPage() {
     [lotes, tomaFisica]
   );
 
+  // Lo que está en el formulario de conteo (las pesadas ya registradas viven en el servidor).
+  // Qué cuenta como "cambio": peso, tara o fotos. El material/lote elegidos solos no justifican
+  // un borrador (vienen a menudo del link "Teórico vs. real" y reaparecerían como borrador casi vacío).
+  const estadoBorrador = { productoId, loteId, pesoBruto, campoTara, fotos };
+  const restablecerConteo = () => {
+    setProductoId('');
+    setLoteId('');
+    setPesoBruto('');
+    setCampoTara(taraVacia());
+    setFotos([]);
+    setAvisoSaneo(null);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'toma-fisica-conteo',
+    docId: tomaFisicaId,
+    version: 1,
+    // Sin catálogos cargados no se puede validar el borrador: se espera a tenerlos.
+    habilitado: tomaFisicaId !== '' && catalogosListos,
+    // Si el link trae ?producto o ?lote el usuario viene a contar eso: no se restaura un borrador ajeno a esa intención.
+    restaurar: !searchParams.get('producto') && !searchParams.get('lote'),
+    estado: estadoBorrador,
+    hayCambios: difiereEstado({ pesoBruto, campoTara, fotos }, { pesoBruto: '', campoTara: taraVacia(), fotos: [] }),
+    aplicar: d => {
+      // Material, lote o tara que ya no existen (o se desactivaron) quedan sin elegir, con aviso.
+      const reseteos: string[] = [];
+      const productoOk = idVigenteOVacio(d.productoId ?? '', productosDisponibles.map(p => p.id));
+      const loteOk = idVigenteOVacio(d.loteId ?? '', lotesDelAlmacen.map(l => l.id));
+      if (productoOk !== (d.productoId ?? '')) reseteos.push('el material');
+      if (loteOk !== (d.loteId ?? '')) reseteos.push('el lote');
+      const tara = sanearTara({ ...taraVacia(), ...d.campoTara }, taras.map(t => t.id));
+      if (tara.cambiada) reseteos.push('la tara');
+      setAvisoSaneo(mensajeSaneoBorrador(reseteos));
+      setProductoId(productoOk);
+      setLoteId(loteOk);
+      setPesoBruto(d.pesoBruto ?? '');
+      setCampoTara(tara.fila);
+      setFotos(d.fotos ?? []);
+    },
+    restablecer: restablecerConteo,
+  });
+
   // Preselección desde el link "Teórico vs. real" de la toma física
   // (?producto=<id> o ?lote=<id>) — solo una vez, para no pisar la
   // selección del usuario cada vez que cargar() trae listas nuevas.
@@ -154,6 +203,7 @@ function ConteoTomaFisicaPage() {
       if (requiereLote && !loteId) { setError('Elige el lote donde está este material.'); return; }
     }
     if (pesoBruto === '') { setError('Ingresa el peso bruto (puede ser 0 si no había material).'); return; }
+    if (taraFilaNoVigente(campoTara, taras)) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
     if (netoActual < 0) { setError('El peso neto no puede ser negativo.'); return; }
     if (fotos.length === 0) { setError('Agrega al menos una foto.'); return; }
 
@@ -175,9 +225,11 @@ function ConteoTomaFisicaPage() {
     if ('error' in result) { setError(result.error); return; }
 
     toast.exito('Pesaje registrado.');
+    borrador.limpiar();
     setPesoBruto('');
     setCampoTara(taraVacia());
     setFotos([]);
+    setProductoId('');
     setLoteId('');
     cargar();
   };
@@ -301,6 +353,8 @@ function ConteoTomaFisicaPage() {
       )}
 
       <form onSubmit={handleAgregar} className="space-y-4 bg-surface rounded-xl border border-border p-5 mb-6">
+        <AvisoBorrador formulario="este conteo" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+        {avisoSaneo && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
         {esConLote ? (
           <div>
             <label className={labelClass}>Lote *</label>

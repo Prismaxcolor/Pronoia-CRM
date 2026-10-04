@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ROLES, RECURSOS, ACCIONES } from '../utils/permisos.js';
+import { TEMAS_MARCA } from '../utils/tema-marca.js';
 
 const permisoSchema = z.object({
   recurso: z.enum(RECURSOS),
@@ -28,6 +29,8 @@ export const actualizarUsuarioSchema = z.object({
   rol: z.enum(ROLES).optional(),
   permisos: z.array(permisoSchema).optional(),
   activo: z.boolean().optional(),
+  /** Color del sistema: 'azul' o null (verde por defecto). Solo un superadmin lo cambia. */
+  temaMarca: z.enum(TEMAS_MARCA).nullable().optional(),
 }).refine(
   (data) => Object.keys(data).length > 0,
   { message: 'Debes enviar al menos un campo a actualizar.' }

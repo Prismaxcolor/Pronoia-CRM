@@ -19,6 +19,12 @@ export function pesajeGlobalVacio(): PesajeGlobalFila {
   return { uid: UID++, peso: '', tara: '', fotos: [] };
 }
 
+/** Pesadas recuperadas de un borrador: uid nuevo y solo fotos ya subidas. */
+export function pesajesDesdeBorrador(filas: PesajeGlobalFila[] | undefined): PesajeGlobalFila[] {
+  const lista = (filas ?? []).map(f => ({ ...pesajeGlobalVacio(), ...f, uid: UID++, fotos: f.fotos ?? [] }));
+  return lista.length > 0 ? lista : [pesajeGlobalVacio()];
+}
+
 export function netoPesajeGlobalFila(f: PesajeGlobalFila): number {
   return redondearKg((Number(f.peso) || 0) - (Number(f.tara) || 0));
 }

@@ -23,10 +23,13 @@ import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SelectorOrden from '../../components/SelectorOrden';
 import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { idVigenteOVacio, mensajeReseteos, mensajeSaneoBorrador, sanearFilasRestauradas } from '../../lib/borrador-vigentes';
+import { filaVacia, taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila } from './material-fila';
 import { contarMaterialesDistintos, resumenMateriales as resumenMaterialesDistintos } from './resumen-materiales';
 import { obtenerVehiculos } from '../../services/vehiculo-service';
 import VehiculoSelector from '../../components/VehiculoSelector';
+import { loteTrasladoFilaVacia, netoLoteTrasladoFila } from './lote-traslado-fila';
+import AvisoBorrador from '../../components/AvisoBorrador';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import { lotesSeleccionables } from '@shared/types/lote.js';
@@ -53,23 +56,6 @@ function ordenarFilas(filas: FilaListado[], orden: OrdenListado): FilaListado[] 
 }
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
-
-/** Un lote (PCB) a trasladar completo — se pesa igual que un material, con
- *  su propia tara y foto, en vez de asumir automáticamente el stock teórico. */
-interface LoteTrasladoFila {
-  uid: number;
-  loteId: string;
-  pesoBruto: string;
-  tara: string;
-  fotos: FotoMaterial[];
-}
-let LOTE_TRASLADO_UID = 0;
-function loteTrasladoFilaVacia(): LoteTrasladoFila {
-  return { uid: LOTE_TRASLADO_UID++, loteId: '', pesoBruto: '', tara: '0', fotos: [] };
-}
-function netoLoteTrasladoFila(f: LoteTrasladoFila): number {
-  return (Number(f.pesoBruto) || 0) - (Number(f.tara) || 0);
-}
 
 type Pestana = 'nuevo' | 'tickets';
 
@@ -101,6 +87,8 @@ function PesajePage() {
   const [tickets, setTickets] = useState<TicketPesaje[]>([]);
   const [traslados, setTraslados] = useState<Traslado[]>([]);
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
+  const [catalogosListos, setCatalogosListos] = useState(false);
+  const [almacenesListos, setAlmacenesListos] = useState(false);
   const [stockOrigen, setStockOrigen] = useState<Map<string, number>>(new Map());
   const [stockGlobalDisponible, setStockGlobalDisponible] = useState<Map<string, number>>(new Map());
   const [tomasFisicasAbiertas, setTomasFisicasAbiertas] = useState<TomaFisicaInventario[]>([]);
@@ -109,7 +97,9 @@ function PesajePage() {
   // las rutas (usePesajeBorrador), no en useState local, para no perderse si
   // el usuario navega a otra pantalla (Dashboard, Cochinito, etc.) y vuelve.
   const {
-    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones, vehiculo },
+    borrador: { tipo, entidadId, almacenOrigenId, almacenDestinoId, fecha, pesajesGlobales, pesajeExterior, devolucion, fotosDevolucion, materiales, observaciones, vehiculo, loteFilas },
+    setLoteFilas, avisoRestauracion, descartarBorradorRestaurado, cerrarAvisoRestauracion,
+    saneoPendiente, avisoSaneo, finalizarSaneo,
     setTipo, setEntidadId, setAlmacenOrigenId, setAlmacenDestinoId, setFecha,
     setPesajesGlobales, setPesajeExterior, setDevolucion, setFotosDevolucion, setMateriales, setObservaciones, setVehiculo,
     limpiarBorrador,
@@ -124,7 +114,6 @@ function PesajePage() {
   const [ticketACompletar, setTicketACompletar] = useState<TicketPesaje | null>(null);
   const [trasladoARecepcionar, setTrasladoARecepcionar] = useState<Traslado | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
-  const [loteFilas, setLoteFilas] = useState<LoteTrasladoFila[]>([]);
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [buscaCodigo, setBuscaCodigo] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'compra' | 'venta' | 'traslado'>('todos');
@@ -152,11 +141,13 @@ function PesajePage() {
   const cargarTraslados = () => { obtenerTraslados().then(setTraslados); };
 
   useEffect(() => {
-    obtenerProveedores().then(lista => setProveedores(lista.filter(p => p.activo)));
-    obtenerClientes().then(lista => setClientes(lista.filter(c => c.activo)));
-    obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
-    obtenerLotes().then(lista => setLotes(lista.filter(l => l.activo)));
-    obtenerTaras().then(lista => setTaras(lista.filter(t => t.activo)));
+    const proveedoresP = obtenerProveedores().then(lista => { setProveedores(lista.filter(p => p.activo)); });
+    const clientesP = obtenerClientes().then(lista => { setClientes(lista.filter(c => c.activo)); });
+    const productosP = obtenerProductos().then(lista => { setProductos(lista.filter(p => p.activo)); });
+    const lotesP = obtenerLotes().then(lista => { setLotes(lista.filter(l => l.activo)); });
+    const tarasP = obtenerTaras().then(lista => { setTaras(lista.filter(t => t.activo)); });
+    // Solo con todos los catálogos cargados se puede validar un borrador restaurado (ver más abajo).
+    Promise.all([proveedoresP, clientesP, productosP, lotesP, tarasP]).then(() => setCatalogosListos(true), () => { /* sin catálogos no se valida el borrador */ });
     obtenerVehiculos().then(lista => setVehiculos(lista.filter(v => v.activo)));
     cargarTickets();
     cargarTraslados();
@@ -173,9 +164,8 @@ function PesajePage() {
       ? obtenerStockAlmacen(almacenOrigenId)
       : Promise.resolve(new Map<string, number>());
     promesa.then(setStockOrigen);
-    // Los lotes disponibles dependen del almacén de origen — si cambia, la
-    // selección anterior puede ya no ser válida.
-    setLoteFilas([]);
+    // Los lotes elegidos se limpian en el setter del borrador cuando cambia
+    // el tipo o el almacén de origen (ver use-pesaje-borrador.tsx).
   }, [tipo, almacenOrigenId]);
 
   // Disponible del negocio (sin importar almacén) para el aviso informativo
@@ -193,7 +183,7 @@ function PesajePage() {
   // Recarga la lista de almacenes al cambiar de pestaña de tipo — si la
   // estrella se movió desde otra pantalla, se refleja sin recargar la página.
   useEffect(() => {
-    obtenerAlmacenes().then(lista => setAlmacenes(lista.filter(a => a.activo)));
+    obtenerAlmacenes().then(lista => { setAlmacenes(lista.filter(a => a.activo)); setAlmacenesListos(true); });
   }, [tipo]);
 
   // Mapa id→nombre de proveedores + clientes (para la tabla de tickets recientes)
@@ -233,7 +223,44 @@ function PesajePage() {
   const quitarFotoDevolucion = (idx: number) =>
     setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
 
-  const limpiar = () => { limpiarBorrador(); setLoteFilas([]); };
+  const limpiar = () => { limpiarBorrador(); };
+
+  // Un borrador restaurado puede traer ids de registros que ya no existen o se desactivaron
+  // (tara, lote, material, almacén, proveedor/cliente): se validan una vez, con los catálogos
+  // ya cargados, y lo que no sirva queda sin elegir (con aviso) en vez de pesar/guardar mal.
+  useEffect(() => {
+    if (!saneoPendiente || !catalogosListos || !almacenesListos) return;
+    const idsTara = taras.map(t => t.id);
+    const idsProducto = productos.map(p => p.id);
+    const idsLote = lotes.map(l => l.id);
+    const idsAlmacen = almacenes.map(a => a.id);
+    const idsEntidad = (tipo === 'compra' ? proveedores : clientes).map(e => e.id);
+    const idsLoteOrigen = lotes
+      .filter(l => l.stockPorAlmacen.some(s => s.almacenId === almacenOrigenId && s.stockKg > 0))
+      .map(l => l.id);
+    const reseteos: string[] = [];
+
+    const saneo = sanearFilasRestauradas(materiales, { productoIds: idsProducto, loteIds: idsLote, taraIds: idsTara });
+    const textoFilas = mensajeReseteos(saneo.reseteos);
+    if (textoFilas) {
+      setMateriales(saneo.filas);
+      reseteos.push(textoFilas);
+    }
+
+    const lotesFantasma = loteFilas.filter(f => f.loteId && idVigenteOVacio(f.loteId, idsLoteOrigen) !== f.loteId).length;
+    if (lotesFantasma > 0) {
+      setLoteFilas(loteFilas.map(f => (f.loteId && idVigenteOVacio(f.loteId, idsLoteOrigen) !== f.loteId ? { ...f, loteId: '' } : f)));
+      reseteos.push(lotesFantasma === 1 ? 'un lote a trasladar' : `${lotesFantasma} lotes a trasladar`);
+    }
+    if (idVigenteOVacio(almacenOrigenId, idsAlmacen) !== almacenOrigenId) { setAlmacenOrigenId(''); reseteos.push('el almacén de origen'); }
+    if (idVigenteOVacio(almacenDestinoId, idsAlmacen) !== almacenDestinoId) { setAlmacenDestinoId(''); reseteos.push('el almacén de destino'); }
+    if (tipo !== 'traslado' && idVigenteOVacio(entidadId, idsEntidad) !== entidadId) {
+      setEntidadId('');
+      reseteos.push(tipo === 'compra' ? 'el proveedor' : 'el cliente');
+    }
+
+    finalizarSaneo(mensajeSaneoBorrador(reseteos));
+  }, [saneoPendiente, catalogosListos, almacenesListos, taras, productos, lotes, almacenes, proveedores, clientes, tipo, materiales, loteFilas, almacenOrigenId, almacenDestinoId, entidadId, setMateriales, setLoteFilas, setAlmacenOrigenId, setAlmacenDestinoId, setEntidadId, finalizarSaneo]);
 
   // Un lote puede tener kilos repartidos en varios almacenes — se muestran
   // acá los que tienen stock en el almacén de origen elegido (no bloquea
@@ -269,6 +296,7 @@ function PesajePage() {
       setError('Agrega al menos un material o un lote a trasladar.');
       return;
     }
+    if (materialesLlenos.some(f => taraFilaNoVigente(f, taras))) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
     if (materialesLlenos.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
     if (materialesLlenos.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
     if (materialesLlenos.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
@@ -345,6 +373,7 @@ function PesajePage() {
         setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
         return;
       }
+      if (materiales.some(f => taraFilaNoVigente(f, taras))) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
       if (materiales.some(f => netoFila(f, taras) < 0)) { setError('El peso neto de un material no puede ser negativo. Revisa bruto y tara.'); return; }
       if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
       if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
@@ -545,6 +574,8 @@ function PesajePage() {
       <div className={puedeVerTickets ? 'max-w-2xl' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
         {puedeCrear ? (
           <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4 h-fit">
+            <AvisoBorrador formulario="pesaje" aviso={avisoRestauracion} onDescartar={descartarBorradorRestaurado} onCerrar={cerrarAvisoRestauracion} />
+            {avisoSaneo && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
             {/* Toggle compra/venta/traslado */}
             <div>
               <label className={labelClass}>Tipo de operación</label>

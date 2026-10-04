@@ -3,6 +3,7 @@ import { redondearKg } from '@shared/types/ticket-pesaje.js';
 import { subirFotoTicket } from '../../services/storage-service';
 import { previewFotoLocal, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import { esFilaSinLote } from './sin-lote-fila';
+import { taraNoVigente } from '../../lib/borrador-vigentes';
 
 /** Valor del selector de destino: el id de un lote real, o '' si el
  *  usuario todavía no eligió nada (sin preselección por defecto). */
@@ -42,6 +43,19 @@ export interface MaterialFila {
 }
 
 let UID = 0;
+
+/** Nuevo id local de fila — para filas restauradas de un borrador, cuyo uid
+ *  guardado podría chocar con los que este módulo ya repartió. */
+export function nuevoUidFila(): number {
+  return UID++;
+}
+
+/** Filas recuperadas de un borrador guardado: uid nuevo y solo fotos ya subidas. */
+export function filasDesdeBorrador(filas: MaterialFila[] | undefined, minimo = 1): MaterialFila[] {
+  const lista = (filas ?? []).map(f => ({ ...filaVacia(), ...f, uid: nuevoUidFila(), fotos: f.fotos ?? [] }));
+  while (lista.length < minimo) lista.push(filaVacia());
+  return lista;
+}
 
 export function filaVacia(): MaterialFila {
   return {
@@ -87,6 +101,14 @@ export function taraKgFila(f: CampoTara, taras: Tara[]): number {
   if (!tara) return 0;
   return redondearKg(tara.peso * (Number(f.taraCantidad) || 0));
 }
+
+/** true si la fila usa una tara preconfigurada que no está entre las `taras`
+ *  vigentes (pásale solo las activas): taraKgFila la pesaría como 0 kg. */
+export function taraFilaNoVigente(f: CampoTara, taras: Tara[]): boolean {
+  return taraNoVigente(f, taras.filter(t => t.activo).map(t => t.id));
+}
+
+export const MENSAJE_TARA_NO_VIGENTE = 'Una tara elegida ya no está disponible. Vuelve a elegirla.';
 
 export function netoFila(f: MaterialFila, taras: Tara[]): number {
   return redondearKg((Number(f.pesoBruto) || 0) - taraKgFila(f, taras));

@@ -2,8 +2,14 @@ import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearUsuarioInput, ActualizarUsuarioInput } from '../schemas/usuarios.js';
 import { validarEdicionUsuario, validarPrivilegiosEdicion } from '../utils/usuario-reglas.js';
+import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { normalizarTemaMarca, type TemaMarca } from '../utils/tema-marca.js';
 
 const BCRYPT_ROUNDS = 10;
+
+const COLUMNAS_BASE = 'id, email, nombre, rol, permisos, activo, creado_en';
+/** tema_marca llega con migration_usuarios_tema_marca.sql; antes no existe. */
+const COLUMNAS_CON_TEMA = `${COLUMNAS_BASE}, tema_marca`;
 
 interface UsuarioRow {
   id: string;
@@ -13,6 +19,7 @@ interface UsuarioRow {
   permisos: unknown;
   activo: boolean;
   creado_en: string;
+  tema_marca?: unknown;
 }
 
 export interface UsuarioPublico {
@@ -23,6 +30,7 @@ export interface UsuarioPublico {
   permisos: unknown;
   activo: boolean;
   creadoEn: string;
+  temaMarca: TemaMarca | null;
 }
 
 function toPublico(row: UsuarioRow): UsuarioPublico {
@@ -34,17 +42,30 @@ function toPublico(row: UsuarioRow): UsuarioPublico {
     permisos: row.permisos,
     activo: row.activo,
     creadoEn: row.creado_en,
+    temaMarca: normalizarTemaMarca(row.tema_marca),
   };
 }
 
 export async function listarUsuarios(): Promise<UsuarioPublico[]> {
-  const { data, error } = await supabaseAdmin
+  const conTema = await supabaseAdmin
     .from('users')
-    .select('id, email, nombre, rol, permisos, activo, creado_en')
+    .select(COLUMNAS_CON_TEMA)
     .order('creado_en', { ascending: false });
 
+  // Migración de tema_marca aún sin aplicar: se degrada a la lista sin esa columna.
+  const { data, error } = esObjetoInexistente(conTema.error)
+    ? await supabaseAdmin.from('users').select(COLUMNAS_BASE).order('creado_en', { ascending: false })
+    : conTema;
+
   if (error || !data) return [];
-  return (data as UsuarioRow[]).map(toPublico);
+  return (data as unknown as UsuarioRow[]).map(toPublico);
+}
+
+async function leerUsuarioPublico(id: string): Promise<UsuarioPublico | null> {
+  const conTema = await supabaseAdmin.from('users').select(COLUMNAS_CON_TEMA).eq('id', id).maybeSingle();
+  const data = conTema.data
+    ?? (await supabaseAdmin.from('users').select(COLUMNAS_BASE).eq('id', id).maybeSingle()).data;
+  return data ? toPublico(data as unknown as UsuarioRow) : null;
 }
 
 export async function crearUsuarioAdmin(
@@ -69,11 +90,11 @@ export async function crearUsuarioAdmin(
       rol: input.rol,
       activo: true,
     })
-    .select('id, email, nombre, rol, permisos, activo, creado_en')
+    .select(COLUMNAS_BASE)
     .single();
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el usuario.' };
-  return { usuario: toPublico(data as UsuarioRow) };
+  return { usuario: toPublico(data as unknown as UsuarioRow) };
 }
 
 /**
@@ -156,17 +177,24 @@ export async function actualizarUsuarioAdmin(
     if (duplicado) return { error: 'Ya existe otro usuario con ese email.', status: 409 };
   }
 
-  const { password, ...resto } = normalizarCambiosRol(cambios);
+  const { password, temaMarca, ...resto } = normalizarCambiosRol(cambios);
   const update: Record<string, unknown> = { ...resto };
+  if (temaMarca !== undefined) update.tema_marca = temaMarca;
   if (password) update.password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
   const { data, error } = await supabaseAdmin
     .from('users')
     .update(update)
     .eq('id', id)
-    .select('id, email, nombre, rol, permisos, activo, creado_en')
+    .select('id')
     .maybeSingle();
 
+  if (error && temaMarca !== undefined && esObjetoInexistente(error)) {
+    return {
+      error: 'El color del sistema aún no está habilitado en la base de datos (falta aplicar migration_usuarios_tema_marca.sql).',
+      status: 409,
+    };
+  }
   if (error) {
     const esDuplicado = error.code === '23505';
     return {
@@ -175,7 +203,9 @@ export async function actualizarUsuarioAdmin(
     };
   }
   if (!data) return { error: 'Usuario no encontrado.', status: 404 };
-  return { usuario: toPublico(data as UsuarioRow) };
+  const usuario = await leerUsuarioPublico(id);
+  if (!usuario) return { error: 'Usuario no encontrado.', status: 404 };
+  return { usuario };
 }
 
 /** Soft delete: marca activo = false. Nunca borra físicamente. */

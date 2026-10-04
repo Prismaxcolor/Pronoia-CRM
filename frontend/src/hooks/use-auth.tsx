@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { apiFetch, setToken, clearToken, getToken, ApiError } from '../services/api-client';
 import { limpiarUltimasRutas } from '../services/nav-memory';
+import { aplicarTemaMarca, normalizarTemaMarca } from '../lib/tema-marca';
 import { PERMISOS_POR_ROL, tienePermiso as checkPermiso } from '@shared/types/index.js';
 import type { Usuario, Permiso, Recurso, Accion } from '@shared/types/index.js';
 import { AuthContext } from './use-auth-context';
@@ -13,6 +14,7 @@ interface UsuarioApi {
   permisos: Permiso[] | null;
   activo: boolean;
   creadoEn: string;
+  temaMarca?: 'azul' | null;
 }
 
 function mapUsuario(api: UsuarioApi): Usuario {
@@ -29,6 +31,7 @@ function mapUsuario(api: UsuarioApi): Usuario {
     permisos,
     activo: api.activo,
     creadoEn: api.creadoEn,
+    temaMarca: normalizarTemaMarca(api.temaMarca),
   };
 }
 
@@ -51,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     apiFetch<{ usuario: UsuarioApi }>('/api/auth/me')
       .then(({ usuario: u }) => setUsuario(mapUsuario(u)))
+      // Sesión vencida o inválida: clearToken también borra los borradores de formularios.
       .catch(() => clearToken())
       .finally(() => setCargando(false));
   }, []);
@@ -90,10 +94,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // clearToken también borra los borradores de formularios: son del usuario que sale.
     clearToken();
     limpiarUltimasRutas();
     setUsuario(null);
   };
+
+  // Marca de color por usuario: se aplica al autenticar y se quita al salir o
+  // cambiar de usuario. Mientras carga /me se conserva la marca recordada
+  // (la pintó main.tsx antes del primer render) para no parpadear.
+  const temaMarca = usuario?.temaMarca ?? null;
+  useEffect(() => {
+    if (cargando) return;
+    aplicarTemaMarca(temaMarca);
+  }, [temaMarca, cargando]);
 
   const tienePermisoFn = (recurso: Recurso, accion: Accion): boolean => {
     if (!usuario) return false;

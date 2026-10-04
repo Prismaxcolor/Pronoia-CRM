@@ -1,4 +1,7 @@
 import { useMemo, useState } from 'react';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { difiereEstado, huellaDocumento } from '../../lib/borrador';
 import { Loader2, X } from 'lucide-react';
 import { editarTraslado, type EditarTrasladoLineaInput } from '../../services/traslado-service';
 import { netoLinea, validarLineasTraslado } from '../../lib/edicion-pesos-traslado';
@@ -28,15 +31,36 @@ interface LineaTexto { pesoBruto: string; tara: string; pesoRecibido: string }
 /** Edita observaciones y pesos (enviado y, si ya fue recepcionado, recibido) de un traslado. */
 function EditarTrasladoModal({ traslado: t, requiereLlave, esSuperadmin, onClose, onGuardado }: Props) {
   const completo = t.estado === 'completo';
+  const lineasIniciales = () => Object.fromEntries(t.materiales.map(m => [m.id, {
+    pesoBruto: String(m.pesoBruto), tara: String(m.tara), pesoRecibido: m.pesoRecibido === null ? '' : String(m.pesoRecibido),
+  }])) as Record<string, LineaTexto>;
   const [observaciones, setObservaciones] = useState(t.observaciones ?? '');
-  const [lineas, setLineas] = useState<Record<string, LineaTexto>>(
-    () => Object.fromEntries(t.materiales.map(m => [m.id, {
-      pesoBruto: String(m.pesoBruto), tara: String(m.tara), pesoRecibido: m.pesoRecibido === null ? '' : String(m.pesoRecibido),
-    }]))
-  );
+  const [lineas, setLineas] = useState<Record<string, LineaTexto>>(lineasIniciales);
   const [llave, setLlave] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Borrador de la edición (la llave de edición nunca se guarda en el borrador).
+  const estadoBorrador = { observaciones, lineas };
+  // Si el traslado cambió en el servidor desde que se guardó el borrador, este se descarta con aviso.
+  const huellaTraslado = useMemo(() => huellaDocumento(t), [t]);
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'traslado-edicion',
+    docId: t.id,
+    version: 1,
+    huellaBase: huellaTraslado,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, { observaciones: t.observaciones ?? '', lineas: lineasIniciales() }),
+    aplicar: d => {
+      setObservaciones(d.observaciones ?? (t.observaciones ?? ''));
+      // Solo las líneas que siguen existiendo: un borrador viejo no puede inventar filas.
+      const base = lineasIniciales();
+      setLineas(Object.fromEntries(Object.entries(base).map(([id, v]) => [id, { ...v, ...d.lineas?.[id] }])));
+    },
+    restablecer: () => { setObservaciones(t.observaciones ?? ''); setLineas(lineasIniciales()); },
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
 
   const numericas = t.materiales.map(m => {
     const l = lineas[m.id];
@@ -77,6 +101,7 @@ function EditarTrasladoModal({ traslado: t, requiereLlave, esSuperadmin, onClose
     const res = await editarTraslado(t.id, { ...cambios, llaveEdicion: requiereLlave ? llave.trim() : undefined });
     setGuardando(false);
     if ('error' in res) { setError(res.error); return; }
+    borrador.limpiar();
     onGuardado(res.traslado);
   };
 
@@ -85,8 +110,9 @@ function EditarTrasladoModal({ traslado: t, requiereLlave, esSuperadmin, onClose
       <form onSubmit={guardar} className="bg-surface rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">Editar {t.codigo}</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary" title="Cerrar"><X size={18} /></button>
+          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary" title="Cerrar"><X size={18} /></button>
         </div>
+        <AvisoBorrador formulario="esta edición" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
         <p className="text-xs text-text-muted">
           Se pueden editar las observaciones y los pesos{completo ? ' enviados y recibidos' : ' enviados'}. Al cambiar un peso se recalcula
           el inventario del origen y del destino; si algún producto o lote quedara en negativo, o hay una toma física abierta,
@@ -140,7 +166,7 @@ function EditarTrasladoModal({ traslado: t, requiereLlave, esSuperadmin, onClose
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
         <div className="flex gap-3 pt-1">
-          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
+          <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
             Cancelar
           </button>
           <button type="submit" disabled={guardando || !!errorPesos} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">

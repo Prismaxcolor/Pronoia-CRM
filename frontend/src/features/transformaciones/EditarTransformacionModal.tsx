@@ -3,6 +3,9 @@ import { Loader2, X } from 'lucide-react';
 import { editarTransformacion, type EditarSalidaInput, type EditarTransformacionInput } from '../../services/transformacion-service';
 import { calcularMermaEdicion, netoDe, validarPesosEdicion } from '../../lib/edicion-pesos-transformacion';
 import { etiquetaSalida } from '../../lib/salida-mixta';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { difiereEstado, huellaDocumento } from '../../lib/borrador';
 import type { Transformacion } from '@shared/types/index.js';
 import type { AvisoTransformacion } from '../../services/transformacion-service';
 
@@ -27,15 +30,52 @@ interface PesosTexto { pesoBruto: string; tara: string }
 /** Edita fecha, notas y pesos de la entrada y de cada salida. El neto y la merma se
  *  recalculan en pantalla; el servidor valida de nuevo el balance, el stock y las tomas físicas. */
 function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, onGuardada }: Props) {
+  const estadoInicial = () => ({
+    fecha: t.fecha,
+    notas: t.notas ?? '',
+    entrada: { pesoBruto: String(t.pesoBruto), tara: String(t.tara) } as PesosTexto,
+    salidas: Object.fromEntries(t.salidas.map(s => [s.id, { pesoBruto: String(s.pesoBruto), tara: String(s.tara) }])) as Record<string, PesosTexto>,
+  });
   const [fecha, setFecha] = useState(t.fecha);
   const [notas, setNotas] = useState(t.notas ?? '');
-  const [entrada, setEntrada] = useState<PesosTexto>({ pesoBruto: String(t.pesoBruto), tara: String(t.tara) });
-  const [salidas, setSalidas] = useState<Record<string, PesosTexto>>(
-    () => Object.fromEntries(t.salidas.map(s => [s.id, { pesoBruto: String(s.pesoBruto), tara: String(s.tara) }]))
-  );
+  const [entrada, setEntrada] = useState<PesosTexto>(() => estadoInicial().entrada);
+  const [salidas, setSalidas] = useState<Record<string, PesosTexto>>(() => estadoInicial().salidas);
   const [llave, setLlave] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Borrador de la edición (la llave de edición nunca se guarda en el borrador).
+  const estadoBorrador = { fecha, notas, entrada, salidas };
+  const aplicarEstado = (e: ReturnType<typeof estadoInicial>) => {
+    setFecha(e.fecha);
+    setNotas(e.notas);
+    setEntrada(e.entrada);
+    setSalidas(e.salidas);
+  };
+  const huellaTransformacion = useMemo(() => huellaDocumento(t), [t]);
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'transformacion-edicion',
+    docId: t.id,
+    version: 1,
+    // Si la transformación cambió en el servidor desde que se guardó el borrador, este se descarta con aviso.
+    huellaBase: huellaTransformacion,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, estadoInicial()),
+    aplicar: d => {
+      const base = estadoInicial();
+      aplicarEstado({
+        // La fecha de una edición es la del documento: no se restaura una fecha de borrador.
+        fecha: base.fecha,
+        notas: d.notas ?? base.notas,
+        entrada: { ...base.entrada, ...d.entrada },
+        // Solo las salidas que siguen existiendo: un borrador viejo no puede inventar filas.
+        salidas: Object.fromEntries(Object.entries(base.salidas).map(([id, v]) => [id, { ...v, ...d.salidas?.[id] }])),
+      });
+    },
+    restablecer: () => aplicarEstado(estadoInicial()),
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
 
   const pesosEntrada = { pesoBruto: aNumero(entrada.pesoBruto), tara: aNumero(entrada.tara) };
   const pesosSalidas = t.salidas.map(s => ({ pesoBruto: aNumero(salidas[s.id].pesoBruto), tara: aNumero(salidas[s.id].tara) }));
@@ -79,6 +119,7 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
     const res = await editarTransformacion(t.id, { ...cambios, llaveEdicion: requiereLlave ? llave.trim() : undefined });
     setGuardando(false);
     if ('error' in res) { setError(res.error); return; }
+    borrador.limpiar();
     onGuardada(res.transformacion, res.avisos ?? []);
   };
 
@@ -87,8 +128,9 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
       <form onSubmit={guardar} className="bg-surface rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">Editar transformación {t.codigo ?? ''}</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary" title="Cerrar"><X size={18} /></button>
+          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary" title="Cerrar"><X size={18} /></button>
         </div>
+        <AvisoBorrador formulario="esta edición" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
         <p className="text-xs text-text-muted">
           Se pueden editar la fecha, las notas y los pesos de la entrada y de cada salida. Al cambiar un peso se recalcula el
           inventario; si algún producto o lote quedara en negativo, o hay una toma física abierta, el sistema no guarda nada.
@@ -166,7 +208,7 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
         <div className="flex gap-3 pt-1">
-          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
+          <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
             Cancelar
           </button>
           <button type="submit" disabled={guardando || !!errorPesos} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">

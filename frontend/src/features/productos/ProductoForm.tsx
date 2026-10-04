@@ -9,6 +9,9 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { TTL_ALTA_BORRADOR_MS, difiereEstado, huellaDocumento } from '../../lib/borrador';
 import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial, Lote } from '@shared/types/index.js';
 
 interface Props {
@@ -71,6 +74,43 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
   const [subProductos, setSubProductos] = useState<SubProductoRef[]>(
     initialVerde?.subProductos ?? [{ tipo: 'ref', productoId: '', cantidad: 1 }]
   );
+
+  // Borrador del formulario (uno por producto, o uno para "nuevo"): sobrevive a F5. La base
+  // para detectar cambios se captura una sola vez, con los valores con que arrancó el formulario.
+  const estadoBorrador = { tipo, nombre, descripcion, tipoMaterialId, moneda, loteIds, activo, fotos, peso, variantes, subProductos };
+  const [estadoInicial] = useState(() => estadoBorrador);
+  const aplicarEstado = (e: typeof estadoBorrador) => {
+    setTipo(e.tipo); setNombre(e.nombre); setDescripcion(e.descripcion); setTipoMaterialId(e.tipoMaterialId);
+    setMoneda(e.moneda); setLoteIds(e.loteIds); setActivo(e.activo); setFotos(e.fotos);
+    setPeso(e.peso); setVariantes(e.variantes); setSubProductos(e.subProductos);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'producto',
+    docId: producto?.id ?? null,
+    version: 1,
+    // Alta de maestro: sin pesos de operación ni dinero, conserva el TTL largo.
+    ttlMs: TTL_ALTA_BORRADOR_MS,
+    // Editar: si el producto cambió en el servidor desde que se guardó el borrador, este se descarta con aviso.
+    huellaBase: producto ? huellaDocumento(producto) : null,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, estadoInicial),
+    aplicar: d => aplicarEstado({
+      tipo: d.tipo ?? estadoInicial.tipo,
+      nombre: d.nombre ?? estadoInicial.nombre,
+      descripcion: d.descripcion ?? estadoInicial.descripcion,
+      tipoMaterialId: d.tipoMaterialId ?? estadoInicial.tipoMaterialId,
+      moneda: d.moneda ?? estadoInicial.moneda,
+      loteIds: d.loteIds ?? estadoInicial.loteIds,
+      activo: d.activo ?? estadoInicial.activo,
+      fotos: d.fotos ?? estadoInicial.fotos,
+      peso: d.peso ?? estadoInicial.peso,
+      variantes: d.variantes && d.variantes.length > 0 ? d.variantes : estadoInicial.variantes,
+      subProductos: d.subProductos && d.subProductos.length > 0 ? d.subProductos : estadoInicial.subProductos,
+    }),
+    restablecer: () => aplicarEstado(estadoInicial),
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
 
   // Catálogo para el select de subproductos (solo se carga cuando el tipo es verde)
   const [catalogo, setCatalogo] = useState<Producto[]>([]);
@@ -152,6 +192,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
 
     if ('producto' in result) {
       toast.exito(editando ? `"${result.producto.nombre}" actualizado.` : `"${result.producto.nombre}" creado.`);
+      borrador.limpiar();
       onGuardado(editando ? 'editar' : 'crear');
     } else {
       setError(result.error);
@@ -168,7 +209,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
           <h2 className="text-lg font-bold text-text-primary">
             {editando ? 'Editar producto' : 'Nuevo producto'}
           </h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -202,6 +243,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
         )}
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <AvisoBorrador formulario="este producto" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
           <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos del producto" />
 
           <div>
@@ -405,7 +447,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">

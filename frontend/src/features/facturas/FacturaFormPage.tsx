@@ -8,6 +8,10 @@ import { obtenerTickets } from '../../services/ticket-pesaje-service';
 import { crearFactura, type TipoFactura } from '../../services/factura-cv-service';
 import { obtenerListas, obtenerListaDetalle } from '../../services/lista-precios-service';
 import { useToast } from '../../hooks/use-toast-context';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { difiereEstado, restaurarFilas } from '../../lib/borrador';
+import { intersectarIds } from '../../lib/borrador-vigentes';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import type { Producto, TicketPesaje, ListaPrecios } from '@shared/types/index.js';
 
@@ -64,6 +68,11 @@ function FacturaFormPage({ tipo }: Props) {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
+  // Validación de un borrador restaurado contra lo vigente (entidad activa, tickets aún pendientes).
+  const [entidadesCargadas, setEntidadesCargadas] = useState(false);
+  const [ticketsCargadosPara, setTicketsCargadosPara] = useState<string | null>(null);
+  const [saneoPendiente, setSaneoPendiente] = useState(false);
+  const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
 
   // Precios de la lista elegida (productoId → precio/kg). En ref para poder
   // precargar líneas nuevas (de ticket o manuales) sin re-disparar efectos.
@@ -71,7 +80,7 @@ function FacturaFormPage({ tipo }: Props) {
 
   useEffect(() => {
     const cargar = (): Promise<Entidad[]> => (esCompra ? obtenerProveedores() : obtenerClientes());
-    cargar().then(lista => setEntidades(lista.filter(e => e.activo)));
+    cargar().then(lista => { setEntidades(lista.filter(e => e.activo)); setEntidadesCargadas(true); });
     obtenerProductos().then(lista => setProductos(lista.filter(p => p.activo)));
     obtenerListas(tipo).then(lista => setListas(lista.filter(l => l.activo)));
   }, [esCompra, tipo]);
@@ -82,8 +91,14 @@ function FacturaFormPage({ tipo }: Props) {
     // elegido una (no solo en el mount, donde ya arranca en []).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!entidadId) { setTicketsPendientes([]); return; }
-    obtenerTickets({ soloNoFacturados: true, entidadId, tipo }).then(setTicketsPendientes);
+    obtenerTickets({ soloNoFacturados: true, entidadId, tipo }).then(lista => {
+      setTicketsPendientes(lista);
+      setTicketsCargadosPara(entidadId);
+    });
   }, [entidadId, tipo]);
+
+  /** Los tickets pendientes de la entidad elegida ya se cargaron (hasta entonces no se sabe qué ids siguen vigentes). */
+  const ticketsListos = entidadId !== '' && ticketsCargadosPara === entidadId;
 
   const ticketsSel = useMemo(
     () => ticketsPendientes.filter(t => ticketIds.includes(t.id)),
@@ -99,9 +114,13 @@ function FacturaFormPage({ tipo }: Props) {
   // Al (de)seleccionar tickets, reconstruir las líneas: UNA por material,
   // consolidando el peso de todas las pesadas de ese material entre los
   // tickets elegidos (antes salía una línea por cada pesada individual).
-  // Se conservan los precios ya escritos (match por productoId); los nuevos
-  // se precargan con el precio de la lista elegida (si hay).
+  // Se conservan los precios y descuentos ya escritos (match por productoId); el peso
+  // siempre se recalcula desde los tickets, y los materiales nuevos se precargan con el
+  // precio de la lista elegida (si hay). Mientras los tickets seleccionados (p. ej. los de un
+  // borrador restaurado) no terminan de cargar NO se reconstruye: con 0 tickets resueltos
+  // se perderían las líneas, sus precios y descuentos.
   useEffect(() => {
+    if (ticketIds.length > 0 && !ticketsListos) return;
     // Reconstruye las líneas fusionando con las anteriores (conserva precios ya
     // escritos a mano) — es una sincronización real con los tickets seleccionados,
     // no una inicialización que se pueda mover a render/useMemo sin perder ese merge.
@@ -140,7 +159,72 @@ function FacturaFormPage({ tipo }: Props) {
       }));
       return nuevas.length > 0 ? nuevas : [lineaVacia()];
     });
-  }, [ticketsSel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticketsSel, ticketsListos]);
+
+  // Un borrador restaurado puede traer una entidad desactivada o tickets que ya se facturaron o
+  // anularon: se quitan (con aviso) para no armar una factura con ids obsoletos.
+  useEffect(() => {
+    if (!saneoPendiente || !entidadesCargadas) return;
+    // Validación única de lo restaurado contra datos que llegan de forma asíncrona: no se puede derivar en render sin perder la limpieza del estado.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (entidadId === '') { setSaneoPendiente(false); return; }
+    if (!entidades.some(e => e.id === entidadId)) {
+      setSaneoPendiente(false);
+      setEntidadId('');
+      setTicketIds([]);
+      setLineas([lineaVacia()]);
+      setAvisoSaneo(`El ${labelEntidad.toLowerCase()} del borrador ya no está disponible: se quitó junto con sus tickets. Elige uno de nuevo.`);
+      return;
+    }
+    if (!ticketsListos) return;
+    setSaneoPendiente(false);
+    const { validos, descartados } = intersectarIds(ticketIds, ticketsPendientes.map(t => t.id));
+    if (descartados.length === 0) return;
+    setTicketIds(validos);
+    setAvisoSaneo(
+      `${descartados.length === 1 ? 'Un ticket del borrador ya no está' : `${descartados.length} tickets del borrador ya no están`} pendiente de facturar (se facturó o anuló) y se quitó. Revisa las líneas antes de emitir.`
+    );
+  }, [saneoPendiente, entidadesCargadas, entidades, entidadId, ticketsListos, ticketIds, ticketsPendientes, labelEntidad]);
+
+  // Borrador de la factura: sobrevive a F5. Las líneas se rearman con los tickets al volver a
+  // cargarlos (el efecto de arriba conserva precios y descuentos ya escritos por material).
+  const estadoBorrador = { entidadId, ticketIds, lineas, listaSelId, descripcion, observaciones };
+  const restablecer = () => {
+    setEntidadId('');
+    setTicketIds([]);
+    setLineas([lineaVacia()]);
+    setListaSelId('');
+    preciosLista.current = {};
+    setDescripcion('');
+    setObservaciones('');
+    setSaneoPendiente(false);
+    setAvisoSaneo(null);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: `factura-${tipo}`,
+    version: 1,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, { entidadId: '', ticketIds: [], lineas: [lineaVacia()], listaSelId: '', descripcion: '', observaciones: '' }),
+    aplicar: d => {
+      setSaneoPendiente(true);
+      setEntidadId(d.entidadId ?? '');
+      setTicketIds(d.ticketIds ?? []);
+      setLineas(restaurarFilas(d.lineas, lineaVacia));
+      setListaSelId(d.listaSelId ?? '');
+      setDescripcion(d.descripcion ?? '');
+      setObservaciones(d.observaciones ?? '');
+      // Solo recupera los precios de la lista para líneas futuras; no pisa los ya escritos.
+      if (d.listaSelId) {
+        void obtenerListaDetalle(d.listaSelId).then(detalle => {
+          const mapa: Record<string, number> = {};
+          (detalle?.precios ?? []).forEach(p => { mapa[p.productoId] = p.precio; });
+          preciosLista.current = mapa;
+        });
+      }
+    },
+    restablecer,
+  });
 
   const toggleTicket = (id: string) =>
     setTicketIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
@@ -205,6 +289,7 @@ function FacturaFormPage({ tipo }: Props) {
 
     if ('error' in result) { setError(result.error); return; }
     toast.exito(esCompra ? 'Factura de compra emitida.' : 'Factura de venta emitida.');
+    borrador.limpiar();
     navigate(`${ruta}/${result.factura.id}`);
   };
 
@@ -225,6 +310,8 @@ function FacturaFormPage({ tipo }: Props) {
       <h1 className="text-2xl font-bold text-text-primary mb-6">{titulo}</h1>
 
       <form onSubmit={handleSubmit} className="bg-surface rounded-xl border border-border p-5 space-y-4">
+        <AvisoBorrador formulario="esta factura" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+        {avisoSaneo && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
         <div>
           <label className={labelClass}>{labelEntidad} *</label>
           <button
@@ -373,7 +460,7 @@ function FacturaFormPage({ tipo }: Props) {
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
         <div className="flex gap-3 pt-2">
-          <button type="button" onClick={() => navigate(ruta)} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+          <button type="button" onClick={() => { borrador.limpiar(); navigate(ruta); }} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
             Cancelar
           </button>
           <button type="submit" disabled={guardando} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">

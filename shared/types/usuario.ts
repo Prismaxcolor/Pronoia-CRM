@@ -10,6 +10,8 @@ export interface Usuario {
   permisos: Permiso[];
   activo: boolean;
   creadoEn: string;
+  /** Color del sistema: 'azul' o null (verde por defecto). */
+  temaMarca?: 'azul' | null;
 }
 
 /** Espejo de backend/src/utils/permisos.ts (ver el comentario ahí sobre por

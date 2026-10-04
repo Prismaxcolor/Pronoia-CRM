@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+import { borrarTodosLosBorradores } from '../lib/borrador';
+
+const API_URL =import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 const TOKEN_KEY = 'pronoia_token';
 
 export function getToken(): string | null {
@@ -14,9 +16,18 @@ export function setToken(token: string, remember = true): void {
   otro.removeItem(TOKEN_KEY);
 }
 
+/** true si la sesión es solo de esta pestaña (token en sessionStorage, el usuario
+ *  no marcó "Recordarme"): sus borradores de formularios también deben serlo. */
+export function tokenEsDeSesion(): boolean {
+  return localStorage.getItem(TOKEN_KEY) === null && sessionStorage.getItem(TOKEN_KEY) !== null;
+}
+
+/** Cierra la sesión local. Los borradores de formularios son datos del usuario
+ *  que sale (o cuya sesión expiró): no deben quedar en el equipo. */
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(TOKEN_KEY);
+  borrarTodosLosBorradores();
 }
 
 export class ApiError extends Error {

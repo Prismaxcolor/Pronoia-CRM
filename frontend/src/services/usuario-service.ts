@@ -10,6 +10,7 @@ interface UsuarioApi {
   permisos: Permiso[] | null;
   activo: boolean;
   creadoEn: string;
+  temaMarca?: 'azul' | null;
 }
 
 function mapApi(api: UsuarioApi): Usuario {
@@ -25,6 +26,7 @@ function mapApi(api: UsuarioApi): Usuario {
     permisos,
     activo: api.activo,
     creadoEn: api.creadoEn,
+    temaMarca: api.temaMarca === 'azul' ? 'azul' : null,
   };
 }
 
@@ -61,6 +63,7 @@ export interface ActualizarUsuarioCambios {
   rol?: RolUsuario;
   permisos?: Permiso[];
   activo?: boolean;
+  temaMarca?: 'azul' | null;
 }
 
 export async function actualizarUsuario(

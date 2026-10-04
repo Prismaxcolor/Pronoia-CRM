@@ -59,6 +59,7 @@ router.patch(
       adminId: req.user!.sub,
       targetUserId: id,
       cambios: Object.keys(req.body),
+      ...(req.body.temaMarca !== undefined ? { temaMarca: req.body.temaMarca } : {}),
     });
     res.json(result);
   }

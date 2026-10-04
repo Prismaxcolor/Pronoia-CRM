@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale, ChevronDown } from 'lucide-react';
 import { completarTicket, obtenerTickets } from '../../services/ticket-pesaje-service';
 import { useToast } from '../../hooks/use-toast-context';
-import { filaVacia, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { difiereEstado } from '../../lib/borrador';
+import { intersectarIds, mensajeReseteos, mensajeSaneoBorrador, sanearFilasRestauradas } from '../../lib/borrador-vigentes';
+import { filaVacia, filasDesdeBorrador, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
@@ -40,6 +44,44 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [candidatos, setCandidatos] = useState<TicketPesaje[]>([]);
   const [unidosIds, setUnidosIds] = useState<string[]>([]);
+  const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
+  const unidosRef = useRef<string[]>([]);
+  useEffect(() => { unidosRef.current = unidosIds; });
+
+  const estadoBorrador = { materiales, devolucion, fotosDevolucion, unidosIds };
+  const restablecer = () => {
+    setMateriales([filaVacia()]);
+    setDevolucion('');
+    setFotosDevolucion([]);
+    setUnidosIds([]);
+    setAvisoSaneo(null);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'completar-ticket',
+    docId: ticket.id,
+    version: 1,
+    estado: estadoBorrador,
+    // Sin catálogos cargados no se puede validar el borrador: se espera a tenerlos.
+    habilitado: productos.length > 0,
+    hayCambios: difiereEstado(estadoBorrador, { materiales: [filaVacia()], devolucion: '', fotosDevolucion: [], unidosIds: [] }),
+    aplicar: d => {
+      // Material, lote o tara que ya no existen (o se desactivaron) quedan sin elegir, con aviso.
+      const saneo = sanearFilasRestauradas(filasDesdeBorrador(d.materiales), {
+        productoIds: productos.map(p => p.id),
+        loteIds: lotes.map(l => l.id),
+        taraIds: taras.filter(t => t.activo).map(t => t.id),
+      });
+      const texto = mensajeReseteos(saneo.reseteos);
+      setAvisoSaneo(texto ? mensajeSaneoBorrador([texto]) : null);
+      setMateriales(saneo.filas);
+      setDevolucion(d.devolucion ?? '');
+      setFotosDevolucion(d.fotosDevolucion ?? []);
+      setUnidosIds(d.unidosIds ?? []);
+    },
+    restablecer,
+  });
+  // Cerrar (X, Cancelar o tras completar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
 
   const puedeUnir = ticket.tipo === 'compra' && !!ticket.entidadId && !ticket.pesajeExterior;
 
@@ -49,7 +91,14 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
     let activo = true;
     obtenerTickets({ tipo: 'compra', entidadId: ticket.entidadId, estado: 'bruto' }).then(lista => {
       if (!activo) return;
-      setCandidatos(lista.filter(t => t.id !== ticket.id && t.estado === 'bruto' && !t.pesajeExterior && !t.ticketPrincipalId));
+      const vigentes = lista.filter(t => t.id !== ticket.id && t.estado === 'bruto' && !t.pesajeExterior && !t.ticketPrincipalId);
+      setCandidatos(vigentes);
+      // Un ticket unido de un borrador que ya se completó/unió en otro lado no puede seguir marcado.
+      const { validos, descartados } = intersectarIds(unidosRef.current, vigentes.map(t => t.id));
+      if (descartados.length > 0) {
+        setUnidosIds(validos);
+        setAvisoSaneo(mensajeSaneoBorrador([descartados.length === 1 ? 'un ticket unido' : `${descartados.length} tickets unidos`]));
+      }
     });
     return () => { activo = false; };
   }, [puedeUnir, ticket.entidadId, ticket.id]);
@@ -104,6 +153,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
       return;
     }
+    if (materiales.some(f => taraFilaNoVigente(f, taras))) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
     if (materiales.some(f => netoFila(f, taras) <= 0)) { setError('Cada material debe tener un peso neto mayor a 0.'); return; }
     if (materiales.some(f => f.fotos.length === 0)) { setError('Cada material necesita al menos una foto.'); return; }
     if (Number(devolucion) > 0 && fotosDevolucion.length === 0) { setError('Agrega al menos una foto de la devolución.'); return; }
@@ -132,13 +182,13 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       return;
     }
 
-    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion, unidosIds);
+    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion, unidos.map(t => t.id));
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
     toast.exito(`${result.ticket.codigo} completado.`);
     onCompletado();
-    onClose();
+    cerrar();
   };
 
   return (
@@ -146,12 +196,14 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="text-lg font-bold text-text-primary">Completar {ticket.codigo}</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-3">
+          <AvisoBorrador formulario="este ticket" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+          {avisoSaneo && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
           <p className="text-xs text-text-muted">
             Este ticket se guardó en bruto. Registra los materiales y destinos definitivos para que se contabilice en el inventario.
           </p>
@@ -325,7 +377,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">

@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { difiereEstado } from '../../lib/borrador';
 import { useNavigate } from 'react-router-dom';
 import { Plus, ClipboardList } from 'lucide-react';
 import { obtenerTomasFisicas, crearTomaFisica } from '../../services/toma-fisica-service';
@@ -62,6 +65,32 @@ function NuevaTomaFisicaModal({
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const almacenInicial = almacenes.find(a => a.activo)?.id ?? '';
+  const estadoBorrador = { almacenId, alcance, categoriaIds, loteIds, descripcion };
+  const restablecer = () => {
+    setAlmacenId(almacenInicial);
+    setAlcance('categoria');
+    setCategoriaIds([]);
+    setLoteIds([]);
+    setDescripcion('');
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'toma-fisica-nueva',
+    version: 1,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, { almacenId: almacenInicial, alcance: 'categoria', categoriaIds: [], loteIds: [], descripcion: '' }),
+    aplicar: d => {
+      setAlmacenId(almacenes.some(a => a.id === d.almacenId) ? (d.almacenId as string) : almacenInicial);
+      setAlcance(d.alcance === 'lote' ? 'lote' : 'categoria');
+      setCategoriaIds(d.categoriaIds ?? []);
+      setLoteIds(d.loteIds ?? []);
+      setDescripcion(d.descripcion ?? '');
+    },
+    restablecer,
+  });
+  // Cancelar descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
+
   // Por categoría solo ofrece categorías "sin lote" (se cuentan producto a
   // producto); por lote solo las "con lote" (PCB, PGM: se pesa el lote
   // completo, no se desarma material por material).
@@ -120,6 +149,7 @@ function NuevaTomaFisicaModal({
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     toast.exito(`${result.tomaFisica.codigo} creada — esas categorías quedan bloqueadas hasta culminarla.`);
+    borrador.limpiar();
     onCreada(result.tomaFisica);
   };
 
@@ -134,6 +164,7 @@ function NuevaTomaFisicaModal({
           </p>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <AvisoBorrador formulario="la nueva toma física" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">Almacén *</label>
             <select value={almacenId} onChange={e => setAlmacenId(e.target.value)} className={inputClass}>
@@ -236,7 +267,7 @@ function NuevaTomaFisicaModal({
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">

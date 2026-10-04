@@ -5,6 +5,9 @@ import { subirFotoTraslado } from '../../services/storage-service';
 import { comprimirImagen } from '../../lib/image-compress';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Traslado } from '@shared/types/index.js';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { difiereEstado } from '../../lib/borrador';
 
 interface Props {
   traslado: Traslado;
@@ -28,6 +31,22 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
   const camaraRef = useRef<HTMLInputElement>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Borrador de lo recibido por material (las fotos de evidencia no se pueden guardar: hay que
+  // volver a tomarlas). Sobrevive a F5.
+  const recibidoInicial = () => Object.fromEntries(traslado.materiales.map(m => [m.id, String(m.pesoNeto)])) as Record<string, string>;
+  const estadoBorrador = { recibido };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'traslado-recepcion',
+    docId: traslado.id,
+    version: 1,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, { recibido: recibidoInicial() }),
+    aplicar: d => setRecibido({ ...recibidoInicial(), ...d.recibido }),
+    restablecer: () => setRecibido(recibidoInicial()),
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
 
   const handleFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -68,7 +87,7 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
     if ('error' in result) { setError(result.error); return; }
     toast.exito(`${result.traslado.codigo} recepcionado.`);
     onCompletado();
-    onClose();
+    cerrar();
   };
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
@@ -78,12 +97,13 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
       <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="text-lg font-bold text-text-primary">Recepcionar {traslado.codigo}</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <AvisoBorrador formulario="esta recepción" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
           <p className="text-xs text-text-muted">
             De <span className="font-medium text-text-secondary">{traslado.nombreAlmacenOrigen}</span> a{' '}
             <span className="font-medium text-text-secondary">{traslado.nombreAlmacenDestino}</span>. Confirma cuánto
@@ -153,7 +173,7 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
