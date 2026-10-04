@@ -5,16 +5,16 @@
 
 import { useMemo, type ReactNode } from 'react';
 import type { CategoriasPantalla, TarjetaInventario } from '@shared/types/inventario-pantalla.js';
-import { formatearKg, formatearPct, formatearUsd, type FiltrosPantalla, type VistaUrl } from '../../../lib/inventario-nuevo';
+import { formatearKg, formatearPct, type FiltrosPantalla, type VistaUrl } from '../../../lib/inventario-nuevo';
 import { estiloCategoria } from '../../../lib/colores-categoria';
 import {
-  ETIQUETA_OTRAS, MENSAJE_VACIO_VISTA, VISTAS_PRINCIPALES, claveParametros, formatearDiasEstimados, formatearUsdKg, parametrosPantalla,
+  ETIQUETA_OTRAS, MENSAJE_VACIO_VISTA, VISTAS_PRINCIPALES, claveParametros, formatearDiasEstimados, parametrosPantalla,
   partesDesglose, segmentosEtapas, tarjetasDeVista, vistaActiva,
 } from '../../../lib/inventario-pantalla';
 import { obtenerCategoriasPantalla } from '../../../services/inventario-pantalla-service';
 import type { ResumenInventario } from '../../../services/inventario-resumen-service';
 import { BarraApilada, Bloque, ControlSegmentado, EstadoVacio, InfoTooltip } from '../../../components/ui';
-import { AvisosMeta, ChipFiltro, ErrorBloque, EtiquetaDerivada, EXPLICACION_BASURA, EXPLICACION_DIAS_TARJETA, EXPLICACION_ETAPAS_BARRA, EXPLICACION_LIMPIEZA, SinPermiso, SkeletonBloque } from './PantallaComun';
+import { AvisosMeta, ChipFiltro, ErrorBloque, EtiquetaDerivada, EXPLICACION_BASURA, EXPLICACION_DIAS_TARJETA, EXPLICACION_ETAPAS_BARRA, EXPLICACION_LIMPIEZA, SkeletonBloque } from './PantallaComun';
 import { useCambiarFiltros, useDatosPantalla } from './useDatosPantalla';
 
 export interface VistasCategoriasProps {
@@ -22,6 +22,8 @@ export interface VistasCategoriasProps {
   filtros: FiltrosPantalla;
   /** Resumen cargado (GET /api/inventario/resumen). No se usa: este bloque pide sus propios datos. */
   resumen: ResumenInventario | null;
+  /** Sube cuando hay que volver a pedir los datos (por ejemplo, tras marcar kg como embalados). */
+  recarga?: number;
 }
 
 /** Colores de las etapas: de gris (recién llegado) a verde de marca (listo). Siempre van con texto y número. */
@@ -69,43 +71,16 @@ function Dato({ etiqueta, ayuda, children }: { etiqueta: string; ayuda?: string;
   );
 }
 
-const AYUDA_VALOR_MATERIALES = 'Kg del material suelto de esta categoría × su costo promedio por kg (sale de las facturas de compra), en USD. Solo cuentan los kg que tienen costo registrado.';
-const AYUDA_VALOR_LOTES = 'Kg de los lotes × el precio estimado de venta por kg que alguien cargó a mano, en USD. Es una proyección de venta, no un costo. Solo cuentan los lotes que tienen precio.';
-const AYUDA_COSTO_MATERIALES = 'Valor a costo ÷ kg con costo registrado, en USD por kg.';
-const AYUDA_PRECIO_LOTES = 'Valor estimado de venta ÷ kg de lotes con precio, en USD por kg.';
 const AYUDA_RENDIMIENTO = 'De cada 100 kg que entraron a transformaciones de esta categoría, cuántos salieron como material o lote: kg que salieron ÷ kg que entraron. Cuenta solo transformaciones completas del rango de fechas elegido. Por ejemplo: entran 1.000 kg y salen 920 kg → 92 %.';
 const AYUDA_MERMA = 'Lo que no salió de la transformación: (kg que entraron − kg que salieron) ÷ kg que entraron. Rendimiento + merma = 100 %.';
 
-function BloqueValor({ t, valorOculto }: { t: TarjetaInventario; valorOculto: boolean }) {
-  const esLotes = t.tipo === 'lotes';
-  const valor = esLotes ? t.valorEstimadoUsd : t.valorCostoUsd;
-  const precio = esLotes ? t.precioPromedioEstimadoKg : t.costoPromedioKg;
-  const sinDato = esLotes ? t.kgSinPrecio : t.kgSinCosto;
-  return (
-    <>
-      <Dato etiqueta={esLotes ? 'Valor estimado de venta' : 'Valor a costo'} ayuda={esLotes ? AYUDA_VALOR_LOTES : AYUDA_VALOR_MATERIALES}>
-        {valorOculto ? <SinPermiso corto /> : valor !== null && !(esLotes && valor === 0 && (sinDato ?? 0) > 0) ? formatearUsd(valor) : <span className="font-normal text-text-muted">{esLotes && valor === 0 ? 'Sin precios cargados' : 'Sin dato'}</span>}
-      </Dato>
-      <Dato etiqueta={esLotes ? 'Precio estimado promedio' : 'Costo promedio'} ayuda={esLotes ? AYUDA_PRECIO_LOTES : AYUDA_COSTO_MATERIALES}>
-        {valorOculto ? <SinPermiso corto /> : precio !== null ? formatearUsdKg(precio) : <span className="font-normal text-text-muted">Sin dato</span>}
-      </Dato>
-      {!valorOculto && sinDato !== null && sinDato > 0 && (
-        <p className="col-span-2 text-[11px] text-amber-800">
-          {formatearKg(sinDato)} sin {esLotes ? 'precio estimado' : 'costo'}: no entran en el valor.
-        </p>
-      )}
-    </>
-  );
-}
-
 interface TarjetaProps {
   t: TarjetaInventario;
-  valorOculto: boolean;
   seleccionada: boolean;
   onElegir: (t: TarjetaInventario) => void;
 }
 
-function TarjetaCategoria({ t, valorOculto, seleccionada, onElegir }: TarjetaProps) {
+function TarjetaCategoria({ t, seleccionada, onElegir }: TarjetaProps) {
   const estilo = estiloCategoria(t.nombre);
   const esExportacion = t.vista === 'exportacion';
   const alActivar = () => onElegir(t);
@@ -146,7 +121,6 @@ function TarjetaCategoria({ t, valorOculto, seleccionada, onElegir }: TarjetaPro
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
-        <BloqueValor t={t} valorOculto={valorOculto} />
         <Dato etiqueta="Días en inventario (estimado)">
           {t.dias ? (
             <span className="inline-flex items-center gap-1">
@@ -210,9 +184,13 @@ function TarjetaCategoria({ t, valorOculto, seleccionada, onElegir }: TarjetaPro
         />
       )}
 
-      {seleccionada && <p className="mt-3 text-[11px] font-medium text-brand-700">La tabla de detalle está filtrada por esta categoría.</p>}
+      {seleccionada && <p className="mt-3 text-[11px] font-medium text-brand-700">La tabla de detalle de arriba está filtrada por esta categoría.</p>}
     </article>
   );
+}
+
+function irADetalle() {
+  document.getElementById('detalle-inventario')?.scrollIntoView({ block: 'start' });
 }
 
 function irAProximoContenedor() {
@@ -239,10 +217,10 @@ function ControlVistas({ vista, resumenKg, hayOtras, onElegir }: { vista: VistaU
   );
 }
 
-function VistasCategorias({ filtros }: VistasCategoriasProps) {
+function VistasCategorias({ filtros, recarga = 0 }: VistasCategoriasProps) {
   const cambiar = useCambiarFiltros();
-  const params = useMemo(() => parametrosPantalla(filtros, { sinCategoria: true }), [filtros]);
-  const { dato, error, actualizando, recargar } = useDatosPantalla<CategoriasPantalla>(claveParametros(params), () => obtenerCategoriasPantalla(params));
+  const params = useMemo(() => parametrosPantalla(filtros, { sinCategoria: true, sinValor: true }), [filtros]);
+  const { dato, error, actualizando, recargar } = useDatosPantalla<CategoriasPantalla>(`${claveParametros(params)}|r${recarga}`, () => obtenerCategoriasPantalla(params));
   const vista = vistaActiva(filtros);
   const descripcion = [...VISTAS_PRINCIPALES, ETIQUETA_OTRAS].find(o => o.clave === vista)?.descripcion ?? '';
 
@@ -256,10 +234,13 @@ function VistasCategorias({ filtros }: VistasCategoriasProps) {
   const hayOtras = (dato?.tarjetas ?? []).some(t => t.vista === 'otras');
   const vistaResumen = dato?.vistas.find(v => v.vista === vista);
 
-  const elegir = (t: TarjetaInventario) => cambiar({ categoria: filtros.categoria === t.nombre ? undefined : t.nombre });
+  const elegir = (t: TarjetaInventario) => {
+    cambiar({ categoria: filtros.categoria === t.nombre ? undefined : t.nombre });
+    irADetalle();
+  };
 
   return (
-    <Bloque titulo="Vistas y categorías" queEstasViendo="el inventario separado en Exportación, Venta nacional y Trabajo interno, con una tarjeta por categoría: kg en galpón, kg por etapa, valor y días en inventario. Los kg son los de hoy; el rendimiento, la merma y lo despachado dependen del rango de fechas. Haz clic en una categoría para filtrar la tabla de abajo.">
+    <Bloque titulo="Vistas y categorías" queEstasViendo="el inventario separado en Exportación (Lote 1 a 4), Venta nacional (solo Ferroso y No ferroso) y Trabajo interno (lotes de trabajo, Procesadores y desarme), con una tarjeta por categoría: kg en galpón, kg por etapa y días en inventario. Los kg son los de hoy; el rendimiento, la merma y lo despachado dependen del rango de fechas. Haz clic en una categoría para filtrar la tabla de detalle de arriba.">
       {!dato && !error && <SkeletonBloque alto="h-72" />}
       {error && !dato && <ErrorBloque mensaje={error} onReintentar={recargar} />}
       {dato && (
@@ -283,7 +264,7 @@ function VistasCategorias({ filtros }: VistasCategoriasProps) {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {tarjetas.map(t => (
-                <TarjetaCategoria key={t.clave} t={t} valorOculto={dato.valorOculto} seleccionada={filtros.categoria === t.nombre} onElegir={elegir} />
+                <TarjetaCategoria key={t.clave} t={t} seleccionada={filtros.categoria === t.nombre} onElegir={elegir} />
               ))}
             </div>
           )}

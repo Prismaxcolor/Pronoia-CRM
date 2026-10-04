@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Pencil, PackageCheck } from 'lucide-react';
-import { calcularFaltanKg, calcularProgresoPct, formatearCantidadKg, formatearKg, formatearNumero, formatearUsd } from '../../../lib/inventario-nuevo';
+import { calcularFaltanKg, calcularProgresoPct, formatearCantidadKg, formatearKg, formatearNumero } from '../../../lib/inventario-nuevo';
 import { guardarConfiguracionInventario, type ResumenInventario } from '../../../services/inventario-resumen-service';
 import { obtenerLotes } from '../../../services/lote-service';
 import MarcarEmbaladoModal from '../../lotes/MarcarEmbaladoModal';
@@ -42,8 +42,6 @@ function ProximoContenedor({ resumen, onCambio }: Props) {
   const [cargandoLote, setCargandoLote] = useState(false);
   const [loteModal, setLoteModal] = useState<Lote | null>(null);
 
-  const valorLote = (loteId: string): number | null =>
-    resumen.valorOculto ? null : resumen.lotes.items.find(l => l.loteId === loteId)?.valorEstimadoUsd ?? null;
 
   const abrirEdicion = () => {
     setMetaTexto(String(sinMeta ? '' : contenedor.metaKg));
@@ -150,20 +148,15 @@ function ProximoContenedor({ resumen, onCambio }: Props) {
                   <th scope="col" className="py-1.5 pr-2 font-medium">Lote</th>
                   <th scope="col" className="px-2 py-1.5 text-right font-medium" title="Kg que una persona marcó como embalados y que el stock del lote todavía respalda. Cuentan para la meta."><span>Embalado (cuenta para la meta)</span></th>
                   <th scope="col" className="px-2 py-1.5 text-right font-medium" title="Kg que hay en el lote pero todavía no están embalados. No cuentan para la meta."><span>En saca (sin embalar)</span></th>
-                  <th scope="col" className="py-1.5 pl-2 text-right font-medium"><span className="sm:hidden" title="Kg del lote × precio estimado de venta por kg, en USD">Valor est.</span><span className="hidden sm:inline" title="Kg del lote × precio estimado de venta por kg, en USD">Valor estimado de venta (USD)</span></th>
                 </tr>
               </thead>
               <tbody>
                 {contenedor.porLote.map(l => {
-                  const valor = valorLote(l.loteId);
                   return (
                     <tr key={l.loteId} className="border-b border-border/60 last:border-0">
                       <th scope="row" className="py-2 pr-2 text-left font-medium text-text-primary">{l.nombre}</th>
                       <td className="px-2 py-2 text-right tabular-nums">{formatearKg(l.listoKg)}</td>
                       <td className="px-2 py-2 text-right tabular-nums text-text-secondary">{formatearKg(l.enSacaKg)}</td>
-                      <td className="py-2 pl-2 text-right tabular-nums text-text-secondary">
-                        {resumen.valorOculto ? <span className="text-text-muted">Sin permiso</span> : valor == null ? <span className="text-text-muted" title="A este lote todavía no se le cargó un precio estimado de venta por kg">Sin precio</span> : formatearUsd(valor)}
-                      </td>
                     </tr>
                   );
                 })}

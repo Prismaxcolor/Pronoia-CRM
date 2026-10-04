@@ -26,7 +26,7 @@ function ExplicacionUmbrales({ c }: { c: AlertasPantalla['configuracion'] }) {
     <p className="text-xs text-text-secondary">
       Se avisa cuando un material o lote lleva más de <strong>{formatearNumero(c.alertaDiasAmarilla, 0)} días</strong> en inventario (atención, amarillo) o más de{' '}
       <strong>{formatearNumero(c.alertaDiasRoja, 0)} días</strong> (urgente, rojo); cuando la merma de una transformación pasa de{' '}
-      <strong>{formatearNumero(c.umbralMermaPct, 0)} %</strong> de lo que entró (urgente si pasa del doble) y es de al menos <strong>{formatearNumero(c.alertaMermaMinKg, 0)} kg</strong>; y cuando hay kg embalados sin contenedor asignado. Los días en inventario son un estimado: se cuentan desde la fecha de entrada del material que queda (por defecto, los límites son 60 y 90 días). Los límites se pueden configurar.
+      <strong>{formatearNumero(c.umbralMermaPct, 0)} %</strong> de lo que entró (urgente si pasa del doble) y es de al menos <strong>{formatearNumero(c.alertaMermaMinKg ?? 0, 0)} kg</strong>; y cuando hay kg embalados sin contenedor asignado. Los días en inventario son un estimado: se cuentan desde la fecha de entrada del material que queda (por defecto, los límites son 60 y 90 días). Los límites se pueden configurar.
     </p>
   );
 }
@@ -51,7 +51,7 @@ function ItemAlerta({ a }: { a: AlertaInventario }) {
 }
 
 function AlertasInventario({ filtros }: AlertasInventarioProps) {
-  const params = useMemo(() => parametrosPantalla(filtros), [filtros]);
+  const params = useMemo(() => parametrosPantalla(filtros, { sinValor: true }), [filtros]);
   const { dato, error, actualizando, recargar } = useDatosPantalla<AlertasPantalla>(claveParametros(params), () => obtenerAlertasPantalla(params));
   const alertas = useMemo(() => ordenarAlertas(dato?.alertas ?? []), [dato]);
 

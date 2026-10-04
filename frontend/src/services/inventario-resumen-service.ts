@@ -112,6 +112,8 @@ export interface ResumenInventario {
 }
 
 export interface ObtenerResumenOpts {
+  /** Pide el resumen sin costos ni precios (`?sinValor=1`) aunque el usuario tenga facturacion:ver: lo usan las pantallas que solo muestran kilos. */
+  sinValor?: boolean;
   /** Rango de la merma (YYYY-MM-DD), ambos o ninguno. Por defecto, los últimos 30 días. */
   desde?: string;
   hasta?: string;
@@ -125,6 +127,7 @@ export async function obtenerResumenInventario(
     params.set('desde', opts.desde);
     params.set('hasta', opts.hasta);
   }
+  if (opts.sinValor) params.set('sinValor', '1');
   const qs = params.toString();
   try {
     const { resumen } = await apiFetch<{ resumen: ResumenInventario }>(`/api/inventario/resumen${qs ? `?${qs}` : ''}`);

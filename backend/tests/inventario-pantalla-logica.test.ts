@@ -1,13 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import type { AlertaInventario, FilaDetalleInventario, FlujoPantalla } from '../../shared/types/inventario-pantalla';
+import type { AlertaInventario, FilaDetalleInventario } from '../../shared/types/inventario-pantalla';
 import { filtrosAUrl, filtrosDesdeUrl } from '../../frontend/src/lib/inventario-nuevo';
 import {
+  AYUDA_ITEMS_CON_STOCK,
   BOM_UTF8,
+  COLUMNAS_TABLA,
+  ETIQUETA_OTRAS,
+  MENSAJE_VACIO_VISTA,
+  VISTAS_PRINCIPALES,
+  abreviarAlmacen,
+  agruparPorVista,
+  contarItemsPorVista,
+  esFilaExpandible,
+  filtrarPorTexto,
+  filtrosComposicion,
+  textoEnTransformacion,
+  textoUbicacionCorta,
+  textoUltimoDespacho,
   ESTILO_SEVERIDAD,
   agruparFilas,
   alternarOrden,
   ariaSort,
   armarCsv,
+  avisosSinDinero,
   claveFamilia,
   claveParametros,
   enlaceAlerta,
@@ -22,16 +37,14 @@ import {
   partesDesglose,
   segmentosEtapas,
   totalizarFilas,
-  usdFila,
   vistaActiva,
 } from '../../frontend/src/lib/inventario-pantalla';
-import { calcularLayoutSankey, filtroDeNodo, listaFlujoMovil } from '../../frontend/src/lib/sankey-layout';
 
 function fila(p: Partial<FilaDetalleInventario> & { id: string }): FilaDetalleInventario {
   return {
     tipo: 'material', enGalpon: true, material: p.id, productoId: null, loteId: null, categoriaClave: 'cat-a', categoria: 'Ferroso',
     vista: 'venta_nacional', clase: null, fase: null, limpieza: null, destinoBasura: null, esClasificacionCompra: false,
-    etapa: 'listo', kgPorEtapa: { recibido: 0, enProceso: 0, listo: 100, despachado: 0 }, kg: 100, embaladoKg: null, enSacaKg: null,
+    etapa: 'listo', kgPorEtapa: { recibido: 0, enProceso: 0, listo: 100 }, kg: 100, ultimoDespacho: null, kgEnTransformacion: 0, costoFuente: null, costoReferenciaKg: null, embaladoKg: null, enSacaKg: null,
     costoPromedioKg: 0.5, valorCostoUsd: 50, precioEstimadoKg: null, valorEstimadoUsd: null, dias: null, porAlmacen: [],
     ...p,
   };
@@ -65,11 +78,16 @@ describe('parámetros de los endpoints /pantalla', () => {
     expect(p.has('etapa')).toBe(false);
     expect(p.has('proveedor')).toBe(false);
   });
-  it('sin categoría cuando se pide (tarjetas y Sankey completos) y con límite/clasificaciones', () => {
+  it('sin categoría cuando se pide (tarjetas completas) y con límite/clasificaciones', () => {
     const p = parametrosPantalla(f, { sinCategoria: true, limite: 1000, incluirClasificaciones: true });
     expect(p.has('categoria')).toBe(false);
     expect(p.get('limite')).toBe('1000');
     expect(p.get('incluirClasificaciones')).toBe('true');
+  });
+  it('sinValor=1 solo viaja cuando se pide (Métricas no lo envía)', () => {
+    expect(parametrosPantalla(f, { sinValor: true }).get('sinValor')).toBe('1');
+    expect(parametrosPantalla(f).has('sinValor')).toBe(false);
+    expect(claveParametros(parametrosPantalla(f, { sinValor: true }))).not.toBe(claveParametros(parametrosPantalla(f)));
   });
   it('desde y hasta viajan juntos o no viajan', () => {
     expect(parametrosPantalla({ desde: '2026-09-01' }).has('desde')).toBe(false);
@@ -111,49 +129,29 @@ describe('tabla: orden, agrupación y totales', () => {
     expect(filas).toEqual(copia);
   });
   it('los valores nulos van al final en ambos sentidos', () => {
-    const asc = ordenarFilas(filas, { columna: 'usd', sentido: 'asc' }).map(f => f.id);
-    const desc = ordenarFilas(filas, { columna: 'usd', sentido: 'desc' }).map(f => f.id);
-    expect(asc[asc.length - 1]).toBe('b');
-    expect(desc[desc.length - 1]).toBe('b');
+    const conNulo = [fila({ id: 'a', dias: null }), fila({ id: 'b', dias: { estimado: true, diasPromedio: 5, fechaEntradaMasAntigua: '2026-09-20', fechaEntradaMasReciente: '2026-09-25', kgConFecha: 100, kgSinFecha: 0 } })];
+    const asc = ordenarFilas(conNulo, { columna: 'dias', sentido: 'asc' }).map(f => f.id);
+    const desc = ordenarFilas(conNulo, { columna: 'dias', sentido: 'desc' }).map(f => f.id);
+    expect(asc[asc.length - 1]).toBe('a');
+    expect(desc[desc.length - 1]).toBe('a');
   });
   it('ordena texto con tildes y numeración natural', () => {
     const r = ordenarFilas([fila({ id: '1', material: 'Lote 10' }), fila({ id: '2', material: 'Lote 2' }), fila({ id: '3', material: 'Álamo' })], { columna: 'material', sentido: 'asc' });
     expect(r.map(f => f.material)).toEqual(['Álamo', 'Lote 2', 'Lote 10']);
   });
-  it('USD de un lote es el estimado de venta y el de un material es el costo', () => {
-    expect(usdFila(filas[3])).toBe(160);
-    expect(usdFila(filas[2])).toBe(100);
-  });
-  it('agrupa por categoría con totales propios, sin sumar costo con venta estimada', () => {
+  it('agrupa por categoría con totales propios de kg', () => {
     const grupos = agruparFilas(filas, { columna: 'kg', sentido: 'desc' });
     expect(grupos.map(g => g.nombre)).toEqual(['No ferroso', 'Ferroso', 'Lotes de exportación']);
-    const nf = grupos[0];
-    expect(nf.totales.kgEnGalpon).toBe(310);
-    expect(nf.totales.valorCostoUsd).toBe(5);
-    expect(nf.totales.valorEstimadoUsd).toBeNull();
-    expect(grupos[2].totales.valorCostoUsd).toBeNull();
-    expect(grupos[2].totales.valorEstimadoUsd).toBe(160);
+    expect(grupos[0].totales.kg).toBe(310);
+    expect(grupos[2].totales.kg).toBe(20);
   });
-  it('totales generales mantienen costo y estimado separados', () => {
-    const t = totalizarFilas(filas);
-    expect(t.kgEnGalpon).toBe(380);
-    expect(t.valorCostoUsd).toBe(105);
-    expect(t.valorEstimadoUsd).toBe(160);
+  it('totales generales: kg del stock', () => {
+    expect(totalizarFilas(filas).kg).toBe(380);
   });
-  it('filas fuera del galpón no suman al stock', () => {
-    const t = totalizarFilas([
-      fila({ id: 'x', kg: 100 }),
-      fila({ id: 'y', enGalpon: false, etapa: 'en_proceso', kg: 40, valorCostoUsd: 999 }),
-      fila({ id: 'z', enGalpon: false, etapa: 'despachado', kg: 25 }),
-    ]);
-    expect(t.kgEnGalpon).toBe(100);
-    expect(t.kgEnTransformacion).toBe(40);
-    expect(t.kgDespachado).toBe(25);
-    expect(t.valorCostoUsd).toBe(50);
-  });
-  it('sin valores (valorOculto) los totales de valor son null', () => {
-    const t = totalizarFilas([fila({ id: 'x', valorCostoUsd: null, costoPromedioKg: null })]);
-    expect(t.valorCostoUsd).toBeNull();
+  it('los kg en transformación se informan aparte y no suman al stock', () => {
+    const t = totalizarFilas([fila({ id: 'x', kg: 100, kgEnTransformacion: 40 }), fila({ id: 'y', kg: 50, kgEnTransformacion: 10 })]);
+    expect(t.kg).toBe(150);
+    expect(t.kgEnTransformacion).toBe(50);
   });
   it('alternar orden: misma columna invierte; otra empieza según el tipo', () => {
     expect(alternarOrden({ columna: 'kg', sentido: 'desc' }, 'kg')).toEqual({ columna: 'kg', sentido: 'asc' });
@@ -166,12 +164,12 @@ describe('tabla: orden, agrupación y totales', () => {
     expect(ariaSort({ columna: 'kg', sentido: 'asc' }, 'material')).toBe('none');
   });
   it('filtra por etapa del filtro de la URL (materia_prima = recibido)', () => {
-    const f2 = [fila({ id: 'r', etapa: 'recibido', kgPorEtapa: { recibido: 100, enProceso: 0, listo: 0, despachado: 0 } }), fila({ id: 'l' })];
+    const f2 = [fila({ id: 'r', etapa: 'recibido', kgPorEtapa: { recibido: 100, enProceso: 0, listo: 0 } }), fila({ id: 'l' })];
     expect(filtrarPorEtapa(f2, 'materia_prima').map(f => f.id)).toEqual(['r']);
     expect(filtrarPorEtapa(f2, undefined)).toHaveLength(2);
   });
   it('un lote a medio embalar aparece también al filtrar por listo', () => {
-    const mixto = fila({ id: 'm', etapa: 'en_proceso', kgPorEtapa: { recibido: 0, enProceso: 40, listo: 60, despachado: 0 } });
+    const mixto = fila({ id: 'm', etapa: 'en_proceso', kgPorEtapa: { recibido: 0, enProceso: 40, listo: 60 } });
     expect(filtrarPorEtapa([mixto], 'listo')).toHaveLength(1);
   });
 });
@@ -192,26 +190,14 @@ describe('CSV es-VE', () => {
     expect(numeroCsv(NaN)).toBe('');
     expect(numeroCsv(0.12345, 4)).toBe('0,1235');
   });
-  it('empieza con BOM, usa ; y CRLF, y trae columnas de valor', () => {
-    const csv = armarCsv([fila({ id: 'a', material: 'Cobre; "A"', porAlmacen: [{ almacenId: '1', almacenNombre: 'G1', kg: 100.5 }] })], { valorOculto: false });
+  it('empieza con BOM, usa ; y CRLF, y no trae ninguna columna de dinero', () => {
+    const csv = armarCsv([fila({ id: 'a', material: 'Cobre; "A"', porAlmacen: [{ almacenId: '1', almacenNombre: 'G1', kg: 100.5 }] })]);
     expect(csv.startsWith(BOM_UTF8)).toBe(true);
     const [enc, dato] = csv.slice(1).split('\r\n');
-    expect(enc.split(';')).toHaveLength(12);
+    expect(enc.split(';')).toHaveLength(10);
+    expect(enc).not.toMatch(/USD|costo|precio|valor/i);
     expect(dato).toContain('"Cobre; ""A"""');
     expect(dato).toContain('G1 101 kg');
-    expect(dato).toContain(';50;');
-  });
-  it('con valorOculto no exporta ninguna columna de valor ni dato de costo', () => {
-    const csv = armarCsv([fila({ id: 'a', valorCostoUsd: null, costoPromedioKg: null })], { valorOculto: true });
-    const [enc, dato] = csv.slice(1).split('\r\n');
-    expect(enc.split(';')).toHaveLength(8);
-    expect(enc).not.toMatch(/USD/);
-    expect(dato.split(';')).toHaveLength(8);
-  });
-  it('lote exporta precio y valor estimado en columnas distintas de las de costo', () => {
-    const csv = armarCsv([fila({ id: 'L', tipo: 'lote', costoPromedioKg: null, valorCostoUsd: null, precioEstimadoKg: 8, valorEstimadoUsd: 160 })], { valorOculto: false });
-    const cols = csv.slice(1).split('\r\n')[1].split(';');
-    expect(cols.slice(8)).toEqual(['', '', '8', '160']);
   });
 });
 
@@ -243,125 +229,6 @@ describe('alertas', () => {
   });
 });
 
-// ---------------------------------------------------------------- Sankey
-
-const nodo = (id: string, tipo: FlujoPantalla['nodos'][number]['tipo'], nombre: string, columna: 0 | 1 | 2 | 3 | 4, kg = 0, categoriaClave: string | null = null) =>
-  ({ id, tipo, nombre, columna, categoriaClave, loteId: null, kg });
-
-const flujoBase: Pick<FlujoPantalla, 'nodos' | 'enlaces'> = {
-  nodos: [
-    nodo('compra', 'compra', 'Compras', 0),
-    nodo('cat:fe', 'categoria', 'Ferroso', 1, 0, 'fe'),
-    nodo('cat:nf', 'categoria', 'No ferroso', 1, 0, 'nf'),
-    nodo('venta:fe', 'venta_directa', 'Venta Ferroso', 4, 0, 'fe'),
-    nodo('merma:basura', 'merma', 'Merma: basura', 4),
-    nodo('inutil', 'lote_trabajo', 'Sin enlaces', 2),
-  ],
-  enlaces: [
-    { origen: 'compra', destino: 'cat:fe', kg: 800 },
-    { origen: 'compra', destino: 'cat:nf', kg: 200 },
-    { origen: 'cat:fe', destino: 'venta:fe', kg: 700 },
-    { origen: 'cat:fe', destino: 'merma:basura', kg: 100 },
-  ],
-};
-
-describe('layout del Sankey', () => {
-  const op = { ancho: 900, alto: 400 };
-  const l = calcularLayoutSankey(flujoBase, op);
-  it('solo dibuja nodos con enlaces y compacta las columnas usadas', () => {
-    expect(l.nodos.map(n => n.id).sort()).toEqual(['cat:fe', 'cat:nf', 'compra', 'merma:basura', 'venta:fe']);
-    expect(l.columnas.map(c => c.columna)).toEqual([0, 1, 4]);
-    const xs = l.columnas.map(c => c.x);
-    expect(xs[0]).toBe(0);
-    expect(xs[2]).toBe(900 - 14);
-  });
-  it('el alto de cada nodo es proporcional a sus kg (misma escala en todo el diagrama)', () => {
-    const fe = l.nodos.find(n => n.id === 'cat:fe')!;
-    const nf = l.nodos.find(n => n.id === 'cat:nf')!;
-    expect(fe.alto / nf.alto).toBeCloseTo(4, 5);
-  });
-  it('los nodos de una columna no se superponen y caben en el alto', () => {
-    for (const col of [0, 1, 4]) {
-      const ns = l.nodos.filter(n => n.columna === col).sort((a, b) => a.y - b.y);
-      for (let i = 1; i < ns.length; i++) expect(ns[i].y).toBeGreaterThanOrEqual(ns[i - 1].y + ns[i - 1].alto - 1e-6);
-      for (const n of ns) { expect(n.y).toBeGreaterThanOrEqual(0); expect(n.y + n.alto).toBeLessThanOrEqual(op.alto + 1e-6); }
-    }
-  });
-  it('el grosor de cada enlace es proporcional a sus kg', () => {
-    const a = l.enlaces.find(e => e.destino === 'cat:fe')!;
-    const b = l.enlaces.find(e => e.destino === 'cat:nf')!;
-    expect(a.grosor / b.grosor).toBeCloseTo(4, 5);
-    expect(a.ruta.startsWith('M')).toBe(true);
-  });
-  it('colorea con el color fijo de la categoría y los destinos heredan el de su origen', () => {
-    expect(l.nodos.find(n => n.id === 'cat:fe')!.color).toBe('#5B6770');
-    expect(l.nodos.find(n => n.id === 'cat:nf')!.color).toBe('#56B4E9');
-    expect(l.nodos.find(n => n.id === 'merma:basura')!.color).toBe('#5B6770');
-    expect(l.enlaces.find(e => e.destino === 'cat:nf')!.color).toBe('#56B4E9');
-  });
-  it('descarta enlaces incoherentes (nodo inexistente, kg <= 0, no avanzan de columna) y los cuenta', () => {
-    const r = calcularLayoutSankey({
-      nodos: flujoBase.nodos,
-      enlaces: [...flujoBase.enlaces, { origen: 'cat:fe', destino: 'nada', kg: 5 }, { origen: 'cat:fe', destino: 'compra', kg: 5 }, { origen: 'compra', destino: 'cat:nf', kg: 0 }],
-    }, op);
-    expect(r.descartados).toBe(3);
-    expect(r.enlaces).toHaveLength(4);
-  });
-  it('sin enlaces devuelve un layout vacío sin romperse', () => {
-    const r = calcularLayoutSankey({ nodos: flujoBase.nodos, enlaces: [] }, op);
-    expect(r.nodos).toHaveLength(0);
-    expect(r.enlaces).toHaveLength(0);
-  });
-  it('los enlaces salen dentro del alto del nodo de origen', () => {
-    for (const e of l.enlaces) {
-      const o = l.nodos.find(n => n.id === e.origen)!;
-      expect(e.grosor).toBeLessThanOrEqual(o.alto + 1e-6);
-    }
-  });
-  it('qué filtra cada tipo de nodo al hacer clic', () => {
-    expect(filtroDeNodo({ tipo: 'categoria', nombre: 'PCB', categoriaClave: 'x' })).toEqual({ categoria: 'PCB', q: null });
-    expect(filtroDeNodo({ tipo: 'lote_exportacion', nombre: 'Lote 1', categoriaClave: null })).toEqual({ categoria: 'Lotes de exportación', q: null });
-    expect(filtroDeNodo({ tipo: 'merma', nombre: 'Merma', categoriaClave: null })).toEqual({ categoria: null, q: null });
-    expect(filtroDeNodo({ tipo: 'compra', nombre: 'Compras', categoriaClave: null })).toEqual({ categoria: null, q: null });
-    expect(filtroDeNodo({ tipo: 'clasificacion', nombre: 'Mixto 1', categoriaClave: null })).toEqual({ categoria: null, q: null });
-  });
-  it('el enlace compra->categoría filtra por la categoría de destino', () => {
-    const e = l.enlaces.find(x => x.origen === 'compra' && x.destino === 'cat:fe')!;
-    expect(e.filtroCategoria).toBe('Ferroso');
-  });
-});
-
-describe('lista simple para móvil', () => {
-  it('una fila por categoría con lo que entra y sus destinos ordenados por kg', () => {
-    const lista = listaFlujoMovil(flujoBase);
-    expect(lista.map(f => f.categoria)).toEqual(['Ferroso', 'No ferroso']);
-    expect(lista[0].entraKg).toBe(800);
-    expect(lista[0].destinos).toEqual([{ nombre: 'Venta Ferroso', kg: 700 }, { nombre: 'Merma: basura', kg: 100 }]);
-    expect(lista[1].destinos).toEqual([]);
-  });
-  it('sin enlaces no hay filas', () => {
-    expect(listaFlujoMovil({ nodos: flujoBase.nodos, enlaces: [] })).toEqual([]);
-  });
-});
-
-describe('layout del Sankey con 6 columnas', () => {
-  it('dibuja compra, categoría, por procesar, procesado, exportación y salida con sus rótulos', () => {
-    const l = calcularLayoutSankey({
-      nodos: [
-        nodo('compra', 'compra', 'Compras', 0), nodo('cat:pcb', 'categoria', 'PCB', 1), nodo('lote:mpp', 'lote_trabajo', 'LOTE MPP', 2),
-        nodo('lote:bgyp', 'lote_trabajo', 'BGYP', 3), nodo('lote:l1', 'lote_exportacion', 'Lote 1', 4), nodo('merma:basura', 'merma', 'Merma', 5),
-      ],
-      enlaces: [
-        { origen: 'compra', destino: 'cat:pcb', kg: 100 }, { origen: 'cat:pcb', destino: 'lote:mpp', kg: 100 },
-        { origen: 'lote:mpp', destino: 'lote:bgyp', kg: 90 }, { origen: 'lote:bgyp', destino: 'lote:l1', kg: 80 }, { origen: 'lote:bgyp', destino: 'merma:basura', kg: 10 },
-      ],
-    }, { ancho: 700, alto: 300 });
-    expect(l.columnas.map(c => c.etiqueta)).toEqual(['Compra', 'Categoría', 'Por procesar', 'Procesado', 'Exportación', 'Venta / Merma']);
-    expect(l.nodos).toHaveLength(6);
-    expect(l.descartados).toBe(0);
-  });
-});
-
 describe('etapa visible de la tabla (no contradice la insignia de fase)', () => {
   const lote = (p: Partial<FilaDetalleInventario>) => fila({ id: 'l', tipo: 'lote', ...p });
   it('lotes de trabajo con fase muestran Por procesar / Procesado aunque la etapa interna sea recibido o en proceso', () => {
@@ -372,16 +239,15 @@ describe('etapa visible de la tabla (no contradice la insignia de fase)', () => 
     expect(etapaVisible(lote({ clase: 'exportacion', etapa: 'en_proceso' }))).toBe('En saca');
     expect(etapaVisible(lote({ clase: 'exportacion', etapa: 'listo' }))).toBe('Embalado (Listo)');
   });
-  it('el resto usa las etapas normales, incluido un lote despachado o de trabajo sin fase', () => {
+  it('el resto usa las etapas normales, incluido un lote de trabajo sin fase', () => {
     expect(etapaVisible(lote({ clase: 'trabajo', fase: null, etapa: 'recibido' }))).toBe('Recibido');
-    expect(etapaVisible(lote({ clase: 'exportacion', etapa: 'despachado' }))).toBe('Despachado');
     expect(etapaVisible(fila({ id: 'm', etapa: 'en_proceso' }))).toBe('En proceso');
     expect(etapaVisible(fila({ id: 'm', etapa: 'listo' }))).toBe('Listo');
   });
   it('ordenar por etapa sigue el recorrido del PCB y el filtro por etapa del contrato no cambia', () => {
     const a = lote({ id: 'a', clase: 'exportacion', etapa: 'listo' });
-    const b = lote({ id: 'b', clase: 'trabajo', fase: 'por_procesar', etapa: 'recibido', kgPorEtapa: { recibido: 10, enProceso: 0, listo: 0, despachado: 0 } });
-    const c = lote({ id: 'c', clase: 'trabajo', fase: 'procesado', etapa: 'en_proceso', kgPorEtapa: { recibido: 0, enProceso: 10, listo: 0, despachado: 0 } });
+    const b = lote({ id: 'b', clase: 'trabajo', fase: 'por_procesar', etapa: 'recibido', kgPorEtapa: { recibido: 10, enProceso: 0, listo: 0 } });
+    const c = lote({ id: 'c', clase: 'trabajo', fase: 'procesado', etapa: 'en_proceso', kgPorEtapa: { recibido: 0, enProceso: 10, listo: 0 } });
     expect(ordenarFilas([a, c, b], { columna: 'etapa', sentido: 'asc' }).map(f => f.id)).toEqual(['b', 'c', 'a']);
     expect(filtrarPorEtapa([a, b, c], 'materia_prima').map(f => f.id)).toEqual(['b']);
   });
@@ -417,5 +283,121 @@ describe('familias de productos por similitud de nombre', () => {
     ];
     const ids = ordenarFilas(filas, { columna: 'material', sentido: 'asc' }).map(f => f.id);
     expect(ids).toEqual(['b', 'c', 'a']);
+  });
+});
+
+describe('tabla nueva: columnas, permisos y textos bajo el nombre', () => {
+  it('el orden de columnas es Material | Kg | Etapa | Días | Ubicación y no hay dinero', () => {
+    expect(COLUMNAS_TABLA.map(c => c.clave)).toEqual(['material', 'kg', 'etapa', 'dias', 'ubicacion']);
+    expect(COLUMNAS_TABLA.map(c => c.etiqueta)).toEqual(['Material', 'Kg', 'Etapa', 'Días', 'Ubicación']);
+  });
+  it('último despacho en dd/mm/aaaa con kg; vacío si nunca se despachó', () => {
+    expect(textoUltimoDespacho({ ultimoDespacho: { fecha: '2026-10-03', kg: 1200 } })).toBe('Último despacho: 03/10/2026 · 1.200 kg');
+    expect(textoUltimoDespacho({ ultimoDespacho: null })).toBe('');
+  });
+  it('en transformación solo aparece si hay kg', () => {
+    expect(textoEnTransformacion({ kgEnTransformacion: 300 })).toBe('En transformación: 300 kg');
+    expect(textoEnTransformacion({ kgEnTransformacion: 0 })).toBe('');
+  });
+  it('ubicación corta: G1 si está en uno; G1 y G2 con kg si está repartido', () => {
+    expect(abreviarAlmacen('Galpón 1')).toBe('G1');
+    expect(abreviarAlmacen('G2')).toBe('G2');
+    expect(abreviarAlmacen('ALMACEN G2')).toBe('G2');
+    expect(abreviarAlmacen('Almacén 3')).toBe('A3');
+    expect(abreviarAlmacen('Patio externo')).toBe('Patio externo');
+    expect(textoUbicacionCorta(fila({ id: 'a', porAlmacen: [{ almacenId: '1', almacenNombre: 'Galpón 1', kg: 50 }] }))).toBe('G1');
+    expect(textoUbicacionCorta(fila({ id: 'b', porAlmacen: [{ almacenId: '1', almacenNombre: 'G1', kg: 1200 }, { almacenId: '2', almacenNombre: 'G2', kg: 300 }] }))).toBe('G1 1.200 · G2 300');
+  });
+  it('solo los lotes con id se pueden desplegar', () => {
+    expect(esFilaExpandible({ tipo: 'lote', loteId: 'l1' })).toBe(true);
+    expect(esFilaExpandible({ tipo: 'lote', loteId: null })).toBe(false);
+    expect(esFilaExpandible({ tipo: 'material', loteId: null })).toBe(false);
+  });
+  it('la composición recibe periodo y almacén activos', () => {
+    expect(filtrosComposicion({ desde: '2026-09-01', hasta: '2026-09-30', almacen: 'a1' })).toEqual({ desde: '2026-09-01', hasta: '2026-09-30', almacenId: 'a1' });
+    expect(filtrosComposicion({ desde: '2026-09-01' })).toEqual({});
+  });
+  it('el filtro de texto instantáneo ignora tildes y mayúsculas y pide todas las palabras', () => {
+    const fs = [fila({ id: 'a', material: 'Plástico 1 limpio' }), fila({ id: 'b', material: 'PLASTICO 2' }), fila({ id: 'c', material: 'Aluminio' })];
+    expect(filtrarPorTexto(fs, 'plástico 1').map(f => f.id)).toEqual(['a']);
+    expect(filtrarPorTexto(fs, 'PLASTICO').map(f => f.id)).toEqual(['a', 'b']);
+    expect(filtrarPorTexto(fs, '  ')).toHaveLength(3);
+  });
+});
+
+describe('tabla nueva: familias y vistas', () => {
+  it('los aluminios quedan juntos y los plásticos 1/2 sucio/limpio también', () => {
+    const filas = [
+      fila({ id: '1', material: 'ALUMINIO LATA', kg: 100 }), fila({ id: '2', material: 'Plástico 1 sucio', kg: 90 }), fila({ id: '3', material: 'ALUMINIO DE CABLE', kg: 80 }),
+      fila({ id: '4', material: 'Plástico 2 limpio', kg: 70 }), fila({ id: '5', material: 'Aluminios mixtos', kg: 60 }), fila({ id: '6', material: 'Plástico 1 limpio', kg: 50 }), fila({ id: '7', material: 'Cobre', kg: 500 }),
+    ];
+    const ids = ordenarFilas(filas, { columna: 'kg', sentido: 'desc' }).map(f => f.id);
+    expect(ids).toEqual(['7', '1', '3', '5', '2', '4', '6']);
+  });
+  it('agrupa por vista en orden fijo con totales y omite las vistas vacías', () => {
+    const filas = [
+      fila({ id: 'a', categoriaClave: 'fe', categoria: 'Ferroso', vista: 'venta_nacional', kg: 10 }),
+      fila({ id: 'b', tipo: 'lote', categoriaClave: 'lotes:exportacion', categoria: 'Lotes de exportación', vista: 'exportacion', kg: 30, valorCostoUsd: null, costoPromedioKg: null, precioEstimadoKg: 1, valorEstimadoUsd: 30 }),
+      fila({ id: 'c', categoriaClave: 'nf', categoria: 'No ferroso', vista: 'venta_nacional', kg: 5 }),
+    ];
+    const v = agruparPorVista(agruparFilas(filas, { columna: 'kg', sentido: 'desc' }));
+    expect(v.map(x => x.vista)).toEqual(['exportacion', 'venta_nacional']);
+    expect(v[1].totales.kg).toBe(15);
+    expect(v[1].grupos.map(g => g.nombre)).toEqual(['Ferroso', 'No ferroso']);
+  });
+});
+
+describe('textos de las vistas y URL', () => {
+  it('venta nacional es solo Ferroso y No ferroso; la Basura va en Otras', () => {
+    const vn = VISTAS_PRINCIPALES.find(v => v.clave === 'venta_nacional')!;
+    expect(vn.descripcion).toContain('Solo Ferroso y No ferroso');
+    expect(vn.descripcion).not.toMatch(/Basura/);
+    expect(MENSAJE_VACIO_VISTA.venta_nacional.texto).not.toMatch(/Basura/);
+    expect(ETIQUETA_OTRAS.descripcion).toContain('Basura');
+  });
+  it('trabajo interno nombra los lotes de trabajo y PCB LIGADO', () => {
+    expect(VISTAS_PRINCIPALES.find(v => v.clave === 'trabajo_interno')!.descripcion).toMatch(/BGPP.*PCB LIGADO/);
+  });
+  it('etapa=despachado en la URL se ignora sin error y no se vuelve a escribir', () => {
+    const f = filtrosDesdeUrl(new URLSearchParams('etapa=despachado&q=plastico'));
+    expect(f.etapa).toBeUndefined();
+    expect(f.q).toBe('plastico');
+    expect(filtrosAUrl(f).toString()).toBe('q=plastico');
+  });
+});
+
+describe('tarjeta «Productos y lotes con stock»', () => {
+  it('cuenta ítems por vista y el total', () => {
+    const c = contarItemsPorVista([
+      { vista: 'exportacion', filas: 4 }, { vista: 'venta_nacional', filas: 7 }, { vista: 'venta_nacional', filas: 3 },
+      { vista: 'trabajo_interno', filas: 6 }, { vista: 'otras', filas: 2 },
+    ]);
+    expect(c.total).toBe(22);
+    expect(c.porVista).toEqual({ exportacion: 4, venta_nacional: 10, trabajo_interno: 6, otras: 2 });
+  });
+  it('sin grupos da cero y descarta valores inválidos', () => {
+    expect(contarItemsPorVista([]).total).toBe(0);
+    expect(contarItemsPorVista([{ vista: 'otras', filas: NaN }, { vista: 'otras', filas: -3 }]).total).toBe(0);
+  });
+  it('la ayuda explica qué cuenta y no habla de dinero', () => {
+    expect(AYUDA_ITEMS_CON_STOCK).toMatch(/productos y lotes/);
+    expect(AYUDA_ITEMS_CON_STOCK).not.toMatch(/USD|costo|precio/i);
+  });
+});
+
+describe('avisos sin dinero en /inventario', () => {
+  it('descarta los avisos que hablan de costos, precios o dinero y conserva el resto', () => {
+    const avisos = [
+      'No se pudieron leer los costos de compra: el valor a costo de los materiales no es confiable.',
+      'No se pudieron leer los costos de referencia: el valor a costo solo usa las facturas.',
+      'Precio estimado de venta no disponible (USD).',
+      'No se pudo calcular la merma del periodo.',
+    ];
+    expect(avisosSinDinero(avisos)).toEqual(['No se pudo calcular la merma del periodo.']);
+  });
+  it('no modifica la lista recibida', () => {
+    const avisos = ['costo no disponible', 'otro aviso'];
+    avisosSinDinero(avisos);
+    expect(avisos).toHaveLength(2);
   });
 });

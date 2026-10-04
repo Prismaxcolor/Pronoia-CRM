@@ -1,6 +1,7 @@
-import { AlertTriangle, Lock, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 import type { MetaPantalla } from '@shared/types/inventario-pantalla.js';
 import { Chip, InfoTooltip, SkeletonBloque as SkeletonKit } from '../../../components/ui';
+import { avisosSinDinero } from '../../../lib/inventario-pantalla';
 
 /** Piezas compartidas por los cuatro bloques pesados de la pantalla de inventario. */
 
@@ -21,25 +22,16 @@ export function ErrorBloque({ mensaje, onReintentar }: { mensaje: string; onRein
 
 /** Aviso ámbar cuando el backend marca la respuesta como parcial: la cifra afectada no está completa. */
 export function AvisosMeta({ meta }: { meta: Pick<MetaPantalla, 'parcial' | 'avisos'> }) {
-  if (!meta.parcial && meta.avisos.length === 0) return null;
+  const avisos = avisosSinDinero(meta.avisos);
+  if (!meta.parcial && avisos.length === 0) return null;
   return (
     <div role="status" className="mb-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
       <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
       <div>
         {meta.parcial && <p className="font-medium">Algunas cifras de este bloque pueden estar incompletas.</p>}
-        {meta.avisos.length > 0 && <ul className="list-disc pl-4">{meta.avisos.map(a => <li key={a}>{a}</li>)}</ul>}
+        {avisos.length > 0 && <ul className="list-disc pl-4">{avisos.map(a => <li key={a}>{a}</li>)}</ul>}
       </div>
     </div>
-  );
-}
-
-/** Valor que el usuario no puede ver (sin facturacion:ver). Con candado y texto: no depende solo del ícono. */
-export function SinPermiso({ corto = false }: { corto?: boolean }) {
-  return (
-    <span className="inline-flex items-center gap-1 text-text-muted" title="Tu usuario no tiene permiso para ver valores en dinero (USD)">
-      <Lock size={12} aria-hidden="true" />
-      <span className="text-xs font-medium">{corto ? 'Sin permiso' : 'Sin permiso para ver valores'}</span>
-    </span>
   );
 }
 

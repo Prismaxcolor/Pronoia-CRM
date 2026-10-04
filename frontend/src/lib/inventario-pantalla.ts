@@ -15,12 +15,16 @@ import { VISTA_POR_DEFECTO, formatearNumero, type EtapaFiltro, type FiltrosPanta
 // ---------------------------------------------------------------- vistas
 
 export const VISTAS_PRINCIPALES: Array<{ clave: VistaUrl; etiqueta: string; descripcion: string }> = [
-  { clave: 'exportacion', etiqueta: 'Exportación', descripcion: 'Lotes 1 a 4 y la ruta del PGM: lo que se embala en contenedores y se envía al exterior.' },
-  { clave: 'venta_nacional', etiqueta: 'Venta nacional', descripcion: 'Ferroso, No ferroso y Basura: material que se vende tal cual en el mercado nacional, sin transformarlo.' },
-  { clave: 'trabajo_interno', etiqueta: 'Trabajo interno', descripcion: 'Lotes de trabajo (por procesar / procesado), desarme RAEE y Procesadores: material que primero se trabaja en casa y ni se exporta ni se vende tal cual.' },
+  { clave: 'exportacion', etiqueta: 'Exportación', descripcion: 'Lote 1 a Lote 4: lo que se arma, se embala en contenedores y se envía al exterior.' },
+  { clave: 'venta_nacional', etiqueta: 'Venta nacional', descripcion: 'Solo Ferroso y No ferroso: material que se vende tal cual en el mercado nacional, sin transformarlo.' },
+  { clave: 'trabajo_interno', etiqueta: 'Trabajo interno', descripcion: 'Lotes de trabajo (BGPP, BGYP, PCPP, PCYP, LOTE MPP y otros como PCB LIGADO), Procesadores y desarme RAEE: material que primero se trabaja en casa y ni se exporta ni se vende tal cual.' },
 ];
 
-export const ETIQUETA_OTRAS = { clave: 'otras' as const, etiqueta: 'Otras', descripcion: 'Material que no encaja en Exportación, Venta nacional ni Trabajo interno.' };
+export const ETIQUETA_OTRAS = { clave: 'otras' as const, etiqueta: 'Otras', descripcion: 'Lo que no encaja en las otras tres vistas, por ejemplo la Basura.' };
+
+/** Orden fijo de las vistas en la tabla de detalle. */
+export const ORDEN_VISTAS: VistaInventario[] = ['exportacion', 'venta_nacional', 'trabajo_interno', 'otras'];
+export const etiquetaVista = (v: VistaInventario): string => [...VISTAS_PRINCIPALES, ETIQUETA_OTRAS].find(o => o.clave === v)?.etiqueta ?? v;
 
 export function vistaActiva(f: Pick<FiltrosPantalla, 'vista'>): VistaUrl {
   return f.vista ?? VISTA_POR_DEFECTO;
@@ -33,14 +37,14 @@ export const MENSAJE_VACIO_VISTA: Record<VistaUrl, { texto: string; enlace?: { r
     enlace: { ruta: '#proximo-contenedor', etiqueta: 'Ir a Próximo contenedor' },
   },
   venta_nacional: {
-    texto: 'No hay Ferroso, No ferroso ni Basura con stock con estos filtros. Se llenan con las compras (pesajes) de esos materiales.',
+    texto: 'No hay Ferroso ni No ferroso con stock con estos filtros. Se llenan con las compras (pesajes) de esos materiales.',
     enlace: { ruta: '/inventario-legacy?pestana=almacenes', etiqueta: 'Ver almacenes' },
   },
   trabajo_interno: {
-    texto: 'No hay lotes de trabajo ni material en desarme con estos filtros. Aparecen al pesar tarjetas a MPP, BGPP, PCPP u otros lotes, o al registrar un desarme.',
+    texto: 'No hay lotes de trabajo, Procesadores ni material en desarme con estos filtros. Aparecen al pesar tarjetas a MPP, BGPP, PCPP u otros lotes, o al registrar un desarme.',
     enlace: { ruta: '/transformaciones', etiqueta: 'Registrar transformación' },
   },
-  otras: { texto: 'No hay material fuera de las tres vistas principales.' },
+  otras: { texto: 'No hay material fuera de las tres vistas principales (por ejemplo, Basura).' },
 };
 
 // ---------------------------------------------------------------- parámetros de los endpoints
@@ -50,10 +54,12 @@ export const LIMITE_FILAS_MAXIMO = 2000;
 export const PASOS_LIMITE = [500, 1000, 2000] as const;
 
 export interface OpcionesParametros {
-  /** No enviar `categoria` (las tarjetas y el Sankey se quedan completos y solo resaltan la elegida). */
+  /** No enviar `categoria` (las tarjetas se quedan completas y solo resaltan la elegida). */
   sinCategoria?: boolean;
   limite?: number;
   incluirClasificaciones?: boolean;
+  /** Pide la respuesta sin costos ni precios (`sinValor=1`) aunque el usuario tenga facturacion:ver. /inventario lo envía siempre; Métricas no. */
+  sinValor?: boolean;
 }
 
 /** Query de /api/inventario/pantalla/*. desde/hasta solo viajan juntos. `etapa`, `proveedor` y `lote` no existen en el
@@ -69,6 +75,7 @@ export function parametrosPantalla(f: FiltrosPantalla, op: OpcionesParametros = 
   if (f.q) p.set('q', f.q);
   if (op.limite) p.set('limite', String(op.limite));
   if (op.incluirClasificaciones) p.set('incluirClasificaciones', 'true');
+  if (op.sinValor) p.set('sinValor', '1');
   return p;
 }
 
@@ -79,14 +86,13 @@ export function claveParametros(p: URLSearchParams): string {
 
 // ---------------------------------------------------------------- formato
 
-export const formatearUsdKg = (n: number): string => `USD ${formatearNumero(n, 2)}/kg`;
 export const formatearDiasEstimados = (d: number): string => `${formatearNumero(d, 0)} días`;
 
-export const ETIQUETA_ETAPA: Record<EtapaInventario, string> = {
+/** Ya no hay filas «despachado»: lo despachado se ve bajo el nombre como «Último despacho». */
+export const ETIQUETA_ETAPA: Record<string, string> = {
   recibido: 'Recibido',
   en_proceso: 'En proceso',
   listo: 'Listo',
-  despachado: 'Despachado',
 };
 
 /** Etapa del filtro de la URL (materia_prima/en_proceso/listo) -> etapa del contrato. */
@@ -134,34 +140,53 @@ export function partesDesglose(partes: Array<{ clave: string; etiqueta: string; 
 
 // ---------------------------------------------------------------- tabla de detalle
 
-export type ColumnaTabla = 'material' | 'categoria' | 'etapa' | 'kg' | 'precioKg' | 'usd' | 'dias' | 'ubicacion';
+export type ColumnaTabla = 'material' | 'categoria' | 'etapa' | 'kg' | 'dias' | 'ubicacion';
 export type SentidoOrden = 'asc' | 'desc';
 export interface OrdenTabla { columna: ColumnaTabla; sentido: SentidoOrden }
 
 export const ORDEN_TABLA_POR_DEFECTO: OrdenTabla = { columna: 'kg', sentido: 'desc' };
 
-/** Texto de la columna Etapa. La etapa del contrato (recibido/en_proceso/listo/despachado) es una agrupación interna:
+export interface DefColumna {
+  clave: Exclude<ColumnaTabla, 'categoria'>;
+  etiqueta: string;
+  derecha: boolean;
+}
+
+/** Columnas de la tabla, en orden: el kg pegado al nombre. Esta pantalla no muestra dinero (todo lo monetario está en Métricas). */
+export const COLUMNAS_TABLA: DefColumna[] = [
+  { clave: 'material', etiqueta: 'Material', derecha: false },
+  { clave: 'kg', etiqueta: 'Kg', derecha: true },
+  { clave: 'etapa', etiqueta: 'Etapa', derecha: false },
+  { clave: 'dias', etiqueta: 'Días', derecha: true },
+  { clave: 'ubicacion', etiqueta: 'Ubicación', derecha: false },
+];
+
+/** Texto de la columna Etapa. La etapa del contrato (recibido/en_proceso/listo) es una agrupación interna:
  *  en lotes con fase o de exportación se muestra el paso real del PCB para no contradecir las insignias. */
-const ETAPAS_VISIBLES = ['Recibido', 'Por procesar', 'En proceso', 'Procesado', 'En saca', 'Listo', 'Embalado (Listo)', 'Despachado'] as const;
+const ETAPAS_VISIBLES = ['Recibido', 'Por procesar', 'En proceso', 'Procesado', 'En saca', 'Listo', 'Embalado (Listo)'] as const;
 export type EtapaVisible = (typeof ETAPAS_VISIBLES)[number];
 
 export function etapaVisible(f: Pick<FilaDetalleInventario, 'tipo' | 'clase' | 'fase' | 'etapa'>): EtapaVisible {
-  if (f.tipo === 'lote' && f.etapa !== 'despachado') {
+  if (f.tipo === 'lote') {
     if (f.clase === 'trabajo' && f.fase === 'por_procesar') return 'Por procesar';
     if (f.clase === 'trabajo' && f.fase === 'procesado') return 'Procesado';
     if (f.clase === 'exportacion') return f.etapa === 'listo' ? 'Embalado (Listo)' : 'En saca';
   }
-  return ETIQUETA_ETAPA[f.etapa] as EtapaVisible;
+  return (ETIQUETA_ETAPA[f.etapa] ?? 'Recibido') as EtapaVisible;
 }
 
-export const EXPLICACION_ETAPAS_PCB = 'En qué paso está cada fila. Lotes de PCB: por procesar (lote de trabajo con material sin tratar) → procesado (ya desarmado o clasificado) → en saca (lote de exportación armado, todavía sin embalar) → embalado (listo para despachar). El resto de los materiales usa Recibido (llegó y no se ha trabajado), En proceso, Listo (disponible para vender o embalado) y Despachado (ya salió).';
+export const EXPLICACION_ETAPAS_PCB = 'En qué paso está cada fila. Lotes de PCB: por procesar (lote de trabajo con material sin tratar) → procesado (ya desarmado o clasificado) → en saca (lote de exportación armado, todavía sin embalar) → embalado (listo para despachar). El resto de los materiales usa Recibido (llegó y no se ha trabajado), En proceso y Listo (disponible para vender o embalado). Lo que ya salió se ve debajo del nombre como «Último despacho».';
 
 const ORDEN_ETAPA = (f: FilaDetalleInventario): number => ETAPAS_VISIBLES.indexOf(etapaVisible(f));
 
-/** $/kg de la fila: costo promedio en materiales, precio estimado de venta en lotes (cifras distintas: ver `usdFila`). */
-export const precioKgFila = (f: FilaDetalleInventario): number | null => (f.tipo === 'lote' ? f.precioEstimadoKg : f.costoPromedioKg);
-/** USD de la fila: valor a COSTO en materiales, valor ESTIMADO de venta en lotes. Nunca se suman entre sí. */
-export const usdFila = (f: FilaDetalleInventario): number | null => (f.tipo === 'lote' ? f.valorEstimadoUsd : f.valorCostoUsd);
+/** Nombre corto del almacén: «Galpón 1» -> «G1», «ALMACEN G2» -> «G2», «Almacén 2» -> «A2»; si no encaja, el mismo nombre. */
+export function abreviarAlmacen(nombre: string): string {
+  const n = nombre.trim();
+  const m = /^(galp[oó]n|almac[eé]n|bodega)\s*#?\s*(\w{1,3})$/i.exec(n);
+  if (!m) return n;
+  const resto = m[2].toUpperCase();
+  return /^G\d+$/.test(resto) ? resto : `${m[1][0].toUpperCase()}${resto}`;
+}
 
 /** Almacén con más kg (para ordenar por ubicación) y texto completo "G1 1.200 kg · G2 300 kg". */
 export function ubicacionPrincipal(f: FilaDetalleInventario): string {
@@ -170,6 +195,47 @@ export function ubicacionPrincipal(f: FilaDetalleInventario): string {
 }
 export function textoUbicacion(f: FilaDetalleInventario): string {
   return f.porAlmacen.map(a => `${a.almacenNombre} ${formatearNumero(a.kg, 0)} kg`).join(' · ');
+}
+/** Ubicación corta para la tabla: «G1» si está en un solo almacén; «G1 1.200 · G2 300» si está repartido. */
+export function textoUbicacionCorta(f: FilaDetalleInventario): string {
+  if (f.porAlmacen.length === 0) return '';
+  if (f.porAlmacen.length === 1) return abreviarAlmacen(f.porAlmacen[0].almacenNombre);
+  return f.porAlmacen.map(a => `${abreviarAlmacen(a.almacenNombre)} ${formatearNumero(a.kg, 0)}`).join(' · ');
+}
+
+/** Texto gris bajo el nombre: «Último despacho: 03/10/2026 · 1.200 kg». Vacío si nunca se despachó. */
+export function textoUltimoDespacho(f: Pick<FilaDetalleInventario, 'ultimoDespacho'>): string {
+  const d = f.ultimoDespacho;
+  if (!d) return '';
+  const [a, m, dia] = d.fecha.slice(0, 10).split('-');
+  const fecha = a && m && dia ? `${dia}/${m}/${a}` : d.fecha;
+  return `Último despacho: ${fecha} · ${formatearNumero(d.kg, 0)} kg`;
+}
+/** Texto gris bajo el nombre: «En transformación: 300 kg». Vacío si no hay. */
+export function textoEnTransformacion(f: Pick<FilaDetalleInventario, 'kgEnTransformacion'>): string {
+  return f.kgEnTransformacion > 0 ? `En transformación: ${formatearNumero(f.kgEnTransformacion, 0)} kg` : '';
+}
+
+/** Solo las filas de lote con id se pueden desplegar para ver de qué compras se compone. */
+export const esFilaExpandible = (f: Pick<FilaDetalleInventario, 'tipo' | 'loteId'>): boolean => f.tipo === 'lote' && Boolean(f.loteId);
+
+/** Filtros que viajan a la composición de un lote: periodo y almacén activos. */
+export function filtrosComposicion(f: Pick<FiltrosPantalla, 'desde' | 'hasta' | 'almacen'>): { desde?: string; hasta?: string; almacenId?: string } {
+  return {
+    ...(f.desde && f.hasta ? { desde: f.desde, hasta: f.hasta } : {}),
+    ...(f.almacen ? { almacenId: f.almacen } : {}),
+  };
+}
+
+const sinTildes = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/** Filtro de texto instantáneo en el cliente (sin tildes ni mayúsculas, todas las palabras). Sirve mientras llega la respuesta del servidor. */
+export function filtrarPorTexto(filas: FilaDetalleInventario[], q: string | undefined): FilaDetalleInventario[] {
+  const palabras = sinTildes(q ?? '').split(/\s+/).filter(Boolean);
+  if (palabras.length === 0) return filas;
+  return filas.filter(f => {
+    const texto = sinTildes(`${f.material} ${f.categoria}`);
+    return palabras.every(p => texto.includes(p));
+  });
 }
 
 type ValorOrden = number | string | null;
@@ -180,8 +246,6 @@ function valorDeColumna(f: FilaDetalleInventario, c: ColumnaTabla): ValorOrden {
     case 'categoria': return f.categoria;
     case 'etapa': return ORDEN_ETAPA(f);
     case 'kg': return f.kg;
-    case 'precioKg': return precioKgFila(f);
-    case 'usd': return usdFila(f);
     case 'dias': return f.dias ? f.dias.diasPromedio : null;
     case 'ubicacion': return ubicacionPrincipal(f) || null;
   }
@@ -205,7 +269,7 @@ export function claveFamilia(material: string): string {
   const palabras = material
     .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter(p => p && !/^d+$/.test(p) && !PALABRAS_SUELTAS.has(p));
+    .filter(p => p && !/^\d+$/.test(p) && !PALABRAS_SUELTAS.has(p));
   const base = palabras[0] ?? material.trim().toLowerCase();
   return base.length > 4 && base.endsWith('s') ? base.slice(0, -1) : base;
 }
@@ -213,12 +277,12 @@ export function claveFamilia(material: string): string {
 const compararNombre = (a: FilaDetalleInventario, b: FilaDetalleInventario) =>
   a.material.localeCompare(b.material, 'es', { sensitivity: 'base', numeric: true }) || a.id.localeCompare(b.id);
 
-/** Copia ordenada (no muta). Al ordenar por material, kg o USD los productos de una misma familia de nombre quedan
+/** Copia ordenada (no muta). Al ordenar por material o kg los productos de una misma familia de nombre quedan
  *  juntos (las familias se ordenan por el total de la columna); con las demás columnas se ordena fila por fila. */
 export function ordenarFilas(filas: FilaDetalleInventario[], orden: OrdenTabla): FilaDetalleInventario[] {
   const porFila = (a: FilaDetalleInventario, b: FilaDetalleInventario) =>
     comparar(valorDeColumna(a, orden.columna), valorDeColumna(b, orden.columna), orden.sentido) || compararNombre(a, b);
-  if (orden.columna !== 'material' && orden.columna !== 'kg' && orden.columna !== 'usd') return [...filas].sort(porFila);
+  if (orden.columna !== 'material' && orden.columna !== 'kg') return [...filas].sort(porFila);
 
   const familias = new Map<string, FilaDetalleInventario[]>();
   for (const fila of filas) {
@@ -240,37 +304,24 @@ export function ordenarFilas(filas: FilaDetalleInventario[], orden: OrdenTabla):
 }
 
 export interface TotalesFilas {
-  /** Stock en galpón (solo filas enGalpon). */
-  kgEnGalpon: number;
-  /** Kg retirados a transformación bruta (filas informativas en_proceso fuera del galpón). */
+  /** Stock actual (todas las filas son stock). */
+  kg: number;
+  /** Kg retirados a una transformación que aún no termina (informativo: no están en `kg`). */
   kgEnTransformacion: number;
-  kgDespachado: number;
-  /** Suma de valores a costo (materiales). null si ninguna fila trae costo (o valorOculto). */
-  valorCostoUsd: number | null;
-  /** Suma de valores estimados de venta (lotes). Cifra distinta: no se suma al costo. */
-  valorEstimadoUsd: number | null;
   filas: number;
 }
 
 const redondear3 = (n: number) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 
 export function totalizarFilas(filas: FilaDetalleInventario[]): TotalesFilas {
-  let kgEnGalpon = 0, kgEnTransformacion = 0, kgDespachado = 0;
-  let costo = 0, estimado = 0, hayCosto = false, hayEstimado = false;
+  let kg = 0, kgEnTransformacion = 0;
   for (const f of filas) {
-    if (f.enGalpon) kgEnGalpon += f.kg;
-    else if (f.etapa === 'despachado') kgDespachado += f.kg;
-    else kgEnTransformacion += f.kg;
-    if (!f.enGalpon) continue;
-    if (f.tipo === 'material' && f.valorCostoUsd !== null) { costo += f.valorCostoUsd; hayCosto = true; }
-    if (f.tipo === 'lote' && f.valorEstimadoUsd !== null) { estimado += f.valorEstimadoUsd; hayEstimado = true; }
+    kg += f.kg;
+    kgEnTransformacion += f.kgEnTransformacion || 0;
   }
   return {
-    kgEnGalpon: redondear3(kgEnGalpon),
+    kg: redondear3(kg),
     kgEnTransformacion: redondear3(kgEnTransformacion),
-    kgDespachado: redondear3(kgDespachado),
-    valorCostoUsd: hayCosto ? redondear3(costo) : null,
-    valorEstimadoUsd: hayEstimado ? redondear3(estimado) : null,
     filas: filas.length,
   };
 }
@@ -283,8 +334,26 @@ export interface GrupoTabla {
   totales: TotalesFilas;
 }
 
+export interface GrupoVista {
+  vista: VistaInventario;
+  etiqueta: string;
+  grupos: GrupoTabla[];
+  totales: TotalesFilas;
+}
+
+/** Agrupa las categorías por vista (orden fijo: Exportación, Venta nacional, Trabajo interno, Otras) con totales por vista.
+ *  Respeta el orden de los grupos recibidos dentro de cada vista y omite las vistas sin filas. */
+export function agruparPorVista(grupos: GrupoTabla[]): GrupoVista[] {
+  return ORDEN_VISTAS
+    .map(vista => {
+      const delaVista = grupos.filter(g => g.vista === vista);
+      return { vista, etiqueta: etiquetaVista(vista), grupos: delaVista, totales: totalizarFilas(delaVista.flatMap(g => g.filas)) };
+    })
+    .filter(v => v.grupos.length > 0);
+}
+
 /** Agrupa por categoría y ordena filas dentro de cada grupo. Los grupos se ordenan por el total de la columna
- *  elegida cuando es numérica comparable (kg, USD), y por nombre en el resto. */
+ *  elegida cuando es numérica comparable (kg), y por nombre en el resto. */
 export function agruparFilas(filas: FilaDetalleInventario[], orden: OrdenTabla): GrupoTabla[] {
   const porClave = new Map<string, FilaDetalleInventario[]>();
   for (const f of filas) porClave.set(f.categoriaClave, [...(porClave.get(f.categoriaClave) ?? []), f]);
@@ -297,9 +366,9 @@ export function agruparFilas(filas: FilaDetalleInventario[], orden: OrdenTabla):
   }));
   const porNombre = (a: GrupoTabla, b: GrupoTabla) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' });
   const valorGrupo = (g: GrupoTabla): number | null =>
-    orden.columna === 'kg' ? g.totales.kgEnGalpon : orden.columna === 'usd' ? (g.totales.valorCostoUsd ?? g.totales.valorEstimadoUsd) : null;
+    orden.columna === 'kg' ? g.totales.kg : null;
   return grupos.sort((a, b) => {
-    if (orden.columna === 'kg' || orden.columna === 'usd') {
+    if (orden.columna === 'kg') {
       return comparar(valorGrupo(a), valorGrupo(b), orden.sentido) || porNombre(a, b);
     }
     return orden.columna === 'categoria' && orden.sentido === 'desc' ? porNombre(b, a) : porNombre(a, b);
@@ -314,7 +383,7 @@ export function filtrarPorEtapa(filas: FilaDetalleInventario[], etapa: EtapaFilt
 
 function kgDeEtapa(f: FilaDetalleInventario, e: EtapaInventario): number {
   const k = f.kgPorEtapa;
-  return e === 'recibido' ? k.recibido : e === 'en_proceso' ? k.enProceso : e === 'listo' ? k.listo : k.despachado;
+  return e === 'recibido' ? k.recibido : e === 'en_proceso' ? k.enProceso : k.listo;
 }
 
 /** Siguiente orden al hacer clic en una columna: misma columna alterna sentido; otra empieza en asc (texto) o desc (números). */
@@ -348,39 +417,30 @@ export function numeroCsv(n: number | null | undefined, decimales = 2): string {
   return String(redondeado).replace('.', ',');
 }
 
-export interface OpcionesCsv { valorOculto: boolean }
+export const ENCABEZADO_CSV_BASE = ['Material', 'Categoría', 'Tipo', 'Etapa', 'Kg', 'Días en inventario (estimado)', 'Ubicación', 'Último despacho (fecha)', 'Último despacho (kg)', 'En transformación (kg)'] as const;
 
-export const ENCABEZADO_CSV_BASE = ['Material', 'Categoría', 'Tipo', 'Etapa', 'En galpón', 'Kg', 'Días en inventario (estimado)', 'Ubicación'] as const;
-export const ENCABEZADO_CSV_VALOR = ['Costo de compra USD/kg (materiales)', 'Valor a costo USD (materiales: kg × costo)', 'Precio estimado de venta USD/kg (lotes)', 'Valor estimado de venta USD (lotes: kg × precio)'] as const;
-
-export function armarCsv(filas: FilaDetalleInventario[], op: OpcionesCsv): string {
-  const encabezado = op.valorOculto ? [...ENCABEZADO_CSV_BASE] : [...ENCABEZADO_CSV_BASE, ...ENCABEZADO_CSV_VALOR];
-  const lineas = [encabezado.map(escaparCampoCsv).join(SEPARADOR_CSV)];
+export function armarCsv(filas: FilaDetalleInventario[]): string {
+  const lineas = [[...ENCABEZADO_CSV_BASE].map(escaparCampoCsv).join(SEPARADOR_CSV)];
   for (const f of filas) {
     const base = [
       escaparCampoCsv(f.material),
       escaparCampoCsv(f.categoria),
       f.tipo === 'lote' ? 'Lote' : 'Material',
       etapaVisible(f),
-      f.enGalpon ? 'Sí' : 'No',
       numeroCsv(f.kg, 3),
       numeroCsv(f.dias?.diasPromedio, 1),
       escaparCampoCsv(textoUbicacion(f)),
+      f.ultimoDespacho ? f.ultimoDespacho.fecha.slice(0, 10) : '',
+      numeroCsv(f.ultimoDespacho?.kg, 3),
+      numeroCsv(f.kgEnTransformacion > 0 ? f.kgEnTransformacion : null, 3),
     ];
-    const valor = op.valorOculto ? [] : [
-      numeroCsv(f.costoPromedioKg, 4),
-      numeroCsv(f.valorCostoUsd, 2),
-      numeroCsv(f.precioEstimadoKg, 4),
-      numeroCsv(f.valorEstimadoUsd, 2),
-    ];
-    lineas.push([...base, ...valor].join(SEPARADOR_CSV));
+    lineas.push(base.join(SEPARADOR_CSV));
   }
   return BOM_UTF8 + lineas.join(SALTO_CSV) + SALTO_CSV;
 }
 
 export const nombreArchivoCsv = (hoy: Date): string => `inventario-${hoy.toISOString().slice(0, 10)}.csv`;
 
-export const AVISO_CSV_SIN_VALOR = 'No tienes permiso para ver valores en dinero: el archivo incluye solo kg, etapa, días en inventario y ubicación, sin costos, precios ni USD.';
 
 // ---------------------------------------------------------------- alertas
 
@@ -422,4 +482,30 @@ export function formatearValorAlerta(a: AlertaInventario): string {
 export function ordenarAlertas(alertas: AlertaInventario[]): AlertaInventario[] {
   const peso: Record<SeveridadAlerta, number> = { roja: 0, amarilla: 1, info: 2 };
   return [...alertas].sort((a, b) => peso[a.severidad] - peso[b.severidad] || b.valor - a.valor);
+}
+
+// ---------------------------------------------------------------- tarjeta «Productos y lotes con stock»
+
+export interface ConteoItems {
+  total: number;
+  porVista: Record<VistaInventario, number>;
+}
+
+/** Cuenta los productos y lotes con stock en galpón (una fila del detalle = un ítem) y los reparte por vista.
+ *  Recibe los grupos del detalle (calculados por el servidor sobre TODAS las filas). Sin dinero. */
+export function contarItemsPorVista(grupos: Array<{ vista: VistaInventario; filas: number }>): ConteoItems {
+  const porVista: Record<VistaInventario, number> = { exportacion: 0, venta_nacional: 0, trabajo_interno: 0, otras: 0 };
+  for (const g of grupos) porVista[g.vista] += Number.isFinite(g.filas) && g.filas > 0 ? g.filas : 0;
+  return { total: ORDEN_VISTAS.reduce((t, v) => t + porVista[v], 0), porVista };
+}
+
+export const AYUDA_ITEMS_CON_STOCK = 'Cuántos productos y lotes distintos tienen kg en el galpón hoy. Cada producto suelto (por ejemplo, Plástico 1 limpio) cuenta uno y cada lote (Lote 1, BGPP…) cuenta uno. Debajo se reparte por vista: Exportación, Venta nacional, Trabajo interno y Otras. No cambia con el rango de fechas ni con la categoría o el buscador; sí respeta el almacén elegido.';
+
+// ---------------------------------------------------------------- avisos sin dinero
+
+const PATRON_DINERO = /costo|precio|dinero|valor|usd|\$/i;
+
+/** /inventario solo muestra kilos: descarta los avisos que hablan de costos, precios o dinero si el servidor los envía. No modifica la lista. */
+export function avisosSinDinero(avisos: readonly string[]): string[] {
+  return avisos.filter(a => !PATRON_DINERO.test(a));
 }

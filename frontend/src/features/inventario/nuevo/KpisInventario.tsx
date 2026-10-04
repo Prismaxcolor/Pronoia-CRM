@@ -1,52 +1,81 @@
-import { Coins, PackageCheck, Percent, Warehouse } from 'lucide-react';
+import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { Boxes, PackageCheck, Percent, Warehouse } from 'lucide-react';
 import {
   compararConPeriodoAnterior,
   derivarKpis,
   formatearKg,
   formatearNumero,
   formatearPct,
-  formatearUsd,
+  type FiltrosPantalla,
 } from '../../../lib/inventario-nuevo';
+import type { DetallePantalla } from '@shared/types/inventario-pantalla.js';
 import { ETIQUETAS_MERMA, type TipoMerma } from '../../../lib/merma-tipificada';
+import { AYUDA_ITEMS_CON_STOCK, ORDEN_VISTAS, claveParametros, contarItemsPorVista, etiquetaVista, parametrosPantalla } from '../../../lib/inventario-pantalla';
 import type { ResumenInventario } from '../../../services/inventario-resumen-service';
+import { obtenerDetallePantalla } from '../../../services/inventario-pantalla-service';
+import { useAuth } from '../../../hooks/use-auth-context';
+import { useDatosPantalla } from './useDatosPantalla';
 import { GrillaKpis, SkeletonKpis, TarjetaKpi } from '../../../components/ui';
 
 /** Esqueleto de los 4 KPIs mientras carga el resumen. */
 export const KpisSkeleton = SkeletonKpis;
 
-function KpisInventario({ resumen }: { resumen: ResumenInventario }) {
+interface Props {
+  resumen: ResumenInventario;
+  /** Filtros de la URL: de ellos solo se usan el rango y el almacén (la tarjeta de ítems no depende de categoría ni buscador). */
+  filtros: FiltrosPantalla;
+  /** Sube cuando hay que volver a pedir los datos propios de la tarjeta de ítems (misma señal que la tabla de detalle). */
+  recarga?: number;
+}
+
+/** «Productos y lotes con stock»: cuántos ítems tienen kg hoy en el galpón, repartidos por vista. Solo kilos.
+ *  Pide el detalle sin categoría ni buscador y con límite 1: los grupos del servidor cubren todas las filas. */
+function TarjetaItemsConStock({ filtros, recarga }: { filtros: FiltrosPantalla; recarga: number }) {
+  const { tienePermiso } = useAuth();
+  const params = useMemo(
+    () => parametrosPantalla({ desde: filtros.desde, hasta: filtros.hasta, almacen: filtros.almacen }, { limite: 1, sinValor: true }),
+    [filtros.desde, filtros.hasta, filtros.almacen],
+  );
+  const { dato, error, recargar } = useDatosPantalla<DetallePantalla>(`${claveParametros(params)}|r${recarga}`, () => obtenerDetallePantalla(params));
+  const conteo = useMemo(() => (dato ? contarItemsPorVista(dato.grupos) : null), [dato]);
+  const estado = error && !dato ? 'vacio' : !conteo ? 'cargando' : 'listo';
+
+  return (
+    <TarjetaKpi
+      titulo="Productos y lotes con stock"
+      icono={<Boxes size={16} />}
+      ayuda={AYUDA_ITEMS_CON_STOCK}
+      estado={estado}
+      mensajeVacio="No se pudo contar"
+      valor={conteo ? `${formatearNumero(conteo.total, 0)} ítems` : '—'}
+      subtitulo="con kg en el galpón hoy"
+      comparacion={null}
+    >
+      {error && !dato && (
+        <button type="button" onClick={recargar} className="mt-1 text-xs font-medium text-brand-700 underline underline-offset-2">Reintentar</button>
+      )}
+      {conteo && (
+        <ul className="mt-1 text-xs text-text-secondary">
+          {ORDEN_VISTAS.filter(v => conteo.porVista[v] > 0 || v !== 'otras').map(v => (
+            <li key={v} className="flex justify-between gap-2"><span>{etiquetaVista(v)}</span><span className="tabular-nums">{formatearNumero(conteo.porVista[v], 0)}</span></li>
+          ))}
+        </ul>
+      )}
+      {tienePermiso('facturacion', 'ver') && (
+        <Link to="/metricas?seccion=inventario" className="mt-2 inline-block text-xs font-medium text-brand-700 underline underline-offset-2">Ver valor del inventario en Métricas →</Link>
+      )}
+    </TarjetaKpi>
+  );
+}
+
+function KpisInventario({ resumen, filtros, recarga = 0 }: Props) {
   const k = derivarKpis(resumen);
   const mermaCmp = compararConPeriodoAnterior(k.merma.pct, k.merma.pctAnterior, 'baja');
   const tiposMerma = k.merma.porTipo.filter(t => t.kg > 0);
 
   return (
     <GrillaKpis>
-      <TarjetaKpi
-        titulo="Valor del inventario (a costo)"
-        icono={<Coins size={16} />}
-        ayuda="Cuánto costó comprar el material suelto que hay hoy en el galpón (sin contar los lotes), en USD. Para cada material se multiplican sus kg por su costo promedio por kg, que sale de las facturas de compra (total pagado ÷ kg facturados). Solo cuentan los kg que tienen costo registrado. El valor estimado de venta de los lotes es otra cifra y no se suma a esta."
-        estado={k.valor.oculto ? 'sinPermiso' : 'listo'}
-        valor={formatearUsd(k.valor.costoUsd ?? 0)}
-        subtitulo="costo de compra · solo material suelto (sin lotes)"
-        comparacion={null}
-      >
-        <p className="mt-1 text-xs text-text-muted">
-          El valor cuenta {formatearKg(k.valor.kgConCosto)} con costo de compra registrado
-          {k.valor.kgSinCosto > 0 && <> ({formatearKg(k.valor.kgSinCosto)} sin costo: no entran en el valor)</>}
-        </p>
-        <div className="mt-2 border-t border-dashed border-border pt-2">
-          <p className="text-xs text-text-muted">Venta estimada de los lotes (kg × precio por kg cargado a mano; otra cifra, no se suma a la de arriba)</p>
-          <p className="text-sm font-medium text-text-secondary tabular-nums">
-            {(k.valor.ventaEstimadaUsd ?? 0) === 0 && k.valor.kgSinPrecio > 0
-              ? <span className="font-normal text-text-muted">Sin precios cargados · {formatearKg(k.valor.kgSinPrecio)} de lotes</span>
-              : <>
-                {formatearUsd(k.valor.ventaEstimadaUsd ?? 0)}
-                {k.valor.kgSinPrecio > 0 && <span className="font-normal text-text-muted"> · {formatearKg(k.valor.kgSinPrecio)} de lotes sin precio</span>}
-              </>}
-          </p>
-        </div>
-      </TarjetaKpi>
-
       <TarjetaKpi
         titulo="Kg en galpón"
         icono={<Warehouse size={16} />}
@@ -64,6 +93,8 @@ function KpisInventario({ resumen }: { resumen: ResumenInventario }) {
           <p className="mt-1 text-xs text-text-muted">Sin almacenes con stock</p>
         )}
       </TarjetaKpi>
+
+      <TarjetaItemsConStock filtros={filtros} recarga={recarga} />
 
       <TarjetaKpi
         titulo="Kg listos para vender / exportar"
