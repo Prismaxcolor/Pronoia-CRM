@@ -26,14 +26,15 @@ export function normalizarTexto(valor: string | null | undefined): string {
 
 /**
  * Categoría de material -> vista (decisión de Julio, 2026-10-03). RAEE (desarme) se ve en trabajo
- * interno: no se vende tal cual, se desarma y alimenta PCB, ferroso, no ferroso y basura.
+ * interno: no se vende tal cual, se desarma y alimenta PCB, ferroso, no ferroso y basura. Venta nacional es
+ * SOLO Ferroso y No ferroso; Basura va a 'otras' (decisión de Julio, 2026-10-04).
  */
 const VISTA_POR_CATEGORIA: Record<string, VistaInventario> = {
   pcb: 'exportacion',
   pgm: 'exportacion',
   ferroso: 'venta_nacional',
   'no ferroso': 'venta_nacional',
-  basura: 'venta_nacional',
+  basura: 'otras',
   procesadores: 'trabajo_interno',
   raee: 'trabajo_interno',
 };
@@ -44,8 +45,8 @@ export function vistaDeCategoria(nombreCategoria: string | null | undefined): Vi
 
 export function vistaDeClaseLote(clase: ClaseLote): VistaInventario {
   if (clase === 'exportacion') return 'exportacion';
-  if (clase === 'trabajo') return 'trabajo_interno';
-  return 'otras';
+  // Los lotes de clase 'otro' (p. ej. PCB LIGADO) son trabajo interno (sin fase).
+  return 'trabajo_interno';
 }
 
 export const claveCategoriaLote = (clase: ClaseLote): string => `lotes:${clase}`;
@@ -130,7 +131,7 @@ export const esCategoriaConLimpieza = (nombreCategoria: string | null | undefine
   return n === 'no ferroso' || n === 'ferroso';
 };
 
-/** Material sin lote: en venta nacional el stock disponible está listo; en el resto aún no se transforma. */
+/** Material sin lote: en venta nacional el stock disponible está listo; en el resto (incluida Basura, en 'otras') aún no se transforma. */
 export function etapaDeMaterial(vista: VistaInventario): EtapaInventario {
   return vista === 'venta_nacional' ? 'listo' : 'recibido';
 }

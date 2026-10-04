@@ -4,12 +4,13 @@ import {
   separarClasificaciones,
   construirFilasDetalle,
   construirFilasDetalleConAvisos,
+  ultimosDespachos,
   construirTarjetas,
   filtrarFilas,
   rendimientoPorCategoria,
   type EntradaFilas,
 } from '../src/utils/pantalla-inventario.js';
-import { construirResumenInventario, type InventarioAlmacenEntrada } from '../src/utils/resumen-inventario.js';
+import { combinarCostos, construirResumenInventario, type InventarioAlmacenEntrada } from '../src/utils/resumen-inventario.js';
 import { configuracionPorDefecto } from '../src/schemas/configuracion-inventario.js';
 import type { MovimientosInventario } from '../src/utils/movimientos-pantalla.js';
 
@@ -145,21 +146,103 @@ describe('construirFilasDetalle', () => {
     expect(porId(filas, 'mat:p-cobre')!.dias).toBeNull();
   });
 
-  it('kg en transformacion bruto: fila informativa en proceso, fuera del galpon', () => {
-    const t = porId(filas, 'transf:p:p-alu')!;
-    expect(t).toMatchObject({ enGalpon: false, etapa: 'en_proceso', kg: 12, kgPorEtapa: { enProceso: 12 }, dias: null });
+  it('una fila por material o lote con stock: ya no hay filas transf: ni desp:', () => {
+    expect(filas.every(f => f.enGalpon && /^(mat|lote):/.test(f.id))).toBe(true);
+    expect(filas.some(f => f.etapa === 'despachado')).toBe(false);
   });
 
-  it('despachado: solo los tickets de venta del periodo', () => {
-    const d = filas.filter(f => f.etapa === 'despachado');
-    expect(d).toHaveLength(1);
-    expect(d[0]).toMatchObject({ id: 'desp:p:p-cobre', enGalpon: false, kg: 15, kgPorEtapa: { despachado: 15 } });
+  it('kgEnTransformacion: los kg retirados a una transformacion bruto se anotan en la fila del material', () => {
+    expect(porId(filas, 'mat:p-alu')).toMatchObject({ kgEnTransformacion: 12 });
+    expect(porId(filas, 'mat:p-cobre')).toMatchObject({ kgEnTransformacion: 0 });
+    // el filtro de almacen aplica: la transformacion es de G2
+    expect(porId(construirFilasDetalle({ ...base, almacenId: G1 }), 'mat:p-alu')).toMatchObject({ kgEnTransformacion: 0 });
+  });
+
+  it('kgEnTransformacion de un lote PCB: se anota en la fila del lote de origen', () => {
+    const transf = [{ id: 'tp', numero: 2, categoria: 'pcb', estado: 'bruto' as const, fecha: '2026-10-03', almacenId: G2, loteOrigenId: 'B', pesoNeto: 40, entradas: [], salidas: [], merma: [] }];
+    const f = construirFilasDetalle({ ...base, movimientos: { ...movimientos, transformaciones: transf } });
+    expect(porId(f, 'lote:B')).toMatchObject({ kgEnTransformacion: 40 });
+    expect(porId(f, 'lote:L1')).toMatchObject({ kgEnTransformacion: 0 });
+  });
+
+  it('ultimoDespacho: el ticket de venta mas reciente de TODO el historial, tambien fuera del periodo', () => {
+    expect(porId(filas, 'mat:p-cobre')!.ultimoDespacho).toEqual({ fecha: '2026-10-01', kg: 15 });
+    // sin ventas: null
+    expect(porId(filas, 'mat:p-alu')!.ultimoDespacho).toBeNull();
+    const viejo = construirFilasDetalle({
+      ...base, rango: { desde: '2026-09-20', hasta: HOY },
+      movimientos: { ...movimientos, tickets: [{ tipo: 'venta', fecha: '2026-07-01', almacenId: G2, detalle: [{ productoId: 'p-cobre', pesoNeto: 999, loteId: null }] }] },
+    });
+    expect(porId(viejo, 'mat:p-cobre')!.ultimoDespacho).toEqual({ fecha: '2026-07-01', kg: 999 });
+  });
+
+  it('ultimoDespacho: suma los tickets de la misma fecha, ignora compras y tickets sin fecha, y respeta el almacen', () => {
+    const tickets = [
+      { tipo: 'venta' as const, fecha: '2026-10-02', almacenId: G1, detalle: [{ productoId: 'p-cobre', pesoNeto: 5, loteId: null }] },
+      { tipo: 'venta' as const, fecha: '2026-10-02', almacenId: G2, detalle: [{ productoId: 'p-cobre', pesoNeto: 7, loteId: null }] },
+      { tipo: 'venta' as const, fecha: '2026-10-03', almacenId: G1, detalle: [{ productoId: 'p-cobre', pesoNeto: 1, loteId: null }] },
+      { tipo: 'compra' as const, fecha: '2026-10-04', almacenId: G2, detalle: [{ productoId: 'p-cobre', pesoNeto: 50, loteId: null }] },
+      { tipo: 'venta' as const, fecha: null, almacenId: G2, detalle: [{ productoId: 'p-cobre', pesoNeto: 80, loteId: null }] },
+    ];
+    expect(ultimosDespachos(tickets, null).get('p:p-cobre')).toEqual({ fecha: '2026-10-03', kg: 1 });
+    expect(ultimosDespachos(tickets, G2).get('p:p-cobre')).toEqual({ fecha: '2026-10-02', kg: 7 });
+    expect(ultimosDespachos(tickets.slice(0, 2).map(t => ({ ...t, almacenId: G1 })), null).get('p:p-cobre')).toEqual({ fecha: '2026-10-02', kg: 12 });
+  });
+
+  it('ultimoDespacho de una venta con lote: cuenta para el LOTE, no para el producto', () => {
+    const tickets = [{ tipo: 'venta' as const, fecha: '2026-10-02', almacenId: G2, detalle: [{ productoId: 'p-cobre', pesoNeto: 30, loteId: 'L1' }] }];
+    const f = construirFilasDetalle({ ...base, movimientos: { ...movimientos, tickets } });
+    expect(porId(f, 'lote:L1')!.ultimoDespacho).toEqual({ fecha: '2026-10-02', kg: 30 });
+    expect(porId(f, 'mat:p-cobre')!.ultimoDespacho).toBeNull();
+  });
+
+  it('las filas internas (fuera) conservan los totales de transformacion y despacho del periodo', () => {
+    const { fuera } = construirFilasDetalleConAvisos(base);
+    expect(fuera.filter(f => f.etapa === 'en_proceso').map(f => [f.id, f.kg])).toEqual([['transf:p:p-alu', 12]]);
+    expect(fuera.filter(f => f.etapa === 'despachado').map(f => [f.id, f.kg])).toEqual([['desp:p:p-cobre', 15]]);
+  });
+
+  it('producto sin stock pero despachado en el periodo: sin fila, pero el total despachado no se pierde', () => {
+    const sinStock = { ...base, almacenes: almacenes.map(a => ({ ...a, grupos: a.grupos.map(g => ({ ...g, articulos: g.articulos.filter(x => x.productoId !== 'p-cobre') })) })) };
+    const { filas: f, fuera } = construirFilasDetalleConAvisos(sinStock);
+    expect(porId(f, 'mat:p-cobre')).toBeUndefined();
+    expect(armarDetalle(f, 100, false, 0, null, fuera).totales.kgDespachado).toBe(15);
+  });
+
+  it('costo EFECTIVO: la referencia manual manda sobre las facturas; sin ninguna, sin costo', () => {
+    const costos = combinarCostos(
+      new Map([['p-alu', { costoPromedioKg: 1.5, kgFacturados: 1000 }], ['p-cobre', { costoPromedioKg: 6, kgFacturados: 10 }]]),
+      new Map([['p-alu', 2], ['p-tel', 0]])
+    );
+    const f = construirFilasDetalle({ ...base, costos });
+    // manual: 150 kg x 2
+    expect(porId(f, 'mat:p-alu')).toMatchObject({ costoPromedioKg: 2, costoFuente: 'manual', costoReferenciaKg: 2, valorCostoUsd: 300 });
+    // solo facturas
+    expect(porId(f, 'mat:p-cobre')).toMatchObject({ costoPromedioKg: 6, costoFuente: 'facturas', costoReferenciaKg: null, valorCostoUsd: 120 });
+    // referencia 0 es un costo valido (no "sin costo")
+    expect(porId(f, 'mat:p-tel')).toMatchObject({ costoPromedioKg: 0, costoFuente: 'manual', valorCostoUsd: 0 });
+    // sin ninguno
+    expect(porId(f, 'mat:p-raee')).toMatchObject({ costoPromedioKg: null, costoFuente: null, costoReferenciaKg: null, valorCostoUsd: null });
+  });
+
+  it('el valor a costo del resumen usa el mismo costo efectivo que la pantalla', () => {
+    const costos = combinarCostos(new Map([['p-alu', { costoPromedioKg: 1.5, kgFacturados: 1000 }]]), new Map([['p-alu', 2], ['p-cobre', 3]]));
+    const resumen = construirResumenInventario({
+      almacenes, lotes, embalajes: [], productosNoVendibles: new Set(), costos, config: configuracionPorDefecto(),
+    });
+    // 150 kg alu x 2 + 20 kg cobre x 3
+    expect(resumen.valor.costoMateriales.valorUsd).toBe(360);
+    expect(resumen.valor.costoMateriales.productosSinCosto.map(p => p.productoId).sort()).toEqual(['p-raee', 'p-tel']);
+    const filas2 = construirFilasDetalle({ ...base, costos });
+    expect(filas2.filter(f => f.tipo === 'material').reduce((a, f) => a + (f.valorCostoUsd ?? 0), 0)).toBe(360);
   });
 
   it('valorOculto: ningun costo, precio ni valor sale en las filas', () => {
     const ocultas = construirFilasDetalle({ ...base, valorOculto: true });
     for (const f of ocultas) {
       expect(f.costoPromedioKg).toBeNull();
+      expect(f.costoFuente).toBeNull();
+      expect(f.costoReferenciaKg).toBeNull();
       expect(f.valorCostoUsd).toBeNull();
       expect(f.precioEstimadoKg).toBeNull();
       expect(f.valorEstimadoUsd).toBeNull();
@@ -173,6 +256,7 @@ describe('construirFilasDetalle', () => {
     expect(porId(g1, 'mat:p-alu')).toMatchObject({ kg: 100, porAlmacen: [{ almacenId: G1, kg: 100 }] });
     expect(porId(g1, 'mat:p-tel')).toBeUndefined();
     expect(g1.some(f => !f.enGalpon)).toBe(false);
+    expect(construirFilasDetalleConAvisos({ ...base, almacenId: G1 }).fuera).toEqual([]);
     const g2 = construirFilasDetalle({ ...base, almacenId: G2 });
     // los embalajes sin almacen no se atribuyen a ningun almacen concreto
     expect(porId(g2, 'lote:L1')).toMatchObject({ kg: 500, embaladoKg: 0, enSacaKg: 500 });
@@ -198,9 +282,9 @@ describe('filtrarFilas', () => {
 });
 
 describe('armarDetalle', () => {
-  const filas = construirFilasDetalle(base);
+  const { filas, fuera } = construirFilasDetalleConAvisos(base);
   it('ordena por categoria y kg, agrupa y recorta sin perder los totales', () => {
-    const d = armarDetalle(filas, 3, false);
+    const d = armarDetalle(filas, 3, false, 0, null, fuera);
     expect(d.filas).toHaveLength(3);
     expect(d.limite).toEqual({ maxFilas: 3, totalFilas: filas.length, truncado: true });
     expect(d.totales.kgEnGalpon).toBe(1930);
@@ -208,7 +292,7 @@ describe('armarDetalle', () => {
     expect(d.totales.kgDespachado).toBe(15);
     expect(d.totales.valorCostoUsd).toBe(225);
     expect(d.totales.valorEstimadoUsd).toBe(3000);
-    expect(d.grupos.find(g => g.categoriaClave === 'tm-nf')).toMatchObject({ kg: 170, filas: 4, valorCostoUsd: 225 });
+    expect(d.grupos.find(g => g.categoriaClave === 'tm-nf')).toMatchObject({ kg: 170, filas: 2, valorCostoUsd: 225 });
     expect(d.grupos.reduce((a, g) => a + g.kg, 0)).toBe(1930);
   });
   it('valorOculto: totales de valor null', () => {
@@ -220,7 +304,7 @@ describe('armarDetalle', () => {
 });
 
 describe('construirTarjetas', () => {
-  const filas = construirFilasDetalle(base);
+  const { filas, fuera } = construirFilasDetalleConAvisos(base);
   const transf = [
     { id: 't9', numero: 9, categoria: 'pcb', estado: 'completa' as const, fecha: '2026-10-01', almacenId: G2, loteOrigenId: 'L1', pesoNeto: 100,
       entradas: [], salidas: [{ productoId: null, loteDestinoId: 'L4', pesoNeto: 90 }], merma: [] },
@@ -228,7 +312,7 @@ describe('construirTarjetas', () => {
       entradas: [], salidas: [], merma: [] },
   ];
   const rend = rendimientoPorCategoria(transf, RANGO);
-  const r = construirTarjetas(filas, rend, false);
+  const r = construirTarjetas(filas, rend, false, fuera);
 
   it('la suma de las tarjetas es el stock total (el del resumen) y cada vista reparte sin perder kg', () => {
     expect(r.totalKgEnGalpon).toBe(1930);

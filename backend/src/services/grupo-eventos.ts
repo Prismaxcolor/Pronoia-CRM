@@ -384,6 +384,7 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('lote.embalado', 'POST', '/api/lotes/:id/embalajes', 'inventario', 'normal', '📦', 'Se marcaron kilos de un lote como embalados', { entidad: { rotulo: 'Lote', tabla: 'lotes' } }),
   ev('lote.embalaje_anulado', 'POST', '/api/lotes/:id/embalajes/:embalajeId/anular', 'inventario', 'critica', '🚫', 'Se anuló un embalaje de un lote', { entidad: { rotulo: 'Lote', tabla: 'lotes' } }),
   ev('inventario.configuracion_editada', 'PUT', '/api/inventario/configuracion', 'inventario', 'normal', '⚙️', 'Se cambió la configuración del inventario'),
+  ev('inventario.costos_referencia_editados', 'PUT', '/api/inventario/costos', 'inventario', 'normal', '💲', 'Se cambiaron costos de referencia del inventario'),
   ...maestro('/api/taras', 'tara', 'inventario', 'Tara', 'taras', 'la', 'tara', false, 'tara'),
   ...maestro('/api/vehiculos', 'vehiculo', 'inventario', 'Vehículo', 'vehiculos', 'el', 'vehículo', true, 'vehiculo'),
   ev('lista_precios.creada', 'POST', '/api/listas-precios', 'precios', 'normal', '🏷️', 'Se creó una lista de precios', { entidad: { rotulo: 'Lista', resp: 'lista' } }),

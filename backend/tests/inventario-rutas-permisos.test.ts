@@ -46,8 +46,9 @@ const servicios = vi.hoisted(() => ({
   editarMermaTransformacion: vi.fn(),
   obtenerDetallePantalla: vi.fn(),
   obtenerCategoriasPantalla: vi.fn(),
-  obtenerFlujoPantalla: vi.fn(),
   obtenerAlertasPantalla: vi.fn(),
+  obtenerCostosInventario: vi.fn(),
+  actualizarCostosReferencia: vi.fn(),
 }));
 
 vi.mock('../src/services/lote-embalaje-service.js', () => ({
@@ -65,8 +66,11 @@ vi.mock('../src/services/inventario-resumen-service.js', () => ({ obtenerResumen
 vi.mock('../src/services/inventario-pantalla-service.js', () => ({
   obtenerDetallePantalla: servicios.obtenerDetallePantalla,
   obtenerCategoriasPantalla: servicios.obtenerCategoriasPantalla,
-  obtenerFlujoPantalla: servicios.obtenerFlujoPantalla,
   obtenerAlertasPantalla: servicios.obtenerAlertasPantalla,
+}));
+vi.mock('../src/services/inventario-costos-service.js', () => ({
+  obtenerCostosInventario: servicios.obtenerCostosInventario,
+  actualizarCostosReferencia: servicios.actualizarCostosReferencia,
 }));
 vi.mock('../src/services/configuracion-inventario-service.js', () => ({
   leerConfiguracionInventario: servicios.leerConfiguracionInventario,
@@ -156,6 +160,16 @@ describe('GET /api/inventario/resumen', () => {
     await llamar('GET', '/api/inventario/resumen?incluirValor=true', 'trabajador');
     expect(servicios.obtenerResumenInventario).toHaveBeenLastCalledWith({ incluirValor: false });
   });
+  it('sinValor=1 quita costos aunque haya facturacion:ver; sinValor invalido da 400', async () => {
+    servicios.obtenerResumenInventario.mockResolvedValue({});
+    for (const u of ['admin', 'administracion', 'trabajador']) {
+      await llamar('GET', '/api/inventario/resumen?sinValor=1', u);
+      expect(servicios.obtenerResumenInventario, u).toHaveBeenLastCalledWith({ incluirValor: false });
+    }
+    await llamar('GET', '/api/inventario/resumen?desde=2026-09-01&hasta=2026-09-30&sinValor=1', 'admin');
+    expect(servicios.obtenerResumenInventario).toHaveBeenLastCalledWith({ desde: '2026-09-01', hasta: '2026-09-30', incluirValor: false });
+    expect((await llamar('GET', '/api/inventario/resumen?sinValor=0', 'admin')).status).toBe(400);
+  });
   it('un usuario inactivo no entra', async () => {
     expect((await llamar('GET', '/api/inventario/resumen', 'inactivo')).status).toBe(401);
   });
@@ -178,7 +192,6 @@ describe('GET /api/inventario/resumen', () => {
 const PANTALLA = [
   ['detalle', 'obtenerDetallePantalla'],
   ['categorias', 'obtenerCategoriasPantalla'],
-  ['flujo', 'obtenerFlujoPantalla'],
   ['alertas', 'obtenerAlertasPantalla'],
 ] as const;
 
@@ -210,6 +223,16 @@ describe.each(PANTALLA)('GET /api/inventario/pantalla/%s', (ruta, servicio) => {
     await llamar('GET', `${url}?incluirValor=true`, 'trabajador');
     expect(servicios[servicio]).toHaveBeenLastCalledWith({ incluirValor: false });
   });
+  it('sinValor=1 fuerza incluirValor=false con facturacion:ver y nunca lo aumenta', async () => {
+    servicios[servicio].mockResolvedValue({});
+    for (const u of ['admin', 'administracion', 'trabajador']) {
+      await llamar('GET', `${url}?sinValor=1`, u);
+      expect(servicios[servicio], u).toHaveBeenLastCalledWith({ incluirValor: false });
+    }
+    await llamar('GET', `${url}?categoria=PCB&sinValor=1`, 'admin');
+    expect(servicios[servicio]).toHaveBeenLastCalledWith({ categoria: 'PCB', incluirValor: false });
+    expect((await llamar('GET', `${url}?sinValor=0`, 'admin')).status).toBe(400);
+  });
   it('pasa los filtros validados y rechaza los invalidos con 400', async () => {
     servicios[servicio].mockResolvedValue({});
     const alm = '11111111-1111-4111-8111-111111111111';
@@ -226,6 +249,76 @@ describe.each(PANTALLA)('GET /api/inventario/pantalla/%s', (ruta, servicio) => {
     const r = await llamar('GET', url, 'trabajador');
     expect(r.status).toBe(500);
     expect(JSON.stringify(r.json)).not.toContain('secreta');
+  });
+});
+
+describe('el flujo (Sankey) ya no existe', () => {
+  it('GET /pantalla/flujo responde 404', async () => {
+    expect((await llamar('GET', '/api/inventario/pantalla/flujo', 'admin')).status).toBe(404);
+  });
+});
+
+describe('/api/inventario/costos', () => {
+  const P1 = '44444444-4444-4444-8444-444444444444';
+  const P2 = '55555555-5555-4555-8555-555555555555';
+  const costos = { productos: [], totales: { valorUsd: null, kgSinCosto: 0, productosSinCosto: 0 } };
+
+  it('GET: solo con facturacion:ver (superadmin y administracion); el trabajador recibe 403 y no se consulta nada', async () => {
+    servicios.obtenerCostosInventario.mockResolvedValue(costos);
+    for (const u of ['admin', 'administracion']) expect((await llamar('GET', '/api/inventario/costos', u)).json, u).toEqual({ costos });
+    expect((await llamar('GET', '/api/inventario/costos', 'trabajador')).status).toBe(403);
+    expect((await llamar('GET', '/api/inventario/costos', null)).status).toBe(401);
+    expect(servicios.obtenerCostosInventario).toHaveBeenCalledTimes(2);
+  });
+
+  it('GET: productos:ver sin facturacion:ver tampoco entra', async () => {
+    usuarios.soloKilos = { rol: 'trabajador', permisos: [{ recurso: 'productos', accion: 'ver' }], activo: true };
+    expect((await llamar('GET', '/api/inventario/costos', 'soloKilos')).status).toBe(403);
+    expect(servicios.obtenerCostosInventario).not.toHaveBeenCalled();
+  });
+
+  it('PUT: exige facturacion:editar (ver no basta) y pasa al servicio el actor', async () => {
+    servicios.actualizarCostosReferencia.mockResolvedValue({ ok: true, costos, cambiados: 1 });
+    usuarios.soloVer = { rol: 'trabajador', permisos: [{ recurso: 'facturacion', accion: 'ver' }], activo: true };
+    const cuerpo = { items: [{ productoId: P1, costoReferenciaKg: 1.25 }, { productoId: P2, costoReferenciaKg: null }] };
+    expect((await llamar('PUT', '/api/inventario/costos', 'soloVer', cuerpo)).status).toBe(403);
+    expect((await llamar('PUT', '/api/inventario/costos', 'trabajador', cuerpo)).status).toBe(403);
+    expect(servicios.actualizarCostosReferencia).not.toHaveBeenCalled();
+    const ok = await llamar('PUT', '/api/inventario/costos', 'administracion', cuerpo);
+    expect(ok.status).toBe(200);
+    expect(ok.json).toEqual({ costos });
+    expect(servicios.actualizarCostosReferencia).toHaveBeenCalledWith(cuerpo, { userId: 'administracion', email: 'administracion@x.test' });
+  });
+
+  it('PUT: facturacion:editar sin facturacion:ver tampoco entra (la respuesta trae todos los costos)', async () => {
+    usuarios.soloEditar = { rol: 'trabajador', permisos: [{ recurso: 'facturacion', accion: 'editar' }], activo: true };
+    const cuerpo = { items: [{ productoId: P1, costoReferenciaKg: 1 }] };
+    expect((await llamar('PUT', '/api/inventario/costos', 'soloEditar', cuerpo)).status).toBe(403);
+    expect(servicios.actualizarCostosReferencia).not.toHaveBeenCalled();
+  });
+
+  it('PUT: valida el cuerpo (negativos, tope, repetidos, vacio, mas de 500, ids invalidos) antes de llegar al servicio', async () => {
+    const item = (productoId: string, costoReferenciaKg: unknown) => ({ productoId, costoReferenciaKg });
+    const muchos = Array.from({ length: 501 }, (_, i) => item(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, 1));
+    for (const cuerpo of [
+      {}, { items: [] }, { items: muchos }, { items: [item('no-uuid', 1)] }, { items: [item(P1, -1)] }, { items: [item(P1, 1e9)] },
+      { items: [item(P1, 'abc')] }, { items: [item(P1, 1), item(P1, 2)] }, { items: [{ productoId: P1 }] },
+    ]) {
+      expect((await llamar('PUT', '/api/inventario/costos', 'admin', cuerpo)).status, JSON.stringify(cuerpo).slice(0, 60)).toBe(400);
+    }
+    expect(servicios.actualizarCostosReferencia).not.toHaveBeenCalled();
+  });
+
+  it('PUT: acepta 0 (costo valido) y null (quitar la referencia); traduce errores del servicio sin filtrar detalles', async () => {
+    servicios.actualizarCostosReferencia.mockResolvedValueOnce({ ok: true, costos, cambiados: 2, advertencia: 'sin auditoria' });
+    const r = await llamar('PUT', '/api/inventario/costos', 'admin', { items: [{ productoId: P1, costoReferenciaKg: 0 }, { productoId: P2, costoReferenciaKg: null }] });
+    expect(r.json).toEqual({ costos, advertencia: 'sin auditoria' });
+    servicios.actualizarCostosReferencia.mockResolvedValueOnce({ ok: false, error: 'Algún producto no existe.', status: 400 });
+    expect((await llamar('PUT', '/api/inventario/costos', 'admin', { items: [{ productoId: P1, costoReferenciaKg: 1 }] })).status).toBe(400);
+    servicios.actualizarCostosReferencia.mockRejectedValueOnce(new Error('tabla secreta'));
+    const e = await llamar('PUT', '/api/inventario/costos', 'admin', { items: [{ productoId: P1, costoReferenciaKg: 1 }] });
+    expect(e.status).toBe(500);
+    expect(JSON.stringify(e.json)).not.toContain('secreta');
   });
 });
 

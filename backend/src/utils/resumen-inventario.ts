@@ -60,9 +60,18 @@ export interface LoteEntrada {
 }
 
 export interface CostoProducto {
-  /** Costo promedio ponderado USD/kg de las facturas de compra vigentes. */
+  /**
+   * Costo EFECTIVO USD/kg: el de referencia manual si existe; si no, el promedio ponderado de las facturas de
+   * compra vigentes. (El nombre se conserva por compatibilidad.)
+   */
   costoPromedioKg: number;
   kgFacturados: number;
+  /** De dónde sale costoPromedioKg. Ausente = 'facturas' (datos antiguos / pruebas). */
+  fuente?: 'manual' | 'facturas';
+  /** Promedio de facturas aunque la referencia manual lo tape; null/ausente = sin facturas. */
+  costoFacturasKg?: number | null;
+  /** Costo de referencia manual; null/ausente = sin referencia. */
+  costoReferenciaKg?: number | null;
 }
 
 export interface EmbalajeEntrada extends EmbalajeParaResumen {
@@ -184,6 +193,32 @@ export function costoPromedioPorProducto(
     if (a.peso > 0) costos.set(productoId, { costoPromedioKg: a.valor / a.peso, kgFacturados: kg(a.peso) });
   }
   return costos;
+}
+
+/**
+ * Costo efectivo por producto: la referencia manual (productos.costo_referencia_kg >= 0) manda sobre el
+ * promedio de facturas; sin ninguna de las dos el producto no aparece (kg sin costo). Una referencia de 0 es
+ * un costo válido (material sin costo de compra), no "sin dato".
+ */
+export function combinarCostos(
+  facturas: ReadonlyMap<string, CostoProducto>,
+  referencias: ReadonlyMap<string, number>
+): Map<string, CostoProducto> {
+  const out = new Map<string, CostoProducto>();
+  for (const id of new Set([...facturas.keys(), ...referencias.keys()])) {
+    const f = facturas.get(id);
+    const ref = referencias.get(id);
+    const hayRef = ref != null && Number.isFinite(ref) && ref >= 0;
+    if (!hayRef && !f) continue;
+    out.set(id, {
+      costoPromedioKg: hayRef ? (ref as number) : (f as CostoProducto).costoPromedioKg,
+      kgFacturados: f?.kgFacturados ?? 0,
+      fuente: hayRef ? 'manual' : 'facturas',
+      costoFacturasKg: f ? f.costoPromedioKg : null,
+      costoReferenciaKg: hayRef ? (ref as number) : null,
+    });
+  }
+  return out;
 }
 
 interface MaterialAcumulado {

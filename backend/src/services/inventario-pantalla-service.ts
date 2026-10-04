@@ -3,13 +3,11 @@ import type {
   CategoriasPantalla,
   DetallePantalla,
   FiltrosPantalla,
-  FlujoPantalla,
   MetaPantalla,
   VistaInventario,
 } from '../../../shared/types/inventario-pantalla.js';
 import { crearCacheCorto } from '../utils/cache-corto.js';
 import { construirAlertas } from '../utils/alertas-inventario.js';
-import { construirFlujo } from '../utils/flujo-inventario.js';
 import {
   armarDetalle,
   construirFilasDetalleConAvisos,
@@ -66,8 +64,8 @@ export interface OpcionesPantalla {
   presupuestoMs?: number;
 }
 
-/** Todo lo que no depende de los filtros: se calcula una vez y lo comparten los cuatro endpoints. */
-interface BasePantalla {
+/** Todo lo que no depende de los filtros: se calcula una vez y lo comparten los endpoints de la pantalla y de costos. */
+export interface BasePantalla {
   generadoEn: string;
   almacenes: InventarioAlmacenEntrada[];
   lotes: LoteEntrada[];
@@ -100,8 +98,8 @@ async function calcularBase(incluirValor: boolean, presupuestoMs: number): Promi
       ? leerConRespaldo(cargarCostos(avisosLecturas), new Map<string, CostoProducto>(), 'No se pudieron leer los costos de compra: el valor a costo de los materiales no es confiable.', seg)
       : Promise.resolve(new Map<string, CostoProducto>()),
     esencial(leerProductos(), 'los productos', seg),
-    leerConRespaldo(leerTickets(), vacio<MovimientosInventario['tickets'][number]>(), 'No se pudieron leer los tickets de compra y venta: despachos, flujo y antigüedad no son completos.', seg),
-    leerConRespaldo(leerTransformaciones(), { transformaciones: vacio<MovimientosInventario['transformaciones'][number]>(), sinMermaTipificada: false }, 'No se pudieron leer las transformaciones: flujo, rendimiento y merma no son completos.', seg),
+    leerConRespaldo(leerTickets(), vacio<MovimientosInventario['tickets'][number]>(), 'No se pudieron leer los tickets de compra y venta: despachos y antigüedad no son completos.', seg),
+    leerConRespaldo(leerTransformaciones(), { transformaciones: vacio<MovimientosInventario['transformaciones'][number]>(), sinMermaTipificada: false }, 'No se pudieron leer las transformaciones: rendimiento y merma no son completos.', seg),
     leerConRespaldo(leerAjustes(), vacio<MovimientosInventario['ajustes'][number]>(), 'No se pudieron leer los ajustes de toma física: la antigüedad estimada no es completa.', seg),
     leerConRespaldo(leerEmbalajesConContenedor(), vacio<MovimientosInventario['embalajes'][number]>(), 'No se pudo leer el contenedor de los embalajes: la alerta de embalado sin contenedor no es completa.', seg),
   ]);
@@ -124,7 +122,7 @@ async function calcularBase(incluirValor: boolean, presupuestoMs: number): Promi
 }
 
 /**
- * Caché corta compartida por los cuatro endpoints; la clave incluye el permiso de valor (con costos o sin ellos).
+ * Caché corta compartida por los endpoints; la clave incluye el permiso de valor (con costos o sin ellos).
  * Los avisos informativos no impiden cachear; una base parcial se cachea solo TTL_CACHE_PARCIAL_MS.
  */
 const cacheBase = crearCacheCorto<BasePantalla>({
@@ -159,29 +157,38 @@ async function prepararContexto(opts: OpcionesPantalla): Promise<Contexto> {
   };
 }
 
+/** Base compartida (caché corta) con o sin costos; la usa también el servicio de costos. */
+export async function obtenerBasePantalla(incluirValor: boolean, presupuestoMs = PRESUPUESTO_PANTALLA_MS): Promise<BasePantalla> {
+  return cacheBase.obtener(`valor:${incluirValor ? 1 : 0}`, () => calcularBase(incluirValor, presupuestoMs));
+}
+
 const meta = (c: Contexto): MetaPantalla => ({
   generadoEn: c.base.generadoEn, valorOculto: c.valorOculto, parcial: c.base.parcial, avisos: c.avisos, filtros: c.filtros,
 });
 
 /** Filas del contexto; los avisos del cálculo (antigüedad con filtro de almacén) se suman a los de la respuesta. */
 function filasDelContexto(c: Contexto) {
-  const { filas, avisos } = construirFilasDetalleConAvisos({
+  const { filas, fuera, avisos } = construirFilasDetalleConAvisos({
     almacenes: c.base.almacenes, lotes: c.base.lotes, embalajes: c.base.embalajes, costos: c.base.costos,
     movimientos: c.base.movimientos, hoy: c.hoy, rango: c.rango, almacenId: c.filtros.almacen, valorOculto: c.valorOculto,
   });
   for (const a of avisos) if (!c.avisos.includes(a)) c.avisos.push(a);
-  return filas;
+  return { filas, fuera };
 }
 
 /** Tabla única de detalle: materiales y lotes en galpón, kg en transformación y despachos del período. */
 export async function obtenerDetallePantalla(opts: OpcionesPantalla = {}): Promise<DetallePantalla> {
   const c = await prepararContexto(opts);
-  const filtradas = filtrarFilas(filasDelContexto(c), { categoria: opts.categoria, q: opts.q, vista: opts.vista });
+  const { filas, fuera } = filasDelContexto(c);
+  const filtro = { categoria: opts.categoria, q: opts.q, vista: opts.vista };
+  const filtradas = filtrarFilas(filas, filtro);
+  const fueraFiltradas = filtrarFilas(fuera, filtro);
   const { visibles, kgOcultos, valorOcultoUsd } = opts.incluirClasificaciones
     ? { visibles: filtradas, kgOcultos: 0, valorOcultoUsd: null }
     : separarClasificaciones(filtradas);
+  const fueraVisibles = opts.incluirClasificaciones ? fueraFiltradas : fueraFiltradas.filter(f => !f.esClasificacionCompra);
   const maxFilas = Math.min(opts.limite ?? FILAS_DETALLE_POR_DEFECTO, MAX_FILAS_DETALLE);
-  const d = armarDetalle(visibles, maxFilas, c.valorOculto, kgOcultos, valorOcultoUsd);
+  const d = armarDetalle(visibles, maxFilas, c.valorOculto, kgOcultos, valorOcultoUsd, fueraVisibles);
   if (d.limite.truncado) {
     c.avisos.push(`Se muestran ${d.limite.maxFilas} de ${d.limite.totalFilas} filas: afina los filtros o sube el límite. Los totales cuentan todas.`);
   }
@@ -191,30 +198,19 @@ export async function obtenerDetallePantalla(opts: OpcionesPantalla = {}): Promi
 /** Tarjetas por categoría (y clase de lote) y por vista, con la barra por etapa. */
 export async function obtenerCategoriasPantalla(opts: OpcionesPantalla = {}): Promise<CategoriasPantalla> {
   const c = await prepararContexto(opts);
-  const filtradas = filtrarFilas(filasDelContexto(c), { categoria: opts.categoria, q: opts.q });
-  const { visibles, kgOcultos } = separarClasificaciones(filtradas);
+  const { filas, fuera } = filasDelContexto(c);
+  const filtro = { categoria: opts.categoria, q: opts.q };
+  const { visibles, kgOcultos } = separarClasificaciones(filtrarFilas(filas, filtro));
+  const fueraVisibles = filtrarFilas(fuera, filtro).filter(f => !f.esClasificacionCompra);
   const transformaciones = c.base.movimientos.transformaciones.filter(t => !c.filtros.almacen || t.almacenId === c.filtros.almacen);
-  const r = construirTarjetas(visibles, rendimientoPorCategoria(transformaciones, c.rango), c.valorOculto);
+  const r = construirTarjetas(visibles, rendimientoPorCategoria(transformaciones, c.rango), c.valorOculto, fueraVisibles);
   return { ...meta(c), ...r, kgClasificacionesCompraOcultas: kgOcultos };
-}
-
-/** Flujo Sankey compra -> categoría -> lote de trabajo -> lote de exportación / venta directa / merma. */
-export async function obtenerFlujoPantalla(opts: OpcionesPantalla = {}): Promise<FlujoPantalla> {
-  const c = await prepararContexto(opts);
-  const todas = filasDelContexto(c);
-  const categorias = new Map<string, { clave: string; nombre: string; vista: VistaInventario }>();
-  for (const f of todas) if (f.tipo === 'material') categorias.set(f.categoriaClave, { clave: f.categoriaClave, nombre: f.categoria, vista: f.vista });
-  const r = construirFlujo({
-    movimientos: c.base.movimientos, lotes: c.base.lotes, rango: c.rango, almacenId: c.filtros.almacen,
-    categoria: opts.categoria ?? null, categoriasConActividad: [...categorias.values()],
-  });
-  return { ...meta(c), ...r };
 }
 
 /** Alertas: antigüedad (según configuracion_inventario), merma sobre el umbral y embalado sin contenedor. */
 export async function obtenerAlertasPantalla(opts: OpcionesPantalla = {}): Promise<AlertasPantalla> {
   const c = await prepararContexto(opts);
-  const filas = filtrarFilas(filasDelContexto(c), { categoria: opts.categoria, q: opts.q });
+  const filas = filtrarFilas(filasDelContexto(c).filas, { categoria: opts.categoria, q: opts.q });
   const transformaciones = c.base.movimientos.transformaciones.filter(t => !c.filtros.almacen || t.almacenId === c.filtros.almacen);
   const r = construirAlertas({ filas, config: c.base.config, transformaciones, rango: c.rango, embalajes: c.base.movimientos.embalajes });
   return { ...meta(c), ...r };

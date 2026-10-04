@@ -15,9 +15,12 @@ import {
   obtenerAlertasPantalla,
   obtenerCategoriasPantalla,
   obtenerDetallePantalla,
-  obtenerFlujoPantalla,
   type OpcionesPantalla,
 } from '../services/inventario-pantalla-service.js';
+import { composicionLoteQuerySchema, loteIdSchema } from '../schemas/lote-composicion.js';
+import { obtenerComposicionLote } from '../services/lote-composicion-pantalla.js';
+import { actualizarCostosSchema } from '../schemas/inventario-costos.js';
+import { actualizarCostosReferencia, obtenerCostosInventario } from '../services/inventario-costos-service.js';
 import { validateBody } from '../middlewares/validate.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -52,7 +55,8 @@ router.get('/', requirePermiso('productos', 'ver'), async (req, res) => {
 // Resumen agregado de solo lectura para la pantalla nueva de inventario (permiso de inventario = 'productos').
 // Los kilos los ve cualquiera con productos:ver; los COSTOS de compra y los precios de venta estimados
 // solo quien tenga facturacion:ver (superadmin y administración por defecto). Sin ese permiso la respuesta
-// trae valorOculto: true y ni siquiera se consultan los costos.
+// trae valorOculto: true y ni siquiera se consultan los costos. `?sinValor=1` fuerza ese mismo modo sin dinero aunque
+// el usuario tenga facturacion:ver (lo usa /inventario, que solo muestra kilos); nunca amplía permisos.
 router.get('/resumen', requirePermiso('productos', 'ver'), async (req, res) => {
   const query = resumenQuerySchema.safeParse(req.query);
   if (!query.success) {
@@ -60,17 +64,18 @@ router.get('/resumen', requirePermiso('productos', 'ver'), async (req, res) => {
     return;
   }
   try {
-    const incluirValor = reqTienePermiso(req, 'facturacion', 'ver');
-    res.json({ resumen: await obtenerResumenInventario({ ...query.data, incluirValor }) });
+    const { sinValor, ...filtros } = query.data;
+    const incluirValor = !sinValor && reqTienePermiso(req, 'facturacion', 'ver');
+    res.json({ resumen: await obtenerResumenInventario({ ...filtros, incluirValor }) });
   } catch (err) {
     logger.error({ evento: 'resumen_inventario_error', ip: clienteIp(req), userId: req.user!.sub, motivo: err instanceof Error ? err.message : String(err) });
     res.status(500).json({ error: 'No se pudo calcular el resumen del inventario.' });
   }
 });
 
-// Pantalla nueva de inventario (solo lectura): detalle, tarjetas, flujo y alertas. Permiso productos:ver para los
+// Pantalla nueva de inventario (solo lectura): detalle, tarjetas y alertas. Permiso productos:ver para los
 // kilos; costos, precios y valores SOLO con facturacion:ver (sin él, valorOculto: true y ni se consultan los costos).
-// Los cuatro comparten una caché corta; ver services/inventario-pantalla-service.ts.
+// Comparten una caché corta; ver services/inventario-pantalla-service.ts.
 function rutaPantalla(evento: string, clave: string, servicio: (opts: OpcionesPantalla) => Promise<unknown>) {
   return async (req: Request, res: Response) => {
     const query = pantallaQuerySchema.safeParse(req.query);
@@ -79,8 +84,9 @@ function rutaPantalla(evento: string, clave: string, servicio: (opts: OpcionesPa
       return;
     }
     try {
-      const incluirValor = reqTienePermiso(req, 'facturacion', 'ver');
-      res.json({ [clave]: await servicio({ ...query.data, incluirValor }) });
+      const { sinValor, ...filtros } = query.data;
+      const incluirValor = !sinValor && reqTienePermiso(req, 'facturacion', 'ver');
+      res.json({ [clave]: await servicio({ ...filtros, incluirValor }) });
     } catch (err) {
       logger.error({ evento, ip: clienteIp(req), userId: req.user!.sub, motivo: err instanceof Error ? err.message : String(err) });
       res.status(500).json({ error: 'No se pudo calcular esta parte del inventario. Intenta de nuevo.' });
@@ -90,8 +96,54 @@ function rutaPantalla(evento: string, clave: string, servicio: (opts: OpcionesPa
 
 router.get('/pantalla/detalle', requirePermiso('productos', 'ver'), rutaPantalla('pantalla_detalle_error', 'detalle', obtenerDetallePantalla));
 router.get('/pantalla/categorias', requirePermiso('productos', 'ver'), rutaPantalla('pantalla_categorias_error', 'categorias', obtenerCategoriasPantalla));
-router.get('/pantalla/flujo', requirePermiso('productos', 'ver'), rutaPantalla('pantalla_flujo_error', 'flujo', obtenerFlujoPantalla));
 router.get('/pantalla/alertas', requirePermiso('productos', 'ver'), rutaPantalla('pantalla_alertas_error', 'alertas', obtenerAlertasPantalla));
+
+// Composición de un lote por producto (solo kilos, sin dinero): stock actual y comprado en el periodo.
+router.get('/pantalla/lotes/:loteId/composicion', requirePermiso('productos', 'ver'), async (req, res) => {
+  const loteId = loteIdSchema.safeParse(req.params.loteId);
+  const query = composicionLoteQuerySchema.safeParse(req.query);
+  if (!loteId.success || !query.success) {
+    const causa = !loteId.success ? loteId.error : query.error!;
+    res.status(400).json({ error: causa.issues[0]?.message ?? 'Parámetros inválidos.' });
+    return;
+  }
+  try {
+    const composicion = await obtenerComposicionLote(loteId.data, query.data);
+    if (!composicion) {
+      res.status(404).json({ error: 'Lote no encontrado.' });
+      return;
+    }
+    res.json({ composicion });
+  } catch (err) {
+    logger.error({ evento: 'pantalla_composicion_lote_error', ip: clienteIp(req), userId: req.user!.sub, motivo: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: 'No se pudo calcular la composición del lote. Intenta de nuevo.' });
+  }
+});
+
+// Costos de referencia por producto (USD/kg). Leer: facturacion:ver; guardar: facturacion:editar y también ver (la respuesta trae todos los costos). Sin esos permisos
+// no se consulta ni se devuelve ningún costo. PUT: máx. 500 productos, guardado atómico, vacía las cachés de la pantalla.
+router.get('/costos', requirePermiso('facturacion', 'ver'), async (req, res) => {
+  try {
+    res.json({ costos: await obtenerCostosInventario() });
+  } catch (err) {
+    logger.error({ evento: 'costos_inventario_error', ip: clienteIp(req), userId: req.user!.sub, motivo: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: 'No se pudieron calcular los costos del inventario. Intenta de nuevo.' });
+  }
+});
+
+router.put('/costos', requirePermiso('facturacion', 'ver'), requirePermiso('facturacion', 'editar'), validateBody(actualizarCostosSchema), async (req, res) => {
+  try {
+    const result = await actualizarCostosReferencia(req.body, { userId: req.user!.sub, email: req.user!.email });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json({ costos: result.costos, ...(result.advertencia ? { advertencia: result.advertencia } : {}) });
+  } catch (err) {
+    logger.error({ evento: 'costos_inventario_guardar_error', ip: clienteIp(req), userId: req.user!.sub, motivo: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: 'No se pudieron guardar los costos. Intenta de nuevo.' });
+  }
+});
 
 // Parámetros no secretos del inventario (meta de contenedor, umbral de merma, alertas).
 router.get('/configuracion', requirePermiso('productos', 'ver'), async (_req, res) => {

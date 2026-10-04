@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { leerPaginado } from '../utils/paginacion.js';
 import { logger } from '../utils/logger.js';
+import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { obtenerInventarioAlmacen } from './inventario-service.js';
 import { leerConfiguracionInventario } from './configuracion-inventario-service.js';
 import { cargarEmbalajesVigentes } from './lote-embalaje-service.js';
@@ -13,6 +14,7 @@ import { leerClasificacion } from '../utils/lote-clasificacion.js';
 import {
   armarResumenMerma,
   construirResumenInventario,
+  combinarCostos,
   costoPromedioPorProducto,
   ocultarValor,
   rangoAnterior,
@@ -106,8 +108,43 @@ export async function cargarNoVendibles(avisos: string[]): Promise<Set<string>> 
   return new Set(((data ?? []) as Array<{ id: string }>).map(p => p.id));
 }
 
-/** Costo promedio ponderado (USD/kg) por producto de las facturas de compra NO anuladas. */
+/** Costos de referencia manuales (productos.costo_referencia_kg). Vacío si la columna aún no existe (migración pendiente). */
+export async function cargarCostosReferencia(): Promise<Map<string, number>> {
+  let filas: Array<{ id: string; costo_referencia_kg: number | string | null }>;
+  try {
+    filas = await leerPaginado<{ id: string; costo_referencia_kg: number | string | null }>((desde, hasta) =>
+      supabaseAdmin.from('productos').select('id, costo_referencia_kg').order('id').range(desde, hasta)
+    );
+  } catch (err) {
+    if (esObjetoInexistente(err as { code?: string; message?: string })) return new Map();
+    throw err;
+  }
+  const mapa = new Map<string, number>();
+  for (const r of filas) {
+    const v = Number(r.costo_referencia_kg);
+    if (r.costo_referencia_kg != null && Number.isFinite(v) && v >= 0) mapa.set(r.id, v);
+  }
+  return mapa;
+}
+
+/**
+ * Costo EFECTIVO (USD/kg) por producto: la referencia manual si existe; si no, el promedio ponderado de las
+ * facturas de compra NO anuladas. Si falta cualquiera de las dos lecturas se usa la otra y se avisa.
+ */
 export async function cargarCostos(avisos: string[]): Promise<Map<string, CostoProducto>> {
+  const [facturas, referencias] = await Promise.all([
+    cargarCostosFacturas(avisos),
+    cargarCostosReferencia().catch(err => {
+      logger.warn({ evento: 'resumen_inventario_costos_referencia_no_leidos', motivo: err instanceof Error ? err.message : String(err) });
+      avisos.push('No se pudieron leer los costos de referencia: el valor a costo solo usa las facturas.');
+      return new Map<string, number>();
+    }),
+  ]);
+  return combinarCostos(facturas, referencias);
+}
+
+/** Costo promedio ponderado (USD/kg) por producto de las facturas de compra NO anuladas. */
+async function cargarCostosFacturas(avisos: string[]): Promise<Map<string, CostoProducto>> {
   try {
     const filas = await leerPaginado<LineaCompraRow>((desde, hasta) =>
       supabaseAdmin

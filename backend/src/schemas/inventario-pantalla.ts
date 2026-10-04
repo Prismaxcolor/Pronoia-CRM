@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { almacenIdSchema } from './inventario.js';
-import { fecha, MAX_DIAS_RANGO } from './inventario-resumen.js';
+import { fecha, MAX_DIAS_RANGO, sinValorParam } from './inventario-resumen.js';
 
 /** Máximo de filas de la tabla de detalle por respuesta (el resto se avisa, no se pierde en silencio). */
 export const MAX_FILAS_DETALLE = 2000;
@@ -10,7 +10,7 @@ const textoCorto = z.string().trim().min(1).max(100);
 const booleano = z.enum(['true', 'false']).transform(v => v === 'true');
 
 /**
- * Filtros de GET /api/inventario/pantalla/{detalle,categorias,flujo,alertas}: desde/hasta (ambos o ninguno),
+ * Filtros de GET /api/inventario/pantalla/{detalle,categorias,alertas}: desde/hasta (ambos o ninguno),
  * categoria, almacen (uuid), q. Solo el detalle usa limite, vista e incluirClasificaciones (los demás los ignoran).
  */
 export const pantallaQuerySchema = z
@@ -23,6 +23,7 @@ export const pantallaQuerySchema = z
     limite: z.coerce.number().int().min(1).max(MAX_FILAS_DETALLE).optional(),
     vista: z.enum(['exportacion', 'venta_nacional', 'trabajo_interno', 'otras']).optional(),
     incluirClasificaciones: booleano.optional(),
+    sinValor: sinValorParam.optional(),
   })
   .refine(q => (q.desde == null) === (q.hasta == null), { message: 'Indica desde y hasta juntos, o ninguno.' })
   .refine(q => !q.desde || !q.hasta || q.desde <= q.hasta, { message: 'La fecha desde no puede ser posterior a hasta.' })

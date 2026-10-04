@@ -9,6 +9,7 @@ export const ENTIDADES_AUDITABLES = [
   'traslado',
   'lote',
   'configuracion_inventario',
+  'producto_costo',
 ] as const;
 export type EntidadAuditable = (typeof ENTIDADES_AUDITABLES)[number];
 
@@ -37,6 +38,7 @@ export const RECURSO_POR_ENTIDAD: Record<EntidadAuditable, Recurso> = {
   traslado: 'traslados',
   lote: 'productos',
   configuracion_inventario: 'productos',
+  producto_costo: 'facturacion',
 };
 
 /** La configuración del inventario es un único conjunto de parámetros, sin id propio: se audita con este id fijo. */

@@ -123,6 +123,7 @@ const BASE_FILA = {
   embaladoKg: null, enSacaKg: null, costoPromedioKg: null, valorCostoUsd: null,
   precioEstimadoKg: null, valorEstimadoUsd: null, dias: null, clase: null,
   fase: null, limpieza: null, limpiezaOrigen: null, destinoBasura: null, esClasificacionCompra: false,
+  costoFuente: null, costoReferenciaKg: null, ultimoDespacho: null, kgEnTransformacion: 0,
 } as const;
 
 /**
@@ -213,6 +214,30 @@ function retirosEnProceso(
   return items.filter(i => Number.isFinite(i.kg) && i.kg > 0);
 }
 
+/**
+ * Ticket de venta más reciente por material o lote, de TODO el historial (con filtro de almacén, solo los de ese
+ * almacén). kg = suma de ese material/lote en los tickets de venta de la fecha más reciente. Una venta con lote
+ * (destino_tipo 'lote') cuenta para el LOTE y no para el producto, igual que el stock. Tickets sin fecha se ignoran.
+ */
+export function ultimosDespachos(
+  tickets: MovimientosInventario['tickets'],
+  almacenId: string | null
+): Map<string, { fecha: string; kg: number }> {
+  const ultimos = new Map<string, { fecha: string; kg: number }>();
+  for (const t of tickets) {
+    if (t.tipo !== 'venta' || !t.fecha || (almacenId && t.almacenId !== almacenId)) continue;
+    for (const d of t.detalle) {
+      const clave = d.loteId ? claveLote(d.loteId) : d.productoId ? claveProducto(d.productoId) : null;
+      if (!clave || !Number.isFinite(d.pesoNeto) || d.pesoNeto <= 0) continue;
+      const previo = ultimos.get(clave);
+      if (!previo || t.fecha > previo.fecha) ultimos.set(clave, { fecha: t.fecha, kg: d.pesoNeto });
+      else if (t.fecha === previo.fecha) previo.kg += d.pesoNeto;
+    }
+  }
+  for (const u of ultimos.values()) u.kg = kg3(u.kg);
+  return ultimos;
+}
+
 function despachosDelPeriodo(
   tickets: MovimientosInventario['tickets'],
   rango: RangoFechas,
@@ -231,9 +256,10 @@ function despachosDelPeriodo(
 }
 
 /**
- * Todas las filas de la tabla única, sin filtrar por texto/categoría/vista (ver filtrarFilas):
- * stock en galpón (materiales y lotes) + kg en transformación 'bruto' + despachos del período.
- * Con `almacenId` todo se limita a ese almacén.
+ * Las filas de la tabla única, sin filtrar por texto/categoría/vista (ver filtrarFilas): UNA por material o lote
+ * con stock en galpón. Con `almacenId` todo se limita a ese almacén. Los kg en transformación 'bruto' y los
+ * despachos del período ya no son filas: van en cada fila (kgEnTransformacion, ultimoDespacho) y sus totales
+ * salen de `fuera` (ver construirFilasDetalleConAvisos).
  */
 export function construirFilasDetalle(e: EntradaFilas): FilaDetalleInventario[] {
   return construirFilasDetalleConAvisos(e).filas;
@@ -241,8 +267,15 @@ export function construirFilasDetalle(e: EntradaFilas): FilaDetalleInventario[] 
 
 export const AVISO_ANTIGUEDAD_CON_ALMACEN = 'antigüedad aproximada con filtro de almacén';
 
-/** Igual que construirFilasDetalle, y devuelve además los avisos del cálculo (hoy: la antigüedad con filtro de almacén). */
-export function construirFilasDetalleConAvisos(e: EntradaFilas): { filas: FilaDetalleInventario[]; avisos: string[] } {
+/**
+ * Igual que construirFilasDetalle, y devuelve además los avisos del cálculo (hoy: la antigüedad con filtro de
+ * almacén) y `fuera`: filas INTERNAS (enGalpon false, 'transf:'/'desp:') con los kg en transformación y los
+ * despachos del período. No se muestran: solo alimentan los totales y las tarjetas para que las cifras globales
+ * no dependan de que el producto aún tenga stock.
+ */
+export function construirFilasDetalleConAvisos(
+  e: EntradaFilas
+): { filas: FilaDetalleInventario[]; fuera: FilaDetalleInventario[]; avisos: string[] } {
   const { materiales, lotes: stockLotes } = acumularStock(e.almacenes);
   const nombres = new Map(e.almacenes.map(a => [a.almacenId, a.nombre]));
   const productos = new Map(e.movimientos.productos.map(p => [p.id, p]));
@@ -260,6 +293,11 @@ export function construirFilasDetalleConAvisos(e: EntradaFilas): { filas: FilaDe
   };
   const lotePorId = new Map(e.lotes.map(l => [l.id, l]));
   const filas: FilaDetalleInventario[] = [];
+  const fueraFilas: FilaDetalleInventario[] = [];
+  const retiros = retirosEnProceso(e.movimientos.transformaciones, e.almacenId);
+  const retiroPorClave = sumarPorClave(retiros);
+  const kgRetirado = (clave: string) => kg3(retiroPorClave.get(clave)?.kg ?? 0);
+  const ultimos = ultimosDespachos(e.movimientos.tickets, e.almacenId);
 
   for (const m of materiales.values()) {
     const kgAlm = e.almacenId ? m.porAlmacen.get(e.almacenId) ?? 0 : [...m.porAlmacen.values()].reduce((a, b) => a + b, 0);
@@ -276,7 +314,11 @@ export function construirFilasDetalleConAvisos(e: EntradaFilas): { filas: FilaDe
       id: `mat:${m.productoId}`, tipo: 'material', enGalpon: true, material: m.nombre, productoId: m.productoId, loteId: null,
       categoriaClave: m.tipoMaterialId ?? '__sin__', categoria: m.categoria, vista, etapa, kgPorEtapa, kg: kg3(kgAlm),
       costoPromedioKg: costo ? redondear(costo.costoPromedioKg, 4) : null,
+      costoFuente: costo ? costo.fuente ?? 'facturas' : null,
+      costoReferenciaKg: costo?.costoReferenciaKg ?? null,
       valorCostoUsd: costo && kgAlm > 0 ? usd2(kgAlm * costo.costoPromedioKg) : null,
+      ultimoDespacho: ultimos.get(claveProducto(m.productoId)) ?? null,
+      kgEnTransformacion: kgRetirado(claveProducto(m.productoId)),
       dias: antiguedadEstimada(kgAlm, entradasDe(claveProducto(m.productoId)), e.hoy),
       porAlmacen: listaAlmacenes(m.porAlmacen, nombres, e.almacenId),
     });
@@ -303,6 +345,8 @@ export function construirFilasDetalleConAvisos(e: EntradaFilas): { filas: FilaDe
       valorEstimadoUsd: precio != null ? usd2(Math.max(emb.stockKg, 0) * precio) : null,
       dias: antiguedadEstimada(kgAlm, entradasDe(claveLote(lote.id)), e.hoy),
       porAlmacen: listaAlmacenes(porAlmacen, nombres, e.almacenId),
+      ultimoDespacho: ultimos.get(claveLote(lote.id)) ?? null,
+      kgEnTransformacion: kgRetirado(claveLote(lote.id)),
     });
   }
 
@@ -317,15 +361,15 @@ export function construirFilasDetalleConAvisos(e: EntradaFilas): { filas: FilaDe
       const id = clave.slice(2);
       if (clave.startsWith('l:')) {
         const lote = lotePorId.get(id);
-        if (lote) filas.push(filaLoteFuera(prefijo, etapa, lote, acc.kg, almacenes));
+        if (lote) fueraFilas.push(filaLoteFuera(prefijo, etapa, lote, acc.kg, almacenes));
       } else {
-        filas.push(filaMaterialFuera(prefijo, etapa, metaDe(productos, id), acc.kg, almacenes));
+        fueraFilas.push(filaMaterialFuera(prefijo, etapa, metaDe(productos, id), acc.kg, almacenes));
       }
     }
   };
-  fuera('transf', 'en_proceso', retirosEnProceso(e.movimientos.transformaciones, e.almacenId));
+  fuera('transf', 'en_proceso', retiros);
   fuera('desp', 'despachado', despachosDelPeriodo(e.movimientos.tickets, e.rango, e.almacenId));
-  return { filas, avisos: antiguedadAproximada ? [AVISO_ANTIGUEDAD_CON_ALMACEN] : [] };
+  return { filas, fuera: fueraFilas, avisos: antiguedadAproximada ? [AVISO_ANTIGUEDAD_CON_ALMACEN] : [] };
 }
 
 /** Filtros de texto, categoría y vista sobre las filas ya construidas (no recalcula kg). */
@@ -369,7 +413,8 @@ export function armarDetalle(
   maxFilas: number,
   valorOculto: boolean,
   kgClasificacionesCompraOcultas = 0,
-  valorClasificacionesCompraOcultasUsd: number | null = null
+  valorClasificacionesCompraOcultasUsd: number | null = null,
+  fuera: readonly FilaDetalleInventario[] = []
 ): DetalleArmado {
   const ordenadas = [...filas].sort(porCategoriaYKg);
   const grupos = new Map<string, GrupoDetalle>();
@@ -396,8 +441,8 @@ export function armarDetalle(
     })),
     totales: {
       kgEnGalpon: kg3(suma(enGalpon.map(f => f.kg))),
-      kgEnTransformacion: kg3(suma(ordenadas.filter(f => !f.enGalpon && f.etapa === 'en_proceso').map(f => f.kg))),
-      kgDespachado: kg3(suma(ordenadas.filter(f => f.etapa === 'despachado').map(f => f.kg))),
+      kgEnTransformacion: kg3(suma(fuera.filter(f => f.etapa === 'en_proceso').map(f => f.kg))),
+      kgDespachado: kg3(suma(fuera.filter(f => f.etapa === 'despachado').map(f => f.kg))),
       valorCostoUsd: valorOculto ? null : usd2(suma(ordenadas.map(f => f.valorCostoUsd))),
       valorEstimadoUsd: valorOculto ? null : usd2(suma(ordenadas.map(f => f.valorEstimadoUsd))),
       kgClasificacionesCompraOcultas: kg3(kgClasificacionesCompraOcultas),
@@ -527,10 +572,11 @@ export interface ResultadoTarjetas {
 export function construirTarjetas(
   filas: readonly FilaDetalleInventario[],
   rendimientos: ReadonlyMap<string, RendimientoExportacion>,
-  valorOculto: boolean
+  valorOculto: boolean,
+  fuera: readonly FilaDetalleInventario[] = []
 ): ResultadoTarjetas {
   const porClave = new Map<string, FilaDetalleInventario[]>();
-  for (const f of filas) porClave.set(f.categoriaClave, [...(porClave.get(f.categoriaClave) ?? []), f]);
+  for (const f of [...filas, ...fuera]) porClave.set(f.categoriaClave, [...(porClave.get(f.categoriaClave) ?? []), f]);
 
   const tarjetas: TarjetaInventario[] = [...porClave.entries()].map(([clave, delGrupo]) => {
     const primera = delGrupo[0];
@@ -547,7 +593,7 @@ export function construirTarjetas(
   tarjetas.sort((a, b) => VISTAS.indexOf(a.vista) - VISTAS.indexOf(b.vista) || a.nombre.localeCompare(b.nombre, 'es'));
 
   const vistas: TarjetaVista[] = VISTAS.map(vista => {
-    const delaVista = filas.filter(f => f.vista === vista);
+    const delaVista = [...filas, ...fuera].filter(f => f.vista === vista);
     const rend = tarjetas.filter(t => t.vista === 'exportacion' && vista === 'exportacion' && t.rendimiento).map(t => t.rendimiento as RendimientoExportacion);
     return {
       vista,

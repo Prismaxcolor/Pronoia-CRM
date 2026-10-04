@@ -26,10 +26,11 @@ describe('vistaDeCategoria (decision de Julio 2026-10-03)', () => {
     expect(vistaDeCategoria('PCB')).toBe('exportacion');
     expect(vistaDeCategoria('PGM')).toBe('exportacion');
   });
-  it('Ferroso, No ferroso y Basura son venta nacional (sin importar mayusculas ni tildes)', () => {
+  it('venta nacional es SOLO Ferroso y No ferroso; Basura va a otras (sin importar mayusculas ni tildes)', () => {
     expect(vistaDeCategoria('Ferroso')).toBe('venta_nacional');
     expect(vistaDeCategoria('No Ferroso')).toBe('venta_nacional');
-    expect(vistaDeCategoria('BASURA')).toBe('venta_nacional');
+    expect(vistaDeCategoria('BASURA')).toBe('otras');
+    expect(etapaDeMaterial(vistaDeCategoria('Basura'))).toBe('recibido');
   });
   it('PROCESADORES y RAEE (desarme: alimenta otras categorias) son trabajo interno', () => {
     expect(vistaDeCategoria('PROCESADORES')).toBe('trabajo_interno');
@@ -45,7 +46,7 @@ describe('lotes por clase', () => {
   it('la clase decide la vista', () => {
     expect(vistaDeClaseLote('exportacion')).toBe('exportacion');
     expect(vistaDeClaseLote('trabajo')).toBe('trabajo_interno');
-    expect(vistaDeClaseLote('otro')).toBe('otras');
+    expect(vistaDeClaseLote('otro')).toBe('trabajo_interno');
   });
   it('clave y nombre de la categoria de lotes', () => {
     expect(claveCategoriaLote('exportacion')).toBe('lotes:exportacion');

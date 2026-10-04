@@ -19,10 +19,11 @@ const datos = vi.hoisted(() => ({
 vi.mock('../src/services/inventario-pantalla-datos.js', () => datos);
 
 const { obtenerResumenInventario } = await import('../src/services/inventario-resumen-service.js');
-const { obtenerAlertasPantalla, obtenerCategoriasPantalla, obtenerDetallePantalla, obtenerFlujoPantalla, TTL_CACHE_PANTALLA_MS, TTL_CACHE_PARCIAL_MS } = await import(
+const { obtenerAlertasPantalla, obtenerCategoriasPantalla, obtenerDetallePantalla, TTL_CACHE_PANTALLA_MS, TTL_CACHE_PARCIAL_MS } = await import(
   '../src/services/inventario-pantalla-service.js'
 );
 const { invalidarCacheResumen } = await import('../src/services/resumen-cache.js');
+const { actualizarCostosReferencia, obtenerCostosInventario } = await import('../src/services/inventario-costos-service.js');
 
 const G1 = 'g1';
 const G2 = 'g2';
@@ -134,11 +135,13 @@ describe('detalle', () => {
     expect(trabajo.filas.find(f => f.id === 'lote:B')).toMatchObject({ fase: 'por_procesar', etapa: 'recibido' });
   });
 
-  it('antiguedad estimada: compra reciente primero, luego la toma fisica; el despachado aparece como fila aparte', async () => {
+  it('antiguedad estimada: compra reciente primero, luego la toma fisica; el ultimo despacho va en la fila', async () => {
     const d = await obtenerDetallePantalla(opts);
     const alu = d.filas.find(f => f.id === 'mat:p-alu')!;
     expect(alu.dias).toMatchObject({ estimado: true, fechaEntradaMasAntigua: '2026-09-16', fechaEntradaMasReciente: '2026-10-02' });
-    expect(d.filas.find(f => f.id === 'desp:p:p-alu')).toMatchObject({ enGalpon: false, kg: 5, etapa: 'despachado' });
+    expect(alu.ultimoDespacho).toEqual({ fecha: '2026-10-03', kg: 5 });
+    expect(d.filas.some(f => /^(desp|transf):/.test(f.id))).toBe(false);
+    // el total despachado del periodo sigue saliendo de los tickets
     expect(d.totales.kgDespachado).toBe(5);
   });
 
@@ -148,16 +151,18 @@ describe('detalle', () => {
 });
 
 describe('permisos de valor', () => {
-  it('sin facturacion:ver: valorOculto, ni un costo ni un precio en detalle, tarjetas, flujo o alertas; los costos ni se consultan', async () => {
+  it('sin facturacion:ver: valorOculto, ni un costo ni un precio en detalle, tarjetas o alertas (tampoco la referencia manual); los costos ni se consultan', async () => {
+    bdFalsa.tablas.productos = [{ id: 'p-alu', costo_referencia_kg: '2' }];
     const o = { hoy: HOY };
     const d = await obtenerDetallePantalla(o);
     const t = await obtenerCategoriasPantalla(o);
-    const f = await obtenerFlujoPantalla(o);
     const a = await obtenerAlertasPantalla(o);
-    for (const r of [d, t, f, a]) expect(r.valorOculto).toBe(true);
+    for (const r of [d, t, a]) expect(r.valorOculto).toBe(true);
     for (const fila of d.filas) {
       expect([fila.costoPromedioKg, fila.valorCostoUsd, fila.precioEstimadoKg, fila.valorEstimadoUsd]).toEqual([null, null, null, null]);
+      expect([fila.costoFuente, fila.costoReferenciaKg]).toEqual([null, null]);
     }
+    expect(JSON.stringify([d, t, a])).not.toMatch(/"costoReferenciaKg":\s*[0-9]/);
     expect(d.totales.valorCostoUsd).toBeNull();
     expect(d.totales.valorEstimadoUsd).toBeNull();
     expect(JSON.stringify(t)).not.toMatch(/"valor(Costo|Estimado)Usd":\s*[1-9]/);
@@ -177,8 +182,8 @@ describe('permisos de valor', () => {
 });
 
 describe('cache compartida y presupuesto', () => {
-  it('los cuatro endpoints juntos leen el inventario UNA vez por almacen y cada tabla una vez', async () => {
-    await Promise.all([obtenerDetallePantalla(opts), obtenerCategoriasPantalla(opts), obtenerFlujoPantalla(opts), obtenerAlertasPantalla(opts)]);
+  it('los endpoints juntos leen el inventario UNA vez por almacen y cada tabla una vez', async () => {
+    await Promise.all([obtenerDetallePantalla(opts), obtenerCategoriasPantalla(opts), obtenerAlertasPantalla(opts)]);
     await obtenerDetallePantalla({ ...opts, categoria: 'PCB' });
     expect(inv.obtenerInventarioAlmacen).toHaveBeenCalledTimes(2);
     for (const f of Object.values(datos)) expect(f).toHaveBeenCalledTimes(1);
@@ -206,7 +211,7 @@ describe('cache compartida y presupuesto', () => {
       vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
       datos.leerTickets.mockRejectedValue(new Error('boom interno'));
       expect((await obtenerDetallePantalla(opts)).parcial).toBe(true);
-      await Promise.all([obtenerFlujoPantalla(opts), obtenerCategoriasPantalla(opts), obtenerAlertasPantalla(opts)]);
+      await Promise.all([obtenerCategoriasPantalla(opts), obtenerAlertasPantalla(opts)]);
       expect(datos.leerTickets).toHaveBeenCalledTimes(1);
       expect(TTL_CACHE_PARCIAL_MS).toBeLessThan(TTL_CACHE_PANTALLA_MS);
 
@@ -259,16 +264,7 @@ describe('cache compartida y presupuesto', () => {
   });
 });
 
-describe('flujo y alertas con los datos de hoy', () => {
-  it('sin transformaciones: se ven las compras, sinTransformaciones y el tramo trabajo -> exportacion sin datos', async () => {
-    const f = await obtenerFlujoPantalla(opts);
-    expect(f.sinTransformaciones).toBe(true);
-    expect(f.sinDatos).toBe(false);
-    expect(f.enlaces.find(e => e.origen === 'compra')).toMatchObject({ destino: 'cat:tm-nf', kg: 60 });
-    expect(f.tramosSinDatos.map(t => t.desde)).toContain('Lotes de trabajo');
-    expect(f.categoriasSinTransformaciones.map(c => c.nombre)).toContain('PCB');
-  });
-
+describe('alertas con los datos de hoy', () => {
   it('con pocos dias de historia no hay alertas de antiguedad; el embalado sin contenedor si avisa', async () => {
     const a = await obtenerAlertasPantalla(opts);
     expect(a.alertas.filter(x => x.tipo === 'antiguedad')).toEqual([]);
@@ -280,5 +276,77 @@ describe('flujo y alertas con los datos de hoy', () => {
     // 60 kg de la compra (84 dias) + 90 kg de la toma fisica (100 dias) = 93,6 dias > 90
     const a = await obtenerAlertasPantalla({ ...opts, hoy: '2026-12-25', desde: '2026-12-01', hasta: '2026-12-25' });
     expect(a.alertas.some(x => x.tipo === 'antiguedad' && x.severidad === 'roja' && x.valor === 93.6)).toBe(true);
+  });
+});
+
+describe('costos de referencia: costo efectivo, GET y PUT', () => {
+  beforeEach(() => {
+    bdFalsa.tablas.productos = [{ id: 'p-alu', costo_referencia_kg: '2' }, { id: 'p-tel', costo_referencia_kg: null }];
+    bdFalsa.tablas.detalle_facturas_compra = [
+      { id: 'd1', producto_id: 'p-alu', peso: '100', subtotal: '150' },
+      { id: 'd2', producto_id: 'p-tel', peso: '10', subtotal: '30' },
+    ];
+  });
+
+  it('la referencia manual manda sobre las facturas; el valor del detalle, las tarjetas y el resumen coinciden', async () => {
+    const resumen = await obtenerResumenInventario(opts);
+    const d = await obtenerDetallePantalla({ ...opts, incluirClasificaciones: true });
+    // alu: 150 kg x 2 (manual, no 1,5 de facturas) + tel: 7 kg x 3 (facturas)
+    expect(d.filas.find(f => f.id === 'mat:p-alu')).toMatchObject({ costoPromedioKg: 2, costoFuente: 'manual', costoReferenciaKg: 2, valorCostoUsd: 300 });
+    expect(d.filas.find(f => f.id === 'mat:p-tel')).toMatchObject({ costoPromedioKg: 3, costoFuente: 'facturas', costoReferenciaKg: null, valorCostoUsd: 21 });
+    expect(resumen.valor?.costoMateriales.valorUsd).toBe(321);
+    expect(d.totales.valorCostoUsd).toBe(321);
+    expect(resumen.valor?.costoMateriales.kgSinCosto).toBe(0);
+  });
+
+  it('sin la columna costo_referencia_kg (migracion pendiente) el costo sale solo de las facturas, sin aviso de error', async () => {
+    bdFalsa.errores.productos = { code: '42703', message: 'column productos.costo_referencia_kg does not exist' } as never;
+    const d = await obtenerDetallePantalla(opts);
+    expect(d.filas.find(f => f.id === 'mat:p-alu')).toMatchObject({ costoPromedioKg: 1.5, costoFuente: 'facturas' });
+  });
+
+  it('GET: kg en galpon, costo de facturas, referencia, efectivo, fuente y valor; solo productos con stock, ordenados', async () => {
+    const c = await obtenerCostosInventario();
+    expect(c.productos.map(p => p.productoId)).toEqual(['p-alu', 'p-tel']);
+    expect(c.productos[0]).toMatchObject({
+      nombre: 'ALUMINIO SUCIO', categoria: 'No Ferroso', categoriaClave: 'tm-nf', vista: 'venta_nacional', kg: 150,
+      costoFacturasKg: 1.5, costoReferenciaKg: 2, costoEfectivoKg: 2, fuente: 'manual', valorUsd: 300,
+    });
+    expect(c.productos[1]).toMatchObject({ kg: 7, costoFacturasKg: 3, costoReferenciaKg: null, costoEfectivoKg: 3, fuente: 'facturas', valorUsd: 21 });
+    expect(c.totales).toEqual({ valorUsd: 321, kgSinCosto: 0, productosSinCosto: 0 });
+  });
+
+  it('GET: un producto sin referencia ni facturas queda sin costo y sus kg se cuentan aparte', async () => {
+    bdFalsa.tablas.detalle_facturas_compra = [];
+    bdFalsa.tablas.productos = [];
+    const c = await obtenerCostosInventario();
+    expect(c.productos.every(p => p.fuente === null && p.valorUsd === null && p.costoEfectivoKg === null)).toBe(true);
+    expect(c.totales).toEqual({ valorUsd: null, kgSinCosto: 157, productosSinCosto: 2 });
+  });
+
+  it('PUT: solo escribe lo que cambia, deja auditoria, vacia la cache y devuelve los costos nuevos', async () => {
+    bdFalsa.rpc.actualizar_costos_referencia = () => 1;
+    await obtenerCostosInventario(); // llena la cache
+    bdFalsa.tablas.productos = [{ id: 'p-alu', nombre: 'ALUMINIO SUCIO', costo_referencia_kg: '2' }, { id: 'p-tel', nombre: 'TELEFONO', costo_referencia_kg: null }];
+    const r = await actualizarCostosReferencia(
+      { items: [{ productoId: 'p-alu', costoReferenciaKg: 2 }, { productoId: 'p-tel', costoReferenciaKg: 4 }] },
+      { userId: 'u1', email: 'a@b.c' }
+    );
+    expect(r.ok).toBe(true);
+    expect(bdFalsa.llamadasRpc).toEqual([{ nombre: 'actualizar_costos_referencia', args: { p_items: [{ producto_id: 'p-tel', costo: 4 }], p_usuario: 'u1' } }]);
+    const auditorias = bdFalsa.escrituras.filter(e => e.tabla === 'auditoria_ediciones');
+    expect(auditorias).toHaveLength(1);
+    expect(JSON.stringify(auditorias[0])).toContain('producto_costo');
+  });
+
+  it('PUT: sin cambios no escribe; producto inexistente = 400; migracion pendiente = 409', async () => {
+    bdFalsa.tablas.productos = [{ id: 'p-alu', nombre: 'ALUMINIO SUCIO', costo_referencia_kg: '2' }];
+    const igual = await actualizarCostosReferencia({ items: [{ productoId: 'p-alu', costoReferenciaKg: 2 }] }, { userId: 'u1' });
+    expect(igual).toMatchObject({ ok: true, cambiados: 0 });
+    expect(bdFalsa.llamadasRpc).toHaveLength(0);
+    const noExiste = await actualizarCostosReferencia({ items: [{ productoId: 'zzz', costoReferenciaKg: 1 }] }, { userId: 'u1' });
+    expect(noExiste).toMatchObject({ ok: false, status: 400 });
+    const sinFuncion = await actualizarCostosReferencia({ items: [{ productoId: 'p-alu', costoReferenciaKg: 5 }] }, { userId: 'u1' });
+    expect(sinFuncion).toMatchObject({ ok: false, status: 409 });
   });
 });

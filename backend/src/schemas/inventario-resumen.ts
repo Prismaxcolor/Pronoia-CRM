@@ -15,9 +15,12 @@ export const fecha = z
 /** Máximo de días del rango de merma (evita comparar décadas por accidente). */
 export const MAX_DIAS_RANGO = 800;
 
-/** GET /api/inventario/resumen?desde=&hasta= — rango opcional (ambos o ninguno) para la merma. */
+/** `sinValor=1` pide la respuesta SIN costos ni precios aunque el usuario tenga facturacion:ver (solo puede quitar, nunca dar permisos). */
+export const sinValorParam = z.enum(['1']).transform(() => true);
+
+/** GET /api/inventario/resumen?desde=&hasta=&sinValor=1 — rango opcional (ambos o ninguno) para la merma. */
 export const resumenQuerySchema = z
-  .object({ desde: fecha.optional(), hasta: fecha.optional() })
+  .object({ desde: fecha.optional(), hasta: fecha.optional(), sinValor: sinValorParam.optional() })
   .refine(q => (q.desde == null) === (q.hasta == null), { message: 'Indica desde y hasta juntos, o ninguno.' })
   .refine(q => !q.desde || !q.hasta || q.desde <= q.hasta, { message: 'La fecha desde no puede ser posterior a hasta.' })
   .refine(

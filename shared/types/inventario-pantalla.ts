@@ -1,11 +1,15 @@
 /**
  * Contrato de la pantalla nueva de /inventario (Fase 2-3 del rediseño).
  *
- * Cuatro endpoints de solo lectura, permiso productos:ver:
+ * Tres endpoints de la pantalla, solo lectura, permiso productos:ver:
  *   GET /api/inventario/pantalla/detalle    -> { detalle:   DetallePantalla }
  *   GET /api/inventario/pantalla/categorias -> { categorias: CategoriasPantalla }
- *   GET /api/inventario/pantalla/flujo      -> { flujo:     FlujoPantalla }
  *   GET /api/inventario/pantalla/alertas    -> { alertas:   AlertasPantalla }
+ * Costos de referencia (solo con facturacion:ver para leer y facturacion:editar para guardar):
+ *   GET /api/inventario/costos -> { costos: CostosInventario }
+ *   PUT /api/inventario/costos  body { items: [{ productoId, costoReferenciaKg|null }] } -> { costos: CostosInventario }
+ * Composición de un lote (productos:ver, mismos filtros desde/hasta/almacenId):
+ *   GET /api/inventario/pantalla/lotes/:loteId/composicion -> { composicion: ComposicionLote }
  * Filtros (query, todos opcionales): desde, hasta (YYYY-MM-DD, ambos o ninguno), categoria, almacen, q.
  * El detalle admite además `limite` (máx. filas), `vista` e `incluirClasificaciones` (true = mostrar también las clasificaciones de compra PCB sin lote).
  *
@@ -15,23 +19,23 @@
  *  - Sin permiso facturacion:ver (valorOculto = true) todos los campos de costo/precio/valor vienen null.
  *  - Todo lo que dice "estimado" (días en inventario) se debe rotular "estimado" en la pantalla.
  *  - `parcial: true` = alguna lectura falló o venció: mostrar `avisos`; la cifra afectada no es completa.
- *  - Los filtros desde/hasta acotan lo que ocurre en el período (despachos, flujo, merma). El stock en galpón
+ *  - Los filtros desde/hasta acotan lo que ocurre en el período (despachos, merma). El stock en galpón
  *    y su antigüedad estimada son siempre los de AHORA: una foto, no un período.
  *
  * DEFINICIONES (vista y etapa se derivan; nada de esto se guarda en la BD)
  *  Vista:
  *   - exportacion:     lotes de clase 'exportacion' (Lote 1-3 = PCB, Lote 4 = polvo de catalizador PGM) y su
  *                      ruta (materiales PGM: catalizador entero, que NUNCA se vende, y polvo).
- *   - venta_nacional:  Ferroso, No ferroso y Basura. Se venden tal cual en el mercado nacional.
- *   - trabajo_interno: lotes de clase 'trabajo' (por procesar / procesados), RAEE (desarme: se desarma y
- *                      alimenta lotes de trabajo, ferroso, no ferroso y basura; no se vende tal cual) y
- *                      PROCESADORES.
- *   - otras:           lo que no encaja en lo anterior (categoría desconocida, lotes de clase 'otro').
+ *   - venta_nacional:  SOLO Ferroso y No ferroso. Se venden tal cual en el mercado nacional.
+ *   - trabajo_interno: lotes de clase 'trabajo' (por procesar / procesados), lotes de clase 'otro' (p. ej.
+ *                      PCB LIGADO; sin fase), RAEE (desarme: se desarma y alimenta lotes de trabajo,
+ *                      ferroso, no ferroso y basura; no se vende tal cual) y PROCESADORES.
+ *   - otras:           Basura y lo que no encaja en lo anterior (categoría desconocida).
  *  PCB: las ~15 clasificaciones de compra (mixto 1, RAM dorada, teléfono...) son SOLO para comprar: toda tarjeta
  *  se almacena en un LOTE DE TRABAJO. Por eso el inventario de PCB son sus lotes, no sus clasificaciones. Un
  *  producto PCB con stock sin lote (no debería haber) se marca esClasificacionCompra y NO sale entre las filas
  *  ni las tarjetas; sus kg se informan aparte en kgClasificacionesCompraOcultas (se piden con
- *  incluirClasificaciones=true). Las clasificaciones solo aparecen como origen de compra en el flujo.
+ *  incluirClasificaciones=true).
  *  Fase de un lote de trabajo (lotes.fase; si la columna aún no existe se deduce del nombre exacto):
  *   - por_procesar: LOTE MPP (mixto), BGPP (bajo grado), PCPP (PC). - procesado: BGYP, PCYP.
  *  Etapa (el recorrido real del PCB: por procesar -> procesado -> lote de exportación en saca -> embalado -> despachado):
@@ -41,7 +45,9 @@
  *                 kg retirados a una transformación en estado 'bruto' (ya NO están en el stock).
  *   - listo:      kg embalados vigentes de un lote de exportación (por kilos) y, en venta nacional,
  *                 el stock disponible.
- *   - despachado: kg de tickets de venta del período (ya salieron; no son stock).
+ *   - despachado: kg de tickets de venta del período (ya salieron; no son stock). Ya NO hay filas con esta
+ *                 etapa: el total por vista/categoría sigue en despachadoKg / totales.kgDespachado, y cada fila
+ *                 de stock trae su ultimoDespacho.
  *  Marcas del material:
  *   - limpieza (No ferroso y Ferroso): productos.estado_limpieza si está definido (limpiezaOrigen
  *     'producto'); si es null, cae al nombre ('sucio' si contiene SUCIO, 'limpio' si contiene LIMPIO;
@@ -77,7 +83,7 @@ export interface FiltrosPantalla {
   q: string | null;
 }
 
-/** Campos comunes a las cuatro respuestas. */
+/** Campos comunes a las respuestas de la pantalla. */
 export interface MetaPantalla {
   generadoEn: string;
   /** Sin facturacion:ver: costos, precios y valores vienen null. */
@@ -119,13 +125,10 @@ export interface AntiguedadEstimada {
 // ---- (a) detalle: tabla única ---------------------------------------------------
 
 export interface FilaDetalleInventario {
-  /** Estable entre llamadas: 'mat:<productoId>' | 'lote:<loteId>' | 'transf:...' | 'desp:...'. */
+  /** Estable entre llamadas: 'mat:<productoId>' | 'lote:<loteId>' (una fila por producto/lote con stock). */
   id: string;
   tipo: 'material' | 'lote';
-  /**
-   * true = kg que están hoy en el galpón (stock). false = fila informativa fuera del stock:
-   * kg en transformación 'bruto' (etapa en_proceso) o kg despachados en el período.
-   */
+  /** Siempre true: solo se emiten filas con stock en galpón (las de transformación y despacho ya no existen). */
   enGalpon: boolean;
   /** Nombre del producto o del lote. */
   material: string;
@@ -154,13 +157,26 @@ export interface FilaDetalleInventario {
   etapa: EtapaInventario;
   /** Reparto de `kg` por etapa (en materiales casi siempre una sola etapa; en lotes mixtos, dos). */
   kgPorEtapa: KgPorEtapa;
-  /** Stock en galpón (enGalpon) o kg en transformación / despachados (fila informativa). */
+  /** Stock en galpón. */
   kg: number;
+  /**
+   * Ticket de venta más reciente de este producto/lote (todo el historial, no solo el período; con filtro de
+   * almacén, solo los de ese almacén). `fecha` YYYY-MM-DD; `kg` = suma de ese producto/lote en los tickets de
+   * venta de ESA fecha. Una venta con lote (destino_tipo 'lote') cuenta para la fila del LOTE, no para la del
+   * producto. null = nunca se ha despachado.
+   */
+  ultimoDespacho: { fecha: string; kg: number } | null;
+  /** Kg de este producto/lote retirados a transformaciones en estado 'bruto' (ya no están en el stock). 0 si ninguno. */
+  kgEnTransformacion: number;
   /** Solo lotes (stock = embalado + enSaca). */
   embaladoKg: number | null;
   enSacaKg: number | null;
-  /** Materiales: costo promedio ponderado USD/kg de las compras; null = sin costo (o valorOculto). */
+  /** Materiales: costo EFECTIVO USD/kg (referencia manual si existe; si no, promedio ponderado de facturas); null = sin costo (o valorOculto). */
   costoPromedioKg: number | null;
+  /** De dónde sale costoPromedioKg: 'manual' (costo de referencia), 'facturas' o null (sin costo / valorOculto / lote). */
+  costoFuente: 'manual' | 'facturas' | null;
+  /** Costo de referencia manual del producto (USD/kg), exista o no fuente 'manual' vigente; null = sin referencia (o valorOculto). */
+  costoReferenciaKg: number | null;
   /** Materiales: kg x costo; null si no hay costo, kg <= 0 o valorOculto. */
   valorCostoUsd: number | null;
   /** Lotes: precio estimado de venta USD/kg cargado a mano; null = sin precio (o valorOculto). */
@@ -280,62 +296,59 @@ export interface CategoriasPantalla extends MetaPantalla {
   kgClasificacionesCompraOcultas: number;
 }
 
-// ---- (c) flujo Sankey ------------------------------------------------------------
+// ---- (c) costos de referencia -----------------------------------------------------
 
-export type TipoNodoFlujo =
-  | 'compra'
-  | 'ajuste'
-  | 'categoria'
-  | 'clasificacion'
-  | 'lote_trabajo'
-  | 'lote_exportacion'
-  | 'lote_otro'
-  | 'venta_directa'
-  | 'despacho'
-  | 'merma';
+export type FuenteCosto = 'manual' | 'facturas';
 
-export interface NodoFlujo {
-  /** Único: 'compra', 'ajuste', 'cat:<clave>', 'clas:<productoId>' (clasificación de compra PCB), 'lote:<id>', 'venta:<categoriaClave>', 'despacho', 'merma:<tipo>'. */
-  id: string;
-  tipo: TipoNodoFlujo;
+export interface CostoProductoInventario {
+  productoId: string;
   nombre: string;
-  /**
-   * Columna del diagrama (0 a 5); todo enlace va de una columna menor a una mayor, así que no hay ciclos:
-   * 0 compra/ajuste, 1 categoría o clasificación de compra PCB, 2 lote de trabajo por procesar (o sin fase),
-   * 3 lote de trabajo procesado, 4 lote de exportación u otro, 5 venta directa / despacho / merma.
-   * (Antes eran 0 a 4 con trabajo en 2, exportación en 3 y destinos finales en 4: el 5 es nuevo.)
-   */
-  columna: 0 | 1 | 2 | 3 | 4 | 5;
-  categoriaClave: string | null;
-  loteId: string | null;
-  /** max(kg que entran, kg que salen). */
+  categoria: string;
+  categoriaClave: string;
+  vista: VistaInventario;
+  /** Stock actual en galpón (todos los almacenes, sin lote). */
   kg: number;
+  /** Promedio ponderado de las facturas de compra vigentes; null = sin facturas. */
+  costoFacturasKg: number | null;
+  /** Costo de referencia fijado a mano; null = sin referencia. */
+  costoReferenciaKg: number | null;
+  /** Referencia si existe; si no, facturas; si no, null. */
+  costoEfectivoKg: number | null;
+  fuente: FuenteCosto | null;
+  /** kg x costoEfectivoKg; null si no hay costo. */
+  valorUsd: number | null;
 }
 
-export interface EnlaceFlujo {
-  origen: string;
-  destino: string;
-  kg: number;
+/** Solo productos con stock > 0, ordenados por categoría y nombre. Requiere facturacion:ver. */
+export interface CostosInventario {
+  productos: CostoProductoInventario[];
+  totales: { valorUsd: number | null; kgSinCosto: number; productosSinCosto: number };
 }
 
-export interface FlujoPantalla extends MetaPantalla {
-  nodos: NodoFlujo[];
-  enlaces: EnlaceFlujo[];
-  /** true cuando no hay ningún flujo para los filtros: mostrar `mensajeSinDatos`, nunca un diagrama vacío. */
-  sinDatos: boolean;
-  mensajeSinDatos: string | null;
-  /** Categorías con stock o compras en el período pero sin ninguna transformación: su flujo termina en la categoría. */
-  categoriasSinTransformaciones: Array<{ clave: string; nombre: string }>;
-  /**
-   * Tramos del recorrido real que NO tienen datos registrados (p. ej. PCB y PGM se pesan directo a lotes de trabajo y
-   * hoy no pasan por el registro de transformaciones). Mostrar "sin datos" en ese tramo; nunca inventar enlaces.
-   */
-  tramosSinDatos: Array<{ desde: string; hacia: string; motivo: string }>;
-  /** true si ninguna transformación aparece en el flujo mostrado (ver mensajeSinDatos). */
-  sinTransformaciones: boolean;
-  /** Kg que no se pudieron dibujar sin crear un ciclo o con datos incoherentes (se informan, no se esconden). */
-  enlacesOmitidos: Array<{ origen: string; destino: string; kg: number; motivo: string }>;
-  totales: { kgComprado: number; kgTransformado: number; kgMerma: number; kgDespachado: number; transformaciones: number };
+export interface ActualizarCostosInventario {
+  items: Array<{ productoId: string; costoReferenciaKg: number | null }>;
+}
+
+// ---- (c2) composición de un lote -----------------------------------------------------
+
+export interface ComposicionLoteItem {
+  productoId: string;
+  producto: string;
+  categoria: string;
+  /** Composición del STOCK ACTUAL del lote para este producto. */
+  kgActual: number;
+  /** Kg comprados de este producto dentro del período y destinados al lote (más el reparto de transformaciones completadas). */
+  kgCompradoPeriodo: number;
+}
+
+export interface ComposicionLote {
+  loteId: string;
+  /** true si alguna cifra es un reparto proporcional (ver nota). */
+  aproximado: boolean;
+  /** Ordenado por kgActual descendente. */
+  items: ComposicionLoteItem[];
+  totales: { kgActual: number; kgCompradoPeriodo: number };
+  nota: string | null;
 }
 
 // ---- (d) alertas -------------------------------------------------------------------
