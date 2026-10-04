@@ -139,14 +139,12 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
 
   const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
 
-  const colorTipo = tipo === 'ingreso' ? 'green' : tipo === 'egreso' ? 'red' : 'blue';
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label="Nuevo movimiento">
       <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
           <h2 className="text-lg font-bold text-text-primary">Nuevo movimiento</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded text-text-muted hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
             <X size={20} />
           </button>
         </div>
@@ -161,7 +159,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
                 onClick={() => cambiarTipo('ingreso')}
                 className={`flex flex-col items-center justify-center gap-1 py-3 rounded-lg border-2 text-xs font-medium transition-all ${
                   tipo === 'ingreso'
-                    ? 'border-green-500 bg-green-50 text-green-700'
+                    ? 'border-brand-600 bg-brand-50 text-brand-800'
                     : 'border-border text-text-secondary hover:bg-surface-alt'
                 }`}
               >
@@ -173,7 +171,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
                 onClick={() => cambiarTipo('egreso')}
                 className={`flex flex-col items-center justify-center gap-1 py-3 rounded-lg border-2 text-xs font-medium transition-all ${
                   tipo === 'egreso'
-                    ? 'border-red-500 bg-red-50 text-red-700'
+                    ? 'border-text-primary bg-surface-alt text-text-primary'
                     : 'border-border text-text-secondary hover:bg-surface-alt'
                 }`}
               >
@@ -185,7 +183,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
                 onClick={() => cambiarTipo('transferencia')}
                 className={`flex flex-col items-center justify-center gap-1 py-3 rounded-lg border-2 text-xs font-medium transition-all ${
                   tipo === 'transferencia'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    ? 'border-brand-600 bg-brand-50 text-brand-800'
                     : 'border-border text-text-secondary hover:bg-surface-alt'
                 }`}
               >
@@ -265,7 +263,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
 
           {/* Monto destino + tasa — solo transferencia entre monedas distintas */}
           {monedasDistintas && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-3">
+            <div className="bg-brand-50 border border-brand-200 rounded-lg p-3 space-y-3">
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1">Tasa a usar (sugerencia)</label>
                 <div className="flex rounded-lg overflow-hidden border border-border text-xs w-fit">
@@ -389,11 +387,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
             <button
               type="submit"
               disabled={guardando}
-              className={`flex-1 py-2.5 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
-                colorTipo === 'green' ? 'bg-green-600 hover:bg-green-700' :
-                colorTipo === 'red' ? 'bg-red-600 hover:bg-red-700' :
-                'bg-brand-600 hover:bg-brand-700'
-              }`}
+              className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
             >
               {guardando ? 'Registrando...' : `Registrar ${tipo}`}
             </button>

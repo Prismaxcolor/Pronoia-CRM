@@ -73,13 +73,13 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
   const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label={editando ? 'Editar banca' : 'Nueva banca'}>
       <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
           <h2 className="text-lg font-bold text-text-primary">
             {editando ? 'Editar banca' : 'Nueva banca'}
           </h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded text-text-muted hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
             <X size={20} />
           </button>
         </div>
