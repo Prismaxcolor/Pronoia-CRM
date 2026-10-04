@@ -9,7 +9,7 @@ import { BlobChat } from './BlobChat';
 import { BlobCara } from './BlobCara';
 import { expresionPorAnimo, semillaBlob } from './cara';
 import { PX_TAMANO } from './config';
-import { elegirFrase, fraseDeReaccion, intervaloFrases, paginaDesdeRuta, probabilidadCambioRuta } from './frases';
+import { bromasPara, elegirFrase, fraseDeReaccion, intervaloFrases, paginaDesdeRuta, probabilidadCambioRuta } from './frases';
 import { aplicarEsquina, useBlobArrastre } from './use-blob-arrastre';
 import { animarBlob, useBlobAnimo, useBlobConfig } from './use-blob-hooks';
 import './blob.css';
@@ -72,9 +72,10 @@ export default function Blob() {
   const fraseTimer = useRef<number>(0);
 
   // Valores "vivos" para timers y callbacks sin re-suscribir efectos.
-  const vivo = useRef({ config, pathname, animo, chatAbierto });
+  const bromas = bromasPara(usuario?.nombre);
+  const vivo = useRef({ config, pathname, animo, chatAbierto, bromas });
   useLayoutEffect(() => {
-    vivo.current = { config, pathname, animo, chatAbierto };
+    vivo.current = { config, pathname, animo, chatAbierto, bromas };
   });
 
   useLayoutEffect(() => {
@@ -98,7 +99,7 @@ export default function Blob() {
       timer = window.setTimeout(() => {
         const v = vivo.current;
         if (!document.hidden && v.animo === 'normal' && !v.chatAbierto) {
-          decir(elegirFrase({ pagina: paginaDesdeRuta(v.pathname), contexto: 'inactivo', propias: v.config.frasesPropias }));
+          decir(elegirFrase({ pagina: paginaDesdeRuta(v.pathname), contexto: 'inactivo', propias: v.config.frasesPropias, bromas: v.bromas }));
         }
         programar();
       }, ms);
@@ -114,7 +115,7 @@ export default function Blob() {
     const v = vivo.current;
     if (v.config.modo !== 'activo' || v.chatAbierto || v.animo === 'dormido') return;
     if (Math.random() < probabilidadCambioRuta(v.config.frecuencia)) {
-      decir(elegirFrase({ pagina: paginaDesdeRuta(pathname), contexto: 'cambio-ruta', propias: v.config.frasesPropias }));
+      decir(elegirFrase({ pagina: paginaDesdeRuta(pathname), contexto: 'cambio-ruta', propias: v.config.frasesPropias, bromas: v.bromas }));
     }
   }, [pathname, decir]);
 
@@ -126,7 +127,7 @@ export default function Blob() {
       sessionStorage.setItem(CLAVE_SALUDO, '1');
     } catch { /* sin sessionStorage: saluda igual */ }
     const t = window.setTimeout(() => {
-      decir(elegirFrase({ pagina: 'otra', contexto: 'saludo' }));
+      decir(elegirFrase({ pagina: 'otra', contexto: 'saludo', bromas: vivo.current.bromas }));
       guinar();
     }, 1500);
     return () => window.clearTimeout(t);

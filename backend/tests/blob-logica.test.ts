@@ -13,6 +13,8 @@ import {
   probabilidadCambioRuta,
   FRASES_POR_PAGINA,
   FRASES_GENERALES,
+  FRASES_BROMA_JESUS,
+  bromasPara,
 } from '../../frontend/src/features/blob/frases';
 import {
   normalizarConfig,
@@ -229,5 +231,25 @@ describe('cara (semilla y expresiones)', () => {
     expect(expresionPorAnimo('dormido', false)).toBe('sleepy');
     expect(expresionPorAnimo('normal', true)).toBe('thinking');
     expect(expresionPorAnimo('enojado', true)).toBe('mad');
+  });
+});
+
+describe('broma privada de BLOB', () => {
+  it('solo se activa para Jesus Cubas, con o sin tildes y mayúsculas', () => {
+    expect(bromasPara('Jesus Cubas')).toBe(FRASES_BROMA_JESUS);
+    expect(bromasPara('JESÚS CUBAS')).toBe(FRASES_BROMA_JESUS);
+    expect(bromasPara('DIONI GARCIA')).toEqual([]);
+    expect(bromasPara('Jesus Perez')).toEqual([]);
+    expect(bromasPara(undefined)).toEqual([]);
+  });
+
+  it('el saludo siempre es una broma y el resto de frases lo es con frecuencia', () => {
+    expect(FRASES_BROMA_JESUS).toContain(elegirFrase({ pagina: 'otra', contexto: 'saludo', bromas: FRASES_BROMA_JESUS, aleatorio: () => 0.99 }));
+    expect(FRASES_BROMA_JESUS).toContain(elegirFrase({ pagina: 'inventario', contexto: 'inactivo', bromas: FRASES_BROMA_JESUS, aleatorio: () => 0.2 }));
+    expect(FRASES_BROMA_JESUS).not.toContain(elegirFrase({ pagina: 'inventario', contexto: 'inactivo', bromas: FRASES_BROMA_JESUS, aleatorio: () => 0.9 }));
+  });
+
+  it('sin bromas todo sigue igual', () => {
+    expect(FRASES_BROMA_JESUS).not.toContain(elegirFrase({ pagina: 'otra', contexto: 'saludo' }));
   });
 });

@@ -64,6 +64,23 @@ export const FRASES_POR_PAGINA: Partial<Record<PaginaBlob, string[]>> = {
 
 export const FRASES_SALUDO: string[] = ['¡Hola!', '¡Aquí estoy!', '¡A trabajar!'];
 
+/** Broma privada para Jesús Cubas: solo BLOB se la dice a él (se detecta por su nombre de usuario). */
+export const FRASES_BROMA_JESUS: string[] = [
+  'Hoy no comemos keto, ¿Yaja hizo nuggets?',
+  'Ayer Jonatan me dijo un chinazo horrible, jajaja',
+  'Jesús, ¿hoy sí comemos keto o hizo nuggets Yaja?',
+  'Jonatan y sus chinazos... ayer se pasó, jajaja',
+];
+/** Probabilidad de que una frase espontánea o de cambio de pantalla sea de la broma. */
+export const PROBABILIDAD_BROMA = 0.7;
+
+const sinTildes = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+export function bromasPara(nombre: string | null | undefined): string[] {
+  const n = sinTildes(nombre ?? '');
+  return n.includes('jesus') && n.includes('cubas') ? FRASES_BROMA_JESUS : [];
+}
+
 export const MAX_FRASES_PROPIAS = 20;
 export const MAX_LONGITUD_FRASE = 80;
 
@@ -71,6 +88,8 @@ interface OpcionesFrase {
   pagina: PaginaBlob;
   contexto: ContextoFrase;
   propias?: string[];
+  /** Frases de broma para un usuario concreto; mandan en el saludo y salen con frecuencia el resto del tiempo. */
+  bromas?: string[];
   aleatorio?: () => number;
 }
 
@@ -84,7 +103,8 @@ function elegir<T>(lista: T[], aleatorio: () => number): T {
  * - cambio-ruta: prioriza las de la pantalla (si hay) más las propias.
  * - inactivo: mezcla generales + pantalla + propias.
  */
-export function elegirFrase({ pagina, contexto, propias = [], aleatorio = Math.random }: OpcionesFrase): string {
+export function elegirFrase({ pagina, contexto, propias = [], bromas = [], aleatorio = Math.random }: OpcionesFrase): string {
+  if (bromas.length > 0 && (contexto === 'saludo' || aleatorio() < PROBABILIDAD_BROMA)) return elegir(bromas, aleatorio);
   if (contexto === 'saludo') return elegir(FRASES_SALUDO, aleatorio);
   const deRuta = FRASES_POR_PAGINA[pagina] ?? [];
   const pool =
