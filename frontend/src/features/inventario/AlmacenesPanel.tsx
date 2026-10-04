@@ -118,7 +118,7 @@ function AlmacenesPanel() {
           <TarjetaKpi
             titulo="Kg en galpón"
             icono={<Warehouse size={16} />}
-            ayuda="Todos los kilos que hay ahora en los almacenes (materiales sueltos más lotes). Es la misma cifra que muestra la pantalla de Inventario."
+            ayuda="Suma de los kg que hay hoy en todos los almacenes, contando materiales y lotes. Es la misma cifra de la pantalla de Inventario."
             estado={!puedeVerKg ? 'sinPermiso' : resumen.estado === 'cargando' ? 'cargando' : kpis.totalKg == null ? 'vacio' : 'listo'}
             mensajeVacio="No se pudo leer el inventario"
             valor={kpis.totalKg != null ? formatearKg(kpis.totalKg) : undefined}
@@ -128,20 +128,20 @@ function AlmacenesPanel() {
           <TarjetaKpi
             titulo="Valor del inventario (a costo)"
             icono={<Coins size={16} />}
-            ayuda="Lo que costó comprar los materiales que hay hoy en los almacenes, en USD (promedio ponderado de compra). Solo cuenta los kilos con costo registrado. El valor estimado de venta de los lotes es otra cifra y no se suma."
+            ayuda="Cuánto costó comprar los materiales que hay hoy en los almacenes, en USD. Se multiplican los kg de cada material por su precio promedio de compra por kg (según las facturas de compra). Los kg sin precio de compra no se cuentan, y los lotes van aparte con su precio de venta estimado, que no se suma."
             estado={!puedeVerValor ? 'sinPermiso' : !puedeVerKg ? 'vacio' : resumen.estado === 'cargando' ? 'cargando' : !r?.valor ? 'vacio' : 'listo'}
             mensajeVacio="No se pudo leer el valor"
             valor={r?.valor ? formatearUsd(r.valor.costoMateriales.valorUsd) : undefined}
-            subtitulo="a costo de compra · materiales"
+            subtitulo="lo que costó comprar los materiales"
             comparacion={null}
           >
             {r?.valor && (
               <p className="mt-1 text-xs text-text-muted">
                 {r.valor.costoMateriales.kgSinCosto > 0
-                  ? `${formatearKg(r.valor.costoMateriales.kgSinCosto)} sin costo registrado · `
+                  ? `${formatearKg(r.valor.costoMateriales.kgSinCosto)} sin precio de compra (no entran en el costo) · `
                   : ''}
                 {r.valor.ventaEstimadaLotes.kgConPrecio > 0
-                  ? `Lotes: ${formatearUsd(r.valor.ventaEstimadaLotes.valorUsd)} de venta estimada (otra cifra)`
+                  ? `Lotes: ${formatearUsd(r.valor.ventaEstimadaLotes.valorUsd)} si se vendieran al precio estimado (aparte, no se suma al costo)`
                   : 'Lotes: sin precio estimado cargado'}
               </p>
             )}
@@ -149,7 +149,7 @@ function AlmacenesPanel() {
           <TarjetaKpi
             titulo="Almacenes activos"
             icono={<Star size={16} />}
-            ayuda="Almacenes que hoy reciben y mueven material. El predeterminado es el único que recibe y pierde stock automáticamente con cada compra y venta."
+            ayuda="Cantidad de almacenes en uso (los desactivados no se cuentan). El predeterminado es el almacén que suma o resta kg automáticamente con cada compra y venta."
             valor={formatearNumero(kpis.activos, 0)}
             subtitulo={kpis.predeterminado ? `predeterminado: ${kpis.predeterminado}` : 'ninguno es el predeterminado'}
             comparacion={null}
@@ -159,7 +159,7 @@ function AlmacenesPanel() {
           <TarjetaKpi
             titulo="Toma física más antigua"
             icono={<CalendarCheck size={16} />}
-            ayuda="De los almacenes activos, el que lleva más tiempo sin una toma física cerrada (contar el material con la mano y ajustar el sistema). «Nunca» significa que ese almacén no tiene ninguna."
+            ayuda="Entre los almacenes activos, el que hace más tiempo que no cierra una toma física (contar el material a mano y corregir el sistema con lo contado). Muestra la fecha de esa última toma y los días transcurridos. «Nunca» quiere decir que ese almacén no ha cerrado ninguna."
             estado={kpis.tomaMasAntigua ? 'listo' : 'vacio'}
             mensajeVacio="Aún no hay almacenes activos"
             valor={kpis.tomaMasAntigua ? (kpis.tomaMasAntigua.fecha ? formatearFecha(kpis.tomaMasAntigua.fecha) : 'Nunca') : undefined}
@@ -199,7 +199,7 @@ function AlmacenesPanel() {
 
       <Bloque
         titulo="Almacenes"
-        queEstasViendo="Cada tarjeta es un galpón con su foto, los kilos que tiene hoy y, si tienes permiso, lo que valen. Las compras y ventas afectan al predeterminado; los traslados mueven material entre almacenes."
+        queEstasViendo="Cada tarjeta es un almacén (galpón) con su foto, los kg que tiene hoy y, si tienes permiso, cuánto valen. Las compras y ventas suman o restan en el almacén predeterminado; los traslados mueven material de un almacén a otro."
         acciones={accionNuevo}
       >
         {almacenes.length === 0 ? (

@@ -72,8 +72,8 @@ function TomaFisicaPanel() {
   const conDatos = resumen.cerradasConDatos;
   const hayCerradasSinDatos = resumen.cerradas > conDatos;
   const subtituloCierre = conDatos === 0
-    ? 'Aún no hay tomas cerradas con resultado'
-    : `${formatearNumero(conDatos, 0)} ${plural(conDatos, 'toma cerrada', 'tomas cerradas')}${hayCerradasSinDatos ? ' (las antiguas sin resumen no suman)' : ''}`;
+    ? 'Aún no hay tomas cerradas con resultado guardado'
+    : `${formatearNumero(conDatos, 0)} ${plural(conDatos, 'toma cerrada', 'tomas cerradas')}${hayCerradasSinDatos ? ' (las antiguas sin resultado guardado no se suman)' : ''}`;
   const sentidoNeto = resumen.diferenciaNetaKg < 0 ? 'Faltante neto · ' : resumen.diferenciaNetaKg > 0 ? 'Sobrante neto · ' : 'Cuadra · ';
 
   return (
@@ -82,8 +82,7 @@ function TomaFisicaPanel() {
         <div>
           <h2 className="text-xl font-bold text-text-primary">Tomas físicas de inventario</h2>
           <p className="mt-1 max-w-2xl text-sm text-text-secondary">
-            Conteo físico que reconcilia el stock teórico contra lo realmente contado. Mientras
-            una esté abierta, quedan bloqueadas solo las categorías elegidas en ese almacén.
+            Una toma física es contar a mano el material de un almacén y comparar lo contado con lo que dice el sistema (el «teórico»). Al cerrarla, el sistema se corrige con lo contado. Mientras una esté abierta, quedan bloqueadas solo las categorías elegidas en ese almacén.
           </p>
         </div>
         {puedeCrear && (
@@ -107,20 +106,20 @@ function TomaFisicaPanel() {
           <GrillaKpis>
             <TarjetaKpi
               titulo="Tomas abiertas" icono={<ClipboardList size={16} />}
-              ayuda="Conteos que se están haciendo ahora. Mientras una está abierta, las categorías elegidas quedan bloqueadas en ese almacén."
+              ayuda="Cantidad de tomas físicas que se empezaron y todavía no se cierran ni se cancelan. Mientras una está abierta, las categorías elegidas quedan bloqueadas en ese almacén."
               valor={formatearNumero(resumen.abiertas, 0)} unidad={plural(resumen.abiertas, 'toma', 'tomas')}
-              subtitulo="Según los filtros de almacén y búsqueda" comparacion={null}
+              subtitulo="Según el almacén y la búsqueda elegidos" comparacion={null}
             />
             <TarjetaKpi
               titulo="Tomas cerradas" icono={<ClipboardCheck size={16} />}
-              ayuda="Conteos culminados, cuyos ajustes ya se aplicaron al inventario. Las canceladas no se cuentan aquí."
+              ayuda="Cantidad de tomas físicas ya terminadas. Al cerrarse, el inventario se corrigió con lo contado. Las canceladas no se cuentan aquí."
               valor={formatearNumero(resumen.cerradas, 0)} unidad={plural(resumen.cerradas, 'toma', 'tomas')}
-              subtitulo={resumen.canceladas > 0 ? `Además hay ${formatearNumero(resumen.canceladas, 0)} ${plural(resumen.canceladas, 'cancelada', 'canceladas')}` : 'Con ajustes ya aplicados'}
+              subtitulo={resumen.canceladas > 0 ? `Además hay ${formatearNumero(resumen.canceladas, 0)} ${plural(resumen.canceladas, 'cancelada', 'canceladas')}` : 'Con el inventario ya corregido'}
               comparacion={null}
             />
             <TarjetaKpi
               titulo="Diferencia neta" icono={<Scale size={16} />}
-              ayuda="Suma de (real contado − teórico del sistema) en las tomas cerradas. Negativo = faltó material; positivo = sobró. Los faltantes y sobrantes se compensan entre sí."
+              ayuda="Resultado total de las tomas cerradas: kg realmente contados menos kg que decía el sistema (teórico). Negativo: faltó material. Positivo: sobró material. Los faltantes y sobrantes se compensan entre sí. Por ejemplo: faltan 10 kg de un material y sobran 4 kg de otro, la diferencia neta es -6 kg."
               valor={conDatos > 0 ? kgConSigno(resumen.diferenciaNetaKg) : undefined} unidad={conDatos > 0 ? 'kg' : undefined}
               estado={conDatos > 0 ? 'listo' : 'vacio'} mensajeVacio="Sin tomas cerradas con resultado todavía"
               subtitulo={conDatos > 0 ? sentidoNeto + subtituloCierre : undefined}
@@ -128,7 +127,7 @@ function TomaFisicaPanel() {
             />
             <TarjetaKpi
               titulo="Ajustes aplicados" icono={<Wrench size={16} />}
-              ayuda="Cantidad de líneas (material o lote) con diferencia distinta de cero que se ajustaron al culminar las tomas cerradas."
+              ayuda="Cantidad de materiales o lotes cuyo conteo no coincidió con el sistema (diferencia mayor a 0,005 kg) y por eso se corrigieron al cerrar las tomas. Cada material o lote corregido cuenta como un ajuste."
               valor={conDatos > 0 ? formatearNumero(resumen.ajustes, 0) : undefined} unidad={conDatos > 0 ? plural(resumen.ajustes, 'ajuste', 'ajustes') : undefined}
               estado={conDatos > 0 ? 'listo' : 'vacio'} mensajeVacio="Sin tomas cerradas con resultado todavía"
               subtitulo={conDatos > 0 ? subtituloCierre : undefined}
@@ -138,11 +137,11 @@ function TomaFisicaPanel() {
         )}
       </section>
 
-      <Bloque titulo="Diferencia por almacén" queEstasViendo="Kilos que hubo que ajustar (faltantes y sobrantes en valor absoluto) en las tomas cerradas, por almacén. Debajo de cada nombre, el resultado neto.">
+      <Bloque titulo="Diferencia por almacén" queEstasViendo="Para cada almacén, la barra suma los kg que se corrigieron en sus tomas cerradas, contando faltantes y sobrantes como cantidades positivas (no se compensan). Debajo de cada nombre está el resultado neto, donde sí se compensan, y cuántas tomas son.">
         {cargando ? <SkeletonBloque /> : porAlmacen.length === 0 ? (
           <EstadoVacio
             mensaje="Todavía no hay diferencias que graficar."
-            descripcion="Esta gráfica se llena cuando se culmina una toma física: ahí se guarda lo contado contra lo teórico de cada almacén."
+            descripcion="Esta gráfica se llena cuando se cierra una toma física: ahí se guarda lo contado frente a lo que decía el sistema en cada almacén."
             icono={<Scale size={22} />}
             accion={puedeCrear ? { etiqueta: 'Crear una toma física', onClick: () => setModalAbierto(true) } : undefined}
           />

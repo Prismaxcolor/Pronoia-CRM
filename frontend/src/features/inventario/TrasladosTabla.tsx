@@ -36,7 +36,7 @@ function celdaDiferencia(t: Traslado) {
   if (d == null) return <span className="text-text-muted">—</span>;
   if (!hayDiferencia(d)) return <span className="text-text-secondary">Sin diferencia</span>;
   return (
-    <Insignia tono="aviso" forma="cuadrada" title="Lo recibido no coincide con lo enviado">
+    <Insignia tono="aviso" forma="cuadrada" title="Los kg pesados al llegar no coinciden con los pesados al salir (recibido menos enviado).">
       {d > 0 ? '+' : ''}{kg2(d)} kg · revisar
     </Insignia>
   );
@@ -68,7 +68,7 @@ function columnasTraslados(a: AccionesTraslado, hoy: Date): ColumnaTabla<Traslad
       clave: 'recibido', titulo: 'Recibido (kg)', alinear: 'derecha', valorOrden: t => (t.estado === 'completo' ? t.pesoNetoRecibido : null),
       celda: t => (t.estado === 'completo' ? kg2(t.pesoNetoRecibido ?? 0) : '—'), decimalesCsv: 2,
       total: ts => kg2(ts.filter(t => t.estado === 'completo').reduce((s, x) => s + (x.pesoNetoRecibido ?? 0), 0)),
-      ayuda: 'Lo que se pesó al llegar al almacén destino. Un traslado pendiente aún no tiene este dato.',
+      ayuda: 'Kg que se pesaron al llegar al almacén destino. Un traslado pendiente todavía no tiene este dato.',
     },
     {
       clave: 'diferencia', titulo: 'Diferencia (kg)', alinear: 'derecha', valorOrden: t => diferenciaTraslado(t), celda: celdaDiferencia,
@@ -77,7 +77,7 @@ function columnasTraslados(a: AccionesTraslado, hoy: Date): ColumnaTabla<Traslad
         const s = ts.reduce((acc, t) => acc + (diferenciaTraslado(t) ?? 0), 0);
         return Math.abs(s) > TOLERANCIA_DIFERENCIA_KG ? `${s > 0 ? '+' : ''}${kg2(s)}` : '0,00';
       },
-      ayuda: 'Recibido menos enviado. Solo existe cuando el traslado está completo; si no es cero, queda registrado como discrepancia.',
+      ayuda: 'Kg recibidos menos kg enviados. Negativo: llegó menos de lo que salió; positivo: llegó más. Solo se calcula cuando el traslado ya fue recibido; diferencias de 0,01 kg o menos se tratan como redondeo de la báscula.',
     },
     {
       clave: 'estado', titulo: 'Estado', valorOrden: t => t.estado,

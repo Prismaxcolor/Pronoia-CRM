@@ -100,7 +100,7 @@ function TomaFisicaDetallePage() {
   const handleCulminar = async () => {
     const ok = await confirmar({
       titulo: 'Culminar toma física',
-      mensaje: `Se aplicarán los ajustes de inventario y el almacén "${tomaFisica?.almacenNombre}" quedará desbloqueado. Esta acción no se puede deshacer.`,
+      mensaje: `Se corregirá el inventario con lo contado y el almacén "${tomaFisica?.almacenNombre}" quedará desbloqueado. Esta acción no se puede deshacer.`,
     });
     if (!ok) return;
     setCulminando(true);
@@ -181,7 +181,7 @@ function TomaFisicaDetallePage() {
             { etiqueta: tomaFisica.codigo },
           ]}
           titulo={`Toma física ${tomaFisica.codigo}`}
-          subtitulo={`${tomaFisica.almacenNombre ?? 'Almacén'} · ${tomaFisica.alcance === 'lote' ? 'Por lote' : 'Por categoría'} · lo que dice el sistema contra lo realmente contado.`}
+          subtitulo={`${tomaFisica.almacenNombre ?? 'Almacén'} · ${tomaFisica.alcance === 'lote' ? 'Por lote' : 'Por categoría'} · compara lo que dice el sistema con lo que se contó a mano.`}
           acciones={<><Insignia tono={estado.tono}>{estado.etiqueta}</Insignia>{acciones}</>}
         />
       </div>
@@ -191,7 +191,7 @@ function TomaFisicaDetallePage() {
         <GrillaKpis>
           <TarjetaKpi
             titulo="Avance del conteo" icono={<Target size={16} />}
-            ayuda="Cuántos de los materiales (o lotes) del alcance ya tienen al menos un pesaje registrado."
+            ayuda="Cuántos de los materiales (o lotes) que entran en esta toma ya tienen al menos un pesaje registrado. Por ejemplo: 3 de 5 significa que faltan 2 por pesar."
             valor={`${formatearNumero(avance.contadas, 0)} de ${formatearNumero(avance.total, 0)}`} unidad={tomaFisica.alcance === 'lote' ? 'lotes' : 'materiales'}
             subtitulo={avance.total === 0 ? 'Esta toma no tiene materiales en su alcance' : avance.faltan > 0 ? `Faltan ${formatearNumero(avance.faltan, 0)} por contar` : 'Todo el alcance está contado'}
           >
@@ -199,21 +199,21 @@ function TomaFisicaDetallePage() {
           </TarjetaKpi>
           <TarjetaKpi
             titulo="Teórico (sistema)" icono={<Warehouse size={16} />}
-            ayuda="Stock que el sistema creía que había en el almacén para este alcance. Una vez cerrada la toma es la foto de ese momento."
-            valor={kg(totalTeorico)} unidad="kg" subtitulo="Suma de los materiales del alcance" comparacion={null}
+            ayuda="Kg que el sistema dice que hay de los materiales o lotes de esta toma. Es lo que se espera encontrar al contar. Cuando la toma se cierra, la cifra queda guardada como estaba en ese momento."
+            valor={kg(totalTeorico)} unidad="kg" subtitulo="Lo que dice el sistema, sumado" comparacion={null}
           />
           <TarjetaKpi
             titulo="Real (contado)" icono={<ClipboardCheck size={16} />}
-            ayuda="Suma del peso neto de los pesajes registrados (bruto menos tara)."
+            ayuda="Kg que se contaron de verdad: suma del peso neto de los pesajes de esta toma (peso con envase menos el peso del envase, o tara). Los materiales de categoría que aún no se han pesado cuentan como 0 kg."
             valor={kg(totalReal)} unidad="kg"
-            subtitulo={esAbierta && avance.faltan > 0 ? `Parcial: faltan ${formatearNumero(avance.faltan, 0)} por contar` : `${formatearNumero(detalle.length, 0)} pesaje${detalle.length === 1 ? '' : 's'} registrados`}
+            subtitulo={esAbierta && avance.faltan > 0 ? `Parcial: faltan ${formatearNumero(avance.faltan, 0)} por contar` : `${formatearNumero(detalle.length, 0)} pesaje${detalle.length === 1 ? '' : 's'} registrado${detalle.length === 1 ? '' : 's'}`}
             comparacion={null}
           />
           <TarjetaKpi
             titulo="Diferencia neta" icono={<Scale size={16} />}
-            ayuda="Real menos teórico. Negativo = faltó material; positivo = sobró. El texto 'Cuadra / menor / notable' compara con el teórico: hasta 2 % es menor."
+            ayuda="Kg contados (real) menos kg que decía el sistema (teórico), de toda la toma. Negativo: faltó material. Positivo: sobró material. Por ejemplo: el sistema decía 100 kg y contaste 94 kg, la diferencia es -6 kg (faltante). El aviso de abajo dice «Cuadra» si no hay diferencia, «menor» si es de hasta 2 % del teórico y «notable» si pasa de 2 %."
             valor={kgConSigno(totalDiferencia)} unidad="kg"
-            subtitulo={esAbierta ? 'Provisional mientras la toma siga abierta' : esCancelada ? 'Toma cancelada: no se aplicó ningún ajuste' : `${sentidoTotal} · ${formatearNumero(ajustes, 0)} ${ajustes === 1 ? 'ajuste aplicado' : 'ajustes aplicados'}`}
+            subtitulo={esAbierta ? 'Provisional: cambia mientras sigas contando' : esCancelada ? 'Toma cancelada: el inventario no se tocó' : `${sentidoTotal} · ${formatearNumero(ajustes, 0)} ${ajustes === 1 ? 'ajuste aplicado' : 'ajustes aplicados'}`}
             comparacion={null}
           >
             {!esCancelada && avance.contadas > 0 && <div className="mt-2"><Insignia tono={semaforoTotal.tono}>{semaforoTotal.etiqueta}</Insignia></div>}
@@ -237,7 +237,7 @@ function TomaFisicaDetallePage() {
       </div>
 
       <div className="print:hidden">
-        <Bloque titulo="Mayores diferencias" queEstasViendo="los materiales con más kilos de diferencia entre lo contado y el sistema (▼ falta, ▲ sobra). El texto de cada barra dice cuánto y en qué sentido.">
+        <Bloque titulo="Mayores diferencias" queEstasViendo="Los materiales o lotes donde lo contado más se aleja de lo que decía el sistema. El largo de la barra son los kg de diferencia, sin importar si faltan o sobran (▼ falta, ▲ sobra). El texto de cada barra dice cuántos kg y en qué sentido.">
           {datosBarras.length > 0 ? (
             <div className="rounded-xl border border-border bg-surface p-4">
               <Suspense fallback={<SkeletonBloque />}>

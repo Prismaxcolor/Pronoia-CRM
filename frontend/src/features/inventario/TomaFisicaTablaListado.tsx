@@ -47,7 +47,7 @@ const COLUMNAS: ReadonlyArray<ColumnaTabla<TomaFisicaInventario>> = [
   { clave: 'material', titulo: 'Material', valorOrden: materialDe, claseCelda: 'max-w-[16rem] truncate' },
   {
     clave: 'diferencia', titulo: 'Diferencia neta', alinear: 'derecha',
-    ayuda: 'Real contado menos teórico del sistema, sumado en la toma. Negativo = faltante. Solo existe para tomas cerradas.',
+    ayuda: 'Kg contados menos kg que decía el sistema, sumando todos los materiales de la toma. Negativo: faltó material (faltante). Positivo: sobró (sobrante). Solo aparece en tomas cerradas.',
     valorOrden: t => diferenciaDeToma(t)?.netoKg ?? null,
     celda: textoDiferencia,
     valorCsv: t => diferenciaDeToma(t)?.netoKg ?? null,
@@ -55,7 +55,7 @@ const COLUMNAS: ReadonlyArray<ColumnaTabla<TomaFisicaInventario>> = [
   },
   {
     clave: 'ajustes', titulo: 'Ajustes', alinear: 'derecha',
-    ayuda: 'Cantidad de líneas (material o lote) cuya diferencia fue distinta de cero y se ajustó al culminar.',
+    ayuda: 'Cantidad de materiales o lotes cuyo conteo no coincidió con el sistema y se corrigieron al cerrar la toma. Solo aparece en tomas cerradas.',
     valorOrden: t => diferenciaDeToma(t)?.ajustes ?? null,
     celda: t => { const d = diferenciaDeToma(t); return d ? formatearNumero(d.ajustes, 0) : '—'; },
     valorCsv: t => diferenciaDeToma(t)?.ajustes ?? null,

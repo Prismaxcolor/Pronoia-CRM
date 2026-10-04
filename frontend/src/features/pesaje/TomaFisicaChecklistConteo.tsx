@@ -24,7 +24,7 @@ function TomaFisicaChecklistConteo({ lineas, esConLote, seleccionadoId, onElegir
   return (
     <Bloque
       titulo="Avance del conteo"
-      queEstasViendo={`cuántos ${unidad} ya tienen pesaje. Toca uno de la lista para cargarlo en el formulario de abajo.`}
+      queEstasViendo={`Cuántos ${unidad} de esta toma ya tienen al menos un pesaje. «Teórico» es lo que dice el sistema y «Real» lo que ya contaste. Toca uno de la lista para cargarlo en el formulario de abajo.`}
     >
       {lineas.length === 0 ? (
         <EstadoVacio
@@ -44,7 +44,7 @@ function TomaFisicaChecklistConteo({ lineas, esConLote, seleccionadoId, onElegir
               <BarraProgreso valor={avance.contadas} max={avance.total} etiqueta={`Avance del conteo: ${avance.contadas} de ${avance.total} ${unidad}`} tono={avance.faltan === 0 ? 'exito' : 'marca'} alto="h-4" />
             </div>
             <p className="mt-1.5 text-xs text-text-secondary">
-              {avance.faltan === 0 ? 'Todo contado: ya puedes culminar la toma desde su detalle.' : `Faltan ${formatearNumero(avance.faltan, 0)} por contar.`}
+              {avance.faltan === 0 ? 'Todo contado: ya puedes cerrar la toma desde su detalle.' : `Faltan ${formatearNumero(avance.faltan, 0)} por contar.`}
             </p>
           </div>
           <ul className="max-h-80 divide-y divide-border overflow-y-auto">

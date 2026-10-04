@@ -306,7 +306,7 @@ function ConteoTomaFisicaPage() {
         }}
       />
 
-      <Bloque titulo="Registrar un pesaje" queEstasViendo="elige el material, pesa, resta la tara y agrega al menos una foto. El neto se calcula solo; el pesaje queda guardado al tocar Agregar.">
+      <Bloque titulo="Registrar un pesaje" queEstasViendo="Elige el material, anota el peso y la tara (peso del envase) y agrega al menos una foto. El peso neto (peso menos tara) se calcula solo y el pesaje queda guardado al tocar Agregar.">
       <form onSubmit={handleAgregar} className="space-y-5 bg-surface rounded-xl border border-border p-4 sm:p-5">
         <AvisoBorrador formulario="este conteo" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
         {avisoSaneo && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
@@ -450,7 +450,7 @@ function ConteoTomaFisicaPage() {
 
       <Bloque
         titulo={`Pesajes registrados (${detalle.length})`}
-        queEstasViendo={detalle.length > 0 ? `lo que ya pesaste en esta toma: ${fmt(totalNeto)} kg netos en total. Si te equivocaste, quita el pesaje con la papelera.` : 'los pesajes que vayas agregando a esta toma.'}
+        queEstasViendo={detalle.length > 0 ? `Lo que ya pesaste en esta toma: ${fmt(totalNeto)} kg netos en total (peso sin envase). Si te equivocaste, quita el pesaje con la papelera.` : 'Aquí aparecerán los pesajes que vayas agregando a esta toma.'}
       >
         {detalle.length === 0 ? (
           <EstadoVacio

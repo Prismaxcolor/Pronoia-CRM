@@ -27,14 +27,14 @@ function Valor({ t, puedeVerValor }: { t: TarjetaAlmacen; puedeVerValor: boolean
   return (
     <div>
       <p className="text-sm font-semibold tabular-nums text-text-primary">
-        {formatearUsd(v.valorCostoUsd)} <span className="text-xs font-normal text-text-secondary">a costo · materiales</span>
+        {formatearUsd(v.valorCostoUsd)} <span className="text-xs font-normal text-text-secondary">de costo de compra (materiales)</span>
       </p>
-      {v.kgSinCosto > 0 && <p className="text-xs text-text-muted">{formatearKg(v.kgSinCosto)} sin costo registrado</p>}
+      {v.kgSinCosto > 0 && <p className="text-xs text-text-muted">{formatearKg(v.kgSinCosto)} sin precio de compra: no entran en el costo</p>}
       {(v.valorEstimadoUsd > 0 || v.kgLotesSinPrecio > 0) && (
         <p className="text-xs text-text-secondary">
-          {v.valorEstimadoUsd > 0 && <>Lotes: {formatearUsd(v.valorEstimadoUsd)} de venta estimada (otra cifra)</>}
+          {v.valorEstimadoUsd > 0 && <>Lotes: {formatearUsd(v.valorEstimadoUsd)} si se vendieran al precio estimado (aparte, no suma al costo)</>}
           {v.valorEstimadoUsd > 0 && v.kgLotesSinPrecio > 0 && ' · '}
-          {v.kgLotesSinPrecio > 0 && <>{formatearKg(v.kgLotesSinPrecio)} de lotes sin precio estimado</>}
+          {v.kgLotesSinPrecio > 0 && <>{formatearKg(v.kgLotesSinPrecio)} de lotes sin precio estimado de venta</>}
         </p>
       )}
     </div>
@@ -90,7 +90,7 @@ function AlmacenTarjeta({ tarjeta, puedeEditar, puedeVerValor, puedeVerKg, onVer
           {puedeVerKg && tarjeta.kg != null && tarjeta.pctDelTotal != null && (
             <div className="mt-1.5">
               <BarraProgreso valor={tarjeta.pctDelTotal} etiqueta={`Parte del inventario total que está en ${a.nombre}`} alto="h-2" />
-              <p className="mt-1 text-xs text-text-secondary">{formatearNumero(tarjeta.pctDelTotal, 0)} % del inventario total</p>
+              <p className="mt-1 text-xs text-text-secondary">{formatearNumero(tarjeta.pctDelTotal, 0)} % de los kg de todos los almacenes</p>
             </div>
           )}
           {puedeVerKg && tarjeta.kg === 0 && <p className="text-xs text-text-muted">Sin stock ahora mismo</p>}
@@ -99,7 +99,7 @@ function AlmacenTarjeta({ tarjeta, puedeEditar, puedeVerValor, puedeVerKg, onVer
         <Valor t={tarjeta} puedeVerValor={puedeVerValor} />
 
         <p className="text-xs text-text-secondary">
-          Última toma física: <span className="font-medium text-text-primary">{a.ultimaTomaFisica ? formatearFecha(a.ultimaTomaFisica) : 'nunca'}</span>
+          Última toma física (conteo a mano) cerrada: <span className="font-medium text-text-primary">{a.ultimaTomaFisica ? formatearFecha(a.ultimaTomaFisica) : 'nunca'}</span>
         </p>
 
         <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">

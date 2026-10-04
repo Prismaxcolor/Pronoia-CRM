@@ -70,7 +70,7 @@ function TomaFisicaTablasDetalle({ lineas, detalle, lotes, tomaFisicaId, puedeCo
   const columnas: ReadonlyArray<ColumnaTabla<ResumenTomaFisicaLinea>> = [
     {
       clave: 'semaforo', titulo: 'Resultado',
-      ayuda: 'Cuadra: sin diferencia. Menor: hasta 2 % del teórico. Notable: más de 2 % (o material que el sistema no tenía). El texto dice si falta o sobra.',
+      ayuda: 'Cuadra: lo contado coincide con el sistema. Menor: la diferencia es de hasta 2 % de lo que decía el sistema. Notable: pasa de 2 % (o el sistema no tenía nada de ese material). Faltante: se contó menos. Sobrante: se contó más. Sin contar: aún no tiene pesajes.',
       valorOrden: l => clasificarDiferencia(l).etiqueta,
       celda: l => { const s = clasificarDiferencia(l); return <Insignia tono={s.tono}>{s.etiqueta}</Insignia>; },
     },
@@ -83,23 +83,25 @@ function TomaFisicaTablasDetalle({ lineas, detalle, lotes, tomaFisicaId, puedeCo
       celda: l => (<>{l.loteNombre ?? '—'}<BadgesComposicion loteId={l.loteId} lotes={lotes} /></>),
     },
     {
-      clave: 'teorico', titulo: 'Teórico (kg)', alinear: 'derecha', valorOrden: l => l.stockTeorico,
+      clave: 'teorico', titulo: 'Teórico (kg)', ayuda: 'Kg que el sistema decía que había de este material o lote.', alinear: 'derecha', valorOrden: l => l.stockTeorico,
       celda: l => kg(l.stockTeorico), valorCsv: l => l.stockTeorico, decimalesCsv: 2,
       total: ls => kg(ls.reduce((a, l) => a + l.stockTeorico, 0)),
     },
     {
-      clave: 'real', titulo: 'Real (kg)', alinear: 'derecha', valorOrden: l => l.stockReal,
+      clave: 'real', titulo: 'Real (kg)', ayuda: 'Kg contados: suma del peso neto de los pesajes de esta toma. Si aún no se ha pesado, es 0.', alinear: 'derecha', valorOrden: l => l.stockReal,
       celda: l => kg(l.stockReal), valorCsv: l => l.stockReal, decimalesCsv: 2,
       total: ls => kg(ls.reduce((a, l) => a + l.stockReal, 0)),
     },
     {
       clave: 'diferencia', titulo: 'Diferencia (kg)', alinear: 'derecha', valorOrden: l => l.diferencia,
+      ayuda: 'Real menos teórico. Negativo: faltó material. Positivo: sobró.',
       celda: l => <span className="font-semibold text-text-primary">{kgConSigno(l.diferencia)}</span>,
       valorCsv: l => l.diferencia, decimalesCsv: 2,
       total: ls => <span className="font-bold">{kgConSigno(ls.reduce((a, l) => a + l.diferencia, 0))}</span>,
     },
     {
       clave: 'pct', titulo: '% del teórico', alinear: 'derecha', ocultaEnMovil: true,
+      ayuda: 'Cuánto representa la diferencia (sin signo) respecto a lo que decía el sistema. Por ejemplo: 6 kg de diferencia sobre 100 kg teóricos es 6 %. Muestra «—» si el sistema decía 0 kg.',
       valorOrden: l => clasificarDiferencia(l).pct,
       celda: l => { const p = clasificarDiferencia(l).pct; return p === null ? '—' : `${formatearNumero(p, 1)} %`; },
       valorCsv: l => clasificarDiferencia(l).pct, decimalesCsv: 1,
@@ -144,7 +146,7 @@ function TomaFisicaTablasDetalle({ lineas, detalle, lotes, tomaFisicaId, puedeCo
 
   return (
     <div className="print:hidden">
-      <Bloque titulo="Resumen de diferencias por material" queEstasViendo="lo que dice el sistema (teórico) contra lo contado (real) en cada material o lote. El resultado dice con texto si falta o sobra material; toca Contar o Recontar para ir a pesarlo.">
+      <Bloque titulo="Resumen de diferencias por material" queEstasViendo="Para cada material o lote: lo que decía el sistema (teórico), lo que se contó (real) y la diferencia. La columna Resultado dice con texto si falta o sobra material. Toca Contar o Recontar para ir a pesarlo.">
         <TablaDatos
           titulo="Resumen de diferencias por material"
           columnas={columnas}
@@ -157,7 +159,7 @@ function TomaFisicaTablasDetalle({ lineas, detalle, lotes, tomaFisicaId, puedeCo
           vacio={{ mensaje: 'Esta toma no tiene materiales para comparar.', descripcion: 'Aparecen cuando hay productos o lotes en el alcance elegido.' }}
         />
       </Bloque>
-      <Bloque titulo={`Ticket de pesajes (${detalle.length})`} queEstasViendo="cada pesaje individual de esta toma, en el orden en que se registró.">
+      <Bloque titulo={`Ticket de pesajes (${detalle.length})`} queEstasViendo="Cada pesaje de esta toma, en el orden en que se registró. La suma de los pesos netos de un material es lo que aparece como «Real».">
         <TablaDatos
           titulo="Ticket de pesajes de la toma física"
           columnas={columnasTicket}

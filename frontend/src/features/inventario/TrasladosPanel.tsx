@@ -121,22 +121,22 @@ function TrasladosPanel() {
           <TarjetaKpi
             titulo="Kg trasladados"
             icono={<Truck size={16} />}
-            ayuda="Kilos netos que salieron de un almacén hacia otro en el periodo elegido, según el día en que se registró el envío. Cuenta lo enviado, no lo recibido."
+            ayuda="Suma de los kg que salieron de un almacén hacia otro en el periodo elegido, según el día en que se registró el envío (peso neto, sin tara). Cuenta lo enviado, no lo que llegó."
             valor={formatearKg(kpis.kgEnviado)}
             subtitulo={`${formatearNumero(kpis.creados, 0)} traslado${kpis.creados === 1 ? '' : 's'} · ${textoRango}`}
             comparacion={kpis.comparacionKg ?? undefined}
             formatoDelta={d => formatearKg(d)}
           >
             {!kpis.comparacionKg && (
-              <p className="mt-2 text-xs text-text-muted" title="El dato real del sistema empieza a mediados de septiembre de 2026">vs periodo anterior: sin historial comparable</p>
+              <p className="mt-2 text-xs text-text-muted" title="No se compara porque el periodo anterior empieza antes del 14 de septiembre de 2026, cuando el sistema aún no tenía datos reales.">vs periodo anterior: sin historial comparable</p>
             )}
           </TarjetaKpi>
           <TarjetaKpi
             titulo="Pendientes de recepción"
             icono={<Clock size={16} />}
-            ayuda="Traslados que ya salieron del origen pero el almacén destino todavía no confirmó la llegada. Ese material está en tránsito: no está en ningún almacén hasta que se recepciona. Cuenta todos los pendientes, no solo los del periodo."
+            ayuda="Traslados que ya salieron del almacén de origen y que el almacén destino todavía no ha confirmado como recibidos. Mientras tanto ese material va en camino (en tránsito) y no está en ningún almacén. Se cuentan todos los pendientes, sean del periodo elegido o no."
             valor={formatearNumero(kpis.pendientes, 0)}
-            subtitulo={kpis.pendientes > 0 ? `${formatearKg(kpis.kgEnTransito)} en tránsito` : 'nada en tránsito'}
+            subtitulo={kpis.pendientes > 0 ? `${formatearKg(kpis.kgEnTransito)} en tránsito (en camino)` : 'nada en tránsito'}
             comparacion={null}
           >
             {kpis.masViejoPendienteDias != null && (
@@ -146,17 +146,17 @@ function TrasladosPanel() {
           <TarjetaKpi
             titulo="Completados"
             icono={<CheckCircle2 size={16} />}
-            ayuda="Traslados que el almacén destino ya recepcionó, según la fecha de recepción dentro del periodo. Se muestran los kilos que realmente llegaron."
+            ayuda="Traslados que el almacén destino ya recibió y confirmó, según la fecha de recepción dentro del periodo. Los kg son los que se pesaron al llegar, no los que se enviaron."
             estado={kpis.completados === 0 ? 'vacio' : 'listo'}
             mensajeVacio="Ningún traslado recepcionado en este periodo"
             valor={formatearKg(kpis.kgRecibido)}
-            subtitulo={`${formatearNumero(kpis.completados, 0)} recepcionado${kpis.completados === 1 ? '' : 's'} · kg recibidos`}
+            subtitulo={`${formatearNumero(kpis.completados, 0)} recibido${kpis.completados === 1 ? '' : 's'} · kg pesados al llegar`}
             comparacion={null}
           />
           <TarjetaKpi
             titulo="Diferencia enviado vs recibido"
             icono={<Scale size={16} />}
-            ayuda="Kilos recibidos menos kilos enviados en los traslados completados del periodo. Cero es lo ideal; una diferencia pide revisar la báscula o el traslado. No es una pérdida confirmada."
+            ayuda="Kg recibidos menos kg enviados, sumando los traslados completados del periodo. Cero es lo ideal. Negativo: llegó menos de lo que salió; positivo: llegó más. Pide revisar las básculas o el traslado, pero no es una pérdida confirmada."
             estado={kpis.completados === 0 ? 'vacio' : 'listo'}
             mensajeVacio="Aparece al recepcionar el primer traslado"
             valor={`${kpis.diferenciaKg > 0 ? '+' : ''}${formatearKgDecimales(kpis.diferenciaKg, 2)}`}
@@ -167,14 +167,14 @@ function TrasladosPanel() {
       </section>
 
       {alertas.length > 0 && (
-        <Bloque titulo="Alertas" queEstasViendo={`Traslados que llevan ${DIAS_PENDIENTE_ATENCION} días o más esperando que el almacén destino confirme la recepción.`}>
+        <Bloque titulo="Alertas" queEstasViendo={`Traslados que salieron hace ${DIAS_PENDIENTE_ATENCION} días o más y siguen sin que el almacén destino confirme que los recibió.`}>
           <ListaAlertas alertas={alertas.map(a => ({ id: a.id, severidad: a.severidad, texto: a.texto, detalle: a.detalle }))} />
         </Bloque>
       )}
 
       <Bloque
         titulo="Pendientes de recepción"
-        queEstasViendo="Material que ya salió de un almacén y todavía no llegó al otro. Quien está en el destino lo recepciona con las fotos de evidencia."
+        queEstasViendo="Material que ya salió de un almacén y todavía no se confirma como recibido en el otro. Quien está en el destino lo recibe con «Recepcionar», pesándolo y subiendo fotos como evidencia."
       >
         {pendientes.length === 0 ? (
           <EstadoVacio

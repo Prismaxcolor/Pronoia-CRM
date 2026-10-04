@@ -75,10 +75,10 @@ function TrasladoDetalleModal({ traslado: t, onClose }: Props) {
                   <thead className="bg-surface-alt text-xs text-text-secondary">
                     <tr>
                       <th scope="col" className="px-3 py-2 text-left font-medium">Material</th>
-                      <th scope="col" className="px-3 py-2 text-right font-medium">Bruto</th>
-                      <th scope="col" className="px-3 py-2 text-right font-medium">Tara</th>
-                      <th scope="col" className="px-3 py-2 text-right font-medium">Enviado</th>
-                      <th scope="col" className="px-3 py-2 text-right font-medium">Recibido</th>
+                      <th scope="col" className="px-3 py-2 text-right font-medium" title="Peso en la báscula con el envase o vehículo, en kg">Bruto (kg)</th>
+                      <th scope="col" className="px-3 py-2 text-right font-medium" title="Peso del envase o vehículo que se resta, en kg">Tara (kg)</th>
+                      <th scope="col" className="px-3 py-2 text-right font-medium" title="Bruto menos tara, pesado al salir del almacén de origen, en kg">Enviado neto (kg)</th>
+                      <th scope="col" className="px-3 py-2 text-right font-medium" title="Peso neto medido al llegar al almacén destino, en kg">Recibido (kg)</th>
                     </tr>
                   </thead>
                   <tbody>
