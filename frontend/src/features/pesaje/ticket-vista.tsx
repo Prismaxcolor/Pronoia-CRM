@@ -27,16 +27,16 @@ export function InsigniasTicket({ ticket }: { ticket: TicketPesaje }) {
     <div className="-mt-3 mb-5 flex flex-wrap items-center gap-2 print:hidden">
       <Insignia tono={tipo.tono}>{tipo.etiqueta}</Insignia>
       {ticket.estado === 'bruto' ? (
-        <Insignia tono="aviso" title="Se guardó solo con el peso global; faltan materiales y destinos">Borrador (en bruto)</Insignia>
+        <Insignia tono="aviso" title="Se guardó solo con el peso global del camión. Faltan los materiales y sus destinos; hasta completarlo no entra al inventario ni se puede facturar.">Borrador (en bruto)</Insignia>
       ) : (
         <Insignia tono={ticket.facturado ? 'exito' : 'aviso'}>{ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}</Insignia>
       )}
       {ticket.ticketPrincipalId && (
-        <Insignia tono="neutral" title="Su pesaje global se sumó al ticket principal; se edita y factura desde allí">
+        <Insignia tono="neutral" title="El peso global de este ticket se sumó al del ticket principal. Se edita y se factura desde ese ticket, no por separado.">
           Unido a {ticket.ticketPrincipalCodigo ?? 'otro ticket'}
         </Insignia>
       )}
-      {ticket.pesajeExterior && <Insignia tono="info">Sin pesaje global</Insignia>}
+      {ticket.pesajeExterior && <Insignia tono="info" title="El camión se pesó en una báscula externa. No hay peso global propio, por eso no se calcula la diferencia.">Sin pesaje global (báscula externa)</Insignia>}
     </div>
   );
 }
@@ -82,7 +82,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
       <GrillaKpis>
         <TarjetaKpi
           titulo="Peso neto total"
-          ayuda="Suma del peso neto (bruto menos tara) de todos los materiales del ticket. No incluye la devolución."
+          ayuda="Kg de material que se registraron en este ticket: la suma del peso neto (bruto menos tara) de cada pesada de material. No incluye la devolución."
           estado={esBruto ? 'vacio' : 'listo'}
           mensajeVacio="Aún sin materiales: el ticket está en borrador"
           valor={formatearPesoTicket(kpis.netoTotal)}
@@ -91,7 +91,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
         />
         <TarjetaKpi
           titulo="Peso global"
-          ayuda="Lo que registró la báscula con el camión completo, sumando todas sus pesadas (bruto menos tara de cada una)."
+          ayuda="Kg que marcó la báscula general con el camión completo: la suma de sus pesadas, cada una con bruto menos tara. Se compara con los materiales para ver si cuadran. Si el ticket tiene otros unidos, incluye el peso global de todos ellos."
           estado={ticket.pesajeExterior ? 'vacio' : 'listo'}
           mensajeVacio="Sin pesaje global: se pesó en una báscula externa"
           valor={formatearPesoTicket(kpis.pesoGlobal)}
@@ -102,7 +102,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
         />
         <TarjetaKpi
           titulo="Diferencia"
-          ayuda={<>Peso global − neto de materiales − devolución. Positiva: merma o peso sin clasificar. Negativa: los materiales superan el global. Se resalta cuando es negativa o supera el 0,6 % del peso global.</>}
+          ayuda={<>Peso global menos peso neto de los materiales menos devolución, en kg. Positiva: el camión pesó más de lo clasificado (merma o peso sin clasificar). Negativa: se anotaron más kg de materiales que los que marcó la báscula; se muestra como «Revisar». Se muestra como «Fuera de rango» cuando la diferencia positiva supera el 0,6 % del peso global (por ejemplo, más de 6 kg en 1.000 kg).</>}
           estado={kpis.diferencia === null ? 'vacio' : 'listo'}
           mensajeVacio={esBruto ? 'Se calcula al completar el ticket' : 'No aplica: no hay pesaje global'}
           valor={kpis.diferencia === null ? undefined : formatearPesoTicket(kpis.diferencia)}
@@ -117,7 +117,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
         />
         <TarjetaKpi
           titulo="Materiales"
-          ayuda="Cantidad de materiales distintos del ticket. Si un material se pesó varias veces cuenta una sola vez."
+          ayuda="Cuántos materiales distintos tiene el ticket. Si un mismo material se pesó varias veces, cuenta una sola vez; el número de pesadas aparece debajo."
           estado={esBruto ? 'vacio' : 'listo'}
           mensajeVacio="Aún sin materiales: el ticket está en borrador"
           valor={formatearNumero(kpis.materialesDistintos)}
@@ -127,7 +127,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
       </GrillaKpis>
 
       {kpis.composicion.length >= 2 && (
-        <Bloque titulo="Composición por material" queEstasViendo="cómo se reparten los kilos netos del ticket entre sus materiales; cada tramo es un material.">
+        <Bloque titulo="Composición por material" queEstasViendo="cómo se reparten los kg netos del ticket entre sus materiales. Cada tramo es un material y su tamaño es lo que pesa respecto al total; si hay muchos, los más pequeños se agrupan en «Otros».">
           <div className="rounded-xl border border-border bg-surface p-4">
             <BarraApilada
               segmentos={kpis.composicion.map((p, i) => ({ clave: p.clave, etiqueta: p.nombre, valor: p.kg, color: colorDeSerie(i) }))}
@@ -142,7 +142,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
 
       <Bloque
         titulo="Materiales"
-        queEstasViendo="cada material pesado con su destino de inventario, bruto, tara y neto, más las fotos de la báscula."
+        queEstasViendo="cada material pesado con el lugar del inventario al que entra (destino), su peso bruto, su tara y su neto (bruto menos tara), más las fotos de la báscula."
         acciones={!esBruto && (
           <label className="flex w-fit cursor-pointer select-none items-center gap-1.5 text-xs text-text-secondary">
             <input type="checkbox" checked={ocultarDestino} onChange={e => onOcultarDestino(e.target.checked)} className="rounded border-border" />
@@ -171,7 +171,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
 
       <Bloque
         titulo="Pesaje global"
-        queEstasViendo="las pesadas del camión por la báscula general: bruto, tara y neto de cada una; su suma es el peso global."
+        queEstasViendo="las pesadas del camión completo en la báscula general: bruto, tara y neto (bruto menos tara) de cada una. La suma de los netos es el peso global del ticket."
       >
         {ticket.pesajeExterior ? (
           <EstadoVacio mensaje="Sin pesaje global." descripcion="El camión se pesó en una báscula externa; no hay lectura propia contra la cual comparar." />
@@ -201,7 +201,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
 
       <Bloque
         titulo="Devolución, vehículo y observaciones"
-        queEstasViendo="el peso devuelto (solo conciliación, no mueve inventario ni factura), el vehículo del viaje y las notas del pesaje."
+        queEstasViendo="los kg devueltos, el vehículo del viaje y las notas del pesaje. La devolución solo sirve para cuadrar la diferencia de peso: no mueve el inventario ni cambia la factura."
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <article className="rounded-xl border border-border bg-surface p-4">

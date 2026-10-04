@@ -29,7 +29,7 @@ function FacturaGraficas({ facturas, tipo, rutaNueva }: Props) {
 
   return (
     <div className="relative grid gap-x-8 overflow-x-clip lg:grid-cols-2">
-      <Bloque titulo="Facturación por semana" queEstasViendo="cuánto se facturó cada semana (lunes a domingo), sin contar facturas anuladas ni borradores.">
+      <Bloque titulo="Facturación por semana" queEstasViendo="cuántos USD se facturaron cada semana (de lunes a domingo), según la fecha de emisión. Suma las facturas emitidas y pagadas; no cuenta las anuladas ni los borradores.">
         {haySuficientesSemanas(semanas) ? (
           <BarrasVerticales
             categorias={semanas.map(s => formatearFechaCorta(s.inicio))}
@@ -46,7 +46,7 @@ function FacturaGraficas({ facturas, tipo, rutaNueva }: Props) {
         )}
       </Bloque>
 
-      <Bloque titulo="Facturas por estado" queEstasViendo="cuántas facturas hay en cada estado dentro del periodo (emitida, pagada, borrador o anulada).">
+      <Bloque titulo="Facturas por estado" queEstasViendo="cuántas facturas del periodo hay en cada estado: emitida (ya generada), pagada, borrador (aún no emitida) o anulada (cancelada). Aquí sí se cuentan todas.">
         {partes.length >= MIN_ESTADOS_DONA ? (
           <Dona
             items={partes.map(p => ({ etiqueta: infoEstado(p.estado).etiqueta, valor: p.cantidad }))}
@@ -65,7 +65,7 @@ function FacturaGraficas({ facturas, tipo, rutaNueva }: Props) {
       <div className="lg:col-span-2">
         <Bloque
           titulo={`Principales ${plural}`}
-          queEstasViendo={`a quién se le ${esCompra ? 'compró' : 'vendió'} más (monto facturado en el periodo, sin anuladas ni borradores).`}
+          queEstasViendo={`a quién se le ${esCompra ? 'compró' : 'vendió'} más en el periodo. Cada barra suma, en USD, las facturas emitidas y pagadas de ese ${esCompra ? 'proveedor' : 'cliente'}; no cuenta anuladas ni borradores.`}
         >
           {ranking.length >= MIN_ENTIDADES_RANKING ? (
             <BarrasHorizontales

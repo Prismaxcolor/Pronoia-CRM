@@ -39,7 +39,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       <TarjetaKpi
         titulo="Kg pesados hoy"
         icono={<Scale size={16} />}
-        ayuda="Suma de los kg de compras y ventas con fecha de hoy: el neto de los materiales en los tickets completos y el peso global en los que siguen en bruto. Los traslados no cuentan. Hoy es un día a medias: se compara contra el día de ayer completo."
+        ayuda="Kg de las compras y ventas con fecha de hoy. De cada ticket completo se suma el peso neto de sus materiales (sin la tara); de cada ticket en bruto, que aún no tiene materiales, se suma el peso global del camión. Los traslados entre almacenes no cuentan. Hoy todavía no termina, por eso se compara con el día de ayer completo."
         estado={sinDatos ? 'vacio' : 'listo'}
         mensajeVacio="Aún no hay pesajes registrados"
         valor={kg(hoyAyer.hoy)}
@@ -58,7 +58,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       <TarjetaKpi
         titulo="Por recepcionar"
         icono={<PackageOpen size={16} />}
-        ayuda="Operaciones que ya se registraron pero falta confirmar: compras guardadas en bruto (se suma su peso global) y traslados pendientes (se suma lo enviado). Es el saldo de hoy, no tiene periodo anterior."
+        ayuda="Kg de lo que ya se pesó o se envió pero falta confirmar. Suma el peso global de los tickets en bruto (camión pesado, pero aún sin los materiales registrados) y los kg enviados en traslados pendientes (que el almacén destino todavía no recibe). Muestra la situación actual de todos los registros, sin comparar con otro periodo."
         estado={sinDatos && traslados.length === 0 ? 'vacio' : 'listo'}
         mensajeVacio="Aún no hay operaciones registradas"
         valor={kg(porRecepcionar.kgTotal)}
@@ -69,7 +69,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       <TarjetaKpi
         titulo="Compras sin facturar"
         icono={<Receipt size={16} />}
-        ayuda="Compras completas que todavía no tienen factura. No cuenta las que están en bruto (primero hay que completarlas) ni las unidas a otro ticket, que se facturan junto con el principal."
+        ayuda="Cantidad de compras ya completas (con sus materiales registrados) a las que todavía no se les hizo factura. Los kg de abajo son el peso neto de esas compras. No cuenta las compras en bruto, porque primero hay que completarlas, ni los tickets unidos a otro, que se facturan junto con el ticket principal."
         estado={!puedeVerFacturacion ? 'sinPermiso' : sinDatos ? 'vacio' : 'listo'}
         mensajeVacio="Aún no hay compras registradas"
         valor={formatearNumero(sinFacturar.cantidad, 0)}
@@ -88,7 +88,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       <TarjetaKpi
         titulo="Diferencia fuera de tolerancia"
         icono={<AlertTriangle size={16} />}
-        ayuda="Tickets completos donde la báscula general y la suma de materiales no cuadran: la diferencia supera el 0,6 % del peso global, o los materiales pesan más que el global. No se mide en pesajes en báscula externa, tickets en bruto ni tickets unidos."
+        ayuda="Cantidad de tickets completos cuyo peso global (el camión completo en la báscula) no cuadra con los materiales registrados. Se cuenta un ticket cuando la diferencia (peso global menos materiales menos devolución) supera el 0,6 % del peso global, por ejemplo más de 6 kg en 1.000 kg, o cuando los materiales suman más kg que el peso global. No se revisan los tickets en bruto, los pesados en báscula externa ni los unidos a otro ticket."
         estado={diferencias.medibles === 0 ? 'vacio' : 'listo'}
         mensajeVacio="Aún no hay tickets con peso global para medir"
         valor={formatearNumero(diferencias.fuera, 0)}
@@ -96,7 +96,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
         tonoValor={diferencias.fuera > 0 ? 'peligro' : 'normal'}
         subtitulo={diferencias.fuera === 0
           ? `Los ${diferencias.medibles} tickets medibles están dentro de la tolerancia`
-          : `de ${diferencias.medibles} tickets medibles${diferencias.favoreceProveedor > 0 ? ` · ${diferencias.favoreceProveedor} con materiales sobre el global` : ''}`}
+          : `de ${diferencias.medibles} tickets medibles${diferencias.favoreceProveedor > 0 ? ` · ${diferencias.favoreceProveedor} con materiales por encima del peso global` : ''}`}
       />
     </GrillaKpis>
   );

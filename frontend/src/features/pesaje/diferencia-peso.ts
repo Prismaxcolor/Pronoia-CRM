@@ -39,5 +39,5 @@ export { calcularDiferenciaPeso, redondearKg } from '@shared/types/ticket-pesaje
  *  negativa = más material itemizado que el peso global. */
 export function descripcionDiferencia(diferencia: number): string {
   if (Math.abs(diferencia) < 0.0005) return 'cuadrado';
-  return diferencia > 0 ? 'merma: el global pesa más que los materiales' : 'los materiales superan el global';
+  return diferencia > 0 ? 'merma: el peso global es mayor que los materiales' : 'los materiales pesan más que el peso global';
 }

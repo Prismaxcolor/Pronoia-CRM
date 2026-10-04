@@ -46,7 +46,7 @@ function FacturaTabla({ facturas, tipo, ruta, cargando, vacio }: Props) {
       {
         clave: 'kg', titulo: 'Peso', alinear: 'derecha', valorOrden: f => pesoFactura(f), celda: f => formatearKgDecimales(pesoFactura(f)),
         total: filas => formatearKgDecimales(suma(filas, pesoFactura)), decimalesCsv: 2,
-        ayuda: 'Kg de todas las líneas de la factura, ya sin los descuentos aplicados al facturar.',
+        ayuda: 'Kilos (kg) de todos los materiales de la factura. Si al facturar una compra se descontó merma o tara, ese peso ya está restado.',
       },
       {
         clave: 'total', titulo: 'Total', alinear: 'derecha', valorOrden: f => f.total, celda: f => formatearUsdDecimales(f.total),
@@ -64,7 +64,7 @@ function FacturaTabla({ facturas, tipo, ruta, cargando, vacio }: Props) {
           clave: 'saldo', titulo: 'Saldo', alinear: 'derecha', valorOrden: f => saldoCompra(f),
           celda: f => formatearUsdDecimales(saldoCompra(f)),
           total: filas => formatearUsdDecimales(suma(filas, saldoCompra)), decimalesCsv: 2,
-          ayuda: 'Lo que falta por pagar: total menos lo pagado. Solo las facturas emitidas tienen saldo; las pagadas y las anuladas no.',
+          ayuda: 'Lo que falta por pagar de esa factura (USD): total menos lo pagado. Solo las facturas emitidas tienen saldo; las pagadas, las anuladas y los borradores muestran 0.',
         },
       );
     }

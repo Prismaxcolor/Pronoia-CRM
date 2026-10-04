@@ -29,7 +29,7 @@ function ListaAlertasPesaje({ tickets, ahora }: Props) {
         id: 'brutos-antiguos',
         severidad: 'amarilla',
         texto: `${brutos.length} ${brutos.length === 1 ? 'ticket lleva' : 'tickets llevan'} más de ${HORAS_BRUTO_ALERTA} h en bruto sin completarse`,
-        detalle: `${listarCodigos(brutos.map(b => b.codigo))}. El más antiguo lleva ${textoAntiguedad(brutos[0].horas)}.`,
+        detalle: `${listarCodigos(brutos.map(b => b.codigo))}. El más antiguo lleva ${textoAntiguedad(brutos[0].horas)} desde que se registró. En bruto significa que se pesó el camión pero faltan los materiales; hasta completarlo no entra al inventario.`,
         enlace: { to: '?estado=bruto', etiqueta: 'Ver por recepcionar' },
       });
     }
@@ -40,7 +40,7 @@ function ListaAlertasPesaje({ tickets, ahora }: Props) {
         id: 'dif-favorece',
         severidad: 'roja',
         texto: `${favorecen.length} ${favorecen.length === 1 ? 'ticket tiene' : 'tickets tienen'} materiales que pesan más que el peso global`,
-        detalle: `${listarCodigos(favorecen.map(t => t.codigo))}. Revisa los pesos: se estaría pagando peso que la báscula general no confirmó.`,
+        detalle: `${listarCodigos(favorecen.map(t => t.codigo))}. Los materiales suman más kg que el peso global (después de restar la devolución). Revisa los pesos: se estaría pagando peso que la báscula general no confirmó.`,
         enlace: { to: '?dif=1', etiqueta: 'Ver estos tickets' },
       });
     }
@@ -51,7 +51,7 @@ function ListaAlertasPesaje({ tickets, ahora }: Props) {
         id: 'dif-fuera',
         severidad: 'amarilla',
         texto: `${fuera.length} ${fuera.length === 1 ? 'ticket tiene' : 'tickets tienen'} una diferencia de peso fuera de tolerancia`,
-        detalle: `${listarCodigos(fuera.map(t => t.codigo))}. La diferencia supera el 0,6 % del peso global (merma o peso sin clasificar).`,
+        detalle: `${listarCodigos(fuera.map(t => t.codigo))}. El peso global es mayor que los materiales en más del 0,6 % (merma o peso sin clasificar).`,
         enlace: { to: '?dif=1', etiqueta: 'Ver estos tickets' },
       });
     }
@@ -59,7 +59,7 @@ function ListaAlertasPesaje({ tickets, ahora }: Props) {
   }, [tickets, ahora]);
 
   return (
-    <Bloque titulo="Alertas" queEstasViendo="lo que conviene revisar hoy: tickets en bruto que se quedaron sin completar y pesos que no cuadran.">
+    <Bloque titulo="Alertas" queEstasViendo="lo que conviene revisar: tickets en bruto con más de 24 horas sin completar, y tickets cuyo peso global no cuadra con la suma de sus materiales (más del 0,6 % de diferencia, o materiales por encima del peso global).">
       <ListaAlertas alertas={alertas} />
     </Bloque>
   );

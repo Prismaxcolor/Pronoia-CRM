@@ -232,7 +232,7 @@ function FacturaHistorialPage({ tipo }: Props) {
           <GrillaKpis>
             <TarjetaKpi
               titulo="Total facturado"
-              ayuda={`Suma del total de las facturas emitidas o pagadas del periodo (${periodoTxt}). No cuenta las anuladas ni los borradores. Se compara con el periodo anterior de la misma duración, solo si ese periodo tiene facturas.`}
+              ayuda={`Dinero (USD) que suman las facturas ${esCompra ? 'de compra' : 'de venta'} emitidas o pagadas con fecha de emisión dentro del periodo (${periodoTxt}). No cuenta las anuladas ni los borradores. La flecha compara con el periodo anterior de la misma duración, y solo aparece si ese periodo tuvo facturas.`}
               valor={formatearUsdDecimales(resumen.total)}
               subtitulo={`${formatearNumero(resumen.facturadas, 0)} ${resumen.facturadas === 1 ? 'factura' : 'facturas'} · ${periodoTxt}`}
               comparacion={comparacion ?? undefined}
@@ -247,7 +247,7 @@ function FacturaHistorialPage({ tipo }: Props) {
               <>
                 <TarjetaKpi
                   titulo="Pagado"
-                  ayuda="Suma de lo ya pagado en las facturas de compra del periodo (pagos aplicados desde el estado de cuenta del proveedor)."
+                  ayuda="Dinero (USD) que ya se pagó de las facturas de compra emitidas o pagadas del periodo. Los pagos se registran desde el estado de cuenta del proveedor. El porcentaje de abajo es lo pagado dividido entre el total facturado."
                   valor={formatearUsdDecimales(resumen.pagado)}
                   subtitulo={`${formatearNumero(porcentajeEntero(porcentajePagado(resumen.total, resumen.pagado)), 0)} % de lo facturado`}
                   estado={kpiEstado}
@@ -257,7 +257,7 @@ function FacturaHistorialPage({ tipo }: Props) {
                 </TarjetaKpi>
                 <TarjetaKpi
                   titulo="Pendiente de pago"
-                  ayuda="Lo que falta por pagar en las facturas emitidas del periodo: total menos lo pagado. Las facturas pagadas y las anuladas no tienen saldo."
+                  ayuda="Dinero (USD) que todavía se le debe a los proveedores en las facturas de compra emitidas del periodo: total de cada factura menos lo ya pagado. Las facturas ya pagadas, las anuladas y los borradores no tienen saldo."
                   valor={formatearUsdDecimales(resumen.pendiente)}
                   subtitulo={`${formatearNumero(resumen.porEstado.emitida.cantidad, 0)} ${resumen.porEstado.emitida.cantidad === 1 ? 'factura emitida' : 'facturas emitidas'} con saldo`}
                   estado={kpiEstado}
@@ -267,7 +267,7 @@ function FacturaHistorialPage({ tipo }: Props) {
             ) : (
               <TarjetaKpi
                 titulo="Emitido sin registro de cobros"
-                ayuda="Total de las facturas de venta en estado emitida. El sistema todavía no registra los cobros de las ventas: este monto NO significa que esté pendiente de cobro ni que esté cobrado."
+                ayuda="Dinero (USD) que suman las facturas de venta en estado «emitida» del periodo. El sistema todavía no registra cuándo los clientes pagan, así que este monto no dice si ya se cobró o si falta cobrar: solo que la factura se emitió."
                 valor={formatearUsdDecimales(resumen.totalEmitidas)}
                 subtitulo="Aún no se registran cobros de ventas: no es un saldo por cobrar."
                 estado={kpiEstado}
@@ -277,7 +277,7 @@ function FacturaHistorialPage({ tipo }: Props) {
 
             <TarjetaKpi
               titulo="Kg facturados"
-              ayuda="Suma de los kilos de las facturas emitidas o pagadas del periodo, ya sin los descuentos aplicados al facturar."
+              ayuda="Kilos (kg) que suman las facturas emitidas o pagadas del periodo. Si al facturar una compra se descontó merma o tara, ese peso ya está restado."
               valor={formatearNumero(resumen.kg, 0)}
               unidad="kg"
               subtitulo={esCompra ? `${formatearNumero(resumen.cantidad, 0)} ${resumen.cantidad === 1 ? 'factura' : 'facturas'}: ${textoDesglosePorEstado(resumen)}` : 'Facturas emitidas y pagadas'}
@@ -288,7 +288,7 @@ function FacturaHistorialPage({ tipo }: Props) {
             {!esCompra && (
               <TarjetaKpi
                 titulo="Facturas"
-                ayuda="Cantidad de facturas de venta del periodo, con el desglose por estado (incluye anuladas y borradores)."
+                ayuda="Cuántas facturas de venta se emitieron en el periodo, de cualquier estado. Debajo se separan por estado: pagada, emitida, borrador (aún no emitida) y anulada (cancelada)."
                 valor={formatearNumero(resumen.cantidad, 0)}
                 subtitulo={textoDesglosePorEstado(resumen) || undefined}
                 estado={!puedeVer ? 'sinPermiso' : primeraCarga ? 'cargando' : resumen.cantidad === 0 ? 'vacio' : 'listo'}
@@ -302,7 +302,7 @@ function FacturaHistorialPage({ tipo }: Props) {
       {puedeVer && antiguedad && (
         <Bloque
           titulo={esCompra ? 'Antigüedad de facturas emitidas con saldo' : 'Antigüedad de facturas emitidas sin cobro registrado'}
-          queEstasViendo="cuántos días llevan emitidas las facturas con saldo, contados desde su fecha de emisión (el sistema no maneja fecha de vencimiento), sin importar el periodo elegido arriba."
+          queEstasViendo="cuántos días hace que se emitieron las facturas emitidas que aún tienen saldo. Los días se cuentan desde la fecha de emisión hasta hoy (el sistema no maneja fecha de vencimiento) y se agrupan en tramos de 0 a 7, 8 a 15, 16 a 30 y más de 30 días. No depende del periodo elegido arriba."
         >
           <ListaAlertas
             alertas={alertas}
@@ -313,7 +313,7 @@ function FacturaHistorialPage({ tipo }: Props) {
 
       <Bloque
         titulo="Facturas"
-        queEstasViendo={`las facturas del periodo elegido (${periodoTxt})${hayFiltros ? ' que cumplen los filtros' : ''}. Pulsa el N° de control para abrir el documento y el título de una columna para ordenar.`}
+        queEstasViendo={`las facturas con fecha de emisión dentro del periodo elegido (${periodoTxt})${hayFiltros ? ' que cumplen los filtros' : ''}. Pulsa el N° de control para abrir el documento y el título de una columna para ordenar.`}
       >
         {primeraCarga ? <SinFacturasSkeleton /> : (
           <div className={cargando ? 'opacity-60 transition-opacity' : ''}>

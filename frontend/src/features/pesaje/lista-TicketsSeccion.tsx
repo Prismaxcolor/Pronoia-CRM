@@ -96,7 +96,7 @@ function TicketsSeccion({
 
       <Bloque
         titulo={compacta ? 'Tickets recientes' : 'Tickets y traslados'}
-        queEstasViendo="cada pesaje de compra o venta y cada traslado entre almacenes. «Por recepcionar» son los que todavía faltan por completar o confirmar."
+        queEstasViendo="cada pesaje de compra o venta y cada traslado entre almacenes. «Por recepcionar» son los tickets en bruto (falta registrar sus materiales) y los traslados pendientes (falta que el destino los confirme). «Por facturar» son los tickets completos que aún no tienen factura."
       >
         <ListaFiltros filtros={filtros} conteos={conteos} entidades={entidades} onCambiar={cambiar} onLimpiar={alLimpiar} />
         {ticketsListos && (

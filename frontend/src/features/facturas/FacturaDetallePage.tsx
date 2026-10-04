@@ -147,7 +147,7 @@ function FacturaDetallePage({ tipo }: Props) {
         <GrillaKpis>
           <TarjetaKpi
             titulo="Total"
-            ayuda="Monto total de la factura: suma de los subtotales de cada material (peso facturable por precio unitario)."
+            ayuda="Monto total de la factura en USD: la suma de lo que vale cada material, que es su peso a facturar (kg) multiplicado por su precio."
             valor={formatearUsdDecimales(factura.total)}
             subtitulo={`${itemsConsolidados.length} ${itemsConsolidados.length === 1 ? 'material' : 'materiales'}`}
             estado={estadoImporte}
@@ -156,7 +156,7 @@ function FacturaDetallePage({ tipo }: Props) {
             <>
               <TarjetaKpi
                 titulo="Pagado"
-                ayuda="Lo que ya se pagó de esta factura. Los pagos se aplican desde el estado de cuenta del proveedor."
+                ayuda="Dinero (USD) que ya se pagó de esta factura. Los pagos se registran desde el estado de cuenta del proveedor. El porcentaje es lo pagado dividido entre el total."
                 valor={formatearUsdDecimales(factura.montoPagado)}
                 subtitulo={`${formatearNumero(porcentajeEntero(pctPagado), 0)} % del total`}
                 estado={estadoImporte}
@@ -165,7 +165,7 @@ function FacturaDetallePage({ tipo }: Props) {
               </TarjetaKpi>
               <TarjetaKpi
                 titulo="Saldo pendiente"
-                ayuda="Lo que falta por pagar: total menos lo pagado. Una factura pagada o anulada no tiene saldo."
+                ayuda="Dinero (USD) que falta por pagar de esta factura: total menos lo pagado. Solo una factura emitida tiene saldo; si está pagada, anulada o en borrador, muestra 0."
                 valor={formatearUsdDecimales(saldo)}
                 subtitulo={textoSaldo}
                 estado={estadoImporte}
@@ -174,7 +174,7 @@ function FacturaDetallePage({ tipo }: Props) {
           )}
           <TarjetaKpi
             titulo="Kg facturados"
-            ayuda="Suma de los kilos de la factura, ya sin los descuentos aplicados al facturar."
+            ayuda="Kilos (kg) de todos los materiales de la factura. Si al facturar una compra se descontó merma o tara, ese peso ya está restado; es el peso con el que se calcula el total."
             valor={formatearNumero(totalPesoFacturado, 2)}
             unidad="kg"
             subtitulo={`${itemsConsolidados.length} ${itemsConsolidados.length === 1 ? 'ítem' : 'ítems'} · ${factura.ticketIds.length === 0 ? 'peso manual' : `${factura.ticketIds.length} ${factura.ticketIds.length === 1 ? 'ticket' : 'tickets'}`}`}

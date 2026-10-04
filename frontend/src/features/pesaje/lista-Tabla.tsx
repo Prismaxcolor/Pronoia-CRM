@@ -36,14 +36,14 @@ const ETIQUETA_DIF: Record<EstadoDiferencia, string> = {
 };
 
 function CeldaDiferencia({ f }: { f: FilaTicket }) {
-  if (f.difKg === null) return <span className="text-text-muted" title="No aplica: ticket en bruto, báscula externa, unido a otro ticket o traslado">—</span>;
+  if (f.difKg === null) return <span className="text-text-muted" title="No hay diferencia que medir: el ticket está en bruto, se pesó en báscula externa, está unido a otro ticket o es un traslado">—</span>;
   const mala = f.estadoDif === 'fuera' || f.estadoDif === 'favorece_proveedor';
   return (
     <span className="inline-flex flex-col items-end gap-0.5">
       <span className="tabular-nums">{kg2(f.difKg)} kg</span>
       {mala
-        ? <Insignia tono={f.estadoDif === 'favorece_proveedor' ? 'peligro' : 'aviso'} forma="cuadrada">{ETIQUETA_DIF[f.estadoDif]}</Insignia>
-        : <span className="text-[11px] text-text-secondary">{ETIQUETA_DIF[f.estadoDif]}</span>}
+        ? <Insignia tono={f.estadoDif === 'favorece_proveedor' ? 'peligro' : 'aviso'} forma="cuadrada" title={f.estadoDif === 'favorece_proveedor' ? 'Los materiales suman más kg que el peso global: revisa los pesos antes de facturar' : 'La diferencia supera el 0,6 % del peso global (merma o peso sin clasificar)'}>{ETIQUETA_DIF[f.estadoDif]}</Insignia>
+        : <span className="text-[11px] text-text-secondary" title={f.estadoDif === 'cuadrada' ? 'El peso global y los materiales coinciden' : 'La diferencia no pasa del 0,6 % del peso global'}>{ETIQUETA_DIF[f.estadoDif]}</span>}
     </span>
   );
 }
@@ -59,7 +59,7 @@ function CeldaEstado({ f }: { f: FilaTicket }) {
 }
 
 function CeldaFacturado({ f }: { f: FilaTicket }) {
-  if (f.facturado === null) return <span className="text-text-muted" title="No aplica: los traslados, los tickets en bruto y los unidos a otro ticket no se facturan por separado">—</span>;
+  if (f.facturado === null) return <span className="text-text-muted" title="No aplica: los traslados no se facturan, los tickets en bruto aún no se pueden facturar y los unidos a otro ticket se facturan junto con el principal">—</span>;
   return <span className="whitespace-nowrap">{f.facturado ? <Insignia tono="exito">Facturado</Insignia> : <Insignia tono="aviso">Sin facturar</Insignia>}</span>;
 }
 
@@ -95,7 +95,7 @@ function ListaTabla({ filas, puedeCrear, puedeEliminar, puedeRecepcionarTraslado
       {f.origen.kind === 'pesaje'
         ? <button type="button" onClick={() => onVerDetalle((f.origen as { ticket: TicketPesaje }).ticket.id)} className={btnCodigo}>{f.codigo}</button>
         : <span className="font-medium text-text-primary">{f.codigo}</span>}
-      {f.unidoA && <Insignia forma="cuadrada" title="Pesaje global sumado al ticket principal; no se factura por separado">Unido a {f.unidoA}</Insignia>}
+      {f.unidoA && <Insignia forma="cuadrada" title={`El peso global de este ticket se sumó al de ${f.unidoA}. Se completa y se factura junto con ese ticket, no por separado.`}>Unido a {f.unidoA}</Insignia>}
     </span>
     {hayAccion && <span className="-ml-2 flex items-center gap-0.5">{botonesAccion(f)}</span>}
     </span>
@@ -104,17 +104,17 @@ function ListaTabla({ filas, puedeCrear, puedeEliminar, puedeRecepcionarTraslado
   const columnas: ColumnaTabla<FilaTicket>[] = [
     { clave: 'codigo', titulo: 'N° control', valorOrden: f => f.codigo, celda: codigoCelda, claseCelda: 'whitespace-nowrap' },
     { clave: 'fecha', titulo: 'Fecha', valorOrden: f => f.fecha, celda: f => formatearFecha(f.fecha), claseCelda: 'whitespace-nowrap' },
-    { clave: 'entidad', titulo: 'Entidad / almacenes', valorOrden: f => f.entidad, ayuda: 'Proveedor (compra), cliente (venta) o almacén de origen → destino (traslado).' },
+    { clave: 'entidad', titulo: 'Entidad / almacenes', valorOrden: f => f.entidad, ayuda: 'Con quién se hizo la operación: el proveedor en una compra, el cliente en una venta, o el almacén de origen → almacén de destino en un traslado.' },
     { clave: 'materiales', titulo: 'Materiales', valorOrden: f => f.materiales },
     {
       clave: 'peso', titulo: 'Peso (kg)', alinear: 'derecha', decimalesCsv: 2,
-      ayuda: 'En tickets en bruto es el peso global; en completos, el neto de los materiales. En traslados, lo enviado (o lo recibido si ya se confirmó).',
+      ayuda: 'Kilos de la operación. Ticket en bruto: el peso global del camión. Ticket completo: la suma del peso neto de sus materiales (sin tara). Traslado: los kg enviados, o los recibidos si el destino ya los confirmó.',
       valorOrden: f => f.pesoKg, celda: f => <span className="font-medium text-text-primary">{kg2(f.pesoKg)}</span>,
       total: filas => kg2(filas.reduce((a, f) => a + f.pesoKg, 0)),
     },
     {
       clave: 'diferencia', titulo: 'Diferencia', alinear: 'derecha', decimalesCsv: 3,
-      ayuda: 'Peso global menos materiales menos devolución. Solo se mide en tickets completos con báscula general. Fuera de rango = más del 0,6 % del peso global.',
+      ayuda: 'Peso global menos peso neto de los materiales menos devolución, en kg. Positiva: el camión pesó más de lo clasificado (merma o peso sin clasificar). Negativa: se anotaron más kg de materiales que los de la báscula. «Fuera de rango» significa que la diferencia supera el 0,6 % del peso global. Solo se mide en tickets completos pesados en báscula propia y que no estén unidos a otro.',
       valorOrden: f => f.difKg, celda: f => <CeldaDiferencia f={f} />,
     },
     { clave: 'vehiculo', titulo: 'Vehículo', valorOrden: f => (f.vehiculo === '—' ? null : f.vehiculo), celda: f => f.vehiculo, claseCelda: 'whitespace-nowrap' },
