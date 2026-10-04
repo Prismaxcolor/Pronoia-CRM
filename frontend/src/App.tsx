@@ -23,6 +23,7 @@ import DashboardPage from './features/dashboard/DashboardPage';
 import MetricasPage from './features/metricas/MetricasPage';
 import ProductosPage from './features/productos/ProductosPage';
 import InventarioPage from './features/inventario/InventarioPage';
+import InventarioNuevoPage from './features/inventario/InventarioNuevoPage';
 import TomaFisicaDetallePage from './features/inventario/TomaFisicaDetallePage';
 import ConteoTomaFisicaPage from './features/pesaje/ConteoTomaFisicaPage';
 import TransformacionesPage from './features/transformaciones/TransformacionesPage';
@@ -96,14 +97,16 @@ function AppRoutes() {
         <Route path="/listas-precios/:id" element={<ProtectedRoute recurso="listas_precios"><ListaDetallePage /></ProtectedRoute>} />
         <Route path="/taras" element={<ProtectedRoute recurso="taras"><TarasPage /></ProtectedRoute>} />
         <Route path="/vehiculos" element={<ProtectedRoute recurso="vehiculos"><VehiculosPage /></ProtectedRoute>} />
-        <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
+        <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioNuevoPage /></ProtectedRoute>} />
+        {/* Pantalla anterior, íntegra. Acepta ?pestana=almacenes|lotes|traslados|toma-fisica. */}
+        <Route path="/inventario-legacy" element={<ProtectedRoute recurso="productos"><InventarioPage /></ProtectedRoute>} />
         <Route path="/inventario/toma-fisica/:id" element={<ProtectedRoute recurso="toma_fisica"><TomaFisicaDetallePage /></ProtectedRoute>} />
         <Route path="/transformaciones" element={<ProtectedRoute recurso="transformaciones"><TransformacionesPage /></ProtectedRoute>} />
         <Route path="/transformaciones/merma" element={<ProtectedRoute recurso="transformaciones"><MermaPage /></ProtectedRoute>} />
         <Route path="/transformaciones/:id"element={<ProtectedRoute recurso="transformaciones"><TransformacionDetallePage /></ProtectedRoute>} />
         {/* "Lotes" pasó a ser una pestaña dentro de Inventario — se mantiene el
          *  redirect por si alguien tiene el link viejo guardado. */}
-        <Route path="/lotes" element={<Navigate to="/inventario" replace />} />
+        <Route path="/lotes" element={<Navigate to="/inventario-legacy?pestana=lotes" replace />} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
         <Route path="/pesaje/:id" element={<ProtectedRoute recurso="pesaje"><TicketDetallePage /></ProtectedRoute>} />
         <Route path="/pesaje/conteo/:tomaFisicaId" element={<ProtectedRoute recurso="toma_fisica"><ConteoTomaFisicaPage /></ProtectedRoute>} />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Package, Lock, RefreshCw } from 'lucide-react';
 import {
   obtenerInventario,
@@ -209,7 +210,8 @@ function agruparPorDestino(
 }
 
 type Agrupacion = 'categoria' | 'lote';
-type Pestana = 'inventario' | 'almacenes' | 'lotes' | 'traslados' | 'toma-fisica';
+const PESTANAS = ['inventario', 'almacenes', 'lotes', 'traslados', 'toma-fisica'] as const;
+type Pestana = (typeof PESTANAS)[number];
 
 function InventarioPage() {
   const [pestana, setPestana] = usePestanaRecordada<Pestana>(
@@ -217,6 +219,14 @@ function InventarioPage() {
     ['inventario', 'almacenes', 'lotes', 'traslados', 'toma-fisica'],
     'inventario',
   );
+  // /inventario-legacy?pestana=lotes abre esa pestaña (la usa el menú "Gestionar" de la pantalla nueva).
+  const [searchParams] = useSearchParams();
+  const pestanaUrl = searchParams.get('pestana');
+  useEffect(() => {
+    const valida = PESTANAS.find(p => p === pestanaUrl);
+    if (valida) setPestana(valida);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setPestana cambia en cada render; solo reaccionamos a la URL.
+  }, [pestanaUrl]);
   const [grupos, setGrupos] = useState<GrupoInventario[]>([]);
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -264,6 +274,9 @@ function InventarioPage() {
   return (
     <div>
       <div className="mb-6">
+        <p className="mb-2 text-xs text-text-muted">
+          Esta es la pantalla anterior · <Link to="/inventario" className="text-brand-700 underline hover:text-brand-800">Volver a la nueva</Link>
+        </p>
         <h1 className="text-2xl font-bold text-text-primary">Inventario</h1>
         <p className="text-sm text-text-secondary mt-1">
           Stock por material y destino (sin lote / lote): compras − ventas ± transformaciones. Al filtrar por almacén se suman también los traslados y los ajustes de toma física, y se detalla cada movimiento.

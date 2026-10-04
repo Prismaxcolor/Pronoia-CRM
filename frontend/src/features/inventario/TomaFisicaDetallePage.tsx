@@ -125,7 +125,7 @@ function TomaFisicaDetallePage() {
   return (
     <div className="max-w-3xl print-documento print:max-w-none">
       <div className="print:hidden">
-        <button type="button" onClick={() => navigate('/inventario')} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
+        <button type="button" onClick={() => navigate('/inventario-legacy?pestana=toma-fisica')} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
           <ArrowLeft size={16} />
           Inventario
         </button>
