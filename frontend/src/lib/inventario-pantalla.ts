@@ -196,12 +196,47 @@ function comparar(a: ValorOrden, b: ValorOrden, sentido: SentidoOrden): number {
   return sentido === 'asc' ? cmp : -cmp;
 }
 
-/** Copia ordenada (no muta). Desempata por material para que el orden sea estable y predecible. */
+/** Palabras que no identifican el producto sino su estado o un adorno del nombre. */
+const PALABRAS_SUELTAS = new Set(['sucio', 'sucia', 'sucios', 'sucias', 'limpio', 'limpia', 'limpios', 'limpias', 'usado', 'usada', 'de', 'del', 'la', 'el', 'los', 'las', 'y', 'tipo', 'no', 'nro', 'num', 'numero']);
+
+/** Familia del producto por similitud de nombre: la primera palabra que lo identifica, sin tildes, mayúsculas,
+ *  números ni plural. "Plástico sucio", "Plásticos 2" y "PLASTICO limpio" caen en la misma familia ("plastico"). */
+export function claveFamilia(material: string): string {
+  const palabras = material
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(p => p && !/^d+$/.test(p) && !PALABRAS_SUELTAS.has(p));
+  const base = palabras[0] ?? material.trim().toLowerCase();
+  return base.length > 4 && base.endsWith('s') ? base.slice(0, -1) : base;
+}
+
+const compararNombre = (a: FilaDetalleInventario, b: FilaDetalleInventario) =>
+  a.material.localeCompare(b.material, 'es', { sensitivity: 'base', numeric: true }) || a.id.localeCompare(b.id);
+
+/** Copia ordenada (no muta). Al ordenar por material, kg o USD los productos de una misma familia de nombre quedan
+ *  juntos (las familias se ordenan por el total de la columna); con las demás columnas se ordena fila por fila. */
 export function ordenarFilas(filas: FilaDetalleInventario[], orden: OrdenTabla): FilaDetalleInventario[] {
-  return [...filas].sort((a, b) =>
-    comparar(valorDeColumna(a, orden.columna), valorDeColumna(b, orden.columna), orden.sentido)
-    || a.material.localeCompare(b.material, 'es', { sensitivity: 'base', numeric: true })
-    || a.id.localeCompare(b.id));
+  const porFila = (a: FilaDetalleInventario, b: FilaDetalleInventario) =>
+    comparar(valorDeColumna(a, orden.columna), valorDeColumna(b, orden.columna), orden.sentido) || compararNombre(a, b);
+  if (orden.columna !== 'material' && orden.columna !== 'kg' && orden.columna !== 'usd') return [...filas].sort(porFila);
+
+  const familias = new Map<string, FilaDetalleInventario[]>();
+  for (const fila of filas) {
+    const clave = claveFamilia(fila.material);
+    familias.set(clave, [...(familias.get(clave) ?? []), fila]);
+  }
+  const totalFamilia = (items: FilaDetalleInventario[]): number | null => {
+    if (orden.columna === 'material') return null;
+    const valores = items.map(i => valorDeColumna(i, orden.columna)).filter((v): v is number => typeof v === 'number');
+    return valores.length > 0 ? valores.reduce((t, v) => t + v, 0) : null;
+  };
+  return [...familias.entries()]
+    .map(([clave, items]) => ({ clave, items: [...items].sort(porFila), total: totalFamilia(items) }))
+    .sort((a, b) =>
+      (orden.columna === 'material'
+        ? comparar(a.clave, b.clave, orden.sentido)
+        : comparar(a.total, b.total, orden.sentido) || comparar(a.clave, b.clave, 'asc')))
+    .flatMap(g => g.items);
 }
 
 export interface TotalesFilas {

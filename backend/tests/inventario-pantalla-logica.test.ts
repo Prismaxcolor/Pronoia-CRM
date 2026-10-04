@@ -8,6 +8,7 @@ import {
   alternarOrden,
   ariaSort,
   armarCsv,
+  claveFamilia,
   claveParametros,
   enlaceAlerta,
   escaparCampoCsv,
@@ -387,5 +388,34 @@ describe('etapa visible de la tabla (no contradice la insignia de fase)', () => 
   it('el CSV exporta la etapa visible', () => {
     const csv = armarCsv([lote({ clase: 'trabajo', fase: 'por_procesar', etapa: 'recibido' })], { valorOculto: true });
     expect(csv).toContain(';Por procesar;');
+  });
+});
+
+describe('familias de productos por similitud de nombre', () => {
+  it('agrupa plástico sucio, con número y en plural en la misma familia', () => {
+    const claves = ['Plástico sucio', 'PLASTICO 2', 'Plásticos limpios', 'Plastico (mixto)'].map(claveFamilia);
+    expect(new Set(claves).size).toBe(1);
+    expect(claveFamilia('Aluminio lata')).not.toBe(claveFamilia('Plástico sucio'));
+  });
+
+  it('ordenando por kg deja juntos los productos de la misma familia, la familia más pesada primero', () => {
+    const filas = [
+      fila({ id: 'a', material: 'Plástico sucio', kg: 100 }),
+      fila({ id: 'b', material: 'Aluminio lata', kg: 300 }),
+      fila({ id: 'c', material: 'Plástico 2', kg: 250 }),
+      fila({ id: 'd', material: 'Cobre pelado', kg: 120 }),
+    ];
+    const ids = ordenarFilas(filas, { columna: 'kg', sentido: 'desc' }).map(f => f.id);
+    expect(ids).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  it('ordenando por material agrupa por familia y luego por nombre', () => {
+    const filas = [
+      fila({ id: 'a', material: 'Plástico sucio' }),
+      fila({ id: 'b', material: 'Cobre pelado' }),
+      fila({ id: 'c', material: 'Plástico 2' }),
+    ];
+    const ids = ordenarFilas(filas, { columna: 'material', sentido: 'asc' }).map(f => f.id);
+    expect(ids).toEqual(['b', 'c', 'a']);
   });
 });

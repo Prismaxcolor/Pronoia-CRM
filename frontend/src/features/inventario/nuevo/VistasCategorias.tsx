@@ -176,8 +176,8 @@ function TarjetaCategoria({ t, valorOculto, seleccionada, onElegir }: TarjetaPro
           titulo="Limpio vs sucio"
           ayuda={EXPLICACION_LIMPIEZA}
           partes={[
-            { clave: 'l', etiqueta: 'Limpio', kg: t.desgloseLimpieza.limpioKg },
-            { clave: 's', etiqueta: 'Sucio', kg: t.desgloseLimpieza.sucioKg },
+            { clave: 'l', etiqueta: 'Material limpio', kg: t.desgloseLimpieza.limpioKg },
+            { clave: 's', etiqueta: 'Material sucio', kg: t.desgloseLimpieza.sucioKg },
             { clave: 'x', etiqueta: 'Sin clasificar', kg: t.desgloseLimpieza.sinClasificarKg },
           ]}
         />

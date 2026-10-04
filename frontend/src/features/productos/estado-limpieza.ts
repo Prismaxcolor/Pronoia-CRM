@@ -5,8 +5,8 @@ export type EstadoLimpiezaForm = '' | 'limpio' | 'sucio';
 
 export const ETIQUETA_ESTADO_LIMPIEZA: Record<EstadoLimpiezaForm, string> = {
   '': 'Sin definir',
-  limpio: 'Limpio',
-  sucio: 'Sucio',
+  limpio: 'Material limpio',
+  sucio: 'Material sucio',
 };
 
 /** Solo Ferroso y No ferroso distinguen limpio de sucio (compara sin tildes ni mayúsculas). */

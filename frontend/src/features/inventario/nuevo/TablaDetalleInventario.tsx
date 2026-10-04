@@ -51,12 +51,12 @@ function Insignias({ f }: { f: FilaDetalleInventario }) {
       {f.fase && <Insignia forma="cuadrada" tono="marca">{f.fase === 'por_procesar' ? 'Por procesar' : 'Ya procesado'}</Insignia>}
       {f.limpieza && (
         <Insignia forma="cuadrada" title={EXPLICACION_LIMPIEZA}>
-          {f.limpieza === 'limpio' ? 'Limpio' : 'Sucio'} ({f.limpiezaOrigen === 'producto' ? 'del producto' : 'del nombre'})
+          {f.limpieza === 'limpio' ? 'Material limpio' : 'Material sucio'} · {f.limpiezaOrigen === 'producto' ? 'según el producto' : 'según el nombre'}
         </Insignia>
       )}
       {f.destinoBasura && (
         <Insignia forma="cuadrada" title={EXPLICACION_BASURA}>
-          {f.destinoBasura === 'recuperable' ? 'Recuperable' : 'Desecho'} (del nombre)
+          {f.destinoBasura === 'recuperable' ? 'Basura recuperable' : 'Desecho (no se recupera)'} · según el nombre
         </Insignia>
       )}
       {f.esClasificacionCompra && <Insignia forma="cuadrada" tono="aviso">Clasificación de compra</Insignia>}

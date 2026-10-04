@@ -54,8 +54,8 @@ export function EtiquetaDerivada({ children, explicacion, rotulo = 'derivado del
   );
 }
 
-export const EXPLICACION_LIMPIEZA = 'Sale del estado de limpieza definido en el producto; si el producto no lo tiene, se deduce del nombre (SUCIO o LIMPIO). Lo que no tiene ninguna pista queda sin clasificar.';
-export const EXPLICACION_BASURA = 'No es un dato guardado: se deduce del nombre. BASURA BUENA y BASURA DE RECEPCION se cuentan como recuperable (aún tienen algo bueno); BASURA MALA y DESECHOS, como desecho (va al vertedero); el resto queda sin clasificar.';
+export const EXPLICACION_LIMPIEZA = 'Material limpio: ya sin residuos, listo para vender. Material sucio: trae residuos y hay que limpiarlo antes. Se toma del estado que se marcó en el producto; si el producto no lo tiene, se deduce de si el nombre dice SUCIO o LIMPIO. Si no hay ninguna pista, queda sin clasificar.';
+export const EXPLICACION_BASURA = 'Basura recuperable: todavía tiene material aprovechable (BASURA BUENA y BASURA DE RECEPCION). Desecho: no se puede recuperar y va al vertedero (BASURA MALA y DESECHOS). No es un dato guardado: se deduce del nombre; lo demás queda sin clasificar.';
 export const EXPLICACION_DIAS = 'Estimado: el sistema no lleva capas FIFO. Se asume que el stock actual se formó con las entradas más recientes (compras, salidas de transformación, ajustes positivos) y se promedia por kg. Los datos empiezan el 16-09-2026: no se inventa antigüedad anterior.';
 
 /** Chip del filtro de categoría activo, con botón para quitarlo. */

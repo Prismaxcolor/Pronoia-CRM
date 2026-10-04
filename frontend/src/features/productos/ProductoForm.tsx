@@ -308,7 +308,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
                   <option key={v || 'sin-definir'} value={v}>{ETIQUETA_ESTADO_LIMPIEZA[v]}</option>
                 ))}
               </select>
-              <p className="text-xs text-text-muted mt-1">Sirve para separar limpio y sucio en el inventario.</p>
+              <p className="text-xs text-text-muted mt-1">Material limpio: sin residuos, listo para vender. Material sucio: trae residuos y hay que limpiarlo antes. Se usa para separarlos en el inventario.</p>
             </div>
           )}
 
