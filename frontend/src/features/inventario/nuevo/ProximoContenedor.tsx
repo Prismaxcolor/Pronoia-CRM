@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Pencil, PackageCheck } from 'lucide-react';
-import { calcularFaltanKg, calcularProgresoPct, formatearKg, formatearNumero, formatearUsd } from '../../../lib/inventario-nuevo';
+import { calcularFaltanKg, calcularProgresoPct, formatearCantidadKg, formatearKg, formatearNumero, formatearUsd } from '../../../lib/inventario-nuevo';
 import { guardarConfiguracionInventario, type ResumenInventario } from '../../../services/inventario-resumen-service';
 import { obtenerLotes } from '../../../services/lote-service';
 import MarcarEmbaladoModal from '../../lotes/MarcarEmbaladoModal';
@@ -125,7 +125,7 @@ function ProximoContenedor({ resumen, onCambio }: Props) {
           <>
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <p className="text-2xl font-bold tabular-nums text-text-primary">
-                {formatearNumero(contenedor.listoKg)} <span className="text-base font-medium text-text-secondary">de {formatearKg(contenedor.metaKg)}</span>
+                {formatearCantidadKg(contenedor.listoKg)} <span className="text-base font-medium text-text-secondary">de {formatearKg(contenedor.metaKg)}</span>
               </p>
               <p className="text-sm font-medium tabular-nums text-brand-700">{formatearNumero(pct, 1)} %</p>
             </div>

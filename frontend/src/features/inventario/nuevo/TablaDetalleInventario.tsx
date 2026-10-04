@@ -6,7 +6,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import type { DetallePantalla, FilaDetalleInventario } from '@shared/types/inventario-pantalla.js';
-import { formatearKg, formatearNumero, formatearUsd, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
+import { formatearCantidadKg, formatearKg, formatearNumero, formatearUsd, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
 import { estiloCategoria } from '../../../lib/colores-categoria';
 import {
   AVISO_CSV_SIN_VALOR, ETIQUETA_ETAPA, EXPLICACION_ETAPAS_PCB, etapaVisible, LIMITE_FILAS_INICIAL, ORDEN_TABLA_POR_DEFECTO, PASOS_LIMITE, agruparFilas, alternarOrden, ariaSort,
@@ -129,7 +129,7 @@ function FilaMaterial({ f, valorOculto }: { f: FilaDetalleInventario; valorOcult
       <td className="px-3 py-2 text-xs">
         {etapaVisible(f)}
         {f.tipo === 'lote' && f.embaladoKg !== null && f.enSacaKg !== null && (
-          <span className="block text-[10px] text-text-secondary"><span className="whitespace-nowrap">{formatearNumero(f.embaladoKg, 0)} embalados</span> · <span className="whitespace-nowrap">{formatearNumero(f.enSacaKg, 0)} en saca</span></span>
+          <span className="block text-[10px] text-text-secondary"><span className="whitespace-nowrap">{formatearCantidadKg(f.embaladoKg)} embalados</span> · <span className="whitespace-nowrap">{formatearCantidadKg(f.enSacaKg)} en saca</span></span>
         )}
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums">{formatearKg(f.kg)}</td>
@@ -138,7 +138,7 @@ function FilaMaterial({ f, valorOculto }: { f: FilaDetalleInventario; valorOcult
       <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums"><CeldaDias f={f} /></td>
       <td className="px-3 py-2 text-xs text-text-secondary">
         {f.porAlmacen.length === 0 ? '—' : f.porAlmacen.map(a => (
-          <span key={a.almacenId} className="block whitespace-nowrap tabular-nums">{a.almacenNombre} {formatearNumero(a.kg, 0)} kg</span>
+          <span key={a.almacenId} className="block whitespace-nowrap tabular-nums">{a.almacenNombre} {formatearCantidadKg(a.kg)} kg</span>
         ))}
       </td>
     </tr>

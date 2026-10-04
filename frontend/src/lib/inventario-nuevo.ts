@@ -6,7 +6,7 @@ import type { ResumenInventario } from '../services/inventario-resumen-service';
 // ---------------------------------------------------------------- formateo
 // La implementación vive en lib/formato.ts (formato es-VE unificado); se re-exporta aquí para no romper importadores.
 import { esFechaIso } from './formato';
-export { formatearNumero, formatearKg, formatearUsd, formatearPct, esFechaIso } from './formato';
+export { formatearNumero, formatearKg, formatearCantidadKg, formatearUsd, formatearPct, esFechaIso } from './formato';
 
 // ---------------------------------------------------------------- contenedor
 

@@ -24,7 +24,9 @@ import {
 describe('formato es-VE unificado', () => {
   it('mantiene los formatos históricos (y se re-exportan desde inventario-nuevo)', () => {
     expect(formatearNumero(1234567.891, 2)).toBe('1.234.567,89');
-    expect(formatearKg(1234)).toBe('1.234 kg');
+    expect(formatearKg(1234)).toBe('1.234,00 kg');
+    expect(formatearKg(11.735)).toBe('11,735 kg');
+    expect(formatearKg(12.5)).toBe('12,50 kg');
     expect(formatearUsd(5000)).toBe('USD 5.000');
     expect(formatearPct(12.345)).toBe('12,3 %');
     expect(inventarioNuevo.formatearKg).toBe(formatearKg);

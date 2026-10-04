@@ -14,7 +14,12 @@ export function formatearNumero(n: number, decimales = 0): string {
   return `${signo}${conMiles}${dec ? `,${dec}` : ''}`;
 }
 
-export const formatearKg = (n: number): string => `${formatearNumero(n, 0)} kg`;
+/** Kilos exactos: mínimo 2 decimales y hasta 3 si el dato los tiene (11,735). Nunca redondea a entero. */
+export function formatearCantidadKg(n: number): string {
+  const texto = formatearNumero(n, 3);
+  return texto.endsWith('0') && texto.includes(',') ? texto.slice(0, -1) : texto;
+}
+export const formatearKg = (n: number): string => `${formatearCantidadKg(n)} kg`;
 export const formatearKgDecimales = (n: number, decimales = 2): string => `${formatearNumero(n, decimales)} kg`;
 export const formatearUsd = (n: number): string => `USD ${formatearNumero(n, 0)}`;
 export const formatearUsdDecimales = (n: number, decimales = 2): string => `USD ${formatearNumero(n, decimales)}`;

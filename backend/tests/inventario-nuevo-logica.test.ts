@@ -32,7 +32,7 @@ describe('formateo es-VE con unidad', () => {
     expect(formatearNumero(0.5, 1)).toBe('0,5');
   });
   it('agrega la unidad', () => {
-    expect(formatearKg(18000)).toBe('18.000 kg');
+    expect(formatearKg(18000)).toBe('18.000,00 kg');
     expect(formatearUsd(12345.6)).toBe('USD 12.346');
     expect(formatearPct(5.25)).toBe('5,3 %');
   });
