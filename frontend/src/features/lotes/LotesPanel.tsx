@@ -46,8 +46,7 @@ function LotesPanel() {
   const toast = useToast();
   const puedeCrear = tienePermiso('productos', 'crear');
   const puedeEditar = tienePermiso('productos', 'editar');
-  const puedeVerValor = tienePermiso('facturacion', 'ver');
-  // Clase y precio estimado de venta: solo superadmin (lo exige el backend).
+  // Clase del lote: solo superadmin (lo exige el backend).
   const puedeConfigurar = usuario?.rol === 'superadmin';
 
   const [lotes, setLotes] = useState<Lote[]>([]);
@@ -110,7 +109,7 @@ function LotesPanel() {
   const idDetalle = typeof filtros.lote === 'string' ? filtros.lote : undefined;
   const hayFiltros = Boolean(fase || clase || estado || q);
   const visibles = useMemo(() => filtrarLotes(filas, { q, fase, clase, estado }), [filas, q, fase, clase, estado]);
-  const kpis = useMemo(() => kpisLotes(filas, !puedeVerValor), [filas, puedeVerValor]);
+  const kpis = useMemo(() => kpisLotes(filas), [filas]);
   const porFase = useMemo(() => (fases ? kgPorFase(filas.filter(l => l.activo)) : null), [fases, filas]);
   const hayEmbalado = lotes.some(l => l.embalado);
   const loteDetalle = idDetalle ? lotes.find(l => l.id === idDetalle) : undefined;
@@ -190,8 +189,6 @@ function LotesPanel() {
       <section aria-label="Indicadores de lotes" className="mb-8">
         <KpisLotesGrilla
           kpis={kpis}
-          puedeVerValor={puedeVerValor}
-          puedeConfigurarPrecio={puedeConfigurar}
           hayEmbalado={hayEmbalado}
           lotesExportacion={filas.filter(l => l.activo && l.clase === 'exportacion').length}
           lotesTrabajo={filas.filter(l => l.activo && l.clase === 'trabajo').length}
@@ -208,11 +205,10 @@ function LotesPanel() {
 
       <Bloque
         titulo="Lotes"
-        queEstasViendo="Cada fila es un destino de inventario con su clase, su fase, el producto ancla (★), los kilos que tiene y, si tienes permiso, su valor estimado de venta. Pulsa el nombre de un lote para ver y gestionar su detalle."
+        queEstasViendo="Cada fila es un destino de inventario con su clase, su fase, el producto ancla (★), los kilos que tiene y cuánto lleva embalado. Pulsa el nombre de un lote para ver y gestionar su detalle."
       >
         <LotesTabla
           filas={visibles}
-          puedeVerValor={puedeVerValor}
           hayEmbalado={hayEmbalado}
           seleccionado={idDetalle}
           onElegir={elegir}
@@ -225,7 +221,7 @@ function LotesPanel() {
 
       <div ref={detalleRef}>
         {loteDetalle && filaDetalle && (
-          <Bloque titulo={`Detalle de ${loteDetalle.nombre}`} queEstasViendo="Dónde está este lote y con qué composición, qué productos lo anclan, y las acciones de clase, precio estimado y embalado.">
+          <Bloque titulo={`Detalle de ${loteDetalle.nombre}`} queEstasViendo="Dónde está este lote y con qué composición, qué productos lo anclan, y las acciones de clase y embalado.">
             <LoteDetalle
               lote={loteDetalle}
               fila={filaDetalle}

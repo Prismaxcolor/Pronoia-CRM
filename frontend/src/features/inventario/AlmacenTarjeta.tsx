@@ -1,14 +1,12 @@
 import { Link } from 'react-router-dom';
 import { Eye, EyeOff, Image as ImagenIcono, Pencil, Star, Warehouse } from 'lucide-react';
-import { BarraProgreso, Insignia, formatearFecha, formatearKg, formatearNumero, formatearUsd } from '../../components/ui';
+import { BarraProgreso, Insignia, formatearFecha, formatearKg, formatearNumero } from '../../components/ui';
 import type { TarjetaAlmacen } from '../../lib/almacenes-kpis';
 import type { Almacen } from '@shared/types/index.js';
 
 interface Props {
   tarjeta: TarjetaAlmacen;
   puedeEditar: boolean;
-  /** facturacion:ver. Sin él se escribe "Sin permiso" en vez de la cifra. */
-  puedeVerValor: boolean;
   /** Los kg solo se leen con permiso de inventario (productos:ver). */
   puedeVerKg: boolean;
   onVerFotos: (almacen: Almacen) => void;
@@ -20,29 +18,8 @@ interface Props {
 
 const BOTON_ICONO = 'rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-alt focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
-function Valor({ t, puedeVerValor }: { t: TarjetaAlmacen; puedeVerValor: boolean }) {
-  if (!puedeVerValor) return <p className="text-sm text-text-secondary">Sin permiso para ver valores</p>;
-  if (!t.valor) return <p className="text-sm text-text-muted">—</p>;
-  const v = t.valor;
-  return (
-    <div>
-      <p className="text-sm font-semibold tabular-nums text-text-primary">
-        {formatearUsd(v.valorCostoUsd)} <span className="text-xs font-normal text-text-secondary">de costo de compra (materiales)</span>
-      </p>
-      {v.kgSinCosto > 0 && <p className="text-xs text-text-muted">{formatearKg(v.kgSinCosto)} sin precio de compra: no entran en el costo</p>}
-      {(v.valorEstimadoUsd > 0 || v.kgLotesSinPrecio > 0) && (
-        <p className="text-xs text-text-secondary">
-          {v.valorEstimadoUsd > 0 && <>Lotes: {formatearUsd(v.valorEstimadoUsd)} si se vendieran al precio estimado (aparte, no suma al costo)</>}
-          {v.valorEstimadoUsd > 0 && v.kgLotesSinPrecio > 0 && ' · '}
-          {v.kgLotesSinPrecio > 0 && <>{formatearKg(v.kgLotesSinPrecio)} de lotes sin precio estimado de venta</>}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** Tarjeta de un almacén: imagen, kg, valor (solo con facturacion:ver), última toma física y las acciones de siempre. */
-function AlmacenTarjeta({ tarjeta, puedeEditar, puedeVerValor, puedeVerKg, onVerFotos, onEditar, onDesactivar, onReactivar, onPredeterminado }: Props) {
+/** Tarjeta de un almacén: imagen, kg, última toma física y las acciones de siempre. */
+function AlmacenTarjeta({ tarjeta, puedeEditar, puedeVerKg, onVerFotos, onEditar, onDesactivar, onReactivar, onPredeterminado }: Props) {
   const a = tarjeta.almacen;
   const foto = a.fotos[0];
   return (
@@ -95,8 +72,6 @@ function AlmacenTarjeta({ tarjeta, puedeEditar, puedeVerValor, puedeVerKg, onVer
           )}
           {puedeVerKg && tarjeta.kg === 0 && <p className="text-xs text-text-muted">Sin stock ahora mismo</p>}
         </div>
-
-        <Valor t={tarjeta} puedeVerValor={puedeVerValor} />
 
         <p className="text-xs text-text-secondary">
           Última toma física (conteo a mano) cerrada: <span className="font-medium text-text-primary">{a.ultimaTomaFisica ? formatearFecha(a.ultimaTomaFisica) : 'nunca'}</span>

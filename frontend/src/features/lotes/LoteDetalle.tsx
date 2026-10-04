@@ -10,7 +10,7 @@ interface Props {
   lote: Lote;
   fila: FilaLote;
   puedeEditar: boolean;
-  /** Solo superadmin: clase y precio estimado. */
+  /** Solo superadmin: cambiar la clase. */
   puedeConfigurar: boolean;
   onEditar: (lote: Lote) => void;
   onToggleActivo: (lote: Lote) => void;
@@ -18,8 +18,8 @@ interface Props {
   onCerrar: () => void;
 }
 
-/** Detalle de UN lote: stock por almacén con su composición, productos ancla, fotos, clase, precio estimado y embalado.
- *  Conserva todas las acciones del panel anterior (editar, activar/desactivar, clase, precio, embalar). */
+/** Detalle de UN lote: stock por almacén con su composición, productos ancla, fotos, clase y embalado.
+ *  Conserva todas las acciones del panel anterior (editar, activar/desactivar, clase, embalar). */
 function LoteDetalle({ lote, fila, puedeEditar, puedeConfigurar, onEditar, onToggleActivo, onCambio, onCerrar }: Props) {
   const [visor, setVisor] = useState<number | null>(null);
   return (

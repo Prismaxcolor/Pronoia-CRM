@@ -2,8 +2,7 @@
  *  backend/tests/almacenes-kpis.test.ts. Todo devuelve valores NUEVOS (nunca muta la entrada).
  *
  *  Las cifras salen de endpoints que ya existen: GET /api/almacenes, /api/lotes, /api/traslados, /api/productos,
- *  /api/inventario/resumen (kg por almacén) y /api/inventario/pantalla/detalle (fase del lote y kg por almacén de cada
- *  fila). Aquí solo se unen y derivan: ningún cálculo de stock nuevo. */
+ *  /api/inventario/resumen (kg por almacén) y /api/inventario/pantalla/detalle (fase del lote de cada fila). Sin cifras de dinero. Aquí solo se unen y derivan: ningún cálculo de stock nuevo. */
 
 import type { Almacen } from '../../../shared/types/almacen';
 import type { ClaseLote, Lote } from '../../../shared/types/lote';
@@ -53,65 +52,18 @@ export interface KgAlmacenResumen {
   totalKg: number;
 }
 
-export interface ValorAlmacen {
-  /** Kg en el almacén (suma de las filas con stock). */
-  kg: number;
-  /** Materiales: kg x costo promedio de compra. */
-  valorCostoUsd: number;
-  /** Materiales del almacén que no tienen costo registrado (no entran en el valor). */
-  kgSinCosto: number;
-  /** Lotes: kg x precio estimado de VENTA. Es otra cifra: nunca se suma a la de costo. */
-  valorEstimadoUsd: number;
-  kgLotesSinPrecio: number;
-}
-
-/** Valor por almacén a partir de las filas del detalle (solo las que están hoy en galpón).
- *  Los materiales van a costo y los lotes a precio estimado de venta: dos cifras que no se mezclan. */
-export function valorPorAlmacen(filas: readonly FilaDetalleInventario[]): Map<string, ValorAlmacen> {
-  const mapa = new Map<string, ValorAlmacen>();
-  for (const f of filas) {
-    if (!f.enGalpon) continue;
-    for (const p of f.porAlmacen) {
-      if (!(p.kg > 0)) continue;
-      const v = mapa.get(p.almacenId) ?? { kg: 0, valorCostoUsd: 0, kgSinCosto: 0, valorEstimadoUsd: 0, kgLotesSinPrecio: 0 };
-      v.kg += p.kg;
-      if (f.tipo === 'lote') {
-        if (f.precioEstimadoKg != null) v.valorEstimadoUsd += p.kg * f.precioEstimadoKg;
-        else v.kgLotesSinPrecio += p.kg;
-      } else if (f.costoPromedioKg != null) {
-        v.valorCostoUsd += p.kg * f.costoPromedioKg;
-      } else {
-        v.kgSinCosto += p.kg;
-      }
-      mapa.set(p.almacenId, v);
-    }
-  }
-  for (const v of mapa.values()) {
-    v.kg = redondear(v.kg);
-    v.valorCostoUsd = redondear(v.valorCostoUsd, 2);
-    v.valorEstimadoUsd = redondear(v.valorEstimadoUsd, 2);
-    v.kgSinCosto = redondear(v.kgSinCosto);
-    v.kgLotesSinPrecio = redondear(v.kgLotesSinPrecio);
-  }
-  return mapa;
-}
-
 export interface TarjetaAlmacen {
   almacen: Almacen;
   /** null = no se pudo leer (sin permiso de inventario o falló la lectura): se muestra "—", nunca 0. */
   kg: number | null;
   /** Parte del total en galpón (0-100); null si no hay total o kg desconocido. */
   pctDelTotal: number | null;
-  /** null = sin permiso de valores o sin datos. */
-  valor: ValorAlmacen | null;
 }
 
-/** Une cada almacén con sus kg (del resumen) y su valor (del detalle). Orden: activos primero, el predeterminado arriba,
- *  luego por nombre. */
+/** Une cada almacén con sus kg (del resumen). Orden: activos primero, el predeterminado arriba, luego por nombre. */
 export function armarTarjetasAlmacen(
   almacenes: readonly Almacen[],
   kgResumen: readonly KgAlmacenResumen[] | null,
-  valores: ReadonlyMap<string, ValorAlmacen> | null,
 ): TarjetaAlmacen[] {
   const kgPorId = new Map((kgResumen ?? []).map(k => [k.almacenId, k.totalKg]));
   const total = [...kgPorId.values()].reduce((a, b) => a + Math.max(b, 0), 0);
@@ -121,7 +73,6 @@ export function armarTarjetasAlmacen(
       almacen,
       kg,
       pctDelTotal: kg != null && total > 0 ? Math.min(100, (Math.max(kg, 0) / total) * 100) : null,
-      valor: valores ? (valores.get(almacen.id) ?? { kg: 0, valorCostoUsd: 0, kgSinCosto: 0, valorEstimadoUsd: 0, kgLotesSinPrecio: 0 }) : null,
     };
   });
   return tarjetas.sort((a, b) =>
@@ -184,10 +135,6 @@ export interface FilaLote {
   stockKg: number;
   embaladoKg: number | null;
   enSacaKg: number | null;
-  /** USD/kg estimado de venta; null = sin precio o sin permiso. */
-  precioEstimadoKg: number | null;
-  /** stock x precio estimado (venta, no costo); null sin precio o sin permiso. */
-  valorEstimadoUsd: number | null;
   /** Nombres de los productos anclados a este lote (★). */
   ancla: string[];
   /** Cantidad de almacenes donde hay stock del lote. */
@@ -203,7 +150,7 @@ export function fasePorLote(filas: readonly FilaDetalleInventario[]): Map<string
   return mapa;
 }
 
-/** Une los lotes con su fase y sus productos ancla. `valorOculto` = sin facturacion:ver (el precio ya viene null). */
+/** Une los lotes con su fase y sus productos ancla. */
 export function unirLotes(
   lotes: readonly Lote[],
   productos: readonly ProductoAncla[],
@@ -215,23 +162,18 @@ export function unirLotes(
       anclaPorLote.set(loteId, [...(anclaPorLote.get(loteId) ?? []), p.nombre]);
     }
   }
-  return lotes.map<FilaLote>(l => {
-    const precio = l.precioEstimadoKg ?? null;
-    return {
-      id: l.id,
-      nombre: l.nombre,
-      activo: l.activo,
-      clase: l.clase ?? 'otro',
-      fase: fases?.get(l.id) ?? null,
-      stockKg: l.stockKg,
-      embaladoKg: l.embalado ? l.embalado.embaladoKg : null,
-      enSacaKg: l.embalado ? l.embalado.enSacaKg : null,
-      precioEstimadoKg: precio,
-      valorEstimadoUsd: precio != null ? redondear(Math.max(l.stockKg, 0) * precio, 2) : null,
-      ancla: [...(anclaPorLote.get(l.id) ?? [])].sort((a, b) => a.localeCompare(b, 'es')),
-      almacenesConStock: l.stockPorAlmacen.filter(s => s.stockKg > 0).length,
-    };
-  });
+  return lotes.map<FilaLote>(l => ({
+    id: l.id,
+    nombre: l.nombre,
+    activo: l.activo,
+    clase: l.clase ?? 'otro',
+    fase: fases?.get(l.id) ?? null,
+    stockKg: l.stockKg,
+    embaladoKg: l.embalado ? l.embalado.embaladoKg : null,
+    enSacaKg: l.embalado ? l.embalado.enSacaKg : null,
+    ancla: [...(anclaPorLote.get(l.id) ?? [])].sort((a, b) => a.localeCompare(b, 'es')),
+    almacenesConStock: l.stockPorAlmacen.filter(s => s.stockKg > 0).length,
+  }));
 }
 
 export interface FiltrosLotes {
@@ -283,23 +225,22 @@ export interface KpisLotes {
   kgTotal: number;
   embaladoKg: number;
   enSacaKg: number;
-  /** null = sin permiso de valores. */
-  valorEstimadoUsd: number | null;
-  kgConPrecio: number;
-  kgSinPrecio: number;
+  /** Kg de los lotes activos de clase exportación y de las demás clases (trabajo interno y otros). */
+  kgExportacion: number;
+  kgOtrasClases: number;
   /** Kg de lotes con stock negativo (se avisa: no se esconde). */
   lotesNegativos: number;
 }
 
-export function kpisLotes(filas: readonly FilaLote[], valorOculto: boolean): KpisLotes {
+export function kpisLotes(filas: readonly FilaLote[]): KpisLotes {
   const activos = filas.filter(l => l.activo);
-  let kgTotal = 0, embalado = 0, enSaca = 0, valor = 0, kgConPrecio = 0, kgSinPrecio = 0;
+  let kgTotal = 0, embalado = 0, enSaca = 0, kgExportacion = 0;
   for (const l of activos) {
     const kg = Math.max(l.stockKg, 0);
     kgTotal += kg;
+    if (l.clase === 'exportacion') kgExportacion += kg;
     embalado += Math.max(l.embaladoKg ?? 0, 0);
     enSaca += Math.max(l.enSacaKg ?? 0, 0);
-    if (l.valorEstimadoUsd != null) { valor += l.valorEstimadoUsd; kgConPrecio += kg; } else kgSinPrecio += kg;
   }
   return {
     lotesActivos: activos.length,
@@ -307,9 +248,8 @@ export function kpisLotes(filas: readonly FilaLote[], valorOculto: boolean): Kpi
     kgTotal: redondear(kgTotal),
     embaladoKg: redondear(embalado),
     enSacaKg: redondear(enSaca),
-    valorEstimadoUsd: valorOculto ? null : redondear(valor, 2),
-    kgConPrecio: redondear(kgConPrecio),
-    kgSinPrecio: redondear(kgSinPrecio),
+    kgExportacion: redondear(kgExportacion),
+    kgOtrasClases: redondear(kgTotal - kgExportacion),
     lotesNegativos: activos.filter(l => l.stockKg < -0.001).length,
   };
 }

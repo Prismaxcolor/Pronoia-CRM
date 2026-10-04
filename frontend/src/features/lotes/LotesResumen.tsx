@@ -1,13 +1,10 @@
-import { Boxes, Coins, PackageCheck, Scale } from 'lucide-react';
-import { BarraApilada, Bloque, EstadoVacio, GrillaKpis, TarjetaKpi, formatearKg, formatearNumero, formatearUsd, type SegmentoApilado } from '../../components/ui';
+import { Boxes, PackageCheck, Scale, Ship } from 'lucide-react';
+import { BarraApilada, Bloque, EstadoVacio, GrillaKpis, TarjetaKpi, formatearKg, formatearNumero, type SegmentoApilado } from '../../components/ui';
 import { COLOR_OTROS } from '../../lib/paleta';
 import type { KgPorFase, KpisLotes } from '../../lib/almacenes-kpis';
 
 interface Props {
   kpis: KpisLotes;
-  /** facturacion:ver. */
-  puedeVerValor: boolean;
-  puedeConfigurarPrecio: boolean;
   /** Hay datos de embalado (migración de clasificación aplicada). */
   hayEmbalado: boolean;
   lotesExportacion: number;
@@ -15,7 +12,7 @@ interface Props {
 }
 
 /** Cuatro indicadores de los lotes. Todo es del estado de HOY: no hay periodo anterior con el cual comparar. */
-export function KpisLotesGrilla({ kpis, puedeVerValor, puedeConfigurarPrecio, hayEmbalado, lotesExportacion, lotesTrabajo }: Props) {
+export function KpisLotesGrilla({ kpis, hayEmbalado, lotesExportacion, lotesTrabajo }: Props) {
   return (
     <GrillaKpis>
       <TarjetaKpi
@@ -43,16 +40,14 @@ export function KpisLotesGrilla({ kpis, puedeVerValor, puedeConfigurarPrecio, ha
         <p className="mt-1 text-xs text-text-muted">{formatearKg(kpis.enSacaKg)} más en saca, sin embalar</p>
       </TarjetaKpi>
       <TarjetaKpi
-        titulo="Valor estimado de venta"
-        icono={<Coins size={16} />}
-        ayuda="Kg de cada lote × el precio estimado de venta por kg (USD/kg) que un superadmin cargó a mano. Suma solo los lotes que tienen precio. Los lotes mezclan materiales y no tienen costo de compra: esta cifra es una proyección de venta, no un costo."
-        estado={!puedeVerValor ? 'sinPermiso' : kpis.kgConPrecio === 0 ? 'vacio' : 'listo'}
-        mensajeVacio={puedeConfigurarPrecio ? 'Ningún lote tiene precio estimado: cárgalo en el detalle de cada lote' : 'Ningún lote tiene precio estimado todavía'}
-        valor={kpis.valorEstimadoUsd != null ? formatearUsd(kpis.valorEstimadoUsd) : undefined}
-        subtitulo="de venta estimada · solo lotes con precio"
+        titulo="Kg de exportación"
+        icono={<Ship size={16} />}
+        ayuda="Kg que hay hoy en los lotes activos de clase exportación (los que se embalan y se venden). Los demás lotes (trabajo interno y otros) se cuentan aparte, debajo."
+        valor={formatearKg(kpis.kgExportacion)}
+        subtitulo="en lotes de exportación"
         comparacion={null}
       >
-        {kpis.kgSinPrecio > 0 && <p className="mt-1 text-xs text-text-muted">{formatearKg(kpis.kgSinPrecio)} de lotes sin precio</p>}
+        <p className="mt-1 text-xs text-text-muted">{formatearKg(kpis.kgOtrasClases)} en trabajo interno y otros</p>
       </TarjetaKpi>
       <TarjetaKpi
         titulo="Lotes activos"

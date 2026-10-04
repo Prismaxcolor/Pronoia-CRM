@@ -1,4 +1,4 @@
-import { TablaDatos, Insignia, formatearNumero, formatearUsd, type ColumnaTabla, type Tono } from '../../components/ui';
+import { TablaDatos, Insignia, formatearNumero, type ColumnaTabla, type Tono } from '../../components/ui';
 import { textoAncla, type FilaLote } from '../../lib/almacenes-kpis';
 import type { ClaseLote, FaseLote } from '@shared/types/index.js';
 
@@ -13,7 +13,7 @@ const CLASE: Record<ClaseLote, { etiqueta: string; tono: Tono }> = {
 const FASE: Record<FaseLote, string> = { por_procesar: 'Por procesar', procesado: 'Procesado' };
 
 
-function columnas(puedeVerValor: boolean, hayEmbalado: boolean, seleccionado: string | undefined, onElegir: (id: string) => void): ColumnaTabla<FilaLote>[] {
+function columnas(hayEmbalado: boolean, seleccionado: string | undefined, onElegir: (id: string) => void): ColumnaTabla<FilaLote>[] {
   const base: ColumnaTabla<FilaLote>[] = [
     {
       clave: 'nombre', titulo: 'Lote', valorOrden: l => l.nombre, valorCsv: l => l.nombre,
@@ -60,21 +60,11 @@ function columnas(puedeVerValor: boolean, hayEmbalado: boolean, seleccionado: st
       ayuda: 'Kg marcados como embalados (listos) que el stock del lote respalda. El resto del stock sigue en saca, sin embalar.',
     });
   }
-  if (puedeVerValor) {
-    base.push({
-      clave: 'valor', titulo: 'Valor est. venta (USD)', alinear: 'derecha', valorOrden: l => l.valorEstimadoUsd,
-      celda: l => (l.valorEstimadoUsd != null ? formatearUsd(l.valorEstimadoUsd) : <span className="text-text-muted" title="Sin precio estimado cargado">Sin precio</span>),
-      valorCsv: l => l.valorEstimadoUsd, decimalesCsv: 2,
-      total: ls => (ls.some(l => l.valorEstimadoUsd != null) ? formatearUsd(ls.reduce((s, l) => s + (l.valorEstimadoUsd ?? 0), 0)) : '—'),
-      ayuda: 'Kg del lote × precio estimado de venta por kg, en USD. Los lotes no tienen costo de compra: es una proyección de venta, no un costo.',
-    });
-  }
   return base;
 }
 
 interface Props {
   filas: readonly FilaLote[];
-  puedeVerValor: boolean;
   hayEmbalado: boolean;
   seleccionado?: string;
   onElegir: (id: string) => void;
@@ -85,11 +75,11 @@ interface Props {
 }
 
 /** Lista de lotes: ordenable, agrupada por clase, con totales y exportación a CSV; en móvil, tarjetas apiladas. */
-function LotesTabla({ filas, puedeVerValor, hayEmbalado, seleccionado, onElegir, hayFiltros, onLimpiar, puedeCrear, onCrear }: Props) {
+function LotesTabla({ filas, hayEmbalado, seleccionado, onElegir, hayFiltros, onLimpiar, puedeCrear, onCrear }: Props) {
   return (
     <TablaDatos
       titulo="Lotes de inventario"
-      columnas={columnas(puedeVerValor, hayEmbalado, seleccionado, onElegir)}
+      columnas={columnas(hayEmbalado, seleccionado, onElegir)}
       filas={filas}
       claveFila={l => l.id}
       ordenInicial={{ columna: 'kg', sentido: 'desc' }}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarCheck, Coins, Plus, Star, Warehouse } from 'lucide-react';
+import { CalendarCheck, Layers, Plus, Star, Warehouse } from 'lucide-react';
 import {
   obtenerAlmacenes,
   desactivarAlmacen,
@@ -7,23 +7,19 @@ import {
   marcarPredeterminado,
 } from '../../services/almacen-service';
 import { obtenerResumenInventario, type ResumenInventario } from '../../services/inventario-resumen-service';
-import { obtenerDetallePantalla } from '../../services/inventario-pantalla-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import {
   AlertaItem, Bloque, BotonAccion, EstadoVacio, GrillaKpis, SkeletonBloque, SkeletonKpis, TarjetaKpi,
-  formatearFecha, formatearKg, formatearNumero, formatearUsd,
+  formatearFecha, formatearKg, formatearNumero,
 } from '../../components/ui';
 import VisorFotos from '../../components/VisorFotos';
 import {
-  armarTarjetasAlmacen, kpisAlmacenes, valorPorAlmacen, type ValorAlmacen,
+  armarTarjetasAlmacen, kpisAlmacenes,
 } from '../../lib/almacenes-kpis';
 import AlmacenFormModal from './AlmacenFormModal';
 import AlmacenTarjeta from './AlmacenTarjeta';
 import type { Almacen } from '@shared/types/index.js';
-
-/** Filas máximas que acepta el detalle del inventario (para sumar el valor por almacén). */
-const FILAS_DETALLE = '2000';
 
 type Lectura<T> = { estado: 'cargando' } | { estado: 'ok'; dato: T } | { estado: 'error'; mensaje: string };
 
@@ -33,12 +29,10 @@ function AlmacenesPanel() {
   const puedeCrear = tienePermiso('almacenes', 'crear');
   const puedeEditar = tienePermiso('almacenes', 'editar');
   const puedeVerKg = tienePermiso('productos', 'ver');
-  const puedeVerValor = tienePermiso('facturacion', 'ver');
 
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [cargando, setCargando] = useState(true);
   const [resumen, setResumen] = useState<Lectura<ResumenInventario>>({ estado: 'cargando' });
-  const [valores, setValores] = useState<Lectura<{ mapa: Map<string, ValorAlmacen>; truncado: boolean }>>({ estado: 'cargando' });
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; almacen: Almacen | null } | { abierto: false }>({ abierto: false });
   const [visor, setVisor] = useState<{ almacen: Almacen; indice: number } | null>(null);
 
@@ -49,25 +43,16 @@ function AlmacenesPanel() {
     recargar();
   }, []);
 
-  // Kg por almacén (resumen) y valor por almacén (detalle): bloques aparte, cada uno con su propio fallo.
-  const [versionLectura, setVersionLectura] = useState(0);
+  // Kg por almacén (resumen).
   useEffect(() => {
     let cancelado = false;
     if (!puedeVerKg) return;
-    obtenerResumenInventario().then(r => {
+    obtenerResumenInventario({ sinValor: true }).then(r => {
       if (cancelado) return;
       setResumen('error' in r ? { estado: 'error', mensaje: r.error } : { estado: 'ok', dato: r.resumen });
     });
-    if (puedeVerValor) {
-      obtenerDetallePantalla(new URLSearchParams({ limite: FILAS_DETALLE })).then(r => {
-        if (cancelado) return;
-        setValores('error' in r
-          ? { estado: 'error', mensaje: r.error }
-          : { estado: 'ok', dato: { mapa: valorPorAlmacen(r.dato.filas), truncado: r.dato.limite.truncado } });
-      });
-    }
     return () => { cancelado = true; };
-  }, [puedeVerKg, puedeVerValor, versionLectura]);
+  }, [puedeVerKg]);
 
   const handleDesactivar = async (a: Almacen) => {
     const result = await desactivarAlmacen(a.id);
@@ -93,8 +78,7 @@ function AlmacenesPanel() {
 
   const hayPredeterminado = almacenes.some(a => a.esPredeterminado && a.activo);
   const kgResumen = resumen.estado === 'ok' ? resumen.dato.almacenes : null;
-  const mapaValores = valores.estado === 'ok' && puedeVerValor ? valores.dato.mapa : null;
-  const tarjetas = useMemo(() => armarTarjetasAlmacen(almacenes, kgResumen, mapaValores), [almacenes, kgResumen, mapaValores]);
+  const tarjetas = useMemo(() => armarTarjetasAlmacen(almacenes, kgResumen), [almacenes, kgResumen]);
   const kpis = useMemo(() => kpisAlmacenes(almacenes, kgResumen, new Date()), [almacenes, kgResumen]);
   const r = resumen.estado === 'ok' ? resumen.dato : null;
 
@@ -126,26 +110,15 @@ function AlmacenesPanel() {
             comparacion={null}
           />
           <TarjetaKpi
-            titulo="Valor del inventario (a costo)"
-            icono={<Coins size={16} />}
-            ayuda="Cuánto costó comprar los materiales que hay hoy en los almacenes, en USD. Se multiplican los kg de cada material por su precio promedio de compra por kg (según las facturas de compra). Los kg sin precio de compra no se cuentan, y los lotes van aparte con su precio de venta estimado, que no se suma."
-            estado={!puedeVerValor ? 'sinPermiso' : !puedeVerKg ? 'vacio' : resumen.estado === 'cargando' ? 'cargando' : !r?.valor ? 'vacio' : 'listo'}
-            mensajeVacio="No se pudo leer el valor"
-            valor={r?.valor ? formatearUsd(r.valor.costoMateriales.valorUsd) : undefined}
-            subtitulo="lo que costó comprar los materiales"
+            titulo="Kg en lotes"
+            icono={<Layers size={16} />}
+            ayuda="De los kg que hay hoy en los almacenes, cuántos están ya agrupados en lotes (mezclas de material listas para procesar o exportar). El resto son materiales sueltos."
+            estado={!puedeVerKg ? 'sinPermiso' : resumen.estado === 'cargando' ? 'cargando' : !r ? 'vacio' : 'listo'}
+            mensajeVacio="No se pudo leer el inventario"
+            valor={r ? formatearKg(r.lotes.totalKg) : undefined}
+            subtitulo={r ? `y ${formatearKg(r.materiales.totalKg)} en materiales sueltos` : undefined}
             comparacion={null}
-          >
-            {r?.valor && (
-              <p className="mt-1 text-xs text-text-muted">
-                {r.valor.costoMateriales.kgSinCosto > 0
-                  ? `${formatearKg(r.valor.costoMateriales.kgSinCosto)} sin precio de compra (no entran en el costo) · `
-                  : ''}
-                {r.valor.ventaEstimadaLotes.kgConPrecio > 0
-                  ? `Lotes: ${formatearUsd(r.valor.ventaEstimadaLotes.valorUsd)} si se vendieran al precio estimado (aparte, no se suma al costo)`
-                  : 'Lotes: sin precio estimado cargado'}
-              </p>
-            )}
-          </TarjetaKpi>
+          />
           <TarjetaKpi
             titulo="Almacenes activos"
             icono={<Star size={16} />}
@@ -184,22 +157,9 @@ function AlmacenesPanel() {
           No se pudieron leer los kilos por almacén ({resumen.mensaje || 'error de lectura'}). Las tarjetas muestran «—» en vez de un 0 engañoso.
         </p>
       )}
-      {puedeVerValor && valores.estado === 'ok' && valores.dato.truncado && (
-        <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-          Hay más filas de inventario que las que se pueden sumar de una vez: el valor por almacén puede estar incompleto.
-        </p>
-      )}
-      {puedeVerValor && valores.estado === 'error' && (
-        <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-          No se pudo calcular el valor por almacén ({valores.mensaje || 'error de lectura'}).
-          {' '}
-          <button type="button" onClick={() => { setValores({ estado: 'cargando' }); setVersionLectura(v => v + 1); }} className="font-medium underline underline-offset-2">Reintentar</button>
-        </p>
-      )}
-
       <Bloque
         titulo="Almacenes"
-        queEstasViendo="Cada tarjeta es un almacén (galpón) con su foto, los kg que tiene hoy y, si tienes permiso, cuánto valen. Las compras y ventas suman o restan en el almacén predeterminado; los traslados mueven material de un almacén a otro."
+        queEstasViendo="Cada tarjeta es un almacén (galpón) con su foto, los kg que tiene hoy y la fecha de su última toma física. Las compras y ventas suman o restan en el almacén predeterminado; los traslados mueven material de un almacén a otro."
         acciones={accionNuevo}
       >
         {almacenes.length === 0 ? (
@@ -216,7 +176,6 @@ function AlmacenesPanel() {
                 <AlmacenTarjeta
                   tarjeta={t}
                   puedeEditar={puedeEditar}
-                  puedeVerValor={puedeVerValor}
                   puedeVerKg={puedeVerKg}
                   onVerFotos={a => setVisor({ almacen: a, indice: 0 })}
                   onEditar={a => setFormAbierto({ abierto: true, almacen: a })}

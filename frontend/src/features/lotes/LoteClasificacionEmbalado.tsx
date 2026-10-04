@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PackageCheck, Loader2, AlertTriangle } from 'lucide-react';
+import { PackageCheck, AlertTriangle } from 'lucide-react';
 import { actualizarLote } from '../../services/lote-service';
 import MarcarEmbaladoModal from './MarcarEmbaladoModal';
 import { useToast } from '../../hooks/use-toast-context';
@@ -17,30 +17,22 @@ function fmt(n: number): string {
 
 const inputClass = 'px-2.5 py-1.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent';
 
-const textoPrecio = (l: Lote) => (l.precioEstimadoKg != null ? String(l.precioEstimadoKg) : '');
-
 interface Props {
   lote: Lote;
   /** productos:editar. Sin permiso solo se ve (sin botones ni campos editables). */
   puedeEditar: boolean;
-  /** Solo superadmin: cambiar la clase y el precio estimado de venta (alimentan el valor y el contenedor que ve todo el equipo). */
+  /** Solo superadmin: cambiar la clase del lote (alimenta el contenedor que ve todo el equipo). */
   puedeConfigurar: boolean;
   onCambio: () => void;
 }
 
-/** Bloque del panel de Lotes: clase del lote, precio estimado de venta (USD/kg, aproximado y a mano)
- *  y embalado por kilos. Todo es retrocompatible: si el backend aún no devuelve estos campos, no se muestra nada. */
+/** Bloque del panel de Lotes: clase del lote y embalado por kilos. Todo es retrocompatible: si el backend aún no devuelve estos campos, no se muestra nada. */
 function LoteClasificacionEmbalado({ lote, puedeEditar, puedeConfigurar, onCambio }: Props) {
   const toast = useToast();
-  const [precio, setPrecio] = useState(() => textoPrecio(lote));
   const [guardando, setGuardando] = useState(false);
   const [embalando, setEmbalando] = useState(false);
 
   if (lote.clase === undefined) return null; // backend sin la migración de clasificación
-
-  const precioNum = precio.trim() === '' ? null : Number(precio.replace(',', '.'));
-  const precioValido = precioNum === null || (Number.isFinite(precioNum) && precioNum >= 0);
-  const precioCambio = precioNum !== (lote.precioEstimadoKg ?? null);
 
   const cambiarClase = async (clase: ClaseLote) => {
     setGuardando(true);
@@ -48,17 +40,6 @@ function LoteClasificacionEmbalado({ lote, puedeEditar, puedeConfigurar, onCambi
     setGuardando(false);
     if ('error' in result) { toast.errorMsg(result.error); return; }
     toast.exito(`${lote.nombre}: clase actualizada.`);
-    if (result.advertencia) toast.advertencia(result.advertencia);
-    onCambio();
-  };
-
-  const guardarPrecio = async () => {
-    if (!precioValido) { toast.errorMsg('El precio estimado debe ser un número mayor o igual a 0.'); return; }
-    setGuardando(true);
-    const result = await actualizarLote(lote.id, { precioEstimadoKg: precioNum });
-    setGuardando(false);
-    if ('error' in result) { toast.errorMsg(result.error); return; }
-    toast.exito(precioNum === null ? `${lote.nombre}: precio estimado borrado.` : `${lote.nombre}: precio estimado guardado.`);
     if (result.advertencia) toast.advertencia(result.advertencia);
     onCambio();
   };
@@ -78,38 +59,6 @@ function LoteClasificacionEmbalado({ lote, puedeEditar, puedeConfigurar, onCambi
           >
             {CLASES.map(c => <option key={c.valor} value={c.valor}>{c.etiqueta}</option>)}
           </select>
-        </div>
-        <div>
-          <label className="block text-[11px] font-medium text-text-secondary mb-1">Precio estimado de venta (USD/kg)</label>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              inputMode="decimal"
-              value={precio}
-              disabled={!puedeConfigurar || guardando}
-              onChange={e => setPrecio(e.target.value)}
-              className={`${inputClass} w-28`}
-              placeholder="Sin precio"
-            />
-            {puedeConfigurar && precioCambio && (
-              <button
-                type="button"
-                onClick={guardarPrecio}
-                disabled={guardando || !precioValido}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
-              >
-                {guardando ? <Loader2 size={13} className="animate-spin" /> : null} Guardar
-              </button>
-            )}
-          </div>
-          {lote.precioEstimadoActualizadoEn && (
-            <p className="text-[10px] text-text-muted mt-0.5">
-              Actualizado {new Date(lote.precioEstimadoActualizadoEn).toLocaleDateString('es-VE')}
-              {lote.precioEstimadoActualizadoPorNombre ? ` por ${lote.precioEstimadoActualizadoPorNombre}` : ''}
-            </p>
-          )}
         </div>
         {emb && (
           <div className="flex items-center gap-2">

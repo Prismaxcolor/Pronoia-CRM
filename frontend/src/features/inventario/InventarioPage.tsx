@@ -224,7 +224,7 @@ const PESTANAS_DEF: ReadonlyArray<PestanaDef<Pestana>> = [
 
 const SUBTITULO_PESTANA: Record<Pestana, string> = {
   inventario: 'Stock por material y destino (sin lote / lote): compras − ventas ± transformaciones. Al filtrar por almacén se suman también los traslados y los ajustes de toma física, y se detalla cada movimiento.',
-  almacenes: 'Cuánto material hay en cada galpón, cuánto vale y cuándo se contó por última vez.',
+  almacenes: 'Cuánto material hay en cada galpón y cuándo se contó por última vez.',
   lotes: 'Los destinos donde se acumula el material pesado: en qué fase está cada lote, cuánto tiene y qué está listo para salir.',
   traslados: 'Material que se mueve entre almacenes: qué salió, qué llegó y qué falta por recepcionar.',
   'toma-fisica': 'Conteo del material con la mano para comparar con el sistema y corregir diferencias.',
