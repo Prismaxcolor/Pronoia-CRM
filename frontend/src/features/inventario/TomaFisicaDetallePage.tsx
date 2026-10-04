@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ScanLine, CheckCircle2, Circle, Printer, FileDown, Images, ZoomIn, X, XCircle } from 'lucide-react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { ScanLine, CheckCircle2, Printer, FileDown, ZoomIn, X, XCircle, Scale, ClipboardCheck, Warehouse, Target } from 'lucide-react';
 import {
   obtenerTomaFisica,
   obtenerResumenTomaFisica,
@@ -16,25 +16,26 @@ import FilaDocumento from '../../components/FilaDocumento';
 import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea, Lote } from '@shared/types/index.js';
 import CompartirBoton from '../../components/CompartirBoton';
 import VisorFotos from '../../components/VisorFotos';
+import {
+  BarraProgreso, Bloque, BotonAccion, EncabezadoPagina, EstadoVacio, GrillaKpis, Insignia, SkeletonBloque, SkeletonKpis, TarjetaKpi, formatearNumero,
+} from '../../components/ui';
+import { avanceConteo, clasificarDiferencia, contarAjustes } from '../../lib/toma-fisica-kpis';
+import type { Tono } from '../../lib/paleta';
+import TomaFisicaTablasImpresion from './TomaFisicaTablasImpresion';
+import type { FotosGaleria } from './TomaFisicaTablasDetalle';
 
-function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+const TomaFisicaTablasDetalle = lazy(() => import('./TomaFisicaTablasDetalle'));
+const BarrasHorizontales = lazy(() => import('../../components/ui/graficas/BarrasHorizontales'));
 
-/** Badges de composición PCB de un lote — mismo estilo que LotesPanel.tsx. */
-function BadgesComposicion({ loteId, lotes }: { loteId: string | null; lotes: Lote[] }) {
-  const lote = loteId ? lotes.find(l => l.id === loteId) : null;
-  if (!lote || lote.composicion.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-1 mt-1 print:hidden">
-      {lote.composicion.map(c => (
-        <span key={c.item} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-0.5">
-          {c.item} {c.porcentaje}%
-        </span>
-      ))}
-    </div>
-  );
-}
+const MAX_BARRAS_DIFERENCIA = 8;
+const ESTADO: Record<string, { etiqueta: string; tono: Tono }> = {
+  abierta: { etiqueta: 'Abierta', tono: 'aviso' },
+  cerrada: { etiqueta: 'Cerrada', tono: 'exito' },
+  cancelada: { etiqueta: 'Cancelada', tono: 'neutral' },
+};
+
+const kg = (n: number) => formatearNumero(n, 2);
+const kgConSigno = (n: number) => `${n > 0 ? '+' : ''}${kg(n)}`;
 
 function fmtFecha(iso: string | null): string {
   if (!iso) return '—';
@@ -43,7 +44,6 @@ function fmtFecha(iso: string | null): string {
 
 function TomaFisicaDetallePage() {
   const { id = '' } = useParams();
-  const navigate = useNavigate();
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
@@ -58,7 +58,7 @@ function TomaFisicaDetallePage() {
   const [cargando, setCargando] = useState(true);
   const [culminando, setCulminando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
-  const [galeriaAbierta, setGaleriaAbierta] = useState<{ label: string; fotos: string[] } | null>(null);
+  const [galeriaAbierta, setGaleriaAbierta] = useState<FotosGaleria | null>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
 
   const cargar = () => {
@@ -76,11 +76,26 @@ function TomaFisicaDetallePage() {
   const totalTeorico = lineas.reduce((acc, l) => acc + l.stockTeorico, 0);
   const totalReal = lineas.reduce((acc, l) => acc + l.stockReal, 0);
   const totalDiferencia = totalReal - totalTeorico;
-
-  // Ticket con cada pesaje individual, en el mismo orden en que se
-  // registraron (el más viejo primero) — para poder numerarlos 1, 2, 3…
-  // igual que se ven mientras se están contando.
-  const detalleOrdenado = [...detalle].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const avance = useMemo(() => avanceConteo(lineas), [lineas]);
+  const ajustes = useMemo(() => contarAjustes(lineas), [lineas]);
+  const semaforoTotal = useMemo(
+    () => clasificarDiferencia({ stockTeorico: totalTeorico, stockReal: totalReal, diferencia: totalDiferencia, cantidadPesajes: avance.contadas }),
+    [totalTeorico, totalReal, totalDiferencia, avance.contadas],
+  );
+  // Mayores diferencias (en kg absolutos) para la gráfica; solo líneas contadas con diferencia.
+  const datosBarras = useMemo(
+    () => lineas
+      .filter(l => l.cantidadPesajes > 0 && Math.abs(l.diferencia) > 0.005)
+      .map(l => ({
+        etiqueta: l.productoNombre ? `${l.productoNombre}${l.loteNombre ? ` · ${l.loteNombre}` : ''}` : `${l.loteNombre ?? '—'} (lote)`,
+        valor: Math.abs(l.diferencia),
+        simbolo: l.diferencia < 0 ? '▼' : '▲',
+        detalle: `${l.diferencia < 0 ? 'Faltante' : 'Sobrante'} ${kgConSigno(l.diferencia)} kg`,
+      }))
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, MAX_BARRAS_DIFERENCIA),
+    [lineas],
+  );
 
   const handleCulminar = async () => {
     const ok = await confirmar({
@@ -112,63 +127,103 @@ function TomaFisicaDetallePage() {
 
   if (cargando) {
     return (
-      <div className="flex justify-center py-12">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-5xl" aria-busy="true">
+        <div className="mb-6 h-12 w-64 animate-pulse rounded bg-surface-hover" />
+        <SkeletonKpis />
+        <SkeletonBloque alto="h-64" />
       </div>
     );
   }
 
   if (!tomaFisica) {
-    return <p className="text-center text-text-muted py-12 text-sm">Toma física no encontrada.</p>;
+    return (
+      <div className="max-w-xl">
+        <EstadoVacio
+          mensaje="No encontramos esta toma física."
+          descripcion="Puede que el enlace sea antiguo o que la toma ya no exista."
+          accion={{ etiqueta: 'Volver a las tomas físicas', to: '/inventario-legacy?pestana=toma-fisica' }}
+        />
+      </div>
+    );
   }
 
-  return (
-    <div className="max-w-3xl print-documento print:max-w-none">
-      <div className="print:hidden">
-        <button type="button" onClick={() => navigate('/inventario-legacy?pestana=toma-fisica')} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
-          <ArrowLeft size={16} />
-          Inventario
-        </button>
-      </div>
+  const estado = ESTADO[tomaFisica.estado] ?? { etiqueta: tomaFisica.estado, tono: 'neutral' as Tono };
+  const esAbierta = tomaFisica.estado === 'abierta';
+  const esCancelada = tomaFisica.estado === 'cancelada';
+  const sentidoTotal = totalDiferencia < -0.005 ? 'Faltante neto' : totalDiferencia > 0.005 ? 'Sobrante neto' : 'Cuadra';
 
+  const acciones = (
+    <>
+      {esAbierta && puedeContar && (
+        <BotonAccion to={`/pesaje/conteo/${tomaFisica.id}`} icono={<ScanLine size={18} />}>Registrar conteo</BotonAccion>
+      )}
+      <BotonAccion variante="secundario" onClick={() => descargarTomaFisicaPDF(tomaFisica, detalle, lineas)} icono={<FileDown size={16} />}>PDF</BotonAccion>
+      <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
+      <CompartirBoton titulo={`Toma física ${tomaFisica.codigo}`} obtenerPdf={() => descargarTomaFisicaPDF(tomaFisica, detalle, lineas, 'blob')} />
+    </>
+  );
+
+  return (
+    <div className="max-w-5xl print-documento print:max-w-none">
       {/* Encabezado de marca — solo el logo, estándar en todo documento impreso. */}
       <div className="hidden print:flex items-center justify-end mb-6">
         <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
       </div>
-
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-text-primary">{tomaFisica.codigo}</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs print:border print:border-black print:bg-transparent ${tomaFisica.estado === 'abierta' ? 'bg-amber-100 text-amber-700' : tomaFisica.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-              {tomaFisica.estado === 'abierta' ? 'Abierta' : tomaFisica.estado === 'cancelada' ? 'Cancelada' : 'Cerrada'}
-            </span>
-          </div>
-        </div>
-        <div className="print:hidden flex items-center gap-2 shrink-0">
-          {tomaFisica.estado === 'abierta' && puedeContar && (
-            <button
-              type="button"
-              onClick={() => navigate(`/pesaje/conteo/${tomaFisica.id}`)}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-            >
-              <ScanLine size={18} />
-              Registrar conteo
-            </button>
-          )}
-          <button type="button" onClick={() => descargarTomaFisicaPDF(tomaFisica, detalle, lineas)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
-            <FileDown size={16} />
-          </button>
-          <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
-            <Printer size={16} />
-          </button>
-          <CompartirBoton titulo={`Toma física ${tomaFisica.codigo}`} obtenerPdf={() => descargarTomaFisicaPDF(tomaFisica, detalle, lineas, 'blob')} />
-        </div>
+      <div className="hidden print:block mb-4">
+        <h1 className="text-2xl font-bold text-text-primary">{tomaFisica.codigo} <span className="ml-2 rounded-full border border-black px-2 py-0.5 text-xs font-medium">{estado.etiqueta}</span></h1>
       </div>
 
-      {/* Encabezado universal: filas etiqueta-valor con línea divisoria,
-       *  sin tarjeta — mismo patrón que factura/nota/pago/ticket. */}
-      <div className="mb-6">
+      <div className="print:hidden">
+        <EncabezadoPagina
+          migas={[
+            { etiqueta: 'Inventario', to: '/inventario' },
+            { etiqueta: 'Tomas físicas', to: '/inventario-legacy?pestana=toma-fisica' },
+            { etiqueta: tomaFisica.codigo },
+          ]}
+          titulo={`Toma física ${tomaFisica.codigo}`}
+          subtitulo={`${tomaFisica.almacenNombre ?? 'Almacén'} · ${tomaFisica.alcance === 'lote' ? 'Por lote' : 'Por categoría'} · lo que dice el sistema contra lo realmente contado.`}
+          acciones={<><Insignia tono={estado.tono}>{estado.etiqueta}</Insignia>{acciones}</>}
+        />
+      </div>
+
+      {/* Indicadores: primero lo que importa (avance y diferencia). No se imprimen: el papel lleva las tablas. */}
+      <section aria-label="Indicadores de la toma física" className="print:hidden">
+        <GrillaKpis>
+          <TarjetaKpi
+            titulo="Avance del conteo" icono={<Target size={16} />}
+            ayuda="Cuántos de los materiales (o lotes) del alcance ya tienen al menos un pesaje registrado."
+            valor={`${formatearNumero(avance.contadas, 0)} de ${formatearNumero(avance.total, 0)}`} unidad={tomaFisica.alcance === 'lote' ? 'lotes' : 'materiales'}
+            subtitulo={avance.total === 0 ? 'Esta toma no tiene materiales en su alcance' : avance.faltan > 0 ? `Faltan ${formatearNumero(avance.faltan, 0)} por contar` : 'Todo el alcance está contado'}
+          >
+            {avance.total > 0 && <div className="mt-2"><BarraProgreso valor={avance.contadas} max={avance.total} etiqueta="Avance del conteo de la toma física" tono={avance.faltan === 0 ? 'exito' : 'marca'} /></div>}
+          </TarjetaKpi>
+          <TarjetaKpi
+            titulo="Teórico (sistema)" icono={<Warehouse size={16} />}
+            ayuda="Stock que el sistema creía que había en el almacén para este alcance. Una vez cerrada la toma es la foto de ese momento."
+            valor={kg(totalTeorico)} unidad="kg" subtitulo="Suma de los materiales del alcance" comparacion={null}
+          />
+          <TarjetaKpi
+            titulo="Real (contado)" icono={<ClipboardCheck size={16} />}
+            ayuda="Suma del peso neto de los pesajes registrados (bruto menos tara)."
+            valor={kg(totalReal)} unidad="kg"
+            subtitulo={esAbierta && avance.faltan > 0 ? `Parcial: faltan ${formatearNumero(avance.faltan, 0)} por contar` : `${formatearNumero(detalle.length, 0)} pesaje${detalle.length === 1 ? '' : 's'} registrados`}
+            comparacion={null}
+          />
+          <TarjetaKpi
+            titulo="Diferencia neta" icono={<Scale size={16} />}
+            ayuda="Real menos teórico. Negativo = faltó material; positivo = sobró. El texto 'Cuadra / menor / notable' compara con el teórico: hasta 2 % es menor."
+            valor={kgConSigno(totalDiferencia)} unidad="kg"
+            subtitulo={esAbierta ? 'Provisional mientras la toma siga abierta' : esCancelada ? 'Toma cancelada: no se aplicó ningún ajuste' : `${sentidoTotal} · ${formatearNumero(ajustes, 0)} ${ajustes === 1 ? 'ajuste aplicado' : 'ajustes aplicados'}`}
+            comparacion={null}
+          >
+            {!esCancelada && avance.contadas > 0 && <div className="mt-2"><Insignia tono={semaforoTotal.tono}>{semaforoTotal.etiqueta}</Insignia></div>}
+          </TarjetaKpi>
+        </GrillaKpis>
+      </section>
+
+      {/* Encabezado universal: filas etiqueta-valor con línea divisoria, sin tarjeta — mismo patrón que factura/nota/pago/ticket. */}
+      <div className="mb-8">
+        <h2 className="mb-1 text-lg font-semibold text-text-primary print:hidden">Datos de la toma</h2>
         <FilaDocumento label="Almacén" valor={tomaFisica.almacenNombre ?? '—'} />
         <FilaDocumento label="Alcance" valor={tomaFisica.alcance === 'lote' ? 'Por lote' : 'Por categoría'} />
         <FilaDocumento label="Categorías" valor={tomaFisica.categoriaNombres.join(', ')} />
@@ -178,153 +233,49 @@ function TomaFisicaDetallePage() {
         {tomaFisica.descripcion && <FilaDocumento label="Descripción" valor={tomaFisica.descripcion} />}
         <FilaDocumento label="Abierta" valor={fmtFecha(tomaFisica.abiertaEn)} />
         {tomaFisica.estado === 'cerrada' && <FilaDocumento label="Cerrada" valor={fmtFecha(tomaFisica.cerradaEn)} />}
-        {tomaFisica.estado === 'cancelada' && <FilaDocumento label="Cancelada" valor={fmtFecha(tomaFisica.cerradaEn)} />}
+        {esCancelada && <FilaDocumento label="Cancelada" valor={fmtFecha(tomaFisica.cerradaEn)} />}
       </div>
 
-      <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
-        <div className="px-5 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold text-text-primary">Teórico (sistema) vs. real (contado)</h2>
-        </div>
-        {lineas.length === 0 ? (
-          <p className="px-5 py-6 text-center text-text-muted text-sm">Sin diferencias que mostrar todavía.</p>
-        ) : (
-          <>
-          <table className="w-full text-sm print:border-collapse">
-            <thead>
-              <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="py-2 pl-5 pr-2 font-medium w-8"></th>
-                <th className="py-2 px-2 font-medium">Material</th>
-                <th className="py-2 px-4 font-medium">Lote</th>
-                <th className="py-2 px-4 font-medium text-right print:hidden">Fotos</th>
-                <th className="py-2 px-4 font-medium text-right">Teórico</th>
-                <th className="py-2 px-4 font-medium text-right">Real</th>
-                <th className="py-2 px-5 font-medium text-right">Diferencia</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lineas.map((l, i) => {
-                const contado = l.cantidadPesajes > 0;
-                const puedeIrAContar = tomaFisica.estado === 'abierta' && puedeContar && (l.productoId || l.loteId);
-                const label = l.productoNombre
-                  ? `${l.productoNombre}${l.loteNombre ? ` · ${l.loteNombre}` : ''}`
-                  : `${l.loteNombre ?? '—'} (lote completo)`;
-                // Fotos de todos los pesajes que componen esta línea — mismos
-                // criterios que usa el resumen para agrupar (producto + lote).
-                const fotosLinea = detalle
-                  .filter(d => d.productoId === l.productoId && d.loteId === l.loteId)
-                  .flatMap(d => d.fotos);
-                return (
-                  <tr
-                    key={i}
-                    onClick={puedeIrAContar ? () => {
-                      const param = l.productoId ? `producto=${l.productoId}` : `lote=${l.loteId}`;
-                      navigate(`/pesaje/conteo/${tomaFisica.id}?${param}`);
-                    } : undefined}
-                    className={`border-t border-border ${contado ? '' : 'opacity-60'} ${puedeIrAContar ? 'cursor-pointer hover:bg-surface-alt transition-colors print:cursor-auto print:hover:bg-transparent' : ''}`}
-                  >
-                    <td className="py-2.5 pl-5 pr-2">
-                      {contado
-                        ? <CheckCircle2 size={16} className="text-green-600" />
-                        : <Circle size={16} className="text-text-muted" />}
-                    </td>
-                    <td className="py-2.5 px-2 text-text-primary">
-                      {l.productoNombre ?? <span className="text-text-muted">Lote completo</span>}
-                    </td>
-                    <td className="py-2.5 px-4 text-text-secondary">
-                      {l.loteNombre ?? '—'}
-                      <BadgesComposicion loteId={l.loteId} lotes={lotes} />
-                    </td>
-                    <td className="py-2.5 px-4 text-right print:hidden">
-                      {fotosLinea.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); setGaleriaAbierta({ label, fotos: fotosLinea }); }}
-                          className="inline-flex items-center gap-1 text-text-muted hover:text-brand-600 transition-colors"
-                          title="Ver fotos"
-                        >
-                          <Images size={14} />
-                          <span className="text-xs">{fotosLinea.length}</span>
-                        </button>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockTeorico)}</td>
-                    <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(l.stockReal)}</td>
-                    <td className={`py-2.5 px-5 text-right font-semibold ${l.diferencia < 0 ? 'text-red-600' : l.diferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
-                      {l.diferencia > 0 ? '+' : ''}{fmt(l.diferencia)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-surface-alt text-sm">
-            <span className="font-medium text-text-secondary">Total: {fmt(totalTeorico)} teórico → {fmt(totalReal)} real</span>
-            <span className={`font-bold ${totalDiferencia < 0 ? 'text-red-600' : totalDiferencia > 0 ? 'text-amber-600' : 'text-text-primary'}`}>
-              {totalDiferencia > 0 ? '+' : ''}{fmt(totalDiferencia)} kg
-            </span>
-          </div>
-          </>
-        )}
+      <div className="print:hidden">
+        <Bloque titulo="Mayores diferencias" queEstasViendo="los materiales con más kilos de diferencia entre lo contado y el sistema (▼ falta, ▲ sobra). El texto de cada barra dice cuánto y en qué sentido.">
+          {datosBarras.length > 0 ? (
+            <div className="rounded-xl border border-border bg-surface p-4">
+              <Suspense fallback={<SkeletonBloque />}>
+                <BarrasHorizontales
+                  etiquetaAria="Mayores diferencias de la toma física, en kilos"
+                  datos={datosBarras}
+                  formatoValor={v => `${kg(v)} kg`}
+                />
+              </Suspense>
+            </div>
+          ) : avance.contadas === 0 ? (
+            <EstadoVacio
+              mensaje="Todavía no hay nada contado, por eso no hay diferencias."
+              descripcion="Las diferencias aparecen en cuanto se registra el primer pesaje de esta toma."
+              icono={<Scale size={22} />}
+              accion={esAbierta && puedeContar ? { etiqueta: 'Registrar conteo', to: `/pesaje/conteo/${tomaFisica.id}` } : undefined}
+            />
+          ) : (
+            <EstadoVacio mensaje="Sin diferencias: todo lo contado coincide con el sistema." icono={<CheckCircle2 size={22} />} variante="marca" />
+          )}
+        </Bloque>
+
+        <Suspense fallback={<SkeletonBloque alto="h-64" conMargen />}>
+          <TomaFisicaTablasDetalle
+            lineas={lineas}
+            detalle={detalle}
+            lotes={lotes}
+            tomaFisicaId={tomaFisica.id}
+            puedeContar={esAbierta && puedeContar}
+            onVerFotos={setGaleriaAbierta}
+          />
+        </Suspense>
       </div>
 
-      <div className="bg-surface rounded-xl border border-border overflow-hidden print:shadow-none">
-        <div className="px-5 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold text-text-primary">
-            Ticket de la toma física ({detalle.length} pesaje{detalle.length === 1 ? '' : 's'})
-          </h2>
-        </div>
-        {detalleOrdenado.length === 0 ? (
-          <p className="px-5 py-6 text-center text-text-muted text-sm">Todavía no se registró ningún pesaje.</p>
-        ) : (
-          <table className="w-full text-sm print:border-collapse">
-            <thead>
-              <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                <th className="py-2 pl-5 pr-2 font-medium w-8">#</th>
-                <th className="py-2 px-2 font-medium">Material</th>
-                <th className="py-2 px-4 font-medium">Lote</th>
-                <th className="py-2 px-4 font-medium text-right print:hidden">Fotos</th>
-                <th className="py-2 px-5 font-medium text-right">Peso neto (kg)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detalleOrdenado.map((d, i) => {
-                const label = d.nombreProducto
-                  ? `${d.nombreProducto}${d.nombreLote ? ` · ${d.nombreLote}` : ''}`
-                  : `${d.nombreLote ?? '—'} (lote completo)`;
-                return (
-                  <tr key={d.id} className="border-t border-border">
-                    <td className="py-2.5 pl-5 pr-2 text-text-muted">{i + 1}</td>
-                    <td className="py-2.5 px-2 text-text-primary">
-                      {d.nombreProducto ?? <span className="text-text-muted">Lote completo</span>}
-                    </td>
-                    <td className="py-2.5 px-4 text-text-secondary">
-                      {d.nombreLote ?? '—'}
-                      <BadgesComposicion loteId={d.loteId} lotes={lotes} />
-                    </td>
-                    <td className="py-2.5 px-4 text-right print:hidden">
-                      {d.fotos.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setGaleriaAbierta({ label, fotos: d.fotos })}
-                          className="inline-flex items-center gap-1 text-text-muted hover:text-brand-600 transition-colors"
-                          title="Ver fotos"
-                        >
-                          <Images size={14} />
-                          <span className="text-xs">{d.fotos.length}</span>
-                        </button>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-5 text-right font-semibold text-text-primary">{fmt(d.pesoNeto)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <TomaFisicaTablasImpresion lineas={lineas} detalle={detalle} />
 
-      {tomaFisica.estado === 'abierta' && puedeCulminar && (
-        <div className="mt-6 flex items-center justify-end gap-3 print:hidden">
+      {esAbierta && puedeCulminar && (
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-3 print:hidden">
           <button
             type="button"
             onClick={handleCancelar}
@@ -351,7 +302,7 @@ function TomaFisicaDetallePage() {
           <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h2 className="text-sm font-semibold text-text-primary truncate">{galeriaAbierta.label}</h2>
-              <button type="button" onClick={() => setGaleriaAbierta(null)} className="text-text-muted hover:text-text-primary transition-colors shrink-0">
+              <button type="button" onClick={() => setGaleriaAbierta(null)} aria-label="Cerrar galería" className="text-text-muted hover:text-text-primary transition-colors shrink-0">
                 <X size={20} />
               </button>
             </div>

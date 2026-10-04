@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Package, Lock, RefreshCw } from 'lucide-react';
+import { EncabezadoPagina, Pestanas, type PestanaDef } from '../../components/ui';
 import {
   obtenerInventario,
   type ArticuloInventario,
@@ -213,6 +214,22 @@ type Agrupacion = 'categoria' | 'lote';
 const PESTANAS = ['inventario', 'almacenes', 'lotes', 'traslados', 'toma-fisica'] as const;
 type Pestana = (typeof PESTANAS)[number];
 
+const PESTANAS_DEF: ReadonlyArray<PestanaDef<Pestana>> = [
+  { valor: 'inventario', etiqueta: 'Inventario' },
+  { valor: 'almacenes', etiqueta: 'Almacenes' },
+  { valor: 'lotes', etiqueta: 'Lotes' },
+  { valor: 'traslados', etiqueta: 'Traslados' },
+  { valor: 'toma-fisica', etiqueta: 'Toma física' },
+];
+
+const SUBTITULO_PESTANA: Record<Pestana, string> = {
+  inventario: 'Stock por material y destino (sin lote / lote): compras − ventas ± transformaciones. Al filtrar por almacén se suman también los traslados y los ajustes de toma física, y se detalla cada movimiento.',
+  almacenes: 'Cuánto material hay en cada galpón, cuánto vale y cuándo se contó por última vez.',
+  lotes: 'Los destinos donde se acumula el material pesado: en qué fase está cada lote, cuánto tiene y qué está listo para salir.',
+  traslados: 'Material que se mueve entre almacenes: qué salió, qué llegó y qué falta por recepcionar.',
+  'toma-fisica': 'Conteo del material con la mano para comparar con el sistema y corregir diferencias.',
+};
+
 function InventarioPage() {
   const [pestana, setPestana] = usePestanaRecordada<Pestana>(
     'pronoia:inventario:pestana',
@@ -220,7 +237,7 @@ function InventarioPage() {
     'inventario',
   );
   // /inventario-legacy?pestana=lotes abre esa pestaña (la usa el menú "Gestionar" de la pantalla nueva).
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const pestanaUrl = searchParams.get('pestana');
   useEffect(() => {
     const valida = PESTANAS.find(p => p === pestanaUrl);
@@ -271,36 +288,20 @@ function InventarioPage() {
 
   const inputClass = "px-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
 
+  const cambiarPestana = (valor: Pestana) => {
+    setPestana(valor);
+    // La pestaña va en la URL (se comparte y sobrevive a F5); al cambiar se sueltan los filtros de la pestaña anterior.
+    setSearchParams(new URLSearchParams({ pestana: valor }), { replace: true });
+  };
+
   return (
-    <div>
-      <div className="mb-6">
-        <p className="mb-2 text-xs text-text-muted">
-          Esta es la pantalla anterior · <Link to="/inventario" className="text-brand-700 underline hover:text-brand-800">Volver a la nueva</Link>
-        </p>
-        <h1 className="text-2xl font-bold text-text-primary">Inventario</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Stock por material y destino (sin lote / lote): compras − ventas ± transformaciones. Al filtrar por almacén se suman también los traslados y los ajustes de toma física, y se detalla cada movimiento.
-        </p>
-      </div>
+    <div className="max-w-7xl">
+      <p className="mb-2 text-xs text-text-muted">
+        Esta es la pantalla anterior · <Link to="/inventario" className="text-brand-700 underline hover:text-brand-800">Volver a la nueva</Link>
+      </p>
+      <EncabezadoPagina titulo="Inventario" subtitulo={SUBTITULO_PESTANA[pestana]} />
 
-      <div className="flex flex-wrap rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
-        <button type="button" onClick={() => setPestana('inventario')} className={`px-4 py-1.5 ${pestana === 'inventario' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-          Inventario
-        </button>
-        <button type="button" onClick={() => setPestana('almacenes')} className={`px-4 py-1.5 ${pestana === 'almacenes' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-          Almacenes
-        </button>
-        <button type="button" onClick={() => setPestana('lotes')} className={`px-4 py-1.5 ${pestana === 'lotes' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-          Lotes
-        </button>
-        <button type="button" onClick={() => setPestana('traslados')} className={`px-4 py-1.5 ${pestana === 'traslados' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-          Traslados
-        </button>
-        <button type="button" onClick={() => setPestana('toma-fisica')} className={`px-4 py-1.5 ${pestana === 'toma-fisica' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-          Toma física
-        </button>
-      </div>
-
+      <Pestanas pestanas={PESTANAS_DEF} valor={pestana} onCambiar={cambiarPestana} etiquetaAria="Secciones del inventario">
       {pestana === 'almacenes' && <AlmacenesPanel />}
       {pestana === 'lotes' && <LotesPanel />}
       {pestana === 'traslados' && <TrasladosPanel />}
@@ -520,6 +521,7 @@ function InventarioPage() {
       )}
       </>
       )}
+      </Pestanas>
     </div>
   );
 }

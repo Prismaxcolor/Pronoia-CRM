@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Recycle, RefreshCw } from 'lucide-react';
 import { obtenerResumenInventario, type ResumenInventario } from '../../services/inventario-resumen-service';
 import { filtrosAUrl, filtrosDesdeUrl, parametrosResumen, type FiltrosPantalla } from '../../lib/inventario-nuevo';
@@ -7,6 +7,7 @@ import BarraFiltros from './nuevo/BarraFiltros';
 import GestionarMenu from './nuevo/GestionarMenu';
 import KpisInventario, { KpisSkeleton } from './nuevo/KpisInventario';
 import ProximoContenedor from './nuevo/ProximoContenedor';
+import { BotonAccion, EncabezadoPagina, SkeletonBloque } from '../../components/ui';
 
 // Lo pesado se carga aparte y después de los KPIs (ranuras que construye otro agente).
 const FlujoSankey = lazy(() => import('./nuevo/FlujoSankey'));
@@ -18,7 +19,7 @@ const AlertasInventario = lazy(() => import('./nuevo/AlertasInventario'));
 const RETARDO_BLOQUES_PESADOS_MS = 150;
 
 function BloqueSkeleton({ alto = 'h-48' }: { alto?: string }) {
-  return <div className={`mb-8 ${alto} animate-pulse rounded-xl border border-border bg-surface-alt`} aria-busy="true" aria-label="Cargando bloque" />;
+  return <SkeletonBloque alto={alto} conMargen etiqueta="Cargando bloque" />;
 }
 
 function InventarioNuevoPage() {
@@ -60,18 +61,16 @@ function InventarioNuevoPage() {
 
   return (
     <div className="max-w-7xl">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Inventario</h1>
-          <p className="mt-1 text-sm text-text-secondary">Cuánto hay, cuánto vale, qué está listo para salir y qué se pierde en el proceso.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <GestionarMenu />
-          <Link to="/transformaciones" className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-            <Recycle size={16} aria-hidden="true" /> Registrar transformación
-          </Link>
-        </div>
-      </div>
+      <EncabezadoPagina
+        titulo="Inventario"
+        subtitulo="Cuánto hay, cuánto vale, qué está listo para salir y qué se pierde en el proceso."
+        acciones={
+          <>
+            <GestionarMenu />
+            <BotonAccion to="/transformaciones" icono={<Recycle size={16} />}>Registrar transformación</BotonAccion>
+          </>
+        }
+      />
 
       <BarraFiltros filtros={filtros} onCambiar={cambiarFiltros} onLimpiar={limpiarFiltros} />
 

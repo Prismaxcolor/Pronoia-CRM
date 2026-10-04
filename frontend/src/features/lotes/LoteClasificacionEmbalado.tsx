@@ -66,7 +66,7 @@ function LoteClasificacionEmbalado({ lote, puedeEditar, puedeConfigurar, onCambi
   const emb = lote.embalado;
 
   return (
-    <div className="mt-2 pl-12 space-y-2">
+    <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label className="block text-[11px] font-medium text-text-secondary mb-1">Clase</label>

@@ -1,289 +1,43 @@
-import { useEffect, useState } from 'react';
-import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
-import AvisoBorrador from '../../components/AvisoBorrador';
-import { difiereEstado } from '../../lib/borrador';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ClipboardList } from 'lucide-react';
-import { obtenerTomasFisicas, crearTomaFisica } from '../../services/toma-fisica-service';
+import { ClipboardCheck, ClipboardList, Plus, Scale, Wrench } from 'lucide-react';
+import { obtenerTomasFisicas } from '../../services/toma-fisica-service';
 import { obtenerAlmacenes } from '../../services/almacen-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { useAuth } from '../../hooks/use-auth-context';
-import { useToast } from '../../hooks/use-toast-context';
+import { useFiltrosUrl, Bloque, BotonAccion, EstadoVacio, FiltrosBarra, GrillaKpis, SkeletonBloque, SkeletonKpis, TarjetaKpi, formatearNumero } from '../../components/ui';
+import { diferenciasPorAlmacen, filtrarTomas, resumirTomas } from '../../lib/toma-fisica-kpis';
+import type { EsquemaFiltros } from '../../lib/filtros-url';
+import NuevaTomaFisicaModal from './TomaFisicaNuevaModal';
 import type { TomaFisicaInventario, Almacen, TipoMaterial, Lote } from '@shared/types/index.js';
 
-function fmtFecha(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
-}
+const BarrasHorizontales = lazy(() => import('../../components/ui/graficas/BarrasHorizontales'));
+const TomaFisicaTablaListado = lazy(() => import('./TomaFisicaTablaListado'));
 
-type Alcance = 'categoria' | 'lote';
+/** Filtros del listado en la URL con prefijo `tf_` para no chocar con `pestana` (ni con otros parámetros de la página). */
+const ESQUEMA_FILTROS: EsquemaFiltros = {
+  campos: {
+    tf_estado: { tipo: 'opcion', opciones: ['abierta', 'cerrada', 'cancelada'] },
+    tf_almacen: { tipo: 'texto' },
+    tf_q: { tipo: 'texto' },
+  },
+};
 
-const ALCANCES: Array<{ id: Alcance; titulo: string; detalle: string }> = [
-  { id: 'categoria', titulo: 'Por categoría', detalle: 'Cuentas los productos de las categorías que elijas (ej. Ferroso, No Ferroso).' },
-  { id: 'lote', titulo: 'Por lote', detalle: 'Cuentas lotes completos (ej. PCB, PGM), uno por uno.' },
+const OPCIONES_ESTADO = [
+  { valor: 'abierta', etiqueta: 'Abiertas' },
+  { valor: 'cerrada', etiqueta: 'Cerradas' },
+  { valor: 'cancelada', etiqueta: 'Canceladas' },
 ];
 
-function fmtKg(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-/** Misma regla que el backend/RPC: mismo almacén y alguna categoría en común. */
-function tomaAbiertaSolapada(
-  tomas: TomaFisicaInventario[],
-  almacenId: string,
-  categoriaIds: string[]
-): TomaFisicaInventario | null {
-  return tomas.find(t =>
-    t.estado === 'abierta'
-    && t.almacenId === almacenId
-    && t.categoriaIds.some(c => categoriaIds.includes(c))
-  ) ?? null;
-}
-
-function NuevaTomaFisicaModal({
-  almacenes,
-  categorias,
-  lotes,
-  tomas,
-  onClose,
-  onCreada,
-}: {
-  almacenes: Almacen[];
-  categorias: TipoMaterial[];
-  lotes: Lote[];
-  tomas: TomaFisicaInventario[];
-  onClose: () => void;
-  onCreada: (t: TomaFisicaInventario) => void;
-}) {
-  const toast = useToast();
-  const [almacenId, setAlmacenId] = useState(almacenes.find(a => a.activo)?.id ?? '');
-  const [alcance, setAlcance] = useState<Alcance>('categoria');
-  const [categoriaIds, setCategoriaIds] = useState<string[]>([]);
-  const [loteIds, setLoteIds] = useState<string[]>([]);
-  const [descripcion, setDescripcion] = useState('');
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const almacenInicial = almacenes.find(a => a.activo)?.id ?? '';
-  const estadoBorrador = { almacenId, alcance, categoriaIds, loteIds, descripcion };
-  const restablecer = () => {
-    setAlmacenId(almacenInicial);
-    setAlcance('categoria');
-    setCategoriaIds([]);
-    setLoteIds([]);
-    setDescripcion('');
-  };
-  const borrador = useBorradorPersistente<typeof estadoBorrador>({
-    formulario: 'toma-fisica-nueva',
-    version: 1,
-    estado: estadoBorrador,
-    hayCambios: difiereEstado(estadoBorrador, { almacenId: almacenInicial, alcance: 'categoria', categoriaIds: [], loteIds: [], descripcion: '' }),
-    aplicar: d => {
-      setAlmacenId(almacenes.some(a => a.id === d.almacenId) ? (d.almacenId as string) : almacenInicial);
-      setAlcance(d.alcance === 'lote' ? 'lote' : 'categoria');
-      setCategoriaIds(d.categoriaIds ?? []);
-      setLoteIds(d.loteIds ?? []);
-      setDescripcion(d.descripcion ?? '');
-    },
-    restablecer,
-  });
-  // Cancelar descarta el borrador guardado.
-  const cerrar = () => { borrador.limpiar(); onClose(); };
-
-  // Por categoría solo ofrece categorías "sin lote" (se cuentan producto a
-  // producto); por lote solo las "con lote" (PCB, PGM: se pesa el lote
-  // completo, no se desarma material por material).
-  // Una categoría con algún producto anclado a un lote se cuenta por lote,
-  // aunque esté marcada "sin lote" (mismo criterio que el backend).
-  const categoriasDelAlcance = categorias.filter(c => {
-    const sinLoteEfectivo = c.sinLote && !c.tieneProductosAnclados;
-    return alcance === 'categoria' ? sinLoteEfectivo : !sinLoteEfectivo;
-  });
-  // La toma física sirve justo para encontrar material que el sistema NO
-  // sabe que está ahí — no se exige que el lote ya tenga stock en este
-  // almacén para poder elegirlo. Se ofrecen todos los lotes activos y se
-  // muestra cuánto tienen hoy en el almacén elegido.
-  const lotesActivos = lotes.filter(l => l.activo);
-  const stockEnAlmacen = (l: Lote) => l.stockPorAlmacen.find(s => s.almacenId === almacenId)?.stockKg ?? 0;
-
-  const cambiarAlcance = (nuevo: Alcance) => {
-    if (nuevo === alcance) return;
-    setAlcance(nuevo);
-    setCategoriaIds([]);
-    setLoteIds([]);
-    setError(null);
-  };
-
-  const toggleCategoria = (id: string) =>
-    setCategoriaIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
-  const toggleLote = (id: string) =>
-    setLoteIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
-
-  const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
-  const almacenNombre = almacenes.find(a => a.id === almacenId)?.nombre ?? 'el almacén';
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (!almacenId) { setError('Elige un almacén.'); return; }
-    if (categoriaIds.length === 0) {
-      setError(alcance === 'categoria' ? 'Elige al menos una categoría a inventariar.' : 'Elige la categoría a la que pertenecen los lotes.');
-      return;
-    }
-    if (alcance === 'lote' && loteIds.length === 0) { setError('Elige al menos un lote a inventariar.'); return; }
-    const solapada = tomaAbiertaSolapada(tomas, almacenId, categoriaIds);
-    if (solapada) {
-      setError(`Ya hay una toma abierta (${solapada.codigo}) con alguna de estas categorías en ${almacenNombre}. Culmínala o cancélala primero.`);
-      return;
-    }
-
-    setGuardando(true);
-    const result = await crearTomaFisica({
-      almacenId,
-      alcance,
-      categoriaIds,
-      loteIds: alcance === 'lote' ? loteIds : [],
-      descripcion: descripcion.trim() || null,
-    });
-    setGuardando(false);
-    if ('error' in result) { setError(result.error); return; }
-    toast.exito(`${result.tomaFisica.codigo} creada — esas categorías quedan bloqueadas hasta culminarla.`);
-    borrador.limpiar();
-    onCreada(result.tomaFisica);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">Nueva toma física de inventario</h2>
-          <p className="text-sm text-text-secondary mt-1">
-            Mientras esté abierta, solo se bloquean las categorías elegidas en este almacén —
-            el resto sigue operando normal.
-          </p>
-        </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <AvisoBorrador formulario="la nueva toma física" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Almacén *</label>
-            <select value={almacenId} onChange={e => setAlmacenId(e.target.value)} className={inputClass}>
-              {almacenes.filter(a => a.activo).map(a => (
-                <option key={a.id} value={a.id}>{a.nombre}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">¿Qué vas a contar? *</label>
-            <div className="grid grid-cols-2 gap-2">
-              {ALCANCES.map(a => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => cambiarAlcance(a.id)}
-                  aria-pressed={alcance === a.id}
-                  className={`text-left p-3 rounded-lg border transition-colors ${alcance === a.id ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-border hover:bg-surface-alt'}`}
-                >
-                  <span className="block text-sm font-semibold text-text-primary">{a.titulo}</span>
-                  <span className="block text-[11px] text-text-secondary mt-0.5 leading-snug">{a.detalle}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">
-              {alcance === 'categoria' ? 'Categorías a inventariar *' : 'Categoría de los lotes *'}
-            </label>
-            {categoriasDelAlcance.length === 0 ? (
-              <p className="text-xs text-amber-700">No hay categorías {alcance === 'categoria' ? 'sin productos anclados a un lote' : 'con productos anclados a un lote'}.</p>
-            ) : (
-              <div className="border border-border rounded-lg divide-y divide-border max-h-40 overflow-y-auto">
-                {categoriasDelAlcance.map(c => (
-                  <label key={c.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={categoriaIds.includes(c.id)}
-                      onChange={() => toggleCategoria(c.id)}
-                      className="w-4 h-4 accent-brand-600"
-                    />
-                    <span className="text-sm text-text-primary">{c.nombre}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {alcance === 'lote' && (
-            <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-brand-800">
-                  Lotes a contar * ({loteIds.length} de {lotesActivos.length})
-                </label>
-                <div className="flex gap-3 text-xs text-brand-700">
-                  <button type="button" onClick={() => setLoteIds(lotesActivos.map(l => l.id))} className="hover:underline">Todos</button>
-                  <button type="button" onClick={() => setLoteIds([])} className="hover:underline">Ninguno</button>
-                </div>
-              </div>
-              <p className="text-xs text-brand-700/80 mb-2">
-                Se muestra cuánto tiene hoy cada lote en {almacenNombre}. Solo se contarán los que marques.
-              </p>
-              {lotesActivos.length === 0 ? (
-                <p className="text-xs text-amber-700">No hay lotes activos todavía.</p>
-              ) : (
-                <div className="border border-brand-200 rounded-lg divide-y divide-brand-100 max-h-40 overflow-y-auto bg-surface">
-                  {lotesActivos.map(l => {
-                    const kg = stockEnAlmacen(l);
-                    return (
-                      <label key={l.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={loteIds.includes(l.id)}
-                          onChange={() => toggleLote(l.id)}
-                          className="w-4 h-4 accent-brand-600"
-                        />
-                        <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{l.nombre}</span>
-                        <span className={`text-xs shrink-0 ${kg > 0 ? 'text-text-secondary' : 'text-text-muted'}`}>
-                          {kg > 0 ? `${fmtKg(kg)} kg` : 'sin stock aquí'}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Descripción</label>
-            <input
-              type="text" maxLength={200}
-              value={descripcion}
-              onChange={e => setDescripcion(e.target.value)}
-              className={inputClass}
-              placeholder="Ej. Cierre de mes agosto 2026 — No Ferroso"
-            />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Creando…' : 'Crear e iniciar conteo'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
+const kgConSigno = (n: number) => `${n > 0 ? '+' : ''}${formatearNumero(n, 2)}`;
+const plural = (n: number, uno: string, varios: string) => (n === 1 ? uno : varios);
 
 function TomaFisicaPanel() {
   const navigate = useNavigate();
   const { tienePermiso } = useAuth();
   const puedeCrear = tienePermiso('toma_fisica', 'crear');
+  const { filtros, cambiar, limpiar, cantidadActivos } = useFiltrosUrl(ESQUEMA_FILTROS);
 
   const [tomasFisicas, setTomasFisicas] = useState<TomaFisicaInventario[]>([]);
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
@@ -304,66 +58,122 @@ function TomaFisicaPanel() {
     obtenerLotes().then(setLotes);
   }, []);
 
+  const estado = typeof filtros.tf_estado === 'string' ? filtros.tf_estado : undefined;
+  const almacen = typeof filtros.tf_almacen === 'string' ? filtros.tf_almacen : undefined;
+  const q = typeof filtros.tf_q === 'string' ? filtros.tf_q : undefined;
+
+  // Indicadores y barras: respetan almacén y búsqueda, no el estado (si no, "abiertas" y "cerradas" nunca se verían juntas).
+  const tomasBase = useMemo(() => filtrarTomas(tomasFisicas, { almacen, q }), [tomasFisicas, almacen, q]);
+  const tomasListado = useMemo(() => filtrarTomas(tomasBase, { estado }), [tomasBase, estado]);
+  const resumen = useMemo(() => resumirTomas(tomasBase), [tomasBase]);
+  const porAlmacen = useMemo(() => diferenciasPorAlmacen(tomasBase), [tomasBase]);
+  const opcionesAlmacen = useMemo(() => almacenes.map(a => ({ valor: a.id, etiqueta: a.nombre })), [almacenes]);
+
+  const conDatos = resumen.cerradasConDatos;
+  const hayCerradasSinDatos = resumen.cerradas > conDatos;
+  const subtituloCierre = conDatos === 0
+    ? 'Aún no hay tomas cerradas con resultado'
+    : `${formatearNumero(conDatos, 0)} ${plural(conDatos, 'toma cerrada', 'tomas cerradas')}${hayCerradasSinDatos ? ' (las antiguas sin resumen no suman)' : ''}`;
+  const sentidoNeto = resumen.diferenciaNetaKg < 0 ? 'Faltante neto · ' : resumen.diferenciaNetaKg > 0 ? 'Sobrante neto · ' : 'Cuadra · ';
+
   return (
-    <div className="max-w-3xl">
-      <div className="flex items-center justify-between mb-4">
+    <div>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-text-primary">Tomas físicas de inventario</h2>
-          <p className="text-sm text-text-secondary mt-1">
+          <h2 className="text-xl font-bold text-text-primary">Tomas físicas de inventario</h2>
+          <p className="mt-1 max-w-2xl text-sm text-text-secondary">
             Conteo físico que reconcilia el stock teórico contra lo realmente contado. Mientras
             una esté abierta, quedan bloqueadas solo las categorías elegidas en ese almacén.
           </p>
         </div>
         {puedeCrear && (
-          <button
-            type="button"
-            onClick={() => setModalAbierto(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shrink-0"
-          >
-            <Plus size={18} />
-            Nueva toma física
-          </button>
+          <BotonAccion onClick={() => setModalAbierto(true)} icono={<Plus size={18} />}>Nueva toma física</BotonAccion>
         )}
       </div>
 
-      {cargando ? (
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
-        </div>
-      ) : tomasFisicas.length === 0 ? (
-        <p className="text-center text-text-muted py-12 text-sm">No hay tomas físicas registradas todavía.</p>
-      ) : (
-        <div className="bg-surface rounded-xl border border-border overflow-hidden">
-          {tomasFisicas.map(t => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => navigate(`/inventario/toma-fisica/${t.id}`)}
-              className="w-full flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0 hover:bg-surface-alt transition-colors text-left"
-            >
-              <div className="w-9 h-9 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
-                <ClipboardList size={16} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-text-primary text-sm">{t.codigo}</h3>
-                  <span className={`px-2 py-0.5 rounded-full text-xs shrink-0 ${t.estado === 'abierta' ? 'bg-amber-100 text-amber-700' : t.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                    {t.estado === 'abierta' ? 'Abierta' : t.estado === 'cancelada' ? 'Cancelada' : 'Cerrada'}
-                  </span>
-                </div>
-                <p className="text-xs text-text-muted truncate">
-                  {t.almacenNombre} · {t.alcance === 'lote' ? 'Por lote' : 'Por categoría'} · {t.categoriaNombres.join(', ')}
-                  {t.loteNombres.length > 0 ? ` (${t.loteNombres.join(', ')})` : ''}
-                  {t.descripcion ? ` · ${t.descripcion}` : ''}
-                </p>
-              </div>
-              <span className="text-xs text-text-muted shrink-0">
-                {t.estado === 'abierta' ? `Abierta ${fmtFecha(t.abiertaEn)}` : t.estado === 'cancelada' ? `Cancelada ${fmtFecha(t.cerradaEn)}` : `Cerrada ${fmtFecha(t.cerradaEn)}`}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="mb-6">
+        <FiltrosBarra
+          selectores={[
+            { id: 'tf-estado', etiqueta: 'Estado', valor: estado, opciones: OPCIONES_ESTADO, textoTodas: 'Todos', cargando: false, onCambiar: v => cambiar({ tf_estado: v }) },
+            { id: 'tf-almacen', etiqueta: 'Almacén', valor: almacen, opciones: opcionesAlmacen, textoTodas: 'Todos', cargando: almacenes.length === 0, onCambiar: v => cambiar({ tf_almacen: v }) },
+          ]}
+          buscador={{ id: 'tf-buscar', valor: q, placeholder: 'Código, almacén, categoría o lote', onCambiar: v => cambiar({ tf_q: v }) }}
+          onLimpiar={limpiar}
+        />
+      </div>
+
+      <section aria-label="Indicadores de tomas físicas">
+        {cargando ? <SkeletonKpis /> : (
+          <GrillaKpis>
+            <TarjetaKpi
+              titulo="Tomas abiertas" icono={<ClipboardList size={16} />}
+              ayuda="Conteos que se están haciendo ahora. Mientras una está abierta, las categorías elegidas quedan bloqueadas en ese almacén."
+              valor={formatearNumero(resumen.abiertas, 0)} unidad={plural(resumen.abiertas, 'toma', 'tomas')}
+              subtitulo="Según los filtros de almacén y búsqueda" comparacion={null}
+            />
+            <TarjetaKpi
+              titulo="Tomas cerradas" icono={<ClipboardCheck size={16} />}
+              ayuda="Conteos culminados, cuyos ajustes ya se aplicaron al inventario. Las canceladas no se cuentan aquí."
+              valor={formatearNumero(resumen.cerradas, 0)} unidad={plural(resumen.cerradas, 'toma', 'tomas')}
+              subtitulo={resumen.canceladas > 0 ? `Además hay ${formatearNumero(resumen.canceladas, 0)} ${plural(resumen.canceladas, 'cancelada', 'canceladas')}` : 'Con ajustes ya aplicados'}
+              comparacion={null}
+            />
+            <TarjetaKpi
+              titulo="Diferencia neta" icono={<Scale size={16} />}
+              ayuda="Suma de (real contado − teórico del sistema) en las tomas cerradas. Negativo = faltó material; positivo = sobró. Los faltantes y sobrantes se compensan entre sí."
+              valor={conDatos > 0 ? kgConSigno(resumen.diferenciaNetaKg) : undefined} unidad={conDatos > 0 ? 'kg' : undefined}
+              estado={conDatos > 0 ? 'listo' : 'vacio'} mensajeVacio="Sin tomas cerradas con resultado todavía"
+              subtitulo={conDatos > 0 ? sentidoNeto + subtituloCierre : undefined}
+              comparacion={null}
+            />
+            <TarjetaKpi
+              titulo="Ajustes aplicados" icono={<Wrench size={16} />}
+              ayuda="Cantidad de líneas (material o lote) con diferencia distinta de cero que se ajustaron al culminar las tomas cerradas."
+              valor={conDatos > 0 ? formatearNumero(resumen.ajustes, 0) : undefined} unidad={conDatos > 0 ? plural(resumen.ajustes, 'ajuste', 'ajustes') : undefined}
+              estado={conDatos > 0 ? 'listo' : 'vacio'} mensajeVacio="Sin tomas cerradas con resultado todavía"
+              subtitulo={conDatos > 0 ? subtituloCierre : undefined}
+              comparacion={null}
+            />
+          </GrillaKpis>
+        )}
+      </section>
+
+      <Bloque titulo="Diferencia por almacén" queEstasViendo="Kilos que hubo que ajustar (faltantes y sobrantes en valor absoluto) en las tomas cerradas, por almacén. Debajo de cada nombre, el resultado neto.">
+        {cargando ? <SkeletonBloque /> : porAlmacen.length === 0 ? (
+          <EstadoVacio
+            mensaje="Todavía no hay diferencias que graficar."
+            descripcion="Esta gráfica se llena cuando se culmina una toma física: ahí se guarda lo contado contra lo teórico de cada almacén."
+            icono={<Scale size={22} />}
+            accion={puedeCrear ? { etiqueta: 'Crear una toma física', onClick: () => setModalAbierto(true) } : undefined}
+          />
+        ) : (
+          <div className="rounded-xl border border-border bg-surface p-4">
+            <Suspense fallback={<SkeletonBloque />}>
+              <BarrasHorizontales
+                etiquetaAria="Kilos ajustados por almacén en tomas físicas cerradas"
+                datos={porAlmacen.map(d => ({
+                  etiqueta: d.almacen,
+                  valor: d.kgAbsolutos,
+                  detalle: `Neto ${kgConSigno(d.kgNetos)} kg · ${d.tomas} ${plural(d.tomas, 'toma', 'tomas')}`,
+                }))}
+                formatoValor={v => `${formatearNumero(v, 2)} kg`}
+                mensajeVacio="Las tomas cerradas cuadraron: no hubo kilos que ajustar."
+              />
+            </Suspense>
+          </div>
+        )}
+      </Bloque>
+
+      <Bloque
+        titulo="Listado de tomas"
+        queEstasViendo={`${formatearNumero(tomasListado.length, 0)} de ${formatearNumero(tomasFisicas.length, 0)} tomas${cantidadActivos > 0 ? ' con los filtros aplicados' : ''}. Toca el código para ver el detalle; ordena con los encabezados.`}
+      >
+        {cargando ? <SkeletonBloque /> : (
+          <Suspense fallback={<SkeletonBloque />}>
+            <TomaFisicaTablaListado tomas={tomasListado} hayFiltros={cantidadActivos > 0 && tomasFisicas.length > 0} />
+          </Suspense>
+        )}
+      </Bloque>
 
       {modalAbierto && (
         <NuevaTomaFisicaModal
