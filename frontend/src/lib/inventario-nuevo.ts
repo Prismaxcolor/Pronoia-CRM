@@ -132,6 +132,11 @@ export function derivarKpis(r: ResumenInventario): KpisInventario {
 export const ETAPAS = ['materia_prima', 'en_proceso', 'listo'] as const;
 export type EtapaFiltro = (typeof ETAPAS)[number];
 
+/** Vistas del selector segmentado (?vista=). 'otras' solo aparece si hay algo que no encaja en las tres principales. */
+export const VISTAS_URL = ['exportacion', 'venta_nacional', 'trabajo_interno', 'otras'] as const;
+export type VistaUrl = (typeof VISTAS_URL)[number];
+export const VISTA_POR_DEFECTO: VistaUrl = 'exportacion';
+
 export interface FiltrosPantalla {
   desde?: string;
   hasta?: string;
@@ -141,9 +146,13 @@ export interface FiltrosPantalla {
   proveedor?: string;
   etapa?: EtapaFiltro;
   lote?: string;
+  /** Vista del selector segmentado. Sin valor equivale a 'exportacion'. */
+  vista?: VistaUrl;
+  /** '1' = la tabla muestra también las clasificaciones de compra PCB sin lote. */
+  clasificaciones?: '1';
 }
 
-export const CLAVES_FILTRO = ['desde', 'hasta', 'categoria', 'q', 'almacen', 'proveedor', 'etapa', 'lote'] as const;
+export const CLAVES_FILTRO = ['desde', 'hasta', 'categoria', 'q', 'almacen', 'proveedor', 'etapa', 'lote', 'vista', 'clasificaciones'] as const;
 /** Filtros que viven en "Más filtros" (el resto son los 3 visibles: fechas, categoría, buscador). */
 export const CLAVES_FILTRO_AVANZADO = ['almacen', 'proveedor', 'etapa', 'lote'] as const;
 
@@ -165,7 +174,10 @@ export function filtrosDesdeUrl(params: URLSearchParams): FiltrosPantalla {
   let hasta = esFechaIso(params.get('hasta')) ? params.get('hasta')! : undefined;
   if (!desde || !hasta || desde > hasta) { desde = undefined; hasta = undefined; }
   const etapa = params.get('etapa');
+  const vista = params.get('vista');
   return {
+    vista: (VISTAS_URL as readonly string[]).includes(vista ?? '') ? (vista as VistaUrl) : undefined,
+    clasificaciones: params.get('clasificaciones') === '1' ? '1' : undefined,
     desde,
     hasta,
     categoria: limpio('categoria'),

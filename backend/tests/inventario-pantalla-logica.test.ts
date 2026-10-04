@@ -341,3 +341,21 @@ describe('lista simple para móvil', () => {
     expect(listaFlujoMovil({ nodos: flujoBase.nodos, enlaces: [] })).toEqual([]);
   });
 });
+
+describe('layout del Sankey con 6 columnas', () => {
+  it('dibuja compra, categoría, por procesar, procesado, exportación y salida con sus rótulos', () => {
+    const l = calcularLayoutSankey({
+      nodos: [
+        nodo('compra', 'compra', 'Compras', 0), nodo('cat:pcb', 'categoria', 'PCB', 1), nodo('lote:mpp', 'lote_trabajo', 'LOTE MPP', 2),
+        nodo('lote:bgyp', 'lote_trabajo', 'BGYP', 3), nodo('lote:l1', 'lote_exportacion', 'Lote 1', 4), nodo('merma:basura', 'merma', 'Merma', 5),
+      ],
+      enlaces: [
+        { origen: 'compra', destino: 'cat:pcb', kg: 100 }, { origen: 'cat:pcb', destino: 'lote:mpp', kg: 100 },
+        { origen: 'lote:mpp', destino: 'lote:bgyp', kg: 90 }, { origen: 'lote:bgyp', destino: 'lote:l1', kg: 80 }, { origen: 'lote:bgyp', destino: 'merma:basura', kg: 10 },
+      ],
+    }, { ancho: 700, alto: 300 });
+    expect(l.columnas.map(c => c.etiqueta)).toEqual(['Compra', 'Categoría', 'Por procesar', 'Procesado', 'Exportación', 'Venta / Merma']);
+    expect(l.nodos).toHaveLength(6);
+    expect(l.descartados).toBe(0);
+  });
+});

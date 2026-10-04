@@ -97,7 +97,7 @@ function InventarioNuevoPage() {
         {resumen ? <div className={cargando ? 'opacity-60 transition-opacity' : ''}><KpisInventario resumen={resumen} /></div> : !error && <KpisSkeleton />}
       </section>
 
-      {resumen ? <ProximoContenedor resumen={resumen} onCambio={recargar} /> : !error && <BloqueSkeleton alto="h-56" />}
+      {resumen ? <div id="proximo-contenedor"><ProximoContenedor resumen={resumen} onCambio={recargar} /></div> : !error && <BloqueSkeleton alto="h-56" />}
 
       {mostrarPesados ? (
         <>

@@ -90,8 +90,12 @@ function KpisInventario({ resumen }: { resumen: ResumenInventario }) {
             <div className="mt-2 border-t border-dashed border-border pt-2">
               <p className="text-xs text-text-muted">Valor estimado de venta de lotes (otra cifra, no se suma)</p>
               <p className="text-sm font-medium text-text-secondary tabular-nums">
-                {formatearUsd(k.valor.ventaEstimadaUsd ?? 0)}
-                {k.valor.kgSinPrecio > 0 && <span className="font-normal text-text-muted"> · {formatearKg(k.valor.kgSinPrecio)} de lotes sin precio</span>}
+                {(k.valor.ventaEstimadaUsd ?? 0) === 0 && k.valor.kgSinPrecio > 0
+                  ? <span className="font-normal text-text-muted">Sin precios cargados · {formatearKg(k.valor.kgSinPrecio)} de lotes</span>
+                  : <>
+                    {formatearUsd(k.valor.ventaEstimadaUsd ?? 0)}
+                    {k.valor.kgSinPrecio > 0 && <span className="font-normal text-text-muted"> · {formatearKg(k.valor.kgSinPrecio)} de lotes sin precio</span>}
+                  </>}
               </p>
             </div>
           </>
