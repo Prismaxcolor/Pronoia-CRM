@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Scale, Loader2, Plus, Trash2, PackageOpen, Search, ChevronDown, AlertTriangle } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Scale, Loader2, Plus, Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
@@ -21,11 +21,11 @@ import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
-import SelectorOrden from '../../components/SelectorOrden';
-import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
+import { AlertaItem, EncabezadoPagina, Pestanas } from '../../components/ui';
+import TicketsSeccion from './lista-TicketsSeccion';
+import { CLAVES_FILTROS_PESAJE } from '../../lib/pesaje-lista';
 import { idVigenteOVacio, mensajeReseteos, mensajeSaneoBorrador, sanearFilasRestauradas } from '../../lib/borrador-vigentes';
 import { filaVacia, taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila } from './material-fila';
-import { contarMaterialesDistintos, resumenMateriales as resumenMaterialesDistintos } from './resumen-materiales';
 import { obtenerVehiculos } from '../../services/vehiculo-service';
 import VehiculoSelector from '../../components/VehiculoSelector';
 import { loteTrasladoFilaVacia, netoLoteTrasladoFila } from './lote-traslado-fila';
@@ -33,27 +33,7 @@ import AvisoBorrador from '../../components/AvisoBorrador';
 import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import { lotesSeleccionables } from '@shared/types/lote.js';
-import { coincideCodigo, type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario, type Vehiculo } from '@shared/types/index.js';
-
-/** Fila unificada de la lista de "Tickets": un pesaje (compra/venta) o un
- *  traslado entre almacenes, mostrados juntos porque ambos son operaciones
- *  de Pesaje — el traslado ya no vive solo en Inventario. */
-type FilaListado =
-  | { kind: 'pesaje'; ticket: TicketPesaje }
-  | { kind: 'traslado'; traslado: Traslado };
-
-const leerOrdenable = (f: FilaListado) => (f.kind === 'pesaje' ? f.ticket : f.traslado);
-const TIPOS_CORRELATIVO = ['compra', 'venta', 'traslado'] as const;
-const tipoFila = (f: FilaListado) => (f.kind === 'pesaje' ? f.ticket.tipo : 'traslado');
-
-function ordenarFilas(filas: FilaListado[], orden: OrdenListado): FilaListado[] {
-  if (orden.campo !== 'correlativo') return ordenarListado(filas, orden, leerOrdenable);
-  // Compra, venta y traslado llevan cada uno su propia secuencia: el correlativo
-  // solo es comparable dentro del mismo tipo, así que se agrupa por tipo.
-  return TIPOS_CORRELATIVO.flatMap(tipo =>
-    ordenarListado(filas.filter(f => tipoFila(f) === tipo), orden, leerOrdenable)
-  );
-}
+import { type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario, type Vehiculo } from '@shared/types/index.js';
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
 
@@ -79,6 +59,13 @@ function PesajePage() {
     puedeVerTickets ? ['nuevo', 'tickets'] : ['nuevo'],
     'nuevo',
   );
+  // Un enlace directo con filtros de la lista (p. ej. /pesaje?estado=bruto) abre la pestaña Tickets.
+  const [paramsUrl] = useSearchParams();
+  const urlApuntaALaLista = CLAVES_FILTROS_PESAJE.some(k => paramsUrl.has(k));
+  useEffect(() => {
+    if (urlApuntaALaLista && puedeVerTickets && pestana !== 'tickets') setPestana('tickets');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al entrar a la pantalla.
+  }, []);
   const [proveedores, setProveedores] = useState<Entidad[]>([]);
   const [clientes, setClientes] = useState<Entidad[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -115,10 +102,6 @@ function PesajePage() {
   const [trasladoARecepcionar, setTrasladoARecepcionar] = useState<Traslado | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
-  const [buscaCodigo, setBuscaCodigo] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'compra' | 'venta' | 'traslado'>('todos');
-  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'bruto' | 'pendiente' | 'facturado'>('todos');
-  const [orden, setOrden] = useState<OrdenListado>(ORDEN_POR_DEFECTO);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
@@ -137,7 +120,8 @@ function PesajePage() {
   const [mostrarSelectorAlmacenOrigen, setMostrarSelectorAlmacenOrigen] = useState(false);
   const [mostrarSelectorAlmacenDestino, setMostrarSelectorAlmacenDestino] = useState(false);
 
-  const cargarTickets = () => { obtenerTickets().then(setTickets); };
+  const [ticketsListos, setTicketsListos] = useState(false);
+  const cargarTickets = () => { obtenerTickets().then(lista => { setTickets(lista); setTicketsListos(true); }); };
   const cargarTraslados = () => { obtenerTraslados().then(setTraslados); };
 
   useEffect(() => {
@@ -485,91 +469,24 @@ function PesajePage() {
 
   const filaActiva = materiales.find(f => f.uid === filaActivaUid) ?? materiales[0];
 
-  // Traslados pasan el filtro de tipo solo si se pidió explícitamente 'traslado'
-  // o 'todos' — no tienen tipo compra/venta, así que 'compra'/'venta' los excluye.
-  const trasladosFiltrados = useMemo(
-    () => (filtroTipo === 'compra' || filtroTipo === 'venta')
-      ? []
-      : traslados.filter(t => coincideCodigo(t.codigo, buscaCodigo)),
-    [traslados, buscaCodigo, filtroTipo]
-  );
-  const ticketsFiltrados = useMemo(
-    () => filtroTipo === 'traslado'
-      ? []
-      : tickets.filter(t =>
-          coincideCodigo(t.codigo, buscaCodigo) && (filtroTipo === 'todos' || t.tipo === filtroTipo)
-        ),
-    [tickets, buscaCodigo, filtroTipo]
-  );
-  // "Por recepcionar" = tickets en bruto + traslados pendientes (mismo
-  // concepto: la operación ya se registró pero falta que alguien la confirme).
-  const filasBruto = useMemo((): FilaListado[] => {
-    const deTickets: FilaListado[] = (filtroEstado === 'todos' || filtroEstado === 'bruto')
-      ? ticketsFiltrados.filter(t => t.estado === 'bruto').map(ticket => ({ kind: 'pesaje' as const, ticket }))
-      : [];
-    const deTraslados: FilaListado[] = (filtroEstado === 'todos' || filtroEstado === 'bruto')
-      ? trasladosFiltrados.filter(t => t.estado === 'pendiente').map(traslado => ({ kind: 'traslado' as const, traslado }))
-      : [];
-    return ordenarFilas([...deTickets, ...deTraslados], orden);
-  }, [ticketsFiltrados, trasladosFiltrados, filtroEstado, orden]);
-  // "Pendientes por facturar / Facturados" — los traslados nunca se facturan,
-  // así que solo aparecen ahí cuando el filtro es 'todos' (no tiene sentido
-  // pedirle "traslados facturados", ese estado no existe para ellos).
-  const filasCompletos = useMemo((): FilaListado[] => {
-    if (filtroEstado === 'bruto') return [];
-    const deTickets: FilaListado[] = ticketsFiltrados
-      .filter(t => {
-        if (t.estado !== 'completo') return false;
-        if (filtroEstado === 'pendiente') return !t.facturado;
-        if (filtroEstado === 'facturado') return t.facturado;
-        return true;
-      })
-      .map(ticket => ({ kind: 'pesaje' as const, ticket }));
-    const deTraslados: FilaListado[] = filtroEstado === 'todos'
-      ? trasladosFiltrados.filter(t => t.estado === 'completo').map(traslado => ({ kind: 'traslado' as const, traslado }))
-      : [];
-    return ordenarFilas([...deTickets, ...deTraslados], orden);
-  }, [ticketsFiltrados, trasladosFiltrados, filtroEstado, orden]);
-  const totalPendientePorRecepcionar = useMemo(
-    () => filasBruto.reduce((acc, f) => acc + (f.kind === 'pesaje' ? f.ticket.pesoGlobal : f.traslado.pesoNetoEnviado), 0),
-    [filasBruto]
-  );
+  const propsLista = {
+    tickets,
+    traslados,
+    ticketsListos,
+    nombrePorEntidad,
+    puedeCrear,
+    puedeEliminar: puedeEliminarTicket,
+    puedeRecepcionarTraslado,
+    puedeVerFacturacion: tienePermiso('facturacion', 'ver'),
+    onCompletar: setTicketACompletar,
+    onEliminar: handleEliminarTicket,
+    onVerDetalle: (id: string) => navigate(`/pesaje/${id}`),
+    onRecepcionarTraslado: setTrasladoARecepcionar,
+    onIrANuevo: () => setPestana('nuevo'),
+  };
 
-  return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">Pesaje</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Registra la pesada del material antes de facturar. Genera un ticket que luego se adjunta a la factura.
-        </p>
-      </div>
-
-      {tomasFisicasAbiertas.length > 0 && (
-        <div className="mb-6 space-y-2">
-          {tomasFisicasAbiertas.map(t => (
-            <div key={t.id} className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
-              <span className="text-amber-800">
-                Hay una toma física abierta en <strong>{t.almacenNombre}</strong> ({t.codigo}) — {t.categoriaNombres.join(', ')} está bloqueado ahí hasta cerrarla.
-              </span>
-              <button type="button" onClick={() => navigate(`/pesaje/conteo/${t.id}`)} className="text-amber-800 font-medium hover:underline shrink-0">
-                Registrar conteo
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {puedeVerTickets && (
-        <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit mb-6">
-          <button type="button" onClick={() => setPestana('nuevo')} className={`px-4 py-1.5 ${pestana === 'nuevo' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-            Nuevo pesaje
-          </button>
-          <button type="button" onClick={() => setPestana('tickets')} className={`px-4 py-1.5 ${pestana === 'tickets' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-            Tickets
-          </button>
-        </div>
-      )}
-
+  const paneles = (
+    <>
       {pestana === 'nuevo' && (
       <div className={puedeVerTickets ? 'max-w-2xl' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
         {puedeCrear ? (
@@ -1086,56 +1003,47 @@ function PesajePage() {
         )}
 
         {!puedeVerTickets && (
-          <SeccionTickets
-            filasBruto={filasBruto}
-            filasCompletos={filasCompletos}
-            totalPendiente={totalPendientePorRecepcionar}
-            nombrePorEntidad={nombrePorEntidad}
-            fmt={fmt}
-            puedeCrear={puedeCrear}
-            puedeEliminar={puedeEliminarTicket}
-            buscaCodigo={buscaCodigo}
-            onBuscaCodigo={setBuscaCodigo}
-            orden={orden}
-            onOrden={setOrden}
-            filtroTipo={filtroTipo}
-            onFiltroTipo={setFiltroTipo}
-            filtroEstado={filtroEstado}
-            onFiltroEstado={setFiltroEstado}
-            onCompletar={setTicketACompletar}
-            onEliminar={handleEliminarTicket}
-            onVerDetalle={id => navigate(`/pesaje/${id}`)}
-            onRecepcionarTraslado={setTrasladoARecepcionar}
-            puedeRecepcionarTraslado={puedeRecepcionarTraslado}
-          />
+          <TicketsSeccion compacta {...propsLista} />
         )}
       </div>
       )}
 
       {pestana === 'tickets' && puedeVerTickets && (
-        <SeccionTickets
-          filasBruto={filasBruto}
-          filasCompletos={filasCompletos}
-          totalPendiente={totalPendientePorRecepcionar}
-          nombrePorEntidad={nombrePorEntidad}
-          fmt={fmt}
-          puedeCrear={puedeCrear}
-          puedeEliminar={puedeEliminarTicket}
-          buscaCodigo={buscaCodigo}
-          onBuscaCodigo={setBuscaCodigo}
-          orden={orden}
-          onOrden={setOrden}
-          filtroTipo={filtroTipo}
-          onFiltroTipo={setFiltroTipo}
-          filtroEstado={filtroEstado}
-          onFiltroEstado={setFiltroEstado}
-          onCompletar={setTicketACompletar}
-          onEliminar={handleEliminarTicket}
-          onVerDetalle={id => navigate(`/pesaje/${id}`)}
-          onRecepcionarTraslado={setTrasladoARecepcionar}
-          puedeRecepcionarTraslado={puedeRecepcionarTraslado}
-        />
+        <TicketsSeccion {...propsLista} />
       )}
+    </>
+  );
+
+  return (
+    <div>
+      <EncabezadoPagina
+        titulo="Pesaje"
+        subtitulo="Registra la pesada del material antes de facturar y sigue qué falta recepcionar, facturar o revisar."
+      />
+
+      {tomasFisicasAbiertas.length > 0 && (
+        <ul aria-label="Tomas físicas abiertas" className="mb-6 space-y-2">
+          {tomasFisicasAbiertas.map(t => (
+            <AlertaItem
+              key={t.id}
+              severidad="amarilla"
+              texto={`Hay una toma física abierta en ${t.almacenNombre} (${t.codigo}): ${t.categoriaNombres.join(', ')} está bloqueado ahí hasta cerrarla.`}
+              enlace={{ to: `/pesaje/conteo/${t.id}`, etiqueta: 'Registrar conteo' }}
+            />
+          ))}
+        </ul>
+      )}
+
+      {puedeVerTickets ? (
+        <Pestanas<Pestana>
+          etiquetaAria="Secciones de Pesaje"
+          pestanas={[{ valor: 'nuevo', etiqueta: 'Nuevo pesaje' }, { valor: 'tickets', etiqueta: 'Tickets' }]}
+          valor={pestana}
+          onCambiar={setPestana}
+        >
+          {paneles}
+        </Pestanas>
+      ) : paneles}
 
       {ticketACompletar && (
         <CompletarTicketModal
@@ -1221,373 +1129,6 @@ function PesajePage() {
       )}
     </div>
   );
-}
-
-/** Separa estrictamente los tickets "por recepcionar" (bruto) de los ya
- *  completados (pendientes por facturar / facturados), con un totalizador
- *  destacado del material pendiente por recepcionar. */
-function SeccionTickets({
-  filasBruto,
-  filasCompletos,
-  totalPendiente,
-  nombrePorEntidad,
-  fmt,
-  puedeCrear,
-  puedeEliminar,
-  puedeRecepcionarTraslado,
-  buscaCodigo,
-  onBuscaCodigo,
-  orden,
-  onOrden,
-  filtroTipo,
-  onFiltroTipo,
-  filtroEstado,
-  onFiltroEstado,
-  onCompletar,
-  onEliminar,
-  onVerDetalle,
-  onRecepcionarTraslado,
-}: {
-  filasBruto: FilaListado[];
-  filasCompletos: FilaListado[];
-  totalPendiente: number;
-  nombrePorEntidad: Map<string, string>;
-  fmt: (n: number) => string;
-  puedeCrear: boolean;
-  puedeEliminar: boolean;
-  puedeRecepcionarTraslado: boolean;
-  buscaCodigo: string;
-  onBuscaCodigo: (v: string) => void;
-  orden: OrdenListado;
-  onOrden: (v: OrdenListado) => void;
-  filtroTipo: 'todos' | 'compra' | 'venta' | 'traslado';
-  onFiltroTipo: (v: 'todos' | 'compra' | 'venta' | 'traslado') => void;
-  filtroEstado: 'todos' | 'bruto' | 'pendiente' | 'facturado';
-  onFiltroEstado: (v: 'todos' | 'bruto' | 'pendiente' | 'facturado') => void;
-  onCompletar: (t: TicketPesaje) => void;
-  onEliminar: (t: TicketPesaje) => void;
-  onVerDetalle: (id: string) => void;
-  onRecepcionarTraslado: (t: Traslado) => void;
-}) {
-  const filtroActivo = filtroTipo !== 'todos' || filtroEstado !== 'todos';
-  const selectFiltroClass = "px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
-
-  return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-full max-w-xs">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-          <input
-            type="search"
-            value={buscaCodigo}
-            onChange={e => onBuscaCodigo(e.target.value)}
-            placeholder="Buscar por N° de control..."
-            className="w-full pl-9 pr-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
-          />
-          {buscaCodigo && (
-            <button
-              type="button"
-              onClick={() => onBuscaCodigo('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted hover:text-text-primary"
-            >
-              Limpiar
-            </button>
-          )}
-        </div>
-
-        <select value={filtroTipo} onChange={e => onFiltroTipo(e.target.value as typeof filtroTipo)} className={selectFiltroClass}>
-          <option value="todos">Todos los tipos</option>
-          <option value="compra">Solo compra</option>
-          <option value="venta">Solo venta</option>
-          <option value="traslado">Solo traslado</option>
-        </select>
-
-        <select value={filtroEstado} onChange={e => onFiltroEstado(e.target.value as typeof filtroEstado)} className={selectFiltroClass}>
-          <option value="todos">Todos los estados</option>
-          <option value="bruto">En bruto / pendiente</option>
-          <option value="pendiente">Pendiente por facturar</option>
-          <option value="facturado">Facturado</option>
-        </select>
-
-        <SelectorOrden orden={orden} onChange={onOrden} />
-
-        {filtroActivo && (
-          <button
-            type="button"
-            onClick={() => { onFiltroTipo('todos'); onFiltroEstado('todos'); }}
-            className="text-xs text-text-muted hover:text-text-primary underline"
-          >
-            Limpiar filtros
-          </button>
-        )}
-      </div>
-
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <h2 className="text-sm font-semibold text-text-secondary">Por recepcionar (completar)</h2>
-          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
-            <PackageOpen size={16} className="text-amber-700" />
-            <span className="text-xs text-amber-800">Material pendiente por recepcionar</span>
-            <span className="text-sm font-bold text-amber-800">{fmt(totalPendiente)} kg</span>
-          </div>
-        </div>
-        <TablaTickets
-          filas={filasBruto}
-          modo="bruto"
-          nombrePorEntidad={nombrePorEntidad}
-          fmt={fmt}
-          puedeCrear={puedeCrear}
-          puedeEliminar={puedeEliminar}
-          puedeRecepcionarTraslado={puedeRecepcionarTraslado}
-          onCompletar={onCompletar}
-          onEliminar={onEliminar}
-          onVerDetalle={onVerDetalle}
-          onRecepcionarTraslado={onRecepcionarTraslado}
-        />
-      </div>
-
-      <div>
-        <h2 className="text-sm font-semibold text-text-secondary mb-3">Pendientes por facturar / Facturados</h2>
-        <TablaTickets
-          filas={filasCompletos}
-          modo="completo"
-          nombrePorEntidad={nombrePorEntidad}
-          fmt={fmt}
-          puedeCrear={puedeCrear}
-          puedeEliminar={puedeEliminar}
-          puedeRecepcionarTraslado={puedeRecepcionarTraslado}
-          onCompletar={onCompletar}
-          onEliminar={onEliminar}
-          onVerDetalle={onVerDetalle}
-          onRecepcionarTraslado={onRecepcionarTraslado}
-        />
-      </div>
-    </div>
-  );
-}
-
-function TablaTickets({
-  filas,
-  modo,
-  nombrePorEntidad,
-  fmt,
-  puedeCrear,
-  puedeEliminar,
-  puedeRecepcionarTraslado,
-  onCompletar,
-  onEliminar,
-  onVerDetalle,
-  onRecepcionarTraslado,
-}: {
-  filas: FilaListado[];
-  modo: 'bruto' | 'completo';
-  nombrePorEntidad: Map<string, string>;
-  fmt: (n: number) => string;
-  puedeCrear: boolean;
-  puedeEliminar: boolean;
-  puedeRecepcionarTraslado: boolean;
-  onCompletar: (t: TicketPesaje) => void;
-  onEliminar: (t: TicketPesaje) => void;
-  onVerDetalle: (id: string) => void;
-  onRecepcionarTraslado: (t: Traslado) => void;
-}) {
-  const hayAccion = puedeCrear || puedeEliminar || puedeRecepcionarTraslado;
-
-  return (
-    <div className="bg-surface rounded-xl border border-border overflow-hidden">
-      {filas.length === 0 ? (
-        <p className="text-center text-text-muted py-10 text-sm">
-          {modo === 'bruto' ? 'No hay operaciones pendientes por recepcionar.' : 'Aún no hay operaciones completadas.'}
-        </p>
-      ) : (
-        <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-xs text-text-muted">
-              <th className="px-4 py-2.5 font-medium">N° Control</th>
-              <th className="px-4 py-2.5 font-medium">Fecha</th>
-              <th className="px-4 py-2.5 font-medium">Tipo</th>
-              <th className="px-4 py-2.5 font-medium">Entidad / Almacenes</th>
-              <th className="px-4 py-2.5 font-medium">Materiales</th>
-              <th className="px-4 py-2.5 font-medium text-right">{modo === 'bruto' ? 'Peso (kg)' : 'Neto (kg)'}</th>
-              <th className="px-4 py-2.5 font-medium text-right">Estado</th>
-              {hayAccion && <th className="px-4 py-2.5 font-medium text-right">Acción</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filas.map(f =>
-              f.kind === 'pesaje' ? (
-                <FilaTicketPesaje
-                  key={`t-${f.ticket.id}`}
-                  t={f.ticket}
-                  modo={modo}
-                  nombrePorEntidad={nombrePorEntidad}
-                  fmt={fmt}
-                  puedeCrear={puedeCrear}
-                  puedeEliminar={puedeEliminar}
-                  hayAccion={hayAccion}
-                  onCompletar={onCompletar}
-                  onEliminar={onEliminar}
-                  onVerDetalle={onVerDetalle}
-                />
-              ) : (
-                <FilaTicketTraslado
-                  key={`tr-${f.traslado.id}`}
-                  t={f.traslado}
-                  fmt={fmt}
-                  puedeRecepcionarTraslado={puedeRecepcionarTraslado}
-                  hayAccion={hayAccion}
-                  onRecepcionarTraslado={onRecepcionarTraslado}
-                />
-              )
-            )}
-          </tbody>
-        </table></div>
-      )}
-    </div>
-  );
-}
-
-function FilaTicketPesaje({
-  t,
-  modo,
-  nombrePorEntidad,
-  fmt,
-  puedeCrear,
-  puedeEliminar,
-  hayAccion,
-  onCompletar,
-  onEliminar,
-  onVerDetalle,
-}: {
-  t: TicketPesaje;
-  modo: 'bruto' | 'completo';
-  nombrePorEntidad: Map<string, string>;
-  fmt: (n: number) => string;
-  puedeCrear: boolean;
-  puedeEliminar: boolean;
-  hayAccion: boolean;
-  onCompletar: (t: TicketPesaje) => void;
-  onEliminar: (t: TicketPesaje) => void;
-  onVerDetalle: (id: string) => void;
-}) {
-  return (
-    <tr
-      onClick={() => onVerDetalle(t.id)}
-      className="border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-alt/60 transition-colors"
-    >
-      <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">
-        <span
-          className={`inline-flex items-center justify-center w-4 h-4 rounded text-[10px] font-bold mr-1.5 ${
-            t.tipo === 'compra' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-          }`}
-          title={t.tipo === 'compra' ? 'Compra' : 'Venta'}
-        >
-          {t.tipo === 'compra' ? 'C' : 'V'}
-        </span>
-        {t.codigo}
-        {t.ticketPrincipalId && (
-          <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-alt text-text-secondary" title="Pesaje global sumado al ticket principal; no se factura por separado">
-            Unido a {t.ticketPrincipalCodigo ?? 'otro ticket'}
-          </span>
-        )}
-      </td>
-      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.fecha ?? '—'}</td>
-      <td className="px-4 py-2.5 text-text-secondary">{t.tipo === 'compra' ? 'Ticket de compra' : 'Ticket de venta'}</td>
-      <td className="px-4 py-2.5 text-text-primary">{t.entidadId ? (nombrePorEntidad.get(t.entidadId) ?? '—') : '—'}</td>
-      <td className="px-4 py-2.5 text-text-secondary">{resumenMateriales(t)}</td>
-      <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmt(modo === 'bruto' ? t.pesoGlobal : t.pesoNetoTotal)}</td>
-      <td className="px-4 py-2.5 text-right">
-        {t.estado === 'bruto' ? (
-          <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700">En bruto</span>
-        ) : (
-          <span className={`px-2 py-0.5 rounded-full text-xs ${t.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-            {t.facturado ? 'Facturado' : 'Pendiente'}
-          </span>
-        )}
-      </td>
-      {hayAccion && (
-        <td className="px-4 py-2.5 text-right">
-          <div className="flex items-center justify-end gap-3">
-            {puedeCrear && t.estado === 'bruto' && (
-              <button type="button" onClick={e => { e.stopPropagation(); onCompletar(t); }} className="text-xs font-medium text-brand-600 hover:text-brand-700">
-                Completar
-              </button>
-            )}
-            {puedeEliminar && !t.facturado && (
-              <button type="button" onClick={e => { e.stopPropagation(); onEliminar(t); }} className="text-text-muted hover:text-red-600 transition-colors" title="Eliminar ticket">
-                <Trash2 size={14} />
-              </button>
-            )}
-          </div>
-        </td>
-      )}
-    </tr>
-  );
-}
-
-/** Fila de traslado dentro de la misma tabla de tickets — mismo layout de
- *  columnas, con "Entidad" leído como "Origen → Destino" y sin acciones de
- *  factura (los traslados no se facturan, no tienen borrado). */
-function FilaTicketTraslado({
-  t,
-  fmt,
-  puedeRecepcionarTraslado,
-  hayAccion,
-  onRecepcionarTraslado,
-}: {
-  t: Traslado;
-  fmt: (n: number) => string;
-  puedeRecepcionarTraslado: boolean;
-  hayAccion: boolean;
-  onRecepcionarTraslado: (t: Traslado) => void;
-}) {
-  const pendiente = t.estado === 'pendiente';
-  return (
-    <tr className="border-b border-border last:border-b-0">
-      <td className="px-4 py-2.5 font-medium text-text-primary whitespace-nowrap">
-        <span
-          className="inline-flex items-center justify-center w-4 h-4 rounded text-[10px] font-bold mr-1.5 bg-teal-100 text-teal-700"
-          title="Traslado"
-        >
-          T
-        </span>
-        {t.codigo}
-      </td>
-      <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">{t.createdAt.slice(0, 10)}</td>
-      <td className="px-4 py-2.5 text-text-secondary">Traslado</td>
-      <td className="px-4 py-2.5 text-text-primary">
-        {t.nombreAlmacenOrigen ?? '—'} → {t.nombreAlmacenDestino ?? '—'}
-      </td>
-      <td className="px-4 py-2.5 text-text-secondary">{resumenMaterialesTraslado(t)}</td>
-      <td className="px-4 py-2.5 text-right font-medium text-text-primary">
-        {fmt(pendiente ? t.pesoNetoEnviado : (t.pesoNetoRecibido ?? t.pesoNetoEnviado))}
-      </td>
-      <td className="px-4 py-2.5 text-right">
-        <span className={`px-2 py-0.5 rounded-full text-xs ${pendiente ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-          {pendiente ? 'Pendiente' : 'Completo'}
-        </span>
-      </td>
-      {hayAccion && (
-        <td className="px-4 py-2.5 text-right">
-          {puedeRecepcionarTraslado && pendiente && (
-            <button type="button" onClick={() => onRecepcionarTraslado(t)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
-              Recepcionar
-            </button>
-          )}
-        </td>
-      )}
-    </tr>
-  );
-}
-
-/** Resumen de los materiales de un ticket: nombre si es uno, "N materiales" si varios. */
-function resumenMateriales(t: TicketPesaje): string {
-  return resumenMaterialesDistintos(t.materiales);
-}
-
-function resumenMaterialesTraslado(t: Traslado): string {
-  const distintos = contarMaterialesDistintos(t.materiales);
-  return distintos > 1 ? `${distintos} ítems` : resumenMaterialesDistintos(t.materiales);
 }
 
 export default PesajePage;

@@ -4,7 +4,7 @@ import AvisoBorrador from '../../components/AvisoBorrador';
 import { difiereEstado } from '../../lib/borrador';
 import { idVigenteOVacio, mensajeSaneoBorrador, sanearTara } from '../../lib/borrador-vigentes';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, Trash2, CheckCircle2, Circle, Images, ZoomIn, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Trash2, Images, ZoomIn, X } from 'lucide-react';
 import { obtenerTomaFisica, obtenerResumenTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
@@ -16,6 +16,8 @@ import SeleccionarTaraModal from './SeleccionarTaraModal';
 import { useToast } from '../../hooks/use-toast-context';
 import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote, Tara, ResumenTomaFisicaLinea } from '@shared/types/index.js';
 import VisorFotos from '../../components/VisorFotos';
+import { BotonAccion, Bloque, EncabezadoPagina, EstadoVacio, SkeletonBloque } from '../../components/ui';
+import TomaFisicaChecklistConteo from './TomaFisicaChecklistConteo';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -240,19 +242,30 @@ function ConteoTomaFisicaPage() {
     cargar();
   };
 
-  const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
-  const labelClass = "block text-xs font-medium text-text-secondary mb-1";
+  // Entradas grandes (móvil primero): 16 px evita el zoom de iOS y 48 px de alto es cómodo con guantes o prisa.
+  const inputClass = "w-full min-h-12 px-3 py-3 bg-surface-alt border border-border rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
+  const labelClass = "block text-sm font-medium text-text-secondary mb-1";
 
   if (cargando) {
     return (
-      <div className="flex justify-center py-12">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-xl" aria-busy="true">
+        <div className="mb-6 h-12 w-56 animate-pulse rounded bg-surface-hover" />
+        <SkeletonBloque alto="h-40" conMargen />
+        <SkeletonBloque alto="h-72" />
       </div>
     );
   }
 
   if (!tomaFisica) {
-    return <p className="text-center text-text-muted py-12 text-sm">Toma física no encontrada.</p>;
+    return (
+      <div className="max-w-xl">
+        <EstadoVacio
+          mensaje="No encontramos esta toma física."
+          descripcion="Puede que el enlace sea antiguo o que la toma ya no exista."
+          accion={{ etiqueta: 'Volver a las tomas físicas', to: '/inventario-legacy?pestana=toma-fisica' }}
+        />
+      </div>
+    );
   }
 
   if (tomaFisica.estado !== 'abierta') {
@@ -265,100 +278,42 @@ function ConteoTomaFisicaPage() {
     );
   }
 
+  const totalNeto = detalle.reduce((acc, d) => acc + d.pesoNeto, 0);
+
   return (
-    <div className="max-w-lg">
-      <button type="button" onClick={() => navigate(`/inventario/toma-fisica/${tomaFisicaId}`)} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
-        <ArrowLeft size={16} />
-        {tomaFisica.codigo}
-      </button>
+    <div className="max-w-xl">
+      <EncabezadoPagina
+        migas={[
+          { etiqueta: 'Inventario', to: '/inventario' },
+          { etiqueta: 'Tomas físicas', to: '/inventario-legacy?pestana=toma-fisica' },
+          { etiqueta: tomaFisica.codigo, to: `/inventario/toma-fisica/${tomaFisicaId}` },
+          { etiqueta: 'Conteo' },
+        ]}
+        titulo="Conteo físico"
+        subtitulo={`${tomaFisica.almacenNombre ?? 'Almacén'} · ${esConLote ? 'Por lote' : 'Por categoría'} · ${tomaFisica.categoriaNombres.join(', ')}${esConLote
+          ? ' — se pesa el lote completo, no un material puntual.'
+          : ' — pesaje simple, sin destino ni pesaje global.'}`}
+        acciones={<BotonAccion variante="secundario" to={`/inventario/toma-fisica/${tomaFisicaId}`} icono={<ArrowLeft size={16} />}>{tomaFisica.codigo}</BotonAccion>}
+      />
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">Conteo físico</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          {tomaFisica.almacenNombre} · {esConLote ? 'Por lote' : 'Por categoría'} · {tomaFisica.categoriaNombres.join(', ')}
-          {esConLote
-            ? ' — se pesa el lote completo, no un material puntual.'
-            : ' — pesaje simple, sin destino ni pesaje global.'}
-        </p>
-      </div>
+      <TomaFisicaChecklistConteo
+        lineas={lineas}
+        esConLote={esConLote}
+        seleccionadoId={esConLote ? loteId : productoId}
+        onElegir={l => {
+          if (esConLote) setLoteId(l.loteId ?? '');
+          else { setProductoId(l.productoId ?? ''); setLoteId(''); }
+        }}
+      />
 
-      {!esConLote && lineas.length > 0 && (
-        <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6">
-          <div className="px-5 py-3 border-b border-border">
-            <h2 className="text-sm font-semibold text-text-primary">
-              Checklist de productos ({lineas.filter(l => l.cantidadPesajes > 0).length}/{lineas.length})
-            </h2>
-            <p className="text-xs text-text-muted mt-0.5">Toca un producto para cargarlo en el formulario.</p>
-          </div>
-          <div className="divide-y divide-border max-h-72 overflow-y-auto">
-            {lineas.map(l => {
-              const contado = l.cantidadPesajes > 0;
-              return (
-                <button
-                  key={l.productoId}
-                  type="button"
-                  onClick={() => { setProductoId(l.productoId ?? ''); setLoteId(''); }}
-                  className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors ${productoId === l.productoId ? 'bg-brand-50' : ''}`}
-                >
-                  {contado
-                    ? <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-                    : <Circle size={16} className="text-text-muted shrink-0" />}
-                  <span className={`flex-1 min-w-0 truncate ${contado ? 'text-text-primary' : 'text-text-secondary'}`}>
-                    {l.productoNombre}
-                  </span>
-                  <span className="text-xs text-text-muted shrink-0">Teórico: {fmt(l.stockTeorico)} kg</span>
-                  {contado && (
-                    <span className="text-xs font-semibold text-text-primary shrink-0">Real: {fmt(l.stockReal)} kg</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {esConLote && lineas.length > 0 && (
-        <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6">
-          <div className="px-5 py-3 border-b border-border">
-            <h2 className="text-sm font-semibold text-text-primary">
-              Checklist de lotes ({lineas.filter(l => l.cantidadPesajes > 0).length}/{lineas.length})
-            </h2>
-            <p className="text-xs text-text-muted mt-0.5">Toca un lote para cargarlo en el formulario.</p>
-          </div>
-          <div className="divide-y divide-border max-h-72 overflow-y-auto">
-            {lineas.map(l => {
-              const contado = l.cantidadPesajes > 0;
-              return (
-                <button
-                  key={l.loteId}
-                  type="button"
-                  onClick={() => setLoteId(l.loteId ?? '')}
-                  className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors ${loteId === l.loteId ? 'bg-brand-50' : ''}`}
-                >
-                  {contado
-                    ? <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-                    : <Circle size={16} className="text-text-muted shrink-0" />}
-                  <span className={`flex-1 min-w-0 truncate ${contado ? 'text-text-primary' : 'text-text-secondary'}`}>
-                    {l.loteNombre}
-                  </span>
-                  <span className="text-xs text-text-muted shrink-0">Teórico: {fmt(l.stockTeorico)} kg</span>
-                  {contado && (
-                    <span className="text-xs font-semibold text-text-primary shrink-0">Real: {fmt(l.stockReal)} kg</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleAgregar} className="space-y-4 bg-surface rounded-xl border border-border p-5 mb-6">
+      <Bloque titulo="Registrar un pesaje" queEstasViendo="elige el material, pesa, resta la tara y agrega al menos una foto. El neto se calcula solo; el pesaje queda guardado al tocar Agregar.">
+      <form onSubmit={handleAgregar} className="space-y-5 bg-surface rounded-xl border border-border p-4 sm:p-5">
         <AvisoBorrador formulario="este conteo" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
         {avisoSaneo && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
         {esConLote ? (
           <div>
-            <label className={labelClass}>Lote *</label>
-            <select value={loteId} onChange={e => setLoteId(e.target.value)} className={inputClass}>
+            <label htmlFor="conteo-lote" className={labelClass}>Lote *</label>
+            <select id="conteo-lote" value={loteId} onChange={e => setLoteId(e.target.value)} className={inputClass}>
               <option value="">Selecciona…</option>
               {lotesDelAlmacen.map(l => <option key={l.id} value={l.id}>{l.nombre} — {fmt(stockLoteEnAlmacen(l))} kg en el sistema</option>)}
             </select>
@@ -392,14 +347,14 @@ function ConteoTomaFisicaPage() {
             <span className={productoId ? 'text-text-primary truncate' : 'text-text-muted'}>
               {productosDisponibles.find(p => p.id === productoId)?.nombre ?? '— Selecciona —'}
             </span>
-            <ChevronDown size={14} className="text-text-muted shrink-0" />
+            <ChevronDown size={16} className="text-text-muted shrink-0" />
           </button>
         </div>
 
         {requiereLote && (
           <div>
-            <label className={labelClass}>Lote *</label>
-            <select value={loteId} onChange={e => setLoteId(e.target.value)} className={inputClass}>
+            <label htmlFor="conteo-lote-material" className={labelClass}>Lote *</label>
+            <select id="conteo-lote-material" value={loteId} onChange={e => setLoteId(e.target.value)} className={inputClass}>
               <option value="">Selecciona…</option>
               {lotesDelAlmacen.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
             </select>
@@ -426,17 +381,17 @@ function ConteoTomaFisicaPage() {
         )}
 
         <div>
-          <label className={labelClass}>Peso bruto (kg) *</label>
-          <input type="number" step="0.001" min="0" value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
+          <label htmlFor="conteo-peso-bruto" className={labelClass}>Peso bruto (kg) *</label>
+          <input id="conteo-peso-bruto" type="number" inputMode="decimal" step="0.001" min="0" value={pesoBruto} onChange={e => setPesoBruto(e.target.value)} className={`${inputClass} text-xl font-semibold tabular-nums`} placeholder="0.00" />
         </div>
 
         <div>
           <label className={labelClass}>Tara</label>
-          <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
-            <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'preconfigurada' }))} className={`px-2 py-1 ${campoTara.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+          <div role="group" aria-label="Modo de tara" className="mb-2 inline-flex overflow-hidden rounded-lg border border-border text-sm">
+            <button type="button" aria-pressed={campoTara.taraModo === 'preconfigurada'} onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'preconfigurada' }))} className={`min-h-11 px-4 py-2 ${campoTara.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
               Preconfigurada
             </button>
-            <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'manual' }))} className={`px-2 py-1 ${campoTara.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
+            <button type="button" aria-pressed={campoTara.taraModo === 'manual'} onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'manual' }))} className={`min-h-11 px-4 py-2 ${campoTara.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
               Manual
             </button>
           </div>
@@ -451,19 +406,21 @@ function ConteoTomaFisicaPage() {
                   <span className={campoTara.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
                     {taras.find(t => t.id === campoTara.taraId)?.nombre ?? '— Sin tara —'}
                   </span>
-                  <ChevronDown size={14} className="text-text-muted shrink-0" />
+                  <ChevronDown size={16} className="text-text-muted shrink-0" />
                 </button>
-                <input type="number" step="1" min="0" value={campoTara.taraCantidad} onChange={e => setCampoTara(prev => ({ ...prev, taraCantidad: e.target.value }))} className={inputClass} placeholder="Cantidad" />
+                <input type="number" inputMode="numeric" step="1" min="0" value={campoTara.taraCantidad} onChange={e => setCampoTara(prev => ({ ...prev, taraCantidad: e.target.value }))} className={inputClass} placeholder="Cantidad" aria-label="Cantidad de taras" />
               </div>
-              <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(campoTara, taras))} kg</p>
+              <p className="text-xs text-text-secondary mt-1">= {fmt(taraKgFila(campoTara, taras))} kg</p>
             </div>
           ) : (
-            <input type="number" step="0.001" min="0" value={campoTara.taraManual} onChange={e => setCampoTara(prev => ({ ...prev, taraManual: e.target.value }))} className={inputClass} placeholder="0.00" />
+            <input type="number" inputMode="decimal" step="0.001" min="0" value={campoTara.taraManual} onChange={e => setCampoTara(prev => ({ ...prev, taraManual: e.target.value }))} className={inputClass} placeholder="0.00" aria-label="Tara manual en kilos" />
           )}
         </div>
 
         {pesoBruto !== '' && netoActual >= 0 && (
-          <p className="text-sm text-text-secondary">Neto: <span className="font-semibold text-text-primary">{fmt(netoActual)} kg</span></p>
+          <p className="rounded-xl bg-brand-50 px-4 py-3 text-sm text-text-secondary" aria-live="polite">
+            Neto a registrar: <span className="text-2xl font-bold tabular-nums text-text-primary">{fmt(netoActual)}</span> <span className="font-medium">kg</span>
+          </p>
         )}
 
         {composicionProyectada && (
@@ -483,58 +440,69 @@ function ConteoTomaFisicaPage() {
 
         <FotoMaterialPicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm font-medium text-red-700">{error}</p>}
 
-        <button type="submit" disabled={guardando} className="w-full py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+        <button type="submit" disabled={guardando} className="w-full min-h-12 py-3 bg-brand-600 text-white rounded-lg text-base font-semibold hover:bg-brand-700 transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2">
           {guardando ? 'Registrando…' : 'Agregar pesaje'}
         </button>
       </form>
+      </Bloque>
 
-      <div className="bg-surface rounded-xl border border-border overflow-hidden">
-        <div className="px-5 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold text-text-primary">Pesajes registrados ({detalle.length})</h2>
-        </div>
+      <Bloque
+        titulo={`Pesajes registrados (${detalle.length})`}
+        queEstasViendo={detalle.length > 0 ? `lo que ya pesaste en esta toma: ${fmt(totalNeto)} kg netos en total. Si te equivocaste, quita el pesaje con la papelera.` : 'los pesajes que vayas agregando a esta toma.'}
+      >
         {detalle.length === 0 ? (
-          <p className="px-5 py-6 text-center text-text-muted text-sm">Todavía no registraste ningún pesaje.</p>
+          <EstadoVacio
+            mensaje="Todavía no registraste ningún pesaje."
+            descripcion="Elige un material de la lista de arriba, pesa y toca Agregar pesaje: aparecerá aquí con su foto."
+          />
         ) : (
-          <div className="divide-y divide-border">
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
             {detalle.map(d => {
               const label = d.nombreProducto
                 ? `${d.nombreProducto}${d.nombreLote ? ` · ${d.nombreLote}` : ''}`
                 : `${d.nombreLote ?? '—'} (lote completo)`;
               return (
-                <div key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
-                  <div className="flex-1 min-w-0">
+                <li key={d.id} className="flex items-center gap-2 px-4 py-2 text-sm">
+                  <div className="min-w-0 flex-1">
                     {d.nombreProducto ? (
                       <>
                         <span className="text-text-primary">{d.nombreProducto}</span>
-                        {d.nombreLote && <span className="text-text-muted"> · {d.nombreLote}</span>}
+                        {d.nombreLote && <span className="text-text-secondary"> · {d.nombreLote}</span>}
                       </>
                     ) : (
                       <span className="text-text-primary">{d.nombreLote ?? '—'} (lote completo)</span>
                     )}
                   </div>
-                  <span className="font-semibold text-text-primary shrink-0">{fmt(d.pesoNeto)} kg</span>
+                  <span className="shrink-0 font-semibold tabular-nums text-text-primary">{fmt(d.pesoNeto)} kg</span>
                   {d.fotos.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setGaleriaAbierta({ label, fotos: d.fotos })}
-                      className="flex items-center gap-1 text-text-muted hover:text-brand-600 transition-colors shrink-0"
+                      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-lg text-text-secondary hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                       title="Ver fotos"
+                      aria-label={`Ver ${d.fotos.length} foto${d.fotos.length === 1 ? '' : 's'} de ${label}`}
                     >
-                      <Images size={14} />
+                      <Images size={16} />
                       <span className="text-xs">{d.fotos.length}</span>
                     </button>
                   )}
-                  <button type="button" onClick={() => handleQuitar(d.id)} className="text-text-muted hover:text-red-600 transition-colors shrink-0" title="Quitar">
-                    <Trash2 size={14} />
+                  <button
+                    type="button"
+                    onClick={() => handleQuitar(d.id)}
+                    className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-text-secondary hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                    title="Quitar"
+                    aria-label={`Quitar el pesaje de ${label}`}
+                  >
+                    <Trash2 size={16} />
                   </button>
-                </div>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
-      </div>
+      </Bloque>
 
       {mostrarSelectorMaterial && (
         <SeleccionarMaterialModal

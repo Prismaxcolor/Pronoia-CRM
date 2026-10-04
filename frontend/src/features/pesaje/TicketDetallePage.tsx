@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, FileDown, Pencil, Loader2, Plus, Trash2, Scale, ZoomIn, ChevronDown } from 'lucide-react';
+import { Printer, FileDown, Pencil, Loader2, Plus, Trash2, Scale, ChevronDown } from 'lucide-react';
+import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonBloque, SkeletonKpis, formatearFecha } from '../../components/ui';
+import TicketVista, { InsigniasTicket, type FotoGaleria } from './ticket-vista';
+import { CabeceraImpresion, CuerpoImpresion } from './ticket-impresion';
 import { obtenerTicket, editarTicket, type AvisoFacturaTicket } from '../../services/ticket-pesaje-service';
 import AvisoFacturaBanner from './AvisoFacturaBanner';
 import { obtenerProductos } from '../../services/producto-service';
@@ -8,7 +11,6 @@ import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
 import { obtenerVehiculos } from '../../services/vehiculo-service';
 import VehiculoSelector from '../../components/VehiculoSelector';
-import VehiculoResumen from '../../components/VehiculoResumen';
 import { buscarVehiculoPorTexto } from '../../lib/vehiculo';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
@@ -24,9 +26,8 @@ import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SelectorDestinoLote from './SelectorDestinoLote';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
-import { destinoLabel, type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo } from '@shared/types/index.js';
+import { type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo } from '@shared/types/index.js';
 import { descargarTicketPDF } from '../../services/ticket-export';
-import FilaDocumento from '../../components/FilaDocumento';
 import HistorialEdiciones from '../../components/HistorialEdiciones';
 import GenerarLlaveEdicion from '../../components/GenerarLlaveEdicion';
 import { obtenerConfigLlaves } from '../../services/llave-service';
@@ -345,19 +346,23 @@ function TicketDetalleContenido() {
 
   if (cargando) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-5xl" aria-busy="true">
+        <EncabezadoPagina titulo="Ticket de pesaje" subtitulo="Cargando el documento…" migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: 'Ticket' }]} />
+        <SkeletonKpis />
+        <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando materiales" />
       </div>
     );
   }
 
   if (!ticket) {
     return (
-      <div className="text-center py-12">
-        <p className="text-text-muted mb-4">No se encontró el ticket.</p>
-        <button type="button" onClick={() => navigate('/pesaje')} className="text-brand-600 hover:underline text-sm">
-          Volver a Pesaje
-        </button>
+      <div className="max-w-5xl">
+        <EncabezadoPagina titulo="Ticket de pesaje" migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: 'No encontrado' }]} />
+        <EstadoVacio
+          mensaje="No se encontró el ticket."
+          descripcion="Puede que se haya eliminado o que el enlace no sea correcto."
+          accion={{ etiqueta: 'Volver a Pesaje', to: '/pesaje' }}
+        />
       </div>
     );
   }
@@ -371,7 +376,7 @@ function TicketDetalleContenido() {
   // Todas las fotos del ticket (por material + generales) en una sola galería
   // con etiqueta de material, en vez de un bloque apilado por material
   // (se veía como una lista infinita de fotos, una por fila).
-  const fotosGaleria = [
+  const fotosGaleria: FotoGaleria[] = [
     ...ticket.materiales.flatMap(m =>
       m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? 'Material', peso: m.pesoNeto as number | null }))
     ),
@@ -387,197 +392,55 @@ function TicketDetalleContenido() {
     ...(ticket.fotos ?? []).map((url, i) => ({ key: `g-${i}`, url, label: 'General', peso: null as number | null })),
   ];
 
-  return (
-    <div className="max-w-2xl print-documento print:max-w-none">
-      <div className="print:hidden">
-        <button type="button" onClick={() => navigate('/pesaje')} className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4">
-          <ArrowLeft size={16} />
-          Pesaje
-        </button>
-      </div>
+  const nombreEntidad = ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—';
+  const descargarPdf = (formato?: 'blob') => descargarTicketPDF(ticket, nombreEntidad, esCompra, formato);
 
+  return (
+    <div className="max-w-5xl print-documento print:max-w-none">
       <AvisoFacturaBanner avisos={avisosFactura} onIrEstadoCuenta={ruta => navigate(ruta)} onCerrar={() => setAvisosFactura([])} />
 
-      {/* Encabezado de marca — solo el logo, estándar en todo documento impreso. */}
-      <div className="hidden print:flex items-center justify-end mb-6">
-        <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
+      {/* Cabecera de pantalla (la hoja impresa usa CabeceraImpresion, con el logo y el marcado de siempre). */}
+      <div className="print:hidden">
+        <EncabezadoPagina
+          titulo={ticket.estado === 'bruto' ? 'Ticket de pesaje en bruto' : 'Ticket de pesaje'}
+          subtitulo={`${ticket.codigo} · ${esCompra ? 'Proveedor' : 'Cliente'}: ${nombreEntidad} · ${formatearFecha(ticket.fecha ?? ticket.createdAt.slice(0, 10))}`}
+          migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: ticket.codigo }]}
+          acciones={!editando && (
+            <>
+              {esSuperadmin && puedeEditarEsteTicket && (
+                <GenerarLlaveEdicion entidadTipo="ticket_pesaje" entidadId={ticket.id} />
+              )}
+              {puedeEditarEsteTicket && (
+                <BotonAccion icono={<Pencil size={16} />} onClick={iniciarEdicion}>Editar</BotonAccion>
+              )}
+              <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => descargarPdf()}>PDF</BotonAccion>
+              <BotonAccion variante="secundario" icono={<Printer size={16} />} onClick={() => window.print()}>Imprimir</BotonAccion>
+              <CompartirBoton titulo={`Ticket de pesaje ${ticket.codigo}`} obtenerPdf={() => descargarPdf('blob')} />
+            </>
+          )}
+        />
+        <InsigniasTicket ticket={ticket} />
       </div>
-
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-text-primary">
-              {ticket.estado === 'bruto' ? 'Ticket de pesaje en bruto' : 'Ticket de pesaje'}
-            </h1>
-            {ticket.estado === 'bruto' ? (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 print:border print:border-black print:bg-transparent">
-                Borrador
-              </span>
-            ) : (
-              <span className={`px-2 py-0.5 rounded-full text-xs ${ticket.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'} print:border print:border-black print:bg-transparent`}>
-                {ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}
-              </span>
-            )}
-            {ticket.ticketPrincipalId && (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-surface-alt text-text-secondary print:border print:border-black print:bg-transparent" title="Su pesaje global se sumó al ticket principal; se edita y factura desde allí">
-                Unido a {ticket.ticketPrincipalCodigo ?? 'otro ticket'}
-              </span>
-            )}
-            {ticket.pesajeExterior && (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 print:border print:border-black print:bg-transparent">
-                Sin pesaje global
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-text-muted mt-1">Ref. {ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
-        </div>
-        {!editando && (
-          <div className="print:hidden flex items-center gap-2 shrink-0">
-            {esSuperadmin && puedeEditarEsteTicket && (
-              <GenerarLlaveEdicion entidadTipo="ticket_pesaje" entidadId={ticket.id} />
-            )}
-            {puedeEditarEsteTicket && (
-              <button type="button" onClick={iniciarEdicion} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Editar ticket">
-                <Pencil size={16} />
-                Editar
-              </button>
-            )}
-            <button type="button" onClick={() => descargarTicketPDF(ticket, ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—', esCompra)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Descargar PDF">
-              <FileDown size={16} />
-              PDF
-            </button>
-            <button type="button" onClick={() => window.print()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors" title="Imprimir">
-              <Printer size={16} />
-              Imprimir
-            </button>
-            <CompartirBoton titulo={`Ticket de pesaje ${ticket.codigo}`} obtenerPdf={() => descargarTicketPDF(ticket, ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—', esCompra, 'blob')} />
-          </div>
-        )}
-      </div>
+      <CabeceraImpresion ticket={ticket} />
 
       {!editando ? (
         <>
-          {/* Encabezado universal: filas etiqueta-valor con línea divisoria,
-           *  sin tarjeta — mismo patrón que factura/nota/pago. */}
-          <div className="mb-6">
-            <FilaDocumento label={esCompra ? 'Proveedor' : 'Cliente'} valor={ticket.entidadId ? (nombrePorEntidad.get(ticket.entidadId) ?? '—') : '—'} />
-            {ticket.vehiculo && <FilaDocumento label="Vehículo" valor={ticket.vehiculo} />}
-            {vehiculoDelCatalogo && <div className="print:hidden pb-2"><VehiculoResumen vehiculo={vehiculoDelCatalogo} /></div>}
-            {ticket.observaciones && <FilaDocumento label="Observaciones" valor={ticket.observaciones} />}
-          </div>
-
-          {ticket.pesajeExterior ? (
-            <p className="text-xs text-text-muted mb-4">Sin pesaje global.</p>
-          ) : (
-            <>
-              <div className="flex justify-between items-baseline pt-3 mb-1">
-                <span className="font-semibold text-text-primary text-lg">Peso global</span>
-                <span className="text-2xl font-bold text-brand-700">{fmt(ticket.pesoGlobal)} kg</span>
-              </div>
-              <div className="flex justify-between items-baseline mb-4 text-sm">
-                <span className="text-text-secondary">Peso neto</span>
-                <span className="font-semibold text-text-primary">{fmt(ticket.pesoNetoTotal)} kg</span>
-              </div>
-            </>
-          )}
-
-          {ticket.estado === 'bruto' && (
-            <p className="mb-4 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 print:border print:border-black print:bg-transparent print:text-black">
-              Ticket en borrador — materiales pendientes de registro. No contabilizado en inventario.
-            </p>
-          )}
-
-          {ticket.estado !== 'bruto' && (
-            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none w-fit mb-2 print:hidden">
-              <input type="checkbox" checked={ocultarDestino} onChange={e => setOcultarDestino(e.target.checked)} className="rounded border-border" />
-              Ocultar destino al imprimir (versión para el proveedor)
-            </label>
-          )}
-
-          {/* Tabla de pesaje: caja redondeada — este documento es 100% pesaje.
-           *  Padding en cada celda (no en el contenedor) — mismo patrón que
-           *  TomaFisicaDetallePage, para que nada quede pegado al borde si la
-           *  tabla desborda y hace scroll horizontal. */}
-          {ticket.estado !== 'bruto' && (
-            <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6 print:shadow-none">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm print:border-collapse">
-                  <thead>
-                    <tr className="text-left text-xs text-text-muted bg-surface-alt">
-                      <th className="py-2 px-5 font-medium">Material</th>
-                      {!ocultarDestino && <th className="py-2 px-4 font-medium">Destino</th>}
-                      <th className="py-2 px-4 font-medium text-right">Bruto</th>
-                      <th className="py-2 px-4 font-medium text-right">Tara</th>
-                      <th className="py-2 px-5 font-medium text-right">Neto (kg)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ticket.materiales.map(m => (
-                      <tr key={m.id} className="border-t border-border">
-                        <td className="py-2.5 px-5 text-text-primary">{m.nombreProducto ?? '—'}</td>
-                        {!ocultarDestino && <td className="py-2.5 px-4 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
-                        <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
-                        <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.tara)}</td>
-                        <td className="py-2.5 px-5 text-right font-medium text-text-primary">{fmt(m.pesoNeto)}</td>
-                      </tr>
-                    ))}
-                    {ticket.devolucion > 0 && (
-                      <tr className="border-t border-border bg-surface-alt/40">
-                        <td className="py-2.5 px-5 text-text-primary font-medium" colSpan={ocultarDestino ? 3 : 4}>
-                          Devolución
-                        </td>
-                        <td className="py-2.5 px-5 text-right font-medium text-text-primary">{fmt(ticket.devolucion)}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {totalesPorMaterial.length > 0 && (
-                <div className="border-t border-border px-5 py-3 bg-surface-alt/60">
-                  <p className="text-[11px] font-medium text-text-secondary mb-1.5">Total por material ({totalesPorMaterial.reduce((acc, t) => acc + t.cantidad, 0)} pesadas)</p>
-                  <div className="flex flex-wrap gap-x-6 gap-y-1">
-                    {totalesPorMaterial.map(t => (
-                      <div key={t.nombre} className="flex items-baseline gap-1.5 text-sm">
-                        <span className="text-text-secondary">{t.nombre}</span>
-                        <span className="text-text-muted text-xs">({t.cantidad}×)</span>
-                        <span className="font-semibold text-text-primary">{fmt(t.total)} kg</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {fotosGaleria.length > 0 && (
-            <div className="mb-4 print:hidden">
-              <p className="text-xs font-medium text-text-secondary mb-2">Fotos ({fotosGaleria.length})</p>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                {fotosGaleria.map(({ key, url, label, peso }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setFotoAmpliada({ url, label, peso })}
-                    className="group relative aspect-square rounded-lg overflow-hidden border border-border"
-                    title="Ver foto en grande"
-                  >
-                    <img src={url} alt={label} loading="lazy" className="w-full h-full object-cover" />
-                    <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] leading-tight px-1.5 py-1 truncate text-left">
-                      {label}
-                    </span>
-                    <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
-                      <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <TicketVista
+            ticket={ticket}
+            fotos={fotosGaleria}
+            vehiculoDelCatalogo={vehiculoDelCatalogo}
+            ocultarDestino={ocultarDestino}
+            onOcultarDestino={setOcultarDestino}
+            totalesPorMaterial={totalesPorMaterial}
+            onAbrirFoto={setFotoAmpliada}
+            onEditar={puedeEditarEsteTicket ? iniciarEdicion : undefined}
+          />
+          <CuerpoImpresion ticket={ticket} nombreEntidad={nombreEntidad} ocultarDestino={ocultarDestino} totalesPorMaterial={totalesPorMaterial} />
 
           <HistorialEdiciones entidadTipo="ticket_pesaje" entidadId={ticket.id} />
         </>
       ) : (
-        <form onSubmit={guardarEdicion} className="bg-surface rounded-xl border border-border p-5 space-y-4">
+        <form onSubmit={guardarEdicion} className="max-w-2xl bg-surface rounded-xl border border-border p-5 space-y-4">
           <AvisoBorrador formulario="la edición de este ticket" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
           {avisoSaneo && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
           {ticket.facturado && (
