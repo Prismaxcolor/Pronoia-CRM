@@ -30,6 +30,12 @@ export interface SalidaTransformacion {
   precioUnitario?: number | null;
 }
 
+/** Un renglón de la merma tipificada de una transformación (basura, plástico, tierra, hierro, otro). */
+export interface MermaDetalleTransformacion {
+  tipo: 'basura' | 'plastico' | 'tierra' | 'hierro' | 'otro';
+  pesoKg: number;
+}
+
 export interface Transformacion {
   id: string;
   numero: number | null;
@@ -56,6 +62,8 @@ export interface Transformacion {
   createdAt: string;
   entradaDetalle: EntradaDetalleTransformacion[];
   salidas: SalidaTransformacion[];
+  /** Merma por tipo registrada (solo GET /:id; vacío o ausente = todo sin clasificar). */
+  mermaDetalle?: MermaDetalleTransformacion[];
   /** Valoración (solo GET /:id). false = migración de valoración sin aplicar en BD. */
   valoracionDisponible?: boolean;
   /** Factura de compra a la que está anclada (opcional). */

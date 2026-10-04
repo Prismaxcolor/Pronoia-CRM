@@ -12,7 +12,28 @@ export interface StockLoteAlmacen {
   almacenId: string;
   almacenNombre: string;
   stockKg: number;
+  /** Kilos embalados/listos de este lote en este almacén (recortados al stock). */
+  embaladoKg?: number;
+  /** Kilos todavía en saca = stock - embalado. */
+  enSacaKg?: number;
   composicion: ComposicionPCBItem[];
+}
+
+/** Clasificación de un lote: de exportación (Lote 1-4), de trabajo interno (BGPP, BGYP,
+ *  PCPP, PCYP, LOTE MPP) u otro. */
+export type ClaseLote = 'exportacion' | 'trabajo' | 'otro';
+
+/** Cuánto de un lote está embalado/listo (por kilos; un lote puede estar parte embalado y parte en saca). */
+export interface EmbaladoLote {
+  stockKg: number;
+  /** Suma de embalajes vigentes tal como se marcaron (puede exceder el stock). */
+  embaladoMarcadoKg: number;
+  /** Lo que el stock actual respalda: min(marcado, stock). */
+  embaladoKg: number;
+  enSacaKg: number;
+  /** Los embalajes vigentes superan el stock actual (se vendió, despachó o transformó parte). */
+  embaladoMayorQueStock: boolean;
+  excesoKg: number;
 }
 
 /**
@@ -45,6 +66,14 @@ export interface Lote {
    *  realmente pesado dentro del lote (regla de tres), nunca declarada a
    *  mano. Solo lectura. Suma ~100% cuando el lote tiene stock. */
   composicion: ComposicionPCBItem[];
+  /** Ausente si el backend aún no tiene la migración de clasificación aplicada (equivale a 'otro'). */
+  clase?: ClaseLote;
+  /** USD/kg aproximado de VENTA, cargado a mano (los lotes mezclan materiales y no se costean). null = sin precio. */
+  precioEstimadoKg?: number | null;
+  precioEstimadoActualizadoEn?: string | null;
+  precioEstimadoActualizadoPorNombre?: string | null;
+  /** Resumen de embalado por kilos (ausente si la migración no está aplicada). */
+  embalado?: EmbaladoLote;
 }
 
 /** Destino de inventario de una línea de pesaje: MPP o un lote concreto. */

@@ -42,3 +42,11 @@ describe('trocear', () => {
     expect(r.map(t => t.length)).toEqual([200, 200, 50]);
   });
 });
+
+describe('leerPaginado: error con codigo', () => {
+  it('conserva el codigo de Postgres para poder distinguir "tabla inexistente" de otros fallos', async () => {
+    const err = await leerPaginado(async () => ({ data: null, error: { message: 'relation x does not exist', code: '42P01' } })).catch(e => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as { code?: string }).code).toBe('42P01');
+  });
+});

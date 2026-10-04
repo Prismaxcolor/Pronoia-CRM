@@ -3,6 +3,14 @@ import { formatCodigoTransformacion } from '../utils/codigos.js';
 import { leerPaginado } from '../utils/paginacion.js';
 import { esErrorFuncionInexistente } from './ticket-principal.js';
 import { validarSalidasMixtasPorCategoria } from '../schemas/transformaciones.js';
+import { cargarMermaDetalle, leerMermaDetalle, registrarMermaAlCompletar, validarMermaContraNetos } from './merma-tipificada-service.js';
+import {
+  resumirMermaPorCategoria,
+  resumirMermaPorTipo,
+  type DetalleMerma,
+  type ResumenMermaCategoria,
+  type ResumenMermaPorTipo,
+} from '../utils/merma-tipificada.js';
 import {
   construirFilaMerma,
   filtrarPorProducto,
@@ -89,6 +97,8 @@ export interface TransformacionPublica {
   completadoPor: string | null;
   completadoEn: string | null;
   createdAt: string;
+  /** Merma tipificada (basura, plástico...). Solo viene al leer UNA transformación, no en el listado. */
+  mermaDetalle?: DetalleMerma[];
   entradaDetalle: Array<{ productoId: string; nombreProducto: string; pesoKg: number }>;
   salidas: Array<{
     id: string;
@@ -172,7 +182,8 @@ export async function obtenerTransformacion(id: string): Promise<TransformacionP
     .maybeSingle();
 
   if (error || !data) return null;
-  return toPublico(data as unknown as TransformacionRow);
+  const publica = toPublico(data as unknown as TransformacionRow);
+  return { ...publica, mermaDetalle: await leerMermaDetalle(id) };
 }
 
 export interface ListarTransformacionesOpts {
@@ -219,7 +230,37 @@ export interface ReporteMerma {
   filas: FilaMermaPublica[];
   periodos: PeriodoMerma[];
   totales: ResumenMerma;
+  /** Desglose de la merma del rango por tipo (kg y %) y "sin clasificar". */
+  porTipo: ResumenMermaPorTipo;
+  /** Lo mismo, separado por categoría de transformación (ferroso_no_ferroso, pcb...). */
+  porCategoria: ResumenMermaCategoria[];
 }
+
+async function nombresDeAlmacenes(): Promise<Map<string, string>> {
+  const { data: almacenes } = await supabaseAdmin.from('almacenes').select('id, nombre');
+  return new Map(((almacenes ?? []) as Array<{ id: string; nombre: string }>).map(a => [a.id, a.nombre]));
+}
+
+function armarReporteMerma(
+  seleccion: readonly TransformacionPublica[],
+  mermaPorId: ReadonlyMap<string, DetalleMerma[]>,
+  nombres: ReadonlyMap<string, string>,
+  agrupar: AgrupacionMerma
+): ReporteMerma {
+  const filas = seleccion.map(t => construirFilaMerma({ ...t, mermaDetalle: mermaPorId.get(t.id) }));
+  const { periodos, totales } = resumirMerma(filas, agrupar);
+  return {
+    agrupar,
+    filas: filas.map(f => ({ ...f, nombreAlmacen: f.almacenId ? nombres.get(f.almacenId) ?? null : null })),
+    periodos,
+    totales,
+    porTipo: resumirMermaPorTipo(filas),
+    porCategoria: resumirMermaPorCategoria(filas),
+  };
+}
+
+const masRecientePrimero = (a: TransformacionPublica, b: TransformacionPublica) =>
+  b.fecha.localeCompare(a.fecha) || (b.numero ?? 0) - (a.numero ?? 0);
 
 /** Histórico de merma derivado de las transformaciones completas (sin tabla propia):
  *  merma = neto de entrada - suma del neto de todas las salidas (materiales y/o lotes).
@@ -233,20 +274,69 @@ export async function reporteMerma(opts: ReporteMermaOpts = {}): Promise<Reporte
     estado: 'completa',
   });
   const porAlmacen = opts.almacenId ? todas.filter(t => t.almacenId === opts.almacenId) : todas;
-  const seleccion = filtrarPorProducto(porAlmacen, opts.productoId)
-    .sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.numero ?? 0) - (a.numero ?? 0));
+  const seleccion = filtrarPorProducto(porAlmacen, opts.productoId).sort(masRecientePrimero);
 
-  const { data: almacenes } = await supabaseAdmin.from('almacenes').select('id, nombre');
-  const nombres = new Map(((almacenes ?? []) as Array<{ id: string; nombre: string }>).map(a => [a.id, a.nombre]));
+  const [nombres, mermaPorId] = await Promise.all([
+    nombresDeAlmacenes(),
+    cargarMermaDetalle(new Set(seleccion.map(t => t.id))),
+  ]);
+  return armarReporteMerma(seleccion, mermaPorId, nombres, agrupar);
+}
 
-  const filas = seleccion.map(construirFilaMerma);
-  const { periodos, totales } = resumirMerma(filas, agrupar);
+export interface RangoMerma {
+  desde: string;
+  hasta: string;
+}
+
+export interface ReportesMermaPeriodos {
+  actual: ReporteMerma;
+  previo: ReporteMerma;
+  /** Lecturas que fallaron y se reemplazaron por vacío (la cifra afectada no es completa). */
+  avisos: string[];
+}
+
+/**
+ * Merma de un período y del período anterior (contiguo) con UNA sola lectura de transformaciones,
+ * de almacenes y del desglose por tipo (en vez de repetirlas por período). Si falla solo el
+ * desglose por tipo, los totales siguen siendo válidos: la merma queda "sin clasificar" y se avisa.
+ */
+export async function reportesMermaDosPeriodos(actual: RangoMerma, previo: RangoMerma): Promise<ReportesMermaPeriodos> {
+  const avisos: string[] = [];
+  const todas = await listarTransformaciones({ desde: previo.desde, hasta: actual.hasta, estado: 'completa' });
+  const ordenadas = [...todas].sort(masRecientePrimero);
+  const delRango = (r: RangoMerma) => ordenadas.filter(t => t.fecha >= r.desde && t.fecha <= r.hasta);
+
+  const [nombres, mermaPorId] = await Promise.all([
+    nombresDeAlmacenes(),
+    cargarMermaDetalle(new Set(ordenadas.map(t => t.id))).catch(() => {
+      avisos.push('No se pudo leer el desglose de merma por tipo: la merma aparece como sin clasificar.');
+      return new Map<string, DetalleMerma[]>();
+    }),
+  ]);
   return {
-    agrupar,
-    filas: filas.map(f => ({ ...f, nombreAlmacen: f.almacenId ? nombres.get(f.almacenId) ?? null : null })),
-    periodos,
-    totales,
+    actual: armarReporteMerma(delRango(actual), mermaPorId, nombres, 'mes'),
+    previo: armarReporteMerma(delRango(previo), mermaPorId, nombres, 'mes'),
+    avisos,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Merma tipificada opcional al completar
+// ---------------------------------------------------------------------------
+
+const netoDeSalida = (s: { pesoBruto: number; tara: number }) => s.pesoBruto - s.tara;
+
+/** Valida el desglose opcional de merma contra el balance ANTES de completar (así no se
+ *  completa una transformación cuyo desglose luego no se podría guardar). null si es válido o no hay. */
+async function prevalidarMerma(
+  id: string,
+  mermaDetalle: CompletarTransformacionFerrosoInput['mermaDetalle'],
+  salidas: ReadonlyArray<{ pesoBruto: number; tara: number }>
+): Promise<string | null> {
+  if (!mermaDetalle || mermaDetalle.length === 0) return null;
+  const { data: cab } = await supabaseAdmin.from('transformaciones').select('peso_neto').eq('id', id).maybeSingle();
+  if (!cab) return null; // la RPC de completar responde "no encontrada" con su propio mensaje
+  return validarMermaContraNetos(Number(cab.peso_neto ?? 0), salidas.map(netoDeSalida), mermaDetalle);
 }
 
 /** Legacy: retira de lote-pool. */
@@ -318,7 +408,10 @@ export async function completarTransformacionFerroso(
   id: string,
   input: CompletarTransformacionFerrosoInput,
   completadoPor: string
-): Promise<{ transformacion: TransformacionPublica } | { error: string }> {
+): Promise<{ transformacion: TransformacionPublica; advertencia?: string } | { error: string }> {
+  const mermaInvalida = await prevalidarMerma(id, input.mermaDetalle, input.salidas);
+  if (mermaInvalida) return { error: mermaInvalida };
+
   const { error } = await supabaseAdmin.rpc('completar_transformacion_ferroso', {
     p_transformacion_id: id,
     p_salidas: input.salidas.map(s => ({
@@ -331,9 +424,10 @@ export async function completarTransformacionFerroso(
   });
 
   if (error) return { error: error.message };
+  const { advertencia } = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer de vuelta.' };
-  return { transformacion };
+  return { transformacion, ...(advertencia ? { advertencia } : {}) };
 }
 
 export interface BorrarTransformacionResult { ok: boolean; razon?: string; noEncontrado?: boolean }
@@ -389,7 +483,10 @@ export async function completarTransformacionPCB(
   id: string,
   input: CompletarTransformacionPCBInput,
   completadoPor: string
-): Promise<{ transformacion: TransformacionPublica } | { error: string }> {
+): Promise<{ transformacion: TransformacionPublica; advertencia?: string } | { error: string }> {
+  const mermaInvalida = await prevalidarMerma(id, input.mermaDetalle, input.salidas);
+  if (mermaInvalida) return { error: mermaInvalida };
+
   const { error } = await supabaseAdmin.rpc('completar_transformacion_pcb', {
     p_transformacion_id: id,
     p_salidas: input.salidas.map(s => ({
@@ -403,9 +500,10 @@ export async function completarTransformacionPCB(
   });
 
   if (error) return { error: error.message };
+  const { advertencia } = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer.' };
-  return { transformacion };
+  return { transformacion, ...(advertencia ? { advertencia } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -417,7 +515,7 @@ export const MENSAJE_MIXTAS_NO_HABILITADAS = 'Las salidas mixtas aún no están 
 export const TOLERANCIA_BALANCE_KG = 0.01;
 
 export type ResultadoTransformacion =
-  | { transformacion: TransformacionPublica }
+  | { transformacion: TransformacionPublica; advertencia?: string }
   | { error: string; status?: number };
 
 /** Suma de netos de las salidas (bruto - tara). */
@@ -497,6 +595,8 @@ export async function completarTransformacionMixta(
 
   const invalido = validarCompletarMixta(cab as TransformacionCabecera, input.salidas);
   if (invalido) return { error: invalido, status: 400 };
+  const mermaInvalida = await prevalidarMerma(id, input.mermaDetalle, input.salidas);
+  if (mermaInvalida) return { error: mermaInvalida, status: 400 };
 
   const { error } = await supabaseAdmin.rpc('completar_transformacion_mixta', {
     p_transformacion_id: id,
@@ -507,9 +607,10 @@ export async function completarTransformacionMixta(
     if (esErrorFuncionInexistente(error)) return { error: MENSAJE_MIXTAS_NO_HABILITADAS, status: 409 };
     return { error: error.message, status: 400 };
   }
+  const { advertencia } = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer.', status: 500 };
-  return { transformacion };
+  return { transformacion, ...(advertencia ? { advertencia } : {}) };
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { subirFotoLote } from '../../services/storage-service';
 import { fotoLocalDeFile, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import LoteFormModal from './LoteFormModal';
+import LoteClasificacionEmbalado from './LoteClasificacionEmbalado';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Lote } from '@shared/types/index.js';
@@ -14,10 +15,12 @@ function fmt(n: number): string {
 }
 
 function LotesPanel() {
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
   const toast = useToast();
   const puedeCrear = tienePermiso('productos', 'crear');
   const puedeEditar = tienePermiso('productos', 'editar');
+  // Clase y precio estimado de venta: solo superadmin (lo exige el backend).
+  const puedeConfigurar = usuario?.rol === 'superadmin';
 
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -165,6 +168,7 @@ function LotesPanel() {
                   ))}
                 </div>
               )}
+              <LoteClasificacionEmbalado lote={l} puedeEditar={puedeEditar} puedeConfigurar={puedeConfigurar} onCambio={recargar} />
             </div>
           ))}
         </div>

@@ -9,7 +9,7 @@ export type { TipoMaterial } from './tipos-material.js';
 export type { ListaPrecios, PrecioLista, TipoListaPrecios } from './lista-precios.js';
 export type { Proveedor } from './proveedor.js';
 export type { TicketPesaje, TicketPesajeMaterial, TipoTicketPesaje, PesajeGlobal } from './ticket-pesaje.js';
-export type { Lote, DestinoTipo, ComposicionPCBItem, StockLoteAlmacen } from './lote.js';
+export type { Lote, DestinoTipo, ComposicionPCBItem, StockLoteAlmacen, ClaseLote, EmbaladoLote } from './lote.js';
 export { destinoLabel } from './lote.js';
 export { formatCodigoPesaje } from './ticket-pesaje.js';
 export type { FacturaCompra, FacturaVenta, FacturaLinea, EstadoFacturaCompraVenta } from './factura-compra-venta.js';
@@ -22,6 +22,7 @@ export type {
   EntradaDetalleTransformacion,
   SalidaTransformacion,
   SalidaComun,
+  MermaDetalleTransformacion,
 } from './transformacion.js';
 export type { Tara } from './tara.js';
 export type { Vehiculo } from './vehiculo.js';

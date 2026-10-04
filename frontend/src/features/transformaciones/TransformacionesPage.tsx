@@ -31,11 +31,17 @@ import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
 import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
-import { taraKgFila, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
+import { taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
 import { coincideCodigo, type Transformacion, type SalidaComun, type Tara, type Lote } from '@shared/types/index.js';
 import { SelectorTipoSalida, BloqueLoteDestino, BloqueMaterialDestino } from './SalidaMixtaFila';
 import { etiquetaSalida, hayFilasMixtas, validarSalidas, armarSalidaMixta, type TipoSalida } from '../../lib/salida-mixta';
 import SelectorOrden from '../../components/SelectorOrden';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import MermaPorTipoBloque from './MermaPorTipoBloque';
+import { armarMermaDetalle, mermaFormVacio, validarMermaForm, type MermaForm } from '../../lib/merma-tipificada';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { difiereEstado, restaurarFilas } from '../../lib/borrador';
+import { fechaRestaurable, idVigenteOVacio, mensajeSaneoBorrador, sanearIdsSalida, sanearTara } from '../../lib/borrador-vigentes';
 import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
@@ -102,17 +108,45 @@ function CompletarFerrosoModal({
 
   const comunesIds = salidasComunes.map(s => s.productoSalidaId);
 
-  const [filas, setFilas] = useState<FilaSalida[]>(() =>
-    comunesIds.length > 0
-      ? comunesIds.map(id => filaVacia(id))
-      : [filaVacia()]
-  );
+  const filasIniciales = (): FilaSalida[] => (comunesIds.length > 0 ? comunesIds.map(id => filaVacia(id)) : [filaVacia()]);
+  const [filas, setFilas] = useState<FilaSalida[]>(filasIniciales);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
+  const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
+
+  const borrador = useBorradorPersistente<{ filas: FilaSalida[] }>({
+    formulario: 'transformacion-completar',
+    docId: transformacion.id,
+    version: 1,
+    estado: { filas },
+    hayCambios: difiereEstado({ filas }, { filas: filasIniciales() }),
+    aplicar: d => {
+      // Material, lote, almacén o tara que ya no existen quedan sin elegir, con aviso.
+      const ids = sanearIdsSalida(restaurarFilas(d.filas, () => filaVacia()), {
+        productoIds: productos.map(p => p.id),
+        loteIds: lotes.filter(l => l.activo).map(l => l.id),
+        almacenIds: almacenes.map(a => a.id),
+      });
+      let tarasReseteadas = 0;
+      const filasOk = ids.filas.map(f => {
+        const t = sanearTara(f, taras.map(x => x.id));
+        if (t.cambiada) tarasReseteadas += 1;
+        return t.fila;
+      });
+      const elementos: string[] = [];
+      if (ids.descartados > 0) elementos.push('material, lote o almacén de alguna salida');
+      if (tarasReseteadas > 0) elementos.push(tarasReseteadas === 1 ? 'una tara' : `${tarasReseteadas} taras`);
+      setAvisoSaneo(mensajeSaneoBorrador(elementos));
+      setFilas(filasOk);
+    },
+    restablecer: () => { setFilas(filasIniciales()); setAvisoSaneo(null); },
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
 
   const actualizar = (uid: number, campo: Partial<FilaSalida>) => {
     setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
@@ -127,17 +161,22 @@ function CompletarFerrosoModal({
   const netoFila = (f: FilaSalida) => (Number(f.pesoBruto) || 0) - taraKgFila(f, taras);
   const totalSalidas = filas.reduce((acc, f) => acc + netoFila(f), 0);
   const merma = transformacion.pesoNeto - totalSalidas;
+  // Merma por tipo: opcional, no forma parte del borrador persistente.
+  const [mermaForm, setMermaForm] = useState<MermaForm>(mermaFormVacio);
 
   const handleCompletar = async () => {
     setError(null);
     // Salida a lote: el material que entra al lote es el de entrada de la transformación.
     const filasEfectivas = filas.map(f => (f.tipo === 'lote' ? { ...f, productoId: transformacion.productoEntradaId ?? '' } : f));
+    if (filasEfectivas.some(f => taraFilaNoVigente(f, taras))) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
     const errorValidacion = validarSalidas(
       'ferroso_no_ferroso',
       filasEfectivas.map(f => ({ ...f, neto: netoFila(f), cantidadFotos: f.fotos.length })),
       { pesoEntrada: transformacion.pesoNeto }
     );
     if (errorValidacion) { setError(errorValidacion); return; }
+    const errorMerma = validarMermaForm(merma, mermaForm);
+    if (errorMerma) { setError(errorMerma); return; }
 
     setGuardando(true);
     const fotasPorFila = await Promise.all(filasEfectivas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
@@ -149,17 +188,20 @@ function CompletarFerrosoModal({
     const result = hayFilasMixtas('ferroso_no_ferroso', filasEfectivas)
       ? await completarTransformacionMixta(
         transformacion.id,
-        filasEfectivas.map((f, i) => armarSalidaMixta('ferroso_no_ferroso', f, Number(f.pesoBruto), taraKgFila(f, taras), fotasPorFila[i] as string[]))
+        filasEfectivas.map((f, i) => armarSalidaMixta('ferroso_no_ferroso', f, Number(f.pesoBruto), taraKgFila(f, taras), fotasPorFila[i] as string[])),
+        armarMermaDetalle(mermaForm)
       )
       : await completarTransformacionFerroso(transformacion.id, filasEfectivas.map((f, i): CompletarTransformacionFerrosoSalidaInput => ({
         productoId: f.productoId,
         pesoBruto: Number(f.pesoBruto),
         tara: taraKgFila(f, taras),
         fotos: fotasPorFila[i] as string[],
-      })));
+      })), armarMermaDetalle(mermaForm));
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     toast.exito('Transformación completada.');
+    if (result.advertencia) toast.advertencia(result.advertencia);
+    borrador.limpiar();
     onCompletada();
   };
 
@@ -173,9 +215,11 @@ function CompletarFerrosoModal({
               Entrada: <span className="font-medium">{transformacion.nombreProductoEntrada}</span> — {fmt(transformacion.pesoNeto)} kg
             </p>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X size={18} /></button>
+          <button onClick={cerrar} className="text-text-muted hover:text-text-primary"><X size={18} /></button>
         </div>
 
+        <AvisoBorrador className="mb-3" formulario="esta transformación" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+        {avisoSaneo && <p role="status" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
         <div className="space-y-3 mb-4">
           {filas.map((f, idx) => (
             <div key={f.uid} className="bg-surface-alt rounded-lg p-3 border border-border">
@@ -284,10 +328,14 @@ function CompletarFerrosoModal({
           </div>
         </div>
 
+        <div className="mb-4">
+          <MermaPorTipoBloque mermaKg={merma} valores={mermaForm} onCambiar={setMermaForm} />
+        </div>
+
         {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
+          <button onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
             Cancelar
           </button>
           <button onClick={handleCompletar} disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
@@ -438,11 +486,14 @@ function NuevaFerrosoForm({
   productos,
   almacenes,
   taras,
+  catalogosListos,
   onCreada,
 }: {
   productos: Producto[];
   almacenes: Almacen[];
   taras: Tara[];
+  /** Los catálogos ya cargaron: recién entonces se puede validar un borrador restaurado. */
+  catalogosListos: boolean;
   onCreada: () => void;
 }) {
   const toast = useToast();
@@ -461,6 +512,46 @@ function NuevaFerrosoForm({
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [stockAlmacen, setStockAlmacen] = useState<Map<string, number>>(new Map());
+  const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
+
+  const estadoBorrador = { productoEntradaId, almacenId, pesoBruto, campoTara, fotos, fecha, notas };
+  const restablecer = () => {
+    setProductoEntradaId('');
+    setAlmacenId('');
+    setPesoBruto('');
+    setCampoTara(taraVacia());
+    setFotos([]);
+    setFecha(hoyISO());
+    setNotas('');
+    setAvisoSaneo(null);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'transformacion-nueva-ferroso',
+    version: 1,
+    habilitado: catalogosListos,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, { productoEntradaId: '', almacenId: '', pesoBruto: '', campoTara: taraVacia(), fotos: [], fecha: hoyISO(), notas: '' }),
+    aplicar: d => {
+      // Material, almacén o tara que ya no existen quedan sin elegir, con aviso.
+      const productoOk = idVigenteOVacio(d.productoEntradaId ?? '', productos.map(p => p.id));
+      const almacenOk = idVigenteOVacio(d.almacenId ?? '', almacenes.map(a => a.id));
+      const tara = sanearTara({ ...taraVacia(), ...d.campoTara }, taras.map(t => t.id));
+      const reseteos: string[] = [];
+      if (productoOk !== (d.productoEntradaId ?? '')) reseteos.push('el material de entrada');
+      if (almacenOk !== (d.almacenId ?? '')) reseteos.push('el almacén');
+      if (tara.cambiada) reseteos.push('la tara');
+      setAvisoSaneo(mensajeSaneoBorrador(reseteos));
+      setProductoEntradaId(productoOk);
+      setAlmacenId(almacenOk);
+      setPesoBruto(d.pesoBruto ?? '');
+      setCampoTara(tara.fila);
+      setFotos(d.fotos ?? []);
+      // Una fecha vieja no se restaura en silencio: una transformación nueva lleva la fecha de hoy.
+      setFecha(fechaRestaurable(d.fecha, hoyISO()));
+      setNotas(d.notas ?? '');
+    },
+    restablecer,
+  });
 
   const neto = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
 
@@ -478,6 +569,7 @@ function NuevaFerrosoForm({
     setError(null);
     if (!productoEntradaId) { setError('Selecciona el material de entrada.'); return; }
     if (!almacenId) { setError('Selecciona el almacén.'); return; }
+    if (taraFilaNoVigente(campoTara, taras)) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
     if (neto <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
     if (fotos.length === 0) { setError('Agrega al menos una foto de entrada.'); return; }
 
@@ -503,18 +595,15 @@ function NuevaFerrosoForm({
 
     if ('error' in result) { setError(result.error); return; }
     toast.exito('Transformación iniciada. Complétala cuando tengas las salidas pesadas.');
-    setProductoEntradaId('');
-    setAlmacenId('');
-    setPesoBruto('');
-    setCampoTara(taraVacia());
-    setFotos([]);
-    setFecha(hoyISO());
-    setNotas('');
+    borrador.limpiar();
+    restablecer();
     onCreada();
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+      <AvisoBorrador className="mb-3" formulario="nueva transformación" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+      {avisoSaneo && <p role="status" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
       <div>
         <label className={labelClass}>Material de entrada *</label>
         <button
@@ -630,7 +719,7 @@ function NuevaFerrosoForm({
 // ---------------------------------------------------------------------------
 // Formulario: Nueva transformación PCB
 // ---------------------------------------------------------------------------
-function NuevaPCBForm({ lotes, almacenes, onCreada }: { lotes: Lote[]; almacenes: Almacen[]; onCreada: () => void }) {
+function NuevaPCBForm({ lotes, almacenes, catalogosListos, onCreada }: { lotes: Lote[]; almacenes: Almacen[]; catalogosListos: boolean; onCreada: () => void }) {
   const toast = useToast();
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
@@ -645,6 +734,37 @@ function NuevaPCBForm({ lotes, almacenes, onCreada }: { lotes: Lote[]; almacenes
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
+  const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
+
+  const estadoBorrador = { loteOrigenId, almacenId, pesoBruto, tara, fecha, notas, fotos };
+  const restablecer = () => {
+    setLoteOrigenId(''); setAlmacenId(''); setPesoBruto(''); setTara(''); setFotos([]); setFecha(hoyISO()); setNotas(''); setAvisoSaneo(null);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'transformacion-nueva-pcb',
+    version: 1,
+    habilitado: catalogosListos,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, { loteOrigenId: '', almacenId: '', pesoBruto: '', tara: '', fecha: hoyISO(), notas: '', fotos: [] }),
+    aplicar: d => {
+      // Lote o almacén que ya no existen (o se desactivó el lote) quedan sin elegir, con aviso.
+      const loteOk = idVigenteOVacio(d.loteOrigenId ?? '', lotes.filter(l => l.activo).map(l => l.id));
+      const almacenOk = idVigenteOVacio(d.almacenId ?? '', almacenes.map(a => a.id));
+      const reseteos: string[] = [];
+      if (loteOk !== (d.loteOrigenId ?? '')) reseteos.push('el lote de origen');
+      if (almacenOk !== (d.almacenId ?? '')) reseteos.push('el almacén');
+      setAvisoSaneo(mensajeSaneoBorrador(reseteos));
+      setLoteOrigenId(loteOk);
+      setAlmacenId(almacenOk);
+      setPesoBruto(d.pesoBruto ?? '');
+      setTara(d.tara ?? '');
+      // Una fecha vieja no se restaura en silencio: una transformación nueva lleva la fecha de hoy.
+      setFecha(fechaRestaurable(d.fecha, hoyISO()));
+      setNotas(d.notas ?? '');
+      setFotos(d.fotos ?? []);
+    },
+    restablecer,
+  });
 
   const loteOrigen = lotes.find(l => l.id === loteOrigenId);
   const neto = (Number(pesoBruto) || 0) - (Number(tara) || 0);
@@ -675,12 +795,15 @@ function NuevaPCBForm({ lotes, almacenes, onCreada }: { lotes: Lote[]; almacenes
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     toast.exito('Transformación PCB iniciada. Complétala cuando tengas las salidas pesadas.');
-    setLoteOrigenId(''); setAlmacenId(''); setPesoBruto(''); setTara(''); setFotos([]); setFecha(hoyISO()); setNotas('');
+    borrador.limpiar();
+    restablecer();
     onCreada();
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+      <AvisoBorrador className="mb-3" formulario="nueva transformación PCB" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+      {avisoSaneo && <p role="status" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
       <div>
         <label className={labelClass}>Lote de origen *</label>
         <button type="button" onClick={() => setMostrarSelectorLote(true)}
@@ -813,6 +936,28 @@ function CompletarPCBModal({
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
+  const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
+
+  const borrador = useBorradorPersistente<{ filas: FilaSalidaPCB[] }>({
+    formulario: 'transformacion-completar-pcb',
+    docId: transformacion.id,
+    version: 1,
+    estado: { filas },
+    hayCambios: difiereEstado({ filas }, { filas: [filaSalidaPCBVacia()] }),
+    aplicar: d => {
+      // Material, lote o almacén que ya no existen quedan sin elegir, con aviso.
+      const ids = sanearIdsSalida(restaurarFilas(d.filas, filaSalidaPCBVacia), {
+        productoIds: productos.map(p => p.id),
+        loteIds: lotes.filter(l => l.activo).map(l => l.id),
+        almacenIds: almacenes.map(a => a.id),
+      });
+      setAvisoSaneo(mensajeSaneoBorrador(ids.descartados > 0 ? ['material, lote o almacén de alguna salida'] : []));
+      setFilas(ids.filas);
+    },
+    restablecer: () => { setFilas([filaSalidaPCBVacia()]); setAvisoSaneo(null); },
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
 
   const actualizar = (uid: number, campo: Partial<FilaSalidaPCB>) => {
     setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
@@ -821,6 +966,8 @@ function CompletarPCBModal({
   const netoFila = (f: FilaSalidaPCB) => (Number(f.pesoBruto) || 0) - (Number(f.tara) || 0);
   const totalSalidas = filas.reduce((acc, f) => acc + netoFila(f), 0);
   const restante = transformacion.pesoNeto - totalSalidas;
+  // Merma por tipo: opcional, no forma parte del borrador persistente.
+  const [mermaForm, setMermaForm] = useState<MermaForm>(mermaFormVacio);
 
   const handleCompletar = async () => {
     setError(null);
@@ -830,6 +977,8 @@ function CompletarPCBModal({
       { loteOrigenId: transformacion.loteOrigenId, pesoEntrada: transformacion.pesoNeto }
     );
     if (errorValidacion) { setError(errorValidacion); return; }
+    const errorMerma = validarMermaForm(restante, mermaForm);
+    if (errorMerma) { setError(errorMerma); return; }
 
     setGuardando(true);
     const fotasPorFila = await Promise.all(filas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
@@ -841,7 +990,8 @@ function CompletarPCBModal({
     const result = hayFilasMixtas('pcb', filas)
       ? await completarTransformacionMixta(
         transformacion.id,
-        filas.map((f, i) => armarSalidaMixta('pcb', f, Number(f.pesoBruto), Number(f.tara) || 0, fotasPorFila[i] as string[]))
+        filas.map((f, i) => armarSalidaMixta('pcb', f, Number(f.pesoBruto), Number(f.tara) || 0, fotasPorFila[i] as string[])),
+        armarMermaDetalle(mermaForm)
       )
       : await completarTransformacionPCB(transformacion.id, filas.map((f, i) => ({
         loteDestinoId: f.loteDestinoId,
@@ -849,10 +999,12 @@ function CompletarPCBModal({
         pesoBruto: Number(f.pesoBruto),
         tara: Number(f.tara) || 0,
         fotos: fotasPorFila[i] as string[],
-      })));
+      })), armarMermaDetalle(mermaForm));
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     toast.exito('Transformación PCB completada.');
+    if (result.advertencia) toast.advertencia(result.advertencia);
+    borrador.limpiar();
     onCompletada();
   };
 
@@ -866,9 +1018,11 @@ function CompletarPCBModal({
               Origen: <span className="font-medium">{transformacion.nombreLoteOrigen ?? '—'}</span> — {fmt(transformacion.pesoNeto)} kg
             </p>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X size={18} /></button>
+          <button onClick={cerrar} className="text-text-muted hover:text-text-primary"><X size={18} /></button>
         </div>
 
+        <AvisoBorrador className="mb-3" formulario="esta transformación" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+        {avisoSaneo && <p role="status" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
         <div className="space-y-3 mb-4">
           {filas.map((f, idx) => {
             const loteDestino = lotes.find(l => l.id === f.loteDestinoId);
@@ -942,10 +1096,14 @@ function CompletarPCBModal({
           </div>
         </div>
 
+        <div className="mb-4">
+          <MermaPorTipoBloque mermaKg={restante} valores={mermaForm} onCambiar={setMermaForm} />
+        </div>
+
         {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
+          <button onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-surface-alt transition-colors">
             Cancelar
           </button>
           <button onClick={handleCompletar} disabled={guardando}
@@ -998,6 +1156,7 @@ function TransformacionesPage() {
   const [salidasComunes, setSalidasComunes] = useState<SalidaComun[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [catalogosListos, setCatalogosListos] = useState(false);
 
   const [completando, setCompletando] = useState<Transformacion | null>(null);
   const [busqueda, setBusqueda] = useState('');
@@ -1019,6 +1178,7 @@ function TransformacionesPage() {
     setTaras(tars.filter(t => t.activo));
     setSalidasComunes(comunes);
     setLotes(lots);
+    setCatalogosListos(true);
     setCargando(false);
   }, [categoria]);
 
@@ -1126,6 +1286,7 @@ function TransformacionesPage() {
                 <NuevaPCBForm
                   lotes={lotes}
                   almacenes={almacenes}
+                  catalogosListos={catalogosListos}
                   onCreada={() => { void cargar(); setTab('pendientes'); }}
                 />
               ) : (
@@ -1133,6 +1294,7 @@ function TransformacionesPage() {
                   productos={productos}
                   almacenes={almacenes}
                   taras={taras}
+                  catalogosListos={catalogosListos}
                   onCreada={() => { void cargar(); setTab('pendientes'); }}
                 />
               )}

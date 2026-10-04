@@ -381,6 +381,9 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('almacen.predeterminado', 'POST', '/api/almacenes/:id/marcar-predeterminado', 'inventario', 'normal', '⭐', 'Se cambió el almacén predeterminado', { entidad: { rotulo: 'Almacén', tabla: 'almacenes' } }),
   ev('lote.creado', 'POST', '/api/lotes', 'inventario', 'normal', '📦', 'Se creó un lote', { entidad: { rotulo: 'Lote', resp: 'lote' } }),
   ev('lote.editado', 'PATCH', '/api/lotes/:id', 'inventario', 'normal', '✏️', 'Se editó un lote', { entidad: { rotulo: 'Lote', tabla: 'lotes' } }),
+  ev('lote.embalado', 'POST', '/api/lotes/:id/embalajes', 'inventario', 'normal', '📦', 'Se marcaron kilos de un lote como embalados', { entidad: { rotulo: 'Lote', tabla: 'lotes' } }),
+  ev('lote.embalaje_anulado', 'POST', '/api/lotes/:id/embalajes/:embalajeId/anular', 'inventario', 'critica', '🚫', 'Se anuló un embalaje de un lote', { entidad: { rotulo: 'Lote', tabla: 'lotes' } }),
+  ev('inventario.configuracion_editada', 'PUT', '/api/inventario/configuracion', 'inventario', 'normal', '⚙️', 'Se cambió la configuración del inventario'),
   ...maestro('/api/taras', 'tara', 'inventario', 'Tara', 'taras', 'la', 'tara', false, 'tara'),
   ...maestro('/api/vehiculos', 'vehiculo', 'inventario', 'Vehículo', 'vehiculos', 'el', 'vehículo', true, 'vehiculo'),
   ev('lista_precios.creada', 'POST', '/api/listas-precios', 'precios', 'normal', '🏷️', 'Se creó una lista de precios', { entidad: { rotulo: 'Lista', resp: 'lista' } }),
@@ -399,6 +402,9 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('transformacion.salidas_comunes', 'PUT', '/api/transformaciones/config/salidas-comunes/:productoId', 'transformacion', 'normal', '⚙️', 'Se configuraron las salidas comunes de un producto'),
   ev('transformacion.valoracion', 'PATCH', '/api/transformaciones/:id/valoracion', 'transformacion', 'normal', '💲', 'Se valoró una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
   ev('transformacion.editada', 'PATCH', '/api/transformaciones/:id/editar', 'transformacion', 'critica', '✏️', 'Se EDITÓ una transformación', {
+    entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesCambios, enriquecer: 'auditoria',
+  }),
+  ev('transformacion.merma_editada', 'PATCH', '/api/transformaciones/:id/merma', 'transformacion', 'critica', '✏️', 'Se editó la merma por tipo de una transformación', {
     entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesCambios, enriquecer: 'auditoria',
   }),
   ev('transformacion.creada', 'POST', '/api/transformaciones', 'transformacion', 'normal', '♻️', 'Se inició una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),

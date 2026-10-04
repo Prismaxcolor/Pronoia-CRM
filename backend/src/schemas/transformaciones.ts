@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mermaDetalleSchema } from './merma-tipificada.js';
 
 const textoOpcional = (max: number) =>
   z
@@ -49,6 +50,8 @@ const salidaFerrosoSchema = z.object({
 
 export const completarTransformacionFerrosoSchema = z.object({
   salidas: z.array(salidaFerrosoSchema).min(1, 'Agrega al menos una salida.'),
+  /** Merma por tipo (opcional): se guarda tras completar, no cambia el flujo actual. */
+  mermaDetalle: mermaDetalleSchema.optional(),
 });
 
 /** Config: guarda cuáles son los materiales de salida comunes de un producto de entrada. */
@@ -86,6 +89,7 @@ const salidaPCBSchema = z.object({
 
 export const completarTransformacionPCBSchema = z.object({
   salidas: z.array(salidaPCBSchema).min(1, 'Agrega al menos un lote de destino.'),
+  mermaDetalle: mermaDetalleSchema.optional(),
 });
 
 export type CrearTransformacionPCBInput = z.infer<typeof crearTransformacionPCBSchema>;
@@ -122,6 +126,7 @@ const salidaMixtaLoteSchema = z.object({
 });
 
 export const completarTransformacionMixtaSchema = z.object({
+  mermaDetalle: mermaDetalleSchema.optional(),
   salidas: z
     .array(z.discriminatedUnion('tipo', [salidaMixtaMaterialSchema, salidaMixtaLoteSchema]))
     .min(1, 'Agrega al menos una salida.')

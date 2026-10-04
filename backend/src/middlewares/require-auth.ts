@@ -14,6 +14,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: JwtPayload;
+      /** Permisos efectivos leídos de la BD por requirePermiso (no se llena para superadmin, que siempre pasa). */
+      permisos?: Permiso[];
     }
   }
 }
@@ -34,6 +36,24 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+/**
+ * Solo superadmin: el nivel más alto que existe en el sistema. Se usa para cambiar parámetros que
+ * afectan lo que ve todo el equipo (meta de contenedor, umbrales, clase y precio estimado de lotes).
+ */
+export function requireSuperadmin(mensaje = 'Solo un superadmin puede hacer este cambio.') {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      res.status(401).json({ error: 'No autenticado.' });
+      return;
+    }
+    if (req.user.rol !== 'superadmin') {
+      res.status(403).json({ error: mensaje });
+      return;
+    }
+    next();
+  };
+}
+
 export function requireRol(...roles: JwtPayload['rol'][]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -46,6 +66,17 @@ export function requireRol(...roles: JwtPayload['rol'][]) {
     }
     next();
   };
+}
+
+/**
+ * ¿El usuario de esta petición tiene (recurso, accion)? Misma regla que requirePermiso: el superadmin
+ * siempre sí; el resto según los permisos efectivos que requirePermiso ya leyó de la BD. Si esos
+ * permisos no se cargaron (la ruta no pasó por requirePermiso) responde false: falla cerrado.
+ */
+export function reqTienePermiso(req: Request, recurso: Recurso, accion: Accion): boolean {
+  if (!req.user) return false;
+  if (req.user.rol === 'superadmin') return true;
+  return tienePermiso(req.permisos ?? [], recurso, accion);
 }
 
 /**
@@ -79,6 +110,7 @@ export function requirePermiso(recurso: Recurso, accion: Accion) {
 
     const rol = data.rol as RolUsuario;
     const permisos = permisosEfectivos(rol, data.permisos as Permiso[] | null);
+    req.permisos = permisos;
 
     if (!tienePermiso(permisos, recurso, accion)) {
       res.status(403).json({ error: `Te falta el permiso ${recurso}:${accion}.` });

@@ -1,10 +1,17 @@
 import { apiFetch } from './api-client';
 import type { Transformacion, SalidaComun } from '@shared/types/index.js';
 import type { SalidaMixtaInput } from '../lib/salida-mixta';
+import type { MermaRenglon, TipoMerma } from '../lib/merma-tipificada';
 
 // ---------------------------------------------------------------------------
 // Tipos de entrada
 // ---------------------------------------------------------------------------
+
+/** Resultado de completar una transformación. `advertencia`: se completó, pero la merma por tipo no
+ *  se pudo guardar (se reintenta desde la edición de merma). */
+export type ResultadoCompletar =
+  | { transformacion: Transformacion; advertencia?: string }
+  | { error: string };
 
 export interface CrearTransformacionInput {
   loteOrigenId: string;
@@ -69,6 +76,30 @@ export interface FilaMerma {
   kgSalida: number;
   kgMerma: number;
   pctMerma: number;
+  /** Merma tipificada por tipo (0 en los no registrados). Ausente en backends anteriores. */
+  mermaPorTipo?: Record<TipoMerma, number>;
+  kgTipificado?: number;
+  /** Merma que nadie clasificó (en transformaciones sin desglose, toda la merma). */
+  kgSinClasificar?: number;
+}
+
+/** Parte de la merma de un conjunto: kg y % sobre la merma total y sobre la entrada. */
+export interface ParteMerma {
+  kg: number;
+  pctDeMerma: number;
+  pctDeEntrada: number;
+}
+
+export interface ResumenMermaPorTipo {
+  transformaciones: number;
+  kgEntrada: number;
+  kgMerma: number;
+  tipos: Array<ParteMerma & { tipo: TipoMerma }>;
+  sinClasificar: ParteMerma;
+}
+
+export interface ResumenMermaCategoria extends ResumenMermaPorTipo {
+  categoria: string;
 }
 
 export interface ReporteMerma {
@@ -76,6 +107,9 @@ export interface ReporteMerma {
   filas: FilaMerma[];
   periodos: PeriodoMerma[];
   totales: ResumenMerma;
+  /** Desglose por tipo del rango (ausente en backends anteriores). */
+  porTipo?: ResumenMermaPorTipo;
+  porCategoria?: ResumenMermaCategoria[];
 }
 
 export interface ObtenerReporteMermaOpts {
@@ -186,14 +220,15 @@ export async function crearTransformacionFerroso(
 
 export async function completarTransformacionFerroso(
   id: string,
-  salidas: CompletarTransformacionFerrosoSalidaInput[]
-): Promise<{ transformacion: Transformacion } | { error: string }> {
+  salidas: CompletarTransformacionFerrosoSalidaInput[],
+  mermaDetalle?: MermaRenglon[]
+): Promise<ResultadoCompletar> {
   try {
-    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
+    const { transformacion, advertencia } = await apiFetch<{ transformacion: Transformacion; advertencia?: string }>(
       `/api/transformaciones/${id}/completar-ferroso`,
-      { method: 'PATCH', body: { salidas } }
+      { method: 'PATCH', body: { salidas, ...(mermaDetalle ? { mermaDetalle } : {}) } }
     );
-    return { transformacion };
+    return { transformacion, ...(advertencia ? { advertencia } : {}) };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación.' };
   }
@@ -268,14 +303,15 @@ export async function crearTransformacionPCB(
 
 export async function completarTransformacionPCB(
   id: string,
-  salidas: CompletarTransformacionPCBSalidaInput[]
-): Promise<{ transformacion: Transformacion } | { error: string }> {
+  salidas: CompletarTransformacionPCBSalidaInput[],
+  mermaDetalle?: MermaRenglon[]
+): Promise<ResultadoCompletar> {
   try {
-    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
+    const { transformacion, advertencia } = await apiFetch<{ transformacion: Transformacion; advertencia?: string }>(
       `/api/transformaciones/${id}/completar-pcb`,
-      { method: 'PATCH', body: { salidas } }
+      { method: 'PATCH', body: { salidas, ...(mermaDetalle ? { mermaDetalle } : {}) } }
     );
-    return { transformacion };
+    return { transformacion, ...(advertencia ? { advertencia } : {}) };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación PCB.' };
   }
@@ -287,14 +323,15 @@ export async function completarTransformacionPCB(
 
 export async function completarTransformacionMixta(
   id: string,
-  salidas: SalidaMixtaInput[]
-): Promise<{ transformacion: Transformacion } | { error: string }> {
+  salidas: SalidaMixtaInput[],
+  mermaDetalle?: MermaRenglon[]
+): Promise<ResultadoCompletar> {
   try {
-    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(
+    const { transformacion, advertencia } = await apiFetch<{ transformacion: Transformacion; advertencia?: string }>(
       `/api/transformaciones/${id}/completar-mixta`,
-      { method: 'PATCH', body: { salidas } }
+      { method: 'PATCH', body: { salidas, ...(mermaDetalle ? { mermaDetalle } : {}) } }
     );
-    return { transformacion };
+    return { transformacion, ...(advertencia ? { advertencia } : {}) };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación.' };
   }
@@ -310,6 +347,27 @@ export async function borrarTransformacion(id: string): Promise<{ ok: true } | {
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo cancelar la transformación.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Merma por tipo de una transformación ya completada (protegida por llave y auditada en el servidor)
+// ---------------------------------------------------------------------------
+
+/** Reemplaza el desglose de merma ([] lo borra). Quien no tiene permiso de editar necesita una llave de edición. */
+export async function editarMermaTransformacion(
+  id: string,
+  detalle: MermaRenglon[],
+  llaveEdicion?: string
+): Promise<{ transformacion: Transformacion | null; advertencia?: string } | { error: string }> {
+  try {
+    const r = await apiFetch<{ transformacion: Transformacion | null; advertencia?: string }>(
+      `/api/transformaciones/${id}/merma`,
+      { method: 'PATCH', body: { detalle, ...(llaveEdicion ? { llaveEdicion } : {}) } }
+    );
+    return { transformacion: r.transformacion, ...(r.advertencia ? { advertencia: r.advertencia } : {}) };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo guardar la merma.' };
   }
 }
 

@@ -29,6 +29,8 @@ import {
 import { guardarValoracionSchema } from '../schemas/transformaciones-valoracion.js';
 import { editarTransformacionSchema, type EditarTransformacionInput } from '../schemas/transformaciones-editar.js';
 import { editarTransformacion } from '../services/transformacion-edicion-service.js';
+import { editarMermaSchema, type EditarMermaInput } from '../schemas/merma-tipificada.js';
+import { editarMermaTransformacion } from '../services/merma-tipificada-service.js';
 import {
   guardarValoracion,
   obtenerTransformacionConValoracion,
@@ -146,6 +148,31 @@ router.patch(
     logger.info({ evento: 'transformacion_editada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: id });
     const { transformacion, avisos, advertencia } = result;
     res.json({ transformacion, ...(avisos ? { avisos } : {}), ...(advertencia ? { advertencia } : {}) });
+  }
+);
+
+// Merma por tipo (basura, plástico, tierra, hierro, otro) de una transformación ya completada:
+// reemplaza el desglose. Misma protección que /editar: permiso 'editar' o llave de un solo uso, y auditada.
+router.patch(
+  '/:id/merma',
+  requirePermisoOLlave('transformaciones', 'editar'),
+  validateBody(editarMermaSchema),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const { llaveEdicion, detalle } = req.body as EditarMermaInput;
+    const result = await editarMermaTransformacion(id, detalle, {
+      userId: req.user!.sub,
+      email: req.user!.email,
+      rol: req.user!.rol,
+      llave: llaveEdicion || undefined,
+    });
+    if (!result.ok) {
+      res.status(result.codigo).json({ error: result.error });
+      return;
+    }
+    logger.info({ evento: 'transformacion_merma_editada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: id });
+    const transformacion = await obtenerTransformacionConValoracion(id).catch(() => null);
+    res.json({ transformacion, desglose: result.desglose, ...(result.advertencia ? { advertencia: result.advertencia } : {}) });
   }
 );
 

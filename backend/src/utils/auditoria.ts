@@ -7,6 +7,8 @@ export const ENTIDADES_AUDITABLES = [
   'factura_venta',
   'transformacion',
   'traslado',
+  'lote',
+  'configuracion_inventario',
 ] as const;
 export type EntidadAuditable = (typeof ENTIDADES_AUDITABLES)[number];
 
@@ -33,7 +35,12 @@ export const RECURSO_POR_ENTIDAD: Record<EntidadAuditable, Recurso> = {
   factura_venta: 'facturacion',
   transformacion: 'transformaciones',
   traslado: 'traslados',
+  lote: 'productos',
+  configuracion_inventario: 'productos',
 };
+
+/** La configuración del inventario es un único conjunto de parámetros, sin id propio: se audita con este id fijo. */
+export const ID_AUDITORIA_CONFIG_INVENTARIO = '00000000-0000-4000-8000-0000000c0f19';
 
 export type ValorAuditado = string | number | boolean | null;
 export type Instantanea = Readonly<Record<string, ValorAuditado>>;

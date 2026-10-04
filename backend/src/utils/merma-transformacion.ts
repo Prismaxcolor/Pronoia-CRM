@@ -5,7 +5,11 @@
  * TransformacionDetallePage): merma = peso neto de entrada - suma del neto de
  * todas las salidas (materiales sueltos y/o lotes de destino, indistinto).
  * No se guarda nada: el histórico se deriva de las transformaciones completas.
+ *
+ * Desde el rediseño de inventario cada fila puede traer además la merma
+ * tipificada (basura, plástico, ...): ver merma-tipificada.ts.
  */
+import { desglosarMerma, type DetalleMerma, type MermaPorTipo } from './merma-tipificada.js';
 
 export type AgrupacionMerma = 'dia' | 'semana' | 'mes';
 
@@ -23,6 +27,8 @@ export interface TransformacionParaMerma {
   entradaDetalle: ReadonlyArray<{ productoId: string }>;
   pesoNeto: number;
   salidas: ReadonlyArray<{ pesoNeto: number }>;
+  /** Desglose opcional de la merma por tipo (transformacion_merma_detalle). */
+  mermaDetalle?: ReadonlyArray<DetalleMerma>;
 }
 
 export interface FilaMerma {
@@ -38,6 +44,13 @@ export interface FilaMerma {
   kgSalida: number;
   kgMerma: number;
   pctMerma: number;
+  /** Merma tipificada por tipo (0 en los tipos no registrados). */
+  mermaPorTipo: MermaPorTipo;
+  kgTipificado: number;
+  /** Merma que nadie clasificó; en transformaciones sin desglose es toda la merma. */
+  kgSinClasificar: number;
+  /** Kilos tipificados que exceden la merma actual (solo si se editaron pesos después). */
+  kgTipificadoExcede: number;
 }
 
 export interface ResumenMerma {
@@ -86,6 +99,7 @@ export function construirFilaMerma(t: TransformacionParaMerma): FilaMerma {
   const kgSalida = kg(t.salidas.reduce((a, s) => a + s.pesoNeto, 0));
   const kgEntrada = kg(t.pesoNeto);
   const { kgMerma, pctMerma } = calcularMerma(t.pesoNeto, t.salidas.map(s => s.pesoNeto));
+  const desglose = desglosarMerma(kgMerma, t.mermaDetalle ?? []);
   return {
     id: t.id,
     numero: t.numero,
@@ -98,6 +112,10 @@ export function construirFilaMerma(t: TransformacionParaMerma): FilaMerma {
     kgSalida,
     kgMerma,
     pctMerma,
+    mermaPorTipo: desglose.porTipo,
+    kgTipificado: desglose.kgTipificado,
+    kgSinClasificar: desglose.kgSinClasificar,
+    kgTipificadoExcede: desglose.excedeKg,
   };
 }
 
