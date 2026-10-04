@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  Recycle, CheckCircle2, Clock, X, Plus, Loader2, Trash2,
-  ChevronDown, ChevronUp, AlertTriangle, Search,
-} from 'lucide-react';
+import { X, Plus, Loader2, Trash2, ChevronDown, AlertTriangle, TrendingDown } from 'lucide-react';
 import {
   obtenerTransformaciones,
   borrarTransformacion,
   crearTransformacionFerroso,
   completarTransformacionFerroso,
   obtenerSalidasComunes,
-  guardarSalidasComunes,
   crearTransformacionPCB,
   completarTransformacionPCB,
   completarTransformacionMixta,
@@ -32,21 +27,25 @@ import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
 import { taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
-import { coincideCodigo, type Transformacion, type SalidaComun, type Tara, type Lote } from '@shared/types/index.js';
+import type { Transformacion, SalidaComun, Tara, Lote } from '@shared/types/index.js';
 import { SelectorTipoSalida, BloqueLoteDestino, BloqueMaterialDestino } from './SalidaMixtaFila';
-import { etiquetaSalida, hayFilasMixtas, validarSalidas, armarSalidaMixta, type TipoSalida } from '../../lib/salida-mixta';
-import SelectorOrden from '../../components/SelectorOrden';
+import { hayFilasMixtas, validarSalidas, armarSalidaMixta, type TipoSalida } from '../../lib/salida-mixta';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import MermaPorTipoBloque from './MermaPorTipoBloque';
 import { armarMermaDetalle, mermaFormVacio, validarMermaForm, type MermaForm } from '../../lib/merma-tipificada';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import { difiereEstado, restaurarFilas } from '../../lib/borrador';
 import { fechaRestaurable, idVigenteOVacio, mensajeSaneoBorrador, sanearIdsSalida, sanearTara } from '../../lib/borrador-vigentes';
-import { ORDEN_POR_DEFECTO, ordenarListado, type OrdenListado } from '../../lib/orden-listado';
+import { BotonAccion, ControlSegmentado, EncabezadoPagina, Pestanas, useFiltrosUrl } from '../../components/ui';
+import PestanaPendientes from './PestanaPendientes';
+import PestanaHistorial from './PestanaHistorial';
+import PestanaConfig from './PestanaConfig';
+import {
+  ESQUEMA_FILTROS_TRANSFORMACIONES, PESTANAS_TRANSFORMACIONES, useUmbralMerma, type PestanaTransformaciones,
+} from './transformaciones-comun';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
 
-type Tab = 'nueva' | 'pendientes' | 'historial' | 'config';
 type Categoria = 'ferroso_no_ferroso' | 'pcb';
 
 function hoyISO() { return new Date().toISOString().slice(0, 10); }
@@ -374,105 +373,6 @@ function CompletarFerrosoModal({
             }
             setMostrarSelectorTara(false);
           }}
-        />
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sección de configuración: salidas comunes por producto de entrada
-// ---------------------------------------------------------------------------
-function ConfigSalidasComunes({
-  productos,
-  salidasComunes,
-  onSaved,
-}: {
-  productos: Producto[];
-  salidasComunes: SalidaComun[];
-  onSaved: () => void;
-}) {
-  const toast = useToast();
-  const [productoEntradaId, setProductoEntradaId] = useState('');
-  const [seleccionados, setSeleccionados] = useState<string[]>([]);
-  const [guardando, setGuardando] = useState(false);
-  const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
-  const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
-  const labelClass = "block text-xs font-medium text-text-secondary mb-1";
-
-  useEffect(() => {
-    if (!productoEntradaId) { setSeleccionados([]); return; }
-    const ids = salidasComunes.filter(s => s.productoEntradaId === productoEntradaId).map(s => s.productoSalidaId);
-    setSeleccionados(ids);
-  }, [productoEntradaId, salidasComunes]);
-
-  const toggle = (id: string) => {
-    setSeleccionados(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const guardar = async () => {
-    if (!productoEntradaId) return;
-    setGuardando(true);
-    const result = await guardarSalidasComunes(productoEntradaId, seleccionados);
-    setGuardando(false);
-    if ('error' in result) { toast.errorMsg(result.error); return; }
-    toast.exito('Configuración guardada.');
-    onSaved();
-  };
-
-  const nombreEntrada = productos.find(p => p.id === productoEntradaId)?.nombre;
-  const productosSalida = productos.filter(p => p.id !== productoEntradaId);
-
-  return (
-    <div className="max-w-md space-y-4">
-      <div>
-        <label className={labelClass}>Material de entrada</label>
-        <button
-          type="button"
-          onClick={() => setMostrarSelectorMaterial(true)}
-          className={`${inputClass} flex items-center justify-between gap-2 text-left`}
-        >
-          <span className={productoEntradaId ? 'text-text-primary truncate' : 'text-text-muted'}>
-            {productos.find(p => p.id === productoEntradaId)?.nombre ?? 'Selecciona el material que entra a la transformación'}
-          </span>
-          <ChevronDown size={14} className="text-text-muted shrink-0" />
-        </button>
-      </div>
-
-      {productoEntradaId && (
-        <>
-          <div>
-            <label className={labelClass}>Materiales que habitualmente salen de {nombreEntrada}</label>
-            <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-              {productosSalida.map(p => (
-                <label key={p.id} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-surface-alt cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={seleccionados.includes(p.id)}
-                    onChange={() => toggle(p.id)}
-                    className="rounded border-border accent-brand-600"
-                  />
-                  <span className="text-sm text-text-primary">{p.nombre}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <button
-            onClick={guardar}
-            disabled={guardando}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
-          >
-            {guardando ? <Loader2 size={14} className="animate-spin" /> : null}
-            Guardar configuración
-          </button>
-        </>
-      )}
-
-      {mostrarSelectorMaterial && (
-        <SeleccionarMaterialModal
-          productos={productos}
-          onClose={() => setMostrarSelectorMaterial(false)}
-          onSeleccionar={id => { setProductoEntradaId(id); setMostrarSelectorMaterial(false); }}
         />
       )}
     </div>
@@ -1135,6 +1035,11 @@ function CompletarPCBModal({
 // ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
+const OPCIONES_CATEGORIA_NUEVA = [
+  { valor: 'ferroso_no_ferroso' as const, etiqueta: 'Ferroso / No ferroso' },
+  { valor: 'pcb' as const, etiqueta: 'PCB' },
+];
+
 function TransformacionesPage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
@@ -1142,30 +1047,33 @@ function TransformacionesPage() {
   const puedeCrear = tienePermiso('transformaciones', 'crear');
   const puedeEliminar = tienePermiso('transformaciones', 'eliminar');
 
-  const [tab, setTab] = usePestanaRecordada<Tab>(
+  // La pestaña recordada (misma clave de siempre) es el valor por defecto; ?tab= en la URL, si viene, manda.
+  const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS_TRANSFORMACIONES);
+  const [tabRecordada, setTabRecordada] = usePestanaRecordada<PestanaTransformaciones>(
     'pronoia:transformaciones:tab',
-    ['nueva', 'pendientes', 'historial', 'config'],
+    PESTANAS_TRANSFORMACIONES,
     'nueva',
   );
+  const tab: PestanaTransformaciones = typeof filtros.tab === 'string' ? (filtros.tab as PestanaTransformaciones) : tabRecordada;
+  const irAPestana = (t: PestanaTransformaciones) => { setTabRecordada(t); cambiar({ tab: t }); };
+
+  // Categoría del formulario de la pestaña "Nueva" (no es el filtro de las listas, que vive en la URL).
   const [categoria, setCategoria] = useState<Categoria>('ferroso_no_ferroso');
 
-  const [transformaciones, setTransformaciones] = useState<Transformacion[]>([]);
+  const [transformaciones, setTransformaciones] = useState<Transformacion[] | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [taras, setTaras] = useState<Tara[]>([]);
   const [salidasComunes, setSalidasComunes] = useState<SalidaComun[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
-  const [cargando, setCargando] = useState(true);
   const [catalogosListos, setCatalogosListos] = useState(false);
 
   const [completando, setCompletando] = useState<Transformacion | null>(null);
-  const [busqueda, setBusqueda] = useState('');
-  const [orden, setOrden] = useState<OrdenListado>(ORDEN_POR_DEFECTO);
+  const umbral = useUmbralMerma();
 
   const cargar = useCallback(async () => {
-    setCargando(true);
     const [txs, prods, alms, tars, comunes, lots] = await Promise.all([
-      obtenerTransformaciones({ categoria }),
+      obtenerTransformaciones(),
       obtenerProductos(),
       obtenerAlmacenes(),
       obtenerTaras(),
@@ -1179,8 +1087,7 @@ function TransformacionesPage() {
     setSalidasComunes(comunes);
     setLotes(lots);
     setCatalogosListos(true);
-    setCargando(false);
-  }, [categoria]);
+  }, []);
 
   useEffect(() => { void cargar(); }, [cargar]);
 
@@ -1199,207 +1106,98 @@ function TransformacionesPage() {
     void cargar();
   };
 
-  const { pendientes, completas, totalPendientes } = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
-    const coincide = (t: Transformacion) => {
-      if (!q) return true;
-      const nombre = (t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '').toLowerCase();
-      return coincideCodigo(t.codigo, busqueda) || nombre.includes(q);
-    };
-    const visibles = ordenarListado(transformaciones.filter(coincide), orden, t => t);
-    return {
-      pendientes: visibles.filter(t => t.estado === 'bruto'),
-      completas: visibles.filter(t => t.estado === 'completa'),
-      totalPendientes: transformaciones.filter(t => t.estado === 'bruto').length,
-    };
-  }, [transformaciones, busqueda, orden]);
-  const hayBusqueda = busqueda.trim() !== '';
-
-  const barraListado = (
-    <div className="flex flex-wrap items-center gap-3 mb-4">
-      <div className="relative w-full max-w-xs">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input
-          type="search"
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          placeholder="Buscar por código o material..."
-          className="w-full pl-9 pr-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
-        />
-      </div>
-      <SelectorOrden orden={orden} onChange={setOrden} />
-    </div>
-  );
-
-  const tabBtn = (t: Tab, label: string) => (
-    <button
-      type="button"
-      onClick={() => setTab(t)}
-      className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${tab === t ? 'bg-brand-600 text-white' : 'text-text-secondary hover:text-text-primary hover:bg-surface-alt'}`}
-    >
-      {label}
-    </button>
-  );
+  const totalPendientes = useMemo(() => (transformaciones ?? []).filter(t => t.estado === 'bruto').length, [transformaciones]);
+  const pestanas = useMemo(() => [
+    { valor: 'nueva' as const, etiqueta: 'Nueva' },
+    { valor: 'pendientes' as const, etiqueta: 'Pendientes', sufijo: transformaciones ? totalPendientes : undefined },
+    { valor: 'historial' as const, etiqueta: 'Historial' },
+    { valor: 'config' as const, etiqueta: 'Configuración' },
+  ], [transformaciones, totalPendientes]);
 
   return (
-    <div>
-      <div className="mb-5">
-        <h1 className="text-2xl font-bold text-text-primary">Transformaciones</h1>
-        <p className="text-sm text-text-secondary mt-1">Procesa materiales: retíralos del inventario, transforma, y registra lo que salió.</p>
-      </div>
+    <div className="max-w-7xl">
+      <EncabezadoPagina
+        titulo="Transformaciones"
+        subtitulo="Procesa materiales: retíralos del inventario, transforma, y registra lo que salió y cuánto se perdió."
+        acciones={
+          <>
+            <BotonAccion variante="secundario" to="/transformaciones/merma" icono={<TrendingDown size={16} />}>Reporte de merma</BotonAccion>
+            {puedeCrear && tab !== 'nueva' && <BotonAccion icono={<Plus size={16} />} onClick={() => irAPestana('nueva')}>Nueva transformación</BotonAccion>}
+          </>
+        }
+      />
 
-      {/* Selector de categoría */}
-      <div className="flex gap-3 mb-5">
-        <button
-          type="button"
-          onClick={() => setCategoria('ferroso_no_ferroso')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${categoria === 'ferroso_no_ferroso' ? 'bg-brand-600 text-white border-brand-600' : 'border-border text-text-secondary hover:border-brand-400 bg-surface'}`}
-        >
-          <Recycle size={15} /> Ferroso / No Ferroso
-        </button>
-        <button
-          type="button"
-          onClick={() => setCategoria('pcb')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${categoria === 'pcb' ? 'bg-brand-600 text-white border-brand-600' : 'border-border text-text-secondary hover:border-brand-400 bg-surface'}`}
-        >
-          PCB
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 mb-5 bg-surface-alt rounded-xl p-1 w-fit border border-border">
-        {tabBtn('nueva', 'Nueva')}
-        {tabBtn('pendientes', `Pendientes${totalPendientes > 0 ? ` (${totalPendientes})` : ''}`)}
-        {tabBtn('historial', 'Historial')}
-        {tabBtn('config', 'Configuración')}
-      </div>
-
-      {/* --- Tab: Nueva --- */}
-      {tab === 'nueva' && (
-        <div className="bg-surface rounded-xl border border-border p-5">
-          {puedeCrear ? (
-            <>
-              <h2 className="text-sm font-semibold text-text-secondary mb-4">
-                Nueva transformación — {categoria === 'pcb' ? 'PCB' : 'Ferroso / No Ferroso'}
-              </h2>
-              {categoria === 'pcb' ? (
-                <NuevaPCBForm
-                  lotes={lotes}
-                  almacenes={almacenes}
-                  catalogosListos={catalogosListos}
-                  onCreada={() => { void cargar(); setTab('pendientes'); }}
-                />
-              ) : (
-                <NuevaFerrosoForm
-                  productos={productos}
-                  almacenes={almacenes}
-                  taras={taras}
-                  catalogosListos={catalogosListos}
-                  onCreada={() => { void cargar(); setTab('pendientes'); }}
-                />
-              )}
-            </>
-          ) : (
-            <p className="text-text-muted text-sm">No tienes permiso para registrar transformaciones.</p>
-          )}
-        </div>
-      )}
-
-      {/* --- Tab: Pendientes --- */}
-      {tab === 'pendientes' && (
-        <div>
-          {barraListado}
-          {cargando ? (
-            <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-text-muted" /></div>
-          ) : pendientes.length === 0 ? (
-            <div className="bg-surface rounded-xl border border-border p-10 text-center text-text-muted text-sm">
-              {hayBusqueda ? 'Sin resultados para la búsqueda.' : 'No hay transformaciones pendientes.'}
+      <Pestanas pestanas={pestanas} valor={tab} onCambiar={irAPestana} etiquetaAria="Secciones de transformaciones">
+        {/* --- Tab: Nueva --- */}
+        {tab === 'nueva' && (
+          <div>
+            <div className="mb-4">
+              <ControlSegmentado opciones={OPCIONES_CATEGORIA_NUEVA} valor={categoria} onCambiar={setCategoria} etiquetaAria="Categoría de la transformación" />
             </div>
-          ) : (
-            <div className="space-y-3">
-              {pendientes.map(t => (
-                <div key={t.id} className="bg-surface rounded-xl border border-amber-200 p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                      <Clock size={15} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-text-primary truncate">
-                        {t.codigo && <span className="text-text-muted">{t.codigo} · </span>}
-                        {t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '—'} — {fmt(t.pesoNeto)} kg
-                      </p>
-                      <p className="text-xs text-text-muted">{t.fecha}</p>
-                    </div>
-                  </div>
-                  {t.notas && (
-                    <p className="pl-11 mb-3 text-xs text-text-secondary whitespace-pre-line">
-                      <span className="font-medium">Notas:</span> {t.notas}
-                    </p>
+            <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
+              {puedeCrear ? (
+                <>
+                  <h2 className="text-lg font-semibold text-text-primary">
+                    Nueva transformación — {categoria === 'pcb' ? 'PCB' : 'Ferroso / No Ferroso'}
+                  </h2>
+                  <p className="mb-4 mt-0.5 text-xs text-text-secondary">
+                    Registra el material que sale del inventario para procesarlo. Al terminar, la completas desde Pendientes con lo que salió.
+                  </p>
+                  {categoria === 'pcb' ? (
+                    <NuevaPCBForm
+                      lotes={lotes}
+                      almacenes={almacenes}
+                      catalogosListos={catalogosListos}
+                      onCreada={() => { void cargar(); irAPestana('pendientes'); }}
+                    />
+                  ) : (
+                    <NuevaFerrosoForm
+                      productos={productos}
+                      almacenes={almacenes}
+                      taras={taras}
+                      catalogosListos={catalogosListos}
+                      onCreada={() => { void cargar(); irAPestana('pendientes'); }}
+                    />
                   )}
-                  <div className="flex gap-3 pl-11">
-                    <Link to={`/transformaciones/${t.id}`} className="text-xs font-medium text-text-secondary hover:text-brand-600">
-                      Ver detalle
-                    </Link>
-                    {puedeCrear && (
-                      <button
-                        type="button"
-                        onClick={() => setCompletando(t)}
-                        className="text-xs font-medium text-brand-600 hover:text-brand-700"
-                      >
-                        Completar →
-                      </button>
-                    )}
-                    {puedeEliminar && (
-                      <button
-                        type="button"
-                        onClick={() => cancelar(t)}
-                        className="text-xs font-medium text-text-muted hover:text-red-600 flex items-center gap-0.5"
-                      >
-                        <X size={12} /> Cancelar
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                </>
+              ) : (
+                <p className="text-sm text-text-secondary">No tienes permiso para registrar transformaciones.</p>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* --- Tab: Historial --- */}
-      {tab === 'historial' && (
-        <div>
-          {barraListado}
-          {cargando ? (
-            <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-text-muted" /></div>
-          ) : completas.length === 0 ? (
-            <div className="bg-surface rounded-xl border border-border p-10 text-center text-text-muted text-sm">
-              {hayBusqueda ? 'Sin resultados para la búsqueda.' : 'Aún no hay transformaciones completadas.'}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {completas.map(t => (
-                <TransformacionHistorialCard key={t.id} t={t} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* --- Tab: Config --- */}
-      {tab === 'config' && (
-        <div className="bg-surface rounded-xl border border-border p-5">
-          <h2 className="text-sm font-semibold text-text-secondary mb-1">Salidas comunes por material</h2>
-          <p className="text-xs text-text-muted mb-4">
-            Configura qué materiales de salida aparecen primero al completar una transformación, según el material que entró.
-          </p>
-          <ConfigSalidasComunes
-            productos={productos}
-            salidasComunes={salidasComunes}
-            onSaved={() => void cargar()}
+        {/* --- Tab: Pendientes --- */}
+        {tab === 'pendientes' && (
+          <PestanaPendientes
+            transformaciones={transformaciones}
+            filtros={filtros}
+            onCambiarFiltros={cambiar}
+            onLimpiarFiltros={limpiar}
+            puedeCrear={puedeCrear}
+            puedeEliminar={puedeEliminar}
+            onCompletar={setCompletando}
+            onCancelar={t => void cancelar(t)}
           />
-        </div>
-      )}
+        )}
+
+        {/* --- Tab: Historial --- */}
+        {tab === 'historial' && (
+          <PestanaHistorial
+            transformaciones={transformaciones}
+            filtros={filtros}
+            onCambiarFiltros={cambiar}
+            onLimpiarFiltros={limpiar}
+            umbral={umbral}
+            onIrAPendientes={() => irAPestana('pendientes')}
+          />
+        )}
+
+        {/* --- Tab: Config --- */}
+        {tab === 'config' && (
+          <PestanaConfig productos={productos} salidasComunes={salidasComunes} onSaved={() => void cargar()} umbral={umbral} />
+        )}
+      </Pestanas>
 
       {/* Modal completar */}
       {completando && completando.categoria === 'pcb' && (
@@ -1409,7 +1207,7 @@ function TransformacionesPage() {
           almacenes={almacenes}
           productos={productos}
           onClose={() => setCompletando(null)}
-          onCompletada={() => { setCompletando(null); void cargar(); setTab('historial'); }}
+          onCompletada={() => { setCompletando(null); void cargar(); irAPestana('historial'); }}
         />
       )}
       {completando && completando.categoria !== 'pcb' && (
@@ -1421,63 +1219,8 @@ function TransformacionesPage() {
           lotes={lotes}
           almacenes={almacenes}
           onClose={() => setCompletando(null)}
-          onCompletada={() => { setCompletando(null); void cargar(); setTab('historial'); }}
+          onCompletada={() => { setCompletando(null); void cargar(); irAPestana('historial'); }}
         />
-      )}
-    </div>
-  );
-}
-
-// Tarjeta de historial (collapsible)
-function TransformacionHistorialCard({ t }: { t: Transformacion }) {
-  const [abierto, setAbierto] = useState(false);
-  return (
-    <div className="bg-surface rounded-xl border border-border p-4">
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
-          <Recycle size={15} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <Link to={`/transformaciones/${t.id}`} className="block text-sm font-medium text-text-primary truncate hover:text-brand-600">
-            {t.codigo && <span className="text-text-muted">{t.codigo} · </span>}
-            {t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '—'} — {fmt(t.pesoNeto)} kg
-          </Link>
-          <p className="text-xs text-text-muted">{t.fecha}</p>
-        </div>
-        <CheckCircle2 size={14} className="text-green-600 shrink-0" />
-        <button type="button" onClick={() => setAbierto(v => !v)} className="text-text-muted hover:text-text-primary">
-          {abierto ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-        </button>
-      </div>
-
-      {!abierto && t.salidas.length > 0 && (
-        <div className="pl-11 mt-2 flex flex-wrap gap-2">
-          {t.salidas.map(s => (
-            <span key={s.id} className="text-xs bg-surface-alt border border-border rounded-full px-2.5 py-0.5 text-text-secondary">
-              {etiquetaSalida(s)}: {fmt(s.pesoNeto)} kg
-            </span>
-          ))}
-        </div>
-      )}
-
-      {abierto && (
-        <div className="pl-11 mt-3 space-y-1.5">
-          <p className="text-xs font-medium text-text-secondary mb-1">Salidas</p>
-          {t.salidas.map(s => (
-            <div key={s.id} className="flex justify-between text-xs text-text-secondary">
-              <span>
-                → {etiquetaSalida(s)}
-                {s.nombreAlmacen && <span className="text-text-muted"> ({s.nombreAlmacen})</span>}
-              </span>
-              <span className="font-medium">{fmt(s.pesoNeto)} kg</span>
-            </div>
-          ))}
-          <div className="flex justify-between text-xs text-text-muted pt-1 border-t border-border">
-            <span>Merma</span>
-            <span>{fmt(t.pesoNeto - t.salidas.reduce((acc, s) => acc + s.pesoNeto, 0))} kg</span>
-          </div>
-          {t.notas && <p className="text-xs text-text-muted italic mt-1">"{t.notas}"</p>}
-        </div>
       )}
     </div>
   );
