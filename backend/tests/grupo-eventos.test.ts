@@ -106,6 +106,14 @@ describe('debeNotificar', () => {
   it('nunca avisa ignorables', () => {
     expect(debeNotificar(ev('auth.login'), { ...base, incluirRuidosos: true })).toBe(false);
   });
+  it('nunca avisa eventos de dinero, ni con todos los interruptores', () => {
+    const dinero = CATALOGO_EVENTOS.filter(e => ['tesoreria', 'facturacion', 'precios'].includes(e.categoria));
+    expect(dinero.length).toBeGreaterThan(10);
+    for (const e of [...dinero, ev('inventario.costos_referencia_editados'), ev('transformacion.valoracion')]) {
+      expect(debeNotificar(e, { ...base, incluirRuidosos: true }), e.clave).toBe(false);
+    }
+    expect(debeNotificar(ev('vehiculo.creado'), base)).toBe(true);
+  });
   it('los ruidosos solo con el interruptor', () => {
     expect(debeNotificar(ev('toma_fisica.pesaje'), base)).toBe(false);
     expect(debeNotificar(ev('toma_fisica.pesaje'), { ...base, incluirRuidosos: true })).toBe(true);

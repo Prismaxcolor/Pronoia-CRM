@@ -86,6 +86,15 @@ export function reqTienePermiso(req: Request, recurso: Recurso, accion: Accion):
  * Superadmin siempre pasa.
  */
 export function requirePermiso(recurso: Recurso, accion: Accion) {
+  return requireAlgunPermiso({ recurso, accion });
+}
+
+/**
+ * Igual que requirePermiso pero basta con tener CUALQUIERA de los permisos dados. Sirve para
+ * catálogos de solo lectura que otra pantalla necesita (p. ej. listar vehículos desde el pesaje
+ * sin exigir el recurso 'vehiculos', ya que los permisos personalizados reemplazan a los del rol).
+ */
+export function requireAlgunPermiso(...requisitos: Permiso[]) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       res.status(401).json({ error: 'No autenticado.' });
@@ -112,8 +121,9 @@ export function requirePermiso(recurso: Recurso, accion: Accion) {
     const permisos = permisosEfectivos(rol, data.permisos as Permiso[] | null);
     req.permisos = permisos;
 
-    if (!tienePermiso(permisos, recurso, accion)) {
-      res.status(403).json({ error: `Te falta el permiso ${recurso}:${accion}.` });
+    if (!requisitos.some(r => tienePermiso(permisos, r.recurso, r.accion))) {
+      const faltan = requisitos.map(r => `${r.recurso}:${r.accion}`).join(' o ');
+      res.status(403).json({ error: `Te falta el permiso ${faltan}.` });
       return;
     }
 

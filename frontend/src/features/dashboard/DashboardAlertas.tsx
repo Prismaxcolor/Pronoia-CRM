@@ -20,7 +20,7 @@ const datoDe = <T,>(e: Estado<T>): T | null => (e.estado === 'listo' ? e.dato : 
 /** Alertas operativas. Cada fuente se revisa solo si el usuario tiene su permiso; lo que no se pudo revisar se dice. */
 function DashboardAlertas({ tickets, tomas, merma }: DashboardAlertasProps) {
   const fuentes = [
-    { id: 'tickets', nombre: 'pesajes en bruto', e: tickets as Estado<unknown> },
+    { id: 'tickets', nombre: 'pesajes globales por recepcionar', e: tickets as Estado<unknown> },
     { id: 'tomas', nombre: 'tomas físicas abiertas', e: tomas as Estado<unknown> },
     { id: 'merma', nombre: 'merma', e: merma as Estado<unknown> },
   ];

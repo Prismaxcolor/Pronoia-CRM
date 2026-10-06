@@ -22,6 +22,7 @@ import { errorEdicionFacturado, extrasEdicionRpc } from '../utils/edicion-ticket
 import { avisosDeFacturasEditadas } from './factura-ticket-service.js';
 import type { AvisoFactura } from '../utils/factura-ticket-edicion.js';
 import { redondearKg, calcularDiferenciaPeso } from '../utils/peso-kg.js';
+import { guardarNotasCompletado, pesajesGlobalesDeUnidos, type PesajeGlobalUnidoPublico } from './ticket-unidos.js';
 
 /** Formatea el correlativo de pesaje: (1, 'compra') → "Compra-0001". Cada tipo
  *  tiene su propio contador desde el Bloque 35 (antes compra y venta
@@ -75,6 +76,7 @@ interface TicketRow {
   completado_por: string | null;
   completado_en: string | null;
   vehiculo: string | null;
+  notas_completado?: string | null;
   ticket_principal_id?: string | null;
   detalle_tickets_pesaje?: DetalleRow[] | null;
   pesajes_globales?: PesajeGlobalRow[] | null;
@@ -139,6 +141,10 @@ export interface TicketPublico {
   completadoPor: string | null;
   completadoEn: string | null;
   vehiculo: string | null;
+  /** Notas escritas al completar (null si no hay o la columna aún no existe). */
+  notasCompletado?: string | null;
+  /** Pesajes globales de los tickets unidos a este (solo en obtenerTicket). */
+  pesajesGlobalesUnidos?: PesajeGlobalUnidoPublico[];
   /** Id del ticket principal si este se unió a otro al completar; null si no. */
   ticketPrincipalId?: string | null;
   /** Código del ticket principal, para mostrar "Unido a ...". */
@@ -195,6 +201,7 @@ function toPublico(row: TicketRow): TicketPublico {
     completadoPor: row.completado_por,
     completadoEn: row.completado_en,
     vehiculo: row.vehiculo,
+    notasCompletado: row.notas_completado ?? null,
     ticketPrincipalId: row.ticket_principal_id ?? null,
     ticketPrincipalCodigo: null,
     createdAt: row.created_at,
@@ -223,7 +230,11 @@ export async function listarTickets(opts: ListarTicketsOpts = {}): Promise<Ticke
   if (opts.soloNoFacturados) query = query.eq('facturado', false);
   if (opts.entidadId) query = query.eq('entidad_id', opts.entidadId);
   if (opts.tipo) query = query.eq('tipo', opts.tipo);
-  if (opts.estado) query = query.eq('estado', opts.estado);
+  // Un ticket en bruto (pesaje global sin completar) nunca es facturable: sin materiales
+  // no hay qué cobrar. Es la fuente de verdad; el frontend repite el filtro.
+  if (opts.soloNoFacturados && opts.estado === 'bruto') return [];
+  const estadoFiltro = opts.soloNoFacturados ? 'completo' : opts.estado;
+  if (estadoFiltro) query = query.eq('estado', estadoFiltro);
 
   const { data, error } = await query;
   if (error || !data) return [];
@@ -259,7 +270,12 @@ export async function obtenerTicket(id: string): Promise<TicketPublico | null> {
   if (error || !data) return null;
   const row = data as unknown as TicketRow;
   const codigos = await codigosDePrincipales([row]);
-  return { ...toPublico(row), ticketPrincipalCodigo: row.ticket_principal_id ? (codigos.get(row.ticket_principal_id) ?? null) : null };
+  const pesajesGlobalesUnidos = row.estado === 'completo' ? await pesajesGlobalesDeUnidos(row.id, formatCodigoPesaje) : [];
+  return {
+    ...toPublico(row),
+    pesajesGlobalesUnidos,
+    ticketPrincipalCodigo: row.ticket_principal_id ? (codigos.get(row.ticket_principal_id) ?? null) : null,
+  };
 }
 
 /** Dispara el envío del ticket por Telegram cuando queda 'completo' (fire-and-forget). */
@@ -363,6 +379,7 @@ export async function completarTicket(
     return { error: idsUnidos.length > 0 && esErrorFuncionInexistente(error) ? MENSAJE_UNION_NO_HABILITADA : error.message };
   }
 
+  await guardarNotasCompletado(id, input.notas);
   const ticket = await obtenerTicket(id);
   if (!ticket) return { error: 'El ticket se completó pero no se pudo leer de vuelta.' };
   notificarTicketSiCorresponde(ticket);

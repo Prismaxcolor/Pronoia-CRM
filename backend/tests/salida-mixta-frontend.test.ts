@@ -61,8 +61,8 @@ describe('validarSalidas: PCB (MPP a lotes y materiales sueltos)', () => {
     expect(validarSalidas('pcb', [lote({ loteDestinoId: 'lote-mpp' })], ctx)).toMatch(/distinto del lote origen/);
   });
 
-  it('exige almacén en lotes y en materiales', () => {
-    expect(validarSalidas('pcb', [lote({ almacenId: '' })], ctx)).toMatch(/almacén/);
+  it('exige almacén en materiales pero no en lotes (el lote usa el almacén de la transformación)', () => {
+    expect(validarSalidas('pcb', [lote({ almacenId: '' })], ctx)).toBeNull();
     expect(validarSalidas('pcb', [material({ almacenId: '' })], ctx)).toMatch(/almacén/);
   });
 
@@ -96,11 +96,11 @@ describe('validarSalidas: ferroso (perfil a plásticos y tarjeta a lote)', () =>
     expect(validarSalidas('ferroso_no_ferroso', [fila({ cantidadFotos: 0 })], ctx)).toMatch(/foto/);
   });
 
-  it('exige producto, lote y almacén cuando la salida va a un lote', () => {
+  it('exige producto y lote (no almacén) cuando la salida va a un lote', () => {
     const base = { tipo: 'lote' as const, productoId: 'tarjeta', loteDestinoId: 'lote-9', almacenId: 'alm-1' };
     expect(validarSalidas('ferroso_no_ferroso', [fila({ ...base, productoId: '' })], ctx)).toMatch(/producto/);
     expect(validarSalidas('ferroso_no_ferroso', [fila({ ...base, loteDestinoId: '' })], ctx)).toMatch(/lote/);
-    expect(validarSalidas('ferroso_no_ferroso', [fila({ ...base, almacenId: '' })], ctx)).toMatch(/almacén/);
+    expect(validarSalidas('ferroso_no_ferroso', [fila({ ...base, almacenId: '' })], ctx)).toBeNull();
   });
 
   it('en ferroso el almacén de una salida de material es opcional', () => {
@@ -109,10 +109,11 @@ describe('validarSalidas: ferroso (perfil a plásticos y tarjeta a lote)', () =>
 });
 
 describe('armarSalidaMixta (cuerpo exacto que espera el backend)', () => {
-  it('PCB a lote va sin productoId', () => {
+  it('PCB a lote va sin productoId ni almacén', () => {
     const s = armarSalidaMixta('pcb', fila({ tipo: 'lote', productoId: 'residual', loteDestinoId: 'l1', almacenId: 'a1' }), 12, 2, ['u1']);
-    expect(s).toEqual({ tipo: 'lote', pesoBruto: 12, tara: 2, fotos: ['u1'], loteDestinoId: 'l1', almacenId: 'a1' });
+    expect(s).toEqual({ tipo: 'lote', pesoBruto: 12, tara: 2, fotos: ['u1'], loteDestinoId: 'l1' });
     expect('productoId' in s).toBe(false);
+    expect('almacenId' in s).toBe(false);
   });
 
   it('PCB a material lleva producto y almacén', () => {
@@ -120,9 +121,9 @@ describe('armarSalidaMixta (cuerpo exacto que espera el backend)', () => {
     expect(s).toEqual({ tipo: 'material', pesoBruto: 5, tara: 0, fotos: [], productoId: 'aluminio', almacenId: 'a1' });
   });
 
-  it('ferroso a lote lleva el producto (tarjeta), el lote y el almacén', () => {
+  it('ferroso a lote lleva el producto (tarjeta) y el lote, sin almacén', () => {
     const s = armarSalidaMixta('ferroso_no_ferroso', fila({ tipo: 'lote', productoId: 'tarjeta', loteDestinoId: 'l9', almacenId: 'a1' }), 22, 2, ['u2']);
-    expect(s).toEqual({ tipo: 'lote', pesoBruto: 22, tara: 2, fotos: ['u2'], productoId: 'tarjeta', loteDestinoId: 'l9', almacenId: 'a1' });
+    expect(s).toEqual({ tipo: 'lote', pesoBruto: 22, tara: 2, fotos: ['u2'], productoId: 'tarjeta', loteDestinoId: 'l9' });
   });
 
   it('ferroso a material omite almacén si no se eligió', () => {

@@ -5,11 +5,21 @@ import { leerValoracion, obtenerTransformacionConValoracion, type ValoracionPubl
 import { esErrorFuncionInexistente } from './ticket-principal.js';
 import type { CambiosAuditoria } from '../utils/auditoria.js';
 import type { EditarTransformacionInput } from '../schemas/transformaciones-editar.js';
+import type { SalidaMixtaInput } from '../schemas/transformaciones.js';
+import { completarAlmacenSalidas } from '../utils/almacen-salida-transformacion.js';
+import {
+  agregarSalidasNuevas,
+  agregarSalidasNuevasASnapshot,
+  salidaNuevaARpc,
+  validarSalidasNuevas,
+} from '../utils/salidas-nuevas-edicion.js';
+import { almacenPorDefectoSalidas } from './transformacion-almacen-salida-service.js';
 import {
   aplicarPesos,
   cambiosPesos,
   cambiosStock,
   construirAvisosPesos,
+  etiquetaSalidaAuditoria,
   proyectarSnapshot,
   snapshotDe,
   validarPesos,
@@ -56,6 +66,41 @@ async function datosFactura(facturaId: string | null): Promise<{ numero: number 
   return { numero: data?.numero != null ? Number(data.numero) : null, estado: (data?.estado as string | undefined) ?? null };
 }
 
+export const MENSAJE_AGREGAR_SALIDAS_NO_HABILITADO =
+  'Agregar salidas al editar aún no está habilitado en la base de datos (falta aplicar migration_editar_transformacion_agregar_salidas.sql).';
+
+type PreparacionNuevas = { ok: true; nuevas: SalidaMixtaInput[] } | { ok: false; error: string };
+
+/** Completa el almacén de las salidas a lote (el de la transformación o el predeterminado) y valida las reglas por categoría. */
+async function prepararSalidasNuevas(antes: Transformacion, brutas: SalidaMixtaInput[]): Promise<PreparacionNuevas> {
+  if (brutas.length === 0) return { ok: true, nuevas: [] };
+  const almacen = antes.almacenId ?? (await almacenPorDefectoSalidas(antes.id));
+  const conAlmacen = completarAlmacenSalidas(brutas, almacen, s => s.tipo === 'lote');
+  if (!conAlmacen.ok) return { ok: false, error: conAlmacen.error };
+  const invalido = validarSalidasNuevas(
+    { categoria: antes.categoria, estado: antes.estado, loteOrigenId: antes.loteOrigenId },
+    conAlmacen.salidas
+  );
+  return invalido ? { ok: false, error: invalido } : { ok: true, nuevas: conAlmacen.salidas };
+}
+
+async function nombresPorId(tabla: 'productos' | 'lotes', ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const { data } = await supabaseAdmin.from(tabla).select('id, nombre').in('id', ids);
+  return new Map((data ?? []).map(r => [r.id as string, r.nombre as string]));
+}
+
+/** Etiqueta de cada salida nueva para el historial (material, lote o material hacia lote). */
+async function etiquetadorSalidasNuevas(nuevas: SalidaMixtaInput[]): Promise<(s: SalidaMixtaInput) => string> {
+  const productoIds = nuevas.flatMap(s => (s.productoId ? [s.productoId] : []));
+  const loteIds = nuevas.flatMap(s => (s.tipo === 'lote' ? [s.loteDestinoId] : []));
+  const [productos, lotes] = await Promise.all([nombresPorId('productos', productoIds), nombresPorId('lotes', loteIds)]);
+  return s => etiquetaSalidaAuditoria({
+    nombreProducto: s.productoId ? productos.get(s.productoId) ?? null : null,
+    nombreLoteDestino: s.tipo === 'lote' ? lotes.get(s.loteDestinoId) ?? null : null,
+  });
+}
+
 function tieneValoracion(v: ValoracionPublica | null): boolean {
   return v != null && (v.costoUnitario != null || Object.values(v.preciosSalida).some(p => p != null));
 }
@@ -82,11 +127,14 @@ export async function editarTransformacion(
   const estadoAntes = estadoPesosDe(antes);
   const aplicado = aplicarPesos(estadoAntes, input);
   if (!aplicado.ok) return { error: aplicado.error, codigo: 400 };
-  const cambianPesos = !pesosIguales(estadoAntes, aplicado.estado);
+  const preparadas = await prepararSalidasNuevas(antes, input.salidasNuevas ?? []);
+  if (!preparadas.ok) return { error: preparadas.error, codigo: 400 };
+  const nuevas = preparadas.nuevas;
+  const cambianPesos = !pesosIguales(estadoAntes, aplicado.estado) || nuevas.length > 0;
 
   // Validar ANTES de autorizar: una edición inválida o sin cambios no debe gastar la llave.
   if (cambianPesos) {
-    const invalido = validarPesos(aplicado.estado);
+    const invalido = validarPesos(agregarSalidasNuevas(aplicado.estado, nuevas));
     if (invalido) return { error: invalido, codigo: 400 };
   }
   if ((input.salidas?.length ?? 0) > 0 && antes.salidas.length === 0) {
@@ -116,11 +164,12 @@ export async function editarTransformacion(
       p_fecha: input.fecha ?? null,
       p_notas: input.notas ?? null,
       p_set_notas: input.notas !== undefined,
+      ...(nuevas.length > 0 ? { p_salidas_nuevas: nuevas.map(salidaNuevaARpc) } : {}),
     });
     if (error) {
       await auth.liberar();
       return esErrorFuncionInexistente(error)
-        ? { error: MENSAJE_PESOS_NO_HABILITADOS, codigo: 409 }
+        ? { error: nuevas.length > 0 ? MENSAJE_AGREGAR_SALIDAS_NO_HABILITADO : MENSAJE_PESOS_NO_HABILITADOS, codigo: 409 }
         : { error: error.message, codigo: 400 };
     }
     const resultado = (data ?? {}) as { stock?: unknown };
@@ -136,7 +185,12 @@ export async function editarTransformacion(
 
   // El cambio ya está confirmado en BD: la auditoría se registra de inmediato con lo proyectado
   // (no depende de releer), para no dejar el cambio sin historial ni la llave gastada en vano.
-  const proyectado = proyectarSnapshot(snapAntes, aplicado.estado, { fecha: input.fecha, notas: input.notas });
+  const etiquetar = nuevas.length > 0 ? await etiquetadorSalidasNuevas(nuevas) : () => 'Salida';
+  const proyectado = agregarSalidasNuevasASnapshot(
+    proyectarSnapshot(snapAntes, aplicado.estado, { fecha: input.fecha, notas: input.notas }),
+    nuevas,
+    etiquetar
+  );
   const registrada = await registrarAuditoria({
     entidadTipo: 'transformacion',
     entidadId: id,

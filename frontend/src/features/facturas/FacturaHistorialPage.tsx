@@ -14,6 +14,7 @@ import {
   BarraProgreso, Bloque, BotonAccion, EncabezadoPagina, FiltrosBarra, GrillaKpis, ListaAlertas, SkeletonBloque, TarjetaKpi, useFiltrosUrl,
   EstadoVacio, formatearFecha, formatearNumero, formatearUsdDecimales, type AlertaDatos,
 } from '../../components/ui';
+import PesajesPendientesFacturar from './PesajesPendientesFacturar';
 import { INICIO_HISTORICO, hoyLocal } from '../../lib/rango-fechas';
 import {
   antiguedadSaldos, compararTotalFacturado, porcentajeEntero, periodoAnterior, periodoEfectivo, porcentajePagado, resumirFacturas,
@@ -158,6 +159,8 @@ function FacturaHistorialPage({ tipo }: Props) {
     [facturas, busqueda, estado],
   );
 
+  const nombresProveedor = useMemo(() => new Map((entidades ?? []).map(e => [e.id, e.nombre])), [entidades]);
+
   const hayFiltros = Boolean(desdeUrl || hastaUrl || entidadId || productoId || estado || busqueda);
   const periodoTxt = textoPeriodo(periodo);
   const primeraCarga = claveCargada === null;
@@ -226,6 +229,8 @@ function FacturaHistorialPage({ tipo }: Props) {
         onAbrirAvanzados={cargarProductos}
         onLimpiar={limpiar}
       />
+
+      {esCompra && puedeVer && <PesajesPendientesFacturar nombresProveedor={nombresProveedor} puedeFacturar={puedeCrear} />}
 
       <section aria-label="Indicadores principales">
         <div className={!primeraCarga && cargando ? 'opacity-60 transition-opacity' : ''}>

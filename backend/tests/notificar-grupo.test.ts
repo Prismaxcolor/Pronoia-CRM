@@ -233,60 +233,55 @@ describe('notificarGrupoMiddleware', () => {
 
   it('un fallo de n8n (rechazo de red o HTTP 500) nunca rompe la operación', async () => {
     fetchMock.mockRejectedValueOnce(new Error('ECONNRESET'));
-    const a = ejecutar({ method: 'POST', originalUrl: '/api/facturas-venta', user: ana, body: {} }, 201, { factura: { codigo: 'V-0006', tipo: 'venta', total: 50 } });
+    const a = ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { almacen: { nombre: 'V-0006' } });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(a.next).toHaveBeenCalledTimes(1);
 
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
-    ejecutar({ method: 'POST', originalUrl: '/api/facturas-venta', user: ana, body: {} }, 201, { factura: { codigo: 'V-0007', tipo: 'venta', total: 50 } });
+    ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { almacen: { nombre: 'V-0007' } });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
   it('fetch con timeout corto', async () => {
-    ejecutar({ method: 'POST', originalUrl: '/api/facturas-venta', user: ana, body: {} }, 201, { factura: { codigo: 'V-0006', tipo: 'venta', total: 50 } });
+    ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { almacen: { nombre: 'V-0006' } });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('factura emitida: código y total; pago múltiple: código PG- y monto', async () => {
-    ejecutar({ method: 'POST', originalUrl: '/api/facturas-compra', user: ana, body: {} }, 201, { factura: { codigo: 'C-0006', tipo: 'compra', total: 1234.5, nombreEntidad: 'Chatarra SA', ticketIds: ['a', 'b'] } });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const t1 = String(cuerpoEnviado().texto);
-    expect(t1).toContain('Factura C-0006');
-    expect(t1).toContain('Total: $1.234,5');
-
-    ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: { proveedorId: 'p1', montoUsd: 300, items: [{}] } }, 201, { numeroPago: 12, numeroAdelanto: null, numeroCruce: null });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const t2 = JSON.parse(String(fetchMock.mock.calls[1][1].body)).texto as string;
-    expect(t2).toContain('Pago PG-0012');
-    expect(t2).toContain('Proveedor Chatarra SA');
-    expect(t2).toContain('Monto: $300');
+  it('eventos de dinero (facturas, pagos, cobros, bancas, precios) nunca se avisan al grupo', async () => {
+    ejecutar({ method: 'POST', originalUrl: '/api/facturas-compra', user: ana, body: {} }, 201, { factura: { codigo: 'C-0006', tipo: 'compra', total: 1234.5 } });
+    ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: { proveedorId: 'p1', montoUsd: 300, items: [{}] } }, 201, { numeroPago: 12 });
+    ejecutar({ method: 'POST', originalUrl: '/api/cobros/multiple', user: ana, body: { clienteId: 'c1', montoUsd: 50, items: [{}] } }, 201, { numeroCobro: 3 });
+    ejecutar({ method: 'POST', originalUrl: '/api/cochinito/movimientos', user: ana, body: { tipo: 'ingreso', monto: 10 } }, 201, {});
+    ejecutar({ method: 'DELETE', originalUrl: '/api/listas-precios/l1/precios/p1', user: ana, body: {} }, 200, { ok: true });
+    await new Promise(r => setTimeout(r, 30));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('usuario sin nombre en BD: usa el email; sin nada, el id', async () => {
     tablas.users = { data: { nombre: null, rol: 'trabajador' } };
-    ejecutar({ method: 'POST', originalUrl: '/api/facturas-venta', user: ana, body: {} }, 201, { factura: { codigo: 'V-1' } });
+    ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { almacen: { nombre: 'V-1'  } });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(String(cuerpoEnviado().texto)).toContain('👤 ana@pronoia.test (Trabajador)');
   });
 
   it('cachea el nombre del usuario (una sola consulta a users para varios eventos)', async () => {
     for (let i = 0; i < 3; i++) {
-      ejecutar({ method: 'POST', originalUrl: '/api/facturas-venta', user: ana, body: {} }, 201, { factura: { codigo: `V-${i}` } });
+      ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { factura: { codigo: `V-${i}` } });
     }
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(consultas.filter(t => t === 'users')).toHaveLength(1);
   });
 
   it('respeta el silenciado por categoría y el interruptor general', async () => {
-    env.ENV.GRUPO_EVENTOS_SILENCIADOS = ['facturacion'];
-    ejecutar({ method: 'POST', originalUrl: '/api/facturas-venta', user: ana, body: {} }, 201, { factura: { codigo: 'V-1' } });
+    env.ENV.GRUPO_EVENTOS_SILENCIADOS = ['inventario'];
+    ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { almacen: { nombre: 'V-1'  } });
     await new Promise(r => setTimeout(r, 20));
     expect(fetchMock).not.toHaveBeenCalled();
 
     env.ENV.GRUPO_EVENTOS_SILENCIADOS = [];
     env.ENV.GRUPO_NOTIFICACIONES_ACTIVAS = false;
-    ejecutar({ method: 'POST', originalUrl: '/api/facturas-venta', user: ana, body: {} }, 201, { factura: { codigo: 'V-1' } });
+    ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { almacen: { nombre: 'V-1'  } });
     await new Promise(r => setTimeout(r, 20));
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -322,8 +317,8 @@ describe('integración con Express real', () => {
     app.use(notificarGrupoMiddleware);
     const router = express.Router();
     router.use((req, _res, next) => { (req as never as { user: unknown }).user = ana; next(); });
-    router.post('/', (_req, res) => { res.status(201).json({ factura: { codigo: 'V-0099', tipo: 'venta', total: 10 } }); });
-    app.use('/api/facturas-venta', router);
+    router.post('/', (_req, res) => { res.status(201).json({ almacen: { nombre: 'Galpon-99' } }); });
+    app.use('/api/almacenes', router);
 
     const servidor = createServer(app);
     await new Promise<void>(r => servidor.listen(0, r));
@@ -333,7 +328,7 @@ describe('integración con Express real', () => {
       // el fetch global es el doble; para llamar al servidor local se usa http directamente
       const { request } = await import('node:http');
       const cuerpo = await new Promise<string>((resolve, reject) => {
-        const req = request({ port: puerto, path: '/api/facturas-venta?x=1', method: 'POST', headers: { 'content-type': 'application/json' } }, res => {
+        const req = request({ port: puerto, path: '/api/almacenes?x=1', method: 'POST', headers: { 'content-type': 'application/json' } }, res => {
           let d = '';
           res.on('data', c => { d += c; });
           res.on('end', () => resolve(`${res.statusCode}|${d}`));
@@ -341,10 +336,10 @@ describe('integración con Express real', () => {
         req.on('error', reject);
         req.end(JSON.stringify({ password: 'S3CR3T0' }));
       });
-      expect(cuerpo).toBe('201|{"factura":{"codigo":"V-0099","tipo":"venta","total":10}}');
+      expect(cuerpo).toBe('201|{"almacen":{"nombre":"Galpon-99"}}');
       await vi.waitFor(() => expect(fetchReal).toHaveBeenCalledTimes(1));
       const texto = String(JSON.parse(String(fetchReal.mock.calls[0][1].body)).texto);
-      expect(texto).toContain('Factura V-0099');
+      expect(texto).toContain('Almacén Galpon-99');
       expect(texto).toContain('Ana Pérez');
       expect(texto).not.toContain('S3CR3T0');
     } finally {

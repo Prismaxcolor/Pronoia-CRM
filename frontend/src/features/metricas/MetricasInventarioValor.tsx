@@ -96,7 +96,7 @@ function MetricasInventarioValor() {
         {costos.estado === 'cargando' && <SkeletonKpis />}
         {costos.estado === 'error' && <ErrorDeBloque mensaje={costos.mensaje} onReintentar={costos.recargar} />}
         {costos.estado === 'listo' && (
-          <InventarioValorKpis resumen={resumen} venta={venta} onEditarCostos={() => setEditorAbierto(true)} />
+          <InventarioValorKpis resumen={resumen} venta={venta} onEditarCostos={() => setEditorAbierto(true)} puedeEditar={puedeEditar} />
         )}
         {venta.estado === 'error' && costos.estado === 'listo' && (
           <div className="mt-3"><ErrorDeBloque mensaje={venta.mensaje} onReintentar={resumenInv.recargar} /></div>

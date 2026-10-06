@@ -1,6 +1,7 @@
 import type { TicketPesaje } from '@shared/types/index.js';
 import { destinoLabel } from '@shared/types/index.js';
 import FilaDocumento from '../../components/FilaDocumento';
+import { fechaPesajeGlobal, tituloTicket, totalKgPesados } from '../../lib/ticket-documento';
 
 /** Versión IMPRESA del ticket (solo se ve al imprimir o descargar con window.print). Conserva exactamente el marcado
  *  del documento anterior al rediseño: la pantalla nueva (ticket-vista.tsx) lleva `print:hidden` y esta `hidden print:block`,
@@ -23,7 +24,7 @@ export function CabeceraImpresion({ ticket }: { ticket: TicketPesaje }) {
       <div className="mb-6">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-bold text-text-primary">
-            {ticket.estado === 'bruto' ? 'Ticket de pesaje en bruto' : 'Ticket de pesaje'}
+            {tituloTicket(ticket.estado)}
           </h1>
           {ticket.estado === 'bruto' ? (
             <span className={`${INSIGNIA_IMPRESA} bg-orange-100 text-orange-700`}>Borrador</span>
@@ -41,7 +42,7 @@ export function CabeceraImpresion({ ticket }: { ticket: TicketPesaje }) {
             <span className={`${INSIGNIA_IMPRESA} bg-purple-100 text-purple-700`}>Sin pesaje global</span>
           )}
         </div>
-        <p className="text-sm text-text-muted mt-1">Ref. {ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {ticket.fecha ?? ticket.createdAt.slice(0, 10)}</p>
+        <p className="text-sm text-text-muted mt-1">Ref. {ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {fechaPesajeGlobal(ticket)}</p>
       </div>
     </div>
   );
@@ -62,7 +63,9 @@ export function CuerpoImpresion({ ticket, nombreEntidad, ocultarDestino, totales
       <div className="mb-6">
         <FilaDocumento label={esCompra ? 'Proveedor' : 'Cliente'} valor={nombreEntidad} />
         {ticket.vehiculo && <FilaDocumento label="Vehículo" valor={ticket.vehiculo} />}
+        {!ticket.pesajeExterior && <FilaDocumento label="Fecha del pesaje global" valor={fechaPesajeGlobal(ticket)} />}
         {ticket.observaciones && <FilaDocumento label="Observaciones" valor={ticket.observaciones} />}
+        {ticket.notasCompletado && <FilaDocumento label="Notas" valor={ticket.notasCompletado} />}
       </div>
 
       {ticket.pesajeExterior ? (
@@ -116,6 +119,10 @@ export function CuerpoImpresion({ ticket, nombreEntidad, ocultarDestino, totales
               )}
             </tbody>
           </table>
+          <div className="flex justify-between items-baseline border-t border-border px-5 py-3">
+            <span className="font-semibold text-text-primary">Total de kg pesados</span>
+            <span className="font-bold text-text-primary">{fmt(totalKgPesados(ticket))} kg</span>
+          </div>
           {totalesPorMaterial.length > 0 && (
             <div className="border-t border-border px-5 py-3 bg-surface-alt/60">
               <p className="text-[11px] font-medium text-text-secondary mb-1.5">Total por material ({totalesPorMaterial.reduce((acc, t) => acc + t.cantidad, 0)} pesadas)</p>

@@ -3,6 +3,8 @@ import { formatCodigoTransformacion } from '../utils/codigos.js';
 import { leerPaginado } from '../utils/paginacion.js';
 import { esErrorFuncionInexistente } from './ticket-principal.js';
 import { validarSalidasMixtasPorCategoria } from '../schemas/transformaciones.js';
+import { completarAlmacenSalidas } from '../utils/almacen-salida-transformacion.js';
+import { almacenPorDefectoSalidas } from './transformacion-almacen-salida-service.js';
 import { cargarMermaDetalle, leerMermaDetalle, registrarMermaAlCompletar, validarMermaContraNetos } from './merma-tipificada-service.js';
 import {
   resumirMermaPorCategoria,
@@ -487,9 +489,13 @@ export async function completarTransformacionPCB(
   const mermaInvalida = await prevalidarMerma(id, input.mermaDetalle, input.salidas);
   if (mermaInvalida) return { error: mermaInvalida };
 
+  // Las salidas a lote no piden almacén: quedan en el de la transformación (o el predeterminado).
+  const conAlmacen = completarAlmacenSalidas(input.salidas, await almacenPorDefectoSalidas(id), () => true);
+  if (!conAlmacen.ok) return { error: conAlmacen.error };
+
   const { error } = await supabaseAdmin.rpc('completar_transformacion_pcb', {
     p_transformacion_id: id,
-    p_salidas: input.salidas.map(s => ({
+    p_salidas: conAlmacen.salidas.map(s => ({
       lote_destino_id: s.loteDestinoId,
       almacen_id: s.almacenId,
       peso_bruto: s.pesoBruto,
@@ -593,14 +599,19 @@ export async function completarTransformacionMixta(
     .maybeSingle();
   if (!cab) return { error: 'Transformación no encontrada.', status: 404 };
 
-  const invalido = validarCompletarMixta(cab as TransformacionCabecera, input.salidas);
+  // Las salidas a lote no piden almacén: quedan en el de la transformación (o el predeterminado).
+  const conAlmacen = completarAlmacenSalidas(input.salidas, await almacenPorDefectoSalidas(id), s => s.tipo === 'lote');
+  if (!conAlmacen.ok) return { error: conAlmacen.error, status: 400 };
+  const salidas = conAlmacen.salidas;
+
+  const invalido = validarCompletarMixta(cab as TransformacionCabecera, salidas);
   if (invalido) return { error: invalido, status: 400 };
-  const mermaInvalida = await prevalidarMerma(id, input.mermaDetalle, input.salidas);
+  const mermaInvalida = await prevalidarMerma(id, input.mermaDetalle, salidas);
   if (mermaInvalida) return { error: mermaInvalida, status: 400 };
 
   const { error } = await supabaseAdmin.rpc('completar_transformacion_mixta', {
     p_transformacion_id: id,
-    p_salidas: input.salidas.map(salidaMixtaARpc),
+    p_salidas: salidas.map(salidaMixtaARpc),
     p_completado_por: completadoPor,
   });
   if (error) {

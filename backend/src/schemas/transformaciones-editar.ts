@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { salidaMixtaSchema } from './transformaciones.js';
 
 /** Valida que YYYY-MM-DD exista en el calendario (rechaza 2026-02-31, 2026-13-45). */
 function esFechaReal(valor: string): boolean {
@@ -9,6 +10,9 @@ function esFechaReal(valor: string): boolean {
 
 /** Tope defensivo (kg) contra typos como 1e9; ninguna pesada real se acerca. */
 const MAX_PESO_KG = 10_000_000;
+
+/** Tope de pesadas nuevas por edición. */
+const MAX_SALIDAS_NUEVAS = 20;
 
 const pesoBruto = z.number().positive('El peso bruto debe ser mayor a 0.').max(MAX_PESO_KG);
 const tara = z.number().min(0, 'La tara no puede ser negativa.').max(MAX_PESO_KG);
@@ -25,7 +29,7 @@ const salidaEditadaSchema = z
 
 /**
  * PATCH /api/transformaciones/:id/editar — fecha, notas y pesos (bruto/tara de
- * la entrada y de cada salida). El neto nunca se envía: es bruto - tara. Los
+ * la entrada y de cada salida) y pesadas adicionales (salidasNuevas). El neto nunca se envía: es bruto - tara. Los
  * pesos recalculan stock, así que la BD valida todo en una sola transacción
  * (editar_transformacion_pesos). No se editan fotos, productos, lotes ni almacenes.
  */
@@ -44,12 +48,20 @@ export const editarTransformacionSchema = z
       .max(200)
       .refine(l => new Set(l.map(s => s.id)).size === l.length, { message: 'Hay salidas repetidas en la edición.' })
       .optional(),
+    /** Pesadas adicionales (salidas nuevas) de una transformación completa. */
+    salidasNuevas: z
+      .array(salidaMixtaSchema)
+      .max(MAX_SALIDAS_NUEVAS)
+      .refine(l => l.every(s => s.pesoBruto - s.tara > 0), {
+        message: 'La tara debe ser menor al peso bruto en cada salida nueva.',
+      })
+      .optional(),
     llaveEdicion: z.string().trim().max(64).optional(),
   })
   .refine(
     d =>
       d.fecha !== undefined || d.notas !== undefined || d.pesoBruto !== undefined ||
-      d.tara !== undefined || (d.salidas?.length ?? 0) > 0,
+      d.tara !== undefined || (d.salidas?.length ?? 0) > 0 || (d.salidasNuevas?.length ?? 0) > 0,
     { message: 'Indica al menos un campo a editar (fecha, notas o pesos).' }
   );
 

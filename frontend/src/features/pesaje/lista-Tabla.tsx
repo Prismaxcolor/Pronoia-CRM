@@ -7,6 +7,7 @@ import type { ColumnaTabla, OrdenTabla } from '../../lib/tabla-datos';
 import type { EstadoDiferencia } from '../../lib/pesaje-kpis';
 import type { Traslado, TicketPesaje } from '@shared/types/index.js';
 import type { FilaTicket } from './lista-filas';
+import CeldaObservacion from './CeldaObservacion';
 
 interface Props {
   filas: readonly FilaTicket[];
@@ -118,6 +119,7 @@ function ListaTabla({ filas, puedeCrear, puedeEliminar, puedeRecepcionarTraslado
       valorOrden: f => f.difKg, celda: f => <CeldaDiferencia f={f} />,
     },
     { clave: 'vehiculo', titulo: 'Vehículo', valorOrden: f => (f.vehiculo === '—' ? null : f.vehiculo), celda: f => f.vehiculo, claseCelda: 'whitespace-nowrap' },
+    { clave: 'observaciones', titulo: 'Observaciones', valorOrden: f => f.observaciones || null, celda: f => <CeldaObservacion texto={f.observaciones} />, ayuda: 'Nota del ticket. Si es larga se recorta: pasa el cursor para leerla o usa «ver completo».' },
     { clave: 'estado', titulo: 'Estado', valorOrden: f => (f.origen.kind === 'traslado' ? f.origen.traslado.estado : f.origen.ticket.estado), celda: f => <CeldaEstado f={f} /> },
     { clave: 'facturado', titulo: 'Facturado', valorOrden: f => f.facturado, celda: f => <CeldaFacturado f={f} /> },
   ];
@@ -153,6 +155,7 @@ function ListaTabla({ filas, puedeCrear, puedeEliminar, puedeRecepcionarTraslado
             {f.vehiculo !== '—' && <div><dt className="text-text-secondary">Vehículo</dt><dd className="font-medium">{f.vehiculo}</dd></div>}
           </dl>
         )}
+        {f.observaciones && <p className="relative z-10 mt-2 text-xs text-text-secondary"><span className="font-medium">Observaciones: </span><CeldaObservacion texto={f.observaciones} /></p>}
         {acciones && <div className="relative z-10 mt-2 flex items-center justify-end gap-1 border-t border-border pt-2">{acciones}</div>}
       </div>
     );
@@ -175,7 +178,7 @@ function ListaTabla({ filas, puedeCrear, puedeEliminar, puedeRecepcionarTraslado
       }}
       exportar={{ nombreArchivo: 'tickets-pesaje' }}
       tarjetaMovil={tarjeta}
-      anchoMinimo="min-w-[56rem]"
+      anchoMinimo="min-w-[64rem]"
       vacio={vacio}
     />
   );

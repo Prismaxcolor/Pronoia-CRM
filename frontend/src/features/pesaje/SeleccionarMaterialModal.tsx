@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Package, Search } from 'lucide-react';
 import type { Producto } from '@shared/types/index.js';
+import { categoriaVigente, guardarCategoriaRecordada, leerCategoriaRecordada } from './pesaje-nuevo-logica';
 
 interface Props {
   productos: Producto[];
@@ -14,8 +15,6 @@ interface Props {
  *  escribiría el <select>. */
 function SeleccionarMaterialModal({ productos, onClose, onSeleccionar }: Props) {
   const [busqueda, setBusqueda] = useState('');
-  const [categoriaId, setCategoriaId] = useState<string | null>(null);
-
   const categorias = Array.from(
     productos.reduce((map, p) => {
       if (p.tipoMaterialId && p.tipoMaterialNombre && !map.has(p.tipoMaterialId)) {
@@ -24,6 +23,11 @@ function SeleccionarMaterialModal({ productos, onClose, onSeleccionar }: Props) 
       return map;
     }, new Map<string, string>())
   ).sort((a, b) => a[1].localeCompare(b[1]));
+  // La última categoría elegida se recuerda para no re-elegirla en cada material.
+  const [categoriaId, setCategoriaIdState] = useState<string | null>(
+    () => categoriaVigente(leerCategoriaRecordada(), categorias.map(([id]) => id)),
+  );
+  const setCategoriaId = (id: string | null) => { setCategoriaIdState(id); guardarCategoriaRecordada(id); };
 
   const filtrados = productos.filter(p =>
     p.nombre.toLowerCase().includes(busqueda.trim().toLowerCase()) &&

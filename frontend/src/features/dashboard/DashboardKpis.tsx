@@ -106,7 +106,7 @@ function KpiTickets({ tickets, puedeFacturar }: { tickets: Estado<ResumenTickets
       ayuda={ayuda}
       valor={formatearNumero(t.porRecepcionar, 0)}
       unidad="por recepcionar"
-      subtitulo="compras en bruto, sin completar"
+      subtitulo="pesajes globales por recepcionar"
       comparacion={null}
     >
       <p className="mt-1 text-xs text-text-secondary">

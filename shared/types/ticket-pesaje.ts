@@ -43,6 +43,16 @@ export interface PesajeGlobal {
   fotos: string[];
 }
 
+/** Pesajes globales de un ticket que se unió a otro (secundario): se muestran
+ *  junto con los del ticket principal. */
+export interface PesajeGlobalUnido {
+  ticketId: string;
+  codigo: string;
+  /** Fecha del pesaje global de ese ticket (YYYY-MM-DD). */
+  fecha: string | null;
+  pesajes: PesajeGlobal[];
+}
+
 /**
  * Ticket de pesaje — registro de una pesada física, con uno o varios materiales.
  */
@@ -97,6 +107,11 @@ export interface TicketPesaje {
    *  para no perder las fotos de tickets creados antes de ese cambio. */
   fotos: string[] | null;
   observaciones: string | null;
+  /** Notas escritas al completar el ticket (distintas de las observaciones del
+   *  pesaje). Ausente/null si no hay o si la columna aún no existe en la BD. */
+  notasCompletado?: string | null;
+  /** Pesajes globales (con fotos) de los tickets que se unieron a este al completar. */
+  pesajesGlobalesUnidos?: PesajeGlobalUnido[];
   /** true cuando ya existe una factura (compra o venta) asociada. */
   facturado: boolean;
   /**

@@ -7,7 +7,7 @@ import {
   reactivarVehiculo,
   eliminarVehiculo,
 } from '../services/vehiculo-service.js';
-import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { requireAuth, requirePermiso, requireAlgunPermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearVehiculoSchema, actualizarVehiculoSchema } from '../schemas/vehiculo.js';
 import { logger, clienteIp } from '../utils/logger.js';
@@ -18,7 +18,12 @@ router.use(requireAuth);
 
 // Vehículos predefinidos = configuración de catálogo, globales → permiso 'vehiculos'.
 
-router.get('/', requirePermiso('vehiculos', 'ver'), async (_req, res) => {
+// Listar también lo puede quien pesa (pesaje:ver): el selector de vehículos del pesaje lo necesita
+// y los permisos personalizados reemplazan a los del rol, así que 'vehiculos' puede faltar.
+router.get('/', requireAlgunPermiso(
+  { recurso: 'vehiculos', accion: 'ver' },
+  { recurso: 'pesaje', accion: 'ver' },
+), async (_req, res) => {
   const vehiculos = await listarVehiculos();
   res.json({ vehiculos });
 });

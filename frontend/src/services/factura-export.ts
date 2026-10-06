@@ -1,7 +1,7 @@
 import { consolidarItems, type FacturaCV } from './factura-cv-service';
 import { type TicketPesaje } from '@shared/types/index.js';
 import {
-  fmt, sanitizarPdf, descargarBlob, entregarPdf, type ArchivoPdf, type ModoPdf,
+  fmt, fmtMoneda, sanitizarPdf, descargarBlob, entregarPdf, type ArchivoPdf, type ModoPdf,
   encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaMonetaria, tablaPesaje,
 } from './pdf-documento';
 
@@ -41,7 +41,7 @@ function filasFactura(f: FacturaCV): Array<[string, string]> {
 
 /** Una línea de la factura como texto: "Material · 12,00 kg × 3,00 = 36,00" (Word). */
 function lineaTexto(it: FacturaCV['items'][number]): string {
-  return `${it.nombreProducto ?? 'material'} · ${fmt(it.peso)} kg × ${fmt(it.precioUnitario)} = ${fmt(it.subtotal)}`;
+  return `${it.nombreProducto ?? 'material'} · ${fmt(it.peso)} kg × ${fmtMoneda(it.precioUnitario)} = ${fmtMoneda(it.subtotal)}`;
 }
 
 export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] = [], modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
@@ -69,8 +69,8 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   const itemsBody = consolidarItems(f.items).map(it => [
     sanitizarPdf(it.nombreProducto ?? '—'),
     fmt(it.peso),
-    fmt(it.precioUnitario),
-    fmt(it.subtotal),
+    fmtMoneda(it.precioUnitario),
+    fmtMoneda(it.subtotal),
   ]);
   y = tablaMonetaria(doc, autoTable, {
     startY: y,
@@ -80,16 +80,16 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
 
   y += 30;
   doc.setFontSize(20).setFont('helvetica', 'bold').text('Total', 56, y);
-  doc.text(fmt(f.total), 539, y, { align: 'right' });
+  doc.text(fmtMoneda(f.total), 539, y, { align: 'right' });
 
   if (esCompra && f.montoPagado > 0) {
     y += 20;
     doc.setFontSize(10).setFont('helvetica', 'normal');
     doc.text('Pagado', 56, y);
-    doc.text(fmt(f.montoPagado), 539, y, { align: 'right' });
+    doc.text(fmtMoneda(f.montoPagado), 539, y, { align: 'right' });
     y += 16;
     doc.text('Saldo pendiente', 56, y);
-    doc.text(fmt(Math.max(f.total - f.montoPagado, 0)), 539, y, { align: 'right' });
+    doc.text(fmtMoneda(Math.max(f.total - f.montoPagado, 0)), 539, y, { align: 'right' });
   }
 
   const totalPeso = consolidarItems(f.items).reduce((acc, it) => acc + it.peso, 0);
@@ -151,7 +151,7 @@ export async function descargarFacturaWord(f: FacturaCV): Promise<void> {
     new Paragraph({ children: [new TextRun({ text: 'Líneas', bold: true })] }),
     ...consolidarItems(f.items).map(it => new Paragraph({ text: `• ${lineaTexto(it)}` })),
     vacio(),
-    new Paragraph({ children: [new TextRun({ text: `Total: ${fmt(f.total)}`, bold: true, size: 28 })] }),
+    new Paragraph({ children: [new TextRun({ text: `Total: ${fmtMoneda(f.total)}`, bold: true, size: 28 })] }),
   ];
 
   const doc = new Document({ sections: [{ children }] });

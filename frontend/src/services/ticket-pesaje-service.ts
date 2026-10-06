@@ -98,7 +98,9 @@ export async function completarTicket(
   fotosDevolucion: string[] = [],
   /** Otros tickets en bruto del mismo proveedor cuyo peso global se suma. Si
    *  viene vacío no se envía el campo (mismo request de siempre). */
-  ticketsUnidosIds: string[] = []
+  ticketsUnidosIds: string[] = [],
+  /** Notas opcionales al completar; si vienen vacías no se envía el campo. */
+  notas = ''
 ): Promise<{ ticket: TicketPesaje } | { error: string }> {
   try {
     const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}/completar`, {
@@ -108,6 +110,7 @@ export async function completarTicket(
         devolucion,
         fotosDevolucion,
         ...(ticketsUnidosIds.length > 0 ? { ticketsUnidosIds } : {}),
+        ...(notas.trim() ? { notas: notas.trim() } : {}),
       },
     });
     return { ticket };

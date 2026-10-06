@@ -397,6 +397,7 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
       return precio !== null ? [`Precio: ${usd(precio)}`] : [];
     },
   }),
+  ev('lista_precios.reordenada', 'PATCH', '/api/listas-precios/:id/precios/reordenar', 'precios', 'ignorable', '↕️', 'Se reordenaron los materiales de una lista de precios', { entidad: { rotulo: 'Lista', tabla: 'listas_precios' } }),
   ev('lista_precios.precio_quitado', 'DELETE', '/api/listas-precios/:id/precios/:productoId', 'precios', 'normal', '❌', 'Se quitó un precio de una lista', { entidad: { rotulo: 'Lista', tabla: 'listas_precios' } }),
 
   // --- Transformaciones -----------------------------------------------------
@@ -546,9 +547,20 @@ export interface FiltroSilencio {
   incluirRuidosos: boolean;
 }
 
-/** ¿Este evento debe avisarse al grupo? Ignorables nunca; ruidosos solo si se pidió. */
+/** Categorías enteras que manejan dinero: nunca se avisan al grupo. */
+const CATEGORIAS_DINERO: ReadonlyArray<CategoriaEvento> = ['tesoreria', 'facturacion', 'precios'];
+/** Eventos sueltos de otras categorías que también tocan costos o valoración. */
+const CLAVES_DINERO: ReadonlyArray<string> = ['inventario.costos_referencia_editados', 'transformacion.valoracion'];
+
+/** ¿El evento tiene que ver con plata (pagos, cobros, facturas, notas, precios, costos)? */
+export function esEventoDeDinero(evento: Pick<EventoCatalogo, 'clave' | 'categoria'>): boolean {
+  return CATEGORIAS_DINERO.includes(evento.categoria) || CLAVES_DINERO.includes(evento.clave);
+}
+
+/** ¿Este evento debe avisarse al grupo? Ignorables y los de dinero nunca; ruidosos solo si se pidió. */
 export function debeNotificar(evento: Pick<EventoCatalogo, 'clave' | 'categoria' | 'importancia'>, filtro: FiltroSilencio): boolean {
   if (evento.importancia === 'ignorable') return false;
+  if (esEventoDeDinero(evento)) return false;
   if (evento.importancia === 'ruidosa' && !filtro.incluirRuidosos) return false;
   return !filtro.silenciados.includes(evento.clave) && !filtro.silenciados.includes(evento.categoria);
 }

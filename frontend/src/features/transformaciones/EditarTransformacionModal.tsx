@@ -2,7 +2,11 @@ import { useMemo, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { editarTransformacion, type EditarSalidaInput, type EditarTransformacionInput } from '../../services/transformacion-service';
 import { calcularMermaEdicion, netoDe, validarPesosEdicion } from '../../lib/edicion-pesos-transformacion';
-import { etiquetaSalida } from '../../lib/salida-mixta';
+import { armarSalidaMixta, etiquetaSalida, type CategoriaSalida } from '../../lib/salida-mixta';
+import { subirFotosLocal } from '../../lib/foto-picker';
+import { subirFotoTicket } from '../../services/storage-service';
+import SalidasNuevasEdicion from './SalidasNuevasEdicion';
+import { productoEfectivo, validarFilasNuevas, type FilaSalidaNueva } from '../../lib/salida-nueva-edicion';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { difiereEstado, huellaDocumento } from '../../lib/borrador';
@@ -40,6 +44,7 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
   const [notas, setNotas] = useState(t.notas ?? '');
   const [entrada, setEntrada] = useState<PesosTexto>(() => estadoInicial().entrada);
   const [salidas, setSalidas] = useState<Record<string, PesosTexto>>(() => estadoInicial().salidas);
+  const [nuevas, setNuevas] = useState<FilaSalidaNueva[]>([]);
   const [llave, setLlave] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,12 +84,15 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
 
   const pesosEntrada = { pesoBruto: aNumero(entrada.pesoBruto), tara: aNumero(entrada.tara) };
   const pesosSalidas = t.salidas.map(s => ({ pesoBruto: aNumero(salidas[s.id].pesoBruto), tara: aNumero(salidas[s.id].tara) }));
+  const pesosNuevas = nuevas.map(n => ({ pesoBruto: aNumero(n.pesoBruto), tara: n.tara.trim() === '' ? 0 : aNumero(n.tara) }));
+  const pesosTodas = [...pesosSalidas, ...pesosNuevas];
   const errorPesos = useMemo(
-    () => validarPesosEdicion(pesosEntrada, pesosSalidas),
+    () => validarPesosEdicion(pesosEntrada, pesosTodas),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [entrada, salidas]
+    [entrada, salidas, nuevas]
   );
-  const resumen = calcularMermaEdicion(pesosEntrada, pesosSalidas);
+  const resumen = calcularMermaEdicion(pesosEntrada, pesosTodas);
+  const puedeAgregar = t.estado === 'completa';
 
   const setPesoSalida = (id: string, campo: keyof PesosTexto, valor: string) =>
     setSalidas(prev => ({ ...prev, [id]: { ...prev[id], [campo]: valor } }));
@@ -107,15 +115,31 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
     return cambios;
   };
 
+  /** Sube las fotos y arma el payload de las pesadas nuevas; null si falla alguna subida. */
+  const armarSalidasNuevas = async (): Promise<EditarTransformacionInput['salidasNuevas'] | null> => {
+    const urls = await Promise.all(nuevas.map(n => subirFotosLocal(n.fotos, subirFotoTicket)));
+    if (urls.some(u => u === null)) return null;
+    return nuevas.map((n, i) =>
+      armarSalidaMixta(t.categoria as CategoriaSalida, { ...n, productoId: productoEfectivo(t, n) }, pesosNuevas[i].pesoBruto, pesosNuevas[i].tara, urls[i] as string[])
+    );
+  };
+
   const guardar = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!fecha) { setError('La fecha es obligatoria.'); return; }
     if (errorPesos) { setError(errorPesos); return; }
     const cambios = construirCambios();
-    if (Object.keys(cambios).length === 0) { setError('No hay cambios para guardar.'); return; }
+    if (Object.keys(cambios).length === 0 && nuevas.length === 0) { setError('No hay cambios para guardar.'); return; }
+    if (nuevas.length > 0) {
+      const errorNuevas = validarFilasNuevas(t, nuevas);
+      if (errorNuevas) { setError(errorNuevas); return; }
+    }
     if (requiereLlave && !llave.trim()) { setError('Ingresa la llave de edición.'); return; }
     setGuardando(true);
+    const salidasNuevas = await armarSalidasNuevas();
+    if (!salidasNuevas) { setGuardando(false); setError('No se pudo subir una de las fotos. Intenta de nuevo.'); return; }
+    if (salidasNuevas.length > 0) cambios.salidasNuevas = salidasNuevas;
     const res = await editarTransformacion(t.id, { ...cambios, llaveEdicion: requiereLlave ? llave.trim() : undefined });
     setGuardando(false);
     if ('error' in res) { setError(res.error); return; }
@@ -132,9 +156,9 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
         </div>
         <AvisoBorrador formulario="esta edición" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
         <p className="text-xs text-text-muted">
-          Se pueden editar la fecha, las notas y los pesos de la entrada y de cada salida. Al cambiar un peso se recalcula el
+          Se pueden editar la fecha, las notas, los pesos de la entrada y de cada salida, y agregar pesadas adicionales. Al cambiar un peso se recalcula el
           inventario; si algún producto o lote quedara en negativo, o hay una toma física abierta, el sistema no guarda nada.
-          Las fotos y los materiales no se modifican.
+          Las fotos y los materiales de lo ya registrado no se modifican.
         </p>
 
         <div className="grid sm:grid-cols-2 gap-3">
@@ -166,7 +190,7 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
           </div>
         </div>
 
-        {t.salidas.length > 0 && (
+        {(t.salidas.length > 0 || nuevas.length > 0) && (
           <div className="border border-border rounded-xl p-3">
             <p className="text-sm font-medium text-text-primary mb-2">Salidas</p>
             <div className="space-y-2">
@@ -190,6 +214,8 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
             </div>
           </div>
         )}
+
+        {puedeAgregar && <SalidasNuevasEdicion transformacion={t} filas={nuevas} onCambiar={setNuevas} />}
 
         {errorPesos && <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">{errorPesos}</p>}
 

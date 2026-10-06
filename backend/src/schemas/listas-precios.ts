@@ -34,6 +34,14 @@ export const upsertPrecioSchema = z.object({
   precio: z.number().nonnegative('El precio no puede ser negativo.'),
 });
 
-export type CrearListaInput = z.infer<typeof crearListaSchema>;
+/** productoIds de TODOS los materiales de la lista, en el orden deseado de arriba a abajo. */
+export const reordenarPreciosSchema = z.object({
+  productoIds: z
+    .array(z.string().uuid('productoId inválido.'))
+    .min(1, 'La lista de materiales no puede estar vacía.')
+    .refine(ids => new Set(ids).size === ids.length, { message: 'Hay materiales repetidos.' }),
+});
+
+export type CrearListaInput =z.infer<typeof crearListaSchema>;
 export type ActualizarListaInput = z.infer<typeof actualizarListaSchema>;
 export type UpsertPrecioInput = z.infer<typeof upsertPrecioSchema>;

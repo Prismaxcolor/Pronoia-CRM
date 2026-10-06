@@ -27,6 +27,10 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function fmtMoneda(n: number): string {
+  return `$ ${fmt(n)}`;
+}
+
 const TEXTO_ANULADA = 'Factura anulada: se corrigió el ticket con la llave de edición. No es deuda ni se puede pagar; el ticket quedó disponible para volver a facturar.';
 
 interface Props {
@@ -236,8 +240,8 @@ function FacturaDetallePage({ tipo }: Props) {
                     )}
                   </td>
                   <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.peso)}</td>
-                  <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmt(it.precioUnitario)}</td>
-                  <td className="py-2.5 px-3 text-right font-medium text-text-primary border border-border print:border-black">{fmt(it.subtotal)}</td>
+                  <td className="py-2.5 px-3 text-right text-text-secondary border border-border print:border-black">{fmtMoneda(it.precioUnitario)}</td>
+                  <td className="py-2.5 px-3 text-right font-medium text-text-primary border border-border print:border-black">{fmtMoneda(it.subtotal)}</td>
                 </tr>
               ))}
             </tbody>
@@ -247,18 +251,18 @@ function FacturaDetallePage({ tipo }: Props) {
         <div>
           <div className="flex justify-between items-baseline pt-3">
             <span className="font-semibold text-text-primary text-lg">Total</span>
-            <span className="text-2xl font-bold text-brand-700">{fmt(factura.total)}</span>
+            <span className="text-2xl font-bold text-brand-700">{fmtMoneda(factura.total)}</span>
           </div>
 
           {esCompra && factura.montoPagado > 0 && (
             <>
               <div className="flex justify-between pt-1 text-sm">
                 <span className="text-text-secondary">Pagado</span>
-                <span className="text-text-primary font-medium">{fmt(factura.montoPagado)}</span>
+                <span className="text-text-primary font-medium">{fmtMoneda(factura.montoPagado)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-text-secondary">Saldo pendiente</span>
-                <span className="text-text-primary font-medium">{fmt(Math.max(factura.total - factura.montoPagado, 0))}</span>
+                <span className="text-text-primary font-medium">{fmtMoneda(Math.max(factura.total - factura.montoPagado, 0))}</span>
               </div>
             </>
           )}

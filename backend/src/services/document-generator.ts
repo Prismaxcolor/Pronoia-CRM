@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { FacturaPublica, ItemPublico } from './factura-service.js';
 import type { TicketPublico } from './ticket-pesaje-service.js';
 import { LOGO_PRONOIA_BASE64 } from '../assets/logo-pronoia.js';
+import { fechaPesajeGlobal, tituloTicket, totalKgPesados } from '../utils/ticket-pdf-datos.js';
 
 // Réplica server-side de frontend/src/services/factura-export.ts (descargarFacturaPDF):
 // mismo armado de documento, solo cambia la salida final (arraybuffer en vez de
@@ -11,6 +12,11 @@ import { LOGO_PRONOIA_BASE64 } from '../assets/logo-pronoia.js';
 
 export function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Monto en dólares con signo: "$ 1.234,50". */
+export function fmtMoneda(n: number): string {
+  return `$ ${fmt(n)}`;
 }
 
 /**
@@ -122,8 +128,8 @@ export function generarFacturaPdf(f: FacturaPublica): Buffer {
     body: consolidarItems(f.items).map(it => [
       sanitizarPdf(it.nombreProducto ?? '—'),
       fmt(it.peso),
-      fmt(it.precioUnitario),
-      fmt(it.subtotal),
+      fmtMoneda(it.precioUnitario),
+      fmtMoneda(it.subtotal),
     ]),
     margin: { left: 56, right: 56 },
     styles: { font: 'helvetica', fontSize: 10, cellPadding: 6 },
@@ -136,16 +142,16 @@ export function generarFacturaPdf(f: FacturaPublica): Buffer {
 
   y += 26;
   doc.setFontSize(14).setFont('helvetica', 'bold').text('Total', 56, y);
-  doc.text(fmt(f.total), 539, y, { align: 'right' });
+  doc.text(fmtMoneda(f.total), 539, y, { align: 'right' });
 
   if (esCompra && f.montoPagado > 0) {
     y += 20;
     doc.setFontSize(10).setFont('helvetica', 'normal');
     doc.text('Pagado', 56, y);
-    doc.text(fmt(f.montoPagado), 539, y, { align: 'right' });
+    doc.text(fmtMoneda(f.montoPagado), 539, y, { align: 'right' });
     y += 16;
     doc.text('Saldo pendiente', 56, y);
-    doc.text(fmt(Math.max(f.total - f.montoPagado, 0)), 539, y, { align: 'right' });
+    doc.text(fmtMoneda(Math.max(f.total - f.montoPagado, 0)), 539, y, { align: 'right' });
   }
 
   const totalPeso = consolidarItems(f.items).reduce((acc, it) => acc + it.peso, 0);
@@ -168,12 +174,12 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   const esCompra = t.tipo === 'compra';
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-  let y = encabezado(doc, `Ticket de pesaje (${esCompra ? 'compra' : 'venta'})`);
+  let y = encabezado(doc, `${tituloTicket(t.estado)} (${esCompra ? 'compra' : 'venta'})`);
 
   y += 20;
   doc.setFontSize(10).setFont('helvetica', 'normal');
   doc.text(t.codigo, 56, y);
-  doc.text(`Fecha: ${(t.fecha ?? t.createdAt).slice(0, 10)}`, 250, y);
+  doc.text(`Fecha del pesaje global: ${fechaPesajeGlobal(t)}`, 220, y);
   doc.text(`Estado: ${t.estado}`, 420, y);
 
   y += 30;
@@ -189,6 +195,12 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   if (t.observaciones) {
     const lineas = doc.splitTextToSize(sanitizarPdf(t.observaciones), 289);
     doc.setFont('helvetica', 'bold').text('Observaciones', 56, y);
+    doc.setFont('helvetica', 'normal').text(lineas, 250, y);
+    y += 20 + (lineas.length - 1) * 13;
+  }
+  if (t.notasCompletado) {
+    const lineas = doc.splitTextToSize(sanitizarPdf(t.notasCompletado), 289);
+    doc.setFont('helvetica', 'bold').text('Notas', 56, y);
     doc.setFont('helvetica', 'normal').text(lineas, 250, y);
     y += 20 + (lineas.length - 1) * 13;
   }
@@ -220,6 +232,10 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   y += 26;
   doc.setFontSize(14).setFont('helvetica', 'bold').text('Peso neto total', 56, y);
   doc.text(`${fmt(t.pesoNetoTotal)} kg`, 539, y, { align: 'right' });
+
+  y += 22;
+  doc.setFontSize(12).setFont('helvetica', 'bold').text('Total de kg pesados', 56, y);
+  doc.text(`${fmt(totalKgPesados(t))} kg`, 539, y, { align: 'right' });
 
   return Buffer.from(doc.output('arraybuffer'));
 }

@@ -49,11 +49,19 @@ function FilaBarra({ item, maxKg, rango, etiquetaContraparte, seleccionada, pued
         <div className={`h-full rounded-full ${destacada ? 'bg-brand-500' : 'bg-brand-300'}`} style={{ width: `${ancho}%` }} />
       </div>
       <div className="flex items-center justify-between gap-2 text-xs text-text-secondary">
-        <span>{item.comprasCount} {item.comprasCount === 1 ? 'compra' : 'compras'} · {item.contraparteCount} {etiquetaContraparte}{item.contraparteCount === 1 ? '' : 's'}</span>
-        {puedeVerCostos && item.precioMaxKg > item.precioMinKg && <span className="tabular-nums">rango {formatearUsdDecimales(item.precioMinKg)}–{formatearUsdDecimales(item.precioMaxKg)}/kg</span>}
+        <span>{item.comprasCount} {item.comprasCount === 1 ? 'compra' : 'compras'} · {item.contraparteCount} {etiquetaContraparte}{item.contraparteCount === 1 ? '' : /[rl]$/.test(etiquetaContraparte) ? 'es' : 's'}</span>
+        {puedeVerCostos && textoRangoPrecio(item)}
       </div>
     </button>
   );
+}
+
+/** Rango de precio pagado por kg. Si mínimo y máximo se ven iguales (a 2 decimales) no se repite el valor. */
+function textoRangoPrecio(item: Agregado) {
+  const min = formatearUsdDecimales(item.precioMinKg);
+  const max = formatearUsdDecimales(item.precioMaxKg);
+  if (min !== max) return <span className="tabular-nums">rango {min}–{max}/kg</span>;
+  return item.comprasCount > 1 ? <span>precio sin variación</span> : null;
 }
 
 function columnasCsv(vista: VistaMetricas, puedeVerCostos: boolean): ColumnaCsv<Agregado>[] {

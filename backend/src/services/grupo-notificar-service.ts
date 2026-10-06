@@ -285,13 +285,15 @@ const esUrlHttp = (u: unknown): u is string => typeof u === 'string' && /^https?
 
 /** Fotos del ticket (cabecera, materiales, pesadas globales y devolución), sin repetir, máx. 10. */
 export function recolectarFotosTicket(t: {
-  fotos?: unknown; fotosDevolucion?: unknown; materiales?: unknown; pesajesGlobales?: unknown;
+  fotos?: unknown; fotosDevolucion?: unknown; materiales?: unknown; pesajesGlobales?: unknown; pesajesGlobalesUnidos?: unknown;
 }): string[] {
   const lista = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
   const todas = [
     ...lista(t.fotos),
     ...lista(t.materiales).flatMap(m => lista(rec(m).fotos)),
     ...lista(t.pesajesGlobales).flatMap(p => lista(rec(p).fotos)),
+    // Pesajes globales de los tickets que se unieron a este: también son evidencia del ticket terminado.
+    ...lista(t.pesajesGlobalesUnidos).flatMap(u => lista(rec(u).pesajes).flatMap(p => lista(rec(p).fotos))),
     ...lista(t.fotosDevolucion),
   ].filter(esUrlHttp);
   return [...new Set(todas)].slice(0, MAX_FOTOS);

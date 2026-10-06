@@ -2,11 +2,12 @@ import { useMemo } from 'react';
 import { Camera, ZoomIn } from 'lucide-react';
 import { destinoLabel, type TicketPesaje, type TicketPesajeMaterial, type Vehiculo } from '@shared/types/index.js';
 import {
-  BarraApilada, Bloque, EstadoVacio, GrillaKpis, Insignia, TarjetaKpi, colorDeSerie, formatearNumero, formatearPct, infoTipoOperacion,
+  BarraApilada, Bloque, EstadoVacio, GrillaKpis, Insignia, TarjetaKpi, colorDeSerie, formatearFecha, formatearNumero, formatearPct, infoTipoOperacion,
 } from '../../components/ui';
 import VehiculoResumen from '../../components/VehiculoResumen';
 import { calcularKpisTicket, formatearPesoTicket } from '../../lib/ticket-kpis';
 import { descripcionDiferencia } from './diferencia-peso';
+import { fechaPesajeGlobal, pesadasGlobalesConUnidos } from '../../lib/ticket-documento';
 
 /** Pantalla de lectura del ticket de pesaje (rediseño con el lenguaje del kit). Todo es `print:hidden`: la hoja impresa
  *  sale de ticket-impresion.tsx, que conserva el marcado anterior. */
@@ -27,7 +28,7 @@ export function InsigniasTicket({ ticket }: { ticket: TicketPesaje }) {
     <div className="-mt-3 mb-5 flex flex-wrap items-center gap-2 print:hidden">
       <Insignia tono={tipo.tono}>{tipo.etiqueta}</Insignia>
       {ticket.estado === 'bruto' ? (
-        <Insignia tono="aviso" title="Se guardó solo con el peso global del camión. Faltan los materiales y sus destinos; hasta completarlo no entra al inventario ni se puede facturar.">Borrador (en bruto)</Insignia>
+        <Insignia tono="aviso" title="Se guardó solo con el peso global del camión. Faltan los materiales y sus destinos; hasta completarlo no entra al inventario ni se puede facturar.">Por recepcionar</Insignia>
       ) : (
         <Insignia tono={ticket.facturado ? 'exito' : 'aviso'}>{ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}</Insignia>
       )}
@@ -76,6 +77,8 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
   };
   const fotosDe = (prefijo: string) => fotos.filter(x => x.key.startsWith(prefijo)).length;
   const alerta = kpis.severidad === 'alta' || kpis.severidad === 'favorece';
+  const pesadas = pesadasGlobalesConUnidos(ticket);
+  const hayUnidos = (ticket.pesajesGlobalesUnidos ?? []).length > 0;
 
   return (
     <div className="print:hidden">
@@ -175,18 +178,23 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
       >
         {ticket.pesajeExterior ? (
           <EstadoVacio mensaje="Sin pesaje global." descripcion="El camión se pesó en una báscula externa; no hay lectura propia contra la cual comparar." />
-        ) : ticket.pesajesGlobales.length === 0 ? (
+        ) : pesadas.length === 0 ? (
           <EstadoVacio
             mensaje={`Peso global total: ${kg(ticket.pesoGlobal)}.`}
             descripcion="Este ticket no guarda el desglose por pesada (es anterior a ese registro)."
           />
         ) : (
+          <>
+          <p className="mb-3 text-sm text-text-secondary">Fecha del pesaje global: <strong className="font-semibold text-text-primary">{formatearFecha(fechaPesajeGlobal(ticket))}</strong></p>
           <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {ticket.pesajesGlobales.map((p, i) => (
+            {pesadas.map(({ pesada: p, codigo, fecha, indice }) => (
               <li key={p.id} className="rounded-xl border border-border bg-surface p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-text-primary">Pesada {i + 1}</h3>
-                  <BotonFotos cantidad={fotosDe(`p-${p.id}-`)} onAbrir={() => abrirPrimera(`p-${p.id}-`)} etiqueta={`la pesada ${i + 1}`} />
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">Pesada {indice}{hayUnidos && ` · ${codigo}`}</h3>
+                    {hayUnidos && <p className="text-xs text-text-secondary">Pesaje del {formatearFecha(fecha ?? ticket.createdAt.slice(0, 10))}</p>}
+                  </div>
+                  <BotonFotos cantidad={fotosDe(`p-${p.id}-`)} onAbrir={() => abrirPrimera(`p-${p.id}-`)} etiqueta={`la pesada ${indice} de ${codigo}`} />
                 </div>
                 <dl className="grid grid-cols-3 gap-2 text-sm">
                   <div><dt className="text-xs text-text-secondary">Bruto</dt><dd className="tabular-nums text-text-primary">{kg(p.peso)}</dd></div>
@@ -196,6 +204,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
               </li>
             ))}
           </ul>
+          </>
         )}
       </Bloque>
 
@@ -231,6 +240,12 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
               ? <p className="whitespace-pre-line break-words text-sm text-text-primary">{ticket.observaciones}</p>
               : <p className="text-sm text-text-secondary">Sin observaciones.</p>}
           </article>
+          {ticket.notasCompletado && (
+            <article className="rounded-xl border border-border bg-surface p-4 md:col-span-3">
+              <h3 className="mb-2 text-sm font-medium text-text-secondary">Notas al completar</h3>
+              <p className="whitespace-pre-line break-words text-sm text-text-primary">{ticket.notasCompletado}</p>
+            </article>
+          )}
         </div>
       </Bloque>
 

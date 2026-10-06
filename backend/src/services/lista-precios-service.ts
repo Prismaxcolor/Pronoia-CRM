@@ -100,17 +100,71 @@ export async function obtenerListaDetalle(
 
   if (errLista || !lista) return null;
 
-  const { data: precios, error: errPrecios } = await supabaseAdmin
-    .from('precios_lista')
-    .select('*, productos(nombre)')
-    .eq('lista_id', id)
-    .order('created_at', { ascending: true });
-
-  if (errPrecios) return null;
+  const precios = await leerPreciosOrdenados(id);
+  if (!precios) return null;
 
   return {
     lista: listaToPublico(lista as ListaRow),
-    precios: (precios as PrecioRow[] | null ?? []).map(precioToPublico),
+    precios: precios.map(precioToPublico),
+  };
+}
+
+const CONSULTA_PRECIOS = '*, productos(nombre)';
+
+/** Lee los precios de la lista en el orden manual (columna `orden`). Si la
+ *  columna aún no existe (migración sin aplicar) cae al orden de alta. */
+async function leerPreciosOrdenados(listaId: string): Promise<PrecioRow[] | null> {
+  const conOrden = await supabaseAdmin
+    .from('precios_lista')
+    .select(CONSULTA_PRECIOS)
+    .eq('lista_id', listaId)
+    .order('orden', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (!conOrden.error) return (conOrden.data as PrecioRow[] | null) ?? [];
+
+  const sinOrden = await supabaseAdmin
+    .from('precios_lista')
+    .select(CONSULTA_PRECIOS)
+    .eq('lista_id', listaId)
+    .order('created_at', { ascending: true });
+  if (sinOrden.error) return null;
+  return (sinOrden.data as PrecioRow[] | null) ?? [];
+}
+
+/** Posición al final para un material nuevo; null si la columna `orden` no existe aún. */
+async function ordenAlFinal(listaId: string): Promise<number | null> {
+  const { data, error } = await supabaseAdmin
+    .from('precios_lista')
+    .select('orden')
+    .eq('lista_id', listaId)
+    .order('orden', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return ((data as { orden: number } | null)?.orden ?? -1) + 1;
+}
+
+/** Persiste el orden manual: productoIds en el orden deseado, de arriba a abajo. */
+export async function reordenarPrecios(
+  listaId: string,
+  productoIds: string[]
+): Promise<{ ok: true } | { error: string }> {
+  const resultados = await Promise.all(
+    productoIds.map((productoId, indice) =>
+      supabaseAdmin
+        .from('precios_lista')
+        .update({ orden: indice })
+        .eq('lista_id', listaId)
+        .eq('producto_id', productoId)
+    )
+  );
+  const fallo = resultados.find(r => r.error);
+  if (!fallo?.error) return { ok: true };
+  const faltaColumna = /orden/i.test(fallo.error.message);
+  return {
+    error: faltaColumna
+      ? 'Falta aplicar la migración del orden de listas de precios (docs/migration_precios_lista_orden.sql).'
+      : fallo.error.message,
   };
 }
 
@@ -162,10 +216,24 @@ export async function upsertPrecioEnLista(
   listaId: string,
   input: UpsertPrecioInput
 ): Promise<{ precio: PrecioPublico } | { error: string }> {
+  // Un material nuevo entra al final; uno existente conserva su posición.
+  const { data: existente } = await supabaseAdmin
+    .from('precios_lista')
+    .select('id')
+    .eq('lista_id', listaId)
+    .eq('producto_id', input.productoId)
+    .maybeSingle();
+  const orden = existente ? null : await ordenAlFinal(listaId);
+
   const { data, error } = await supabaseAdmin
     .from('precios_lista')
     .upsert(
-      { lista_id: listaId, producto_id: input.productoId, precio: input.precio },
+      {
+        lista_id: listaId,
+        producto_id: input.productoId,
+        precio: input.precio,
+        ...(orden === null ? {} : { orden }),
+      },
       { onConflict: 'lista_id,producto_id' }
     )
     .select('*, productos(nombre)')

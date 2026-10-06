@@ -66,12 +66,12 @@ const actor = { userId: 'u1', email: 'a@b.c', rol: 'admin' } as never;
 
 describe('sin migración aplicada (columna ticket_principal_id inexistente)', () => {
   beforeEach(() => {
-    cliente = crearCliente({ rows: [fila('t1', 1), fila('t2', 2)], conColumna: false });
+    cliente = crearCliente({ rows: [fila('t1', 1, { estado: 'completo' }), fila('t2', 2, { estado: 'completo' })], conColumna: false });
   });
 
-  it('listarTickets({soloNoFacturados, estado}) sigue devolviendo los tickets', async () => {
+  it('listarTickets({soloNoFacturados, estado}) sigue devolviendo los tickets completos', async () => {
     const { listarTickets } = await import('../src/services/ticket-pesaje-service.js');
-    const tickets = await listarTickets({ soloNoFacturados: true, tipo: 'compra', entidadId: 'e1', estado: 'bruto' });
+    const tickets = await listarTickets({ soloNoFacturados: true, tipo: 'compra', entidadId: 'e1' });
     expect(tickets.map(t => t.id)).toEqual(['t1', 't2']);
     expect(tickets[0].ticketPrincipalId).toBeNull();
   });
@@ -118,7 +118,7 @@ describe('con migración aplicada', () => {
 
   it('listarTickets excluye secundarios en no facturados y resuelve el código del principal aparte', async () => {
     const { listarTickets } = await import('../src/services/ticket-pesaje-service.js');
-    expect((await listarTickets({ soloNoFacturados: true })).map(t => t.id)).toEqual(['p1', 'b1']);
+    expect((await listarTickets({ soloNoFacturados: true })).map(t => t.id)).toEqual(['p1']); // b1 está en bruto: nunca es facturable
     // estado='completo' no incluye al principal si fuera bruto; aquí el código se resuelve por consulta aparte.
     const todos = await listarTickets({ estado: 'completo' });
     expect(todos.find(t => t.id === 's1')?.ticketPrincipalCodigo).toBe('Compra-0001');

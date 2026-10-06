@@ -39,7 +39,7 @@ export const ESTADOS: Readonly<Record<string, InfoEstado>> = {
   anulada: { etiqueta: 'Anulada', tono: 'neutral' },
   borrador: { etiqueta: 'Borrador', tono: 'info' },
   emitida: { etiqueta: 'Emitida', tono: 'marca' },
-  bruto: { etiqueta: 'Solo bruto', tono: 'aviso' },
+  bruto: { etiqueta: 'Por recepcionar', tono: 'aviso' },
   completo: { etiqueta: 'Completo', tono: 'exito' },
 };
 

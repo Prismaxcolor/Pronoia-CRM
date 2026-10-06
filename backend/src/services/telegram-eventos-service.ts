@@ -82,6 +82,9 @@ export function fotosDeTicket(ticket: TicketPublico, fotosVehiculo: string[] = [
   ticket.pesajesGlobales.forEach((p, idx) => {
     agregar(p.fotos, (i, n) => `${ticket.codigo} · Pesaje del camión ${idx + 1} (${i}/${n})`);
   });
+  (ticket.pesajesGlobalesUnidos ?? []).forEach(u => u.pesajes.forEach((p, idx) => {
+    agregar(p.fotos, (i, n) => `${u.codigo} · Pesaje del camión ${idx + 1} (${i}/${n})`);
+  }));
   agregar(ticket.fotosDevolucion, (i, n) => `${ticket.codigo} · Devolución (${i}/${n})`);
   agregar(fotosVehiculo, (i, n) => `${ticket.codigo} · Vehículo${ticket.vehiculo ? ` ${ticket.vehiculo}` : ''} (${i}/${n})`);
 

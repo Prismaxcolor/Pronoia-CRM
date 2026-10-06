@@ -116,7 +116,8 @@ router.get('/documentos/tickets/:id/pdf', requirePortalAuth, async (req, res) =>
     .eq('id', entidadId)
     .maybeSingle();
 
-  const buffer = generarTicketPdf(ticket, data?.nombre ?? '—');
+  // Las notas al completar son internas: no se muestran a proveedores ni clientes.
+  const buffer = generarTicketPdf({ ...ticket, notasCompletado: null }, data?.nombre ?? '—');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${nombreArchivoTicket(ticket)}"`);
   res.send(buffer);

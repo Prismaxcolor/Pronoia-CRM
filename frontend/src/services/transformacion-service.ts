@@ -280,8 +280,8 @@ export interface CrearTransformacionPCBInput {
 
 export interface CompletarTransformacionPCBSalidaInput {
   loteDestinoId: string;
-  /** Almacén donde queda este lote resultante. */
-  almacenId: string;
+  /** Opcional: si falta, el servidor usa el almacén de la transformación. */
+  almacenId?: string;
   pesoBruto: number;
   tara: number;
   fotos: string[];
@@ -389,6 +389,8 @@ export interface EditarTransformacionInput {
   tara?: number;
   /** Solo las salidas que cambian (bruto y/o tara). */
   salidas?: EditarSalidaInput[];
+  /** Pesadas adicionales (salidas nuevas) de una transformación completa. */
+  salidasNuevas?: SalidaMixtaInput[];
   llaveEdicion?: string;
 }
 

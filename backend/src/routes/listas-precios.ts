@@ -7,6 +7,7 @@ import {
   eliminarLista,
   upsertPrecioEnLista,
   eliminarPrecio,
+  reordenarPrecios,
   listasParaProducto,
 } from '../services/lista-precios-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
@@ -15,6 +16,7 @@ import {
   crearListaSchema,
   actualizarListaSchema,
   upsertPrecioSchema,
+  reordenarPreciosSchema,
 } from '../schemas/listas-precios.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -118,6 +120,28 @@ router.put(
       res.status(400).json(result);
       return;
     }
+    res.json(result);
+  }
+);
+
+router.patch(
+  '/:id/precios/reordenar',
+  requirePermiso('listas_precios', 'editar'),
+  validateBody(reordenarPreciosSchema),
+  async (req, res) => {
+    const listaId = String(req.params.id);
+    const result = await reordenarPrecios(listaId, req.body.productoIds);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'lista_precios_reordenada',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      listaId,
+      cantidad: req.body.productoIds.length,
+    });
     res.json(result);
   }
 );

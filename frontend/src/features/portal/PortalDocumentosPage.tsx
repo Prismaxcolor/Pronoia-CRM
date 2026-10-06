@@ -74,7 +74,7 @@ function PortalDocumentosPage() {
   const columnasTickets = useMemo<ColumnaTabla<PortalTicket>[]>(() => [
     { clave: 'codigo', titulo: 'Ticket', valorOrden: t => t.codigo },
     { clave: 'fecha', titulo: 'Fecha', valorOrden: t => t.createdAt, celda: t => fechaCorta(t.createdAt), valorCsv: t => fechaCorta(t.createdAt) },
-    { clave: 'estado', titulo: 'Estado', ayuda: 'Completo: el pesaje ya terminó. Solo bruto: todavía falta completar el pesaje.', valorOrden: t => t.estado, celda: t => <InsigniaEstado estado={t.estado} />, valorCsv: t => t.estado },
+    { clave: 'estado', titulo: 'Estado', ayuda: 'Completo: el pesaje ya terminó. Por recepcionar: todavía falta completar el pesaje.', valorOrden: t => t.estado, celda: t => <InsigniaEstado estado={t.estado} />, valorCsv: t => t.estado },
     { clave: 'fotos', titulo: 'Fotos', ayuda: 'Cuántas fotos se guardaron del pesaje.', alinear: 'derecha', valorOrden: t => t.fotos.length, ocultaEnMovil: true },
     { clave: 'peso', titulo: 'Peso neto', ayuda: 'Kilos de material pesado, ya sin la tara (el peso del recipiente o vehículo). Es la suma de todos los materiales del ticket.', alinear: 'derecha', valorOrden: t => t.pesoNetoTotal, celda: t => `${formatearNumero(t.pesoNetoTotal, 2)} kg`, valorCsv: t => t.pesoNetoTotal, decimalesCsv: 2 },
     {

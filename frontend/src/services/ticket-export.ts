@@ -1,5 +1,6 @@
 import type { TicketPesaje } from '@shared/types/index.js';
 import { destinoLabel } from '@shared/types/index.js';
+import { fechaPesajeGlobal, tituloTicket, totalKgPesados } from '../lib/ticket-documento';
 import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
 
 /** "Borrador" es naranja en el ticket (no gris, que es lo que le tocaría
@@ -26,16 +27,18 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
 
   encabezadoMarca(doc);
 
-  const titulo = ticket.estado === 'bruto' ? 'Ticket de pesaje en bruto' : 'Ticket de pesaje';
+  const titulo = tituloTicket(ticket.estado);
   let y = 56 + 52;
   tituloConBadge(doc, y, titulo, badges(ticket));
 
   y += 16;
-  subtitulo(doc, y, `Ref. ${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${ticket.fecha ?? ticket.createdAt.slice(0, 10)}`);
+  subtitulo(doc, y, `Ref. ${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${fechaPesajeGlobal(ticket)}`);
 
   y += 26;
   y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', nombreEntidad);
+  if (!ticket.pesajeExterior) y = filaEncabezado(doc, y, 'Fecha del pesaje global', fechaPesajeGlobal(ticket));
   if (ticket.observaciones) y = filaEncabezado(doc, y, 'Observaciones', ticket.observaciones);
+  if (ticket.notasCompletado) y = filaEncabezado(doc, y, 'Notas', ticket.notasCompletado);
 
   y += 6;
   if (ticket.pesajeExterior) {
@@ -62,10 +65,11 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
       fmt(m.tara),
       fmt(m.pesoNeto),
     ]);
-    const foot = ticket.devolucion > 0
-      ? [[{ content: 'Devolución', colSpan: 4 }, `${fmt(ticket.devolucion)}`]]
-      : undefined;
-    y = tablaPesaje(doc, autoTable, {
+    const foot = [
+      ...(ticket.devolucion > 0 ? [[{ content: 'Devolución', colSpan: 4 }, `${fmt(ticket.devolucion)}`]] : []),
+      [{ content: 'Total de kg pesados', colSpan: 4 }, `${fmt(totalKgPesados(ticket))} kg`],
+    ];
+    tablaPesaje(doc, autoTable, {
       startY: y,
       head: [['Material', 'Destino', 'Bruto', 'Tara', 'Neto (kg)']],
       body: materialesBody,

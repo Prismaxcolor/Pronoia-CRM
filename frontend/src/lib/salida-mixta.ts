@@ -60,8 +60,8 @@ export function hayFilasMixtas(
 
 function validarFilaPCB(f: FilaSalidaMixta, ctx: ContextoValidacion): string | null {
   if (f.tipo === 'lote') {
+    // El almacén de un lote no se pregunta: lo resuelve el servidor (almacén de la transformación).
     if (!f.loteDestinoId) return 'Selecciona el lote de destino en cada fila.';
-    if (!f.almacenId) return 'Selecciona el almacén de destino en cada fila.';
     if (f.loteDestinoId === ctx.loteOrigenId) return 'El lote destino debe ser distinto del lote origen.';
     return null;
   }
@@ -74,7 +74,6 @@ function validarFilaFerroso(f: FilaSalidaMixta): string | null {
   if (!f.productoId) return 'Todos los materiales de salida necesitan un producto.';
   if (f.tipo === 'lote') {
     if (!f.loteDestinoId) return 'Selecciona el lote de destino en cada salida a lote.';
-    if (!f.almacenId) return 'Selecciona el almacén de destino en cada salida a lote.';
   }
   return null;
 }
@@ -108,10 +107,10 @@ function formatearKg(n: number): string {
 }
 
 /** Arma una salida del payload según las reglas del backend:
- *  - PCB+lote: loteDestinoId + almacenId, sin productoId.
+ *  - PCB+lote: loteDestinoId, sin productoId ni almacén (lo resuelve el servidor).
  *  - PCB+material: productoId + almacenId.
  *  - Ferroso+material: productoId (almacenId solo si se eligió).
- *  - Ferroso+lote: productoId + loteDestinoId + almacenId. */
+ *  - Ferroso+lote: productoId + loteDestinoId (sin almacén; lo resuelve el servidor). */
 export function armarSalidaMixta(
   categoria: CategoriaSalida,
   fila: Pick<FilaSalidaMixta, 'tipo' | 'productoId' | 'loteDestinoId' | 'almacenId'>,
@@ -122,8 +121,8 @@ export function armarSalidaMixta(
   const base = { tipo: fila.tipo, pesoBruto, tara, fotos };
   if (fila.tipo === 'lote') {
     return categoria === 'pcb'
-      ? { ...base, loteDestinoId: fila.loteDestinoId, almacenId: fila.almacenId }
-      : { ...base, productoId: fila.productoId, loteDestinoId: fila.loteDestinoId, almacenId: fila.almacenId };
+      ? { ...base, loteDestinoId: fila.loteDestinoId }
+      : { ...base, productoId: fila.productoId, loteDestinoId: fila.loteDestinoId };
   }
   return fila.almacenId
     ? { ...base, productoId: fila.productoId, almacenId: fila.almacenId }

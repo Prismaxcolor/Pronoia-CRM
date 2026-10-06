@@ -37,7 +37,7 @@ export function SelectorTipoSalida({
 }
 
 // ---------------------------------------------------------------------------
-// Selector de almacén (compartido por salidas a lote y a material)
+// Selector de almacén (solo salidas a material: el lote no pide almacén)
 // ---------------------------------------------------------------------------
 function SelectorAlmacen({
   etiqueta,
@@ -155,21 +155,18 @@ function ComposicionLote({
 export function BloqueLoteDestino({
   lote,
   almacenId,
-  almacenes,
   entradaDetalle,
   neto,
   onElegirLote,
-  onCambiarAlmacen,
 }: {
   lote: Lote | undefined;
-  almacenId: string;
-  almacenes: Almacen[];
+  /** Almacén donde quedará (el de la transformación): solo para la vista previa de composición; no se elige. */
+  almacenId: string | null;
   /** Composición de lo que entra a este lote (PCB: la congelada de la
    *  transformación; ferroso: el material de la fila al 100%). */
   entradaDetalle: EntradaDetalleTransformacion[];
   neto: number;
   onElegirLote: () => void;
-  onCambiarAlmacen: (id: string) => void;
 }) {
   return (
     <>
@@ -182,18 +179,9 @@ export function BloqueLoteDestino({
           <ChevronDown size={14} className="text-text-muted shrink-0" />
         </button>
       </div>
-      <div>
-        <SelectorAlmacen
-          etiqueta="Almacén de destino *"
-          placeholder="-Selecciona dónde queda este lote-"
-          almacenId={almacenId}
-          almacenes={almacenes}
-          onCambiar={onCambiarAlmacen}
-        />
-        {lote && almacenId && (
-          <ComposicionLote lote={lote} almacenId={almacenId} entradaDetalle={entradaDetalle} neto={neto} />
-        )}
-      </div>
+      {lote && almacenId && (
+        <ComposicionLote lote={lote} almacenId={almacenId} entradaDetalle={entradaDetalle} neto={neto} />
+      )}
     </>
   );
 }

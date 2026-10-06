@@ -111,6 +111,22 @@ export async function eliminarPrecio(
   }
 }
 
+/** Guarda el orden manual: productoIds de todos los materiales, de arriba a abajo. */
+export async function reordenarPrecios(
+  listaId: string,
+  productoIds: string[]
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/listas-precios/${listaId}/precios/reordenar`, {
+      method: 'PATCH',
+      body: { productoIds },
+    });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo reordenar la lista.' };
+  }
+}
+
 /** Listas activas (del tipo dado) que tienen un precio definido para el material. */
 export async function obtenerListasParaProducto(
   productoId: string,

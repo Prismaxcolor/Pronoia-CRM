@@ -79,9 +79,9 @@ export const crearTransformacionPCBSchema = z.object({
 
 const salidaPCBSchema = z.object({
   loteDestinoId: z.string().uuid('Selecciona el lote de destino.'),
-  /** Almacén donde queda ESTE lote resultante — puede diferir del almacén
-   *  de origen y entre distintas salidas de la misma transformación. */
-  almacenId: z.string().uuid('Selecciona el almacén de destino.'),
+  /** Opcional: si falta, el lote queda en el almacén de la transformación
+   *  (o el predeterminado). El formulario ya no lo pregunta. */
+  almacenId: z.string().uuid('Almacén de destino inválido.').nullish(),
   pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
   tara: z.number().min(0).default(0),
   fotos: z.array(z.string()).default([]),
@@ -125,10 +125,13 @@ const salidaMixtaLoteSchema = z.object({
   ...salidaMixtaBase,
 });
 
+/** Una salida mixta (material o lote); también la usa la edición para agregar pesadas. */
+export const salidaMixtaSchema = z.discriminatedUnion('tipo', [salidaMixtaMaterialSchema, salidaMixtaLoteSchema]);
+
 export const completarTransformacionMixtaSchema = z.object({
   mermaDetalle: mermaDetalleSchema.optional(),
   salidas: z
-    .array(z.discriminatedUnion('tipo', [salidaMixtaMaterialSchema, salidaMixtaLoteSchema]))
+    .array(salidaMixtaSchema)
     .min(1, 'Agrega al menos una salida.')
     .superRefine((salidas, ctx) => {
       salidas.forEach((s, i) => {

@@ -250,12 +250,10 @@ function CompletarFerrosoModal({
                 {f.tipo === 'lote' && (
                   <BloqueLoteDestino
                     lote={lotes.find(l => l.id === f.loteDestinoId)}
-                    almacenId={f.almacenId}
-                    almacenes={almacenes}
+                    almacenId={transformacion.almacenId}
                     entradaDetalle={[{ productoId: transformacion.productoEntradaId ?? '', nombreProducto: transformacion.nombreProductoEntrada ?? '', pesoKg: 1 }]}
                     neto={netoFila(f)}
                     onElegirLote={() => { setFilaActivaUid(f.uid); setMostrarSelectorLote(true); }}
-                    onCambiarAlmacen={almacenId => actualizar(f.uid, { almacenId })}
                   />
                 )}
                 <div>
@@ -895,7 +893,6 @@ function CompletarPCBModal({
       )
       : await completarTransformacionPCB(transformacion.id, filas.map((f, i) => ({
         loteDestinoId: f.loteDestinoId,
-        almacenId: f.almacenId,
         pesoBruto: Number(f.pesoBruto),
         tara: Number(f.tara) || 0,
         fotos: fotasPorFila[i] as string[],
@@ -941,12 +938,10 @@ function CompletarPCBModal({
                   {f.tipo === 'lote' ? (
                     <BloqueLoteDestino
                       lote={loteDestino}
-                      almacenId={f.almacenId}
-                      almacenes={almacenes}
+                      almacenId={transformacion.almacenId}
                       entradaDetalle={transformacion.entradaDetalle}
                       neto={netoFila(f)}
                       onElegirLote={() => { setFilaActivaUid(f.uid); setMostrarSelectorLote(true); }}
-                      onCambiarAlmacen={almacenId => actualizar(f.uid, { almacenId })}
                     />
                   ) : (
                     <BloqueMaterialDestino

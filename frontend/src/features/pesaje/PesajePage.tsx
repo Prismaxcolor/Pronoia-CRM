@@ -21,6 +21,8 @@ import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
+import TicketsBrutoProveedor from './TicketsBrutoProveedor';
+import { faltantesParaAgregar, productoRequiereLote, ticketsBrutoDeEntidad } from './pesaje-nuevo-logica';
 import { AlertaItem, EncabezadoPagina, Pestanas } from '../../components/ui';
 import TicketsSeccion from './lista-TicketsSeccion';
 import { CLAVES_FILTROS_PESAJE } from '../../lib/pesaje-lista';
@@ -94,7 +96,8 @@ function PesajePage() {
 
   // En compra y venta el pesaje global es obligatorio, salvo que se active
   // explícitamente "Peso exterior / sin pesaje global". Traslado no aplica.
-  const sinPesajeGlobal = tipo !== 'traslado' && pesajeExterior;
+  // El "peso exterior" solo existe en compra: en venta el pesaje global siempre es obligatorio.
+  const sinPesajeGlobal = tipo === 'compra' && pesajeExterior;
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -191,6 +194,11 @@ function PesajePage() {
   const setFila = (uid: number, campo: keyof MaterialFila, valor: string) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, [campo]: valor } : f)));
 
+  const faltaParaAgregar = useMemo(() => faltantesParaAgregar(materiales, productos), [materiales, productos]);
+  const ticketsBrutoProveedor = useMemo(
+    () => (tipo === 'compra' ? ticketsBrutoDeEntidad(tickets, entidadId) : []),
+    [tipo, tickets, entidadId]
+  );
   const agregarMaterial = () => setMateriales(prev => [...prev, filaVacia()]);
   const quitarMaterial = (uid: number) =>
     setMateriales(prev => (prev.length > 1 ? prev.filter(f => f.uid !== uid) : prev));
@@ -500,7 +508,7 @@ function PesajePage() {
                 <button type="button" onClick={() => { setTipo('compra'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
                   Compra <span className="hidden sm:inline">(proveedor)</span>
                 </button>
-                <button type="button" onClick={() => { setTipo('venta'); setEntidadId(''); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                <button type="button" onClick={() => { setTipo('venta'); setEntidadId(''); setPesajeExterior(false); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
                   Venta <span className="hidden sm:inline">(cliente)</span>
                 </button>
                 <button type="button" onClick={() => { setTipo('traslado'); setEntidadId(''); setPesajeExterior(false); }} className={`flex-1 sm:flex-none px-2 sm:px-4 py-1.5 text-center ${tipo === 'traslado' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
@@ -552,6 +560,10 @@ function PesajePage() {
             </div>
             )}
 
+            {tipo === 'compra' && (
+              <TicketsBrutoProveedor tickets={ticketsBrutoProveedor} onContinuar={setTicketACompletar} />
+            )}
+
             {tipo !== 'traslado' && (
               almacenes.length > 1 ? (
                 <div>
@@ -593,19 +605,21 @@ function PesajePage() {
             {tipo !== 'traslado' && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className={labelClass + ' mb-0'}>Pesaje global {pesajeExterior ? '' : '*'}</label>
+                <label className={labelClass + ' mb-0'}>Pesaje global {sinPesajeGlobal ? '' : '*'}</label>
               </div>
-              <label className="flex items-center gap-2 mb-2 text-sm text-text-secondary cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={pesajeExterior}
-                  onChange={e => setPesajeExterior(e.target.checked)}
-                  className="rounded border-border"
-                />
-                Peso exterior / sin pesaje global
-              </label>
-              {pesajeExterior ? (
-                <p className="text-xs text-text-muted">Sin pesaje global: {tipo === 'venta' ? 'la venta' : 'la compra'} se registra con el peso exterior, sin peso global para reconciliar.</p>
+              {tipo === 'compra' && (
+                <label className="flex items-center gap-2 mb-2 text-sm text-text-secondary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={pesajeExterior}
+                    onChange={e => setPesajeExterior(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  Peso exterior / sin pesaje global
+                </label>
+              )}
+              {sinPesajeGlobal ? (
+                <p className="text-xs text-text-muted">Sin pesaje global: la compra se registra con el peso exterior, sin peso global para reconciliar.</p>
               ) : (
               <div className="space-y-2">
                 {pesajesGlobales.map((f, idx) => {
@@ -838,10 +852,20 @@ function PesajePage() {
                 );
               })}
 
-              <button type="button" onClick={agregarMaterial} className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors">
+              <button
+                type="button"
+                onClick={agregarMaterial}
+                disabled={faltaParaAgregar.length > 0}
+                className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <Plus size={16} />
                 Agregar material
               </button>
+              {faltaParaAgregar.length > 0 && (
+                <p role="status" className="text-xs text-amber-700">
+                  Para agregar otro material completa el actual. Falta: {faltaParaAgregar.join(', ')}.
+                </p>
+              )}
             </div>
 
             {tipo === 'traslado' && almacenOrigenId && (
@@ -1074,6 +1098,11 @@ function PesajePage() {
             setMateriales(prev => prev.map(f => (f.uid === uid && lotesDelProducto.length > 0 && f.destino && !lotesDelProducto.includes(f.destino) ? { ...f, destino: '' } : f)));
             setFila(uid, 'productoId', productoId);
             setMostrarSelectorMaterial(false);
+            // Si el material maneja lote, se abre de inmediato el selector de lote.
+            if (tipo !== 'traslado' && productoRequiereLote(productoId, productos)) {
+              setFilaLoteActivaUid(uid);
+              setMostrarSelectorLote(true);
+            }
           }}
         />
       )}

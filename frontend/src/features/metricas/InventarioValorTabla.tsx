@@ -15,14 +15,18 @@ export interface InventarioValorTablaProps {
 
 const TEXTO_FUENTE = 'Manual: costo por kg que se puso a mano (manda sobre las facturas). Facturas: promedio ponderado de las facturas de compra. Sin costo: aún no tiene ninguno y no entra en el valor.';
 
+/** Esta tabla solo tiene materiales sueltos. Si el nombre empieza por "Lote" (p. ej. «LOTE 2» de PCB) se aclara el tipo
+ *  para no confundirlo con un lote de exportación. */
+const nombreVisible = (p: ProductoValor): string => (/^lote\b/i.test(p.nombre.trim()) ? `${p.nombre} (material)` : p.nombre);
+
 const COLUMNAS: ReadonlyArray<ColumnaTabla<ProductoValor>> = [
-  { clave: 'producto', titulo: 'Producto', valorOrden: p => p.nombre.toLowerCase(), celda: p => p.nombre, valorCsv: p => p.nombre },
+  { clave: 'producto', titulo: 'Producto', valorOrden: p => p.nombre.toLowerCase(), celda: nombreVisible, valorCsv: nombreVisible },
   {
     clave: 'categoria', titulo: 'Categoría', valorOrden: p => p.categoria,
     celda: p => <span><span aria-hidden="true" style={{ color: estiloCategoria(p.categoria).color }}>{estiloCategoria(p.categoria).simbolo}</span> {p.categoria}</span>,
     valorCsv: p => p.categoria,
   },
-  { clave: 'kg', titulo: 'Kg', alinear: 'derecha', valorOrden: p => p.kg, celda: p => <span className="tabular-nums">{formatearKg(p.kg)}</span>, valorCsv: p => p.kg, total: filas => <span className="tabular-nums">{formatearKg(filas.reduce((s, p) => s + p.kg, 0))}</span> },
+  { clave: 'kg', titulo: 'Kg', alinear: 'derecha', valorOrden: p => p.kg, celda: p => <span className="tabular-nums">{formatearKg(p.kg)}</span>, valorCsv: p => p.kg, decimalesCsv: 3, total: filas => <span className="tabular-nums">{formatearKg(filas.reduce((s, p) => s + p.kg, 0))}</span> },
   {
     clave: 'costo', titulo: 'Costo por kg', alinear: 'derecha', valorOrden: p => p.costoEfectivoKg,
     celda: p => <span className="tabular-nums">{p.costoEfectivoKg === null ? '—' : formatearUsdDecimales(p.costoEfectivoKg)}</span>,

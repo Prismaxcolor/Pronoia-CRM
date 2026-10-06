@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
@@ -11,6 +11,7 @@ import { useToast } from '../../hooks/use-toast-context';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { difiereEstado, restaurarFilas } from '../../lib/borrador';
+import { esTicketFacturable } from '../../lib/tickets-facturables';
 import { intersectarIds } from '../../lib/borrador-vigentes';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import type { Producto, TicketPesaje, ListaPrecios } from '@shared/types/index.js';
@@ -48,6 +49,7 @@ interface Props {
 
 function FacturaFormPage({ tipo }: Props) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const toast = useToast();
 
   const esCompra = tipo === 'compra';
@@ -60,8 +62,9 @@ function FacturaFormPage({ tipo }: Props) {
   const [ticketsPendientes, setTicketsPendientes] = useState<TicketPesaje[]>([]);
   const [listas, setListas] = useState<ListaPrecios[]>([]);
 
-  const [entidadId, setEntidadId] = useState('');
-  const [ticketIds, setTicketIds] = useState<string[]>([]);
+  // Acceso directo desde "Pesajes pendientes por facturar": ?entidad=<id>&ticket=<id> preselecciona proveedor y ticket.
+  const [entidadId, setEntidadId] = useState(() => searchParams.get('entidad') ?? '');
+  const [ticketIds, setTicketIds] = useState<string[]>(() => searchParams.getAll('ticket'));
   const [lineas, setLineas] = useState<LineaFila[]>([lineaVacia()]);
   const [listaSelId, setListaSelId] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -94,7 +97,7 @@ function FacturaFormPage({ tipo }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!entidadId) { setTicketsPendientes([]); return; }
     obtenerTickets({ soloNoFacturados: true, entidadId, tipo }).then(lista => {
-      setTicketsPendientes(lista);
+      setTicketsPendientes(lista.filter(esTicketFacturable));
       setTicketsCargadosPara(entidadId);
     });
   }, [entidadId, tipo]);
@@ -298,8 +301,7 @@ function FacturaFormPage({ tipo }: Props) {
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
   const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  // Solo la factura de compra muestra el signo de moneda.
-  const fmtMoneda = (n: number) => (esCompra ? `$ ${fmt(n)}` : fmt(n));
+  const fmtMoneda = (n: number) => `$ ${fmt(n)}`;
   const nombreProducto = (id: string) => productos.find(p => p.id === id)?.nombre ?? 'material';
 
   // Datos del resumen fijo (solo lectura de lo ya calculado arriba; no cambia ninguna lógica).

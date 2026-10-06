@@ -10,6 +10,11 @@ import { PRONOIA_LOGO_ICON_PNG_BASE64 } from '../assets/pronoia-logo-icon';
  * más completo (documento mixto: monetario + pesaje en el mismo PDF).
  */
 
+/** Monto en dólares con signo: "$ 1.234,50". */
+export function fmtMoneda(n: number): string {
+  return `$ ${fmt(n)}`;
+}
+
 export function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

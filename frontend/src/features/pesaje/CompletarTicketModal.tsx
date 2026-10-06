@@ -28,6 +28,8 @@ function pesoGlobalTotal(pesoPrincipal: number, unidos: ReadonlyArray<{ pesoGlob
   return redondearKg(unidos.reduce((acc, t) => acc + t.pesoGlobal, pesoPrincipal));
 }
 
+const MAX_NOTAS = 1000;
+
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
@@ -36,6 +38,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const toast = useToast();
   const [materiales, setMateriales] = useState<MaterialFila[]>([filaVacia()]);
   const [devolucion, setDevolucion] = useState('');
+  const [notas, setNotas] = useState('');
   const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,10 +51,11 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const unidosRef = useRef<string[]>([]);
   useEffect(() => { unidosRef.current = unidosIds; });
 
-  const estadoBorrador = { materiales, devolucion, fotosDevolucion, unidosIds };
+  const estadoBorrador = { materiales, devolucion, notas, fotosDevolucion, unidosIds };
   const restablecer = () => {
     setMateriales([filaVacia()]);
     setDevolucion('');
+    setNotas('');
     setFotosDevolucion([]);
     setUnidosIds([]);
     setAvisoSaneo(null);
@@ -63,7 +67,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
     estado: estadoBorrador,
     // Sin catálogos cargados no se puede validar el borrador: se espera a tenerlos.
     habilitado: productos.length > 0,
-    hayCambios: difiereEstado(estadoBorrador, { materiales: [filaVacia()], devolucion: '', fotosDevolucion: [], unidosIds: [] }),
+    hayCambios: difiereEstado(estadoBorrador, { materiales: [filaVacia()], devolucion: '', notas: '', fotosDevolucion: [], unidosIds: [] }),
     aplicar: d => {
       // Material, lote o tara que ya no existen (o se desactivaron) quedan sin elegir, con aviso.
       const saneo = sanearFilasRestauradas(filasDesdeBorrador(d.materiales), {
@@ -75,6 +79,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       setAvisoSaneo(texto ? mensajeSaneoBorrador([texto]) : null);
       setMateriales(saneo.filas);
       setDevolucion(d.devolucion ?? '');
+      setNotas(d.notas ?? '');
       setFotosDevolucion(d.fotosDevolucion ?? []);
       setUnidosIds(d.unidosIds ?? []);
     },
@@ -182,7 +187,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
       return;
     }
 
-    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion, unidos.map(t => t.id));
+    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion, unidos.map(t => t.id), notas);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -193,7 +198,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-4xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="text-lg font-bold text-text-primary">Completar {ticket.codigo}</h2>
           <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
@@ -372,6 +377,19 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                 </span>
               </div>
             )}
+          </div>
+
+          <div>
+            <label htmlFor="notas-completar" className={labelClass}>Notas del pesaje (opcional)</label>
+            <textarea
+              id="notas-completar"
+              value={notas}
+              onChange={e => setNotas(e.target.value)}
+              maxLength={MAX_NOTAS}
+              rows={3}
+              className={inputClass}
+              placeholder="Cualquier detalle que quieras dejar en el ticket"
+            />
           </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}

@@ -19,6 +19,8 @@ export interface FilaTicket extends FilaLista<OrigenFila> {
   difKg: number | null;
   estadoDif: EstadoDiferencia;
   vehiculo: string;
+  /** Observaciones del ticket o traslado (texto completo); '' si no hay. */
+  observaciones: string;
   /** Código del ticket principal si este ticket está unido a otro. */
   unidoA: string | null;
 }
@@ -46,6 +48,7 @@ export function filaDeTicket(t: TicketPesaje, nombrePorEntidad: ReadonlyMap<stri
     difKg: estadoDif === 'no_aplica' ? null : t.diferencia,
     estadoDif,
     vehiculo: t.vehiculo?.trim() || '—',
+    observaciones: t.observaciones?.trim() ?? '',
     unidoA: t.ticketPrincipalId ? (t.ticketPrincipalCodigo ?? 'otro ticket') : null,
   };
 }
@@ -68,6 +71,7 @@ export function filaDeTraslado(t: Traslado): FilaTicket {
     difKg: null,
     estadoDif: 'no_aplica',
     vehiculo: t.vehiculo?.trim() || '—',
+    observaciones: t.observaciones?.trim() ?? '',
     unidoA: null,
   };
 }

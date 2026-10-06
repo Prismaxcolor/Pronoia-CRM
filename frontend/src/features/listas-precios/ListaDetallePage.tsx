@@ -1,11 +1,13 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Check, Coins, Lock, PackageCheck, CalendarClock } from 'lucide-react';
+import { Plus, Trash2, Check, Coins, Lock, PackageCheck, CalendarClock, ArrowUpDown } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import {
   obtenerListaDetalle,
   upsertPrecioEnLista,
   eliminarPrecio,
+  reordenarPrecios,
 } from '../../services/lista-precios-service';
+import ReordenarPreciosPanel from './ReordenarPreciosPanel';
 import { obtenerProductos } from '../../services/producto-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
@@ -51,6 +53,7 @@ function ListaDetallePage() {
   // alta de nuevo material
   const [nuevoProductoId, setNuevoProductoId] = useState('');
   const [nuevoPrecio, setNuevoPrecio] = useState('');
+  const [reordenando, setReordenando] = useState(false);
 
   const puedeEditar = tienePermiso('listas_precios', 'editar');
   // Los precios son importes: se ven con permiso de facturación o con permiso para editar la lista.
@@ -121,6 +124,16 @@ function ListaDetallePage() {
     if ('error' in result) { toast.errorMsg(result.error); return; }
     setPrecios(prev => prev.filter(x => x.productoId !== p.productoId));
     toast.exito('Material quitado de la lista.');
+  };
+
+  const handleReordenar = async (nuevos: PrecioLista[]) => {
+    const anteriores = precios;
+    setPrecios(nuevos);
+    const result = await reordenarPrecios(id, nuevos.map(p => p.productoId));
+    if ('error' in result) {
+      setPrecios(anteriores);
+      toast.errorMsg(result.error);
+    }
   };
 
   const nombreMaterial = (p: PrecioLista) => p.nombreProducto ?? p.productoId;
@@ -339,8 +352,19 @@ function ListaDetallePage() {
         queEstasViendo={puedeVerPrecios
           ? 'cuánto vale cada kilo de cada material, en USD, en esta lista. Ordena por cualquier columna y exporta a CSV.'
           : 'los materiales de esta lista. Los precios solo los ve quien tiene permiso de facturación.'}
+        acciones={puedeEditar && precios.length > 1 ? (
+          <button
+            type="button"
+            onClick={() => setReordenando(v => !v)}
+            className="print:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm font-medium text-text-secondary hover:bg-surface-alt focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+          >
+            <ArrowUpDown size={15} aria-hidden="true" />
+            {reordenando ? 'Listo' : 'Reordenar'}
+          </button>
+        ) : undefined}
       >
-        <Suspense fallback={<SkeletonBloque alto="h-56" etiqueta="Cargando tabla de precios" />}>
+        {reordenando && <ReordenarPreciosPanel precios={precios} onReordenar={handleReordenar} />}
+        {!reordenando && <Suspense fallback={<SkeletonBloque alto="h-56" etiqueta="Cargando tabla de precios" />}>
           <TablaDatos
             titulo={`Precios de ${lista.nombre}`}
             columnas={columnas}
@@ -357,7 +381,7 @@ function ListaDetallePage() {
                 : undefined,
             }}
           />
-        </Suspense>
+        </Suspense>}
       </Bloque>
     </div>
   );

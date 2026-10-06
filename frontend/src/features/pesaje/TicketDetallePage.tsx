@@ -35,6 +35,7 @@ import CompartirBoton from '../../components/CompartirBoton';
 import PesajesGlobalesEditor from './PesajesGlobalesEditor';
 import { pesajeGlobalVacio, sumaPesajesGlobales, subirFotosPesajeGlobal, type PesajeGlobalFila } from './pesaje-global-fila';
 import VisorFotos from '../../components/VisorFotos';
+import { etiquetaPesadaGlobal, pesadasGlobalesConUnidos, tituloTicket } from '../../lib/ticket-documento';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -380,11 +381,11 @@ function TicketDetalleContenido() {
     ...ticket.materiales.flatMap(m =>
       m.fotos.map((url, i) => ({ key: `m-${m.id}-${i}`, url, label: m.nombreProducto ?? 'Material', peso: m.pesoNeto as number | null }))
     ),
-    ...ticket.pesajesGlobales.flatMap((p, idxPesaje) =>
+    ...pesadasGlobalesConUnidos(ticket).flatMap(({ pesada: p, codigo, indice, total }) =>
       p.fotos.map((url, i) => ({
         key: `p-${p.id}-${i}`,
         url,
-        label: ticket.pesajesGlobales.length > 1 ? `Pesaje global ${idxPesaje + 1}` : 'Pesaje global',
+        label: etiquetaPesadaGlobal((ticket.pesajesGlobalesUnidos ?? []).length > 0, codigo, indice, total),
         peso: (p.peso - p.tara) as number | null,
       }))
     ),
@@ -402,7 +403,7 @@ function TicketDetalleContenido() {
       {/* Cabecera de pantalla (la hoja impresa usa CabeceraImpresion, con el logo y el marcado de siempre). */}
       <div className="print:hidden">
         <EncabezadoPagina
-          titulo={ticket.estado === 'bruto' ? 'Ticket de pesaje en bruto' : 'Ticket de pesaje'}
+          titulo={tituloTicket(ticket.estado)}
           subtitulo={`${ticket.codigo} · ${esCompra ? 'Proveedor' : 'Cliente'}: ${nombreEntidad} · ${formatearFecha(ticket.fecha ?? ticket.createdAt.slice(0, 10))}`}
           migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: ticket.codigo }]}
           acciones={!editando && (

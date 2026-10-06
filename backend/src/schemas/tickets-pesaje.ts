@@ -129,6 +129,8 @@ export const completarTicketSchema = z
     materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
     devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
     fotosDevolucion: z.array(z.string()).default([]),
+    /** Notas opcionales al completar (se muestran en el detalle y en la impresión). */
+    notas: z.string().trim().max(1000, 'Las notas no pueden pasar de 1000 caracteres.').optional().nullable(),
     /** Opcional: otros tickets en bruto del mismo proveedor cuyos pesos globales
      *  se suman a este al completar. Vacío/omitido = flujo de siempre. */
     ticketsUnidosIds: z
