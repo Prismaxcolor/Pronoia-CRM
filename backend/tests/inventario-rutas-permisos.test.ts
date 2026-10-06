@@ -239,7 +239,7 @@ describe.each(PANTALLA)('GET /api/inventario/pantalla/%s', (ruta, servicio) => {
     await llamar('GET', `${url}?desde=2026-09-01&hasta=2026-09-30&categoria=PCB&almacen=${alm}&q=bgpp`, 'admin');
     expect(servicios[servicio]).toHaveBeenLastCalledWith({ desde: '2026-09-01', hasta: '2026-09-30', categoria: 'PCB', almacen: alm, q: 'bgpp', incluirValor: true });
     servicios[servicio].mockClear();
-    for (const q of ['desde=2026-09-01', 'desde=2026-10-02&hasta=2026-10-01', 'almacen=no-uuid', 'limite=0', 'limite=999999', 'vista=otra', 'categoria=', 'desde=2020-01-01&hasta=2026-10-01']) {
+    for (const q of ['desde=2026-09-01', 'desde=2026-10-02&hasta=2026-10-01', 'almacen=no-uuid', 'limite=0', 'limite=999999', 'vista=otra', 'categoria=', 'desde=2010-01-01&hasta=2026-10-01']) {
       expect((await llamar('GET', `${url}?${q}`, 'admin')).status, q).toBe(400);
     }
     expect(servicios[servicio]).not.toHaveBeenCalled();

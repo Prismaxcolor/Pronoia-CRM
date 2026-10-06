@@ -3,7 +3,7 @@
  *  Pide GET /api/inventario/pantalla/detalle con los filtros de la URL (categoría, almacén, q); la etapa se filtra en el cliente.
  *  En móvil las filas se apilan como tarjetas. Columnas: Material | Kg | Etapa | Días| Ubicación. */
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import type { DetallePantalla, FilaDetalleInventario } from '@shared/types/inventario-pantalla.js';
 import { formatearKg, formatearNumero, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
@@ -16,7 +16,7 @@ import {
 } from '../../../lib/inventario-pantalla';
 import { obtenerDetallePantalla } from '../../../services/inventario-pantalla-service';
 import { Bloque, EstadoVacio, InfoTooltip, Insignia, exportarCsv } from '../../../components/ui';
-import { AvisosMeta, ChipFiltro, ErrorBloque, EXPLICACION_BASURA, EXPLICACION_DIAS, EXPLICACION_LIMPIEZA, SkeletonBloque } from './PantallaComun';
+import { AvisosMeta, ChipFiltro, ErrorBloque, EXPLICACION_BASURA, ExplicacionDias, EXPLICACION_LIMPIEZA, SkeletonBloque } from './PantallaComun';
 import ComposicionLote from './ComposicionLote';
 import { useCambiarFiltros, useDatosPantalla } from './useDatosPantalla';
 import { useMediaQuery } from '../../../hooks/use-media-query';
@@ -34,11 +34,11 @@ const MAX_FILAS_ABIERTAS_POR_DEFECTO = 40;
 /** Ancho desde el cual se usa la tabla (breakpoint md de Tailwind); por debajo, tarjetas. */
 const CONSULTA_ESCRITORIO = '(min-width: 768px)';
 
-const AYUDAS: Record<DefColumna['clave'], string | undefined> = {
+const AYUDAS: Record<DefColumna['clave'], ReactNode> = {
   material: 'Producto o lote. Debajo, en gris, el último despacho (fecha y kg) y los kg que están en una transformación que aún no termina. Los lotes se pueden desplegar con la flecha para ver los productos de compra que lo forman (el desglose puede cubrir solo una parte del stock del lote).',
   kg: 'Kg que hay hoy de ese producto o lote, sumando todos los almacenes. Es una sola fila por producto: lo despachado o en transformación no suma aquí, se ve debajo del nombre.',
   etapa: EXPLICACION_ETAPAS_PCB,
-  dias: EXPLICACION_DIAS,
+  dias: <ExplicacionDias />,
   ubicacion: 'Almacén donde está (G1, G2…). Si está repartido en varios, se ve cuántos kg hay en cada uno.',
 };
 

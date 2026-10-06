@@ -52,7 +52,7 @@ function BarrasHorizontales({ datos, formatoValor = v => formatearNumero(v, 0), 
             </>
           );
           return (
-            <li key={f.etiqueta} className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)_auto] items-center gap-x-3 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto]" title={`${f.etiqueta}: ${formatoValor(f.valor)}`}>
+            <li key={`${i}-${f.etiqueta}`} className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)_auto] items-center gap-x-3 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto]" title={`${f.etiqueta}: ${formatoValor(f.valor)}`}>
               {f.to ? <Link to={f.to} className="min-w-0 rounded hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">{etiqueta}</Link> : <div className="min-w-0">{etiqueta}</div>}
               <svg width="100%" height="12" aria-hidden="true" className="block">
                 <rect x="0" y="0" width="100%" height="12" rx="6" className="fill-surface-hover" />

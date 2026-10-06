@@ -277,8 +277,25 @@ export function claveFamilia(material: string): string {
 const compararNombre = (a: FilaDetalleInventario, b: FilaDetalleInventario) =>
   a.material.localeCompare(b.material, 'es', { sensitivity: 'base', numeric: true }) || a.id.localeCompare(b.id);
 
+const ESTADOS_SUCIEDAD = /\b(sucios?|sucias?|limpios?|limpias?)\b/g;
+const sinTildesMinus = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/** Nombre sin las palabras sucio/limpio (y sin tildes): "PLÁSTICO 1 SUCIO" y "PLASTICO 1" comparten "plastico 1". */
+export function nombreBase(material: string): string {
+  return sinTildesMinus(material).replace(ESTADOS_SUCIEDAD, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** 0 = limpio o sin etiqueta, 1 = sucio: a igual nombre base la versión limpia va antes. */
+const rangoSuciedad = (material: string): number => (/\b(sucios?|sucias?)\b/.test(sinTildesMinus(material)) ? 1 : 0);
+
+/** Orden dentro de una familia: por nombre base y, a igual base, limpio antes que sucio. */
+const compararEnFamilia = (a: FilaDetalleInventario, b: FilaDetalleInventario) =>
+  nombreBase(a.material).localeCompare(nombreBase(b.material), 'es', { sensitivity: 'base', numeric: true })
+  || rangoSuciedad(a.material) - rangoSuciedad(b.material)
+  || compararNombre(a, b);
+
 /** Copia ordenada (no muta). Al ordenar por material o kg los productos de una misma familia de nombre quedan
- *  juntos (las familias se ordenan por el total de la columna); con las demás columnas se ordena fila por fila. */
+ *  juntos (las familias se ordenan por el total de la columna; dentro de cada una, por nombre base con la versión limpia antes que la sucia); con las demás columnas se ordena fila por fila. */
 export function ordenarFilas(filas: FilaDetalleInventario[], orden: OrdenTabla): FilaDetalleInventario[] {
   const porFila = (a: FilaDetalleInventario, b: FilaDetalleInventario) =>
     comparar(valorDeColumna(a, orden.columna), valorDeColumna(b, orden.columna), orden.sentido) || compararNombre(a, b);
@@ -295,7 +312,7 @@ export function ordenarFilas(filas: FilaDetalleInventario[], orden: OrdenTabla):
     return valores.length > 0 ? valores.reduce((t, v) => t + v, 0) : null;
   };
   return [...familias.entries()]
-    .map(([clave, items]) => ({ clave, items: [...items].sort(porFila), total: totalFamilia(items) }))
+    .map(([clave, items]) => ({ clave, items: [...items].sort(compararEnFamilia), total: totalFamilia(items) }))
     .sort((a, b) =>
       (orden.columna === 'material'
         ? comparar(a.clave, b.clave, orden.sentido)

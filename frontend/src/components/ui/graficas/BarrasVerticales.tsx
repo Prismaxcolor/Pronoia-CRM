@@ -103,7 +103,7 @@ function BarrasVerticales({ categorias, series, apilada = false, formatoValor = 
             const subAncho = agrupada ? geo.ancho / series.length : geo.ancho;
             const apil = apilada ? apilarCategoria(modelo.porCategoria[i]).segmentos : [];
             return (
-              <g key={c} opacity={activo === null || resaltada ? 1 : 0.55}>
+              <g key={`${i}-${c}`} opacity={activo === null || resaltada ? 1 : 0.55}>
                 {resaltada && <rect x={izq + i * geo.paso} y={pad.arriba} width={geo.paso} height={baseY - pad.arriba} fill="rgba(0,0,0,0.04)" />}
                 {apilada
                   ? apil.filter(s => s.valor > 0).map(s => (

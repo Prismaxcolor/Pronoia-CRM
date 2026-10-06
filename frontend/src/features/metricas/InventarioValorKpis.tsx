@@ -10,11 +10,13 @@ export interface InventarioValorKpisProps {
   resumen: ResumenValor;
   venta: EstadoVenta;
   onEditarCostos: () => void;
+  /** Sin permiso de edición el botón solo abre el panel para consultar. */
+  puedeEditar?: boolean;
 }
 
 const BOTON = 'mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
-function InventarioValorKpis({ resumen, venta, onEditarCostos }: InventarioValorKpisProps) {
+function InventarioValorKpis({ resumen, venta, onEditarCostos, puedeEditar = true }: InventarioValorKpisProps) {
   const sinProductos = resumen.productos === 0;
   return (
     <GrillaKpis>
@@ -41,7 +43,7 @@ function InventarioValorKpis({ resumen, venta, onEditarCostos }: InventarioValor
           <>
             <p className="mt-1 text-xs font-medium text-amber-800">⚠ Falta costo: el valor de arriba está incompleto</p>
             <button type="button" onClick={onEditarCostos} className={BOTON}>
-              <Pencil size={13} aria-hidden="true" /> Poner costos
+              <Pencil size={13} aria-hidden="true" /> {puedeEditar ? 'Poner costos' : 'Ver costos'}
             </button>
           </>
         )}

@@ -48,7 +48,14 @@ export function EtiquetaDerivada({ children, explicacion, rotulo = 'se deduce de
 
 export const EXPLICACION_LIMPIEZA = 'Limpio: ya no trae residuos y se puede vender. Sucio: trae residuos y hay que limpiarlo antes. Se toma del estado marcado en el producto; si no tiene, se deduce de si su nombre dice LIMPIO o SUCIO. Sin ninguna de las dos pistas queda «sin clasificar».';
 export const EXPLICACION_BASURA = 'Recuperable: todavía tiene material aprovechable (productos BASURA BUENA y BASURA DE RECEPCION). Desecho: no se puede recuperar y va al vertedero (BASURA MALA y DESECHOS). Esto no es un dato guardado: se deduce del nombre del producto; los demás nombres quedan «sin clasificar».';
-export const EXPLICACION_DIAS = 'Días que lleva en el galpón el material que hay hoy, contados desde la fecha en que entró hasta hoy. Es un estimado: el sistema no sabe de qué compra salió cada kilo vendido, así que supone que lo que queda es lo que entró más recientemente y promedia los días de esas entradas según sus kg. Por ejemplo: quedan 100 kg; entraron 60 kg hace 10 días y 80 kg hace 40 días → se cuentan 60 kg de hace 10 días y 40 kg de hace 40 días → (60×10 + 40×40) ÷ 100 = 22 días. Cuentan como entradas las compras, las salidas de transformaciones y los ajustes positivos de toma física. Los registros empiezan el 16-09-2026: los kg que ninguna entrada registrada explica no se cuentan. No cambia con el rango de fechas elegido arriba. Por defecto se avisa desde 60 días (atención) y desde 90 días (urgente).';
+export function ExplicacionDias() {
+  return (
+  <>
+    Días que lleva en el galpón lo que hay hoy, desde que entró hasta hoy. Es un estimado: se supone que lo que queda es lo último que entró y se promedian sus días según los kg. Se avisa desde 60 días (atención) y 90 (urgente).
+    <span className="mt-1.5 block">Ejemplo: quedan 100 kg; 60 kg entraron hace 10 días y 80 kg hace 40 → (60×10 + 40×40) ÷ 100 = 22 días.</span>
+  </>
+  );
+}
 export const EXPLICACION_ETAPAS_BARRA = 'Reparte los kg de la categoría en tres etapas. Recibido: material que llegó y aún no se trabaja (incluye lotes de trabajo por procesar). En proceso: lotes ya procesados, lotes de exportación armados pero sin embalar y kg retirados para una transformación. Listo: kg embalados de lotes de exportación y material de venta nacional disponible.';
 export const EXPLICACION_DIAS_TARJETA = 'Días promedio que llevan en el galpón los materiales y lotes de esta categoría que tienen stock hoy. Para cada uno se cuentan los días desde la fecha en que entró lo que queda (se supone que es lo último que entró) y luego se promedian por kg, así que lo que tiene más kilos pesa más. Es un estimado y no cuenta los kg sin entrada registrada. Por defecto se avisa desde 60 días (atención) y desde 90 días (urgente).';
 

@@ -32,6 +32,7 @@ import {
   formatearValorAlerta,
   numeroCsv,
   ordenarAlertas,
+  nombreBase,
   ordenarFilas,
   parametrosPantalla,
   partesDesglose,
@@ -272,7 +273,7 @@ describe('familias de productos por similitud de nombre', () => {
       fila({ id: 'd', material: 'Cobre pelado', kg: 120 }),
     ];
     const ids = ordenarFilas(filas, { columna: 'kg', sentido: 'desc' }).map(f => f.id);
-    expect(ids).toEqual(['c', 'a', 'b', 'd']);
+    expect(ids).toEqual(['a', 'c', 'b', 'd']);
   });
 
   it('ordenando por material agrupa por familia y luego por nombre', () => {
@@ -282,7 +283,7 @@ describe('familias de productos por similitud de nombre', () => {
       fila({ id: 'c', material: 'Plástico 2' }),
     ];
     const ids = ordenarFilas(filas, { columna: 'material', sentido: 'asc' }).map(f => f.id);
-    expect(ids).toEqual(['b', 'c', 'a']);
+    expect(ids).toEqual(['b', 'a', 'c']);
   });
 });
 
@@ -332,7 +333,26 @@ describe('tabla nueva: familias y vistas', () => {
       fila({ id: '4', material: 'Plástico 2 limpio', kg: 70 }), fila({ id: '5', material: 'Aluminios mixtos', kg: 60 }), fila({ id: '6', material: 'Plástico 1 limpio', kg: 50 }), fila({ id: '7', material: 'Cobre', kg: 500 }),
     ];
     const ids = ordenarFilas(filas, { columna: 'kg', sentido: 'desc' }).map(f => f.id);
-    expect(ids).toEqual(['7', '1', '3', '5', '2', '4', '6']);
+    expect(ids).toEqual(['7', '3', '1', '5', '6', '2', '4']);
+  });
+  it('dentro de la familia: nombre base y, a igual base, limpio antes que sucio (sin importar kg ni sentido)', () => {
+    const filas = [
+      fila({ id: 'p2s', material: 'PLÁSTICO 2 SUCIO', kg: 10 }), fila({ id: 'p1s', material: 'PLÁSTICO 1 SUCIO', kg: 900 }),
+      fila({ id: 'p2', material: 'PLASTICO 2', kg: 20 }), fila({ id: 'p1', material: 'PLASTICO 1', kg: 30 }),
+      fila({ id: 'ad', material: 'ALUMINIO DURO', kg: 5 }), fila({ id: 'ads', material: 'ALUMINIO DURO SUCIO', kg: 5 }),
+      fila({ id: 'am', material: 'ALUMINIO MIXTO', kg: 5 }), fila({ id: 'ams', material: 'ALUMINIO MIXTO SUCIO', kg: 5 }), fila({ id: 'amz', material: 'ALUMINIO MEZCLADO', kg: 5 }),
+      fila({ id: 'pf', material: 'PERFIL', kg: 1 }), fila({ id: 'pfs', material: 'PERFIL SUCIO', kg: 1 }),
+    ];
+    const kgDesc = ordenarFilas(filas, { columna: 'kg', sentido: 'desc' }).map(f => f.id);
+    expect(kgDesc.filter(i => i.startsWith('p') && i !== 'pf' && i !== 'pfs')).toEqual(['p1', 'p1s', 'p2', 'p2s']);
+    expect(kgDesc.filter(i => i.startsWith('a'))).toEqual(['ad', 'ads', 'amz', 'am', 'ams']);
+    expect(kgDesc.filter(i => i.startsWith('pf'))).toEqual(['pf', 'pfs']);
+    const mat = ordenarFilas(filas, { columna: 'material', sentido: 'asc' }).map(f => f.id);
+    expect(mat).toEqual(['ad', 'ads', 'amz', 'am', 'ams', 'pf', 'pfs', 'p1', 'p1s', 'p2', 'p2s']);
+  });
+  it('nombreBase quita sucio/limpio y tildes', () => {
+    expect(nombreBase('PLÁSTICO 1 SUCIO')).toBe('plastico 1');
+    expect(nombreBase('Aluminio limpia duro')).toBe('aluminio duro');
   });
   it('agrupa por vista en orden fijo con totales y omite las vistas vacías', () => {
     const filas = [

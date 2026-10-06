@@ -112,10 +112,9 @@ function KpisInventario({ resumen, filtros, recarga = 0 }: Props) {
         icono={<Percent size={16} />}
         ayuda={
           <>
-            Porcentaje de los kg que entraron a transformaciones y no salieron como material: (kg que entraron − kg que salieron) ÷ kg que entraron.
-            Es lo que se perdió como basura, plástico, tierra, hierro u otro no vendible. Cuenta solo las transformaciones completas del rango de fechas elegido y se compara con el período anterior de la misma duración.
-            Por ejemplo: entran 1.000 kg y salen 920 kg → merma de 80 kg = 8 %.
-            Se marca como alta desde {formatearPct(k.merma.umbralPct, 0)} (valor por defecto 8 %, configurable). Lo que nadie indicó qué era aparece como «sin clasificar».
+            Porcentaje de los kg que entraron a transformaciones y no salieron como material: (kg que entraron − kg que salieron) ÷ kg que entraron. Cuenta solo las transformaciones completas del rango elegido y se compara con el período anterior de la misma duración.
+            <span className="mt-1.5 block">Ejemplo: entran 1.000 kg y salen 920 kg → merma de 80 kg = 8 %.</span>
+            <span className="mt-1.5 block">Se marca alta desde {formatearPct(k.merma.umbralPct, 0)} (configurable). Lo que nadie clasificó aparece como «sin clasificar».</span>
           </>
         }
         estado={k.merma.transformaciones === 0 ? 'vacio' : 'listo'}

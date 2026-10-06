@@ -378,8 +378,9 @@ export default function CostosEditorPanel({ abierto, onCerrar, onGuardado, produ
           <div className="min-w-0">
             <h2 id={tituloId} className="text-lg font-bold text-text-primary">Costos para el valor del inventario</h2>
             <p id={introId} className="mt-1 text-sm text-text-secondary">
-              Aquí pones a mano cuánto cuesta cada kilo de cada producto, para ver cuánto vale a costo todo lo que tienes en existencia. Si no pones nada,
-              se usa el promedio de tus facturas de compra.
+              {puedeEditar
+                ? 'Aquí pones a mano cuánto cuesta cada kilo de cada producto, para ver cuánto vale a costo todo lo que tienes en existencia. Si no pones nada, se usa el promedio de tus facturas de compra.'
+                : 'Aquí se ve cuánto cuesta cada kilo de cada producto y de dónde sale ese costo (puesto a mano o promedio de las facturas de compra). Solo consulta: tu usuario no puede cambiar costos.'}
             </p>
             <p className="mt-1 hidden text-xs text-text-muted sm:block">{TEXTO_COSTO_MANUAL}</p>
           </div>
