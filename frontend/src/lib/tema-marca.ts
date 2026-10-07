@@ -51,7 +51,7 @@ export function aplicarTemaMarca(tema: TemaMarca | null, entorno: EntornoTema = 
 }
 
 function entornoNavegador(): EntornoTema {
-  let storage: AlmacenTema | null = null;
+  let storage: AlmacenTema | null;
   try {
     storage = window.localStorage;
   } catch {

@@ -6,7 +6,8 @@ import { obtenerFacturas, obtenerFactura, consolidarItems, type FacturaCV } from
 import { guardarValoracion } from '../../services/transformacion-valoracion-service';
 import { calcularGananciaTransformacion } from '../../lib/ganancia-transformacion';
 import { useToast } from '../../hooks/use-toast-context';
-import { etiquetaSalida } from '../../lib/salida-mixta';
+import { unificarSalidas, salidasAGuardar } from '../../lib/salidas-unificadas';
+import { formatearFecha } from '../../lib/formato';
 
 interface Props {
   transformacion: Transformacion;
@@ -44,9 +45,14 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
   const [facturas, setFacturas] = useState<FacturaCV[]>([]);
   const [facturaId, setFacturaId] = useState(t.facturaCompraId ?? '');
   const [costo, setCosto] = useState(aTexto(t.costoUnitario));
+  // Un solo renglón (y un solo precio) por material/lote: las pesadas repetidas se suman.
+  // Si sus precios eran distintos, el precio único es el promedio ponderado por peso.
+  const renglones = useMemo(() => unificarSalidas(t.salidas), [t.salidas]);
   const [precios, setPrecios] = useState<Record<string, string>>(
-    () => Object.fromEntries(t.salidas.map(s => [s.id, aTexto(s.precioUnitario)]))
+    () => Object.fromEntries(renglones.map(r => [r.clave, r.precioUnitario == null ? '' : precioATexto(r.precioUnitario)]))
   );
+  // Claves de renglones cuyo precio tocó el usuario (o vino de la factura): solo esos se escriben.
+  const [editados, setEditados] = useState<ReadonlySet<string>>(() => new Set());
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
@@ -71,19 +77,26 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
     if (!f) return;
     const costoFactura = precioEnFactura(f, t.productoEntradaId);
     if (costoFactura != null) setCosto(precioATexto(costoFactura));
-    setPrecios(prev => Object.fromEntries(t.salidas.map(s => {
-      const p = precioEnFactura(f, s.productoId);
-      return [s.id, p != null ? precioATexto(p) : (prev[s.id] ?? '')];
+    setPrecios(prev => Object.fromEntries(renglones.map(r => {
+      const p = precioEnFactura(f, r.productoId);
+      return [r.clave, p != null ? precioATexto(p) : (prev[r.clave] ?? '')];
     })));
+    const conPrecioFactura = renglones.filter(r => precioEnFactura(f, r.productoId) != null).map(r => r.clave);
+    setEditados(prev => new Set([...prev, ...conPrecioFactura]));
+  };
+
+  const editarPrecio = (clave: string, valor: string) => {
+    setPrecios(prev => ({ ...prev, [clave]: valor }));
+    setEditados(prev => new Set([...prev, clave]));
   };
 
   const resultado = useMemo(
     () => calcularGananciaTransformacion(
       t.pesoNeto,
       aNumero(costo),
-      t.salidas.map(s => ({ pesoNeto: s.pesoNeto, precioUnitario: aNumero(precios[s.id] ?? '') }))
+      renglones.map(r => ({ pesoNeto: r.pesoNeto, precioUnitario: aNumero(precios[r.clave] ?? '') }))
     ),
-    [t.pesoNeto, t.salidas, costo, precios]
+    [t.pesoNeto, renglones, costo, precios]
   );
 
   const guardar = async () => {
@@ -91,7 +104,8 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
     const res = await guardarValoracion(t.id, {
       facturaCompraId: facturaId || null,
       costoUnitario: aNumero(costo),
-      salidas: t.salidas.map(s => ({ id: s.id, precioUnitario: aNumero(precios[s.id] ?? '') })),
+      // Solo renglones editados; el precio único del renglón va a todas sus pesadas.
+      salidas: salidasAGuardar(renglones, clave => aNumero(precios[clave] ?? ''), editados),
     });
     setGuardando(false);
     if ('error' in res) { toast.errorMsg(res.error); return; }
@@ -130,7 +144,7 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
           <select value={facturaId} disabled={!editable || !proveedorId} onChange={e => elegirFactura(e.target.value)} className={selectClass}>
             <option value="">— Sin anclar —</option>
             {facturas.map(f => (
-              <option key={f.id} value={f.id}>{f.codigo ?? f.id.slice(0, 8)} · {f.createdAt.slice(0, 10)} · ${fmt(f.total)}</option>
+              <option key={f.id} value={f.id}>{f.codigo ?? f.id.slice(0, 8)} · {formatearFecha(f.createdAt)} · ${fmt(f.total)}</option>
             ))}
           </select>
         </div>
@@ -143,22 +157,35 @@ function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }
         <input type="number" min="0" step="0.01" value={costo} disabled={!editable} onChange={e => setCosto(e.target.value)} className={inputClass} />
       </div>
 
-      {t.salidas.length > 0 && (
+      {renglones.length > 0 && (
         <div className="border-t border-border pt-2 mb-3">
-          {t.salidas.map(s => (
-            <div key={s.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
-              <span className="text-text-secondary flex-1 min-w-0 truncate">
-                {etiquetaSalida(s)} — {fmt(s.pesoNeto)} kg
-              </span>
-              <span className="text-xs text-text-muted">$/kg</span>
-              <input
-                type="number" min="0" step="0.01" disabled={!editable}
-                value={precios[s.id] ?? ''}
-                onChange={e => setPrecios(prev => ({ ...prev, [s.id]: e.target.value }))}
-                className={inputClass}
-              />
-            </div>
-          ))}
+          {renglones.map(r => {
+            const precio = aNumero(precios[r.clave] ?? '');
+            const esPromedio = r.preciosDistintos > 1 && !editados.has(r.clave);
+            return (
+              <div key={r.clave} className="py-1.5 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-text-secondary flex-1 min-w-0 truncate">
+                    {r.etiqueta} — {fmt(r.pesoNeto)} kg{r.ids.length > 1 ? ` (${r.ids.length} pesadas sumadas)` : ''}
+                  </span>
+                  <span className="text-xs text-text-muted">$/kg</span>
+                  <input
+                    type="number" min="0" step="0.01" disabled={!editable}
+                    aria-label={`Precio por kg de ${r.etiqueta}`}
+                    value={precios[r.clave] ?? ''}
+                    onChange={e => editarPrecio(r.clave, e.target.value)}
+                    className={inputClass}
+                  />
+                  <span className="w-24 text-right tabular-nums text-text-primary">{precio == null ? '—' : `$${fmt(r.pesoNeto * precio)}`}</span>
+                </div>
+                {esPromedio && (
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Promedio de {r.preciosDistintos} precios distintos que tenían las pesadas. No se cambia hasta que lo edites.
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

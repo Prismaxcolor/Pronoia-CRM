@@ -8,10 +8,10 @@ export type { Cliente } from './cliente.js';
 export type { TipoMaterial } from './tipos-material.js';
 export type { ListaPrecios, PrecioLista, TipoListaPrecios } from './lista-precios.js';
 export type { Proveedor } from './proveedor.js';
-export type { TicketPesaje, TicketPesajeMaterial, TipoTicketPesaje, PesajeGlobal, PesajeGlobalUnido } from './ticket-pesaje.js';
+export type { TaraDetalle, TicketPesaje, TicketPesajeMaterial, TipoTicketPesaje, PesajeGlobal, PesajeGlobalUnido } from './ticket-pesaje.js';
 export type { Lote, DestinoTipo, ComposicionPCBItem, StockLoteAlmacen, ClaseLote, EmbaladoLote } from './lote.js';
 export { destinoLabel } from './lote.js';
-export { formatCodigoPesaje } from './ticket-pesaje.js';
+export { formatCodigoPesaje, describirTarasDetalle } from './ticket-pesaje.js';
 export type { FacturaCompra, FacturaVenta, FacturaLinea, EstadoFacturaCompraVenta } from './factura-compra-venta.js';
 export { formatCodigoCompra, formatCodigoVenta } from './factura-compra-venta.js';
 export { normalizarCodigo, coincideCodigo } from './codigo.js';
@@ -39,3 +39,4 @@ export type {
 export { codigoTomaFisica } from './toma-fisica.js';
 export type * from './inventario-pantalla.js';
 export type * from './saldos.js';
+export type * from './packing-list.js';

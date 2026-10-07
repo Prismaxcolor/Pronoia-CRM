@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { comprobanteUrlSchema } from './comprobantes.js';
 import { validarPagoCombinado } from './pago-combinado.js';
 
 const textoOpcional = (max: number) =>
@@ -24,7 +25,7 @@ export const registrarPagoSchema = z.object({
   /** Factura a la que se aplica el pago. Si se omite, es un adelanto. */
   facturaId: z.string().uuid('Factura inválida.').optional().nullable(),
   /** URLs de los comprobantes ya subidos vía POST /api/uploads/comprobantes. */
-  comprobantes: z.array(z.string().url('Comprobante inválido.')).default([]),
+  comprobantes: z.array(comprobanteUrlSchema).default([]),
 });
 
 export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
@@ -65,7 +66,7 @@ export const registrarPagoMultipleSchema = z.object({
   referencia: textoOpcional(50),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   items: z.array(itemPagoMultipleSchema).default([]),
-  comprobantes: z.array(z.string().url('Comprobante inválido.')).default([]),
+  comprobantes: z.array(comprobanteUrlSchema).default([]),
 }).superRefine((data, ctx) => validarPagoCombinado(data, ctx, 'pago'));
 
 export type BancaPagoInput = z.infer<typeof bancaPagoSchema>;

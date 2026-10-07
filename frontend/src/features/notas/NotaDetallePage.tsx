@@ -8,6 +8,8 @@ import type { TipoEntidad } from '../../services/estado-cuenta-service';
 import { descargarNotaPDF } from '../../services/nota-export';
 import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
+import { formatearFecha } from '../../lib/formato';
+import { formatearFechaHora, nombreYMomento } from '../../lib/fecha-negocio';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -42,14 +44,21 @@ function NotaDetallePage({ tipoEntidad }: Props) {
   const ruta = navState?.volverA ?? `/${esProveedor ? 'proveedores' : 'clientes'}/${entidadId}/estado-cuenta`;
   const etiquetaVolver = navState?.volverALabel ?? 'Estado de cuenta';
 
-  const [nota, setNota] = useState<NotaAjusteDetalle | NotaAjusteClienteDetalle | null>(null);
-  const [cargando, setCargando] = useState(true);
+  // El resultado guarda la clave con la que se pidió: mientras no coincida con
+  // la clave actual se muestra el spinner (sin setState síncrono en el efecto).
+  const clave = `${esProveedor}|${entidadId}|${notaId}`;
+  const [resultado, setResultado] = useState<{ clave: string; nota: NotaAjusteDetalle | NotaAjusteClienteDetalle | null } | null>(null);
+  const cargando = resultado?.clave !== clave;
+  const nota = resultado?.clave === clave ? resultado.nota : null;
 
   useEffect(() => {
-    setCargando(true);
+    let vigente = true;
     const promesa = esProveedor ? obtenerNotaAjuste(entidadId, notaId) : obtenerNotaAjusteCliente(entidadId, notaId);
-    promesa.then(setNota).finally(() => setCargando(false));
-  }, [esProveedor, entidadId, notaId]);
+    promesa
+      .catch(() => null)
+      .then(n => { if (vigente) setResultado({ clave, nota: n }); });
+    return () => { vigente = false; };
+  }, [esProveedor, entidadId, notaId, clave]);
 
   if (cargando) {
     return (
@@ -90,12 +99,12 @@ function NotaDetallePage({ tipoEntidad }: Props) {
         <EncabezadoPagina
           migas={[{ etiqueta: etiquetaVolver, to: ruta }, { etiqueta: titulo }]}
           titulo={titulo}
-          subtitulo={`Ref. ${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`} · ${nota.fecha.slice(0, 10)}`}
+          subtitulo={`Ref. ${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`} · ${formatearFecha(nota.fecha)}`}
           acciones={(
             <div className="print:hidden flex flex-wrap items-center gap-2">
               <BotonAccion variante="secundario" onClick={() => descargarNotaPDF(nota, esProveedor)} icono={<FileDown size={16} />}>PDF</BotonAccion>
               <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
-              <CompartirBoton titulo={`Nota ${nota.codigo ?? nota.id.slice(0, 8)}`} obtenerPdf={() => descargarNotaPDF(nota, esProveedor, 'blob')} />
+              <CompartirBoton titulo={`Nota ${nota.codigo ?? nota.id.slice(0, 8)} ${nombreEntidad}`} />
             </div>
           )}
         />
@@ -121,7 +130,7 @@ function NotaDetallePage({ tipoEntidad }: Props) {
        *  con divisor — el mismo patrón de encabezado de todo el sistema. */}
       <div className="mb-6">
         <FilaDocumento label={esProveedor ? 'Proveedor' : 'Cliente'} valor={nombreEntidad} />
-        <FilaDocumento label="Fecha" valor={nota.fecha.slice(0, 10)} />
+        <FilaDocumento label="Fecha" valor={formatearFecha(nota.fecha)} />
         <FilaDocumento label="Correlativo" valor={nota.codigo ?? '—'} />
         {nota.facturaAsociada && (
           <FilaDocumento
@@ -133,10 +142,10 @@ function NotaDetallePage({ tipoEntidad }: Props) {
           />
         )}
         <FilaDocumento label="Motivo" valor={nota.motivo} />
-        <FilaDocumento label="Registrado por" valor={nota.registradoPor ?? '—'} />
+        <FilaDocumento label="Registrado por" valor={nombreYMomento(nota.registradoPor, nota.registradoEn)} />
         {nota.anulada && (
           <>
-            <FilaDocumento label="Anulada el" valor={nota.anuladaAt ? nota.anuladaAt.slice(0, 10) : '—'} />
+            <FilaDocumento label="Anulada el" valor={nota.anuladaAt ? formatearFechaHora(nota.anuladaAt) : '—'} />
             <FilaDocumento label="Anulada por" valor={nota.anuladaPor ?? '—'} />
             <FilaDocumento label="Motivo de anulación" valor={nota.anuladaMotivo ?? '—'} />
           </>

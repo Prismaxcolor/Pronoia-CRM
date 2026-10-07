@@ -1,6 +1,9 @@
 import type { NotaAjusteDetalle } from './nota-ajuste-service';
+import { nombreArchivoDocumento } from '../lib/nombre-archivo';
 import type { NotaAjusteClienteDetalle } from './nota-ajuste-cliente-service';
 import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, type Badge } from './pdf-documento';
+import { formatearFecha } from '../lib/formato';
+import { nombreYMomento } from '../lib/fecha-negocio';
 
 type Nota = NotaAjusteDetalle | NotaAjusteClienteDetalle;
 
@@ -33,17 +36,17 @@ export async function descargarNotaPDF(nota: Nota, esProveedor: boolean, modo: M
   tituloConBadge(doc, y, titulo, badges(nota, esProveedor, titulo));
 
   y += 16;
-  subtitulo(doc, y, `Ref. ${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`}  ·  ${nota.fecha.slice(0, 10)}`);
+  subtitulo(doc, y, `Ref. ${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`}  ·  ${formatearFecha(nota.fecha)}`);
 
   y += 26;
   y = filaEncabezado(doc, y, esProveedor ? 'Proveedor' : 'Cliente', nombreEntidad(nota));
-  y = filaEncabezado(doc, y, 'Fecha', nota.fecha.slice(0, 10));
+  y = filaEncabezado(doc, y, 'Fecha', formatearFecha(nota.fecha));
   y = filaEncabezado(doc, y, 'Correlativo', nota.codigo ?? '—');
   if (nota.facturaAsociada) {
     y = filaEncabezado(doc, y, 'Factura asociada', nota.facturaAsociada.codigo ?? `N.º ${nota.facturaAsociada.id.slice(0, 8)}`);
   }
   y = filaEncabezado(doc, y, 'Motivo', nota.motivo);
-  y = filaEncabezado(doc, y, 'Registrado por', nota.registradoPor ?? '—');
+  y = filaEncabezado(doc, y, 'Registrado por', nombreYMomento(nota.registradoPor, nota.registradoEn));
 
   y += 20;
   doc.setDrawColor(120).setLineWidth(1.5).line(56, y, 539, y);
@@ -57,6 +60,10 @@ export async function descargarNotaPDF(nota: Nota, esProveedor: boolean, modo: M
   y += 22;
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(130).text(leyenda, 56, y);
 
-  const ref = (nota.codigo ?? nota.id.slice(0, 8)).replace(/\s+/g, '-').toLowerCase();
-  return entregarPdf(doc, `nota-${nota.tipo}-${ref}.pdf`, modo);
+  const nombreArchivo = nombreArchivoDocumento({
+    prefijo: nota.tipo === 'credito' ? 'Nota-credito' : 'Nota-debito',
+    codigo: nota.codigo ?? nota.id.slice(0, 8),
+    entidad: nombreEntidad(nota),
+  });
+  return entregarPdf(doc, nombreArchivo, modo);
 }

@@ -75,7 +75,8 @@ type PreparacionNuevas = { ok: true; nuevas: SalidaMixtaInput[] } | { ok: false;
 async function prepararSalidasNuevas(antes: Transformacion, brutas: SalidaMixtaInput[]): Promise<PreparacionNuevas> {
   if (brutas.length === 0) return { ok: true, nuevas: [] };
   const almacen = antes.almacenId ?? (await almacenPorDefectoSalidas(antes.id));
-  const conAlmacen = completarAlmacenSalidas(brutas, almacen, s => s.tipo === 'lote');
+  // En PCB el material suelto también queda en el almacén con el que se inició la transformación.
+  const conAlmacen = completarAlmacenSalidas(brutas, almacen, s => s.tipo === 'lote' || antes.categoria === 'pcb');
   if (!conAlmacen.ok) return { ok: false, error: conAlmacen.error };
   const invalido = validarSalidasNuevas(
     { categoria: antes.categoria, estado: antes.estado, loteOrigenId: antes.loteOrigenId },

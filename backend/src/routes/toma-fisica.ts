@@ -10,9 +10,10 @@ import {
   culminarTomaFisica,
   cancelarTomaFisica,
 } from '../services/toma-fisica-service.js';
+import { lotesElegiblesDeCategorias } from '../services/toma-fisica-opciones-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearTomaFisicaSchema, registrarPesajeTomaFisicaSchema } from '../schemas/toma-fisica.js';
+import { crearTomaFisicaSchema, registrarPesajeTomaFisicaSchema, categoriaIdsQuerySchema } from '../schemas/toma-fisica.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -22,6 +23,21 @@ router.use(requireAuth);
 router.get('/', requirePermiso('toma_fisica', 'ver'), async (_req, res) => {
   const tomasFisicas = await listarTomasFisicas();
   res.json({ tomasFisicas });
+});
+
+/** Lotes que se pueden contar para las categorías elegidas (PCB sin Lote 4; PGM solo Lote 4). */
+router.get('/lotes-elegibles', requirePermiso('toma_fisica', 'ver'), async (req, res) => {
+  const parsed = categoriaIdsQuerySchema.safeParse(req.query.categoriaIds);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Indica las categorías (categoriaIds) separadas por coma.' });
+    return;
+  }
+  try {
+    res.json({ loteIds: await lotesElegiblesDeCategorias(parsed.data) });
+  } catch (err) {
+    logger.error({ evento: 'toma_fisica_lotes_elegibles_error', ip: clienteIp(req), userId: req.user!.sub, motivo: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: 'No se pudieron calcular los lotes elegibles.' });
+  }
 });
 
 router.get('/:id', requirePermiso('toma_fisica', 'ver'), async (req, res) => {

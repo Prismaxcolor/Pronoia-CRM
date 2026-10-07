@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MAX_TICKETS_UNIDOS } from '../services/ticket-union.js';
+import { desgloseTaraCoincide, tarasDetalleSchema, TOLERANCIA_TARAS_KG } from '../utils/taras-detalle.js';
 
 /** Una línea de material dentro del ticket. El peso neto lo calcula la BD. */
 export const materialSchema = z
@@ -14,6 +15,9 @@ export const materialSchema = z
       .transform(v => (v && v.length > 0 ? v : null)),
     pesoBruto: z.number().nonnegative('El peso bruto no puede ser negativo.'),
     tara: z.number().nonnegative('La tara no puede ser negativa.'),
+    /** Desglose opcional de la tara (saca + cesta...). Si viene, su suma debe
+     *  coincidir con `tara`. Omitido = solo se guarda la tara total. */
+    tarasDetalle: tarasDetalleSchema,
     devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
     destinoTipo: z.enum(['mpp', 'lote']).default('mpp'),
     loteId: z.string().uuid('Lote inválido.').optional().nullable(),
@@ -24,6 +28,10 @@ export const materialSchema = z
   .refine(m => m.pesoBruto - m.tara - m.devolucion >= 0, {
     message: 'El peso neto de un material no puede ser negativo.',
     path: ['pesoBruto'],
+  })
+  .refine(m => desgloseTaraCoincide(m.tarasDetalle, m.tara), {
+    message: `El desglose de taras no coincide con la tara total (tolerancia ${TOLERANCIA_TARAS_KG} kg).`,
+    path: ['tarasDetalle'],
   })
   .refine(m => m.destinoTipo !== 'lote' || !!m.loteId, {
     message: 'Selecciona un lote para el material con destino Lote.',
@@ -99,11 +107,11 @@ export const crearTicketSchema = z
       .transform(v => (v && v.length > 0 ? v : null)),
   })
   .refine(d => d.estado === 'completo' ? d.materiales.length >= 1 : true, {
-    message: 'Agrega al menos un material (o guarda el ticket en bruto).',
+    message: 'Agrega al menos un material (o guarda el pesaje global para completar después).',
     path: ['materiales'],
   })
   .refine(d => d.estado === 'bruto' ? d.tipo === 'compra' : true, {
-    message: 'El pesaje en bruto solo aplica para compras (proveedor).',
+    message: 'El pesaje global por recepcionar solo aplica para compras (proveedor).',
     path: ['estado'],
   })
   .refine(d => d.pesajeExterior || (d.pesoGlobal != null && d.pesoGlobal > 0), {

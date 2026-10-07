@@ -6,6 +6,7 @@ import { GrillaKpis, TarjetaKpi, formatearFecha, formatearKg, formatearNumero, f
 import { compararKg, formatoDeltaConPct, contarCompras, periodoAnteriorComparable, sumarKg, type BancaMinima, type ResumenTickets, saldosPorMoneda } from '../../lib/dashboard-kpis';
 import type { EstadoBloque } from './useDashboardCarga';
 import type { SemanasKg } from './dashboardFuentes';
+import { formatearHoraNegocio } from '../../lib/fecha-negocio';
 
 /** Los cuatro indicadores del Dashboard. Cada tarjeta carga y falla sola y comprueba SU permiso. */
 export interface DashboardKpisProps {
@@ -82,7 +83,7 @@ function KpiPorPagar({ saldos }: { saldos: Estado<RespuestaSaldos> }) {
 
   const { totales, saldos: lista, calculadoEn } = saldos.dato;
   const conDeuda = lista.filter(s => s.saldo > 0).length;
-  const hora = new Date(calculadoEn).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+  const hora = formatearHoraNegocio(calculadoEn);
   return (
     <TarjetaKpi titulo={titulo} icono={icono} ayuda={ayuda} valor={formatearUsd(totales.porPagar ?? 0)} subtitulo={`${conDeuda} ${conDeuda === 1 ? 'proveedor con saldo' : 'proveedores con saldo'} · calculado ${hora}`} comparacion={null}>
       {totales.aFavor > 0 && <p className="mt-1 text-xs text-text-muted">Aparte, {formatearUsd(totales.aFavor)} a favor: proveedores a quienes se les pagó o adelantó de más. Esa cifra no se resta del total por pagar.</p>}
@@ -94,7 +95,7 @@ function KpiPorPagar({ saldos }: { saldos: Estado<RespuestaSaldos> }) {
 function KpiTickets({ tickets, puedeFacturar }: { tickets: Estado<ResumenTickets>; puedeFacturar: boolean }) {
   const titulo = 'Tickets pendientes';
   const icono = <Ticket size={16} />;
-  const ayuda = 'Por recepcionar: compras ya pesadas pero todavía «en bruto», es decir sin completar; mientras estén así no suman al inventario ni se pueden facturar. Sin facturar: compras ya completas que aún no tienen factura (un ticket unido a otro no se cuenta aparte).';
+  const ayuda = 'Por recepcionar: compras ya pesadas pero todavía «por recepcionar», es decir sin completar; mientras estén así no suman al inventario ni se pueden facturar. Sin facturar: compras ya completas que aún no tienen factura (un ticket unido a otro no se cuenta aparte).';
   const pendiente = tarjetaNoLista(tickets, titulo, icono, ayuda, { dinero: false, mensaje: 'Sin permiso para ver pesajes' });
   if (pendiente || tickets.estado !== 'listo') return pendiente;
 

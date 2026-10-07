@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { ENV } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
-import { buscarEvento, debeNotificar, type Metodo } from '../services/grupo-eventos.js';
+import { buscarEvento, destinoEvento, type Metodo } from '../services/grupo-eventos.js';
 import {
   notificarGrupo, construirPayloadGrupo, etiquetaPreviaParaBorrado, fotoPreviaParaEdicion, type PeticionEvento,
 } from '../services/grupo-notificar-service.js';
@@ -28,7 +28,7 @@ export function notificarGrupoMiddleware(req: Request, res: Response, next: Next
     const encontrado = buscarEvento(req.method, ruta);
     const filtro = { silenciados: ENV.GRUPO_EVENTOS_SILENCIADOS, incluirRuidosos: ENV.GRUPO_INCLUIR_RUIDOSOS };
     if (!encontrado || (encontrado.evento.importancia === 'ignorable') ||
-        (!encontrado.evento.variante && !debeNotificar(encontrado.evento, filtro))) {
+        (!encontrado.evento.variante && !destinoEvento(encontrado.evento, filtro))) {
       next();
       return;
     }

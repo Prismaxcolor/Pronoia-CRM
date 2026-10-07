@@ -77,6 +77,9 @@ vi.mock('../src/services/document-generator.js', () => ({
   nombreArchivoTicket: () => 'ticket-compra-0024.pdf',
 }));
 
+const leerTransformacion = vi.hoisted(() => vi.fn());
+vi.mock('../src/services/transformacion-service.js', () => ({ obtenerTransformacion: leerTransformacion }));
+
 import { notificarGrupoMiddleware } from '../src/middlewares/notificar-grupo.js';
 import { limpiarCacheActores } from '../src/services/grupo-notificar-service.js';
 
@@ -109,6 +112,7 @@ beforeEach(() => {
   consultas.length = 0;
   subidas.length = 0;
   limpiarCacheActores();
+  leerTransformacion.mockReset();
   waitUntil.mockReset();
   env.ENV.GRUPO_NOTIFICACIONES_ACTIVAS = true;
   env.ENV.GRUPO_EVENTOS_SILENCIADOS = [];
@@ -141,7 +145,7 @@ describe('notificarGrupoMiddleware', () => {
     const payload = cuerpoEnviado();
     expect(payload.parseMode).toBe('HTML');
     const texto = String(payload.texto);
-    expect(texto).toContain('Se inició un pesaje');
+    expect(texto).toContain('Se guardó un pesaje global');
     expect(texto).toContain('Ticket Compra-0024');
     expect(texto).toContain('Proveedor Chatarra SA');
     expect(texto).toContain('👤 Ana Pérez (Administración)');
@@ -248,8 +252,7 @@ describe('notificarGrupoMiddleware', () => {
     expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('eventos de dinero (facturas, pagos, cobros, bancas, precios) nunca se avisan al grupo', async () => {
-    ejecutar({ method: 'POST', originalUrl: '/api/facturas-compra', user: ana, body: {} }, 201, { factura: { codigo: 'C-0006', tipo: 'compra', total: 1234.5 } });
+  it('eventos de dinero (pagos, cobros, bancas, precios) nunca se avisan al grupo de operaciones', async () => {
     ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: { proveedorId: 'p1', montoUsd: 300, items: [{}] } }, 201, { numeroPago: 12 });
     ejecutar({ method: 'POST', originalUrl: '/api/cobros/multiple', user: ana, body: { clienteId: 'c1', montoUsd: 50, items: [{}] } }, 201, { numeroCobro: 3 });
     ejecutar({ method: 'POST', originalUrl: '/api/cochinito/movimientos', user: ana, body: { tipo: 'ingreso', monto: 10 } }, 201, {});
@@ -462,5 +465,80 @@ describe('notificarGrupoMiddleware: edición de maestros avisa solo lo que cambi
     ejecutar({ method: 'PATCH', originalUrl: '/api/proveedores/p1', user: ana, body: bodyCompleto }, 200, { id: 'p1' });
     ejecutar({ method: 'POST', originalUrl: '/api/proveedores/p1/desactivar', user: ana, body: {} }, 200, { ok: true });
     expect(ordenLecturas).toEqual([]);
+  });
+});
+
+describe('transformaciones: el aviso nombra el material', () => {
+  const tr = {
+    id: 'tr1', codigo: 'TR-0003', categoria: 'ferroso_no_ferroso', estado: 'completa', almacenId: 'a1',
+    nombreProductoEntrada: 'Chatarra mixta', nombreLoteOrigen: null, pesoNeto: 500, entradaDetalle: [],
+    salidas: [{ nombreProducto: 'Hierro', nombreLoteDestino: null, nombreAlmacen: 'Patio 1', pesoNeto: 480, precioUnitario: 0.4 }],
+    costoUnitario: 0.3,
+  };
+  const texto = () => String(cuerpoEnviado().texto);
+
+  beforeEach(() => { tablas.almacenes = { data: { nombre: 'Patio 1' } }; });
+
+  it('inicio: material, almacén (consultado por id) y kilos; el mensaje no lleva dinero', async () => {
+    ejecutar({ method: 'POST', originalUrl: '/api/transformaciones/ferroso', user: ana, body: {} }, 201, { transformacion: { ...tr, estado: 'bruto', salidas: [] } });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(texto()).toContain('Se inició una transformación ferrosa');
+    expect(texto()).toContain('Transformación TR-0003');
+    expect(texto()).toContain('Material de entrada: Chatarra mixta');
+    expect(texto()).toContain('Almacén: Patio 1');
+    expect(texto()).toContain('Kilos de entrada: 500 kg');
+  });
+
+  it('completar PCB: salidas con kilos netos y sin precios', async () => {
+    ejecutar({ method: 'PATCH', originalUrl: '/api/transformaciones/tr1/completar-pcb', user: ana, body: {} }, 200, {
+      transformacion: { ...tr, categoria: 'pcb', nombreProductoEntrada: null, nombreLoteOrigen: 'Lote Tarjetas' },
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const t = texto();
+    expect(t).toContain('Tipo: PCB');
+    expect(t).toContain('Lote de origen: Lote Tarjetas');
+    expect(t).toContain('• Hierro (almacén Patio 1): 480 kg');
+    expect(t).toContain('Merma: 20 kg');
+    expect(t).not.toMatch(/\$|0[.,]4|0[.,]3|precio|costo/i);
+  });
+
+  it('edición con llave: cambios y luego el material actual', async () => {
+    tablas.auditoria_ediciones = { data: [{ cambios: { 'Peso neto': { antes: 450, despues: 500 } }, autorizado_por_nombre: 'Luis', created_at: new Date().toISOString() }] };
+    ejecutar({ method: 'PATCH', originalUrl: '/api/transformaciones/tr1/editar', user: ana, body: {} }, 200, { transformacion: tr });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(texto()).toContain('Peso neto: 450 → 500');
+    expect(texto()).toContain('Material de entrada: Chatarra mixta');
+  });
+
+  it('borrado: lee la transformación ANTES de que el handler la borre', async () => {
+    leerTransformacion.mockResolvedValue(tr);
+    ejecutar({ method: 'DELETE', originalUrl: '/api/transformaciones/tr1', user: ana }, 200, { ok: true });
+    leerTransformacion.mockResolvedValue(null); // ya no existe
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(texto()).toContain('Se ELIMINÓ una transformación');
+    expect(texto()).toContain('Material de entrada: Chatarra mixta');
+    expect(texto()).toContain('Total salidas: 480 kg');
+  });
+
+  it('si la respuesta no trae datos, los lee por id (completar legacy)', async () => {
+    leerTransformacion.mockResolvedValue({ ...tr, nombreProductoEntrada: null, nombreLoteOrigen: 'Lote 5' });
+    ejecutar({ method: 'PATCH', originalUrl: '/api/transformaciones/tr1/completar', user: ana, body: {} }, 200, { transformacion: { id: 'tr1', codigo: 'TR-0003' } });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(texto()).toContain('Lote de origen: Lote 5');
+  });
+
+  it('si la consulta falla, avisa igual como antes (sin material) y sin lanzar', async () => {
+    leerTransformacion.mockRejectedValue(new Error('db caída'));
+    ejecutar({ method: 'PATCH', originalUrl: '/api/transformaciones/tr1/completar-mixta', user: ana, body: {} }, 200, { transformacion: { id: 'tr1', codigo: 'TR-0003' } });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(texto()).toContain('Se completó una transformación con salida mixta');
+    expect(texto()).toContain('Transformación TR-0003');
+    expect(texto()).not.toContain('Material de entrada');
+  });
+
+  it('la valoración (dinero) no se avisa al grupo de operaciones', async () => {
+    ejecutar({ method: 'PATCH', originalUrl: '/api/transformaciones/tr1/valoracion', user: ana, body: {} }, 200, { transformacion: tr });
+    await new Promise(r => setTimeout(r, 20));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

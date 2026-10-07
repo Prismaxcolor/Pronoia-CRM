@@ -12,6 +12,7 @@ import {
   SkeletonKpis, SkeletonBloque, Insignia, Chip, useFiltrosUrl, formatearNumero,
 } from '../../components/ui';
 import { kpisCitas } from '../../lib/catalogos-kpis';
+import { hoyNegocio } from '../../lib/fecha-negocio';
 
 type Vista = 'lista' | 'semana';
 
@@ -21,18 +22,18 @@ const OPCIONES_ESTADO = ESTADOS_CITA.map(e => ({ valor: e, etiqueta: INFO_ESTADO
 const BOTON_ICONO = 'inline-flex h-9 w-9 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
 function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hoyNegocio();
 }
 
 function sumarDias(iso: string, dias: number): string {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + dias);
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
   return d.toISOString().slice(0, 10);
 }
 
 /** Lunes de la semana que contiene `iso` (semana empieza en lunes). */
 function lunesDeSemana(iso: string): string {
-  const d = new Date(`${iso}T00:00:00`);
+  const d = new Date(`${iso}T00:00:00Z`);
   const diaSemana = (d.getDay() + 6) % 7; // 0 = lunes
   return sumarDias(iso, -diaSemana);
 }

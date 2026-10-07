@@ -22,7 +22,9 @@ import { errorEdicionFacturado, extrasEdicionRpc } from '../utils/edicion-ticket
 import { avisosDeFacturasEditadas } from './factura-ticket-service.js';
 import type { AvisoFactura } from '../utils/factura-ticket-edicion.js';
 import { redondearKg, calcularDiferenciaPeso } from '../utils/peso-kg.js';
+import { tarasDetalleARpc, tarasDetalleDesdeBd, type TaraDetallePublico } from '../utils/taras-detalle.js';
 import { guardarNotasCompletado, pesajesGlobalesDeUnidos, type PesajeGlobalUnidoPublico } from './ticket-unidos.js';
+import { nombresDeUsuarios, ultimaEdicionDe, type AutoriaEdicion } from './autoria-documento.js';
 
 /** Formatea el correlativo de pesaje: (1, 'compra') → "Compra-0001". Cada tipo
  *  tiene su propio contador desde el Bloque 35 (antes compra y venta
@@ -40,6 +42,8 @@ interface DetalleRow {
   subcategoria: string | null;
   peso_bruto: number | null;
   tara: number | null;
+  /** jsonb nullable; ausente si la migración taras_detalle aún no se aplicó. */
+  taras_detalle?: unknown;
   devolucion: number | null;
   peso_neto: number | null;
   destino_tipo: 'mpp' | 'lote';
@@ -89,6 +93,8 @@ export interface MaterialPublico {
   subcategoria: string | null;
   pesoBruto: number;
   tara: number;
+  /** Desglose de la tara; null en tickets sin desglose (solo se conoce el total). */
+  tarasDetalle: TaraDetallePublico[] | null;
   devolucion: number;
   pesoNeto: number;
   destinoTipo: 'mpp' | 'lote';
@@ -149,6 +155,11 @@ export interface TicketPublico {
   ticketPrincipalId?: string | null;
   /** Código del ticket principal, para mostrar "Unido a ...". */
   ticketPrincipalCodigo?: string | null;
+  /** Nombre de quien registró el ticket (pesadoPor) y de quien lo completó; solo en obtenerTicket. */
+  pesadoPorNombre?: string | null;
+  completadoPorNombre?: string | null;
+  /** Última edición según la auditoría (null si nunca se editó); solo en obtenerTicket. */
+  ultimaEdicion?: AutoriaEdicion | null;
   createdAt: string;
 }
 
@@ -160,6 +171,7 @@ function detalleToPublico(d: DetalleRow): MaterialPublico {
     subcategoria: d.subcategoria,
     pesoBruto: Number(d.peso_bruto ?? 0),
     tara: Number(d.tara ?? 0),
+    tarasDetalle: tarasDetalleDesdeBd(d.taras_detalle),
     devolucion: Number(d.devolucion ?? 0),
     pesoNeto: Number(d.peso_neto ?? 0),
     destinoTipo: d.destino_tipo,
@@ -271,8 +283,15 @@ export async function obtenerTicket(id: string): Promise<TicketPublico | null> {
   const row = data as unknown as TicketRow;
   const codigos = await codigosDePrincipales([row]);
   const pesajesGlobalesUnidos = row.estado === 'completo' ? await pesajesGlobalesDeUnidos(row.id, formatCodigoPesaje) : [];
+  const [nombres, ultimaEdicion] = await Promise.all([
+    nombresDeUsuarios([row.pesado_por, row.completado_por]),
+    ultimaEdicionDe('ticket_pesaje', row.id),
+  ]);
   return {
     ...toPublico(row),
+    pesadoPorNombre: row.pesado_por ? (nombres.get(row.pesado_por) ?? null) : null,
+    completadoPorNombre: row.completado_por ? (nombres.get(row.completado_por) ?? null) : null,
+    ultimaEdicion,
     pesajesGlobalesUnidos,
     ticketPrincipalCodigo: row.ticket_principal_id ? (codigos.get(row.ticket_principal_id) ?? null) : null,
   };
@@ -293,6 +312,7 @@ function materialesARpc(materiales: CrearTicketInput['materiales']) {
     subcategoria: m.subcategoria,
     peso_bruto: redondearKg(m.pesoBruto),
     tara: redondearKg(m.tara),
+    taras_detalle: tarasDetalleARpc(m.tarasDetalle),
     devolucion: m.devolucion,
     destino_tipo: m.destinoTipo,
     lote_id: m.destinoTipo === 'lote' ? m.loteId : null,
@@ -393,7 +413,7 @@ const MENSAJE_EDICION_NO_HABILITADA =
 async function errorPreviaEdicion(id: string, antes: TicketPublico | null, input: EditarTicketInput): Promise<{ error: string; codigo: number } | null> {
   if (!antes) return { error: 'Ticket no encontrado.', codigo: 404 };
   if (antes.estado !== 'completo') {
-    return { error: 'Solo se pueden editar tickets completos (un ticket en bruto se completa desde su pantalla).', codigo: 400 };
+    return { error: 'Solo se pueden editar tickets completos (un pesaje global por recepcionar se completa desde su pantalla).', codigo: 400 };
   }
   if (!input.pesajesGlobales) return null;
   if (antes.pesajeExterior) return { error: 'Este ticket no tiene pesaje global (báscula externa).', codigo: 400 };

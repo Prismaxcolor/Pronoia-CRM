@@ -104,7 +104,7 @@ describe('ticket de pesaje', () => {
     expect(envios).toHaveLength(2);
     const [doc, album] = envios;
     expect(doc).toMatchObject({ accion: 'documento', tipoDocumento: 'ticket', entidadTipo: 'proveedor', entidadId: P1, chatId: CHAT_P1 });
-    expect(doc.nombreArchivo).toBe('ticket-compra-0057.pdf');
+    expect(doc.nombreArchivo).toBe('Ticket-Compra-0057-Reciclados-El-Valle-C.A.pdf');
     expect(doc.url).toContain('https://storage.test/firmada/proveedor/');
     expect(doc.mensaje).toContain('Compra-0057');
     expect(album.accion).toBe('fotos');
@@ -123,7 +123,7 @@ describe('ticket de pesaje', () => {
     await crearTicket(inputTicket('venta', CL1, 'completo'), 'U1');
 
     const [doc] = await esperarEnvios(2);
-    expect(doc).toMatchObject({ entidadTipo: 'cliente', entidadId: CL1, chatId: CHAT_CL1, nombreArchivo: 'ticket-venta-0004.pdf' });
+    expect(doc).toMatchObject({ entidadTipo: 'cliente', entidadId: CL1, chatId: CHAT_CL1, nombreArchivo: 'Ticket-Venta-0004-Fundicion-Norte.pdf' });
   });
 
   it('ticket en bruto (borrador): no se envía nada', async () => {
@@ -191,7 +191,7 @@ describe('edición de ticket con llave', () => {
     expect(envios).toHaveLength(1);
     expect(envios[0]).toMatchObject({ accion: 'documento', tipoDocumento: 'ticket', chatId: CHAT_P1 });
     expect(envios[0].mensaje).toContain('DOCUMENTO CORREGIDO');
-    expect(envios[0].nombreArchivo).toBe('ticket-compra-0057-corregido.pdf');
+    expect(envios[0].nombreArchivo).toBe('Ticket-Compra-0057-Reciclados-El-Valle-C.A-corregido.pdf');
   });
 
   it('edición sin cambios visibles: no se manda nada', async () => {
@@ -225,7 +225,7 @@ describe('edición de ticket con llave', () => {
     expect(anulada?.mensaje).toContain('FACTURA ANULADA');
     expect(anulada?.mensaje).not.toContain('corrección del ticket'); // el motivo de anulación es interno
     expect(anulada?.mensaje).not.toContain('(');
-    expect(anulada?.nombreArchivo).toBe('factura-compra-c-0003-anulada.pdf');
+    expect(anulada?.nombreArchivo).toBe('Factura-C-0003-Reciclados-El-Valle-C.A-anulada.pdf');
   });
 
   it('factura con pagos (no se anula): solo el ticket corregido, la factura no se toca', async () => {
@@ -252,7 +252,7 @@ describe('facturas', () => {
 
     const [doc] = await esperarEnvios(1);
     expect(doc).toMatchObject({ accion: 'documento', tipoDocumento: 'factura', entidadTipo: 'proveedor', chatId: CHAT_P1 });
-    expect(doc.nombreArchivo).toBe('factura-compra-c-0003.pdf');
+    expect(doc.nombreArchivo).toBe('Factura-C-0003-Reciclados-El-Valle-C.A.pdf');
     expect(doc.mensaje).toContain('C-0003');
   });
 
@@ -263,7 +263,7 @@ describe('facturas', () => {
     await crearFactura('venta', { entidadId: CL1, estado: 'emitida', items: [], ticketIds: [] } as never);
 
     const [doc] = await esperarEnvios(1);
-    expect(doc).toMatchObject({ tipoDocumento: 'factura', entidadTipo: 'cliente', chatId: CHAT_CL1, nombreArchivo: 'factura-venta-v-0003.pdf' });
+    expect(doc).toMatchObject({ tipoDocumento: 'factura', entidadTipo: 'cliente', chatId: CHAT_CL1, nombreArchivo: 'Factura-V-0003-Fundicion-Norte.pdf' });
   });
 
   it('factura en borrador: no se envía', async () => {
@@ -285,7 +285,7 @@ describe('notas de crédito / débito', () => {
     expect('id' in r).toBe(true);
 
     const [doc] = await esperarEnvios(1);
-    expect(doc).toMatchObject({ accion: 'documento', tipoDocumento: 'nota', entidadTipo: 'proveedor', chatId: CHAT_P1, nombreArchivo: 'nota-credito-nc-0004.pdf' });
+    expect(doc).toMatchObject({ accion: 'documento', tipoDocumento: 'nota', entidadTipo: 'proveedor', chatId: CHAT_P1, nombreArchivo: 'Nota-credito-NC-0004-Reciclados-El-Valle-C.A.pdf' });
     expect(doc.mensaje).toContain('NC-0004');
     expect(doc.mensaje).not.toContain('Operador Interno');
     expect(doc.mensaje).not.toContain('Ajuste por diferencia de peso'); // el motivo interno no sale a terceros
@@ -309,7 +309,7 @@ describe('notas de crédito / débito', () => {
     await crearNotaAjusteCliente(CL1, { tipo: 'debito', monto: 50, motivo: 'Ajuste' } as never, 'U1');
 
     const [doc] = await esperarEnvios(1);
-    expect(doc).toMatchObject({ tipoDocumento: 'nota', entidadTipo: 'cliente', chatId: CHAT_CL1, nombreArchivo: 'nota-debito-ndv-0002.pdf' });
+    expect(doc).toMatchObject({ tipoDocumento: 'nota', entidadTipo: 'cliente', chatId: CHAT_CL1, nombreArchivo: 'Nota-debito-NDV-0002-Fundicion-Norte.pdf' });
   });
 
   it('nota de cliente anulada: al cliente', async () => {
@@ -336,7 +336,7 @@ describe('pagos, cobros y cruces', () => {
 
     const envios = await esperarEnvios(2);
     const [doc, foto] = envios;
-    expect(doc).toMatchObject({ accion: 'documento', tipoDocumento: 'pago', entidadTipo: 'proveedor', chatId: CHAT_P1, nombreArchivo: 'pago-pg-0007.pdf' });
+    expect(doc).toMatchObject({ accion: 'documento', tipoDocumento: 'pago', entidadTipo: 'proveedor', chatId: CHAT_P1, nombreArchivo: 'Pago-PG-0007-Reciclados-El-Valle-C.A.pdf' });
     expect(doc.mensaje).toContain('PG-0007');
     expect(foto).toMatchObject({ accion: 'foto', chatId: CHAT_P1 });
     expect(foto.fotos).toEqual([{ url: FOTO_COMPROBANTE, caption: 'Comprobante PG-0007 (1/1)' }]);
@@ -372,7 +372,7 @@ describe('pagos, cobros y cruces', () => {
     await registrarPagoMultiple({ proveedorId: P1, bancas: [], montoUsd: 0, items: [], comprobantes: [] } as never, 'U1');
 
     const [doc] = await esperarEnvios(1);
-    expect(doc).toMatchObject({ tipoDocumento: 'cruce', chatId: CHAT_P1, nombreArchivo: 'cruce-cr-0001.pdf' });
+    expect(doc).toMatchObject({ tipoDocumento: 'cruce', chatId: CHAT_P1, nombreArchivo: 'Cruce-CR-0001-Reciclados-El-Valle-C.A.pdf' });
   });
 
   it('cobro a cliente con comprobante: PDF del cobro + foto, al cliente', async () => {
@@ -382,7 +382,7 @@ describe('pagos, cobros y cruces', () => {
     await registrarCobroMultiple({ clienteId: CL1, bancas: [], montoUsd: 100, items: [], comprobantes: [FOTO_COMPROBANTE] } as never, 'U1');
 
     const [doc, foto] = await esperarEnvios(2);
-    expect(doc).toMatchObject({ tipoDocumento: 'pago', entidadTipo: 'cliente', chatId: CHAT_CL1, nombreArchivo: 'cobro-cb-0007.pdf' });
+    expect(doc).toMatchObject({ tipoDocumento: 'pago', entidadTipo: 'cliente', chatId: CHAT_CL1, nombreArchivo: 'Cobro-CB-0007-Fundicion-Norte.pdf' });
     expect(foto).toMatchObject({ accion: 'foto', chatId: CHAT_CL1 });
   });
 
@@ -393,7 +393,7 @@ describe('pagos, cobros y cruces', () => {
     await registrarCobroMultiple({ clienteId: CL1, bancas: [], montoUsd: 0, items: [], comprobantes: [] } as never, 'U1');
 
     const [doc] = await esperarEnvios(1);
-    expect(doc).toMatchObject({ tipoDocumento: 'cruce', entidadTipo: 'cliente', chatId: CHAT_CL1, nombreArchivo: 'cruce-crv-0002.pdf' });
+    expect(doc).toMatchObject({ tipoDocumento: 'cruce', entidadTipo: 'cliente', chatId: CHAT_CL1, nombreArchivo: 'Cruce-CRV-0002-Fundicion-Norte.pdf' });
   });
 });
 

@@ -1,9 +1,10 @@
-import type { Producto, Tara } from '@shared/types/index.js';
+import type { Producto, Tara, TaraDetalle } from '@shared/types/index.js';
 import { redondearKg } from '@shared/types/ticket-pesaje.js';
 import { subirFotoTicket } from '../../services/storage-service';
 import { previewFotoLocal, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import { esFilaSinLote } from './sin-lote-fila';
 import { taraNoVigente } from '../../lib/borrador-vigentes';
+import { taraTotalKg, tarasDetalleDeFila, type ConTarasExtra, type TaraUnidad } from './tara-multiple';
 
 /** Valor del selector de destino: el id de un lote real, o '' si el
  *  usuario todavía no eligió nada (sin preselección por defecto). */
@@ -30,6 +31,8 @@ export interface MaterialFila {
   taraId: string;
   taraCantidad: string;
   taraManual: string;
+  /** Taras adicionales a la principal (p. ej. saca + cesta); se suman al neto. */
+  tarasExtra?: TaraUnidad[];
   /** id del lote destino, o '' si aún no se eligió. */
   destino: DestinoValor;
   /** Solo en filas de un ticket ya guardado: producto y destino con los que se
@@ -83,7 +86,7 @@ export function subirFotosFila(fotos: FotoMaterial[]): Promise<string[] | null> 
  *  cualquier formulario que pese algo (pesaje, transformación, toma
  *  física) los necesita, no solo MaterialFila. Estructural a propósito
  *  para no acoplar cada formulario al tipo completo de MaterialFila. */
-export interface CampoTara {
+export interface CampoTara extends ConTarasExtra {
   taraModo: TaraModo;
   taraId: string;
   taraCantidad: string;
@@ -96,16 +99,15 @@ export function taraVacia(): CampoTara {
 
 /** Kg de tara resultantes de una fila, según su modo (preconfigurada × cantidad, o manual). */
 export function taraKgFila(f: CampoTara, taras: Tara[]): number {
-  if (f.taraModo === 'manual') return redondearKg(Number(f.taraManual) || 0);
-  const tara = taras.find(t => t.id === f.taraId);
-  if (!tara) return 0;
-  return redondearKg(tara.peso * (Number(f.taraCantidad) || 0));
+  return taraTotalKg(f, taras);
 }
 
-/** true si la fila usa una tara preconfigurada que no está entre las `taras`
- *  vigentes (pásale solo las activas): taraKgFila la pesaría como 0 kg. */
+/** true si la fila (tara principal o adicionales) usa una tara preconfigurada que
+ *  no está entre las `taras` vigentes (pásale solo las activas): taraKgFila la
+ *  pesaría como 0 kg. */
 export function taraFilaNoVigente(f: CampoTara, taras: Tara[]): boolean {
-  return taraNoVigente(f, taras.filter(t => t.activo).map(t => t.id));
+  const vigentes = taras.filter(t => t.activo).map(t => t.id);
+  return taraNoVigente(f, vigentes) || (f.tarasExtra ?? []).some(e => taraNoVigente(e, vigentes));
 }
 
 export const MENSAJE_TARA_NO_VIGENTE = 'Una tara elegida ya no está disponible. Vuelve a elegirla.';
@@ -141,6 +143,8 @@ export function materialAPayload(f: MaterialFila, taras: Tara[], productos: Prod
   subcategoria: string | null;
   pesoBruto: number;
   tara: number;
+  /** Desglose de la tara (saca + cesta...); la suma de sus kg es `tara`. */
+  tarasDetalle: TaraDetalle[];
   destinoTipo: 'mpp' | 'lote';
   loteId: string | null;
 } {
@@ -150,6 +154,7 @@ export function materialAPayload(f: MaterialFila, taras: Tara[], productos: Prod
     subcategoria: f.subcategoria.trim() || null,
     pesoBruto: redondearKg(Number(f.pesoBruto) || 0),
     tara: taraKgFila(f, taras),
+    tarasDetalle: tarasDetalleDeFila(f, taras),
     destinoTipo: sinLote ? 'mpp' : 'lote',
     loteId: sinLote ? null : f.destino,
   };

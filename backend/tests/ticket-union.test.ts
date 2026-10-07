@@ -61,7 +61,7 @@ describe('validarUnionTickets', () => {
   });
 
   it('rechaza tickets que no están en bruto', () => {
-    expect(validarUnionTickets(principal, [ticket({ id: UUID2, estado: 'completo' })], [UUID2])).toMatch(/bruto/);
+    expect(validarUnionTickets(principal, [ticket({ id: UUID2, estado: 'completo' })], [UUID2])).toMatch(/por recepcionar/);
   });
 
   it('rechaza pesaje exterior en principal o secundario', () => {

@@ -30,10 +30,11 @@ const RETARDO_GRAFICAS_MS = 150;
 
 interface Entidad { id: string; nombre: string }
 
-const ESTADOS_FILTRO = ['borrador', 'emitida', 'pagada', 'anulada'] as const;
+const ESTADOS_FILTRO = ['borrador', 'emitida', 'pendiente', 'pagada', 'anulada'] as const;
 const OPCIONES_ESTADO = [
   { valor: 'borrador', etiqueta: 'Borrador' },
   { valor: 'emitida', etiqueta: 'Emitida' },
+  { valor: 'pendiente', etiqueta: 'Pendiente' },
   { valor: 'pagada', etiqueta: 'Pagada' },
   { valor: 'anulada', etiqueta: 'Anulada' },
 ] as const;
@@ -150,6 +151,8 @@ function FacturaHistorialPage({ tipo }: Props) {
   }, [claveCargada]);
 
   const resumen = useMemo(() => resumirFacturas(facturas, tipo), [facturas, tipo]);
+  // Facturas con saldo vivo: emitidas + pendientes (con pago parcial).
+  const cantidadConSaldo = resumen.porEstado.emitida.cantidad + resumen.porEstado.pendiente.cantidad;
   const resumenPrevio = useMemo(() => (previas ? resumirFacturas(previas, tipo) : null), [previas, tipo]);
   const comparacion = useMemo(() => compararTotalFacturado(resumen, resumenPrevio, tipo), [resumen, resumenPrevio, tipo]);
   const antiguedad = useMemo(() => (todas ? antiguedadSaldos(todas, tipo, hoy) : null), [todas, tipo, hoy]);
@@ -237,7 +240,7 @@ function FacturaHistorialPage({ tipo }: Props) {
           <GrillaKpis>
             <TarjetaKpi
               titulo="Total facturado"
-              ayuda={`Dinero (USD) que suman las facturas ${esCompra ? 'de compra' : 'de venta'} emitidas o pagadas con fecha de emisión dentro del periodo (${periodoTxt}). No cuenta las anuladas ni los borradores. La flecha compara con el periodo anterior de la misma duración, y solo aparece si ese periodo tuvo facturas.`}
+              ayuda={`Dinero (USD) que suman las facturas ${esCompra ? 'de compra' : 'de venta'} emitidas, pendientes o pagadas con fecha de emisión dentro del periodo (${periodoTxt}). No cuenta las anuladas ni los borradores. La flecha compara con el periodo anterior de la misma duración, y solo aparece si ese periodo tuvo facturas.`}
               valor={formatearUsdDecimales(resumen.total)}
               subtitulo={`${formatearNumero(resumen.facturadas, 0)} ${resumen.facturadas === 1 ? 'factura' : 'facturas'} · ${periodoTxt}`}
               comparacion={comparacion ?? undefined}
@@ -252,7 +255,7 @@ function FacturaHistorialPage({ tipo }: Props) {
               <>
                 <TarjetaKpi
                   titulo="Pagado"
-                  ayuda="Dinero (USD) que ya se pagó de las facturas de compra emitidas o pagadas del periodo. Los pagos se registran desde el estado de cuenta del proveedor. El porcentaje de abajo es lo pagado dividido entre el total facturado."
+                  ayuda="Dinero (USD) que ya se pagó de las facturas de compra emitidas, pendientes o pagadas del periodo. Los pagos se registran desde el estado de cuenta del proveedor. El porcentaje de abajo es lo pagado dividido entre el total facturado."
                   valor={formatearUsdDecimales(resumen.pagado)}
                   subtitulo={`${formatearNumero(porcentajeEntero(porcentajePagado(resumen.total, resumen.pagado)), 0)} % de lo facturado`}
                   estado={kpiEstado}
@@ -262,9 +265,9 @@ function FacturaHistorialPage({ tipo }: Props) {
                 </TarjetaKpi>
                 <TarjetaKpi
                   titulo="Pendiente de pago"
-                  ayuda="Dinero (USD) que todavía se le debe a los proveedores en las facturas de compra emitidas del periodo: total de cada factura menos lo ya pagado. Las facturas ya pagadas, las anuladas y los borradores no tienen saldo."
+                  ayuda="Dinero (USD) que todavía se le debe a los proveedores en las facturas de compra emitidas y pendientes del periodo: total de cada factura menos lo ya pagado. Las facturas ya pagadas, las anuladas y los borradores no tienen saldo."
                   valor={formatearUsdDecimales(resumen.pendiente)}
-                  subtitulo={`${formatearNumero(resumen.porEstado.emitida.cantidad, 0)} ${resumen.porEstado.emitida.cantidad === 1 ? 'factura emitida' : 'facturas emitidas'} con saldo`}
+                  subtitulo={`${formatearNumero(cantidadConSaldo, 0)} ${cantidadConSaldo === 1 ? 'factura emitida' : 'facturas emitidas'} con saldo`}
                   estado={kpiEstado}
                   mensajeVacio="Sin facturas en este periodo"
                 />
@@ -293,7 +296,7 @@ function FacturaHistorialPage({ tipo }: Props) {
             {!esCompra && (
               <TarjetaKpi
                 titulo="Facturas"
-                ayuda="Cuántas facturas de venta se emitieron en el periodo, de cualquier estado. Debajo se separan por estado: pagada, emitida, borrador (aún no emitida) y anulada (cancelada)."
+                ayuda="Cuántas facturas de venta se emitieron en el periodo, de cualquier estado. Debajo se separan por estado: pagada, pendiente, emitida, borrador (aún no emitida) y anulada (cancelada)."
                 valor={formatearNumero(resumen.cantidad, 0)}
                 subtitulo={textoDesglosePorEstado(resumen) || undefined}
                 estado={!puedeVer ? 'sinPermiso' : primeraCarga ? 'cargando' : resumen.cantidad === 0 ? 'vacio' : 'listo'}

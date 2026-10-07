@@ -2,11 +2,12 @@ import { Link } from 'react-router-dom';
 import { ClipboardList } from 'lucide-react';
 import TablaDatos from '../../components/ui/TablaDatos';
 import Insignia from '../../components/ui/Insignia';
-import { formatearFecha, formatearNumero } from '../../lib/formato';
+import { formatearNumero } from '../../lib/formato';
 import { diferenciaDeToma } from '../../lib/toma-fisica-kpis';
 import type { ColumnaTabla } from '../../lib/tabla-datos';
 import type { Tono } from '../../lib/paleta';
 import type { TomaFisicaInventario } from '@shared/types/index.js';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 /** Listado de tomas (tabla ordenable + CSV; en móvil tarjetas). Se carga con React.lazy: export default. */
 
@@ -61,8 +62,8 @@ const COLUMNAS: ReadonlyArray<ColumnaTabla<TomaFisicaInventario>> = [
     valorCsv: t => diferenciaDeToma(t)?.ajustes ?? null,
     decimalesCsv: 0,
   },
-  { clave: 'abierta', titulo: 'Abierta', valorOrden: t => t.abiertaEn, celda: t => formatearFecha(t.abiertaEn), valorCsv: t => formatearFecha(t.abiertaEn) },
-  { clave: 'cierre', titulo: 'Cierre', valorOrden: t => t.cerradaEn, celda: t => formatearFecha(t.cerradaEn), valorCsv: t => formatearFecha(t.cerradaEn) },
+  { clave: 'abierta', titulo: 'Abierta', valorOrden: t => t.abiertaEn, celda: t => formatearFechaHora(t.abiertaEn), valorCsv: t => formatearFechaHora(t.abiertaEn) },
+  { clave: 'cierre', titulo: 'Cierre', valorOrden: t => t.cerradaEn, celda: t => formatearFechaHora(t.cerradaEn), valorCsv: t => formatearFechaHora(t.cerradaEn) },
 ];
 
 function TomaFisicaTablaListado({ tomas, hayFiltros }: { tomas: readonly TomaFisicaInventario[]; hayFiltros: boolean }) {

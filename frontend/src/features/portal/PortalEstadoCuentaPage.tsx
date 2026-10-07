@@ -6,6 +6,7 @@ import {
   type EntradaEstadoCuenta,
 } from '../../services/portal-estado-cuenta-service';
 import { Bloque, EstadoVacio, GrillaKpis, Insignia, SkeletonKpis, SkeletonTabla, TarjetaKpi, TablaDatos } from '../../components/ui';
+import { totalesEstadoCuenta } from '@shared/types/estado-cuenta-totales.js';
 import { formatearUsdDecimales } from '../../lib/formato';
 import { ayudaSaldoPortal, fechaCorta, importeMovimiento, mensajeSaldo, ultimoMovimiento } from '../../lib/portal-kpis';
 import type { ColumnaTabla } from '../../lib/tabla-datos';
@@ -55,6 +56,7 @@ function PortalEstadoCuentaPage() {
   const saldo = datos?.totales.saldo ?? 0;
   const mensaje = useMemo(() => mensajeSaldo(datos?.entidad.tipo ?? 'proveedor', saldo), [datos, saldo]);
   const filas = useMemo<Fila[]>(() => (datos?.entradas ?? []).map((e, indice) => ({ ...e, indice })), [datos]);
+  const totalesFilas = useMemo(() => totalesEstadoCuenta(datos?.entradas ?? []), [datos]);
   const ultimo = useMemo(() => ultimoMovimiento(datos?.entradas ?? []), [datos]);
 
   if (!cargando && !datos) {
@@ -113,6 +115,12 @@ function PortalEstadoCuentaPage() {
                 accion: { etiqueta: 'Agendar despacho', to: '/portal/agendar' },
               }}
             />
+            <dl aria-label="Totales del estado de cuenta" className="mt-3 grid grid-cols-3 gap-3 rounded-lg border border-border bg-surface-alt px-4 py-3 text-sm">
+              <div><dt className="text-text-secondary">Total cargos</dt><dd className="font-semibold tabular-nums">{formatearUsdDecimales(totalesFilas.totalCargos)}</dd></div>
+              <div><dt className="text-text-secondary">Total abonos</dt><dd className="font-semibold tabular-nums">{formatearUsdDecimales(totalesFilas.totalAbonos)}</dd></div>
+              <div><dt className="text-text-secondary">Saldo final</dt><dd className="font-semibold tabular-nums">{formatearUsdDecimales(totalesFilas.saldoFinal)}</dd></div>
+              <p className="col-span-3 text-xs text-text-secondary">Suma de los {totalesFilas.filas} movimientos de la lista (todas las páginas), en USD. Cargos aumentan lo que se debe; abonos lo reducen.</p>
+            </dl>
           </Bloque>
         </>
       )}

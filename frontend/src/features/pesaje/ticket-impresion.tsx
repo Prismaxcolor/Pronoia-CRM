@@ -1,7 +1,9 @@
 import type { TicketPesaje } from '@shared/types/index.js';
-import { destinoLabel } from '@shared/types/index.js';
+import { destinoLabel, describirTarasDetalle } from '@shared/types/index.js';
 import FilaDocumento from '../../components/FilaDocumento';
-import { fechaPesajeGlobal, tituloTicket, totalKgPesados } from '../../lib/ticket-documento';
+import { fechaPesajeGlobal, lineasAutoriaTicket, tituloTicket, totalKgPesados } from '../../lib/ticket-documento';
+import LeyendaRegistro from '../../components/LeyendaRegistro';
+import { formatearFecha } from '../../lib/formato';
 
 /** Versión IMPRESA del ticket (solo se ve al imprimir o descargar con window.print). Conserva exactamente el marcado
  *  del documento anterior al rediseño: la pantalla nueva (ticket-vista.tsx) lleva `print:hidden` y esta `hidden print:block`,
@@ -27,7 +29,7 @@ export function CabeceraImpresion({ ticket }: { ticket: TicketPesaje }) {
             {tituloTicket(ticket.estado)}
           </h1>
           {ticket.estado === 'bruto' ? (
-            <span className={`${INSIGNIA_IMPRESA} bg-orange-100 text-orange-700`}>Borrador</span>
+            <span className={`${INSIGNIA_IMPRESA} bg-orange-100 text-orange-700`}>Por recepcionar (pesaje global)</span>
           ) : (
             <span className={`${INSIGNIA_IMPRESA} ${ticket.facturado ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
               {ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}
@@ -42,7 +44,7 @@ export function CabeceraImpresion({ ticket }: { ticket: TicketPesaje }) {
             <span className={`${INSIGNIA_IMPRESA} bg-purple-100 text-purple-700`}>Sin pesaje global</span>
           )}
         </div>
-        <p className="text-sm text-text-muted mt-1">Ref. {ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {fechaPesajeGlobal(ticket)}</p>
+        <p className="text-sm text-text-muted mt-1">Ref. {ticket.codigo} · {esCompra ? 'Compra' : 'Venta'} · {formatearFecha(fechaPesajeGlobal(ticket))}</p>
       </div>
     </div>
   );
@@ -63,9 +65,10 @@ export function CuerpoImpresion({ ticket, nombreEntidad, ocultarDestino, totales
       <div className="mb-6">
         <FilaDocumento label={esCompra ? 'Proveedor' : 'Cliente'} valor={nombreEntidad} />
         {ticket.vehiculo && <FilaDocumento label="Vehículo" valor={ticket.vehiculo} />}
-        {!ticket.pesajeExterior && <FilaDocumento label="Fecha del pesaje global" valor={fechaPesajeGlobal(ticket)} />}
+        {!ticket.pesajeExterior && <FilaDocumento label="Fecha del pesaje global" valor={formatearFecha(fechaPesajeGlobal(ticket))} />}
         {ticket.observaciones && <FilaDocumento label="Observaciones" valor={ticket.observaciones} />}
         {ticket.notasCompletado && <FilaDocumento label="Notas" valor={ticket.notasCompletado} />}
+        <LeyendaRegistro className="mt-2 text-xs" nombre={ticket.pesadoPorNombre} instante={ticket.createdAt} extra={lineasAutoriaTicket(ticket).completado} edicion={ticket.ultimaEdicion} />
       </div>
 
       {ticket.pesajeExterior ? (
@@ -85,7 +88,7 @@ export function CuerpoImpresion({ ticket, nombreEntidad, ocultarDestino, totales
 
       {ticket.estado === 'bruto' && (
         <p className="mb-4 text-xs border border-black rounded-lg px-3 py-2">
-          Ticket en borrador — materiales pendientes de registro. No contabilizado en inventario.
+          Pesaje global por recepcionar — materiales pendientes de registro. No contabilizado en inventario.
         </p>
       )}
 
@@ -104,7 +107,12 @@ export function CuerpoImpresion({ ticket, nombreEntidad, ocultarDestino, totales
             <tbody>
               {ticket.materiales.map(m => (
                 <tr key={m.id} className="border-t border-border">
-                  <td className="py-2.5 px-5 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                  <td className="py-2.5 px-5 text-text-primary">
+                    {m.nombreProducto ?? '—'}
+                    {m.tarasDetalle && m.tarasDetalle.length > 0 && (
+                      <span className="block text-xs text-text-muted">Tara: {describirTarasDetalle(m.tarasDetalle, fmt)}</span>
+                    )}
+                  </td>
                   {!ocultarDestino && <td className="py-2.5 px-4 text-text-secondary">{destinoLabel(m.destinoTipo, m.nombreLote)}</td>}
                   <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.pesoBruto)}</td>
                   <td className="py-2.5 px-4 text-right text-text-secondary">{fmt(m.tara)}</td>

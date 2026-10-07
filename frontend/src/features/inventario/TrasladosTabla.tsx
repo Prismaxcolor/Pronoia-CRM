@@ -1,9 +1,10 @@
 import { ArrowRight } from 'lucide-react';
-import { Insignia, InsigniaEstado, TablaDatos, formatearFecha, formatearNumero, type ColumnaTabla } from '../../components/ui';
+import { Insignia, InsigniaEstado, TablaDatos, formatearNumero, type ColumnaTabla } from '../../components/ui';
 import {
   TOLERANCIA_DIFERENCIA_KG, diasDesde, diferenciaTraslado, hayDiferencia, resumenMaterialesTraslado,
 } from '../../lib/almacenes-kpis';
 import type { Traslado } from '@shared/types/index.js';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 const kg2 = (n: number) => formatearNumero(n, 2);
 const BOTON_FILA = 'rounded px-1 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
@@ -49,7 +50,7 @@ function columnasTraslados(a: AccionesTraslado, hoy: Date): ColumnaTabla<Traslad
       celda: t => <span className="whitespace-nowrap font-medium text-text-primary">{t.codigo}</span>,
       valorCsv: t => t.codigo,
     },
-    { clave: 'fecha', titulo: 'Enviado el', valorOrden: t => t.createdAt, celda: t => formatearFecha(t.createdAt), valorCsv: t => formatearFecha(t.createdAt), claseCelda: 'whitespace-nowrap' },
+    { clave: 'fecha', titulo: 'Enviado el', valorOrden: t => t.createdAt, celda: t => formatearFechaHora(t.createdAt), valorCsv: t => formatearFechaHora(t.createdAt), claseCelda: 'whitespace-nowrap' },
     {
       clave: 'ruta', titulo: 'Origen → destino', valorOrden: t => `${t.nombreAlmacenOrigen ?? ''} ${t.nombreAlmacenDestino ?? ''}`,
       celda: t => (

@@ -28,6 +28,7 @@ import type { FacturaPublica, TipoFactura } from './factura-service.js';
 import type { EstadoCuentaPortal } from './portal-estado-cuenta.js';
 import type { EfectoFactura } from '../utils/factura-ticket-edicion.js';
 import type { TipoEntidad } from './estado-cuenta-service.js';
+import { hoyNegocio, diaNegocio } from '../utils/fecha-negocio.js';
 
 /**
  * Qué se le manda por Telegram al proveedor/cliente y cuándo. Un solo lugar con el
@@ -109,7 +110,7 @@ const enviarMensaje = (p: NotificarMensajeParams): void =>
   ejecutarEnSegundoPlano(notificarMensaje(p), 'telegram_mensaje');
 
 function fechaTicket(t: TicketPublico): string {
-  return (t.fecha ?? t.createdAt).slice(0, 10);
+  return t.fecha ?? diaNegocio(t.createdAt) ?? t.createdAt.slice(0, 10);
 }
 
 export interface OpcionesNotificarTicket {
@@ -117,18 +118,19 @@ export interface OpcionesNotificarTicket {
   corregido?: boolean;
 }
 
-/** Ticket de pesaje 'completo': PDF + fotos. Un ticket en bruto es un borrador y no se manda. */
+/** Ticket de pesaje 'completo': PDF + fotos. Un pesaje global por recepcionar no se manda. */
 function notificarTicketInterno(ticket: TicketPublico, opciones: OpcionesNotificarTicket = {}): void {
   if (ticket.estado !== 'completo' || !ticket.entidadId) return;
   const corregido = opciones.corregido === true;
-  const nombreBase = nombreArchivoTicket(ticket);
   enviarDocumento({
     entidadTipo: entidadDeTicket(ticket),
     entidadId: ticket.entidadId,
     tipoDocumento: 'ticket',
     preparar: async nombreEntidad => ({
       buffer: generarTicketPdf(ticket, nombreEntidad),
-      nombreArchivo: corregido ? nombreBase.replace(/\.pdf$/, '-corregido.pdf') : nombreBase,
+      nombreArchivo: corregido
+        ? nombreArchivoTicket(ticket, nombreEntidad).replace(/\.pdf$/, '-corregido.pdf')
+        : nombreArchivoTicket(ticket, nombreEntidad),
       mensaje: corregido
         ? `DOCUMENTO CORREGIDO: se corrigió el ticket de pesaje ${ticket.codigo} (${fechaTicket(ticket)}). Este reemplaza al enviado antes. Peso neto total: ${fmt(ticket.pesoNetoTotal)} kg.`
         : `Ticket de pesaje ${ticket.codigo} (${ticket.tipo}) del ${fechaTicket(ticket)}. Peso neto total: ${fmt(ticket.pesoNetoTotal)} kg.`,
@@ -221,7 +223,7 @@ function notificarNotaInterno(
       const ref = n.codigo ?? `N.º ${n.id.slice(0, 8)}`;
       return {
         buffer: generarNotaPdf(n, nombreEntidad, entidadTipo === 'proveedor'),
-        nombreArchivo: nombreArchivoNota(n),
+        nombreArchivo: nombreArchivoNota(n, nombreEntidad),
         mensaje: evento === 'anulada'
           ? `NOTA ANULADA: la ${nombre} ${ref} por $${fmt(n.monto)} fue anulada y ya no afecta tu saldo.`
           : `Se registró la ${nombre} ${ref} por $${fmt(n.monto)}.`,
@@ -267,7 +269,7 @@ function notificarPagoInterno(
 
 /** Estado de cuenta (versión externa) enviado a pedido del equipo. */
 function notificarEstadoCuentaInterno(entidadTipo: EntidadTelegram, entidadId: string, estado: EstadoCuentaPortal): void {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyNegocio();
   enviarDocumento({
     entidadTipo,
     entidadId,

@@ -43,6 +43,8 @@ export function formatearCompacto(n: number): string {
   return formatearNumero(n, abs < 10 && !Number.isInteger(n) ? 1 : 0);
 }
 
+import { diaNegocio } from './fecha-negocio';
+
 const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Fecha ISO "AAAA-MM-DD" válida (calendario real: rechaza 2026-02-31). */
@@ -61,12 +63,13 @@ function partesFecha(valor: string | Date | null | undefined): { a: string; m: s
     return { a: String(valor.getFullYear()), m: dosDigitos(valor.getMonth() + 1), d: dosDigitos(valor.getDate()) };
   }
   if (typeof valor !== 'string') return null;
-  const dia = valor.slice(0, 10);
+  // Un instante (timestamptz con Z u offset) se pasa al día de la zona de negocio; una fecha pura se toma tal cual.
+  const dia = diaNegocio(valor) ?? valor.slice(0, 10);
   if (!esFechaIso(dia)) return null;
   return { a: dia.slice(0, 4), m: dia.slice(5, 7), d: dia.slice(8, 10) };
 }
 
-/** "04/10/2026". Un string ISO se toma tal cual (sin corrimiento por zona horaria). Sin dato: "—". */
+/** "04/10/2026". Fecha pura: tal cual. Instante (timestamptz): día en la zona de negocio (Caracas). Sin dato: "—". */
 export function formatearFecha(valor: string | Date | null | undefined): string {
   const p = partesFecha(valor);
   return p ? `${p.d}/${p.m}/${p.a}` : '—';
@@ -77,3 +80,16 @@ export function formatearFechaCorta(valor: string | Date | null | undefined): st
   const p = partesFecha(valor);
   return p ? `${p.d}/${p.m}` : '—';
 }
+
+export {
+  ZONA_NEGOCIO,
+  hoyNegocio,
+  diaNegocio,
+  formatearFechaNegocio,
+  formatearHoraNegocio,
+  formatearFechaHora,
+  fechaConHora,
+  nombreYMomento,
+  leyendaRegistro,
+  leyendaUltimaEdicion,
+} from './fecha-negocio';

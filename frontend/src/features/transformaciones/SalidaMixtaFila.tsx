@@ -72,12 +72,16 @@ export function BloqueMaterialDestino({
   almacenes,
   onElegirProducto,
   onCambiarAlmacen,
+  almacenFijoNombre,
 }: {
   nombreProducto: string | undefined;
   almacenId: string;
   almacenes: Almacen[];
   onElegirProducto: () => void;
   onCambiarAlmacen: (id: string) => void;
+  /** Nombre del almacén con el que se inició la transformación: si viene, el material queda
+   *  ahí y el almacén se muestra bloqueado en vez de pedirlo otra vez. */
+  almacenFijoNombre?: string;
 }) {
   return (
     <>
@@ -90,13 +94,20 @@ export function BloqueMaterialDestino({
           <ChevronDown size={14} className="text-text-muted shrink-0" />
         </button>
       </div>
-      <SelectorAlmacen
-        etiqueta="Almacén de destino *"
-        placeholder="-Selecciona dónde queda este material-"
-        almacenId={almacenId}
-        almacenes={almacenes}
-        onCambiar={onCambiarAlmacen}
-      />
+      {almacenFijoNombre ? (
+        <div>
+          <label className={LABEL_CLASS}>Almacén de destino</label>
+          <p className={`${INPUT_CLASS} text-text-secondary`}>{almacenFijoNombre} <span className="text-[11px] text-text-muted">(el de inicio)</span></p>
+        </div>
+      ) : (
+        <SelectorAlmacen
+          etiqueta="Almacén de destino *"
+          placeholder="-Selecciona dónde queda este material-"
+          almacenId={almacenId}
+          almacenes={almacenes}
+          onCambiar={onCambiarAlmacen}
+        />
+      )}
     </>
   );
 }

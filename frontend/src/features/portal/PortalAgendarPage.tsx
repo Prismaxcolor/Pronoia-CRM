@@ -14,9 +14,10 @@ import type { Tono } from '../../lib/paleta';
 import PortalLayout from './PortalLayout';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import { useToast } from '../../hooks/use-toast-context';
+import { hoyNegocio } from '../../lib/fecha-negocio';
 
 function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hoyNegocio();
 }
 
 function fechaLegible(iso: string): string {

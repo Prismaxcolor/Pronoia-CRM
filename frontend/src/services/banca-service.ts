@@ -105,6 +105,8 @@ export interface CrearMovimientoInput {
   proveedorId?: string | null;
   /** Cliente del que se cobra (ingreso). Alimenta su estado de cuenta. */
   clienteId?: string | null;
+  /** URLs de la imagen del comprobante (opcional), subidas con subirComprobantePago. */
+  comprobantes?: string[];
 }
 
 /** Crea un movimiento de ingreso, egreso o transferencia. El trigger SQL ajusta el saldo. */

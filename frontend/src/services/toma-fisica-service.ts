@@ -20,6 +20,19 @@ export async function obtenerTomaFisica(
   }
 }
 
+/** Lotes que se pueden contar para las categorías elegidas (PCB sin el Lote 4; PGM solo el Lote 4). */
+export async function obtenerLotesElegiblesToma(categoriaIds: string[]): Promise<string[]> {
+  if (categoriaIds.length === 0) return [];
+  try {
+    const { loteIds } = await apiFetch<{ loteIds: string[] }>(
+      `/api/tomas-fisicas/lotes-elegibles?categoriaIds=${encodeURIComponent(categoriaIds.join(','))}`
+    );
+    return loteIds;
+  } catch {
+    return [];
+  }
+}
+
 export async function obtenerResumenTomaFisica(id: string): Promise<ResumenTomaFisicaLinea[]> {
   try {
     const { lineas } = await apiFetch<{ lineas: ResumenTomaFisicaLinea[] }>(`/api/tomas-fisicas/${id}/resumen`);
@@ -34,6 +47,8 @@ export async function crearTomaFisica(input: {
   categoriaIds: string[];
   loteIds?: string[];
   alcance: 'categoria' | 'lote';
+  /** Solo alcance 'categoria': materiales a contar (omitir = toda la categoría). */
+  productoIds?: string[];
   descripcion?: string | null;
 }): Promise<{ tomaFisica: TomaFisicaInventario } | { error: string }> {
   try {

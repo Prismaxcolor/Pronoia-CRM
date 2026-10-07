@@ -78,6 +78,7 @@ function SalidasNuevasEdicion({ transformacion: t, filas, onCambiar }: Props) {
                 almacenes={almacenes}
                 onElegirProducto={() => setSelector({ uid: f.uid, que: 'material' })}
                 onCambiarAlmacen={almacenId => actualizar(f.uid, { almacenId })}
+                almacenFijoNombre={t.almacenId ? (almacenes.find(a => a.id === t.almacenId)?.nombre ?? 'Almacén de inicio') : undefined}
               />
             )}
             <div className="grid grid-cols-2 gap-2">

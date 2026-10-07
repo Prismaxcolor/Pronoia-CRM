@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { formatCodigoCompra } from '../utils/codigos.js';
+import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
 
 /** Una línea de compra (una fila de detalle_facturas_compra) ya resuelta con
  *  nombres, para que el frontend arme cualquier agregación (resumen, por
@@ -43,8 +44,8 @@ export async function obtenerMetricasCompras(desde: string, hasta: string): Prom
     .from('facturas_compra')
     .select('id, numero, proveedor_id, created_at')
     .not('estado', 'in', '(borrador,anulada)')
-    .gte('created_at', desde)
-    .lte('created_at', `${hasta}T23:59:59`);
+    .gte('created_at', inicioDiaNegocio(desde))
+    .lte('created_at', finDiaNegocio(hasta));
 
   if (errFacturas || !facturasData) return [];
   const facturas = facturasData as FacturaRow[];
@@ -102,7 +103,7 @@ export async function obtenerMetricasCompras(desde: string, hasta: string): Prom
       nombreProducto: d.producto_id ? (nombrePorProducto.get(d.producto_id) ?? '—') : 'Sin producto',
       tipoMaterialId,
       tipoMaterialNombre: tipoMaterialId ? (nombrePorTipoMaterial.get(tipoMaterialId) ?? null) : null,
-      fecha: factura.created_at.slice(0, 10),
+      fecha: diaNegocio(factura.created_at) ?? factura.created_at.slice(0, 10),
       kg: Number(d.peso),
       costo: Number(d.subtotal),
     });

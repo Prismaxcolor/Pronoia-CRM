@@ -1,9 +1,12 @@
+import { saldoFactura } from '../lib/estado-factura';
+import { nombreArchivoDocumento } from '../lib/nombre-archivo';
 import { consolidarItems, type FacturaCV } from './factura-cv-service';
 import { type TicketPesaje } from '@shared/types/index.js';
 import {
   fmt, fmtMoneda, sanitizarPdf, descargarBlob, entregarPdf, type ArchivoPdf, type ModoPdf,
-  encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaMonetaria, tablaPesaje,
+  encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, pieRegistro, tablaMonetaria, tablaPesaje,
 } from './pdf-documento';
+import { formatearFechaHora, leyendaRegistro, leyendaUltimaEdicion } from '../lib/fecha-negocio';
 
 // jspdf y docx se cargan bajo demanda (dynamic import) para no inflar el bundle
 // inicial: solo pesan cuando el usuario descarga una factura.
@@ -24,8 +27,7 @@ function origenPeso(f: FacturaCV, tickets: TicketPesaje[]): string {
 }
 
 function nombreArchivo(f: FacturaCV, ext: string): string {
-  const ref = (f.codigo ?? f.id.slice(0, 8)).replace(/\s+/g, '-').toLowerCase();
-  return `factura-${f.tipo}-${ref}.${ext}`;
+  return nombreArchivoDocumento({ prefijo: 'Factura', codigo: f.codigo ?? f.id.slice(0, 8), entidad: f.nombreEntidad, extension: ext });
 }
 
 /** Filas (etiqueta, valor) de la cabecera de la factura (sin las líneas). */
@@ -56,7 +58,7 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   tituloConBadge(doc, y, `Factura de ${esCompra ? 'compra' : 'venta'}`, f.estado);
 
   y += 16;
-  subtitulo(doc, y, `Ref. ${refFactura(f)}  ·  ${f.createdAt.slice(0, 10)}`);
+  subtitulo(doc, y, `Ref. ${refFactura(f)}  ·  ${formatearFechaHora(f.createdAt)}`);
 
   y += 26;
   y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', f.nombreEntidad ?? '—');
@@ -82,14 +84,14 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
   doc.setFontSize(20).setFont('helvetica', 'bold').text('Total', 56, y);
   doc.text(fmtMoneda(f.total), 539, y, { align: 'right' });
 
-  if (esCompra && f.montoPagado > 0) {
+  if (f.montoPagado > 0) {
     y += 20;
     doc.setFontSize(10).setFont('helvetica', 'normal');
     doc.text('Pagado', 56, y);
     doc.text(fmtMoneda(f.montoPagado), 539, y, { align: 'right' });
     y += 16;
     doc.text('Saldo pendiente', 56, y);
-    doc.text(fmtMoneda(Math.max(f.total - f.montoPagado, 0)), 539, y, { align: 'right' });
+    doc.text(fmtMoneda(saldoFactura(f)), 539, y, { align: 'right' });
   }
 
   const totalPeso = consolidarItems(f.items).reduce((acc, it) => acc + it.peso, 0);
@@ -127,6 +129,7 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
     }
   }
 
+  pieRegistro(doc, [leyendaRegistro(f.registradoPorNombre, f.createdAt, 'Registrada'), leyendaUltimaEdicion(f.ultimaEdicion?.nombre, f.ultimaEdicion?.en)]);
   return entregarPdf(doc, nombreArchivo(f, 'pdf'), modo);
 }
 
@@ -143,7 +146,8 @@ export async function descargarFacturaWord(f: FacturaCV): Promise<void> {
     vacio(),
     new Paragraph({ children: [new TextRun({ text: `Factura de ${esCompra ? 'compra' : 'venta'}`, bold: true, size: 28 })] }),
     fila('N.º', f.codigo ?? f.id.slice(0, 8)),
-    fila('Fecha', f.createdAt.slice(0, 10)),
+    fila('Fecha', formatearFechaHora(f.createdAt)),
+    new Paragraph({ text: leyendaRegistro(f.registradoPorNombre, f.createdAt, 'Registrada') }),
     fila('Estado', f.estado),
     vacio(),
     ...filasFactura(f).map(([k, v]) => fila(k, v)),

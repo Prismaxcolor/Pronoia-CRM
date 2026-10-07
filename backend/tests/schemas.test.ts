@@ -1,4 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Los esquemas validan comprobantes contra ENV.SUPABASE_URL: se fija para no depender del .env local.
+vi.mock('../src/config/env.js', async importOriginal => {
+  const real = await importOriginal<typeof import('../src/config/env.js')>();
+  return { ...real, ENV: { ...real.ENV, SUPABASE_URL: 'https://x.supabase.co' } };
+});
 import { crearFacturaSchema } from '../src/schemas/facturas.js';
 import { crearTransformacionSchema, completarTransformacionSchema } from '../src/schemas/transformaciones.js';
 import { crearTicketSchema, completarTicketSchema } from '../src/schemas/tickets-pesaje.js';

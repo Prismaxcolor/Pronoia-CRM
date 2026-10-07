@@ -78,6 +78,8 @@ export interface CampoTaraMinimo {
   taraModo: 'preconfigurada' | 'manual';
   taraId: string;
   taraCantidad: string;
+  /** Taras adicionales de la fila (opcional: datos anteriores no la traen). */
+  tarasExtra?: Array<{ taraModo: 'preconfigurada' | 'manual'; taraId: string; taraCantidad: string }>;
 }
 
 /** true si la fila usa una tara preconfigurada que ya no está entre las vigentes (activas).
@@ -90,8 +92,14 @@ export function taraNoVigente(f: CampoTaraMinimo, taraIdsVigentes: Iterable<stri
 
 /** Deja la tara de la fila sin elegir si su id ya no es vigente (no muta la fila). */
 export function sanearTara<T extends CampoTaraMinimo>(f: T, taraIdsVigentes: Iterable<string>): { fila: T; cambiada: boolean } {
-  if (!taraNoVigente(f, taraIdsVigentes)) return { fila: f, cambiada: false };
-  return { fila: { ...f, taraId: '', taraCantidad: '' }, cambiada: true };
+  const vigentes = [...taraIdsVigentes];
+  const extras = f.tarasExtra ?? [];
+  const extrasVigentes = extras.filter(e => !taraNoVigente(e, vigentes));
+  const extrasCambiaron = extrasVigentes.length !== extras.length;
+  const principalCambia = taraNoVigente(f, vigentes);
+  if (!principalCambia && !extrasCambiaron) return { fila: f, cambiada: false };
+  const base = principalCambia ? { ...f, taraId: '', taraCantidad: '' } : { ...f };
+  return { fila: extrasCambiaron ? { ...base, tarasExtra: extrasVigentes } : base, cambiada: true };
 }
 
 export interface FilaMaterialMinima extends CampoTaraMinimo {

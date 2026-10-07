@@ -81,6 +81,8 @@ export interface FilaLista<T = unknown> {
   codigo: string;
   /** AAAA-MM-DD */
   fecha: string | null;
+  /** Instante (timestamptz ISO) en que se registró; sirve para mostrar la hora junto a `fecha`. */
+  instante?: string;
   entidadId: string | null;
   /** true: ticket en bruto o traslado pendiente (falta confirmarlo). */
   porRecepcionar: boolean;

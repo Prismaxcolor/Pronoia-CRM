@@ -46,7 +46,7 @@ function FacturaGraficas({ facturas, tipo, rutaNueva }: Props) {
         )}
       </Bloque>
 
-      <Bloque titulo="Facturas por estado" queEstasViendo="cuántas facturas del periodo hay en cada estado: emitida (ya generada), pagada, borrador (aún no emitida) o anulada (cancelada). Aquí sí se cuentan todas.">
+      <Bloque titulo="Facturas por estado" queEstasViendo="cuántas facturas del periodo hay en cada estado: emitida (sin ningún pago), pendiente (con pagos y saldo por pagar), pagada (sin saldo), borrador (aún no emitida) o anulada (cancelada). Aquí sí se cuentan todas.">
         {partes.length >= MIN_ESTADOS_DONA ? (
           <Dona
             items={partes.map(p => ({ etiqueta: infoEstado(p.estado).etiqueta, valor: p.cantidad }))}

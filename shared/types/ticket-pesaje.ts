@@ -2,6 +2,18 @@ import type { DestinoTipo } from './lote.js';
 
 export type TipoTicketPesaje = 'compra' | 'venta';
 
+/** Una tara individual del desglose de un material (p. ej. saca ×2, cesta).
+ *  `kg` es el total de esa tara (cantidad × peso unitario si es de la tabla). */
+export interface TaraDetalle {
+  tipo: 'tabla' | 'manual';
+  /** Tara de la tabla de taras (solo `tipo === 'tabla'`). */
+  taraId?: string;
+  nombre: string;
+  /** Unidades usadas (solo `tipo === 'tabla'`). */
+  cantidad?: number;
+  kg: number;
+}
+
 /**
  * Una línea de material dentro de un ticket de pesaje. Un ticket puede tener
  * varias (cada material con su propio peso).
@@ -18,6 +30,9 @@ export interface TicketPesajeMaterial {
   subcategoria: string | null;
   pesoBruto: number;
   tara: number;
+  /** Desglose de la tara (suma = `tara`). Null/ausente en tickets anteriores:
+   *  solo se conoce el total. */
+  tarasDetalle?: TaraDetalle[] | null;
   /** Peso devuelto/descontado. Por defecto 0. */
   devolucion: number;
   /** Calculado en BD (columna generada). Solo lectura. */
@@ -133,6 +148,11 @@ export interface TicketPesaje {
   ticketPrincipalId?: string | null;
   /** Código del ticket principal (ej. "Compra-0012") para mostrar "Unido a". */
   ticketPrincipalCodigo?: string | null;
+  /** Nombre de quien registró el ticket (pesadoPor) y de quien lo completó. Solo viene en el detalle (obtenerTicket). */
+  pesadoPorNombre?: string | null;
+  completadoPorNombre?: string | null;
+  /** Última edición según la auditoría (null si nunca se editó). Solo viene en el detalle. */
+  ultimaEdicion?: { nombre: string; en: string } | null;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
 }
@@ -149,6 +169,14 @@ export function formatCodigoPesaje(numero: number, tipo: 'compra' | 'venta'): st
  *  Duplicado en backend/src/utils/peso-kg.ts (hay test de paridad). */
 export function redondearKg(n: number): number {
   return Math.round((n + Number.EPSILON) * 1000) / 1000 || 0;
+}
+
+/** Texto del desglose de tara de un material: 'Saca ×2 = 1,20 kg · Cesta = 0,50 kg'.
+ *  `fmtKg` da formato a los kg (sin unidad). Vacío si no hay desglose. */
+export function describirTarasDetalle(detalle: TaraDetalle[] | null | undefined, fmtKg: (kg: number) => string): string {
+  return (detalle ?? [])
+    .map(t => `${t.nombre}${t.tipo === 'tabla' && (t.cantidad ?? 1) !== 1 ? ` ×${t.cantidad}` : ''} = ${fmtKg(t.kg)} kg`)
+    .join(' · ');
 }
 
 /** Diferencia de un ticket = peso global - suma neta de materiales - devolución.

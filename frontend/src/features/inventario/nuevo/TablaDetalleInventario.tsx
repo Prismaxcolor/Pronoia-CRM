@@ -18,6 +18,8 @@ import { obtenerDetallePantalla } from '../../../services/inventario-pantalla-se
 import { Bloque, EstadoVacio, InfoTooltip, Insignia, exportarCsv } from '../../../components/ui';
 import { AvisosMeta, ChipFiltro, ErrorBloque, EXPLICACION_BASURA, ExplicacionDias, EXPLICACION_LIMPIEZA, SkeletonBloque } from './PantallaComun';
 import ComposicionLote from './ComposicionLote';
+import VaciarDesechosBoton from './VaciarDesechosBoton';
+import { puedeVaciarDesechos } from '../../../lib/desechos';
 import { useCambiarFiltros, useDatosPantalla } from './useDatosPantalla';
 import { useMediaQuery } from '../../../hooks/use-media-query';
 
@@ -120,6 +122,8 @@ interface FilaProps {
   filtrosComp: ReturnType<typeof filtrosComposicion>;
   /** Cambia cuando la tabla se recarga: la composición de un lote expandido se vuelve a pedir. */
   version?: number;
+  /** Recarga la tabla (la usa «Vaciar desechos» tras dejar el producto en 0 kg). */
+  onVaciado?: () => void;
 }
 
 function BotonExpandir({ f, expandida, onExpandir }: { f: FilaDetalleInventario; expandida: boolean; onExpandir: (id: string) => void }) {
@@ -138,13 +142,14 @@ function BotonExpandir({ f, expandida, onExpandir }: { f: FilaDetalleInventario;
   );
 }
 
-function CeldaMaterial({ f, expandida, onExpandir }: Pick<FilaProps, 'f' | 'expandida' | 'onExpandir'>) {
+function CeldaMaterial({ f, expandida, onExpandir, onVaciado }: Pick<FilaProps, 'f' | 'expandida' | 'onExpandir' | 'onVaciado'>) {
   const expandible = esFilaExpandible(f);
   return (
     <>
       {expandible && <BotonExpandir f={f} expandida={expandida} onExpandir={onExpandir} />}
       {f.material}<Insignias f={f} />
       <NotasFila f={f} />
+      {onVaciado && puedeVaciarDesechos(f) && <span className="block"><VaciarDesechosBoton productoId={f.productoId!} kg={f.kg} onVaciado={onVaciado} /></span>}
     </>
   );
 }
@@ -153,7 +158,7 @@ function celda(c: DefColumna['clave'], p: FilaProps) {
   const { f } = p;
   switch (c) {
     case 'material':
-      return <td key={c} className={`px-3 py-2 font-medium text-text-primary ${esFilaExpandible(f) ? 'pl-5' : 'pl-9'}`}><CeldaMaterial f={f} expandida={p.expandida} onExpandir={p.onExpandir} /></td>;
+      return <td key={c} className={`px-3 py-2 font-medium text-text-primary ${esFilaExpandible(f) ? 'pl-5' : 'pl-9'}`}><CeldaMaterial f={f} expandida={p.expandida} onExpandir={p.onExpandir} onVaciado={p.onVaciado} /></td>;
     case 'kg':
       return <td key={c} className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">{formatearKg(f.kg)}</td>;
     case 'etapa':
@@ -188,11 +193,11 @@ function FilaMaterial(p: FilaProps) {
   );
 }
 
-function TarjetaMovil({ f, expandida, onExpandir, filtrosComp, version }: FilaProps) {
+function TarjetaMovil({ f, expandida, onExpandir, filtrosComp, version, onVaciado }: FilaProps) {
   return (
     <li className="rounded-lg border border-border bg-surface p-3">
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-sm font-medium text-text-primary"><CeldaMaterial f={f} expandida={expandida} onExpandir={onExpandir} /></p>
+        <p className="min-w-0 text-sm font-medium text-text-primary"><CeldaMaterial f={f} expandida={expandida} onExpandir={onExpandir} onVaciado={onVaciado} /></p>
         <p className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-text-primary">{formatearKg(f.kg)}</p>
       </div>
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
@@ -367,7 +372,7 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
                                 clase="border-t border-border-strong bg-surface-alt"
                               />
                               {abierto && g.filas.map(f => (
-                                <FilaMaterial key={f.id} f={f} columnas={columnas} expandida={Boolean(expandidas[f.id])} onExpandir={alternarExpandida} filtrosComp={filtrosComp} version={recarga} />
+                                <FilaMaterial key={f.id} f={f} columnas={columnas} expandida={Boolean(expandidas[f.id])} onExpandir={alternarExpandida} filtrosComp={filtrosComp} version={recarga} onVaciado={recargar} />
                               ))}
                             </tbody>
                           );
@@ -404,7 +409,7 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
                           {estaAbierto(g.clave) && (
                             <ul className="space-y-2">
                               {g.filas.map(f => (
-                                <TarjetaMovil key={f.id} f={f} columnas={columnas} expandida={Boolean(expandidas[f.id])} onExpandir={alternarExpandida} filtrosComp={filtrosComp} version={recarga} />
+                                <TarjetaMovil key={f.id} f={f} columnas={columnas} expandida={Boolean(expandidas[f.id])} onExpandir={alternarExpandida} filtrosComp={filtrosComp} version={recarga} onVaciado={recargar} />
                               ))}
                             </ul>
                           )}

@@ -5,8 +5,13 @@ import { crearMovimiento } from '../../services/banca-service';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerTasa, type FuenteTasaKey } from '../../services/tasa-service';
+import { subirComprobantePago } from '../../services/storage-service';
+import { fotoLocalDeFile, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import { filtrarComprobantes } from '../../lib/comprobante-imagen';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import { useAuth } from '../../hooks/use-auth-context';
 import type { Banca } from '@shared/types/index.js';
+import { hoyNegocio } from '../../lib/fecha-negocio';
 
 interface Props {
   bancas: Banca[];
@@ -36,9 +41,17 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
   const [tasas, setTasas] = useState<Partial<Record<FuenteTasaKey, number>>>({});
   const [descripcion, setDescripcion] = useState('');
   const [referencia, setReferencia] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [fecha, setFecha] = useState(hoyNegocio());
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [comprobantes, setComprobantes] = useState<FotoLocal[]>([]);
+
+  const agregarComprobantes = (files: File[]) => {
+    const { validos, errores } = filtrarComprobantes(files, comprobantes.length);
+    setError(errores.length > 0 ? errores.join(' ') : null);
+    setComprobantes(prev => [...prev, ...validos.map(fotoLocalDeFile)]);
+  };
+  const quitarComprobante = (idx: number) => setComprobantes(prev => prev.filter((_, i) => i !== idx));
 
   // Atribución opcional a proveedor (egreso = pago) o cliente (ingreso = cobro)
   const [proveedores, setProveedores] = useState<Entidad[]>([]);
@@ -114,6 +127,12 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
     }
 
     setGuardando(true);
+    const comprobantesUrls = await subirFotosLocal(comprobantes, subirComprobantePago);
+    if (!comprobantesUrls) {
+      setGuardando(false);
+      setError('No se pudo subir el comprobante. Prueba de nuevo o registra el movimiento sin él.');
+      return;
+    }
     const result = await crearMovimiento({
       tipo,
       bancaId,
@@ -127,6 +146,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
       registradoPor: usuario?.id ?? '',
       proveedorId: tipo === 'egreso' ? entidadId || null : null,
       clienteId: tipo === 'ingreso' ? entidadId || null : null,
+      comprobantes: comprobantesUrls,
     });
     setGuardando(false);
 
@@ -373,6 +393,13 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
               </p>
             </div>
           )}
+
+          <FotoMultiplePicker
+            fotos={comprobantes}
+            onAgregar={agregarComprobantes}
+            onQuitar={quitarComprobante}
+            label="Imagen del comprobante (opcional)"
+          />
 
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">

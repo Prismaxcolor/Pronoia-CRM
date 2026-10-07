@@ -1,5 +1,6 @@
 import { formatearCambios, kg, usd, sanitizarValor } from '../utils/grupo-formato.js';
 import type { CambiosAuditoria } from '../utils/auditoria.js';
+import { detallesExtraDinero } from './grupo-dinero.js';
 
 /**
  * Catálogo de acciones del sistema que se avisan al grupo interno de Telegram.
@@ -43,6 +44,10 @@ export interface ExtraEvento {
   autorizadoPor?: string | null;
   /** Nombre de la contraparte ("Proveedor X"), resuelto por el servicio. */
   contexto?: string | null;
+  /** Transformación completa (nombres de producto/lote/almacén) leída por el servicio; gana sobre la respuesta. */
+  transformacion?: Readonly<Record<string, unknown>> | null;
+  /** Nombre del almacén de donde sale el material de una transformación. */
+  almacenEntrada?: string | null;
 }
 
 export interface ContextoEvento {
@@ -73,7 +78,7 @@ export interface ContextoRef {
   id: string;
 }
 
-export type Enriquecimiento = 'ticket' | 'auditoria';
+export type Enriquecimiento = 'ticket' | 'auditoria' | 'factura';
 
 export interface EventoCatalogo {
   clave: string;
@@ -92,7 +97,7 @@ export interface EventoCatalogo {
   contexto?: (ctx: ContextoEvento) => ContextoRef | null;
   /** Líneas de detalle: solo campos seguros. */
   detalles?: (ctx: ContextoEvento) => string[];
-  /** Cambia icono/acción/clave según el resultado (ej. ticket en bruto vs completo). */
+  /** Cambia icono/acción/clave según el resultado (ej. pesaje global por recepcionar vs completo). */
   variante?: (ctx: ContextoEvento) => Partial<Pick<EventoCatalogo, 'clave' | 'icono' | 'accion'>> | null;
   enriquecer?: Enriquecimiento;
 }
@@ -241,6 +246,67 @@ function detallesEntidadComercialEditada(ctx: ContextoEvento): string[] {
   return cambios.length > 0 ? [`Cambió: ${cambios.join(', ')}`] : [];
 }
 
+const MAX_SALIDAS = 8;
+const TOLERANCIA_KG = 0.005;
+
+const CATEGORIAS_TRANSFORMACION: Record<string, string> = {
+  pcb: 'PCB',
+  ferroso_no_ferroso: 'Ferroso / No ferroso',
+  mixta: 'Mixta',
+};
+
+function lineaSalidaTransformacion(s: Record<string, unknown>): string[] {
+  const neto = num(s.pesoNeto);
+  const material = txt(s.nombreProducto);
+  const lote = txt(s.nombreLoteDestino);
+  const almacen = txt(s.nombreAlmacen);
+  if (neto === null || (!material && !lote)) return [];
+  const nombre = [material, lote ? `Lote ${lote}` : null].filter(Boolean).join(' → ');
+  return [`• ${sanitizarValor(nombre)}${almacen ? ` (almacén ${sanitizarValor(almacen)})` : ''}: ${kg(neto)}`];
+}
+
+/**
+ * Qué material se transforma y qué se obtiene: tipo, material/lote de entrada, almacén, kilos
+ * de entrada y, si ya hay salidas, cada salida con sus kilos netos y la merma. SIN precios ni
+ * valores monetarios (el dinero va a otro grupo): solo se leen los campos nombrados aquí.
+ */
+function detallesTransformacion(ctx: ContextoEvento): string[] {
+  const t = rec(ctx.extra.transformacion ?? ctx.resBody.transformacion);
+  if (Object.keys(t).length === 0) return [];
+  const categoria = txt(t.categoria);
+  const entradas = arr(t.entradaDetalle).map(rec);
+  const entrada = txt(t.nombreProductoEntrada) ?? (entradas.length === 1 ? txt(entradas[0].nombreProducto) : null);
+  const lote = txt(t.nombreLoteOrigen);
+  const netoEntrada = num(t.pesoNeto);
+  const salidas = arr(t.salidas).map(rec);
+  const esMixta = ctx.metodo === 'PATCH' && ctx.ruta.endsWith('/completar-mixta');
+  const lineasSalidas = salidas.slice(0, MAX_SALIDAS).flatMap(lineaSalidaTransformacion);
+  const netoSalidas = salidas.reduce((a, s) => a + (num(s.pesoNeto) ?? 0), 0);
+  const merma = netoEntrada !== null && salidas.length > 0 ? netoEntrada - netoSalidas : null;
+  return [
+    ...linea('Tipo', categoria ? (CATEGORIAS_TRANSFORMACION[categoria] ?? categoria) : null),
+    ...(esMixta ? ['Salida mixta (material y lote)'] : []),
+    ...linea('Material de entrada', entrada),
+    ...linea('Lote de origen', lote),
+    ...linea('Almacén', ctx.extra.almacenEntrada),
+    ...(netoEntrada !== null ? [`Kilos de entrada: ${kg(netoEntrada)}`] : []),
+    ...(lineasSalidas.length > 0 ? ['Salidas obtenidas:', ...lineasSalidas] : []),
+    ...(salidas.length > MAX_SALIDAS ? [`• … y ${salidas.length - MAX_SALIDAS} salida(s) más`] : []),
+    ...(lineasSalidas.length > 0 ? [`Total salidas: ${kg(netoSalidas)}`] : []),
+    ...(merma !== null && merma > TOLERANCIA_KG ? [`Merma: ${kg(merma)}`] : []),
+  ];
+}
+
+/** Eventos de transformación cuyo aviso nombra el material (el servicio completa nombres y almacén). */
+export const esTransformacionConMaterial = (clave: string): boolean =>
+  clave.startsWith('transformacion.') && !['transformacion.salidas_comunes', 'transformacion.valoracion'].includes(clave);
+
+/** Edición de una transformación: primero qué cambió y luego el material/salidas actuales. */
+const detallesTransformacionEditada = (ctx: ContextoEvento): string[] => [
+  ...detallesCambios(ctx),
+  ...detallesTransformacion(ctx),
+];
+
 const ENTIDAD_LLAVE: Record<string, string> = {
   ticket_pesaje: 'ticket de pesaje',
   transformacion: 'transformación',
@@ -316,13 +382,13 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('asistente.chat', 'POST', '/api/asistente/chat', 'acceso', 'ignorable', '🤖', 'Mensaje al asistente IA (consulta, no modifica datos)'),
 
   // --- Pesaje ---------------------------------------------------------------
-  ev('ticket.iniciado', 'POST', '/api/tickets-pesaje', 'pesaje', 'normal', '⚖️', 'Se inició un pesaje', {
+  ev('ticket.iniciado', 'POST', '/api/tickets-pesaje', 'pesaje', 'normal', '⚖️', 'Se guardó un pesaje global (por recepcionar)', {
     entidad: { rotulo: 'Ticket', resp: 'ticket' }, contexto: contextoDeTicket, detalles: detallesTicket, enriquecer: 'ticket',
     variante: ctx => rec(ctx.resBody.ticket).estado === 'completo'
       ? { clave: 'ticket.creado_completo', icono: '✅', accion: 'Se terminó el pesaje (ticket completo)' }
       : null,
   }),
-  ev('ticket.completado', 'PATCH', '/api/tickets-pesaje/:id/completar', 'pesaje', 'normal', '✅', 'Se terminó el pesaje', {
+  ev('ticket.completado', 'PATCH', '/api/tickets-pesaje/:id/completar', 'pesaje', 'normal', '✅', 'Se terminó el pesaje (se recepcionó el pesaje global)', {
     entidad: { rotulo: 'Ticket', resp: 'ticket' }, contexto: contextoDeTicket, detalles: detallesTicket, enriquecer: 'ticket',
   }),
   ev('ticket.editado', 'PATCH', '/api/tickets-pesaje/:id', 'pesaje', 'critica', '✏️', 'Se EDITÓ un ticket de pesaje', {
@@ -334,10 +400,10 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
 
   // --- Facturación ----------------------------------------------------------
   ev('factura_compra.emitida', 'POST', '/api/facturas-compra', 'facturacion', 'normal', '🧾', 'Se emitió una factura de compra', {
-    entidad: { rotulo: 'Factura', resp: 'factura' }, detalles: detallesFactura,
+    entidad: { rotulo: 'Factura', resp: 'factura' }, detalles: detallesFactura, enriquecer: 'factura',
   }),
   ev('factura_venta.emitida', 'POST', '/api/facturas-venta', 'facturacion', 'normal', '🧾', 'Se emitió una factura de venta', {
-    entidad: { rotulo: 'Factura', resp: 'factura' }, detalles: detallesFactura,
+    entidad: { rotulo: 'Factura', resp: 'factura' }, detalles: detallesFactura, enriquecer: 'factura',
   }),
   ...entidadComercial('/api/proveedores', 'proveedor', 'Proveedor', 'proveedores', 'notas_ajuste_proveedor', 'el', 'proveedor'),
   ...entidadComercial('/api/clientes', 'cliente', 'Cliente', 'clientes', 'notas_ajuste_cliente', 'el', 'cliente'),
@@ -348,28 +414,39 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
     etiqueta: ctx => (txt(ctx.resBody.movimientoId) ? 'Pago individual' : null),
     detalles: ctx => {
       const monto = num(ctx.reqBody.montoUsd);
-      return monto !== null ? [`Monto: ${usd(monto)}`] : [];
+      return [...(monto !== null ? [`Monto: ${usd(monto)}`] : []), ...detallesExtraDinero(ctx.reqBody)];
     },
   }),
   ev('pago.multiple', 'POST', '/api/pagos/multiple', 'tesoreria', 'critica', '💸', 'Se registró un pago / cruce a proveedor', {
     contexto: contextoPor('Proveedor', 'proveedores', 'proveedorId'),
     etiqueta: ctx => etiquetaDoc(ctx.resBody, [['numeroPago', 'PG', 'Pago'], ['numeroCruce', 'CR', 'Cruce']]),
-    detalles: ctx => detallesPagoCobro(ctx, [['numeroPago', 'PG'], ['numeroAdelanto', 'AD'], ['numeroCruce', 'CR']]),
+    detalles: ctx => [
+      ...detallesPagoCobro(ctx, [['numeroPago', 'PG'], ['numeroAdelanto', 'AD'], ['numeroCruce', 'CR']]),
+      ...detallesExtraDinero(ctx.reqBody),
+    ],
   }),
   ev('cobro.multiple', 'POST', '/api/cobros/multiple', 'tesoreria', 'critica', '💰', 'Se registró un cobro / cruce a cliente', {
     contexto: contextoPor('Cliente', 'clientes', 'clienteId'),
     etiqueta: ctx => etiquetaDoc(ctx.resBody, [['numeroCobro', 'CB', 'Cobro'], ['numeroCruce', 'CRV', 'Cruce']]),
-    detalles: ctx => detallesPagoCobro(ctx, [['numeroCobro', 'CB'], ['numeroAnticipo', 'AC'], ['numeroCruce', 'CRV']]),
+    detalles: ctx => [
+      ...detallesPagoCobro(ctx, [['numeroCobro', 'CB'], ['numeroAnticipo', 'AC'], ['numeroCruce', 'CRV']]),
+      ...detallesExtraDinero(ctx.reqBody),
+    ],
   }),
   ev('banca.creada', 'POST', '/api/cochinito/bancas', 'tesoreria', 'normal', '🏦', 'Se creó una banca', { entidad: { rotulo: 'Banca', resp: 'banca' } }),
   ev('banca.editada', 'PATCH', '/api/cochinito/bancas/:id', 'tesoreria', 'normal', '✏️', 'Se editó una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
   ev('banca.archivada', 'POST', '/api/cochinito/bancas/:id/archivar', 'tesoreria', 'critica', '📦', 'Se ARCHIVÓ una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
   ev('banca.desarchivada', 'POST', '/api/cochinito/bancas/:id/desarchivar', 'tesoreria', 'normal', '📤', 'Se desarchivó una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
   ev('banca.movimiento', 'POST', '/api/cochinito/movimientos', 'tesoreria', 'critica', '🔁', 'Se registró un movimiento de banca', {
+    contexto: ctx => contextoDeEntidadTipo(ctx.reqBody.proveedorId ? 'proveedor' : 'cliente', ctx.reqBody.proveedorId ?? ctx.reqBody.clienteId),
     detalles: ctx => {
       const monto = num(ctx.reqBody.monto);
       const tipo = txt(ctx.reqBody.tipo);
-      return [...linea('Tipo', tipo), ...(monto !== null ? [`Monto: ${formatMontoBanca(monto)}`] : [])];
+      return [
+        ...linea('Tipo', tipo),
+        ...(monto !== null ? [`Monto: ${formatMontoBanca(monto, txt(ctx.reqBody.moneda))}`] : []),
+        ...detallesExtraDinero(ctx.reqBody),
+      ];
     },
   }),
 
@@ -404,19 +481,19 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('transformacion.salidas_comunes', 'PUT', '/api/transformaciones/config/salidas-comunes/:productoId', 'transformacion', 'normal', '⚙️', 'Se configuraron las salidas comunes de un producto'),
   ev('transformacion.valoracion', 'PATCH', '/api/transformaciones/:id/valoracion', 'transformacion', 'normal', '💲', 'Se valoró una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
   ev('transformacion.editada', 'PATCH', '/api/transformaciones/:id/editar', 'transformacion', 'critica', '✏️', 'Se EDITÓ una transformación', {
-    entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesCambios, enriquecer: 'auditoria',
+    entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacionEditada, enriquecer: 'auditoria',
   }),
   ev('transformacion.merma_editada', 'PATCH', '/api/transformaciones/:id/merma', 'transformacion', 'critica', '✏️', 'Se editó la merma por tipo de una transformación', {
-    entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesCambios, enriquecer: 'auditoria',
+    entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacionEditada, enriquecer: 'auditoria',
   }),
-  ev('transformacion.creada', 'POST', '/api/transformaciones', 'transformacion', 'normal', '♻️', 'Se inició una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
-  ev('transformacion.completada', 'PATCH', '/api/transformaciones/:id/completar', 'transformacion', 'normal', '✅', 'Se completó una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
-  ev('transformacion.ferroso_creada', 'POST', '/api/transformaciones/ferroso', 'transformacion', 'normal', '♻️', 'Se inició una transformación ferrosa / no ferrosa', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
-  ev('transformacion.ferroso_completada', 'PATCH', '/api/transformaciones/:id/completar-ferroso', 'transformacion', 'normal', '✅', 'Se completó una transformación ferrosa / no ferrosa', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
-  ev('transformacion.pcb_creada', 'POST', '/api/transformaciones/pcb', 'transformacion', 'normal', '♻️', 'Se inició una transformación PCB', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
-  ev('transformacion.pcb_completada', 'PATCH', '/api/transformaciones/:id/completar-pcb', 'transformacion', 'normal', '✅', 'Se completó una transformación PCB', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
-  ev('transformacion.mixta_completada', 'PATCH', '/api/transformaciones/:id/completar-mixta', 'transformacion', 'normal', '✅', 'Se completó una transformación con salida mixta', { entidad: { rotulo: 'Transformación', resp: 'transformacion' } }),
-  ev('transformacion.eliminada', 'DELETE', '/api/transformaciones/:id', 'transformacion', 'critica', '🗑️', 'Se ELIMINÓ una transformación', { entidad: { rotulo: 'Transformación', tabla: 'transformaciones' } }),
+  ev('transformacion.creada', 'POST', '/api/transformaciones', 'transformacion', 'normal', '♻️', 'Se inició una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.completada', 'PATCH', '/api/transformaciones/:id/completar', 'transformacion', 'normal', '✅', 'Se completó una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.ferroso_creada', 'POST', '/api/transformaciones/ferroso', 'transformacion', 'normal', '♻️', 'Se inició una transformación ferrosa / no ferrosa', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.ferroso_completada', 'PATCH', '/api/transformaciones/:id/completar-ferroso', 'transformacion', 'normal', '✅', 'Se completó una transformación ferrosa / no ferrosa', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.pcb_creada', 'POST', '/api/transformaciones/pcb', 'transformacion', 'normal', '♻️', 'Se inició una transformación PCB', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.pcb_completada', 'PATCH', '/api/transformaciones/:id/completar-pcb', 'transformacion', 'normal', '✅', 'Se completó una transformación PCB', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.mixta_completada', 'PATCH', '/api/transformaciones/:id/completar-mixta', 'transformacion', 'normal', '✅', 'Se completó una transformación con salida mixta', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.eliminada', 'DELETE', '/api/transformaciones/:id', 'transformacion', 'critica', '🗑️', 'Se ELIMINÓ una transformación', { entidad: { rotulo: 'Transformación', tabla: 'transformaciones' }, detalles: detallesTransformacion }),
 
   // --- Traslados ------------------------------------------------------------
   ev('traslado.creado', 'POST', '/api/traslados', 'traslado', 'normal', '🚚', 'Se creó un traslado entre almacenes', { entidad: { rotulo: 'Traslado', resp: 'traslado' } }),
@@ -434,6 +511,7 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('toma_fisica.pesaje_eliminado', 'DELETE', '/api/tomas-fisicas/:id/pesajes/:detalleId', 'toma_fisica', 'normal', '❌', 'Se eliminó una pesada de la toma física', { entidad: { rotulo: 'Toma física', tabla: 'tomas_fisicas_inventario' } }),
   ev('toma_fisica.culminada', 'POST', '/api/tomas-fisicas/:id/culminar', 'toma_fisica', 'critica', '🏁', 'Se CERRÓ una toma física (ajusta el inventario)', { entidad: { rotulo: 'Toma física', tabla: 'tomas_fisicas_inventario' } }),
   ev('toma_fisica.cancelada', 'POST', '/api/tomas-fisicas/:id/cancelar', 'toma_fisica', 'critica', '🛑', 'Se CANCELÓ una toma física', { entidad: { rotulo: 'Toma física', tabla: 'tomas_fisicas_inventario' } }),
+  ev('inventario.desechos_vaciados', 'POST', '/api/inventario/desechos/:productoId/vaciar', 'inventario', 'critica', '🗑️', 'Se vació el producto DESECHOS (basura llevada al vertedero)', { entidad: { rotulo: 'Producto', tabla: 'productos' } }),
 
   // --- Usuarios y seguridad -------------------------------------------------
   ev('usuario.creado', 'POST', '/api/usuarios', 'usuarios', 'critica', '👤', 'Se creó un usuario', {
@@ -463,6 +541,16 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   }),
   ev('portal.cita_agendada', 'POST', '/api/portal/agendar', 'citas', 'normal', '📅', 'Un proveedor/cliente agendó una cita desde el portal', { detalles: detallesCita }),
   ev('portal.cita_cancelada', 'POST', '/api/portal/agendar/:id/cancelar', 'citas', 'normal', '📅', 'Un proveedor/cliente canceló una cita desde el portal'),
+
+  // --- Packing list de exportación -------------------------------------------
+  ev('packing_list.creado', 'POST', '/api/packing-lists', 'citas', 'normal', '📦', 'Se creó un packing list de exportación', {
+    detalles: ctx => linea('Contenedor', txt(ctx.reqBody.contenedor)),
+  }),
+  ev('packing_list.editado', 'PUT', '/api/packing-lists/:id', 'citas', 'normal', '✏️', 'Se editó un packing list de exportación', {
+    detalles: ctx => linea('Contenedor', txt(ctx.reqBody.contenedor)),
+  }),
+  ev('packing_list.eliminado', 'DELETE', '/api/packing-lists/:id', 'citas', 'critica', '🗑️', 'Se ELIMINÓ un packing list de exportación'),
+  ev('packing_list.empresa_editada', 'PUT', '/api/packing-lists/empresas/:idioma', 'citas', 'normal', '🏢', 'Se editaron los datos de la empresa del packing list'),
 ];
 
 function detallesFactura(ctx: ContextoEvento): string[] {
@@ -483,8 +571,8 @@ function detallesCita(ctx: ContextoEvento): string[] {
 }
 
 /** Montos de banca vienen en la moneda de la banca: se muestra el número sin símbolo. */
-function formatMontoBanca(monto: number): string {
-  return String(monto);
+function formatMontoBanca(monto: number, moneda: string | null): string {
+  return moneda ? `${monto} ${moneda}` : String(monto);
 }
 
 // ---------------------------------------------------------------------------
@@ -547,7 +635,7 @@ export interface FiltroSilencio {
   incluirRuidosos: boolean;
 }
 
-/** Categorías enteras que manejan dinero: nunca se avisan al grupo. */
+/** Categorías enteras que manejan dinero: nunca se avisan al grupo de operaciones. */
 const CATEGORIAS_DINERO: ReadonlyArray<CategoriaEvento> = ['tesoreria', 'facturacion', 'precios'];
 /** Eventos sueltos de otras categorías que también tocan costos o valoración. */
 const CLAVES_DINERO: ReadonlyArray<string> = ['inventario.costos_referencia_editados', 'transformacion.valoracion'];
@@ -557,12 +645,30 @@ export function esEventoDeDinero(evento: Pick<EventoCatalogo, 'clave' | 'categor
   return CATEGORIAS_DINERO.includes(evento.categoria) || CLAVES_DINERO.includes(evento.clave);
 }
 
-/** ¿Este evento debe avisarse al grupo? Ignorables y los de dinero nunca; ruidosos solo si se pidió. */
+/** Grupos de Telegram a los que puede ir un aviso. */
+export type DestinoGrupo = 'operaciones' | 'cajas';
+
+/**
+ * A qué grupo va un evento (null = a ninguno). Primero los filtros comunes (ignorables, ruidosos,
+ * silenciados); después el ruteo por tema:
+ *  - tesorería, facturas (emitidas, con su PDF), notas, estado de cuenta -> cajas ("P.S Cajas Pagos")
+ *  - precios, costos y valoración   -> ninguno (no son movimientos de dinero)
+ *  - todo lo demás                  -> operaciones
+ * Así el dinero (facturas incluidas) NUNCA llega al grupo de operaciones.
+ */
+export function destinoEvento(
+  evento: Pick<EventoCatalogo, 'clave' | 'categoria' | 'importancia'>, filtro: FiltroSilencio
+): DestinoGrupo | null {
+  if (evento.importancia === 'ignorable') return null;
+  if (evento.importancia === 'ruidosa' && !filtro.incluirRuidosos) return null;
+  if (filtro.silenciados.includes(evento.clave) || filtro.silenciados.includes(evento.categoria)) return null;
+  if (!esEventoDeDinero(evento)) return 'operaciones';
+  return evento.categoria === 'tesoreria' || evento.categoria === 'facturacion' ? 'cajas' : null;
+}
+
+/** ¿Este evento debe avisarse al grupo de OPERACIONES? (El dinero va a cajas: ver destinoEvento.) */
 export function debeNotificar(evento: Pick<EventoCatalogo, 'clave' | 'categoria' | 'importancia'>, filtro: FiltroSilencio): boolean {
-  if (evento.importancia === 'ignorable') return false;
-  if (esEventoDeDinero(evento)) return false;
-  if (evento.importancia === 'ruidosa' && !filtro.incluirRuidosos) return false;
-  return !filtro.silenciados.includes(evento.clave) && !filtro.silenciados.includes(evento.categoria);
+  return destinoEvento(evento, filtro) === 'operaciones';
 }
 
 /** Aplica la variante dinámica (ej. ticket creado ya completo) sobre la fila base. */

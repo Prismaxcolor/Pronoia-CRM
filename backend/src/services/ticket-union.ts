@@ -30,7 +30,7 @@ export function sumarPesosGlobales(
 
 function errorSecundario(principal: TicketUnibleRow, t: TicketUnibleRow): string | null {
   if (t.tipo !== 'compra') return 'Solo se pueden unir tickets de compra.';
-  if (t.estado !== 'bruto') return 'Solo se pueden unir tickets en bruto (sin completar).';
+  if (t.estado !== 'bruto') return 'Solo se pueden unir pesajes globales por recepcionar (sin completar).';
   if (t.entidad_id !== principal.entidad_id) return 'Todos los tickets unidos deben ser del mismo proveedor.';
   if (t.pesaje_exterior) return 'Un ticket con pesaje exterior no tiene peso global y no se puede unir.';
   if (t.ticket_principal_id) return 'Alguno de los tickets ya está unido a otro.';

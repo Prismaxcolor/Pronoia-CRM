@@ -7,6 +7,8 @@ import type { TipoEntidad } from '../../services/estado-cuenta-service';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import { fechaRestaurable, idVigenteOVacio } from '../../lib/borrador-vigentes';
+import { hoyNegocio } from '../../lib/fecha-negocio';
+import { formatearFecha } from '../../lib/formato';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -18,7 +20,7 @@ interface Props {
 type Tipo = 'credito' | 'debito';
 
 function hoyISO(): string {
-  return new Date().toISOString().split('T')[0];
+  return hoyNegocio();
 }
 
 function fmt(n: number): string {
@@ -157,7 +159,7 @@ function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
               <option value="">Sin factura asociada (ajuste general)</option>
               {facturas.map(f => (
                 <option key={f.id} value={f.id}>
-                  {f.codigo ?? f.id.slice(0, 8)} · {f.createdAt.slice(0, 10)} · ${fmt(f.total)}
+                  {f.codigo ?? f.id.slice(0, 8)} · {formatearFecha(f.createdAt)} · ${fmt(f.total)}
                 </option>
               ))}
             </select>

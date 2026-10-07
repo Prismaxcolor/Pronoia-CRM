@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Check, Coins, Lock, PackageCheck, CalendarClock, ArrowUpDown } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import CompartirBoton from '../../components/CompartirBoton';
 import {
   obtenerListaDetalle,
   upsertPrecioEnLista,
@@ -21,6 +22,7 @@ import type { ColumnaTabla } from '../../components/ui';
 import { derivarKpisPreciosLista } from '../../lib/productos-kpis';
 import { estiloCategoria } from '../../lib/colores-categoria';
 import type { ListaPrecios, PrecioLista, Producto } from '@shared/types/index.js';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 // lazy pierde el genérico de TablaDatos<T>: se restaura con su tipo.
 const TablaDatos = lazy(() => import('../../components/ui/TablaDatos')) as unknown as typeof TablaDatosTipo;
@@ -203,8 +205,8 @@ function ListaDetallePage() {
       titulo: 'Cargado el',
       ayuda: 'Fecha en que se agregó este precio a la lista. No cambia si después modificas el precio.',
       valorOrden: p => p.createdAt,
-      celda: p => formatearFecha(p.createdAt),
-      valorCsv: p => formatearFecha(p.createdAt),
+      celda: p => formatearFechaHora(p.createdAt),
+      valorCsv: p => formatearFechaHora(p.createdAt),
       ocultaEnMovil: true,
     },
     ...(puedeEditar
@@ -254,12 +256,17 @@ function ListaDetallePage() {
   const tipoTexto = lista.tipo === 'venta' ? 'venta' : 'compra';
 
   return (
-    <div className="max-w-7xl">
+    <div data-compartir-imagen className="max-w-7xl">
       <EncabezadoPagina
         titulo={lista.nombre}
         subtitulo={`Lista de ${tipoTexto} · ${lista.vigenteDesde ? `vigente desde ${formatearFecha(lista.vigenteDesde)}` : 'sin fecha de vigencia'}`}
         migas={[{ etiqueta: 'Listas de precios', to: '/listas-precios' }, { etiqueta: lista.nombre }]}
-        acciones={!lista.activo ? <Insignia tono="neutral">Inactiva</Insignia> : undefined}
+        acciones={(
+          <>
+            {!lista.activo && <Insignia tono="neutral">Inactiva</Insignia>}
+            <CompartirBoton titulo={`Lista de precios ${lista.nombre}`} />
+          </>
+        )}
       />
 
       <section aria-label="Indicadores principales" className="print:hidden">
@@ -301,7 +308,7 @@ function ListaDetallePage() {
 
       {/* Alta de material */}
       {puedeEditar && (
-        <div className="print:hidden">
+        <div data-no-imagen className="print:hidden">
           <Bloque titulo="Agregar material" queEstasViendo="elige un material que todavía no tiene precio en esta lista y escribe cuánto vale cada kilo, en USD.">
             <form
               onSubmit={handleAgregar}

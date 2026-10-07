@@ -1,4 +1,5 @@
 import type { PesajeGlobal, PesajeGlobalUnido, TicketPesaje } from '@shared/types/index.js';
+import { diaNegocio, leyendaRegistro, leyendaUltimaEdicion } from './fecha-negocio';
 
 /** Datos puros del ticket para pantalla, impresión y PDF (sin React ni DOM; se prueban desde backend/tests). */
 
@@ -12,7 +13,20 @@ export function tituloTicket(estado: TicketPesaje['estado']): string {
 
 /** Fecha del pesaje global (YYYY-MM-DD): la del ticket o, si falta, la de creación. */
 export function fechaPesajeGlobal(t: Pick<TicketPesaje, 'fecha' | 'createdAt'>): string {
-  return (t.fecha ?? t.createdAt).slice(0, 10);
+  // `fecha` es un día de calendario; createdAt es un instante: su día es el de Caracas, no el UTC.
+  return t.fecha ?? diaNegocio(t.createdAt) ?? t.createdAt.slice(0, 10);
+}
+
+/** Líneas de autoría del ticket para pantalla, impresión y PDF (hora de Caracas):
+ *  "Registrado por X · fecha hora", "Completado por Y · fecha hora" (si se completó desde bruto) y "Última edición por Z · fecha hora". */
+export function lineasAutoriaTicket(
+  t: Pick<TicketPesaje, 'createdAt' | 'completadoEn' | 'pesadoPorNombre' | 'completadoPorNombre' | 'ultimaEdicion'>
+): { registro: string; completado: string | null; edicion: string | null } {
+  return {
+    registro: leyendaRegistro(t.pesadoPorNombre, t.createdAt),
+    completado: t.completadoEn ? leyendaRegistro(t.completadoPorNombre, t.completadoEn, 'Completado') : null,
+    edicion: leyendaUltimaEdicion(t.ultimaEdicion?.nombre, t.ultimaEdicion?.en),
+  };
 }
 
 /** Total de kg pesados: suma del neto de los materiales; sin materiales, el peso global. Redondeado a gramos. */

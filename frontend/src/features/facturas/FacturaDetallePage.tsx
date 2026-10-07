@@ -10,15 +10,19 @@ import HistorialEdiciones from '../../components/HistorialEdiciones';
 import { type TicketPesaje } from '@shared/types/index.js';
 import CompartirBoton from '../../components/CompartirBoton';
 import {
-  BarraProgreso, BotonAccion, EstadoVacio, GrillaKpis, SkeletonBloque, SkeletonKpis, TarjetaKpi, formatearFecha, formatearNumero, formatearUsdDecimales,
+  BarraProgreso, BotonAccion, EstadoVacio, GrillaKpis, SkeletonBloque, SkeletonKpis, TarjetaKpi, formatearNumero, formatearUsdDecimales,
 } from '../../components/ui';
+import { saldoFactura } from '../../lib/estado-factura';
 import { porcentajeEntero, porcentajePagado, saldoCompra } from '../../lib/facturas-kpis';
 import { CabeceraFactura, TituloSeccion } from './factura-cabecera';
+import LeyendaRegistro from '../../components/LeyendaRegistro';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 /** Etiqueta del estado en el encabezado impreso (la insignia de pantalla vive en CabeceraFactura). */
 const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
   borrador: { label: 'Borrador', clase: 'bg-gray-100 text-gray-600' },
   emitida: { label: 'Emitida', clase: 'bg-blue-100 text-blue-700' },
+  pendiente: { label: 'Pendiente', clase: 'bg-amber-100 text-amber-800' },
   pagada: { label: 'Pagada', clase: 'bg-green-100 text-green-700' },
   anulada: { label: 'Anulada', clase: 'bg-red-100 text-red-700' },
 };
@@ -102,7 +106,7 @@ function FacturaDetallePage({ tipo }: Props) {
   const itemsConsolidados = consolidarItems(factura.items);
   const totalPesoFacturado = itemsConsolidados.reduce((acc, it) => acc + it.peso, 0);
   const codigoVisible = factura.codigo ?? `N.º ${factura.id.slice(0, 8)}`;
-  const fecha = factura.createdAt.slice(0, 10);
+  const fecha = formatearFechaHora(factura.createdAt);
   const anulada = factura.estado === 'anulada';
   const saldo = saldoCompra(factura);
   const pctPagado = porcentajePagado(factura.total, factura.montoPagado);
@@ -126,7 +130,7 @@ function FacturaDetallePage({ tipo }: Props) {
       <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => descargarFacturaPDF(factura, tickets)}>PDF</BotonAccion>
       <BotonAccion variante="secundario" icono={<FileText size={16} />} onClick={() => descargarFacturaWord(factura)}>Word</BotonAccion>
       <BotonAccion variante="secundario" icono={<Printer size={16} />} onClick={() => window.print()}>Imprimir</BotonAccion>
-      <CompartirBoton titulo={`Factura ${factura.codigo ?? factura.id.slice(0, 8)}`} obtenerPdf={() => descargarFacturaPDF(factura, tickets, 'blob')} />
+      <CompartirBoton titulo={`Factura ${factura.codigo ?? factura.id.slice(0, 8)} ${factura.nombreEntidad ?? ''}`.trim()} />
     </>
   );
 
@@ -136,7 +140,7 @@ function FacturaDetallePage({ tipo }: Props) {
       <CabeceraFactura
         titulo={`${titulo} ${factura.codigo ?? ''}`.trim()}
         estado={factura.estado}
-        subtitulo={`${labelEntidad}: ${factura.nombreEntidad ?? '—'} · Emitida el ${formatearFecha(fecha)}`}
+        subtitulo={`${labelEntidad}: ${factura.nombreEntidad ?? '—'} · Emitida el ${fecha}`}
         migas={[{ etiqueta: etiquetaLista, to: ruta }, { etiqueta: codigoVisible }]}
         acciones={acciones}
       />
@@ -169,7 +173,7 @@ function FacturaDetallePage({ tipo }: Props) {
               </TarjetaKpi>
               <TarjetaKpi
                 titulo="Saldo pendiente"
-                ayuda="Dinero (USD) que falta por pagar de esta factura: total menos lo pagado. Solo una factura emitida tiene saldo; si está pagada, anulada o en borrador, muestra 0."
+                ayuda="Dinero (USD) que falta por pagar de esta factura: total menos lo pagado. Solo una factura emitida o pendiente tiene saldo; si está pagada, anulada o en borrador, muestra 0."
                 valor={formatearUsdDecimales(saldo)}
                 subtitulo={textoSaldo}
                 estado={estadoImporte}
@@ -192,7 +196,7 @@ function FacturaDetallePage({ tipo }: Props) {
       />
 
       {/* ---- El documento imprimible. En pantalla es una tarjeta; al imprimir queda igual que antes. ---- */}
-      <div className="mb-8 rounded-xl border border-border bg-surface p-4 sm:p-6 print:mb-0 print:rounded-none print:border-0 print:bg-transparent print:p-0">
+      <div data-compartir-imagen className="mb-8 rounded-xl border border-border bg-surface p-4 sm:p-6 print:mb-0 print:rounded-none print:border-0 print:bg-transparent print:p-0">
         {/* Encabezado de marca — solo el logo, estándar en todo documento impreso. */}
         <div className="hidden print:flex items-center justify-end mb-6">
           <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
@@ -215,6 +219,7 @@ function FacturaDetallePage({ tipo }: Props) {
           <FilaDocumento label="Origen del peso" valor={origenPeso(factura, tickets)} />
           {factura.descripcion && <FilaDocumento label="Descripción" valor={factura.descripcion} />}
           {factura.observaciones && <FilaDocumento label="Observaciones" valor={factura.observaciones} />}
+          <LeyendaRegistro className="mt-2 text-xs text-text-muted print:text-black" verbo="Registrada" nombre={factura.registradoPorNombre} instante={factura.createdAt} edicion={factura.ultimaEdicion} />
         </div>
 
         {/* Bloque monetario: tabla de grid completo, esquinas cuadradas — a
@@ -254,7 +259,7 @@ function FacturaDetallePage({ tipo }: Props) {
             <span className="text-2xl font-bold text-brand-700">{fmtMoneda(factura.total)}</span>
           </div>
 
-          {esCompra && factura.montoPagado > 0 && (
+          {factura.montoPagado > 0 && (
             <>
               <div className="flex justify-between pt-1 text-sm">
                 <span className="text-text-secondary">Pagado</span>
@@ -262,7 +267,7 @@ function FacturaDetallePage({ tipo }: Props) {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-text-secondary">Saldo pendiente</span>
-                <span className="text-text-primary font-medium">{fmtMoneda(Math.max(factura.total - factura.montoPagado, 0))}</span>
+                <span className="text-text-primary font-medium">{fmtMoneda(saldoFactura(factura))}</span>
               </div>
             </>
           )}

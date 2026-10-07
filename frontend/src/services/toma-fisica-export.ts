@@ -1,10 +1,6 @@
 import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea } from '@shared/types/index.js';
 import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, filaEncabezado, tablaPesaje } from './pdf-documento';
-
-function fmtFecha(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
+import { nombreYMomento } from '../lib/fecha-negocio';
 
 /** Documento 100% de pesaje/inventario: encabezado universal + dos tablas en
  *  caja redondeada (ticket agrupado, y teórico vs. real). */
@@ -29,8 +25,8 @@ export async function descargarTomaFisicaPDF(
   y = filaEncabezado(doc, y, 'Categorías', tomaFisica.categoriaNombres.join(', '));
   if (tomaFisica.loteNombres.length > 0) y = filaEncabezado(doc, y, 'Lote(s)', tomaFisica.loteNombres.join(', '));
   if (tomaFisica.descripcion) y = filaEncabezado(doc, y, 'Descripción', tomaFisica.descripcion);
-  y = filaEncabezado(doc, y, 'Abierta', fmtFecha(tomaFisica.abiertaEn));
-  if (tomaFisica.estado === 'cerrada') y = filaEncabezado(doc, y, 'Cerrada', fmtFecha(tomaFisica.cerradaEn));
+  y = filaEncabezado(doc, y, 'Abierta por', nombreYMomento(tomaFisica.abiertaPorNombre, tomaFisica.abiertaEn));
+  if (tomaFisica.estado === 'cerrada') y = filaEncabezado(doc, y, 'Cerrada por', nombreYMomento(tomaFisica.cerradaPorNombre, tomaFisica.cerradaEn));
 
   y += 10;
   const ticketPorMaterial = detalle.reduce((mapa, d) => {
@@ -80,7 +76,7 @@ export async function descargarTomaFisicaPDF(
       `${l.diferencia > 0 ? '+' : ''}${fmt(l.diferencia)}`,
     ]);
     const foot = [['Total', '', fmt(totalTeorico), fmt(totalReal), `${totalDiferencia > 0 ? '+' : ''}${fmt(totalDiferencia)} kg`]];
-    y = tablaPesaje(doc, autoTable, {
+    tablaPesaje(doc, autoTable, {
       startY: y,
       head: [['Material', 'Lote', 'Teórico', 'Real', 'Diferencia']],
       body,

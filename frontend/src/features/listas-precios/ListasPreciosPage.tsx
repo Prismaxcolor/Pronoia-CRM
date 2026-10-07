@@ -18,6 +18,7 @@ import type { ColumnaTabla } from '../../components/ui';
 import { derivarKpisListas } from '../../lib/productos-kpis';
 import ListaFormModal from './ListaFormModal';
 import type { ListaPrecios } from '@shared/types/index.js';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 // lazy pierde el genérico de TablaDatos<T>: se restaura con su tipo.
 const TablaDatos = lazy(() => import('../../components/ui/TablaDatos')) as unknown as typeof TablaDatosTipo;
@@ -102,8 +103,8 @@ function ListasPreciosPage() {
         titulo: 'Creada',
         ayuda: 'Fecha en que se creó la lista en el sistema (no es la fecha de vigencia).',
         valorOrden: l => l.createdAt,
-        celda: l => formatearFecha(l.createdAt),
-        valorCsv: l => formatearFecha(l.createdAt),
+        celda: l => formatearFechaHora(l.createdAt),
+        valorCsv: l => formatearFechaHora(l.createdAt),
         ocultaEnMovil: true,
       },
     ];

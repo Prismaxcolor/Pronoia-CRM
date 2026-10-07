@@ -5,7 +5,7 @@ interface Props {
   onContinuar: (ticket: TicketPesaje) => void;
 }
 
-/** Tickets en bruto del proveedor elegido, para continuarlos (completarlos)
+/** Pesajes globales por recepcionar del proveedor elegido, para continuarlos (completarlos)
  *  en vez de crear otro pesaje nuevo. No se muestra si no hay ninguno. */
 function TicketsBrutoProveedor({ tickets, onContinuar }: Props) {
   if (tickets.length === 0) return null;

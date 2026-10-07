@@ -11,12 +11,13 @@ import {
   type PesajeBorrador,
   type TipoPesajeBorrador,
 } from './use-pesaje-borrador-context';
+import { hoyNegocio } from '../lib/fecha-negocio';
 
 /** Súbela si cambia la forma de PesajeBorrador: los borradores guardados con la anterior se descartan. */
 const VERSION_BORRADOR_PESAJE = 1;
 
 function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hoyNegocio();
 }
 
 function borradorInicial(): PesajeBorrador {

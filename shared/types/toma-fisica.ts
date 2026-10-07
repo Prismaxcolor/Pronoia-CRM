@@ -21,6 +21,8 @@ export interface TomaFisicaInventario {
    *  (ej. PCB) — null/vacío significa "todos los lotes de ese almacén". */
   loteIds: string[];
   loteNombres: string[];
+  /** Materiales elegidos en una toma "Por categoría"; vacío = todos los de las categorías. */
+  productoIds: string[];
   /** Qué se cuenta: 'categoria' = productos de categorías sin lote;
    *  'lote' = lotes completos (PCB, PGM). Se elige al iniciar la toma. */
   alcance: AlcanceTomaFisica;
@@ -31,6 +33,9 @@ export interface TomaFisicaInventario {
   cerradaEn: string | null;
   createdAt: string;
   snapshotResumen?: ResumenTomaFisicaLinea[] | null;
+  /** Nombres de quien abrió/cerró la toma (solo en el detalle). */
+  abiertaPorNombre?: string | null;
+  cerradaPorNombre?: string | null;
 }
 
 /** Un pesaje individual de conteo dentro de una toma física — sin destino,

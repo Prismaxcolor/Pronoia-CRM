@@ -3,6 +3,7 @@ import { X, Loader2, Undo2 } from 'lucide-react';
 import { anularEmbalaje, marcarEmbalado, obtenerEmbalajes, type EmbalajeLote } from '../../services/lote-service';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Lote } from '@shared/types/index.js';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -147,7 +148,7 @@ function MarcarEmbaladoModal({ lote, puedeEditar, onClose, onCambio }: Props) {
                         <span className="font-semibold text-text-primary">{fmt(e.pesoKg)} kg</span>
                         <span className="text-text-muted"> · {nombreAlmacen(e.almacenId)}{e.contenedor ? ` · ${e.contenedor}` : ''}</span>
                         <p className="text-text-muted truncate">
-                          {new Date(e.marcadoEn).toLocaleDateString('es-VE')}{e.marcadoPorNombre ? ` · ${e.marcadoPorNombre}` : ''}{e.nota ? ` · ${e.nota}` : ''}
+                          {formatearFechaHora(e.marcadoEn)}{e.marcadoPorNombre ? ` · ${e.marcadoPorNombre}` : ''}{e.nota ? ` · ${e.nota}` : ''}
                         </p>
                       </div>
                       {puedeEditar && (

@@ -3,6 +3,8 @@ import { apiFetch, ApiError } from './api-client';
 export type TipoEntidad = 'proveedor' | 'cliente';
 
 export interface EntradaEstadoCuenta {
+  /** Instante (timestamptz ISO) de registro, para mostrar la hora junto a `fecha`. */
+  instante?: string | null;
   fecha: string;
   tipo: 'factura' | 'pago' | 'adelanto' | 'nota_credito' | 'nota_debito' | 'cruce';
   descripcion: string;

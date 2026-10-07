@@ -28,7 +28,7 @@ function ListaGraficas({ tickets, hoyIso, onRegistrarPesaje }: Props) {
       <div className="lg:col-span-2">
         <Bloque
           titulo="Kg pesados por día"
-          queEstasViendo={`los kg pesados cada día en los últimos ${DIAS_GRAFICA} días, hasta hoy. Cada barra es un día y el color separa compras de ventas. De cada ticket se cuenta el peso neto de sus materiales (o el peso global si sigue en bruto) en la fecha del ticket; los traslados no se incluyen.`}
+          queEstasViendo={`los kg pesados cada día en los últimos ${DIAS_GRAFICA} días, hasta hoy. Cada barra es un día y el color separa compras de ventas. De cada ticket se cuenta el peso neto de sus materiales (o el peso global si sigue por recepcionar) en la fecha del ticket; los traslados no se incluyen.`}
         >
           <div className="relative overflow-hidden rounded-xl border border-border bg-surface p-3 sm:p-4">
             {suficiente ? (
@@ -55,7 +55,7 @@ function ListaGraficas({ tickets, hoyIso, onRegistrarPesaje }: Props) {
 
       <Bloque
         titulo="Compras recepcionadas"
-        queEstasViendo="qué parte de las compras registradas ya está completa, es decir, con sus materiales anotados, frente al total de compras. Por ejemplo: 8 de 10 compras completas es 80 %. Las que faltan son tickets en bruto."
+        queEstasViendo="qué parte de las compras registradas ya está completa, es decir, con sus materiales anotados, frente al total de compras. Por ejemplo: 8 de 10 compras completas es 80 %. Las que faltan son tickets por recepcionar."
       >
         <div className="rounded-xl border border-border bg-surface p-4">
           {avance.porcentaje === null ? (

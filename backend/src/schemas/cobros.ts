@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { comprobanteUrlSchema } from './comprobantes.js';
 import { bancaPagoSchema, itemPagoMultipleSchema } from './pagos.js';
 import { validarPagoCombinado } from './pago-combinado.js';
 
@@ -25,7 +26,7 @@ export const registrarCobroMultipleSchema = z.object({
     .transform(v => (v && v.length > 0 ? v : null)),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   items: z.array(itemPagoMultipleSchema).default([]),
-  comprobantes: z.array(z.string().url('Comprobante inválido.')).default([]),
+  comprobantes: z.array(comprobanteUrlSchema).default([]),
 }).superRefine((data, ctx) => validarPagoCombinado(data, ctx, 'cobro'));
 
 export type RegistrarCobroMultipleInput = z.infer<typeof registrarCobroMultipleSchema>;

@@ -5,6 +5,7 @@ import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerHorarios, crearCitaStaff } from '../../services/citas-service';
 import { useToast } from '../../hooks/use-toast-context';
+import { hoyNegocio } from '../../lib/fecha-negocio';
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
 type TipoEntidad = 'proveedor' | 'cliente';
@@ -15,7 +16,7 @@ interface Props {
 }
 
 function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hoyNegocio();
 }
 
 function NuevaCitaModal({ onClose, onAgendada }: Props) {

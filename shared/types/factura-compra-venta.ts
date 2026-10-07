@@ -36,6 +36,9 @@ interface FacturaCompraVentaBase {
   estado: EstadoFacturaCompraVenta;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
+  /** Nombre de quien creó la factura y última edición (auditoría). Solo en el detalle; null/ausente en facturas anteriores a created_by. */
+  registradoPorNombre?: string | null;
+  ultimaEdicion?: { nombre: string; en: string } | null;
   /**
    * Correlativo numérico secuencial, asignado automáticamente por la BD al crear
    * la factura (1, 2, 3, ...). El usuario no lo escribe. Solo lectura.

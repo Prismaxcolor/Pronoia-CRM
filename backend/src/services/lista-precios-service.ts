@@ -1,4 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { mensajeDeErrorBd } from '../utils/errores-bd.js';
 import type {
   CrearListaInput,
   ActualizarListaInput,
@@ -144,28 +146,23 @@ async function ordenAlFinal(listaId: string): Promise<number | null> {
   return ((data as { orden: number } | null)?.orden ?? -1) + 1;
 }
 
-/** Persiste el orden manual: productoIds en el orden deseado, de arriba a abajo. */
+export const MENSAJE_ORDEN_NO_HABILITADO =
+  'Falta aplicar la migración del orden de listas de precios (docs/migration_reordenar_precios_lista.sql).';
+
+/** Persiste el orden manual en UNA operación atómica (RPC `reordenar_precios_lista`): productoIds en
+ *  el orden deseado, de arriba a abajo. La función SQL exige que cubra exactamente los materiales
+ *  de la lista (sin faltantes, ajenos ni duplicados) y, si no, no cambia nada. */
 export async function reordenarPrecios(
   listaId: string,
   productoIds: string[]
 ): Promise<{ ok: true } | { error: string }> {
-  const resultados = await Promise.all(
-    productoIds.map((productoId, indice) =>
-      supabaseAdmin
-        .from('precios_lista')
-        .update({ orden: indice })
-        .eq('lista_id', listaId)
-        .eq('producto_id', productoId)
-    )
-  );
-  const fallo = resultados.find(r => r.error);
-  if (!fallo?.error) return { ok: true };
-  const faltaColumna = /orden/i.test(fallo.error.message);
-  return {
-    error: faltaColumna
-      ? 'Falta aplicar la migración del orden de listas de precios (docs/migration_precios_lista_orden.sql).'
-      : fallo.error.message,
-  };
+  const { error } = await supabaseAdmin.rpc('reordenar_precios_lista', {
+    p_lista_id: listaId,
+    p_producto_ids: productoIds,
+  });
+  if (!error) return { ok: true };
+  if (esObjetoInexistente(error)) return { error: MENSAJE_ORDEN_NO_HABILITADO };
+  return { error: mensajeDeErrorBd(error, 'No se pudo reordenar la lista.') };
 }
 
 export async function crearLista(

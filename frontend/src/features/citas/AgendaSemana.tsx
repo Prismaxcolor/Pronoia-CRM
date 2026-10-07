@@ -3,13 +3,14 @@ import type { Cita } from '../../services/citas-service';
 import { INFO_ESTADO_CITA } from './estados-cita';
 import { ESTILOS_TONO, formatearFecha } from '../../components/ui';
 import EstadoVacio from '../../components/ui/EstadoVacio';
+import { hoyNegocio } from '../../lib/fecha-negocio';
 
 
 const DIA_LABEL = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 function sumarDias(iso: string, dias: number): string {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + dias);
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
   return d.toISOString().slice(0, 10);
 }
 
@@ -28,13 +29,13 @@ interface Props {
 function AgendaSemana({ lunes, horarios, citas, onSemanaAnterior, onSemanaSiguiente, onVerCita }: Props) {
   const dias = Array.from({ length: 7 }, (_, i) => sumarDias(lunes, i));
   const domingo = dias[6];
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyNegocio();
 
   const citaEn = (fecha: string, hora: string) =>
     citas.find(c => c.fecha === fecha && c.hora === hora && c.estado !== 'cancelada');
 
   const fmtDia = (iso: string) => {
-    const d = new Date(`${iso}T00:00:00`);
+    const d = new Date(`${iso}T00:00:00Z`);
     return `${d.getDate()}`;
   };
 

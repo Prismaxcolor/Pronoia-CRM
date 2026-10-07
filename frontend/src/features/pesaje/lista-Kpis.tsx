@@ -30,7 +30,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
   const detallePendiente = pendientes === 0
     ? 'Nada pendiente: todo está recepcionado'
     : [
-      porRecepcionar.ticketsBruto > 0 ? `${porRecepcionar.ticketsBruto} ${plural(porRecepcionar.ticketsBruto, 'ticket en bruto', 'tickets en bruto')}` : null,
+      porRecepcionar.ticketsBruto > 0 ? `${porRecepcionar.ticketsBruto} ${plural(porRecepcionar.ticketsBruto, 'ticket por recepcionar', 'tickets por recepcionar')}` : null,
       porRecepcionar.trasladosPendientes > 0 ? `${porRecepcionar.trasladosPendientes} ${plural(porRecepcionar.trasladosPendientes, 'traslado pendiente', 'traslados pendientes')}` : null,
     ].filter(Boolean).join(' y ');
 
@@ -39,7 +39,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       <TarjetaKpi
         titulo="Kg pesados hoy"
         icono={<Scale size={16} />}
-        ayuda="Kg de las compras y ventas con fecha de hoy. De cada ticket completo se suma el peso neto de sus materiales (sin la tara); de cada ticket en bruto, que aún no tiene materiales, se suma el peso global del camión. Los traslados entre almacenes no cuentan. Hoy todavía no termina, por eso se compara con el día de ayer completo."
+        ayuda="Kg de las compras y ventas con fecha de hoy. De cada ticket completo se suma el peso neto de sus materiales (sin la tara); de cada ticket por recepcionar, que aún no tiene materiales, se suma el peso global del camión. Los traslados entre almacenes no cuentan. Hoy todavía no termina, por eso se compara con el día de ayer completo."
         estado={sinDatos ? 'vacio' : 'listo'}
         mensajeVacio="Aún no hay pesajes registrados"
         valor={kg(hoyAyer.hoy)}
@@ -58,7 +58,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       <TarjetaKpi
         titulo="Por recepcionar"
         icono={<PackageOpen size={16} />}
-        ayuda="Kg de lo que ya se pesó o se envió pero falta confirmar. Suma el peso global de los tickets en bruto (camión pesado, pero aún sin los materiales registrados) y los kg enviados en traslados pendientes (que el almacén destino todavía no recibe). Muestra la situación actual de todos los registros, sin comparar con otro periodo."
+        ayuda="Kg de lo que ya se pesó o se envió pero falta confirmar. Suma el peso global de los tickets por recepcionar (camión pesado, pero aún sin los materiales registrados) y los kg enviados en traslados pendientes (que el almacén destino todavía no recibe). Muestra la situación actual de todos los registros, sin comparar con otro periodo."
         estado={sinDatos && traslados.length === 0 ? 'vacio' : 'listo'}
         mensajeVacio="Aún no hay operaciones registradas"
         valor={kg(porRecepcionar.kgTotal)}
@@ -69,7 +69,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       <TarjetaKpi
         titulo="Compras sin facturar"
         icono={<Receipt size={16} />}
-        ayuda="Cantidad de compras ya completas (con sus materiales registrados) a las que todavía no se les hizo factura. Los kg de abajo son el peso neto de esas compras. No cuenta las compras en bruto, porque primero hay que completarlas, ni los tickets unidos a otro, que se facturan junto con el ticket principal."
+        ayuda="Cantidad de compras ya completas (con sus materiales registrados) a las que todavía no se les hizo factura. Los kg de abajo son el peso neto de esas compras. No cuenta las compras por recepcionar, porque primero hay que completarlas, ni los tickets unidos a otro, que se facturan junto con el ticket principal."
         estado={!puedeVerFacturacion ? 'sinPermiso' : sinDatos ? 'vacio' : 'listo'}
         mensajeVacio="Aún no hay compras registradas"
         valor={formatearNumero(sinFacturar.cantidad, 0)}
@@ -80,7 +80,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       >
         {sinFacturar.enBruto > 0 && (
           <p className="mt-0.5 text-xs text-text-secondary">
-            Además, {sinFacturar.enBruto} {plural(sinFacturar.enBruto, 'compra en bruto', 'compras en bruto')} aún no se puede{sinFacturar.enBruto === 1 ? '' : 'n'} facturar
+            Además, {sinFacturar.enBruto} {plural(sinFacturar.enBruto, 'compra por recepcionar', 'compras por recepcionar')} aún no se puede{sinFacturar.enBruto === 1 ? '' : 'n'} facturar
           </p>
         )}
       </TarjetaKpi>
@@ -88,7 +88,7 @@ function ListaKpis({ tickets, traslados, cargando, hoyIso, puedeVerFacturacion }
       <TarjetaKpi
         titulo="Diferencia fuera de tolerancia"
         icono={<AlertTriangle size={16} />}
-        ayuda="Cantidad de tickets completos cuyo peso global (el camión completo en la báscula) no cuadra con los materiales registrados. Se cuenta un ticket cuando la diferencia (peso global menos materiales menos devolución) supera el 0,6 % del peso global, por ejemplo más de 6 kg en 1.000 kg, o cuando los materiales suman más kg que el peso global. No se revisan los tickets en bruto, los pesados en báscula externa ni los unidos a otro ticket."
+        ayuda="Cantidad de tickets completos cuyo peso global (el camión completo en la báscula) no cuadra con los materiales registrados. Se cuenta un ticket cuando la diferencia (peso global menos materiales menos devolución) supera el 0,6 % del peso global, por ejemplo más de 6 kg en 1.000 kg, o cuando los materiales suman más kg que el peso global. No se revisan los tickets por recepcionar, los pesados en báscula externa ni los unidos a otro ticket."
         estado={diferencias.medibles === 0 ? 'vacio' : 'listo'}
         mensajeVacio="Aún no hay tickets con peso global para medir"
         valor={formatearNumero(diferencias.fuera, 0)}

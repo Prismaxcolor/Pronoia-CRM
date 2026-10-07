@@ -11,6 +11,7 @@ import type { FaseLote, FilaDetalleInventario } from '../../../shared/types/inve
 import type { ComparacionPeriodo } from './comparacion';
 import { compararConPeriodoAnterior } from './comparacion';
 import type { Severidad } from './paleta';
+import { diaNegocio } from './fecha-negocio';
 
 // ---------------------------------------------------------------- constantes
 
@@ -31,11 +32,7 @@ const normalizar = (v: string): string => v.normalize('NFD').replace(/[̀-ͯ]/g,
 
 /** Fecha local (YYYY-MM-DD) de un instante ISO: el día que vio la persona, no el día UTC. */
 export function fechaLocalIso(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  const dia = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mes}-${dia}`;
+  return diaNegocio(iso) ?? '';
 }
 
 /** Días enteros transcurridos desde un instante ISO hasta `hoy` (nunca negativo). */

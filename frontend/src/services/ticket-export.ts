@@ -1,15 +1,17 @@
 import type { TicketPesaje } from '@shared/types/index.js';
-import { destinoLabel } from '@shared/types/index.js';
-import { fechaPesajeGlobal, tituloTicket, totalKgPesados } from '../lib/ticket-documento';
-import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
+import { destinoLabel, describirTarasDetalle } from '@shared/types/index.js';
+import { nombreArchivoDocumento } from '../lib/nombre-archivo';
+import { fechaPesajeGlobal, lineasAutoriaTicket, tituloTicket, totalKgPesados } from '../lib/ticket-documento';
+import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, pieRegistro, tablaPesaje, type Badge } from './pdf-documento';
+import { formatearFecha } from '../lib/formato';
 
-/** "Borrador" es naranja en el ticket (no gris, que es lo que le tocaría
+/** "Por recepcionar" es naranja en el ticket (no gris, que es lo que le tocaría
  *  por la clave compartida 'borrador' que usa factura) — por eso lleva
  *  color explícito. El preview también puede mostrar "Pesaje exterior"
  *  como segundo badge, a la vez que el de estado. */
 function badges(ticket: TicketPesaje): Badge[] {
   const estado: Badge = ticket.estado === 'bruto'
-    ? { texto: 'Borrador', color: [194, 65, 12] }
+    ? { texto: 'Por recepcionar (pesaje global)', color: [194, 65, 12] }
     : { texto: ticket.facturado ? 'Facturado' : 'Pendiente por facturar' };
   const lista = [estado];
   if (ticket.pesajeExterior) lista.push({ texto: 'Sin pesaje global', color: [126, 34, 206] });
@@ -32,11 +34,11 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
   tituloConBadge(doc, y, titulo, badges(ticket));
 
   y += 16;
-  subtitulo(doc, y, `Ref. ${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${fechaPesajeGlobal(ticket)}`);
+  subtitulo(doc, y, `Ref. ${ticket.codigo}  ·  ${esCompra ? 'Compra' : 'Venta'}  ·  ${formatearFecha(fechaPesajeGlobal(ticket))}`);
 
   y += 26;
   y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', nombreEntidad);
-  if (!ticket.pesajeExterior) y = filaEncabezado(doc, y, 'Fecha del pesaje global', fechaPesajeGlobal(ticket));
+  if (!ticket.pesajeExterior) y = filaEncabezado(doc, y, 'Fecha del pesaje global', formatearFecha(fechaPesajeGlobal(ticket)));
   if (ticket.observaciones) y = filaEncabezado(doc, y, 'Observaciones', ticket.observaciones);
   if (ticket.notasCompletado) y = filaEncabezado(doc, y, 'Notas', ticket.notasCompletado);
 
@@ -59,7 +61,7 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
   if (ticket.estado !== 'bruto') {
     y += 20;
     const materialesBody = ticket.materiales.map(m => [
-      sanitizarPdf(m.nombreProducto ?? '—'),
+      sanitizarPdf(`${m.nombreProducto ?? '—'}${m.tarasDetalle?.length ? `\nTara: ${describirTarasDetalle(m.tarasDetalle, fmt)}` : ''}`),
       sanitizarPdf(destinoLabel(m.destinoTipo, m.nombreLote)),
       fmt(m.pesoBruto),
       fmt(m.tara),
@@ -78,8 +80,11 @@ export async function descargarTicketPDF(ticket: TicketPesaje, nombreEntidad: st
   } else {
     y += 30;
     doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(180, 130, 40)
-      .text('Ticket en borrador — materiales pendientes de registro. No contabilizado en inventario.', 56, y);
+      .text('Pesaje global por recepcionar — materiales pendientes de registro. No contabilizado en inventario.', 56, y);
   }
 
-  return entregarPdf(doc, `ticket-pesaje-${ticket.codigo.replace(/\s+/g, '-').toLowerCase()}.pdf`, modo);
+  const autoria = lineasAutoriaTicket(ticket);
+  pieRegistro(doc, [autoria.registro, autoria.completado, autoria.edicion]);
+
+  return entregarPdf(doc, nombreArchivoDocumento({ prefijo: 'Ticket', codigo: ticket.codigo, entidad: nombreEntidad }), modo);
 }

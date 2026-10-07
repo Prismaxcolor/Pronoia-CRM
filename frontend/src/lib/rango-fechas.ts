@@ -1,15 +1,17 @@
 /** Atajos de rango de fechas (7 días, 30 días, este mes, todo) para filtros de periodo. Lógica pura: el "hoy" se pasa de
  *  afuera para poder probarla. Se re-exporta desde lib/inventario-nuevo.ts. */
 
+import { hoyNegocio } from './fecha-negocio';
+
 export type AtajoRango = '7d' | '30d' | 'mes' | 'todo';
 export const INICIO_HISTORICO = '2020-01-01';
 export const ATAJOS_RANGO: readonly AtajoRango[] = ['7d', '30d', 'mes', 'todo'];
 
 const aIso = (d: Date) => d.toISOString().slice(0, 10);
 
-/** "Hoy" según el reloj local, expresado como fecha UTC a medianoche (rangoDeAtajo trabaja en UTC). */
+/** "Hoy" en la zona de negocio (Caracas), expresado como fecha UTC a medianoche (rangoDeAtajo trabaja en UTC). */
 export function hoyLocal(ahora: Date = new Date()): Date {
-  return new Date(Date.UTC(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()));
+  return new Date(`${hoyNegocio(ahora)}T00:00:00Z`);
 }
 
 /** Rango de un atajo. `hoy` se pasa de afuera (UTC, sin tocar el reloj aquí) para poder probarlo. */

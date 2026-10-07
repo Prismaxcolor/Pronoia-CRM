@@ -24,6 +24,8 @@ import { subirFotoTicket } from '../../services/storage-service';
 import { subirFotosLocal } from '../../lib/foto-picker';
 import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
 import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
+import CantidadTaraInput from '../pesaje/CantidadTaraInput';
+import CampoTaraSalida from './CampoTaraSalida';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
 import { taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
@@ -45,10 +47,11 @@ import {
 } from './transformaciones-comun';
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
+import { hoyNegocio } from '../../lib/fecha-negocio';
 
 type Categoria = 'ferroso_no_ferroso' | 'pcb';
 
-function hoyISO() { return new Date().toISOString().slice(0, 10); }
+function hoyISO() { return hoyNegocio(); }
 function fmt(n: number) { return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 }); }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +116,6 @@ function CompletarFerrosoModal({
   const [error, setError] = useState<string | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
-  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
   const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
 
@@ -262,37 +264,7 @@ function CompletarFerrosoModal({
                     onChange={e => actualizar(f.uid, { pesoBruto: e.target.value })}
                     className={inputClass} placeholder="0.00" />
                 </div>
-                <div>
-                  <label className={labelClass}>Tara</label>
-                  <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
-                    <button type="button" onClick={() => actualizar(f.uid, { taraModo: 'preconfigurada' })} className={`px-2 py-1 ${f.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-                      Preconfigurada
-                    </button>
-                    <button type="button" onClick={() => actualizar(f.uid, { taraModo: 'manual' })} className={`px-2 py-1 ${f.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-                      Manual
-                    </button>
-                  </div>
-                  {f.taraModo === 'preconfigurada' ? (
-                    <div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => { setFilaActivaUid(f.uid); setMostrarSelectorTara(true); }}
-                          className={`${inputClass} flex items-center justify-between gap-2 text-left`}
-                        >
-                          <span className={f.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
-                            {taras.find(t => t.id === f.taraId)?.nombre ?? '— Sin tara —'}
-                          </span>
-                          <ChevronDown size={14} className="text-text-muted shrink-0" />
-                        </button>
-                        <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => actualizar(f.uid, { taraCantidad: e.target.value })} className={inputClass} placeholder="Cantidad" />
-                      </div>
-                      <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
-                    </div>
-                  ) : (
-                    <input type="number" step="0.001" min="0" value={f.taraManual} onChange={e => actualizar(f.uid, { taraManual: e.target.value })} className={inputClass} placeholder="0.00" />
-                  )}
-                </div>
+                <CampoTaraSalida valor={f} taras={taras} onCambiar={campos => actualizar(f.uid, campos)} />
                 <p className="text-xs text-text-muted">
                   Neto: <span className="font-semibold text-text-primary">{fmt(netoFila(f))} kg</span>
                 </p>
@@ -357,20 +329,6 @@ function CompletarFerrosoModal({
           entidades={lotes.filter(l => l.activo).map(l => ({ id: l.id, nombre: `${l.nombre} — ${fmt(l.stockKg)} kg`, fotos: l.fotos }))}
           onClose={() => setMostrarSelectorLote(false)}
           onSeleccionar={id => { if (filaActivaUid != null) actualizar(filaActivaUid, { loteDestinoId: id }); setMostrarSelectorLote(false); }}
-        />
-      )}
-      {mostrarSelectorTara && (
-        <SeleccionarTaraModal
-          taras={taras}
-          taraSeleccionada={filas.find(f => f.uid === filaActivaUid)?.taraId || undefined}
-          onClose={() => setMostrarSelectorTara(false)}
-          onSeleccionar={taraId => {
-            if (filaActivaUid != null) {
-              const fila = filas.find(f => f.uid === filaActivaUid);
-              if (fila) actualizar(filaActivaUid, seleccionarTaraFila(fila, taraId));
-            }
-            setMostrarSelectorTara(false);
-          }}
         />
       )}
     </div>
@@ -456,10 +414,11 @@ function NuevaFerrosoForm({
   // Aviso (sin bloquear, mismo criterio que traslados en Pesaje) si retirar
   // este neto deja el material en negativo en el almacén elegido.
   useEffect(() => {
-    if (!almacenId) { setStockAlmacen(new Map()); return; }
+    if (!almacenId) return;
     obtenerStockAlmacen(almacenId).then(setStockAlmacen);
   }, [almacenId]);
-  const disponible = stockAlmacen.get(productoEntradaId) ?? 0;
+  // Sin almacén elegido no hay stock que mostrar (se deriva, sin limpiar el estado en el efecto).
+  const disponible = (almacenId ? stockAlmacen.get(productoEntradaId) : undefined) ?? 0;
   const quedaEnNegativo = productoEntradaId && almacenId && neto > 0 && neto > disponible;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -553,7 +512,7 @@ function NuevaFerrosoForm({
                 </span>
                 <ChevronDown size={14} className="text-text-muted shrink-0" />
               </button>
-              <input type="number" step="1" min="0" value={campoTara.taraCantidad} onChange={e => setCampoTara(prev => ({ ...prev, taraCantidad: e.target.value }))} className={inputClass} placeholder="Cantidad" />
+              <CantidadTaraInput value={campoTara.taraCantidad} onChange={v => setCampoTara(prev => ({ ...prev, taraCantidad: v }))} />
             </div>
             <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(campoTara, taras))} kg</p>
           </div>
@@ -794,7 +753,7 @@ function NuevaPCBForm({ lotes, almacenes, catalogosListos, onCreada }: { lotes: 
 // ---------------------------------------------------------------------------
 // Modal: Completar transformación PCB
 // ---------------------------------------------------------------------------
-interface FilaSalidaPCB {
+interface FilaSalidaPCB extends CampoTara {
   uid: number;
   /** 'material' = salida mixta: material suelto (producto + almacén). */
   tipo: TipoSalida;
@@ -802,11 +761,10 @@ interface FilaSalidaPCB {
   loteDestinoId: string;
   almacenId: string;
   pesoBruto: string;
-  tara: string;
   fotos: FotoMaterial[];
 }
 function filaSalidaPCBVacia(): FilaSalidaPCB {
-  return { uid: nextUid++, tipo: 'lote', productoId: '', loteDestinoId: '', almacenId: '', pesoBruto: '', tara: '', fotos: [] };
+  return { uid: nextUid++, tipo: 'lote', productoId: '', loteDestinoId: '', almacenId: '', pesoBruto: '', ...taraVacia(), fotos: [] };
 }
 
 function CompletarPCBModal({
@@ -814,6 +772,7 @@ function CompletarPCBModal({
   lotes,
   almacenes,
   productos,
+  taras,
   onClose,
   onCompletada,
 }: {
@@ -821,6 +780,7 @@ function CompletarPCBModal({
   lotes: Lote[];
   almacenes: Almacen[];
   productos: Producto[];
+  taras: Tara[];
   onClose: () => void;
   onCompletada: () => void;
 }) {
@@ -839,7 +799,9 @@ function CompletarPCBModal({
   const borrador = useBorradorPersistente<{ filas: FilaSalidaPCB[] }>({
     formulario: 'transformacion-completar-pcb',
     docId: transformacion.id,
-    version: 1,
+    // v2: la tara dejó de ser un texto único (`tara`) y pasó a taraModo/taraId/taraCantidad/taraManual;
+    // los borradores v1 se descartan en vez de restaurarse con la tara perdida.
+    version: 2,
     estado: { filas },
     hayCambios: difiereEstado({ filas }, { filas: [filaSalidaPCBVacia()] }),
     aplicar: d => {
@@ -849,8 +811,17 @@ function CompletarPCBModal({
         loteIds: lotes.filter(l => l.activo).map(l => l.id),
         almacenIds: almacenes.map(a => a.id),
       });
-      setAvisoSaneo(mensajeSaneoBorrador(ids.descartados > 0 ? ['material, lote o almacén de alguna salida'] : []));
-      setFilas(ids.filas);
+      let tarasReseteadas = 0;
+      const filasOk = ids.filas.map(f => {
+        const t = sanearTara(f, taras.map(x => x.id));
+        if (t.cambiada) tarasReseteadas += 1;
+        return t.fila;
+      });
+      const elementos: string[] = [];
+      if (ids.descartados > 0) elementos.push('material, lote o almacén de alguna salida');
+      if (tarasReseteadas > 0) elementos.push(tarasReseteadas === 1 ? 'una tara' : `${tarasReseteadas} taras`);
+      setAvisoSaneo(mensajeSaneoBorrador(elementos));
+      setFilas(filasOk);
     },
     restablecer: () => { setFilas([filaSalidaPCBVacia()]); setAvisoSaneo(null); },
   });
@@ -861,17 +832,22 @@ function CompletarPCBModal({
     setFilas(prev => prev.map(f => f.uid === uid ? { ...f, ...campo } : f));
   };
 
-  const netoFila = (f: FilaSalidaPCB) => (Number(f.pesoBruto) || 0) - (Number(f.tara) || 0);
+  const netoFila = (f: FilaSalidaPCB) => (Number(f.pesoBruto) || 0) - taraKgFila(f, taras);
   const totalSalidas = filas.reduce((acc, f) => acc + netoFila(f), 0);
   const restante = transformacion.pesoNeto - totalSalidas;
   // Merma por tipo: opcional, no forma parte del borrador persistente.
   const [mermaForm, setMermaForm] = useState<MermaForm>(mermaFormVacio);
+  // El material suelto sale al mismo almacén con el que se inició (solo se pregunta en transformaciones antiguas sin almacén).
+  const almacenFijo = transformacion.almacenId ?? '';
+  const nombreAlmacenFijo = almacenFijo ? (almacenes.find(a => a.id === almacenFijo)?.nombre ?? 'Almacén de inicio') : undefined;
 
   const handleCompletar = async () => {
     setError(null);
+    if (filas.some(f => taraFilaNoVigente(f, taras))) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
+    const filasEfectivas = filas.map(f => (f.tipo === 'material' && almacenFijo ? { ...f, almacenId: almacenFijo } : f));
     const errorValidacion = validarSalidas(
       'pcb',
-      filas.map(f => ({ ...f, neto: netoFila(f), cantidadFotos: f.fotos.length })),
+      filasEfectivas.map(f => ({ ...f, neto: netoFila(f), cantidadFotos: f.fotos.length })),
       { loteOrigenId: transformacion.loteOrigenId, pesoEntrada: transformacion.pesoNeto }
     );
     if (errorValidacion) { setError(errorValidacion); return; }
@@ -879,22 +855,22 @@ function CompletarPCBModal({
     if (errorMerma) { setError(errorMerma); return; }
 
     setGuardando(true);
-    const fotasPorFila = await Promise.all(filas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
+    const fotasPorFila = await Promise.all(filasEfectivas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
     if (fotasPorFila.some(urls => urls === null)) {
       setError('No se pudo subir una de las fotos. Intenta de nuevo.');
       setGuardando(false);
       return;
     }
-    const result = hayFilasMixtas('pcb', filas)
+    const result = hayFilasMixtas('pcb', filasEfectivas)
       ? await completarTransformacionMixta(
         transformacion.id,
-        filas.map((f, i) => armarSalidaMixta('pcb', f, Number(f.pesoBruto), Number(f.tara) || 0, fotasPorFila[i] as string[])),
+        filasEfectivas.map((f, i) => armarSalidaMixta('pcb', f, Number(f.pesoBruto), taraKgFila(f, taras), fotasPorFila[i] as string[])),
         armarMermaDetalle(mermaForm)
       )
-      : await completarTransformacionPCB(transformacion.id, filas.map((f, i) => ({
+      : await completarTransformacionPCB(transformacion.id, filasEfectivas.map((f, i) => ({
         loteDestinoId: f.loteDestinoId,
         pesoBruto: Number(f.pesoBruto),
-        tara: Number(f.tara) || 0,
+        tara: taraKgFila(f, taras),
         fotos: fotasPorFila[i] as string[],
       })), armarMermaDetalle(mermaForm));
     setGuardando(false);
@@ -950,6 +926,7 @@ function CompletarPCBModal({
                       almacenes={almacenes}
                       onElegirProducto={() => { setFilaActivaUid(f.uid); setMostrarSelectorMaterial(true); }}
                       onCambiarAlmacen={almacenId => actualizar(f.uid, { almacenId })}
+                      almacenFijoNombre={nombreAlmacenFijo}
                     />
                   )}
                   <div>
@@ -957,11 +934,7 @@ function CompletarPCBModal({
                     <input type="number" step="0.001" min="0.001" value={f.pesoBruto}
                       onChange={e => actualizar(f.uid, { pesoBruto: e.target.value })} className={inputClass} placeholder="0.00" />
                   </div>
-                  <div>
-                    <label className={labelClass}>Tara (kg)</label>
-                    <input type="number" step="0.001" min="0" value={f.tara}
-                      onChange={e => actualizar(f.uid, { tara: e.target.value })} className={inputClass} placeholder="0.00" />
-                  </div>
+                  <CampoTaraSalida valor={f} taras={taras} onCambiar={campos => actualizar(f.uid, campos)} />
                   <p className="text-xs text-text-muted">Neto: <span className="font-semibold text-text-primary">{fmt(netoFila(f))} kg</span></p>
                   <FotoMaterialPicker
                     label="Fotos de esta salida (opcional)"
@@ -1066,15 +1039,16 @@ function TransformacionesPage() {
   const [completando, setCompletando] = useState<Transformacion | null>(null);
   const umbral = useUmbralMerma();
 
-  const cargar = useCallback(async () => {
-    const [txs, prods, alms, tars, comunes, lots] = await Promise.all([
-      obtenerTransformaciones(),
-      obtenerProductos(),
-      obtenerAlmacenes(),
-      obtenerTaras(),
-      obtenerSalidasComunes(),
-      obtenerLotes(),
-    ]);
+  // Sin async/await: el linter no distingue que estos setState ocurren después
+  // de resolverse la promesa, y marcaría el efecto que llama a cargar().
+  const cargar = useCallback(() => Promise.all([
+    obtenerTransformaciones(),
+    obtenerProductos(),
+    obtenerAlmacenes(),
+    obtenerTaras(),
+    obtenerSalidasComunes(),
+    obtenerLotes(),
+  ]).then(([txs, prods, alms, tars, comunes, lots]) => {
     setTransformaciones(txs);
     setProductos(prods.filter(p => p.activo));
     setAlmacenes(alms);
@@ -1082,7 +1056,7 @@ function TransformacionesPage() {
     setSalidasComunes(comunes);
     setLotes(lots);
     setCatalogosListos(true);
-  }, []);
+  }), []);
 
   useEffect(() => { void cargar(); }, [cargar]);
 
@@ -1201,6 +1175,7 @@ function TransformacionesPage() {
           lotes={lotes}
           almacenes={almacenes}
           productos={productos}
+          taras={taras}
           onClose={() => setCompletando(null)}
           onCompletada={() => { setCompletando(null); void cargar(); irAPestana('historial'); }}
         />

@@ -7,8 +7,8 @@ const pcb = { categoria: 'pcb', almacenId: ALM, productoEntradaId: null, loteOri
 const ferroso = { categoria: 'ferroso_no_ferroso', almacenId: ALM, productoEntradaId: 'prod-in', loteOrigenId: null } as unknown as Transformacion;
 
 describe('filaSalidaNuevaVacia', () => {
-  it('PCB empieza como lote sin almacén; ferroso como material en el almacén de la transformación', () => {
-    expect(filaSalidaNuevaVacia(pcb)).toMatchObject({ tipo: 'lote', almacenId: '' });
+  it('PCB empieza como lote y ferroso como material, ambos en el almacén de la transformación', () => {
+    expect(filaSalidaNuevaVacia(pcb)).toMatchObject({ tipo: 'lote', almacenId: ALM });
     expect(filaSalidaNuevaVacia(ferroso)).toMatchObject({ tipo: 'material', almacenId: ALM });
   });
 });

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
+import { totalesEstadoCuenta } from '../utils/estado-cuenta-totales.js';
 import { leerPaginado, trocear } from '../utils/paginacion.js';
 import {
   formatCodigoPagoProveedor,
@@ -13,6 +14,7 @@ import {
   formatCodigoCruce,
   formatCodigoCruceCliente,
 } from '../utils/codigos.js';
+import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
 
 export type TipoEntidad = 'proveedor' | 'cliente';
 
@@ -26,6 +28,8 @@ function formatCodigo(tipoEntidad: TipoEntidad, numero: number): string {
 export interface EntradaEstadoCuenta {
   /** Fecha ISO (YYYY-MM-DD). */
   fecha: string;
+  /** Instante (timestamptz ISO) en que se registró, para mostrar la hora; ausente si no se conoce (cruces). */
+  instante?: string | null;
   tipo: 'factura' | 'pago' | 'adelanto' | 'nota_credito' | 'nota_debito' | 'cruce';
   descripcion: string;
   /** Correlativo formateado (C-0001, PG-0007, AD-0003, NC-0004...). */
@@ -72,12 +76,15 @@ export interface EstadoCuenta {
 }
 
 function soloFecha(valor: string): string {
-  return valor.slice(0, 10);
+  return diaNegocio(valor) ?? valor.slice(0, 10);
 }
 
 // ---- núcleo puro (testeable sin BD) ----------------------------------------
 
 export interface FacturaCruda { id: string; total: number; descripcion: string | null; fecha: string; codigo?: string | null }
+
+/** `fecha` de una factura es su created_at (instante): la hora solo aplica si trae parte horaria. */
+const instanteSiTrae = (valor: string | null | undefined): string | null => (valor && valor.length > 10 ? valor : null);
 export interface PagoCrudo {
   id: string;
   monto: number;
@@ -85,12 +92,16 @@ export interface PagoCrudo {
   /** Texto libre que el usuario tipeó (ej. "TRF-432"), no el correlativo. */
   referencia: string | null;
   fecha: string;
+  /** Instante de registro (movimientos.creado_en). */
+  instante?: string | null;
   subtipo?: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
   numero?: number | null;
   grupoId?: string | null;
 }
 export interface NotaCruda {
   id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean; pagada: boolean; fecha: string; numero?: number | null;
+  /** Instante de registro (created_at de la nota). */
+  instante?: string | null;
   /** Ya resueltos por obtenerEstadoCuenta (segunda query a facturas_compra + Map), no se
    *  vuelven a resolver acá — mismo patrón que FacturaCruda.codigo. */
   facturaAsociadaId?: string | null;
@@ -181,6 +192,7 @@ export function construirEstadoCuenta(
   for (const f of facturas) {
     entradas.push({
       fecha: soloFecha(f.fecha),
+      instante: instanteSiTrae(f.fecha),
       tipo: 'factura',
       descripcion: f.descripcion ?? 'Factura',
       referencia: f.codigo ?? f.id.slice(0, 8),
@@ -196,6 +208,7 @@ export function construirEstadoCuenta(
     const aplicado = esAnticipo ? Math.round((datosCruce.adelantoAplicadoPorId.get(pagoId) ?? 0) * 100) / 100 : 0;
     entradas.push({
       fecha: soloFecha(p.fecha),
+      instante: p.instante ?? null,
       tipo: esAnticipo ? 'adelanto' : 'pago',
       descripcion: p.descripcion ?? (esAnticipo ? 'Adelanto' : 'Pago'),
       referencia: codigo ?? p.referencia,
@@ -230,6 +243,7 @@ export function construirEstadoCuenta(
     const vigente = !n.anulada;
     entradas.push({
       fecha: soloFecha(n.fecha),
+      instante: n.instante ?? null,
       tipo: n.tipo === 'credito' ? 'nota_credito' : 'nota_debito',
       descripcion: n.motivo,
       referencia: n.numero != null ? formatCodigoNota(entidad.tipo, n.tipo, n.numero) : null,
@@ -246,13 +260,13 @@ export function construirEstadoCuenta(
 
   entradas.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
-  const facturado = entradas.reduce((s, e) => s + e.cargo, 0);
-  const pagado = entradas.reduce((s, e) => s + e.abono, 0);
+  // Única función de totales (compartida con el frontend): cargos, abonos y saldo en centavos exactos.
+  const { totalCargos: facturado, totalAbonos: pagado, saldoFinal: saldo } = totalesEstadoCuenta(entradas);
 
   return {
     entidad,
     entradas,
-    totales: { facturado, pagado, saldo: facturado - pagado },
+    totales: { facturado, pagado, saldo },
     ...(datosCruce.incompleto ? { datosCruceIncompletos: true as const } : {}),
   };
 }
@@ -284,8 +298,8 @@ export async function obtenerEstadoCuenta(
 
   // Las facturas anuladas (ticket corregido con llave de edición) no son deuda: no entran al estado de cuenta.
   let qFacturas = supabaseAdmin.from(tablaFacturas).select('id, numero, total, descripcion, created_at').eq(columnaEntidad, id).neq('estado', 'anulada');
-  if (desde) qFacturas = qFacturas.gte('created_at', desde);
-  if (hasta) qFacturas = qFacturas.lte('created_at', `${hasta}T23:59:59`);
+  if (desde) qFacturas = qFacturas.gte('created_at', inicioDiaNegocio(desde));
+  if (hasta) qFacturas = qFacturas.lte('created_at', finDiaNegocio(hasta));
   const { data: facturasData } = await qFacturas;
   const facturas: FacturaCruda[] = ((facturasData as Array<{ id: string; numero: number | null; total: number; descripcion: string | null; created_at: string }> | null) ?? [])
     .map(f => ({
@@ -298,7 +312,7 @@ export async function obtenerEstadoCuenta(
 
   let qPagos = supabaseAdmin
     .from('movimientos')
-    .select('id, monto, monto_usd, descripcion, referencia, fecha, subtipo, numero, grupo_id')
+    .select('id, monto, monto_usd, descripcion, referencia, fecha, subtipo, numero, grupo_id, creado_en')
     .eq(columnaEntidad, id)
     .eq('tipo', tipoMovAbono);
   if (desde) qPagos = qPagos.gte('fecha', desde);
@@ -307,7 +321,7 @@ export async function obtenerEstadoCuenta(
   const pagosCrudos: PagoCrudo[] = ((pagosData as Array<{
     id: string; monto: number; monto_usd: number | null; descripcion: string | null;
     referencia: string | null; fecha: string; subtipo: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
-    numero: number | null; grupo_id: string | null;
+    numero: number | null; grupo_id: string | null; creado_en?: string | null;
   }> | null) ?? [])
     // El estado de cuenta se lleva en USD (facturas_compra/venta.total está en USD).
     // monto_usd es el equivalente correcto cuando el pago salió de una banca en
@@ -318,6 +332,7 @@ export async function obtenerEstadoCuenta(
       descripcion: p.descripcion,
       referencia: p.referencia,
       fecha: p.fecha,
+      instante: p.creado_en ?? null,
       subtipo: p.subtipo,
       numero: p.numero,
       grupoId: p.grupo_id,
@@ -335,14 +350,14 @@ export async function obtenerEstadoCuenta(
 
   let qNotas = supabaseAdmin
     .from(tablaNotas)
-    .select('id, tipo, monto, motivo, anulada, pagada, fecha, numero, factura_id')
+    .select('id, tipo, monto, motivo, anulada, pagada, fecha, numero, factura_id, created_at')
     .eq(columnaEntidad, id);
   if (desde) qNotas = qNotas.gte('fecha', desde);
   if (hasta) qNotas = qNotas.lte('fecha', hasta);
   const { data: notasData } = await qNotas;
   const notasCrudas = (notasData as Array<{
     id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean;
-    pagada: boolean; fecha: string; numero: number | null; factura_id: string | null;
+    pagada: boolean; fecha: string; numero: number | null; factura_id: string | null; created_at?: string | null;
   }> | null) ?? [];
 
   // Selects planos, no embedding anidado de PostgREST — mismo estilo que
@@ -368,6 +383,7 @@ export async function obtenerEstadoCuenta(
     anulada: n.anulada,
     pagada: n.pagada,
     fecha: n.fecha,
+    instante: n.created_at ?? null,
     numero: n.numero,
     facturaAsociadaId: n.factura_id,
     facturaAsociadaCodigo: n.factura_id ? (codigoPorFacturaId.get(n.factura_id) ?? null) : null,

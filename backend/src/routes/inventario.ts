@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
 import { obtenerInventario, obtenerInventarioAlmacen } from '../services/inventario-service.js';
 import { requireAuth, requirePermiso, requireSuperadmin, reqTienePermiso } from '../middlewares/require-auth.js';
 import { parsearAlmacenId } from '../schemas/inventario.js';
@@ -21,6 +22,7 @@ import { composicionLoteQuerySchema, loteIdSchema } from '../schemas/lote-compos
 import { obtenerComposicionLote } from '../services/lote-composicion-pantalla.js';
 import { actualizarCostosSchema } from '../schemas/inventario-costos.js';
 import { actualizarCostosReferencia, obtenerCostosInventario } from '../services/inventario-costos-service.js';
+import { vaciarDesechos } from '../services/vaciar-desechos-service.js';
 import { validateBody } from '../middlewares/validate.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -166,5 +168,21 @@ router.put(
     res.json({ configuracion: result.configuracion, ...(result.advertencia ? { advertencia: result.advertencia } : {}) });
   }
 );
+
+// Vaciar DESECHOS: deja ese (y solo ese) producto en 0 kg. Es un ajuste de inventario: exige toma_fisica:editar.
+router.post('/desechos/:productoId/vaciar', requirePermiso('toma_fisica', 'editar'), async (req, res) => {
+  const productoId = z.string().uuid().safeParse(req.params.productoId);
+  if (!productoId.success) {
+    res.status(400).json({ error: 'El id del producto no es válido.' });
+    return;
+  }
+  const r = await vaciarDesechos(productoId.data, req.user!.sub);
+  if (!r.ok) {
+    res.status(r.status).json({ error: r.error });
+    return;
+  }
+  logger.info({ evento: 'desechos_vaciados_api', ip: clienteIp(req), userId: req.user!.sub, kgVaciados: r.kgVaciados });
+  res.json({ kgVaciados: r.kgVaciados, almacenes: r.almacenes });
+});
 
 export default router;

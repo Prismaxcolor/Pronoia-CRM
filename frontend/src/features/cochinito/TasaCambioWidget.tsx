@@ -47,25 +47,25 @@ interface Props {
 const CLASE_TARJETA = 'flex h-full flex-col rounded-xl border border-border bg-surface p-4';
 
 function TasaCambioWidget({ fuenteKey, titulo, subtitulo, monedaOrigen, cacheMs }: Props) {
-  const [tasa, setTasa] = useState<TasaOficial | null>(null);
-  const [historial, setHistorial] = useState<TasaOficial[]>([]);
-  const [cargando, setCargando] = useState(true);
+  // Los datos guardan la fuente con la que se pidieron: mientras no coincida
+  // con la actual se muestra el skeleton (sin setState síncrono en el efecto).
+  const [datos, setDatos] = useState<{ fuenteKey: FuenteTasaKey; tasa: TasaOficial | null; historial: TasaOficial[] } | null>(null);
   const [refrescando, setRefrescando] = useState(false);
+  const cargando = datos?.fuenteKey !== fuenteKey;
+  const tasa = datos?.fuenteKey === fuenteKey ? datos.tasa : null;
+  const historial = datos?.fuenteKey === fuenteKey ? datos.historial : [];
 
   const cargar = async () => {
     const [t, h] = await Promise.all([obtenerTasa(fuenteKey), obtenerHistorialTasa(fuenteKey, 7)]);
-    setTasa(t);
-    setHistorial(h);
+    setDatos({ fuenteKey, tasa: t, historial: h });
   };
 
-  // Igual que cargar(), pero sin pasar por una función async con nombre: el
-  // linter no puede ver más allá del await y marca el setState de adentro
-  // como "síncrono dentro del efecto" aunque no lo sea.
   useEffect(() => {
-    setCargando(true);
+    let vigente = true;
     Promise.all([obtenerTasa(fuenteKey), obtenerHistorialTasa(fuenteKey, 7)])
-      .then(([t, h]) => { setTasa(t); setHistorial(h); })
-      .finally(() => setCargando(false));
+      .then(([t, h]) => { if (vigente) setDatos({ fuenteKey, tasa: t, historial: h }); })
+      .catch(() => { if (vigente) setDatos({ fuenteKey, tasa: null, historial: [] }); });
+    return () => { vigente = false; };
   }, [fuenteKey]);
 
   const refrescar = async () => {

@@ -12,6 +12,9 @@ import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SelectorDestinoLote from './SelectorDestinoLote';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
+import CantidadTaraInput from './CantidadTaraInput';
+import TarasExtraEditor from './TarasExtraEditor';
+import { filaTaraIncompleta } from './tara-multiple';
 import type { Producto, TicketPesaje, Lote, Tara } from '@shared/types/index.js';
 
 interface Props {
@@ -154,7 +157,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
 
     if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
     if (materiales.some(f => !esFilaSinLote(f, productos) && !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
-    if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
+    if (materiales.some(filaTaraIncompleta)) {
       setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
       return;
     }
@@ -210,7 +213,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
           <AvisoBorrador formulario="este ticket" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
           {avisoSaneo && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">{avisoSaneo}</p>}
           <p className="text-xs text-text-muted">
-            Este ticket se guardó en bruto. Registra los materiales y destinos definitivos para que se contabilice en el inventario.
+            Este pesaje global está por recepcionar. Registra los materiales y destinos definitivos para que se contabilice en el inventario.
           </p>
 
           {candidatos.length > 0 && (
@@ -298,7 +301,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                             </span>
                             <ChevronDown size={14} className="text-text-muted shrink-0" />
                           </button>
-                          <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
+                          <CantidadTaraInput value={f.taraCantidad} onChange={v => setFila(f.uid, 'taraCantidad', v)} />
                         </div>
                         <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                       </div>
@@ -311,6 +314,12 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
                     <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass} placeholder="0.00" />
                   </div>
                 </div>
+
+                <TarasExtraEditor
+                  extras={f.tarasExtra ?? []}
+                  taras={taras}
+                  onChange={extras => setMateriales(prev => prev.map(x => (x.uid === f.uid ? { ...x, tarasExtra: extras } : x)))}
+                />
 
                 <div className="flex items-center justify-end gap-2 text-sm">
                   <span className="text-text-muted">Neto del material</span>

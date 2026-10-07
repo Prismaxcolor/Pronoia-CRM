@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { comprobanteUrlSchema } from './comprobantes.js';
 
 const textoOpcional = (max: number) =>
   z
@@ -37,6 +38,8 @@ export const crearMovimientoSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   proveedorId: z.string().uuid('Proveedor inválido.').optional().nullable(),
   clienteId: z.string().uuid('Cliente inválido.').optional().nullable(),
+  /** Imagen(es) OPCIONAL(es) del comprobante, ya subidas vía POST /api/uploads/comprobantes. */
+  comprobantes: z.array(comprobanteUrlSchema).max(10, 'Máximo 10 comprobantes.').default([]),
 }).superRefine((data, ctx) => {
   if (data.tipo !== 'transferencia') return;
   if (!data.bancaDestinoId) {

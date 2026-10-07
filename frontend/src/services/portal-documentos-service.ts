@@ -7,7 +7,7 @@ export interface PortalFactura {
   codigo: string | null;
   tipo: 'compra' | 'venta';
   total: number;
-  estado: 'borrador' | 'emitida' | 'pagada' | 'anulada';
+  estado: 'borrador' | 'emitida' | 'pendiente' | 'pagada' | 'anulada';
   createdAt: string;
 }
 

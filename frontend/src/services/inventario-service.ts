@@ -58,3 +58,15 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     return [];
   }
 }
+
+/** Vacía el producto DESECHOS (lo deja en 0 kg). El servidor rechaza cualquier otro producto. */
+export async function vaciarDesechos(productoId: string): Promise<{ kgVaciados: number } | { error: string }> {
+  try {
+    const { kgVaciados } = await apiFetch<{ kgVaciados: number }>(`/api/inventario/desechos/${productoId}/vaciar`, {
+      method: 'POST',
+    });
+    return { kgVaciados };
+  } catch (err) {
+    return { error: err instanceof Error && err.message ? err.message : 'No se pudo vaciar los desechos.' };
+  }
+}

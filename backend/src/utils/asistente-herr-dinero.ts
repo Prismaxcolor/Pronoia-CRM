@@ -32,6 +32,8 @@ import {
 import type { Permiso } from './permisos.js';
 import { formatearMonto } from './asistente-formato.js';
 import { coincidePorPalabras, sugerirParecidos } from './asistente-similitud.js';
+import { derivarEstadoFactura, saldoFactura, type EstadoFacturaGuardado } from './estado-factura.js';
+import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from './fecha-negocio.js';
 
 const MONEDA_FACTURAS = 'USD';
 const ESTADOS_FACTURA_VIGENTE = ['emitida', 'pagada'];
@@ -63,7 +65,11 @@ const TABLA_FACTURAS: Record<TipoFactura, 'facturas_compra' | 'facturas_venta'> 
 const COLUMNA_ENTIDAD: Record<TipoFactura, 'proveedor_id' | 'cliente_id'> = { compra: 'proveedor_id', venta: 'cliente_id' };
 const TABLA_ENTIDAD: Record<TipoFactura, 'proveedores' | 'clientes'> = { compra: 'proveedores', venta: 'clientes' };
 
-const pendiente = (f: FacturaFila): number => Math.max(Number(f.total) - Number(f.monto_pagado ?? 0), 0);
+const pendiente = (f: FacturaFila): number => saldoFactura({ total: Number(f.total), montoPagado: Number(f.monto_pagado ?? 0) });
+
+/** Estado según los pagos (emitida | pendiente | pagada), mismo criterio que las pantallas. */
+const estadoDe = (f: FacturaFila) =>
+  derivarEstadoFactura({ estado: f.estado as EstadoFacturaGuardado, total: Number(f.total), montoPagado: Number(f.monto_pagado ?? 0) });
 
 async function idsPorNombre(tabla: 'proveedores' | 'clientes', nombre: string): Promise<string[]> {
   const { data } = await supabaseAdmin.from(tabla).select('id').ilike('nombre', patronBusqueda(nombre)).limit(30);
@@ -101,7 +107,7 @@ function resumenPendientes(facturas: FacturaFila[], col: 'proveedor_id' | 'clien
 
 const facturasSchema = z.object({
   tipo: z.enum(['compra', 'venta']).describe('compra = facturas de compra a PROVEEDORES (lo que debemos pagar); venta = facturas de venta a CLIENTES (lo que nos deben cobrar).'),
-  estado: z.enum(['emitida', 'pagada']).optional().describe("'emitida' = vigente (puede tener saldo pendiente); 'pagada' = saldada."),
+  estado: z.enum(['emitida', 'pendiente', 'pagada']).optional().describe("'emitida' = sin ningún pago; 'pendiente' = con algún pago y saldo por pagar; 'pagada' = sin saldo."),
   soloPendientes: z.boolean().optional().describe('true = solo facturas con saldo pendiente (> 0), con el total pendiente y el desglose por proveedor/cliente. Úsalo para "facturas pendientes de pago/cobro" y "a quién le debemos/quién nos debe".'),
   desde: fechaSchema.optional(),
   hasta: fechaSchema.optional(),
@@ -125,23 +131,23 @@ export const consultarFacturas = definirHerramienta({
     let q = supabaseAdmin
       .from(TABLA_FACTURAS[tipo])
       .select(`numero, total, monto_pagado, estado, created_at, ${col}`)
-      .in('estado', soloPendientes ? ['emitida'] : estado ? [estado] : ESTADOS_FACTURA_VIGENTE)
+      .in('estado', soloPendientes ? ['emitida'] : ESTADOS_FACTURA_VIGENTE)
       .order('created_at', { ascending: false })
       .limit(soloPendientes ? MAX_FACTURAS_RESUMEN : limiteEfectivo(limite));
-    if (desde) q = q.gte('created_at', desde);
-    if (hasta) q = q.lte('created_at', `${hasta}T23:59:59`);
+    if (desde) q = q.gte('created_at', inicioDiaNegocio(desde));
+    if (hasta) q = q.lte('created_at', finDiaNegocio(hasta));
     if (ids) q = q.in(col, ids);
     const { data } = await q;
-    const leidas = (data ?? []) as unknown as FacturaFila[];
+    const leidas = ((data ?? []) as unknown as FacturaFila[]).filter(f => !estado || estadoDe(f) === estado);
     const conSaldo = soloPendientes ? leidas.filter(f => pendiente(f) > 0.005) : leidas;
     const facturas = conSaldo.slice(0, limiteEfectivo(limite));
     const nombres = await nombresPorId(TABLA_ENTIDAD[tipo], conSaldo.map(f => String(f[col] ?? '')).filter(Boolean));
     const formato = tipo === 'compra' ? formatCodigoCompra : formatCodigoVenta;
     const filas = facturas.map(f => ({
       factura: f.numero != null ? formato(f.numero) : null,
-      fecha: f.created_at.slice(0, 10),
+      fecha: diaNegocio(f.created_at) ?? f.created_at.slice(0, 10),
       [tipo === 'compra' ? 'proveedor' : 'cliente']: nombres.get(String(f[col] ?? '')) ?? null,
-      estado: f.estado,
+      estado: estadoDe(f),
       totalUsd: dinero(f.total),
       pagadoUsd: dinero(f.monto_pagado),
       pendienteUsd: dinero(pendiente(f)),
@@ -171,8 +177,8 @@ async function resumenTipo(tipo: TipoFactura, desde: string, hasta: string) {
       .from(tabla)
       .select('total, monto_pagado, estado, created_at')
       .in('estado', ESTADOS_FACTURA_VIGENTE)
-      .gte('created_at', desde)
-      .lte('created_at', `${hasta}T23:59:59`)
+      .gte('created_at', inicioDiaNegocio(desde))
+      .lte('created_at', finDiaNegocio(hasta))
       .limit(MAX_FACTURAS_RESUMEN),
     supabaseAdmin.from(tabla).select('total, monto_pagado').eq('estado', 'emitida').limit(MAX_FACTURAS_RESUMEN),
   ]);
@@ -425,7 +431,7 @@ function herramientasDeEntidad(p: Perfil): HerramientaAsistente[] {
         tipo: r.tipo,
         [p.singular]: nombres.get(String(r[p.columnaNotas] ?? '')) ?? null,
         montoUsd: dinero(r.monto),
-        fecha: String(r.created_at ?? '').slice(0, 10),
+        fecha: diaNegocio(String(r.created_at ?? '')) ?? String(r.created_at ?? '').slice(0, 10),
         anulada: Boolean(r.anulada),
         pagada: Boolean(r.pagada),
       }));

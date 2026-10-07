@@ -197,6 +197,8 @@ export async function crearMovimiento(
       registrado_por: registradoPor,
       proveedor_id: input.proveedorId ?? null,
       cliente_id: input.clienteId ?? null,
+      // Solo si hay comprobante: así un movimiento sin imagen no depende de la columna.
+      ...(input.comprobantes.length > 0 ? { comprobantes: input.comprobantes } : {}),
     })
     .select()
     .single();

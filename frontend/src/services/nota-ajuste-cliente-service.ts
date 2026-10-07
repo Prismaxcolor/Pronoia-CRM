@@ -25,6 +25,8 @@ export interface NotaAjusteClienteDetalle {
   clienteId: string;
   nombreCliente: string;
   registradoPor: string | null;
+  /** Instante (timestamptz) en que se registró la nota. */
+  registradoEn?: string | null;
   anulaNotaId: string | null;
   /** Datos de la anulación (null si la nota no está anulada). */
   anuladaAt: string | null;

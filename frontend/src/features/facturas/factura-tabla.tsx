@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { InsigniaEstado, TablaDatos, formatearFecha, formatearKgDecimales, formatearUsdDecimales, infoEstado, type ColumnaTabla, type TablaDatosProps } from '../../components/ui';
-import { cuentaComoFacturada, fechaEmision, pesoFactura, saldoCompra } from '../../lib/facturas-kpis';
+import { InsigniaEstado, TablaDatos, formatearKgDecimales, formatearUsdDecimales, infoEstado, type ColumnaTabla, type TablaDatosProps } from '../../components/ui';
+import { cuentaComoFacturada, pesoFactura, saldoCompra } from '../../lib/facturas-kpis';
 import type { FacturaCV, TipoFactura } from '../../services/factura-cv-service';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 /** Tabla del historial de facturas (se carga con React.lazy después de los indicadores). Ordenable, exportable a CSV y,
  *  en móvil, tarjetas apiladas. El N° de control es el enlace al detalle. Las columnas de pago existen solo en compras:
@@ -40,7 +41,7 @@ function FacturaTabla({ facturas, tipo, ruta, cargando, vacio }: Props) {
         ),
         claseCelda: 'whitespace-nowrap',
       },
-      { clave: 'fecha', titulo: 'Fecha', valorOrden: f => f.createdAt, celda: f => formatearFecha(fechaEmision(f)), valorCsv: f => formatearFecha(fechaEmision(f)), claseCelda: 'whitespace-nowrap' },
+      { clave: 'fecha', titulo: 'Fecha', valorOrden: f => f.createdAt, celda: f => formatearFechaHora(f.createdAt), valorCsv: f => formatearFechaHora(f.createdAt), claseCelda: 'whitespace-nowrap' },
       { clave: 'entidad', titulo: labelEntidad, valorOrden: f => f.nombreEntidad ?? '' , celda: f => f.nombreEntidad ?? '—' },
       { clave: 'materiales', titulo: 'Materiales', valorOrden: f => resumenMateriales(f), ocultaEnMovil: true },
       {
@@ -64,7 +65,7 @@ function FacturaTabla({ facturas, tipo, ruta, cargando, vacio }: Props) {
           clave: 'saldo', titulo: 'Saldo', alinear: 'derecha', valorOrden: f => saldoCompra(f),
           celda: f => formatearUsdDecimales(saldoCompra(f)),
           total: filas => formatearUsdDecimales(suma(filas, saldoCompra)), decimalesCsv: 2,
-          ayuda: 'Lo que falta por pagar de esa factura (USD): total menos lo pagado. Solo las facturas emitidas tienen saldo; las pagadas, las anuladas y los borradores muestran 0.',
+          ayuda: 'Lo que falta por pagar de esa factura (USD): total menos lo pagado. Solo las facturas emitidas y pendientes tienen saldo; las pagadas, las anuladas y los borradores muestran 0.',
         },
       );
     }
@@ -82,7 +83,7 @@ function FacturaTabla({ facturas, tipo, ruta, cargando, vacio }: Props) {
         <InsigniaEstado estado={f.estado} />
       </div>
       <p className="mt-0.5 text-sm text-text-primary">{f.nombreEntidad ?? '—'}</p>
-      <p className="text-xs text-text-secondary">{formatearFecha(fechaEmision(f))} · {resumenMateriales(f)} · {formatearKgDecimales(pesoFactura(f))}</p>
+      <p className="text-xs text-text-secondary">{formatearFechaHora(f.createdAt)} · {resumenMateriales(f)} · {formatearKgDecimales(pesoFactura(f))}</p>
       <dl className="mt-2 grid grid-cols-2 gap-x-3 text-xs">
         <div><dt className="text-text-secondary">Total</dt><dd className="font-medium tabular-nums">{formatearUsdDecimales(f.total)}</dd></div>
         {esCompra && <div><dt className="text-text-secondary">Saldo</dt><dd className="font-medium tabular-nums">{formatearUsdDecimales(saldoCompra(f))}</dd></div>}

@@ -3,7 +3,10 @@ import autoTable from 'jspdf-autotable';
 import type { FacturaPublica, ItemPublico } from './factura-service.js';
 import type { TicketPublico } from './ticket-pesaje-service.js';
 import { LOGO_PRONOIA_BASE64 } from '../assets/logo-pronoia.js';
+import { describirTarasDetalle } from '../utils/taras-detalle.js';
+import { nombreArchivoDocumento } from '../utils/nombre-archivo.js';
 import { fechaPesajeGlobal, tituloTicket, totalKgPesados } from '../utils/ticket-pdf-datos.js';
+import { formatearFechaHora } from '../utils/fecha-negocio.js';
 
 // Réplica server-side de frontend/src/services/factura-export.ts (descargarFacturaPDF):
 // mismo armado de documento, solo cambia la salida final (arraybuffer en vez de
@@ -33,6 +36,26 @@ const REEMPLAZOS_PDF: Array<[RegExp, string]> = [
   [/\u00A0/g, ' '],
 ];
 
+/** Segunda línea del material con el desglose de tara ('Tara: Saca ×2 = 1,20 kg · ...'); vacío si no hay. */
+function textoDesgloseTara(m: TicketPublico['materiales'][number]): string {
+  const texto = describirTarasDetalle(m.tarasDetalle, fmt);
+  return texto ? `\nTara: ${texto}` : '';
+}
+
+/** Pie del documento (hora de Caracas). Los PDF del backend son EXTERNOS (Telegram al proveedor/cliente y portal):
+ *  llevan "Registrado el fecha hora" pero nunca el nombre del usuario interno. */
+export function pieRegistroPdf(doc: jsPDF, y: number, lineas: ReadonlyArray<string | null>): number {
+  let yy = y;
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(90);
+  for (const linea of lineas) {
+    if (!linea) continue;
+    yy += 14;
+    doc.text(sanitizarPdf(linea), 56, yy);
+  }
+  doc.setTextColor(0);
+  return yy;
+}
+
 export function sanitizarPdf(v: string): string {
   return REEMPLAZOS_PDF.reduce((s, [re, r]) => s.replace(re, r), v);
 }
@@ -50,13 +73,12 @@ function refFactura(f: FacturaPublica): string {
 }
 
 export function nombreArchivoFactura(f: FacturaPublica): string {
-  const ref = (f.codigo ?? f.id.slice(0, 8)).replace(/\s+/g, '-').toLowerCase();
-  return `factura-${f.tipo}-${ref}.pdf`;
+  return nombreArchivoDocumento({ prefijo: 'Factura', codigo: f.codigo ?? f.id.slice(0, 8), entidad: f.nombreEntidad });
 }
 
-export function nombreArchivoTicket(t: TicketPublico): string {
-  const ref = t.codigo.replace(/\s+/g, '-').toLowerCase();
-  return `ticket-${ref}.pdf`;
+/** nombreEntidad: proveedor o cliente del ticket (el TicketPublico solo trae su id). */
+export function nombreArchivoTicket(t: TicketPublico, nombreEntidad?: string | null): string {
+  return nombreArchivoDocumento({ prefijo: 'Ticket', codigo: t.codigo, entidad: nombreEntidad });
 }
 
 function filasFactura(f: FacturaPublica): Array<[string, string]> {
@@ -104,7 +126,7 @@ export function generarFacturaPdf(f: FacturaPublica): Buffer {
   y += 20;
   doc.setFontSize(10).setFont('helvetica', 'normal');
   doc.text(refFactura(f), 56, y);
-  doc.text(`Fecha: ${f.createdAt.slice(0, 10)}`, 250, y);
+  doc.text(`Fecha: ${formatearFechaHora(f.createdAt)}`, 250, y);
   doc.text(`Estado: ${f.estado}`, 420, y);
 
   y += 30;
@@ -161,6 +183,8 @@ export function generarFacturaPdf(f: FacturaPublica): Buffer {
   doc.setFontSize(12).setFont('helvetica', 'bold').text('Total de kilos facturados', 56, y);
   doc.text(`${fmt(totalPeso)} kg`, 539, y, { align: 'right' });
 
+  pieRegistroPdf(doc, y + 12, [`Registrada el ${formatearFechaHora(f.createdAt)}`]);
+
   return Buffer.from(doc.output('arraybuffer'));
 }
 
@@ -211,7 +235,7 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
     head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
     body: [
       ...t.materiales.map(m => [
-        sanitizarPdf(m.nombreProducto ?? m.subcategoria ?? '—'),
+        sanitizarPdf(`${m.nombreProducto ?? m.subcategoria ?? '—'}${textoDesgloseTara(m)}`),
         fmt(m.pesoBruto),
         fmt(m.tara),
         fmt(m.pesoNeto),
@@ -236,6 +260,11 @@ export function generarTicketPdf(t: TicketPublico, nombreEntidad: string): Buffe
   y += 22;
   doc.setFontSize(12).setFont('helvetica', 'bold').text('Total de kg pesados', 56, y);
   doc.text(`${fmt(totalKgPesados(t))} kg`, 539, y, { align: 'right' });
+
+  pieRegistroPdf(doc, y + 10, [
+    `Registrado el ${formatearFechaHora(t.createdAt)}`,
+    t.completadoEn ? `Completado el ${formatearFechaHora(t.completadoEn)}` : null,
+  ]);
 
   return Buffer.from(doc.output('arraybuffer'));
 }

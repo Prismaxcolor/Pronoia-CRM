@@ -1,9 +1,11 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { slugArchivo } from '../utils/nombre-archivo.js';
-import { encabezado, fmt, sanitizarPdf } from './document-generator.js';
+import { nombreArchivoDocumento, slugArchivo } from '../utils/nombre-archivo.js';
+import { encabezado, fmt, pieRegistroPdf, sanitizarPdf } from './document-generator.js';
 import type { PagoDetalle } from './pago-detalle-service.js';
 import type { EstadoCuentaPortal } from './portal-estado-cuenta.js';
+import { totalesEstadoCuenta } from '../utils/estado-cuenta-totales.js';
+import { formatearFechaHora } from '../utils/fecha-negocio.js';
 
 // PDFs de los documentos financieros que se mandan por Telegram al proveedor/cliente:
 // notas de crédito/débito, comprobantes de pago/cobro/cruce y estado de cuenta.
@@ -20,6 +22,8 @@ export interface NotaParaPdf {
   motivo: string;
   anulada: boolean;
   fecha: string;
+  /** Instante en que se registró (timestamptz); opcional. */
+  registradoEn?: string | null;
   anuladaAt: string | null;
   anuladaMotivo: string | null;
   facturaAsociada: { id: string; codigo: string | null } | null;
@@ -41,8 +45,12 @@ function escribirFilas(doc: jsPDF, y: number, filas: Array<[string, string]>): n
   return cursor;
 }
 
-export function nombreArchivoNota(nota: NotaParaPdf): string {
-  return `nota-${nota.tipo}-${slug(nota.codigo ?? nota.id.slice(0, 8))}.pdf`;
+export function nombreArchivoNota(nota: NotaParaPdf, nombreEntidad?: string | null): string {
+  return nombreArchivoDocumento({
+    prefijo: nota.tipo === 'credito' ? 'Nota-credito' : 'Nota-debito',
+    codigo: nota.codigo ?? nota.id.slice(0, 8),
+    entidad: nombreEntidad,
+  });
 }
 
 export function generarNotaPdf(nota: NotaParaPdf, nombreEntidad: string, esProveedor: boolean): Buffer {
@@ -62,7 +70,7 @@ export function generarNotaPdf(nota: NotaParaPdf, nombreEntidad: string, esProve
     filas.push(['Factura asociada', nota.facturaAsociada.codigo ?? `N.º ${nota.facturaAsociada.id.slice(0, 8)}`]);
   }
     if (nota.anulada) {
-    if (nota.anuladaAt) filas.push(['Anulada el', nota.anuladaAt.slice(0, 10)]);
+    if (nota.anuladaAt) filas.push(['Anulada el', formatearFechaHora(nota.anuladaAt)]);
   }
   y = escribirFilas(doc, y, filas);
 
@@ -79,6 +87,7 @@ export function generarNotaPdf(nota: NotaParaPdf, nombreEntidad: string, esProve
       : `Suma al saldo que ${esProveedor ? 'le debemos al proveedor' : 'nos debe el cliente'}.`;
   y += 22;
   doc.setFontSize(9).setFont('helvetica', 'normal').text(leyenda, 56, y);
+  if (nota.registradoEn) pieRegistroPdf(doc, y + 4, [`Registrada el ${formatearFechaHora(nota.registradoEn)}`]);
 
   return Buffer.from(doc.output('arraybuffer'));
 }
@@ -94,7 +103,19 @@ export function nombreArchivoPago(pago: PagoDetalle): string {
   const esCruce = pago.codigoCruce != null;
   const prefijo = esCruce ? 'cruce' : pago.entidadTipo === 'proveedor' ? 'pago' : 'cobro';
   const ref = pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? pago.grupoId.slice(0, 8);
-  return `${prefijo}-${slug(ref)}.pdf`;
+  return nombreArchivoDocumento({ prefijo: prefijo[0].toUpperCase() + prefijo.slice(1), codigo: ref, entidad: pago.nombreEntidad });
+}
+
+/** Filas del resumen (total de las facturas, adelantos / N/C / N/D, saldo pendiente) bajo el desglose. */
+function filasResumenPdf(doc: jsPDF, y: number, filas: PagoDetalle['resumen']): number {
+  let cursor = y;
+  for (const f of filas) {
+    doc.setFontSize(10).setFont('helvetica', f.clave === 'saldoPendiente' ? 'bold' : 'normal');
+    doc.text(`${f.signo ? `${f.signo} ` : ''}${f.etiqueta}`, 56, cursor);
+    doc.text(`${f.signo === '-' ? '-' : ''}$${fmt(f.montoUsd)}`, 539, cursor, { align: 'right' });
+    cursor += 15;
+  }
+  return cursor + 6;
 }
 
 /** Comprobante de pago (proveedor), cobro (cliente) o cruce sin movimiento de dinero. */
@@ -133,6 +154,7 @@ export function generarPagoPdf(pago: PagoDetalle): Buffer {
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     y = (doc as any).lastAutoTable.finalY + 20;
+    y = filasResumenPdf(doc, y, pago.resumen.filter(f => f.clave !== 'pagado'));
   }
 
   if (esCruce) {
@@ -156,8 +178,9 @@ export function generarPagoPdf(pago: PagoDetalle): Buffer {
   y += 26;
   doc.setDrawColor(0).setLineWidth(1).line(56, y, 539, y);
   y += 24;
-  doc.setFontSize(14).setFont('helvetica', 'bold').text(esCruce ? 'Total en efectivo/banco' : 'Total', 56, y);
+  doc.setFontSize(14).setFont('helvetica', 'bold').text(pago.items.length > 0 ? 'Pagado' : 'Total', 56, y);
   doc.text(`$${fmt(pago.totalUsd)}`, 539, y, { align: 'right' });
+  if (pago.registradoEn) pieRegistroPdf(doc, y + 6, [`Registrado el ${formatearFechaHora(pago.registradoEn)}`]);
 
   return Buffer.from(doc.output('arraybuffer'));
 }
@@ -183,7 +206,7 @@ export function generarEstadoCuentaPdf(estado: EstadoCuentaPortal, hoy: string):
   let y = encabezado(doc, 'Estado de cuenta');
 
   y += 20;
-  doc.setFontSize(10).setFont('helvetica', 'normal').text(`Emitido: ${hoy}`, 56, y);
+  doc.setFontSize(10).setFont('helvetica', 'normal').text(`Emitido: ${formatearFechaHora(new Date())}`, 56, y);
 
   y += 30;
   y = escribirFilas(doc, y, [[esProveedor ? 'Proveedor' : 'Cliente', estado.entidad.nombre]]);
@@ -208,15 +231,17 @@ export function generarEstadoCuentaPdf(estado: EstadoCuentaPortal, hoy: string):
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   y = (doc as any).lastAutoTable.finalY + 26;
 
+  // Totales de las MISMAS filas impresas arriba (función única compartida con pantalla y portal).
+  const totales = totalesEstadoCuenta(estado.entradas);
   doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text('Total facturado', 56, y);
-  doc.text(fmt(estado.totales.facturado), 539, y, { align: 'right' });
+  doc.text(`Total cargos (${totales.filas} movimientos, USD)`, 56, y);
+  doc.text(fmt(totales.totalCargos), 539, y, { align: 'right' });
   y += 16;
-  doc.text('Total pagado', 56, y);
-  doc.text(fmt(estado.totales.pagado), 539, y, { align: 'right' });
+  doc.text('Total abonos', 56, y);
+  doc.text(fmt(totales.totalAbonos), 539, y, { align: 'right' });
   y += 24;
-  doc.setFontSize(14).setFont('helvetica', 'bold').text('Saldo', 56, y);
-  doc.text(fmt(estado.totales.saldo), 539, y, { align: 'right' });
+  doc.setFontSize(14).setFont('helvetica', 'bold').text('Saldo final', 56, y);
+  doc.text(fmt(totales.saldoFinal), 539, y, { align: 'right' });
 
   return Buffer.from(doc.output('arraybuffer'));
 }

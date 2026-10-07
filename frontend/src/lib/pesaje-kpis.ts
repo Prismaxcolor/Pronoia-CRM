@@ -5,6 +5,7 @@
  *  Las firmas usan tipos estructurales mínimos: TicketPesaje y Traslado de @shared/types los cumplen tal cual. */
 
 import { compararConPeriodoAnterior, type ComparacionPeriodo } from './comparacion';
+import { hoyNegocio } from './fecha-negocio';
 
 export interface TicketKpi {
   id: string;
@@ -34,8 +35,7 @@ const DIA_MS = 86_400_000;
 
 /** AAAA-MM-DD según el reloj LOCAL de `d` (la fecha de un ticket es la del galpón, no la UTC). */
 export function fechaLocalIso(d: Date): string {
-  const dos = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}`;
+  return hoyNegocio(d);
 }
 
 /** Suma (o resta, con negativo) días a una fecha AAAA-MM-DD. Trabaja en UTC: sin saltos por horario de verano. */

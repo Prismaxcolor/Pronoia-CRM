@@ -16,7 +16,7 @@ function listarCodigos(codigos: readonly string[]): string {
   return codigos.length > MAX_CODIGOS ? `${visibles} y ${codigos.length - MAX_CODIGOS} más` : visibles;
 }
 
-/** Alertas de la lista de Pesaje: tickets en bruto sin completar y diferencias de peso fuera de tolerancia.
+/** Alertas de la lista de Pesaje: tickets por recepcionar sin completar y diferencias de peso fuera de tolerancia.
  *  (Las tomas físicas abiertas se avisan arriba de toda la pantalla, en las dos pestañas.)
  *  Rojo solo cuando los materiales superan al peso global (se pagaría peso que la báscula nunca confirmó). */
 function ListaAlertasPesaje({ tickets, ahora }: Props) {
@@ -28,8 +28,8 @@ function ListaAlertasPesaje({ tickets, ahora }: Props) {
       salida.push({
         id: 'brutos-antiguos',
         severidad: 'amarilla',
-        texto: `${brutos.length} ${brutos.length === 1 ? 'ticket lleva' : 'tickets llevan'} más de ${HORAS_BRUTO_ALERTA} h en bruto sin completarse`,
-        detalle: `${listarCodigos(brutos.map(b => b.codigo))}. El más antiguo lleva ${textoAntiguedad(brutos[0].horas)} desde que se registró. En bruto significa que se pesó el camión pero faltan los materiales; hasta completarlo no entra al inventario.`,
+        texto: `${brutos.length} ${brutos.length === 1 ? 'ticket lleva' : 'tickets llevan'} más de ${HORAS_BRUTO_ALERTA} h por recepcionar sin completarse`,
+        detalle: `${listarCodigos(brutos.map(b => b.codigo))}. El más antiguo lleva ${textoAntiguedad(brutos[0].horas)} desde que se registró. Por recepcionar significa que se pesó el camión pero faltan los materiales; hasta completarlo no entra al inventario.`,
         enlace: { to: '?estado=bruto', etiqueta: 'Ver por recepcionar' },
       });
     }
@@ -59,7 +59,7 @@ function ListaAlertasPesaje({ tickets, ahora }: Props) {
   }, [tickets, ahora]);
 
   return (
-    <Bloque titulo="Alertas" queEstasViendo="lo que conviene revisar: tickets en bruto con más de 24 horas sin completar, y tickets cuyo peso global no cuadra con la suma de sus materiales (más del 0,6 % de diferencia, o materiales por encima del peso global).">
+    <Bloque titulo="Alertas" queEstasViendo="lo que conviene revisar: tickets por recepcionar con más de 24 horas sin completar, y tickets cuyo peso global no cuadra con la suma de sus materiales (más del 0,6 % de diferencia, o materiales por encima del peso global).">
       <ListaAlertas alertas={alertas} />
     </Bloque>
   );

@@ -1,7 +1,7 @@
 /** Pestaña "Configuración" de /transformaciones: salidas comunes por material de entrada (editable, igual que siempre) y,
  *  como lectura, los umbrales con los que la pantalla avisa (merma y días de espera). */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import type { Producto, SalidaComun } from '@shared/types/index.js';
 import { guardarSalidasComunes } from '../../services/transformacion-service';
@@ -28,11 +28,17 @@ function ConfigSalidasComunes({
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
-  useEffect(() => {
-    if (!productoEntradaId) { setSeleccionados([]); return; }
-    const ids = salidasComunes.filter(s => s.productoEntradaId === productoEntradaId).map(s => s.productoSalidaId);
-    setSeleccionados(ids);
-  }, [productoEntradaId, salidasComunes]);
+  // Re-sincroniza la selección cuando cambia el material o la config guardada
+  // (estado derivado durante el render, no en un efecto).
+  const [origenSeleccion, setOrigenSeleccion] = useState<{ productoEntradaId: string; salidasComunes: SalidaComun[] } | null>(null);
+  if (origenSeleccion?.productoEntradaId !== productoEntradaId || origenSeleccion.salidasComunes !== salidasComunes) {
+    setOrigenSeleccion({ productoEntradaId, salidasComunes });
+    setSeleccionados(
+      productoEntradaId
+        ? salidasComunes.filter(s => s.productoEntradaId === productoEntradaId).map(s => s.productoSalidaId)
+        : [],
+    );
+  }
 
   const toggle = (id: string) => {
     setSeleccionados(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);

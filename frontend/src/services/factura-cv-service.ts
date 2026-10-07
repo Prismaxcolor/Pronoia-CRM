@@ -1,8 +1,10 @@
 import { apiFetch } from './api-client';
+import type { EstadoFacturaDerivado } from '../lib/estado-factura';
 
 export type TipoFactura = 'compra' | 'venta';
-/** 'anulada': se conserva para historial, pero no es deuda ni se puede pagar. */
-export type EstadoFacturaCV = 'borrador' | 'emitida' | 'pagada' | 'anulada';
+/** 'emitida' = sin pagos; 'pendiente' = con pagos y saldo; 'pagada' = sin saldo (ver lib/estado-factura.ts).
+ *  'anulada': se conserva para historial, pero no es deuda ni se puede pagar. */
+export type EstadoFacturaCV = EstadoFacturaDerivado;
 
 export interface FacturaItemCV {
   id: string;
@@ -33,6 +35,9 @@ export interface FacturaCV {
   observaciones: string | null;
   estado: EstadoFacturaCV;
   createdAt: string;
+  /** Solo en el detalle: quién la creó y la última edición según auditoría. */
+  registradoPorNombre?: string | null;
+  ultimaEdicion?: { nombre: string; en: string } | null;
 }
 
 /**

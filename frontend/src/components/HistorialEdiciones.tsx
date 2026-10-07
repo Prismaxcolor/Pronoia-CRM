@@ -4,15 +4,14 @@ import {
   type EntidadAuditable,
   type EntradaAuditoria,
 } from '../services/auditoria-service';
+import { formatearFechaHora } from '../lib/fecha-negocio';
 
 interface Props {
   entidadTipo: EntidadAuditable;
   entidadId: string;
 }
 
-function fmtFecha(iso: string): string {
-  return new Date(iso).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
-}
+const fmtFecha = formatearFechaHora;
 
 function fmtValor(v: string | number | boolean | null): string {
   return v === null || v === '' ? '—' : String(v);

@@ -19,6 +19,7 @@ import CompletarTicketModal from './CompletarTicketModal';
 import CompletarTrasladoModal from '../inventario/CompletarTrasladoModal';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
+import CantidadTaraInput from './CantidadTaraInput';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import TicketsBrutoProveedor from './TicketsBrutoProveedor';
@@ -27,6 +28,8 @@ import { AlertaItem, EncabezadoPagina, Pestanas } from '../../components/ui';
 import TicketsSeccion from './lista-TicketsSeccion';
 import { CLAVES_FILTROS_PESAJE } from '../../lib/pesaje-lista';
 import { idVigenteOVacio, mensajeReseteos, mensajeSaneoBorrador, sanearFilasRestauradas } from '../../lib/borrador-vigentes';
+import TarasExtraEditor from './TarasExtraEditor';
+import { filaTaraIncompleta } from './tara-multiple';
 import { filaVacia, taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila } from './material-fila';
 import { obtenerVehiculos } from '../../services/vehiculo-service';
 import VehiculoSelector from '../../components/VehiculoSelector';
@@ -361,7 +364,7 @@ function PesajePage() {
     if (estado === 'completo') {
       if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
       if (materiales.some(f => !esFilaSinLote(f, productos) && !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
-      if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
+      if (materiales.some(filaTaraIncompleta)) {
         setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
         return;
       }
@@ -444,7 +447,7 @@ function PesajePage() {
     if ('error' in result) { setError(result.error); return; }
     toast.exito(
       estado === 'bruto'
-        ? `${result.ticket.codigo} guardado en bruto. Complétalo luego desde la lista.`
+        ? `${result.ticket.codigo} guardado como pesaje global (por recepcionar). Complétalo luego desde la lista.`
         : `${result.ticket.codigo} generado (neto ${fmt(result.ticket.pesoNetoTotal)} kg).`
     );
     limpiar();
@@ -604,20 +607,18 @@ function PesajePage() {
 
             {tipo !== 'traslado' && (
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className={labelClass + ' mb-0'}>Pesaje global {sinPesajeGlobal ? '' : '*'}</label>
-              </div>
               {tipo === 'compra' && (
-                <label className="flex items-center gap-2 mb-2 text-sm text-text-secondary cursor-pointer">
+                <label className="flex items-center gap-2 mb-4 text-sm font-medium text-text-primary cursor-pointer">
                   <input
                     type="checkbox"
                     checked={pesajeExterior}
                     onChange={e => setPesajeExterior(e.target.checked)}
                     className="rounded border-border"
                   />
-                  Peso exterior / sin pesaje global
+                  Peso exterior (sin pesaje global)
                 </label>
               )}
+              <h3 className="text-lg font-bold text-text-primary mb-2">Pesaje global {sinPesajeGlobal ? '' : '*'}</h3>
               {sinPesajeGlobal ? (
                 <p className="text-xs text-text-muted">Sin pesaje global: la compra se registra con el peso exterior, sin peso global para reconciliar.</p>
               ) : (
@@ -801,7 +802,7 @@ function PesajePage() {
                                 </span>
                                 <ChevronDown size={14} className="text-text-muted shrink-0" />
                               </button>
-                              <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
+                              <CantidadTaraInput value={f.taraCantidad} onChange={v => setFila(f.uid, 'taraCantidad', v)} />
                             </div>
                             <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                           </div>
@@ -811,6 +812,12 @@ function PesajePage() {
                       </div>
                       <input type="number" step="0.001" min="0" value={f.pesoBruto} onChange={e => setFila(f.uid, 'pesoBruto', e.target.value)} className={inputClass + ' self-start'} placeholder="0.00" />
                     </div>
+
+                    <TarasExtraEditor
+                      extras={f.tarasExtra ?? []}
+                      taras={taras}
+                      onChange={extras => setMateriales(prev => prev.map(x => (x.uid === f.uid ? { ...x, tarasExtra: extras } : x)))}
+                    />
 
                     <div className="flex items-center justify-end gap-2 text-sm">
                       <span className="text-text-muted">Neto del material</span>
@@ -1017,7 +1024,7 @@ function PesajePage() {
                 onClick={() => guardar('bruto')}
                 className="w-full py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors disabled:opacity-50"
               >
-                Guardar en bruto (completar después)
+                Guardar pesaje global, completar después
               </button>
             )}
 

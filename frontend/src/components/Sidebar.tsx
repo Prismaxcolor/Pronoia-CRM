@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, X } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, PackageOpen, X } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
 import type { Recurso } from '@shared/types/index.js';
@@ -43,6 +43,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Pesaje', to: '/pesaje', icon: <Scale size={20} />, recurso: 'pesaje', recordable: true },
       { label: 'Taras', to: '/taras', icon: <Weight size={20} />, recurso: 'taras' },
       { label: 'Despachos', to: '/citas', icon: <CalendarClock size={20} />, recurso: 'despachos' },
+      { label: 'Packing list', to: '/packing-list', icon: <PackageOpen size={20} />, recurso: 'despachos', recordable: true },
     ],
   },
   {
@@ -133,8 +134,16 @@ function Sidebar({ abierto, onCerrar }: Props) {
     const item = seccionActual(location.pathname);
     if (!item) return;
     guardarUltimaRuta(item.to, location.pathname);
-    setUltimasRutas(prev => (prev[item.to] === location.pathname ? prev : { ...prev, [item.to]: location.pathname }));
   }, [location.pathname]);
+  // El estado en memoria se deriva durante el render (no en el efecto).
+  const [pathnameVisto, setPathnameVisto] = useState<string | null>(null);
+  if (pathnameVisto !== location.pathname) {
+    setPathnameVisto(location.pathname);
+    const item = seccionActual(location.pathname);
+    if (item && ultimasRutas[item.to] !== location.pathname) {
+      setUltimasRutas({ ...ultimasRutas, [item.to]: location.pathname });
+    }
+  }
 
   // Filtra items por permiso y descarta secciones que queden sin items visibles.
   const seccionesVisibles = NAV_SECTIONS

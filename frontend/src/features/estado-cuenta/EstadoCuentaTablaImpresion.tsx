@@ -1,15 +1,19 @@
 import type { EntradaEstadoCuenta } from '../../services/estado-cuenta-service';
+import { totalesEstadoCuenta } from '@shared/types/estado-cuenta-totales.js';
 import { LABEL_POR_TIPO, fmt } from './estado-cuenta-comun';
 
 interface Props {
   entradas: readonly EntradaEstadoCuenta[];
-  totales: { facturado: number; pagado: number; saldo: number };
+  /** Saldo acumulado de la cuenta tras la última fila (distinto de cargos - abonos si se filtró por tipo). */
+  saldoFinal: number;
+  filtradoPorTipo: boolean;
 }
 
 /** Versión IMPRESA del estado de cuenta: la tabla clásica (fecha, concepto, referencia, cargo, abono) y los totales.
  *  Solo se ve al imprimir; en pantalla se usa la tabla interactiva. Se mantiene aparte para que lo impreso no cambie
  *  con el rediseño (sin botones, filtros ni gráficas). */
-function EstadoCuentaTablaImpresion({ entradas, totales }: Props) {
+function EstadoCuentaTablaImpresion({ entradas, saldoFinal, filtradoPorTipo }: Props) {
+  const totales = totalesEstadoCuenta(entradas);
   return (
     <div className="hidden print:block">
       <div className="mb-6 overflow-hidden rounded-xl border border-border bg-surface">
@@ -63,17 +67,20 @@ function EstadoCuentaTablaImpresion({ entradas, totales }: Props) {
 
       <div className="flex flex-col items-end gap-2">
         <div className="flex w-full max-w-xs justify-between text-sm">
-          <span className="text-text-secondary">Total facturado</span>
-          <span className="font-medium text-text-primary">{fmt(totales.facturado)}</span>
+          <span className="text-text-secondary">Total cargos</span>
+          <span className="font-medium text-text-primary">{fmt(totales.totalCargos)}</span>
         </div>
         <div className="flex w-full max-w-xs justify-between text-sm">
-          <span className="text-text-secondary">Total pagado</span>
-          <span className="font-medium text-text-primary">{fmt(totales.pagado)}</span>
+          <span className="text-text-secondary">Total abonos</span>
+          <span className="font-medium text-text-primary">{fmt(totales.totalAbonos)}</span>
         </div>
         <div className="flex w-full max-w-xs justify-between border-t border-border pt-2 text-base">
-          <span className="font-semibold text-text-primary">Saldo pendiente</span>
-          <span className="font-bold text-text-primary">{fmt(totales.saldo)}</span>
+          <span className="font-semibold text-text-primary">Saldo final</span>
+          <span className="font-bold text-text-primary">{fmt(saldoFinal)}</span>
         </div>
+        <p className="max-w-xs text-right text-xs text-text-muted">
+          {filtradoPorTipo ? `Cargos y abonos de las ${totales.filas} filas filtradas; el saldo final es el de toda la cuenta.` : `Totales de las ${totales.filas} filas mostradas, en USD.`}
+        </p>
       </div>
     </div>
   );

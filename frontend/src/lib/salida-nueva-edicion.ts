@@ -27,7 +27,8 @@ export function filaSalidaNuevaVacia(t: Pick<Transformacion, 'categoria' | 'alma
     tipo: esPcb ? 'lote' : 'material',
     productoId: '',
     loteDestinoId: '',
-    almacenId: esPcb ? '' : t.almacenId ?? '',
+    // Siempre el almacén con el que se inició la transformación (PCB incluido).
+    almacenId: t.almacenId ?? '',
     pesoBruto: '',
     tara: '',
     fotos: [],

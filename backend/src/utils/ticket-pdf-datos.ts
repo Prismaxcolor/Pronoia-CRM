@@ -1,4 +1,5 @@
 import { redondearKg } from './peso-kg.js';
+import { diaNegocio } from './fecha-negocio.js';
 
 /** Datos puros del PDF del ticket de pesaje (fáciles de probar sin armar el documento). */
 
@@ -18,5 +19,5 @@ export function totalKgPesados(t: { materiales: ReadonlyArray<{ pesoNeto: number
 
 /** Fecha del pesaje global (YYYY-MM-DD): la del ticket, o la de creación si no tiene. */
 export function fechaPesajeGlobal(t: { fecha: string | null; createdAt: string }): string {
-  return (t.fecha ?? t.createdAt).slice(0, 10);
+  return t.fecha ?? diaNegocio(t.createdAt) ?? t.createdAt.slice(0, 10);
 }

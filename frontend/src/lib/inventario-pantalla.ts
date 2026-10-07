@@ -11,6 +11,7 @@ import type {
   VistaInventario,
 } from '@shared/types/inventario-pantalla.js';
 import { VISTA_POR_DEFECTO, formatearNumero, type EtapaFiltro, type FiltrosPantalla, type VistaUrl } from './inventario-nuevo';
+import { hoyNegocio } from './fecha-negocio';
 
 // ---------------------------------------------------------------- vistas
 
@@ -456,7 +457,7 @@ export function armarCsv(filas: FilaDetalleInventario[]): string {
   return BOM_UTF8 + lineas.join(SALTO_CSV) + SALTO_CSV;
 }
 
-export const nombreArchivoCsv = (hoy: Date): string => `inventario-${hoy.toISOString().slice(0, 10)}.csv`;
+export const nombreArchivoCsv = (hoy: Date): string => `inventario-${hoyNegocio(hoy)}.csv`;
 
 
 // ---------------------------------------------------------------- alertas

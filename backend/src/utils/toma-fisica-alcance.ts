@@ -105,3 +105,29 @@ export function lineasLotesSinContar(
       cantidadPesajes: 0,
     }));
 }
+
+export interface ProductoDeCategoria {
+  id: string;
+  categoriaId: string | null;
+}
+
+/** Materiales a contar en una toma "Por categoría". `seleccion` ausente o que
+ *  cubre todos los productos activos de las categorías = toda la categoría
+ *  (null: no se guarda lista, el comportamiento histórico). Una selección
+ *  parcial se guarda tal cual. Rechaza vacía o con productos ajenos. */
+export function resolverProductosToma(
+  seleccion: readonly string[] | undefined,
+  activosDeCategorias: readonly ProductoDeCategoria[],
+  categoriaIds: readonly string[]
+): { error: string } | { productoIds: string[] | null } {
+  if (seleccion === undefined) return { productoIds: null };
+  const elegidos = [...new Set(seleccion)];
+  if (elegidos.length === 0) return { error: 'Elige al menos un material a inventariar.' };
+  const validos = new Set(
+    activosDeCategorias.filter(p => p.categoriaId && categoriaIds.includes(p.categoriaId)).map(p => p.id)
+  );
+  if (elegidos.some(id => !validos.has(id))) {
+    return { error: 'Algún material elegido no existe, está inactivo o no pertenece a las categorías elegidas.' };
+  }
+  return { productoIds: elegidos.length === validos.size ? null : elegidos };
+}

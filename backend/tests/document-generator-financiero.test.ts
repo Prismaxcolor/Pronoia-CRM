@@ -9,6 +9,7 @@ import {
   type NotaParaPdf,
 } from '../src/services/document-generator-financiero.js';
 import type { PagoDetalle } from '../src/services/pago-detalle-service.js';
+import { resumenComprobante } from '../src/utils/comprobante-resumen.js';
 
 const esPdf = (b: Buffer) => b.subarray(0, 5).toString() === '%PDF-' && b.length > 1000;
 
@@ -17,13 +18,16 @@ const nota = (extra: Partial<NotaParaPdf> = {}): NotaParaPdf => ({
   anulada: false, fecha: '2026-10-03', anuladaAt: null, anuladaMotivo: null, facturaAsociada: null, ...extra,
 });
 
-const pago = (extra: Partial<PagoDetalle> = {}): PagoDetalle => ({
+const pago = (extra: Partial<PagoDetalle> = {}): PagoDetalle => {
+  const base: PagoDetalle = {
   grupoId: '55555555-5555-4555-8555-555555555555', entidadTipo: 'proveedor', entidadId: 'P1', nombreEntidad: 'Reciclados El Valle',
   fecha: '2026-10-03', descripcion: null, comprobantes: [], registradoPor: 'Operador Interno',
   bancas: [{ bancaId: 'B1', bancaNombre: 'Banesco USD', monto: 100, moneda: 'USD', montoUsd: 100, referencia: 'REF-1' }],
   totalUsd: 100, codigoPago: 'PG-0007', codigoAdelanto: null, codigoCruce: null,
-  items: [{ tipo: 'factura', codigo: 'C-0003', montoUsd: 100 }], ...extra,
-});
+  items: [{ tipo: 'factura', codigo: 'C-0003', montoUsd: 100 }], resumen: [], ...extra,
+  };
+  return { ...base, resumen: extra.resumen ?? resumenComprobante(base.items, base.totalUsd, base.entidadTipo === 'proveedor') };
+};
 
 describe('nota de crédito/débito', () => {
   it('genera PDF válido para crédito, débito, anulada, de proveedor y de cliente', () => {
@@ -38,15 +42,15 @@ describe('nota de crédito/débito', () => {
   });
 
   it('nombre de archivo estable', () => {
-    expect(nombreArchivoNota(nota())).toBe('nota-credito-nc-0004.pdf');
-    expect(nombreArchivoNota(nota({ codigo: null }))).toBe('nota-credito-abcdef12.pdf');
+    expect(nombreArchivoNota(nota())).toBe('Nota-credito-NC-0004.pdf');
+    expect(nombreArchivoNota(nota({ codigo: null }))).toBe('Nota-credito-abcdef12.pdf');
   });
 });
 
 describe('comprobante de pago / cobro / cruce', () => {
   it('pago con desglose y banca', () => {
     expect(esPdf(generarPagoPdf(pago()))).toBe(true);
-    expect(nombreArchivoPago(pago())).toBe('pago-pg-0007.pdf');
+    expect(nombreArchivoPago(pago())).toBe('Pago-PG-0007-Reciclados-El-Valle.pdf');
   });
 
   it('pago con adelanto, nota de crédito y varias bancas', () => {
@@ -68,13 +72,13 @@ describe('comprobante de pago / cobro / cruce', () => {
   it('cobro de cliente', () => {
     const c = pago({ entidadTipo: 'cliente', codigoPago: 'CB-0003' });
     expect(esPdf(generarPagoPdf(c))).toBe(true);
-    expect(nombreArchivoPago(c)).toBe('cobro-cb-0003.pdf');
+    expect(nombreArchivoPago(c)).toBe('Cobro-CB-0003-Reciclados-El-Valle.pdf');
   });
 
   it('cruce sin dinero', () => {
     const c = pago({ codigoPago: null, codigoCruce: 'CR-0001', bancas: [], totalUsd: 0 });
     expect(esPdf(generarPagoPdf(c))).toBe(true);
-    expect(nombreArchivoPago(c)).toBe('cruce-cr-0001.pdf');
+    expect(nombreArchivoPago(c)).toBe('Cruce-CR-0001-Reciclados-El-Valle.pdf');
   });
 });
 

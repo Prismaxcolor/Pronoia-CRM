@@ -26,6 +26,9 @@ import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SelectorDestinoLote from './SelectorDestinoLote';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
+import CantidadTaraInput from './CantidadTaraInput';
+import TarasExtraEditor from './TarasExtraEditor';
+import { filaTaraIncompleta, filaTaraDesdeDetalle } from './tara-multiple';
 import { type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo } from '@shared/types/index.js';
 import { descargarTicketPDF } from '../../services/ticket-export';
 import HistorialEdiciones from '../../components/HistorialEdiciones';
@@ -35,26 +38,25 @@ import CompartirBoton from '../../components/CompartirBoton';
 import PesajesGlobalesEditor from './PesajesGlobalesEditor';
 import { pesajeGlobalVacio, sumaPesajesGlobales, subirFotosPesajeGlobal, type PesajeGlobalFila } from './pesaje-global-fila';
 import VisorFotos from '../../components/VisorFotos';
-import { etiquetaPesadaGlobal, pesadasGlobalesConUnidos, tituloTicket } from '../../lib/ticket-documento';
+import { etiquetaPesadaGlobal, lineasAutoriaTicket, pesadasGlobalesConUnidos, tituloTicket } from '../../lib/ticket-documento';
+import LeyendaRegistro from '../../components/LeyendaRegistro';
+import { diaNegocio } from '../../lib/fecha-negocio';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
-/** Convierte los materiales ya guardados de un ticket en filas editables. La
- *  tara histórica se carga como manual: no se guarda qué tara preconfigurada
- *  ni cuántas unidades se usaron originalmente, solo el kg resultante. */
-function filasDesdeTicket(t: TicketPesaje): MaterialFila[] {
+/** Convierte los materiales ya guardados de un ticket en filas editables. Si el
+ *  material guardó el desglose de su tara se restauran las taras individuales;
+ *  si no (tickets anteriores), una sola tara manual con el total. */
+function filasDesdeTicket(t: TicketPesaje, taras: Tara[]): MaterialFila[] {
   if (t.materiales.length === 0) return [filaVacia()];
   return t.materiales.map(m => ({
     uid: filaVacia().uid,
     productoId: m.productoId ?? '',
     subcategoria: m.subcategoria ?? '',
     pesoBruto: String(m.pesoBruto),
-    taraModo: 'manual' as const,
-    taraId: '',
-    taraCantidad: '',
-    taraManual: String(m.tara),
+    ...filaTaraDesdeDetalle(m.tarasDetalle, m.tara, taras),
     destino: m.loteId ?? '',
     guardado: m.productoId ? { productoId: m.productoId, destinoTipo: m.destinoTipo } : undefined,
     fotos: m.fotos.map(url => ({ tipo: 'existente' as const, url })),
@@ -62,14 +64,14 @@ function filasDesdeTicket(t: TicketPesaje): MaterialFila[] {
 }
 
 /** Campos del formulario de edición de un ticket, a partir del ticket guardado. */
-function estadoEdicionDesdeTicket(t: TicketPesaje) {
+function estadoEdicionDesdeTicket(t: TicketPesaje, taras: Tara[]) {
   return {
-    materiales: filasDesdeTicket(t),
+    materiales: filasDesdeTicket(t, taras),
     devolucionEdit: t.devolucion ? String(t.devolucion) : '',
     fotosDevolucionEdit: t.fotosDevolucion.map(url => ({ tipo: 'existente' as const, url })) as FotoMaterial[],
     observacionesEdit: t.observaciones ?? '',
     vehiculoEdit: t.vehiculo ?? '',
-    fechaEdit: t.fecha ?? t.createdAt.slice(0, 10),
+    fechaEdit: t.fecha ?? diaNegocio(t.createdAt) ?? t.createdAt.slice(0, 10),
     pesajesEdit: t.pesajesGlobales.map(p => ({
       ...pesajeGlobalVacio(),
       peso: String(p.peso),
@@ -181,7 +183,7 @@ function TicketDetalleContenido() {
 
   const iniciarEdicion = () => {
     if (!ticket) return;
-    aplicarEstadoEdicion(estadoEdicionDesdeTicket(ticket));
+    aplicarEstadoEdicion(estadoEdicionDesdeTicket(ticket, taras));
     setError(null);
     setEditando(true);
   };
@@ -216,7 +218,7 @@ function TicketDetalleContenido() {
     habilitado: puedeEditarEsteTicket && catalogosListos,
     huellaBase: huellaTicket,
     estado: estadoEdicion,
-    hayCambios: editando && !!ticket && difiereEstado(estadoEdicion, estadoEdicionDesdeTicket(ticket)),
+    hayCambios: editando && !!ticket && difiereEstado(estadoEdicion, estadoEdicionDesdeTicket(ticket, taras)),
     aplicar: d => {
       // Material, lote o tara que ya no existen (o se desactivaron) quedan sin elegir, con aviso.
       const saneo = sanearFilasRestauradas(filasDesdeBorrador(d.materiales), {
@@ -280,7 +282,7 @@ function TicketDetalleContenido() {
 
     if (materiales.some(f => !f.productoId)) { setError('Cada material debe tener un producto seleccionado.'); return; }
     if (materiales.some(f => !esFilaSinLote(f, productos) && !f.destino)) { setError('Cada material debe tener un destino seleccionado.'); return; }
-    if (materiales.some(f => f.taraModo === 'preconfigurada' && Number(f.taraCantidad) > 0 && !f.taraId)) {
+    if (materiales.some(filaTaraIncompleta)) {
       setError('Selecciona la tara preconfigurada para las unidades ingresadas.');
       return;
     }
@@ -397,14 +399,14 @@ function TicketDetalleContenido() {
   const descargarPdf = (formato?: 'blob') => descargarTicketPDF(ticket, nombreEntidad, esCompra, formato);
 
   return (
-    <div className="max-w-5xl print-documento print:max-w-none">
+    <div data-compartir-imagen className="max-w-5xl print-documento print:max-w-none">
       <AvisoFacturaBanner avisos={avisosFactura} onIrEstadoCuenta={ruta => navigate(ruta)} onCerrar={() => setAvisosFactura([])} />
 
       {/* Cabecera de pantalla (la hoja impresa usa CabeceraImpresion, con el logo y el marcado de siempre). */}
       <div className="print:hidden">
         <EncabezadoPagina
           titulo={tituloTicket(ticket.estado)}
-          subtitulo={`${ticket.codigo} · ${esCompra ? 'Proveedor' : 'Cliente'}: ${nombreEntidad} · ${formatearFecha(ticket.fecha ?? ticket.createdAt.slice(0, 10))}`}
+          subtitulo={`${ticket.codigo} · ${esCompra ? 'Proveedor' : 'Cliente'}: ${nombreEntidad} · ${formatearFecha(ticket.fecha ?? ticket.createdAt)}`}
           migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: ticket.codigo }]}
           acciones={!editando && (
             <>
@@ -416,11 +418,12 @@ function TicketDetalleContenido() {
               )}
               <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => descargarPdf()}>PDF</BotonAccion>
               <BotonAccion variante="secundario" icono={<Printer size={16} />} onClick={() => window.print()}>Imprimir</BotonAccion>
-              <CompartirBoton titulo={`Ticket de pesaje ${ticket.codigo}`} obtenerPdf={() => descargarPdf('blob')} />
+              <CompartirBoton titulo={`Ticket ${ticket.codigo} ${nombreEntidad}`} />
             </>
           )}
         />
         <InsigniasTicket ticket={ticket} />
+        <LeyendaRegistro className="-mt-2 mb-4 text-xs text-text-muted" nombre={ticket.pesadoPorNombre} instante={ticket.createdAt} extra={lineasAutoriaTicket(ticket).completado} edicion={ticket.ultimaEdicion} />
       </div>
       <CabeceraImpresion ticket={ticket} />
 
@@ -438,7 +441,7 @@ function TicketDetalleContenido() {
           />
           <CuerpoImpresion ticket={ticket} nombreEntidad={nombreEntidad} ocultarDestino={ocultarDestino} totalesPorMaterial={totalesPorMaterial} />
 
-          <HistorialEdiciones entidadTipo="ticket_pesaje" entidadId={ticket.id} />
+          <div data-no-imagen><HistorialEdiciones entidadTipo="ticket_pesaje" entidadId={ticket.id} /></div>
         </>
       ) : (
         <form onSubmit={guardarEdicion} className="max-w-2xl bg-surface rounded-xl border border-border p-5 space-y-4">
@@ -541,7 +544,7 @@ function TicketDetalleContenido() {
                               </span>
                               <ChevronDown size={14} className="text-text-muted shrink-0" />
                             </button>
-                            <input type="number" step="1" min="0" value={f.taraCantidad} onChange={e => setFila(f.uid, 'taraCantidad', e.target.value)} className={inputClass} placeholder="Cantidad" />
+                            <CantidadTaraInput value={f.taraCantidad} onChange={v => setFila(f.uid, 'taraCantidad', v)} />
                           </div>
                           <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(f, taras))} kg</p>
                         </div>
@@ -550,6 +553,12 @@ function TicketDetalleContenido() {
                       )}
                     </div>
                   </div>
+
+                  <TarasExtraEditor
+                    extras={f.tarasExtra ?? []}
+                    taras={taras}
+                    onChange={extras => setMateriales(prev => prev.map(x => (x.uid === f.uid ? { ...x, tarasExtra: extras } : x)))}
+                  />
 
                   <div className="flex items-center justify-end gap-2 text-sm">
                     <span className="text-text-muted">Neto del material</span>

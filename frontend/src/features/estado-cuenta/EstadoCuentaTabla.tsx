@@ -1,16 +1,22 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Ban } from 'lucide-react';
-import { Insignia, TablaDatos, formatearFecha, type ColumnaTabla } from '../../components/ui';
+import { Insignia, TablaDatos, type ColumnaTabla } from '../../components/ui';
 import type { EntradaConSaldo } from '../../lib/terceros-kpis';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
+import { totalesEstadoCuenta } from '@shared/types/estado-cuenta-totales.js';
 import { AYUDA_POR_TIPO, LABEL_POR_TIPO, TONO_POR_TIPO, fmt, rutaDetalle } from './estado-cuenta-comun';
+import { fechaConHora } from '../../lib/fecha-negocio';
 
 interface Props {
   tipo: TipoEntidad;
   entidadId: string;
   nombreEntidad: string;
   filas: readonly EntradaConSaldo[];
+  /** Saldo acumulado de la cuenta tras su última fila (cuando se filtra por tipo, las filas mostradas no lo reproducen solas). */
+  saldoFinal: number;
+  /** Hay un filtro por tipo de movimiento: cargos y abonos son solo de las filas mostradas. */
+  filtradoPorTipo: boolean;
   /** Ruta (con filtros) a la que vuelve el detalle de una fila. */
   rutaVuelta: string;
   puedeAjustar: boolean;
@@ -48,7 +54,7 @@ function Importe({ e, lado }: { e: EntradaEstadoCuenta; lado: 'cargo' | 'abono' 
 }
 
 /** Tabla cronológica del estado de cuenta (cargo, abono y saldo corrido). Ordenable y exportable a CSV; en móvil, tarjetas. */
-function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, rutaVuelta, puedeAjustar, onAnular, vacio }: Props) {
+function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, saldoFinal, filtradoPorTipo, rutaVuelta, puedeAjustar, onAnular, vacio }: Props) {
   const referencia = (e: EntradaConSaldo) => {
     const destino = rutaDetalle(tipo, entidadId, e);
     const texto = e.referencia ?? '—';
@@ -71,22 +77,23 @@ function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, rutaVuelta, 
 
   const columnas = useMemo<Array<ColumnaTabla<EntradaConSaldo>>>(() => {
     const base: Array<ColumnaTabla<EntradaConSaldo>> = [
-      { clave: 'fecha', titulo: 'Fecha', valorOrden: e => e.fecha, celda: e => <span className="whitespace-nowrap text-text-secondary">{formatearFecha(e.fecha)}</span>, claseCelda: 'align-top' },
+      { clave: 'fecha', titulo: 'Fecha', valorOrden: e => e.fecha, celda: e => <span className="whitespace-nowrap text-text-secondary">{fechaConHora(e.fecha, e.instante)}</span>, claseCelda: 'align-top' },
       { clave: 'concepto', titulo: 'Concepto', valorOrden: e => e.descripcion, celda: e => <Concepto e={e} />, valorCsv: e => `${LABEL_POR_TIPO[e.tipo]}: ${e.descripcion}`, claseCelda: 'align-top' },
       { clave: 'referencia', titulo: 'Referencia', valorOrden: e => e.referencia, celda: referencia, valorCsv: e => e.referencia ?? '', claseCelda: 'align-top' },
       {
         clave: 'cargo', titulo: 'Cargo', alinear: 'derecha', valorOrden: e => e.cargo, celda: e => <Importe e={e} lado="cargo" />, valorCsv: e => e.cargo, decimalesCsv: 2,
         ayuda: 'Lo que hace subir el saldo, en USD: facturas y notas de débito (las notas anuladas no cuentan).',
-        total: lista => fmt(lista.reduce((s, e) => s + e.cargo, 0)), claseCelda: 'align-top',
+        total: lista => fmt(totalesEstadoCuenta(lista).totalCargos), claseCelda: 'align-top',
       },
       {
         clave: 'abono', titulo: 'Abono', alinear: 'derecha', valorOrden: e => e.abono, celda: e => <Importe e={e} lado="abono" />, valorCsv: e => e.abono, decimalesCsv: 2,
         ayuda: 'Lo que hace bajar el saldo, en USD: pagos o cobros, adelantos y notas de crédito (las notas anuladas no cuentan).',
-        total: lista => fmt(lista.reduce((s, e) => s + e.abono, 0)), claseCelda: 'align-top',
+        total: lista => fmt(totalesEstadoCuenta(lista).totalAbonos), claseCelda: 'align-top',
       },
       {
         clave: 'saldo', titulo: 'Saldo', alinear: 'derecha', valorOrden: e => e.saldoCorrido, celda: e => <span className="font-medium">{fmt(e.saldoCorrido)}</span>, valorCsv: e => e.saldoCorrido, decimalesCsv: 2,
         ayuda: 'Lo que queda por pagar o cobrar justo después de ese movimiento, en USD. Va sumando los cargos y restando los abonos desde la primera fila del periodo consultado. Si filtras por tipo de movimiento, el saldo sigue contando todos los movimientos.', claseCelda: 'align-top',
+        total: () => fmt(saldoFinal),
       },
     ];
     return puedeAjustar
@@ -94,7 +101,7 @@ function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, rutaVuelta, 
       : base;
     // referencia y botonAnular solo dependen de las props listadas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo, entidadId, rutaVuelta, puedeAjustar, onAnular]);
+  }, [tipo, entidadId, rutaVuelta, puedeAjustar, onAnular, saldoFinal]);
 
   return (
     <TablaDatos<EntradaConSaldo>
@@ -103,7 +110,7 @@ function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, rutaVuelta, 
       filas={filas}
       claveFila={e => String(e.orden)}
       etiquetaFila={e => `${LABEL_POR_TIPO[e.tipo]} ${e.referencia ?? ''}`.trim()}
-      totales={{ etiqueta: `Totales de las ${filas.length} filas mostradas` }}
+      totales={{ etiqueta: filtradoPorTipo ? `Total cargos, abonos y saldo final (cargos y abonos de las ${filas.length} filas filtradas; saldo final de toda la cuenta)` : `Total cargos, abonos y saldo final (las ${filas.length} filas, todas las páginas)` }}
       paginacion={{ tamano: 50 }}
       exportar={{ nombreArchivo: `estado-cuenta-${slug(nombreEntidad) || tipo}` }}
       vacio={vacio}
@@ -112,7 +119,7 @@ function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, rutaVuelta, 
       tarjetaMovil={e => (
         <div>
           <div className="flex items-start justify-between gap-2">
-            <span className="text-xs tabular-nums text-text-secondary">{formatearFecha(e.fecha)}</span>
+            <span className="text-xs tabular-nums text-text-secondary">{fechaConHora(e.fecha, e.instante)}</span>
             <span className="text-xs">{referencia(e)}</span>
           </div>
           <div className="mt-1 text-sm"><Concepto e={e} /></div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { KeyRound, X } from 'lucide-react';
 import { generarLlaveEdicion, type LlaveGenerada } from '../services/llave-service';
 import type { EntidadConLlave } from '../services/auditoria-service';
+import { formatearHoraNegocio } from '../lib/fecha-negocio';
 
 interface Props {
   entidadTipo: EntidadConLlave;
@@ -45,7 +46,7 @@ function GenerarLlaveEdicion({ entidadTipo, entidadId }: Props) {
         <div className="mt-2 p-3 bg-surface-alt border border-border rounded-lg">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs text-text-secondary">Llave de un solo uso (vence {new Date(llave.expiraEn).toLocaleTimeString('es-VE', { timeStyle: 'short' })}). No se volverá a mostrar.</p>
+              <p className="text-xs text-text-secondary">Llave de un solo uso (vence {formatearHoraNegocio(llave.expiraEn)}). No se volverá a mostrar.</p>
               <p className="text-xl font-mono font-bold tracking-wider text-text-primary select-all mt-1">{llave.codigo}</p>
             </div>
             <button type="button" onClick={() => setLlave(null)} className="p-1 text-text-muted hover:text-text-primary" aria-label="Cerrar">

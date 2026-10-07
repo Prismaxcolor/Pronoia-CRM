@@ -3,6 +3,7 @@ import type { FilaLista } from '../../lib/pesaje-lista';
 import { esTicketUnido, estaFueraDeTolerancia, estadoDiferencia, kgPesadosTicket, type EstadoDiferencia } from '../../lib/pesaje-kpis';
 import { ORDEN_POR_DEFECTO, ordenarListado } from '../../lib/orden-listado';
 import { contarMaterialesDistintos, resumenMateriales } from './resumen-materiales';
+import { diaNegocio } from '../../lib/fecha-negocio';
 
 /** Registro original detrás de una fila de la lista: un ticket de compra/venta o un traslado entre almacenes. */
 export type OrigenFila =
@@ -37,6 +38,7 @@ export function filaDeTicket(t: TicketPesaje, nombrePorEntidad: ReadonlyMap<stri
     tipo: t.tipo,
     codigo: t.codigo,
     fecha: t.fecha,
+    instante: t.createdAt,
     entidadId: t.entidadId,
     porRecepcionar: t.estado === 'bruto',
     facturado: t.estado === 'bruto' || esTicketUnido(t) ? null : t.facturado,
@@ -59,7 +61,8 @@ export function filaDeTraslado(t: Traslado): FilaTicket {
     clave: `tr-${t.id}`,
     tipo: 'traslado',
     codigo: t.codigo,
-    fecha: t.createdAt.slice(0, 10),
+    fecha: diaNegocio(t.createdAt) ?? t.createdAt.slice(0, 10),
+    instante: t.createdAt,
     entidadId: null,
     porRecepcionar: pendiente,
     facturado: null,

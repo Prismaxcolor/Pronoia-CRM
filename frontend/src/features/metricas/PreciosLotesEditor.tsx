@@ -10,6 +10,7 @@ import {
   textoDePrecio, totalEstimado, valorEstimado, type EdicionesPrecio, type LotePrecio,
 } from '../../lib/precios-lotes';
 import type { ClaseLote, Lote } from '@shared/types/index.js';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 const CLASE: Record<ClaseLote, { etiqueta: string; tono: Tono }> = {
   exportacion: { etiqueta: 'Exportación', tono: 'marca' },
@@ -25,7 +26,7 @@ const aFila = (l: Lote): LotePrecio => ({
   precioEstimadoKg: l.precioEstimadoKg ?? null, actualizadoEn: l.precioEstimadoActualizadoEn ?? null,
 });
 
-const fechaCorta = (iso: string) => new Date(iso).toLocaleDateString('es-VE');
+const fechaCorta = (iso: string) => formatearFechaHora(iso);
 
 interface Props {
   /** Quien llama dice si la pantalla permite editar; el componente además exige el permiso real del backend. */

@@ -600,7 +600,12 @@ export async function completarTransformacionMixta(
   if (!cab) return { error: 'Transformación no encontrada.', status: 404 };
 
   // Las salidas a lote no piden almacén: quedan en el de la transformación (o el predeterminado).
-  const conAlmacen = completarAlmacenSalidas(input.salidas, await almacenPorDefectoSalidas(id), s => s.tipo === 'lote');
+  // En PCB el material suelto también: sale al mismo almacén con el que se inició la transformación.
+  const conAlmacen = completarAlmacenSalidas(
+    input.salidas,
+    await almacenPorDefectoSalidas(id),
+    s => s.tipo === 'lote' || cab.categoria === 'pcb'
+  );
   if (!conAlmacen.ok) return { error: conAlmacen.error, status: 400 };
   const salidas = conAlmacen.salidas;
 

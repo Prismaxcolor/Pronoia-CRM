@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { obtenerMetricasCompras } from '../services/metricas-service.js';
+import { hoyNegocio } from '../utils/fecha-negocio.js';
 
 const router = Router();
 
@@ -9,11 +10,11 @@ router.use(requireAuth);
 const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hoyNegocio();
 }
 function fechaMenosDias(dias: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - dias);
+  const d = new Date(`${hoyNegocio()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - dias);
   return d.toISOString().slice(0, 10);
 }
 

@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { difiereEstado } from '../../lib/borrador';
-import { crearTomaFisica } from '../../services/toma-fisica-service';
+import { crearTomaFisica, obtenerLotesElegiblesToma } from '../../services/toma-fisica-service';
 import { useToast } from '../../hooks/use-toast-context';
-import type { TomaFisicaInventario, Almacen, TipoMaterial, Lote } from '@shared/types/index.js';
+import type { TomaFisicaInventario, Almacen, TipoMaterial, Lote, Producto } from '@shared/types/index.js';
 
 type Alcance = 'categoria' | 'lote';
 
@@ -34,6 +34,7 @@ export default function NuevaTomaFisicaModal({
   almacenes,
   categorias,
   lotes,
+  productos,
   tomas,
   onClose,
   onCreada,
@@ -41,6 +42,7 @@ export default function NuevaTomaFisicaModal({
   almacenes: Almacen[];
   categorias: TipoMaterial[];
   lotes: Lote[];
+  productos: Producto[];
   tomas: TomaFisicaInventario[];
   onClose: () => void;
   onCreada: (t: TomaFisicaInventario) => void;
@@ -50,29 +52,35 @@ export default function NuevaTomaFisicaModal({
   const [alcance, setAlcance] = useState<Alcance>('categoria');
   const [categoriaIds, setCategoriaIds] = useState<string[]>([]);
   const [loteIds, setLoteIds] = useState<string[]>([]);
+  // Materiales que el usuario DESMARCO (todos arrancan marcados). Guardar los excluidos hace que una categoria nueva entre completa.
+  const [productosExcluidos, setProductosExcluidos] = useState<string[]>([]);
+  // Lotes que corresponden a la(s) categoria(s) de `clave`; se descarta si ya no es la seleccion vigente.
+  const [elegibles, setElegibles] = useState<{ clave: string; ids: string[] } | null>(null);
   const [descripcion, setDescripcion] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const almacenInicial = almacenes.find(a => a.activo)?.id ?? '';
-  const estadoBorrador = { almacenId, alcance, categoriaIds, loteIds, descripcion };
+  const estadoBorrador = { almacenId, alcance, categoriaIds, loteIds, productosExcluidos, descripcion };
   const restablecer = () => {
     setAlmacenId(almacenInicial);
     setAlcance('categoria');
     setCategoriaIds([]);
     setLoteIds([]);
+    setProductosExcluidos([]);
     setDescripcion('');
   };
   const borrador = useBorradorPersistente<typeof estadoBorrador>({
     formulario: 'toma-fisica-nueva',
     version: 1,
     estado: estadoBorrador,
-    hayCambios: difiereEstado(estadoBorrador, { almacenId: almacenInicial, alcance: 'categoria', categoriaIds: [], loteIds: [], descripcion: '' }),
+    hayCambios: difiereEstado(estadoBorrador, { almacenId: almacenInicial, alcance: 'categoria', categoriaIds: [], loteIds: [], productosExcluidos: [], descripcion: '' }),
     aplicar: d => {
       setAlmacenId(almacenes.some(a => a.id === d.almacenId) ? (d.almacenId as string) : almacenInicial);
       setAlcance(d.alcance === 'lote' ? 'lote' : 'categoria');
       setCategoriaIds(d.categoriaIds ?? []);
       setLoteIds(d.loteIds ?? []);
+      setProductosExcluidos(d.productosExcluidos ?? []);
       setDescripcion(d.descripcion ?? '');
     },
     restablecer,
@@ -93,14 +101,44 @@ export default function NuevaTomaFisicaModal({
   // sabe que está ahí — no se exige que el lote ya tenga stock en este
   // almacén para poder elegirlo. Se ofrecen todos los lotes activos y se
   // muestra cuánto tienen hoy en el almacén elegido.
-  const lotesActivos = lotes.filter(l => l.activo);
+  // Solo los lotes que corresponden a la categoria elegida (PCB sin el Lote 4; PGM solo el Lote 4).
+  const loteIdsElegibles = elegibles && elegibles.clave === categoriaIds.join(',') ? elegibles.ids : null;
+  const lotesOfrecidos = loteIdsElegibles ? lotes.filter(l => l.activo && loteIdsElegibles.includes(l.id)) : [];
   const stockEnAlmacen = (l: Lote) => l.stockPorAlmacen.find(s => s.almacenId === almacenId)?.stockKg ?? 0;
+
+  const claveCategorias = categoriaIds.join(',');
+  useEffect(() => {
+    if (alcance !== 'lote' || claveCategorias === '') return;
+    let vigente = true;
+    obtenerLotesElegiblesToma(claveCategorias.split(',')).then(ids => {
+      if (!vigente) return;
+      setElegibles({ clave: claveCategorias, ids });
+      setLoteIds(prev => prev.filter(id => ids.includes(id)));
+    });
+    return () => { vigente = false; };
+  }, [alcance, claveCategorias]);
+
+  // Por categoria: materiales activos de las categorias elegidas, con casilla cada uno.
+  const productosDeCategorias = alcance === 'categoria'
+    ? productos
+        .filter(p => p.activo && categoriaIds.includes(p.tipoMaterialId ?? ''))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+    : [];
+  const productosElegidos = productosDeCategorias.filter(p => !productosExcluidos.includes(p.id));
+  const toggleProducto = (id: string) =>
+    setProductosExcluidos(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const marcarTodosProductos = (marcar: boolean) =>
+    setProductosExcluidos(prev => {
+      const visibles = productosDeCategorias.map(p => p.id);
+      return marcar ? prev.filter(id => !visibles.includes(id)) : [...new Set([...prev, ...visibles])];
+    });
 
   const cambiarAlcance = (nuevo: Alcance) => {
     if (nuevo === alcance) return;
     setAlcance(nuevo);
     setCategoriaIds([]);
     setLoteIds([]);
+    setProductosExcluidos([]);
     setError(null);
   };
 
@@ -121,6 +159,10 @@ export default function NuevaTomaFisicaModal({
       return;
     }
     if (alcance === 'lote' && loteIds.length === 0) { setError('Elige al menos un lote a inventariar.'); return; }
+    if (alcance === 'categoria' && productosDeCategorias.length > 0 && productosElegidos.length === 0) {
+      setError('Elige al menos un material a inventariar.');
+      return;
+    }
     const solapada = tomaAbiertaSolapada(tomas, almacenId, categoriaIds);
     if (solapada) {
       setError(`Ya hay una toma abierta (${solapada.codigo}) con alguna de estas categorías en ${almacenNombre}. Culmínala o cancélala primero.`);
@@ -133,6 +175,10 @@ export default function NuevaTomaFisicaModal({
       alcance,
       categoriaIds,
       loteIds: alcance === 'lote' ? loteIds : [],
+      // Solo si se desmarco alguno; sin lista, la toma cuenta toda la categoria.
+      ...(alcance === 'categoria' && productosElegidos.length < productosDeCategorias.length
+        ? { productoIds: productosElegidos.map(p => p.id) }
+        : {}),
       descripcion: descripcion.trim() || null,
     });
     setGuardando(false);
@@ -204,25 +250,62 @@ export default function NuevaTomaFisicaModal({
             )}
           </div>
 
+          {alcance === 'categoria' && productosDeCategorias.length > 0 && (
+            <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-brand-800">
+                  Materiales a contar * ({productosElegidos.length} de {productosDeCategorias.length})
+                </label>
+                <div className="flex gap-3 text-xs text-brand-700">
+                  <button type="button" onClick={() => marcarTodosProductos(true)} className="hover:underline">Seleccionar todos</button>
+                  <button type="button" onClick={() => marcarTodosProductos(false)} className="hover:underline">Deseleccionar todos</button>
+                </div>
+              </div>
+              <p className="text-xs text-brand-700/80 mb-2">
+                Solo se contarán (y se ajustarán al culminar) los materiales que dejes marcados.
+              </p>
+              <div className="border border-brand-200 rounded-lg divide-y divide-brand-100 max-h-48 overflow-y-auto bg-surface">
+                {productosDeCategorias.map(p => (
+                  <label key={p.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={!productosExcluidos.includes(p.id)}
+                      onChange={() => toggleProducto(p.id)}
+                      className="w-4 h-4 accent-brand-600"
+                    />
+                    <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{p.nombre}</span>
+                    {categoriaIds.length > 1 && (
+                      <span className="text-xs text-text-muted shrink-0">{p.tipoMaterialNombre}</span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           {alcance === 'lote' && (
             <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-medium text-brand-800">
-                  Lotes a contar * ({loteIds.length} de {lotesActivos.length})
+                  Lotes a contar * ({loteIds.length} de {lotesOfrecidos.length})
                 </label>
                 <div className="flex gap-3 text-xs text-brand-700">
-                  <button type="button" onClick={() => setLoteIds(lotesActivos.map(l => l.id))} className="hover:underline">Todos</button>
+                  <button type="button" onClick={() => setLoteIds(lotesOfrecidos.map(l => l.id))} className="hover:underline">Todos</button>
                   <button type="button" onClick={() => setLoteIds([])} className="hover:underline">Ninguno</button>
                 </div>
               </div>
               <p className="text-xs text-brand-700/80 mb-2">
                 Se muestra cuánto tiene hoy cada lote en {almacenNombre}. Solo se contarán los que marques.
               </p>
-              {lotesActivos.length === 0 ? (
-                <p className="text-xs text-amber-700">No hay lotes activos todavía.</p>
+              {categoriaIds.length === 0 ? (
+                <p className="text-xs text-amber-700">Elige primero la categoría para ver sus lotes.</p>
+              ) : loteIdsElegibles === null ? (
+                <p className="text-xs text-text-secondary">Cargando lotes…</p>
+              ) : lotesOfrecidos.length === 0 ? (
+                <p className="text-xs text-amber-700">No hay lotes activos para esta categoría.</p>
               ) : (
                 <div className="border border-brand-200 rounded-lg divide-y divide-brand-100 max-h-40 overflow-y-auto bg-surface">
-                  {lotesActivos.map(l => {
+                  {lotesOfrecidos.map(l => {
                     const kg = stockEnAlmacen(l);
                     return (
                       <label key={l.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">

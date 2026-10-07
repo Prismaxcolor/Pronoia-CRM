@@ -18,6 +18,14 @@ export interface ItemPagoDetalle {
   montoUsd: number;
 }
 
+export interface FilaResumenPago {
+  clave: 'totalFacturas' | 'notasDebito' | 'adelantos' | 'notasCredito' | 'saldoPendiente' | 'pagado';
+  etiqueta: string;
+  /** USD, nunca negativo; `signo` dice si suma o resta. */
+  montoUsd: number;
+  signo: '' | '+' | '-';
+}
+
 export interface PagoDetalle {
   grupoId: string;
   entidadTipo: TipoEntidad;
@@ -27,6 +35,8 @@ export interface PagoDetalle {
   descripcion: string | null;
   comprobantes: string[];
   registradoPor: string | null;
+  /** Instante (timestamptz) en que se registró el pago/cobro. */
+  registradoEn?: string | null;
   bancas: BancaPagoDetalle[];
   totalUsd: number;
   codigoPago: string | null;
@@ -36,6 +46,10 @@ export interface PagoDetalle {
   /** Desglose por factura/nota aplicada — vacío en pagos registrados antes
    *  del Bloque 49, esa data nunca se guardó. */
   items: ItemPagoDetalle[];
+  /** Total de las facturas, adelantos / N/C / N/D aplicados, saldo pendiente y, al final, lo pagado
+   *  (calculado en el backend: utils/comprobante-resumen.ts). Opcional: un backend
+   *  anterior no lo envía y la pantalla muestra solo el Total. */
+  resumen?: FilaResumenPago[];
 }
 
 /** Detalle completo de un pago/cobro para su comprobante imprimible (vista

@@ -42,16 +42,13 @@ function fueDescartadoRecientemente(): boolean {
  *  Safari no dispara ese evento — ahí se muestran instrucciones manuales. */
 function InstallPwaBanner() {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
-  const [visible, setVisible] = useState(false);
   const [ios] = useState(esIOS);
+  // En iOS no hay evento nativo: el banner con instrucciones se muestra desde
+  // el inicio (si no está instalada ni fue descartado hace poco).
+  const [visible, setVisible] = useState(() => esIOS() && !estaInstalada() && !fueDescartadoRecientemente());
 
   useEffect(() => {
-    if (estaInstalada() || fueDescartadoRecientemente()) return;
-
-    if (ios) {
-      setVisible(true);
-      return;
-    }
+    if (ios || estaInstalada() || fueDescartadoRecientemente()) return;
 
     const handler = (e: Event) => {
       e.preventDefault();

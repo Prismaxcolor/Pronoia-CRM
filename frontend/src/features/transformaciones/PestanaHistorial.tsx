@@ -17,6 +17,7 @@ import { etiquetaSalida } from '../../lib/salida-mixta';
 import {
   alertasMerma, compararPeriodos, filtrarTransformaciones, mermaTransformacion, rendimientoPct, severidadMerma, type MermaTransformacion,
 } from '../../lib/transformaciones-kpis';
+import { fechaConHora } from '../../lib/fecha-negocio';
 import {
   OPCIONES_FILTRO_CATEGORIA, coincideBusqueda, etiquetaCategoria, nombreEntrada, rangoEfectivo, type UmbralMerma, kgFino } from './transformaciones-comun';
 
@@ -112,7 +113,7 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
       clave: 'codigo', titulo: 'Código', valorOrden: f => f.t.codigo ?? '',
       celda: f => <Link to={`/transformaciones/${f.t.id}`} className="font-medium text-text-primary hover:text-brand-700 hover:underline">{f.t.codigo ?? '—'}</Link>,
     },
-    { clave: 'fecha', titulo: 'Fecha', valorOrden: f => f.t.fecha, celda: f => formatearFecha(f.t.fecha), valorCsv: f => f.t.fecha },
+    { clave: 'fecha', titulo: 'Fecha', valorOrden: f => f.t.fecha, celda: f => fechaConHora(f.t.fecha, f.t.createdAt), valorCsv: f => f.t.fecha },
     { clave: 'categoria', titulo: 'Categoría', valorOrden: f => etiquetaCategoria(f.t.categoria), ocultaEnMovil: true },
     { clave: 'material', titulo: 'Material de entrada', valorOrden: f => nombreEntrada(f.t) },
     { clave: 'entrada', titulo: 'Entrada (kg)', alinear: 'derecha', valorOrden: f => f.m.kgEntrada, celda: f => formatearNumero(f.m.kgEntrada, 2), decimalesCsv: 3, total: filas => formatearNumero(filas.reduce((a, f) => a + f.m.kgEntrada, 0), 2) },
@@ -243,7 +244,7 @@ function PestanaHistorial({ transformaciones, filtros, onCambiarFiltros, onLimpi
                     <Link to={`/transformaciones/${f.t.id}`} className="block truncate text-sm font-medium text-text-primary hover:text-brand-700 hover:underline">
                       {f.t.codigo && <span className="text-text-secondary">{f.t.codigo} · </span>}{nombreEntrada(f.t)}
                     </Link>
-                    <p className="text-xs text-text-secondary">{formatearFecha(f.t.fecha)} · {etiquetaCategoria(f.t.categoria)}</p>
+                    <p className="text-xs text-text-secondary">{fechaConHora(f.t.fecha, f.t.createdAt)} · {etiquetaCategoria(f.t.categoria)}</p>
                   </div>
                   <CheckCircle2 size={14} className="mt-1 shrink-0 text-brand-600" aria-label="Completada" />
                 </div>

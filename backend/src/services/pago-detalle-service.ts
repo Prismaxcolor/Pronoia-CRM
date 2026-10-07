@@ -14,6 +14,7 @@ import {
   formatCodigoCruce,
   formatCodigoCruceCliente,
 } from '../utils/codigos.js';
+import { resumenComprobante, type FacturaComprobante, type FilaComprobante } from '../utils/comprobante-resumen.js';
 
 type Subtipo = 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
 type TipoItemAplicacion = 'factura' | 'nota_debito' | 'nota_credito' | 'adelanto';
@@ -38,6 +39,7 @@ interface MovimientoRow {
   comprobantes: string[] | null;
   registrado_por: string | null;
   banca_origen_id: string | null;
+  creado_en?: string | null;
 }
 
 export interface BancaPagoDetalle {
@@ -68,6 +70,8 @@ export interface PagoDetalle {
   descripcion: string | null;
   comprobantes: string[];
   registradoPor: string | null;
+  /** Instante (timestamptz) en que se registró el pago/cobro; null en cruces o si la fila no lo trae. */
+  registradoEn?: string | null;
   bancas: BancaPagoDetalle[];
   totalUsd: number;
   /** Correlativo del pago/cobro (PG-/CB-), null si esta operación no tuvo esa parte. */
@@ -81,6 +85,10 @@ export interface PagoDetalle {
    *  (Bloque 49). Vacío en pagos registrados antes de ese bloque — esa data
    *  nunca se guardó, el comprobante sigue mostrando solo `descripcion`. */
   items: ItemPagoDetalle[];
+  /** Resumen en el orden del comprobante: total de las facturas, adelantos / N/C / N/D aplicados,
+   *  saldo pendiente y, al final, lo pagado. Calculado aquí (utils/comprobante-resumen.ts); los
+   *  clientes solo lo dibujan. */
+  resumen: FilaComprobante[];
 }
 
 function formatCodigoPago(tipoEntidad: TipoEntidad, subtipo: Subtipo, numero: number | null): string | null {
@@ -117,7 +125,7 @@ export async function obtenerPagoDetalle(
 
   const { data, error } = await supabaseAdmin
     .from('movimientos')
-    .select('id, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion, referencia, fecha, comprobantes, registrado_por, banca_origen_id')
+    .select('id, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion, referencia, fecha, comprobantes, registrado_por, banca_origen_id, creado_en')
     .eq(columnaEntidad, entidadId)
     .eq('tipo', tipoMov)
     .or(`grupo_id.eq.${grupoId},id.eq.${grupoId}`);
@@ -159,7 +167,8 @@ export async function obtenerPagoDetalle(
   const filaComprobante = propias.find(f => f.comprobantes && f.comprobantes.length > 0) ?? null;
   const filaDescripcion = propias.find(f => f.descripcion) ?? propias[0];
 
-  const items = await cargarItems(tipoEntidad, entidadId, grupoId);
+  const { items, facturas } = await cargarItems(tipoEntidad, entidadId, grupoId);
+  const totalUsd = propias.reduce((s, f) => s + Number(f.monto_usd ?? f.monto), 0);
 
   return {
     grupoId,
@@ -170,6 +179,7 @@ export async function obtenerPagoDetalle(
     descripcion: filaDescripcion.descripcion,
     comprobantes: filaComprobante?.comprobantes ?? [],
     registradoPor: nombreRegistradoPor,
+    registradoEn: propias.map(f => f.creado_en).filter((x): x is string => !!x).sort()[0] ?? null,
     bancas: propias.map(f => ({
       bancaId: f.banca_origen_id,
       bancaNombre: f.banca_origen_id ? (nombrePorBancaId.get(f.banca_origen_id) ?? null) : null,
@@ -178,11 +188,12 @@ export async function obtenerPagoDetalle(
       montoUsd: Number(f.monto_usd ?? f.monto),
       referencia: f.referencia,
     })),
-    totalUsd: propias.reduce((s, f) => s + Number(f.monto_usd ?? f.monto), 0),
+    totalUsd,
     codigoPago: filaPago ? formatCodigoPago(tipoEntidad, filaPago.subtipo, filaPago.numero) : null,
     codigoAdelanto: filaAdelanto ? formatCodigoPago(tipoEntidad, filaAdelanto.subtipo, filaAdelanto.numero) : null,
     codigoCruce: null,
     items,
+    resumen: resumenComprobante(items, totalUsd, esProveedor, facturas),
   };
 }
 
@@ -191,7 +202,11 @@ export async function obtenerPagoDetalle(
  * aplicados con su monto exacto. `grupoId` ya viene validado contra la entidad
  * por quien llama (pertenece a sus movimientos o a su cruce).
  */
-async function cargarItems(tipoEntidad: TipoEntidad, entidadId: string, grupoId: string): Promise<ItemPagoDetalle[]> {
+async function cargarItems(
+  tipoEntidad: TipoEntidad,
+  entidadId: string,
+  grupoId: string
+): Promise<{ items: ItemPagoDetalle[]; facturas: FacturaComprobante[] }> {
   const esProveedor = tipoEntidad === 'proveedor';
 
   const { data: aplicacionesData } = await supabaseAdmin
@@ -206,10 +221,16 @@ async function cargarItems(tipoEntidad: TipoEntidad, entidadId: string, grupoId:
   const adelantoIds = aplicaciones.filter(a => a.tipo === 'adelanto').map(a => a.item_id);
 
   const codigoPorFacturaId = new Map<string, string>();
+  const facturas: FacturaComprobante[] = [];
   if (facturaIds.length > 0) {
     const tablaFactura = esProveedor ? 'facturas_compra' : 'facturas_venta';
-    const { data: facturasData } = await supabaseAdmin.from(tablaFactura).select('id, numero').in('id', facturaIds);
-    for (const f of (facturasData as Array<{ id: string; numero: number | null }> | null) ?? []) {
+    const { data: facturasData } = await supabaseAdmin
+      .from(tablaFactura)
+      .select('id, numero, total, monto_pagado')
+      .in('id', [...new Set(facturaIds)]);
+    type FilaFactura = { id: string; numero: number | null; total: number | null; monto_pagado: number | null };
+    for (const f of (facturasData as FilaFactura[] | null) ?? []) {
+      facturas.push({ total: Number(f.total ?? 0), montoPagado: Number(f.monto_pagado ?? 0) });
       if (f.numero == null) continue;
       codigoPorFacturaId.set(f.id, esProveedor ? formatCodigoCompra(f.numero) : formatCodigoVenta(f.numero));
     }
@@ -247,11 +268,12 @@ async function cargarItems(tipoEntidad: TipoEntidad, entidadId: string, grupoId:
     }
   }
 
-  return aplicaciones.map(a => ({
+  const items = aplicaciones.map(a => ({
     tipo: a.tipo,
     codigo: (a.tipo === 'factura' ? codigoPorFacturaId : a.tipo === 'adelanto' ? codigoPorAdelantoId : codigoPorNotaId).get(a.item_id) ?? null,
     montoUsd: Number(a.monto_usd),
   }));
+  return { items, facturas };
 }
 
 /**
@@ -268,14 +290,14 @@ async function obtenerCruceDetalle(
 
   const { data } = await supabaseAdmin
     .from('cruces')
-    .select('grupo_id, numero, fecha, descripcion, registrado_por')
+    .select('grupo_id, numero, fecha, descripcion, registrado_por, created_at')
     .eq('grupo_id', grupoId)
     .eq(esProveedor ? 'proveedor_id' : 'cliente_id', entidadId)
     .maybeSingle();
-  const cruce = data as { grupo_id: string; numero: number; fecha: string; descripcion: string | null; registrado_por: string | null } | null;
+  const cruce = data as { grupo_id: string; numero: number; fecha: string; descripcion: string | null; registrado_por: string | null; created_at?: string | null } | null;
   if (!cruce) return { error: 'Pago no encontrado para esta entidad.' };
 
-  const [{ data: entidadData }, { data: usuario }, items] = await Promise.all([
+  const [{ data: entidadData }, { data: usuario }, { items, facturas }] = await Promise.all([
     supabaseAdmin.from(esProveedor ? 'proveedores' : 'clientes').select('id, nombre').eq('id', entidadId).maybeSingle(),
     cruce.registrado_por
       ? supabaseAdmin.from('users').select('id, nombre').eq('id', cruce.registrado_por).maybeSingle()
@@ -292,11 +314,13 @@ async function obtenerCruceDetalle(
     descripcion: cruce.descripcion,
     comprobantes: [],
     registradoPor: (usuario as { nombre: string } | null)?.nombre ?? null,
+    registradoEn: cruce.created_at ?? null,
     bancas: [],
     totalUsd: 0,
     codigoPago: null,
     codigoAdelanto: null,
     codigoCruce: esProveedor ? formatCodigoCruce(cruce.numero) : formatCodigoCruceCliente(cruce.numero),
     items,
+    resumen: resumenComprobante(items, 0, esProveedor, facturas),
   };
 }

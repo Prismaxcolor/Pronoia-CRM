@@ -40,6 +40,7 @@ import {
   leerTransformaciones,
 } from './inventario-pantalla-datos.js';
 import { registrarInvalidacionCacheResumen } from './resumen-cache.js';
+import { hoyNegocio } from '../utils/fecha-negocio.js';
 
 /** Mismo presupuesto que el resumen: deja margen bajo el límite de la función serverless. */
 export const PRESUPUESTO_PANTALLA_MS = 8_000;
@@ -77,7 +78,7 @@ export interface BasePantalla {
   parcial: boolean;
 }
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+const hoyISO = () => hoyNegocio();
 
 async function calcularBase(incluirValor: boolean, presupuestoMs: number): Promise<BasePantalla> {
   const inicio = Date.now();

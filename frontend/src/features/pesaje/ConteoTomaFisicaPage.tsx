@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { difiereEstado } from '../../lib/borrador';
@@ -13,6 +13,7 @@ import { subirFotosFila, taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE,
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
+import CantidadTaraInput from './CantidadTaraInput';
 import { useToast } from '../../hooks/use-toast-context';
 import type { TomaFisicaInventario, DetalleTomaFisica, Producto, Lote, Tara, ResumenTomaFisicaLinea } from '@shared/types/index.js';
 import VisorFotos from '../../components/VisorFotos';
@@ -28,7 +29,7 @@ function ConteoTomaFisicaPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const toast = useToast();
-  const preseleccionAplicada = useRef(false);
+  const [preseleccionAplicada, setPreseleccionAplicada] = useState(false);
 
   const [tomaFisica, setTomaFisica] = useState<TomaFisicaInventario | null>(null);
   const [detalle, setDetalle] = useState<DetalleTomaFisica[]>([]);
@@ -53,8 +54,15 @@ function ConteoTomaFisicaPage() {
   const [galeriaAbierta, setGaleriaAbierta] = useState<{ label: string; fotos: string[] } | null>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
 
-  const cargar = () => {
+  // Al cambiar de toma física se vuelve a mostrar el spinner (derivado durante
+  // el render; el efecto ya no hace setState síncrono).
+  const [tomaCargada, setTomaCargada] = useState(tomaFisicaId);
+  if (tomaFisicaId !== tomaCargada) {
+    setTomaCargada(tomaFisicaId);
     setCargando(true);
+  }
+
+  const traerDatos = () => {
     Promise.all([
       obtenerTomaFisica(tomaFisicaId),
       obtenerResumenTomaFisica(tomaFisicaId),
@@ -72,7 +80,13 @@ function ConteoTomaFisicaPage() {
     });
   };
 
-  useEffect(() => { cargar(); }, [tomaFisicaId]);
+  // Recarga manual (tras registrar un pesaje): vuelve a mostrar el spinner.
+  const cargar = () => {
+    setCargando(true);
+    traerDatos();
+  };
+
+  useEffect(() => { traerDatos(); }, [tomaFisicaId]);
 
   // Si esta toma física ya se culminó (ej. en otra pestaña, o volviendo con
   // el botón atrás del navegador a un enlace viejo), no tiene sentido dejar
@@ -98,7 +112,12 @@ function ConteoTomaFisicaPage() {
   // Solo materiales de las categorías elegidas para esta toma física
   // (categorías "sin lote" — Ferroso/No Ferroso).
   const productosDisponibles = useMemo(
-    () => productos.filter(p => p.activo && tomaFisica?.categoriaIds.includes(p.tipoMaterialId ?? '')),
+    () => productos.filter(p =>
+      p.activo
+      && tomaFisica?.categoriaIds.includes(p.tipoMaterialId ?? '')
+      // Toma selectiva: solo los materiales elegidos al crearla (vacio = toda la categoria).
+      && (!tomaFisica.productoIds?.length || tomaFisica.productoIds.includes(p.id))
+    ),
     [productos, tomaFisica]
   );
   const productoSel = productosDisponibles.find(p => p.id === productoId);
@@ -161,19 +180,18 @@ function ConteoTomaFisicaPage() {
   // Preselección desde el link "Teórico vs. real" de la toma física
   // (?producto=<id> o ?lote=<id>) — solo una vez, para no pisar la
   // selección del usuario cada vez que cargar() trae listas nuevas.
-  useEffect(() => {
-    if (preseleccionAplicada.current) return;
+  // Se resuelve durante el render (estado derivado), no en un efecto.
+  if (!preseleccionAplicada) {
     const productoParam = searchParams.get('producto');
     const loteParam = searchParams.get('lote');
-    if (!productoParam && !loteParam) return;
     if (productoParam && productosDisponibles.some(p => p.id === productoParam)) {
       setProductoId(productoParam);
-      preseleccionAplicada.current = true;
+      setPreseleccionAplicada(true);
     } else if (loteParam && lotesDelAlmacen.some(l => l.id === loteParam)) {
       setLoteId(loteParam);
-      preseleccionAplicada.current = true;
+      setPreseleccionAplicada(true);
     }
-  }, [productosDisponibles, lotesDelAlmacen, searchParams]);
+  }
 
   const loteSeleccionado = loteId ? lotes.find(l => l.id === loteId) ?? null : null;
   const netoActual = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
@@ -408,7 +426,7 @@ function ConteoTomaFisicaPage() {
                   </span>
                   <ChevronDown size={16} className="text-text-muted shrink-0" />
                 </button>
-                <input type="number" inputMode="numeric" step="1" min="0" value={campoTara.taraCantidad} onChange={e => setCampoTara(prev => ({ ...prev, taraCantidad: e.target.value }))} className={inputClass} placeholder="Cantidad" aria-label="Cantidad de taras" />
+                <CantidadTaraInput value={campoTara.taraCantidad} onChange={v => setCampoTara(prev => ({ ...prev, taraCantidad: v }))} />
               </div>
               <p className="text-xs text-text-secondary mt-1">= {fmt(taraKgFila(campoTara, taras))} kg</p>
             </div>

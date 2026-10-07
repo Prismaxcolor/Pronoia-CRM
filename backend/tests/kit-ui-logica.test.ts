@@ -75,8 +75,9 @@ describe('formato es-VE unificado', () => {
     expect(esFechaIso('26-02-28')).toBe(false);
   });
 
-  it('hoyLocal toma el día local como UTC a medianoche', () => {
-    expect(hoyLocal(new Date(2026, 9, 4, 23, 30)).toISOString()).toBe('2026-10-04T00:00:00.000Z');
+  it('hoyLocal toma el día de Caracas como UTC a medianoche (no el día UTC ni el del navegador)', () => {
+    expect(hoyLocal(new Date('2026-10-05T03:30:00Z')).toISOString()).toBe('2026-10-04T00:00:00.000Z');
+    expect(hoyLocal(new Date('2026-10-05T04:00:00Z')).toISOString()).toBe('2026-10-05T00:00:00.000Z');
   });
 });
 

@@ -5,12 +5,13 @@ import { obtenerTomasFisicas } from '../../services/toma-fisica-service';
 import { obtenerAlmacenes } from '../../services/almacen-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
 import { obtenerLotes } from '../../services/lote-service';
+import { obtenerProductos } from '../../services/producto-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useFiltrosUrl, Bloque, BotonAccion, EstadoVacio, FiltrosBarra, GrillaKpis, SkeletonBloque, SkeletonKpis, TarjetaKpi, formatearNumero } from '../../components/ui';
 import { diferenciasPorAlmacen, filtrarTomas, resumirTomas } from '../../lib/toma-fisica-kpis';
 import type { EsquemaFiltros } from '../../lib/filtros-url';
 import NuevaTomaFisicaModal from './TomaFisicaNuevaModal';
-import type { TomaFisicaInventario, Almacen, TipoMaterial, Lote } from '@shared/types/index.js';
+import type { TomaFisicaInventario, Almacen, TipoMaterial, Lote, Producto } from '@shared/types/index.js';
 
 const BarrasHorizontales = lazy(() => import('../../components/ui/graficas/BarrasHorizontales'));
 const TomaFisicaTablaListado = lazy(() => import('./TomaFisicaTablaListado'));
@@ -43,19 +44,25 @@ function TomaFisicaPanel() {
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [categorias, setCategorias] = useState<TipoMaterial[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
   const [cargando, setCargando] = useState(true);
   const [modalAbierto, setModalAbierto] = useState(false);
 
+  const traerTomas = () => obtenerTomasFisicas().then(setTomasFisicas).finally(() => setCargando(false));
+
+  // Recarga manual (al crear una toma): vuelve a mostrar el spinner.
   const cargar = () => {
     setCargando(true);
-    obtenerTomasFisicas().then(setTomasFisicas).finally(() => setCargando(false));
+    void traerTomas();
   };
 
   useEffect(() => {
-    cargar();
+    // `cargando` ya arranca en true: la carga inicial no necesita setearlo.
+    void traerTomas();
     obtenerAlmacenes().then(setAlmacenes);
     obtenerTiposMaterial().then(setCategorias);
     obtenerLotes().then(setLotes);
+    obtenerProductos().then(setProductos);
   }, []);
 
   const estado = typeof filtros.tf_estado === 'string' ? filtros.tf_estado : undefined;
@@ -179,6 +186,7 @@ function TomaFisicaPanel() {
           almacenes={almacenes}
           categorias={categorias}
           lotes={lotes}
+          productos={productos}
           tomas={tomasFisicas}
           onClose={() => setModalAbierto(false)}
           onCreada={t => { setModalAbierto(false); cargar(); navigate(`/inventario/toma-fisica/${t.id}`); }}

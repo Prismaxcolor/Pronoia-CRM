@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Camera, ZoomIn } from 'lucide-react';
-import { destinoLabel, type TicketPesaje, type TicketPesajeMaterial, type Vehiculo } from '@shared/types/index.js';
+import { destinoLabel, describirTarasDetalle, type TicketPesaje, type TicketPesajeMaterial, type Vehiculo } from '@shared/types/index.js';
 import {
   BarraApilada, Bloque, EstadoVacio, GrillaKpis, Insignia, TarjetaKpi, colorDeSerie, formatearFecha, formatearNumero, formatearPct, infoTipoOperacion,
 } from '../../components/ui';
@@ -21,6 +21,9 @@ export interface FotoGaleria {
 
 const kg = (n: number) => `${formatearPesoTicket(n)} kg`;
 
+/** Línea con el desglose de tara de un material ('Saca ×2 = 1,20 kg · Cesta = 0,50 kg'); vacía si no hay. */
+const desgloseTara = (m: TicketPesajeMaterial) => describirTarasDetalle(m.tarasDetalle, formatearPesoTicket);
+
 /** Etiquetas del encabezado: tipo, estado de facturación, ticket unido y pesaje externo. */
 export function InsigniasTicket({ ticket }: { ticket: TicketPesaje }) {
   const tipo = infoTipoOperacion(ticket.tipo);
@@ -28,7 +31,7 @@ export function InsigniasTicket({ ticket }: { ticket: TicketPesaje }) {
     <div className="-mt-3 mb-5 flex flex-wrap items-center gap-2 print:hidden">
       <Insignia tono={tipo.tono}>{tipo.etiqueta}</Insignia>
       {ticket.estado === 'bruto' ? (
-        <Insignia tono="aviso" title="Se guardó solo con el peso global del camión. Faltan los materiales y sus destinos; hasta completarlo no entra al inventario ni se puede facturar.">Por recepcionar</Insignia>
+        <Insignia tono="aviso" title="Se guardó solo con el peso global del camión. Faltan los materiales y sus destinos; hasta completarlo no entra al inventario ni se puede facturar.">Por recepcionar (pesaje global)</Insignia>
       ) : (
         <Insignia tono={ticket.facturado ? 'exito' : 'aviso'}>{ticket.facturado ? 'Facturado' : 'Pendiente por facturar'}</Insignia>
       )}
@@ -87,7 +90,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
           titulo="Peso neto total"
           ayuda="Kg de material que se registraron en este ticket: la suma del peso neto (bruto menos tara) de cada pesada de material. No incluye la devolución."
           estado={esBruto ? 'vacio' : 'listo'}
-          mensajeVacio="Aún sin materiales: el ticket está en borrador"
+          mensajeVacio="Aún sin materiales: es un pesaje global por recepcionar"
           valor={formatearPesoTicket(kpis.netoTotal)}
           unidad="kg"
           subtitulo={`Suma de ${kpis.pesadasMaterial} ${kpis.pesadasMaterial === 1 ? 'línea de material' : 'líneas de material'}`}
@@ -122,7 +125,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
           titulo="Materiales"
           ayuda="Cuántos materiales distintos tiene el ticket. Si un mismo material se pesó varias veces, cuenta una sola vez; el número de pesadas aparece debajo."
           estado={esBruto ? 'vacio' : 'listo'}
-          mensajeVacio="Aún sin materiales: el ticket está en borrador"
+          mensajeVacio="Aún sin materiales: es un pesaje global por recepcionar"
           valor={formatearNumero(kpis.materialesDistintos)}
           unidad={kpis.materialesDistintos === 1 ? 'material' : 'materiales'}
           subtitulo={`${kpis.pesadasMaterial} ${kpis.pesadasMaterial === 1 ? 'pesada' : 'pesadas'} en total`}
@@ -155,7 +158,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
       >
         {esBruto ? (
           <EstadoVacio
-            mensaje="Ticket en borrador: materiales pendientes de registro."
+            mensaje="Pesaje global por recepcionar: materiales pendientes de registro."
             descripcion="No se contabiliza en inventario hasta que se completen los materiales y sus destinos."
             accion={{ etiqueta: 'Ir a Pesaje para completarlo', to: '/pesaje' }}
           />
@@ -192,7 +195,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
                 <div className="mb-2 flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-semibold text-text-primary">Pesada {indice}{hayUnidos && ` · ${codigo}`}</h3>
-                    {hayUnidos && <p className="text-xs text-text-secondary">Pesaje del {formatearFecha(fecha ?? ticket.createdAt.slice(0, 10))}</p>}
+                    {hayUnidos && <p className="text-xs text-text-secondary">Pesaje del {formatearFecha(fecha ?? ticket.createdAt)}</p>}
                   </div>
                   <BotonFotos cantidad={fotosDe(`p-${p.id}-`)} onAbrir={() => abrirPrimera(`p-${p.id}-`)} etiqueta={`la pesada ${indice} de ${codigo}`} />
                 </div>
@@ -313,7 +316,10 @@ function TablaMateriales({ ticket, ocultarDestino, totalesPorMaterial, fotosDe, 
           <tbody>
             {ticket.materiales.map(m => (
               <tr key={m.id} className="border-t border-border">
-                <td className="px-5 py-2.5 text-text-primary">{m.nombreProducto ?? '—'}</td>
+                <td className="px-5 py-2.5 text-text-primary">
+                  {m.nombreProducto ?? '—'}
+                  {desgloseTara(m) && <span className="mt-0.5 block text-xs text-text-muted">Tara: {desgloseTara(m)}</span>}
+                </td>
                 {!ocultarDestino && <td className="px-4 py-2.5 text-text-secondary">{destinoDe(m)}</td>}
                 <td className="px-4 py-2.5 text-right tabular-nums text-text-secondary">{formatearPesoTicket(m.pesoBruto)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-text-secondary">{formatearPesoTicket(m.tara)}</td>
@@ -349,8 +355,9 @@ function TablaMateriales({ ticket, ocultarDestino, totalesPorMaterial, fotosDe, 
             <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
               {!ocultarDestino && (<><dt className="text-text-secondary">Destino</dt><dd className="text-right text-text-primary">{destinoDe(m)}</dd></>)}
               <dt className="text-text-secondary">Bruto</dt><dd className="text-right tabular-nums text-text-primary">{kg(m.pesoBruto)}</dd>
-              <dt className="text-text-secondary">Tara</dt><dd className="text-right tabular-nums text-text-primary">{kg(m.tara)}</dd>
+              <dt className="text-text-secondary">Tara total</dt><dd className="text-right tabular-nums text-text-primary">{kg(m.tara)}</dd>
             </dl>
+            {desgloseTara(m) && <p className="mt-1 text-xs text-text-muted">Tara: {desgloseTara(m)}</p>}
             <div className="mt-2"><BotonFotos cantidad={fotosDe(m.id)} onAbrir={() => abrirFotos(m.id)} etiqueta={m.nombreProducto ?? 'el material'} /></div>
           </li>
         ))}

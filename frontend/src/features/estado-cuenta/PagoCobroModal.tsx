@@ -7,8 +7,10 @@ import { registrarPagoMultiple, type BancaPago, type ItemPagoMultiple } from '..
 import { registrarCobroMultiple, type ResultadoCobroMultiple } from '../../services/cobro-service';
 import { obtenerAdelantosDisponibles, type AdelantoDisponible } from '../../services/cruce-service';
 import { subirComprobantePago } from '../../services/storage-service';
+import { tieneSaldoPendiente } from '../../lib/estado-factura';
 import { calcularCruce, redondear2, sugerirMontoCredito, validarMontoAplicable, type ItemCruce } from '../../lib/cruce';
 import { fotoLocalDeFile, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import { filtrarComprobantes } from '../../lib/comprobante-imagen';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
@@ -16,6 +18,7 @@ import { fechaRestaurable, recortarSeleccionPago } from '../../lib/borrador-vige
 import type { Banca } from '@shared/types/index.js';
 import type { FacturaCV } from '../../services/factura-cv-service';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
+import { hoyNegocio } from '../../lib/fecha-negocio';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -39,7 +42,7 @@ interface LineaBanca {
 }
 
 function hoyISO(): string {
-  return new Date().toISOString().split('T')[0];
+  return hoyNegocio();
 }
 
 function fmt(n: number): string {
@@ -84,11 +87,14 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   const [fecha, setFecha] = useState(hoyISO());
   const [descripcion, setDescripcion] = useState('');
   const [comprobantes, setComprobantes] = useState<FotoLocal[]>([]);
-  const agregarComprobantes = (files: File[]) => setComprobantes(prev => [...prev, ...files.map(fotoLocalDeFile)]);
-  const quitarComprobante = (idx: number) => setComprobantes(prev => prev.filter((_, i) => i !== idx));
-
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const agregarComprobantes = (files: File[]) => {
+    const { validos, errores } = filtrarComprobantes(files, comprobantes.length);
+    setError(errores.length > 0 ? errores.join(' ') : null);
+    setComprobantes(prev => [...prev, ...validos.map(fotoLocalDeFile)]);
+  };
+  const quitarComprobante = (idx: number) => setComprobantes(prev => prev.filter((_, i) => i !== idx));
 
   // Un borrador restaurado puede traer ids de facturas, notas o adelantos que ya no están
   // vigentes (se pagaron, anularon o aplicaron): se recortan cuando las listas terminan de cargar.
@@ -152,7 +158,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     });
     obtenerTasaOficial().then(t => setTasa(t?.tasa ?? null));
     obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista => {
-      setFacturasPendientes(lista.filter(f => f.estado === 'emitida'));
+      setFacturasPendientes(lista.filter(f => tieneSaldoPendiente(f.estado)));
       setFacturasCargadas(true);
     });
     obtenerAdelantosDisponibles(tipoEntidad, entidadId).then(lista => {

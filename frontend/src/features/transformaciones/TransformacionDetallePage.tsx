@@ -15,6 +15,7 @@ import { obtenerConfigLlaves } from '../../services/llave-service';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Transformacion } from '@shared/types/index.js';
 import { etiquetaSalida } from '../../lib/salida-mixta';
+import { unificarSalidas } from '../../lib/salidas-unificadas';
 import CompartirBoton from '../../components/CompartirBoton';
 import VisorFotos from '../../components/VisorFotos';
 import {
@@ -26,14 +27,13 @@ import { ETIQUETAS_MERMA, TIPOS_MERMA } from '../../lib/merma-tipificada';
 import { mermaTransformacion, severidadMerma } from '../../lib/transformaciones-kpis';
 import DiagramaFlujoTransformacion from './DiagramaFlujoTransformacion';
 import { etiquetaCategoria, nombreEntrada, useUmbralMerma, kgFino } from './transformaciones-comun';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
-function fechaHora(iso: string | null): string {
-  return iso ? iso.slice(0, 16).replace('T', ' ') : '—';
-}
+const fechaHora = (iso: string | null): string => (iso ? formatearFechaHora(iso) : '—');
 
 interface FotoGaleria { key: string; url: string; label: string; peso: number | null }
 
@@ -177,7 +177,9 @@ function TransformacionDetallePage() {
   const referencia = t.codigo ?? t.id.slice(0, 8);
   const botonClass = 'flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text-primary hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
   const sobreUmbral = completa && merma.kgMerma >= umbral.minimoKg && severidadMerma(merma.pctMerma, umbral.umbralPct) !== null;
-  const salidasDiagrama = t.salidas.map(s => ({ id: s.id, etiqueta: etiquetaSalida(s), kg: s.pesoNeto }));
+  // Un solo renglón por material/lote con el peso sumado de todas sus pesadas.
+  const renglonesSalida = unificarSalidas(t.salidas);
+  const salidasDiagrama = renglonesSalida.map(r => ({ id: r.clave, etiqueta: r.etiqueta, kg: r.pesoNeto }));
 
   return (
     <div className="max-w-5xl print-documento print:max-w-none">
@@ -195,7 +197,7 @@ function TransformacionDetallePage() {
               )}
               <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarTransformacionPDF(t, nombres)}>PDF</BotonAccion>
               <BotonAccion variante="secundario" icono={<Printer size={16} />} onClick={() => window.print()}>Imprimir</BotonAccion>
-              <CompartirBoton titulo={`Transformación ${referencia}`} obtenerPdf={() => descargarTransformacionPDF(t, nombres, 'blob')} className={botonClass} />
+              <CompartirBoton titulo={`Transformación ${referencia}`} className={botonClass} />
             </>
           }
         />
@@ -344,10 +346,10 @@ function TransformacionDetallePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {t.salidas.map(s => (
-                    <tr key={s.id} className="border-t border-border">
-                      <td className="py-2.5 px-5 text-text-primary">{etiquetaSalida(s)}</td>
-                      <td className="py-2.5 px-4 text-text-secondary">{s.nombreAlmacen ?? '—'}</td>
+                  {renglonesSalida.map(s => (
+                    <tr key={s.clave} className="border-t border-border">
+                      <td className="py-2.5 px-5 text-text-primary">{s.etiqueta}</td>
+                      <td className="py-2.5 px-4 text-text-secondary">{s.almacenes.join(', ') || '—'}</td>
                       <td className="py-2.5 px-4 text-right tabular-nums text-text-secondary">{fmt(s.pesoBruto)}</td>
                       <td className="py-2.5 px-4 text-right tabular-nums text-text-secondary">{fmt(s.tara)}</td>
                       <td className="py-2.5 px-5 text-right tabular-nums font-medium text-text-primary">{fmt(s.pesoNeto)}</td>
@@ -368,13 +370,13 @@ function TransformacionDetallePage() {
 
           {/* Tarjetas (móvil) */}
           <ul className="space-y-2 sm:hidden print:hidden">
-            {t.salidas.map(s => (
-              <li key={s.id} className="rounded-lg border border-border bg-surface p-3">
+            {renglonesSalida.map(s => (
+              <li key={s.clave} className="rounded-lg border border-border bg-surface p-3">
                 <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-sm font-medium text-text-primary">{etiquetaSalida(s)}</p>
+                  <p className="text-sm font-medium text-text-primary">{s.etiqueta}</p>
                   <p className="shrink-0 text-sm font-semibold tabular-nums text-text-primary">{fmt(s.pesoNeto)} kg</p>
                 </div>
-                <p className="mt-0.5 text-xs text-text-secondary">{s.nombreAlmacen ?? 'Sin almacén'} · bruto {fmt(s.pesoBruto)} kg − tara {fmt(s.tara)} kg</p>
+                <p className="mt-0.5 text-xs text-text-secondary">{s.almacenes.join(', ') || 'Sin almacén'} · bruto {fmt(s.pesoBruto)} kg − tara {fmt(s.tara)} kg</p>
               </li>
             ))}
             <li className="flex items-baseline justify-between rounded-lg bg-surface-alt px-3 py-2 text-sm">

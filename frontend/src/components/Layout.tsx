@@ -19,10 +19,13 @@ function Layout() {
     mainRef.current?.scrollTo(0, 0);
   }, [pathname]);
 
-  // El drawer del menú no debe seguir abierto al cambiar de pantalla.
-  useEffect(() => {
+  // El drawer del menú no debe seguir abierto al cambiar de pantalla
+  // (estado derivado durante el render, no en un efecto).
+  const [pathnameAnterior, setPathnameAnterior] = useState(pathname);
+  if (pathname !== pathnameAnterior) {
+    setPathnameAnterior(pathname);
     setMenuAbierto(false);
-  }, [pathname]);
+  }
 
   return (
     // h-dvh (viewport dinámico), no h-screen (100vh fijo) — en mobile, 100vh

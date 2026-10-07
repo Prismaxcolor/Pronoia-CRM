@@ -6,10 +6,12 @@
 
 import type { FacturaCV, TipoFactura } from '../services/factura-cv-service';
 import { compararConPeriodoAnterior, type ComparacionPeriodo } from './comparacion';
+import { saldoFactura, tieneSaldoPendiente } from './estado-factura';
+import { diaNegocio } from './fecha-negocio';
 
 export type EstadoFactura = FacturaCV['estado'];
 
-export const ESTADOS_FACTURA: readonly EstadoFactura[] = ['emitida', 'pagada', 'borrador', 'anulada'];
+export const ESTADOS_FACTURA: readonly EstadoFactura[] = ['emitida', 'pendiente', 'pagada', 'borrador', 'anulada'];
 
 const MS_DIA = 86_400_000;
 /** Mínimo de semanas con datos para que valga la pena una gráfica de barras por semana. */
@@ -30,22 +32,22 @@ const aIso = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
 /** Fecha de emisión "AAAA-MM-DD" de una factura. */
 export function fechaEmision(f: Pick<FacturaCV, 'createdAt'>): string {
-  return f.createdAt.slice(0, 10);
+  return diaNegocio(f.createdAt) ?? f.createdAt.slice(0, 10);
 }
 
-/** Una factura cuenta como facturada si está emitida o pagada. */
+/** Una factura cuenta como facturada si está emitida, pendiente (pago parcial) o pagada. */
 export function cuentaComoFacturada(f: Pick<FacturaCV, 'estado'>): boolean {
-  return f.estado === 'emitida' || f.estado === 'pagada';
+  return tieneSaldoPendiente(f.estado) || f.estado === 'pagada';
 }
 
 export function pesoFactura(f: Pick<FacturaCV, 'items'>): number {
   return f.items.reduce((acc, it) => acc + (Number.isFinite(it.peso) ? it.peso : 0), 0);
 }
 
-/** Saldo pendiente de pago de una COMPRA: solo las emitidas tienen saldo (pagada = 0, anulada/borrador no son deuda). */
+/** Saldo pendiente de una factura: solo las emitidas y pendientes tienen saldo (pagada = 0, anulada/borrador no son deuda). */
 export function saldoCompra(f: Pick<FacturaCV, 'estado' | 'total' | 'montoPagado'>): number {
-  if (f.estado !== 'emitida') return 0;
-  return Math.max(f.total - f.montoPagado, 0);
+  if (!tieneSaldoPendiente(f.estado)) return 0;
+  return saldoFactura(f);
 }
 
 // ---------------------------------------------------------------- resumen del periodo
@@ -53,7 +55,7 @@ export function saldoCompra(f: Pick<FacturaCV, 'estado' | 'total' | 'montoPagado
 export interface ResumenFacturas {
   /** Todas las facturas recibidas (cualquier estado). */
   cantidad: number;
-  /** Emitidas + pagadas. */
+  /** Emitidas + pendientes + pagadas. */
   facturadas: number;
   /** Suma del total de las facturadas. */
   total: number;
@@ -71,7 +73,7 @@ export interface ResumenFacturas {
 export function resumirFacturas(facturas: readonly FacturaCV[], tipo: TipoFactura): ResumenFacturas {
   const r: ResumenFacturas = {
     cantidad: facturas.length, facturadas: 0, total: 0, kg: 0, pagado: 0, pendiente: 0, totalEmitidas: 0,
-    porEstado: { emitida: { cantidad: 0, total: 0 }, pagada: { cantidad: 0, total: 0 }, borrador: { cantidad: 0, total: 0 }, anulada: { cantidad: 0, total: 0 } },
+    porEstado: { emitida: { cantidad: 0, total: 0 }, pendiente: { cantidad: 0, total: 0 }, pagada: { cantidad: 0, total: 0 }, borrador: { cantidad: 0, total: 0 }, anulada: { cantidad: 0, total: 0 } },
   };
   for (const f of facturas) {
     const grupo = r.porEstado[f.estado] ?? r.porEstado.emitida;
@@ -81,7 +83,7 @@ export function resumirFacturas(facturas: readonly FacturaCV[], tipo: TipoFactur
     r.facturadas += 1;
     r.total += f.total;
     r.kg += pesoFactura(f);
-    if (f.estado === 'emitida') r.totalEmitidas += f.total;
+    if (tieneSaldoPendiente(f.estado)) r.totalEmitidas += f.total;
     if (tipo === 'compra') {
       r.pagado += f.montoPagado;
       r.pendiente += saldoCompra(f);
@@ -93,9 +95,9 @@ export function resumirFacturas(facturas: readonly FacturaCV[], tipo: TipoFactur
 /** "13 pagadas, 4 emitidas": desglose por estado en palabras (solo los estados con facturas). */
 export function textoDesglosePorEstado(r: ResumenFacturas): string {
   const nombres: Record<EstadoFactura, [string, string]> = {
-    emitida: ['emitida', 'emitidas'], pagada: ['pagada', 'pagadas'], borrador: ['borrador', 'borradores'], anulada: ['anulada', 'anuladas'],
+    emitida: ['emitida', 'emitidas'], pendiente: ['pendiente', 'pendientes'], pagada: ['pagada', 'pagadas'], borrador: ['borrador', 'borradores'], anulada: ['anulada', 'anuladas'],
   };
-  const partes = (['pagada', 'emitida', 'borrador', 'anulada'] as const)
+  const partes = (['pagada', 'pendiente', 'emitida', 'borrador', 'anulada'] as const)
     .filter(e => r.porEstado[e].cantidad > 0)
     .map(e => `${r.porEstado[e].cantidad} ${nombres[e][r.porEstado[e].cantidad === 1 ? 0 : 1]}`);
   return partes.join(', ');
@@ -226,13 +228,14 @@ const TRAMOS: ReadonlyArray<{ etiqueta: string; desde: number; hasta: number | n
   { etiqueta: 'Más de 30 días', desde: 31, hasta: null },
 ];
 
-/** Antigüedad (desde la emisión) de las facturas EMITIDAS con saldo. En compras el saldo es total − pagado; en ventas es el
- *  total emitido (no hay registro de cobros, así que es "emitido sin registro de cobro", no "por cobrar"). */
-export function antiguedadSaldos(facturas: readonly FacturaCV[], tipo: TipoFactura, hoy: string): AntiguedadSaldos {
+/** Antigüedad (desde la emisión) de las facturas emitidas y pendientes con saldo. El saldo es total − aplicado
+ *  (en ventas sin cobros aplicados coincide con el total emitido). */
+export function antiguedadSaldos(facturas: readonly FacturaCV[], _tipo: TipoFactura, hoy: string): AntiguedadSaldos {
   const lista: FacturaConSaldo[] = [];
   for (const f of facturas) {
-    if (f.estado !== 'emitida') continue;
-    const saldo = tipo === 'compra' ? saldoCompra(f) : f.total;
+    if (!tieneSaldoPendiente(f.estado)) continue;
+    // Ya filtradas por estado con saldo: el saldo real (total menos lo aplicado) vale en compras y en ventas pendientes.
+    const saldo = saldoFactura(f);
     if (!(saldo > 0)) continue;
     lista.push({ id: f.id, codigo: f.codigo, entidad: f.nombreEntidad ?? 'Sin nombre', dias: diasEntre(fechaEmision(f), hoy), saldo });
   }

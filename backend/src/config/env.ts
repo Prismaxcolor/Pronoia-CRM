@@ -52,6 +52,13 @@ export const ENV = {
    *  vive en el workflow de n8n, no aquí. */
   N8N_WEBHOOK_GRUPO:
     webhookN8n(process.env.N8N_WEBHOOK_GRUPO, 'notificar-grupo-pronoia'),
+  /** Chat id (negativo, ej. -1001234567890) del grupo de Telegram "P.S Cajas Pagos": ahí van los
+   *  movimientos de dinero (pagos, cobros, cruces, bancas, notas). OPCIONAL: sin valor no se envía
+   *  nada de dinero a Telegram y el sistema sigue igual. La entrega usa N8N_WEBHOOK_ENVIAR_CONTENIDO
+   *  con este chatId, así que el bot (admin del grupo) es el del workflow de n8n.
+   *  Opcional: la clave también puede estar en public.configuracion_secreta. El servicio de cajas la
+   *  lee con obtenerSecreto (config/secretos.ts), no de este campo. */
+  TELEGRAM_CAJAS_CHAT_ID: (process.env.TELEGRAM_CAJAS_CHAT_ID || '').trim(),
   /** Interruptor general de las notificaciones al grupo ('false' las apaga). Apagado en tests. */
   GRUPO_NOTIFICACIONES_ACTIVAS: process.env.GRUPO_NOTIFICACIONES !== 'false' && process.env.NODE_ENV !== 'test',
   /** Eventos a silenciar, separados por coma: claves ("ticket.editado") o categorías ("maestros"). */

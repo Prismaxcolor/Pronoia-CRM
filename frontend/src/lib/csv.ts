@@ -3,6 +3,8 @@
  *  fórmulas (= + - @ al inicio de un TEXTO) para que Excel no ejecute contenido ajeno.
  *  `construirCsv` es pura (se prueba en node); `exportarCsv` solo toca el DOM al llamarse. */
 
+import { hoyNegocio } from './fecha-negocio';
+
 export const BOM_UTF8 = '﻿';
 export const SEPARADOR_CSV = ';';
 export const SALTO_CSV = '\r\n';
@@ -49,7 +51,7 @@ export function construirCsv<T>(columnas: ReadonlyArray<ColumnaCsv<T>>, filas: r
 /** "prefijo-AAAA-MM-DD.csv" con el prefijo saneado (solo letras, números y guiones). */
 export function nombreArchivoCsv(prefijo: string, hoy: Date): string {
   const limpio = prefijo.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'datos';
-  return `${limpio}-${hoy.toISOString().slice(0, 10)}.csv`;
+  return `${limpio}-${hoyNegocio(hoy)}.csv`;
 }
 
 /** Descarga un CSV ya armado en el navegador. */

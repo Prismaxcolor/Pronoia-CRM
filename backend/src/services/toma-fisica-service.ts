@@ -1,14 +1,17 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearTomaFisicaInput, RegistrarPesajeTomaFisicaInput } from '../schemas/toma-fisica.js';
 import { categoriaIdsConProductosAnclados } from './tipo-material-service.js';
+import { lotesElegiblesDeCategorias } from './toma-fisica-opciones-service.js';
 import {
   categoriaSinLoteEfectivo,
   derivarAlcance,
   validarAlcance,
   buscarTomaSolapada,
   lineasLotesSinContar,
+  resolverProductosToma,
   type AlcanceToma,
 } from '../utils/toma-fisica-alcance.js';
+import { nombresDeUsuarios } from './autoria-documento.js';
 
 /** Duplicado intencional de shared/types/toma-fisica.ts (mismo patrón que
  *  formatCodigoPesaje / formatCodigoTraslado — @shared no resuelve limpio
@@ -24,6 +27,8 @@ interface TomaFisicaRow {
   almacen_id: string;
   categorias: string[];
   lote_ids: string[] | null;
+  /** Materiales elegidos (migration_toma_fisica_productos.sql). null = toda la categoría. */
+  producto_ids?: string[] | null;
   estado: 'abierta' | 'cerrada' | 'cancelada';
   abierta_por: string;
   abierta_en: string;
@@ -45,6 +50,8 @@ export interface TomaFisicaPublica {
   categoriaNombres: string[];
   loteIds: string[];
   loteNombres: string[];
+  /** Materiales elegidos en una toma "Por categoría"; vacío = toda la categoría. */
+  productoIds: string[];
   /** 'categoria' = productos de categorías sin lote; 'lote' = lotes completos.
    *  Derivado (sin columna): las tomas anteriores no cambian. */
   alcance: AlcanceToma;
@@ -55,6 +62,9 @@ export interface TomaFisicaPublica {
   cerradaEn: string | null;
   createdAt: string;
   snapshotResumen: ResumenTomaFisicaLinea[] | null;
+  /** Nombres de quien abrió/cerró la toma; solo en obtenerTomaFisica. */
+  abiertaPorNombre?: string | null;
+  cerradaPorNombre?: string | null;
 }
 
 export interface DetalleTomaFisicaPublico {
@@ -115,6 +125,7 @@ async function toPublico(row: TomaFisicaRow): Promise<TomaFisicaPublica> {
     categoriaNombres: (row.categorias ?? []).map(id => nombresCat.get(id) ?? '—'),
     loteIds,
     loteNombres: loteIds.map(id => nombresLote.get(id) ?? '—'),
+    productoIds: row.producto_ids ?? [],
     alcance: derivarAlcance(loteIds, (row.categorias ?? []).map(id => sinLotePorCat.get(id) ?? true)),
     estado: row.estado,
     abiertaPor: row.abierta_por,
@@ -158,12 +169,36 @@ export async function obtenerTomaFisica(id: string): Promise<TomaFisicaPublica |
     .maybeSingle();
 
   if (error || !data) return null;
-  return toPublico(data as TomaFisicaRow);
+  const toma = await toPublico(data as TomaFisicaRow);
+  const nombres = await nombresDeUsuarios([toma.abiertaPor, toma.cerradaPor]);
+  return {
+    ...toma,
+    abiertaPorNombre: nombres.get(toma.abiertaPor) ?? null,
+    cerradaPorNombre: toma.cerradaPor ? (nombres.get(toma.cerradaPor) ?? null) : null,
+  };
+}
+
+/** Materiales elegidos de una toma "Por categoría" (null = toda la categoría). */
+async function validarProductos(
+  input: CrearTomaFisicaInput,
+  alcance: AlcanceToma
+): Promise<{ error: string } | { productoIds: string[] | null }> {
+  if (input.productoIds === undefined) return { productoIds: null };
+  if (alcance !== 'categoria') return { error: 'Elegir materiales solo aplica al alcance "Por categoría".' };
+  const { data } = await supabaseAdmin
+    .from('productos')
+    .select('id, tipo_material_id')
+    .eq('activo', true)
+    .in('tipo_material_id', input.categoriaIds);
+  const activos = (data ?? []).map(p => ({ id: p.id as string, categoriaId: p.tipo_material_id as string | null }));
+  return resolverProductosToma(input.productoIds, activos, input.categoriaIds);
 }
 
 /** Valida alcance, almacén, lotes y solape con tomas abiertas antes de llamar
  *  al RPC (que sigue siendo la barrera final contra solapes). */
-async function validarCreacion(input: CrearTomaFisicaInput): Promise<{ error: string } | { alcance: AlcanceToma }> {
+async function validarCreacion(
+  input: CrearTomaFisicaInput
+): Promise<{ error: string } | { alcance: AlcanceToma; productoIds: string[] | null }> {
   const [{ data: almacen }, { data: cats }, anclados] = await Promise.all([
     supabaseAdmin.from('almacenes').select('id, activo').eq('id', input.almacenId).maybeSingle(),
     supabaseAdmin.from('tipos_material').select('id, sin_lote').in('id', input.categoriaIds),
@@ -187,7 +222,14 @@ async function validarCreacion(input: CrearTomaFisicaInput): Promise<{ error: st
   if (alcance === 'lote') {
     const { data: lotes } = await supabaseAdmin.from('lotes').select('id').eq('activo', true).in('id', loteIds);
     if ((lotes ?? []).length !== new Set(loteIds).size) return { error: 'Algún lote elegido no existe o está inactivo.' };
+    const elegibles = new Set(await lotesElegiblesDeCategorias(input.categoriaIds));
+    if (loteIds.some(id => !elegibles.has(id))) {
+      return { error: 'Algún lote elegido no corresponde a la categoría de la toma (PCB: sin el Lote 4; PGM: solo el Lote 4).' };
+    }
   }
+
+  const productos = await validarProductos(input, alcance);
+  if ('error' in productos) return productos;
 
   const { data: abiertas } = await supabaseAdmin
     .from('tomas_fisicas_inventario')
@@ -207,7 +249,7 @@ async function validarCreacion(input: CrearTomaFisicaInput): Promise<{ error: st
   if (solapada) {
     return { error: `Ya hay una toma física abierta (${solapada.codigo}) que incluye alguna de estas categorías en este almacén. Culmínala o cancélala primero.` };
   }
-  return { alcance };
+  return { alcance, productoIds: productos.productoIds };
 }
 
 export async function crearTomaFisica(
@@ -225,6 +267,8 @@ export async function crearTomaFisica(
     p_descripcion: input.descripcion,
     p_abierta_por: abiertaPor,
     p_lote_ids: loteIds.length > 0 ? loteIds : null,
+    // Solo con selección parcial: sin ella el RPC histórico (sin este argumento) sigue valiendo.
+    ...(validacion.productoIds ? { p_producto_ids: validacion.productoIds } : {}),
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la toma física.' };

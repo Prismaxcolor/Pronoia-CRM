@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, X } from 'lucide-react';
-import { InsigniaEstado, formatearFecha, formatearKgDecimales } from '../../components/ui';
+import { InsigniaEstado, formatearKgDecimales } from '../../components/ui';
 import VisorFotos from '../../components/VisorFotos';
 import { diferenciaTraslado, hayDiferencia } from '../../lib/almacenes-kpis';
 import type { Traslado } from '@shared/types/index.js';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
 
 interface Props {
   traslado: Traslado;
@@ -46,8 +47,8 @@ function TrasladoDetalleModal({ traslado: t, onClose }: Props) {
 
         <div className="space-y-5 p-5">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
-            <div><dt className="text-xs text-text-secondary">Enviado el</dt><dd className="font-medium text-text-primary">{formatearFecha(t.createdAt)}</dd></div>
-            <div><dt className="text-xs text-text-secondary">Recibido el</dt><dd className="font-medium text-text-primary">{t.completadoEn ? formatearFecha(t.completadoEn) : 'Pendiente'}</dd></div>
+            <div><dt className="text-xs text-text-secondary">Enviado el</dt><dd className="font-medium text-text-primary">{formatearFechaHora(t.createdAt)}</dd></div>
+            <div><dt className="text-xs text-text-secondary">Recibido el</dt><dd className="font-medium text-text-primary">{t.completadoEn ? formatearFechaHora(t.completadoEn) : 'Pendiente'}</dd></div>
             <div><dt className="text-xs text-text-secondary">Vehículo</dt><dd className="font-medium text-text-primary">{t.vehiculo || '—'}</dd></div>
             <div>
               <dt className="text-xs text-text-secondary">Diferencia</dt>

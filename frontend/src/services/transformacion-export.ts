@@ -1,6 +1,7 @@
 import type { Transformacion } from '@shared/types/index.js';
 import { entregarPdf, type ArchivoPdf, type ModoPdf, fmt, sanitizarPdf, encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, tablaPesaje, type Badge } from './pdf-documento';
 import { etiquetaSalida } from '../lib/salida-mixta';
+import { formatearFechaHora } from '../lib/fecha-negocio';
 
 export interface NombresTransformacion {
   almacen: string | null;
@@ -14,9 +15,7 @@ function badgeEstado(t: Transformacion): Badge {
     : { texto: 'Pendiente', color: [194, 65, 12] };
 }
 
-function fechaHora(iso: string | null): string {
-  return iso ? iso.slice(0, 16).replace('T', ' ') : '—';
-}
+const fechaHora = (iso: string | null): string => (iso ? formatearFechaHora(iso) : '—');
 
 /** Documento de la transformación: encabezado universal + tabla de salidas en
  *  caja redondeada (mismo patrón que ticket-export.ts). No incluye la

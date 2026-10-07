@@ -23,6 +23,7 @@ import { avanceConteo, clasificarDiferencia, contarAjustes } from '../../lib/tom
 import type { Tono } from '../../lib/paleta';
 import TomaFisicaTablasImpresion from './TomaFisicaTablasImpresion';
 import type { FotosGaleria } from './TomaFisicaTablasDetalle';
+import { formatearFechaHora, nombreYMomento } from '../../lib/fecha-negocio';
 
 const TomaFisicaTablasDetalle = lazy(() => import('./TomaFisicaTablasDetalle'));
 const BarrasHorizontales = lazy(() => import('../../components/ui/graficas/BarrasHorizontales'));
@@ -37,10 +38,7 @@ const ESTADO: Record<string, { etiqueta: string; tono: Tono }> = {
 const kg = (n: number) => formatearNumero(n, 2);
 const kgConSigno = (n: number) => `${n > 0 ? '+' : ''}${kg(n)}`;
 
-function fmtFecha(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
+const fmtFecha = (iso: string | null): string => (iso ? formatearFechaHora(iso) : '—');
 
 function TomaFisicaDetallePage() {
   const { id = '' } = useParams();
@@ -61,8 +59,15 @@ function TomaFisicaDetallePage() {
   const [galeriaAbierta, setGaleriaAbierta] = useState<FotosGaleria | null>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
 
-  const cargar = () => {
+  // Al cambiar de toma física se vuelve a mostrar el spinner (derivado durante
+  // el render; el efecto ya no hace setState síncrono).
+  const [idCargado, setIdCargado] = useState(id);
+  if (id !== idCargado) {
+    setIdCargado(id);
     setCargando(true);
+  }
+
+  const traerDatos = () => {
     Promise.all([obtenerTomaFisica(id), obtenerResumenTomaFisica(id)]).then(([res, resumen]) => {
       if (res) { setTomaFisica(res.tomaFisica); setDetalle(res.detalle); }
       setLineas(resumen);
@@ -70,7 +75,13 @@ function TomaFisicaDetallePage() {
     });
   };
 
-  useEffect(() => { cargar(); }, [id]);
+  // Recarga manual (tras culminar/cancelar): vuelve a mostrar el spinner.
+  const cargar = () => {
+    setCargando(true);
+    traerDatos();
+  };
+
+  useEffect(() => { traerDatos(); }, [id]);
   useEffect(() => { obtenerLotes().then(setLotes); }, []);
 
   const totalTeorico = lineas.reduce((acc, l) => acc + l.stockTeorico, 0);
@@ -159,7 +170,7 @@ function TomaFisicaDetallePage() {
       )}
       <BotonAccion variante="secundario" onClick={() => descargarTomaFisicaPDF(tomaFisica, detalle, lineas)} icono={<FileDown size={16} />}>PDF</BotonAccion>
       <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
-      <CompartirBoton titulo={`Toma física ${tomaFisica.codigo}`} obtenerPdf={() => descargarTomaFisicaPDF(tomaFisica, detalle, lineas, 'blob')} />
+      <CompartirBoton titulo={`Toma física ${tomaFisica.codigo}`} />
     </>
   );
 
@@ -231,8 +242,8 @@ function TomaFisicaDetallePage() {
           <FilaDocumento label="Lote(s)" valor={tomaFisica.loteNombres.join(', ')} />
         )}
         {tomaFisica.descripcion && <FilaDocumento label="Descripción" valor={tomaFisica.descripcion} />}
-        <FilaDocumento label="Abierta" valor={fmtFecha(tomaFisica.abiertaEn)} />
-        {tomaFisica.estado === 'cerrada' && <FilaDocumento label="Cerrada" valor={fmtFecha(tomaFisica.cerradaEn)} />}
+        <FilaDocumento label="Abierta por" valor={nombreYMomento(tomaFisica.abiertaPorNombre, tomaFisica.abiertaEn)} />
+        {tomaFisica.estado === 'cerrada' && <FilaDocumento label="Cerrada por" valor={nombreYMomento(tomaFisica.cerradaPorNombre, tomaFisica.cerradaEn)} />}
         {esCancelada && <FilaDocumento label="Cancelada" valor={fmtFecha(tomaFisica.cerradaEn)} />}
       </div>
 

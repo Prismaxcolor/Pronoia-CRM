@@ -2,6 +2,16 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { almacenIdSchema } from '../schemas/inventario.js';
 import { leerPaginado } from '../utils/paginacion.js';
 import { calcularDesgloseAlmacen, type LineaDesgloseAlmacen, type MovimientoAlmacen } from './inventario-almacen-desglose.js';
+import {
+  construirMovimientosAlmacen,
+  type AjusteAlmacenFila,
+  type RangoFechasAlmacen,
+  type SalidaAlmacenFila,
+  type TicketAlmacenFila,
+  type TrasladoAlmacenFila,
+  type TransformacionAlmacenFila,
+} from '../utils/movimientos-almacen.js';
+import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
 
 export interface ArticuloInventario {
   productoId: string;
@@ -513,7 +523,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
       const esOrigen = t.almacen_origen_id === almacenId;
       const esDestinoCompleto = t.almacen_destino_id === almacenId && t.estado === 'completo';
       if (!esOrigen && !esDestinoCompleto) continue;
-      const fecha = (esDestinoCompleto ? t.completado_en?.slice(0, 10) : t.created_at?.slice(0, 10)) ?? null;
+      const fecha = (diaNegocio(esDestinoCompleto ? t.completado_en : t.created_at) ?? null);
       if (filtros.desde && fecha && fecha < filtros.desde) continue;
       if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
       for (const d of t.detalle_traslado ?? []) {
@@ -622,8 +632,8 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     .from('ajustes_inventario')
     .select('producto_id, lote_id, almacen_id, diferencia, created_at, lotes(nombre)')
     .not('producto_id', 'is', null);
-  if (filtros.desde) qAjustes = qAjustes.gte('created_at', filtros.desde);
-  if (filtros.hasta) qAjustes = qAjustes.lte('created_at', `${filtros.hasta}T23:59:59.999`);
+  if (filtros.desde) qAjustes = qAjustes.gte('created_at', inicioDiaNegocio(filtros.desde));
+  if (filtros.hasta) qAjustes = qAjustes.lte('created_at', finDiaNegocio(filtros.hasta));
   const { data: ajustesData } = await qAjustes;
 
   const ajustesToma: AjusteTomaInventario[] = [];
@@ -652,8 +662,8 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
     .select('lote_id, diferencia, created_at, lotes(nombre)')
     .is('producto_id', null)
     .not('lote_id', 'is', null);
-  if (filtros.desde) qAjustesLote = qAjustesLote.gte('created_at', filtros.desde);
-  if (filtros.hasta) qAjustesLote = qAjustesLote.lte('created_at', `${filtros.hasta}T23:59:59.999`);
+  if (filtros.desde) qAjustesLote = qAjustesLote.gte('created_at', inicioDiaNegocio(filtros.desde));
+  if (filtros.hasta) qAjustesLote = qAjustesLote.lte('created_at', finDiaNegocio(filtros.hasta));
   const { data: ajustesLoteData } = await qAjustesLote;
 
   // Retiros de transformación sin producto (masa de ajuste de lote retirada a PCB).
@@ -696,7 +706,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
       completado_en: string | null;
       detalle_traslado?: Array<{ producto_id: string | null; peso_neto: number | null; peso_recibido: number | null }> | null;
     }> | null) ?? []) {
-      const fecha = t.completado_en ? t.completado_en.slice(0, 10) : null;
+      const fecha = diaNegocio(t.completado_en);
       if (filtros.desde && fecha && fecha < filtros.desde) continue;
       if (filtros.hasta && fecha && fecha > filtros.hasta) continue;
       for (const d of t.detalle_traslado ?? []) {
@@ -775,117 +785,46 @@ const UMBRAL_STOCK_KG = 0.005;
 const LOTES_ALMACEN_CATEGORIA = 'Lotes';
 const LOTES_ALMACEN_CLAVE_GRUPO = '__lotes_almacen__';
 
-interface RangoFechas { desde?: string; hasta?: string }
+type RangoFechas = RangoFechasAlmacen;
 
-/** ¿La fecha (YYYY-MM-DD o ISO) cae dentro del rango? Sin fecha, no se filtra. */
-function enRango(fecha: string | null | undefined, rango: RangoFechas): boolean {
-  if (!fecha) return true;
-  const dia = fecha.slice(0, 10);
-  if (rango.desde && dia < rango.desde) return false;
-  if (rango.hasta && dia > rango.hasta) return false;
-  return true;
-}
-
-const ESTADOS_TRASLADO_QUE_DESCUENTAN = new Set(['pendiente', 'completo']);
-
-/** Lee de la BD todos los movimientos que afectan a un almacén y los normaliza.
- *  Mismas reglas de atribución que stock_almacen() / stock_lote_por_almacen():
- *  compra/venta por el almacén del ticket; traslado saliente desde que se crea
- *  (pendiente o completo) y entrante solo al completarse, por lo recibido;
- *  transformación por el almacén de la salida (o el de la transformación si
- *  la salida no lo indica) y solo si está completa; ajustes por su almacén. */
+/** Lee de la BD todos los movimientos que afectan a un almacén y los normaliza
+ *  (la atribución vive en utils/movimientos-almacen.ts, pura y con pruebas).
+ *  Mismas reglas que stock_almacen() / stock_lote_por_almacen(): compra/venta
+ *  por el almacén del ticket; traslado saliente desde que se crea (pendiente o
+ *  completo) y entrante solo al completarse, por lo recibido; transformación
+ *  por el almacén de la salida (o el de la transformación si la salida no lo
+ *  indica) y solo si está completa; ajustes por su almacén. */
 async function cargarMovimientosAlmacen(almacenId: string, rango: RangoFechas): Promise<MovimientoAlmacen[]> {
   // Defensa en profundidad: almacenId se interpola en un filtro .or() de PostgREST.
   almacenIdSchema.parse(almacenId);
-  const movimientos: MovimientoAlmacen[] = [];
-  const empujar = (tipo: MovimientoAlmacen['tipo'], productoId: string | null, loteId: string | null, peso: unknown) =>
-    movimientos.push({ tipo, productoId, loteId, peso: Number(peso ?? 0) });
-
-  // Compras y ventas.
-  const tickets = await leerPaginado<{
-    tipo: 'compra' | 'venta';
-    fecha: string | null;
-    detalle_tickets_pesaje: Array<{ producto_id: string | null; peso_neto: number | null; destino_tipo: string | null; lote_id: string | null }> | null;
-  }>((d, h) =>
-    supabaseAdmin
-      .from('tickets_pesaje')
-      .select('tipo, fecha, detalle_tickets_pesaje(producto_id, peso_neto, destino_tipo, lote_id)')
-      .eq('almacen_id', almacenId)
-      .order('id')
-      .range(d, h)
-  );
-  for (const t of tickets) {
-    if (!enRango(t.fecha, rango)) continue;
-    for (const d of t.detalle_tickets_pesaje ?? []) {
-      const aLote = d.destino_tipo === 'lote';
-      if (aLote && !d.lote_id) continue;
-      empujar(t.tipo, d.producto_id, aLote ? d.lote_id : null, d.peso_neto);
-    }
-  }
-
-  // Traslados.
-  const traslados = await leerPaginado<{
-    almacen_origen_id: string | null;
-    almacen_destino_id: string | null;
-    estado: string;
-    created_at: string | null;
-    completado_en: string | null;
-    detalle_traslado: Array<{ producto_id: string | null; lote_id: string | null; peso_neto: number | null; peso_recibido: number | null }> | null;
-  }>((d, h) =>
-    supabaseAdmin
-      .from('tickets_traslado')
-      .select('almacen_origen_id, almacen_destino_id, estado, created_at, completado_en, detalle_traslado(producto_id, lote_id, peso_neto, peso_recibido)')
-      .or(`almacen_origen_id.eq.${almacenId},almacen_destino_id.eq.${almacenId}`)
-      .order('id')
-      .range(d, h)
-  );
-  for (const t of traslados) {
-    for (const d of t.detalle_traslado ?? []) {
-      if (t.almacen_origen_id === almacenId && ESTADOS_TRASLADO_QUE_DESCUENTAN.has(t.estado) && enRango(t.created_at, rango)) {
-        empujar('traslado_salida', d.producto_id, d.lote_id, d.peso_neto);
-      }
-      if (t.almacen_destino_id === almacenId && t.estado === 'completo' && enRango(t.completado_en, rango)) {
-        empujar('traslado_entrada', d.producto_id, d.lote_id, d.peso_recibido);
-      }
-    }
-  }
-
-  // Transformaciones: consumo (entrada) de las hechas en este almacén.
-  const transformaciones = await leerPaginado<{
-    categoria: string;
-    fecha: string | null;
-    lote_origen_id: string | null;
-    peso_neto: number | null;
-    transformacion_entrada_detalle: Array<{ producto_id: string | null; peso_kg: number | null }> | null;
-  }>((d, h) =>
-    supabaseAdmin
-      .from('transformaciones')
-      .select('categoria, fecha, lote_origen_id, peso_neto, transformacion_entrada_detalle(producto_id, peso_kg)')
-      .eq('almacen_id', almacenId)
-      .order('id')
-      .range(d, h)
-  );
-  for (const t of transformaciones) {
-    if (!enRango(t.fecha, rango)) continue;
-    if (t.categoria === 'pcb' && t.lote_origen_id) {
-      empujar('transf_entrada', null, t.lote_origen_id, t.peso_neto);
-    } else if (t.categoria === 'ferroso_no_ferroso') {
-      for (const e of t.transformacion_entrada_detalle ?? []) empujar('transf_entrada', e.producto_id, null, e.peso_kg);
-    }
-  }
-
-  // Transformaciones: producción (salida) asignada a este almacén. Dos
-  // consultas: salidas con almacén propio, y salidas sin almacén cuya
-  // transformación es de este almacén.
-  type SalidaRow = {
-    producto_id: string | null;
-    lote_destino_id: string | null;
-    peso_neto: number | null;
-    transformaciones: { estado: string | null; fecha: string | null } | null;
-  };
   const columnasSalida = 'producto_id, lote_destino_id, peso_neto';
-  const [salidasPropias, salidasHeredadas] = await Promise.all([
-    leerPaginado<SalidaRow>((d, h) =>
+  const [tickets, traslados, transformaciones, salidasPropias, salidasHeredadas, ajustes] = await Promise.all([
+    leerPaginado<TicketAlmacenFila>((d, h) =>
+      supabaseAdmin
+        .from('tickets_pesaje')
+        .select('tipo, fecha, detalle_tickets_pesaje(producto_id, peso_neto, destino_tipo, lote_id)')
+        .eq('almacen_id', almacenId)
+        .order('id')
+        .range(d, h)
+    ),
+    leerPaginado<TrasladoAlmacenFila>((d, h) =>
+      supabaseAdmin
+        .from('tickets_traslado')
+        .select('almacen_origen_id, almacen_destino_id, estado, created_at, completado_en, detalle_traslado(producto_id, lote_id, peso_neto, peso_recibido)')
+        .or(`almacen_origen_id.eq.${almacenId},almacen_destino_id.eq.${almacenId}`)
+        .order('id')
+        .range(d, h)
+    ),
+    leerPaginado<TransformacionAlmacenFila>((d, h) =>
+      supabaseAdmin
+        .from('transformaciones')
+        .select('categoria, fecha, lote_origen_id, peso_neto, transformacion_entrada_detalle(producto_id, peso_kg)')
+        .eq('almacen_id', almacenId)
+        .order('id')
+        .range(d, h)
+    ),
+    // Salidas con almacén propio, y salidas sin almacén cuya transformación es de este almacén.
+    leerPaginado<SalidaAlmacenFila>((d, h) =>
       supabaseAdmin
         .from('transformacion_salida_detalle')
         .select(`${columnasSalida}, transformaciones(estado, fecha)`)
@@ -893,7 +832,7 @@ async function cargarMovimientosAlmacen(almacenId: string, rango: RangoFechas): 
         .order('id')
         .range(d, h)
     ),
-    leerPaginado<SalidaRow>((d, h) =>
+    leerPaginado<SalidaAlmacenFila>((d, h) =>
       supabaseAdmin
         .from('transformacion_salida_detalle')
         .select(`${columnasSalida}, transformaciones!inner(estado, fecha, almacen_id)`)
@@ -902,32 +841,20 @@ async function cargarMovimientosAlmacen(almacenId: string, rango: RangoFechas): 
         .order('id')
         .range(d, h)
     ),
+    leerPaginado<AjusteAlmacenFila>((d, h) =>
+      supabaseAdmin
+        .from('ajustes_inventario')
+        .select('producto_id, lote_id, diferencia, created_at')
+        .eq('almacen_id', almacenId)
+        .order('id')
+        .range(d, h)
+    ),
   ]);
-  for (const s of [...salidasPropias, ...salidasHeredadas]) {
-    if (s.transformaciones?.estado !== 'completa' || !enRango(s.transformaciones.fecha, rango)) continue;
-    empujar('transf_salida', s.producto_id, s.lote_destino_id, s.peso_neto);
-  }
-
-  // Ajustes de toma física / manuales.
-  const ajustes = await leerPaginado<{
-    producto_id: string | null;
-    lote_id: string | null;
-    diferencia: number | null;
-    created_at: string | null;
-  }>((d, h) =>
-    supabaseAdmin
-      .from('ajustes_inventario')
-      .select('producto_id, lote_id, diferencia, created_at')
-      .eq('almacen_id', almacenId)
-      .order('id')
-      .range(d, h)
+  return construirMovimientosAlmacen(
+    almacenId,
+    { tickets, traslados, transformaciones, salidas: [...salidasPropias, ...salidasHeredadas], ajustes },
+    rango
   );
-  for (const a of ajustes) {
-    if (!enRango(a.created_at, rango)) continue;
-    empujar('ajuste', a.producto_id, a.lote_id, a.diferencia);
-  }
-
-  return movimientos;
 }
 
 function aDesglose(l: LineaDesgloseAlmacen): DesgloseArticulo {

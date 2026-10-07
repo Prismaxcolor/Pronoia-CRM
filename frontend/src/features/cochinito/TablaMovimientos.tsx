@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight } from 'lucide-react';
-import { Insignia, TablaDatos, formatearFecha, formatearNumero, type ColumnaTabla, type EstadoVacioProps, type OrdenTabla } from '../../components/ui';
+import { Insignia, TablaDatos, formatearNumero, type ColumnaTabla, type EstadoVacioProps, type OrdenTabla } from '../../components/ui';
 import { correlativoMovimiento, diaDe, montoUsdDe } from '../../lib/cochinito-kpis';
 import type { Banca, Movimiento, TipoMovimiento } from '@shared/types/index.js';
+import { fechaConHora } from '../../lib/fecha-negocio';
 
 const ETIQUETA_TIPO: Record<TipoMovimiento, string> = { ingreso: 'Ingreso', egreso: 'Egreso', transferencia: 'Transferencia' };
 const ICONO_TIPO: Record<TipoMovimiento, React.ReactNode> = {
@@ -39,7 +40,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio }: Props) {
   const textoContraparte = useMemo(() => (m: Movimiento) => nombreContraparte(m) ?? (m.proveedorId ? 'Proveedor' : m.clienteId ? 'Cliente' : ''), [nombreContraparte]);
 
   const columnas = useMemo<ColumnaTabla<Movimiento>[]>(() => [
-    { clave: 'fecha', titulo: 'Fecha', valorOrden: m => diaDe(m), celda: m => formatearFecha(diaDe(m)), claseCelda: 'whitespace-nowrap' },
+    { clave: 'fecha', titulo: 'Fecha', valorOrden: m => diaDe(m), celda: m => fechaConHora(diaDe(m), m.creadoEn), claseCelda: 'whitespace-nowrap' },
     { clave: 'numero', titulo: 'N°', valorOrden: m => correlativoMovimiento(m), claseCelda: 'whitespace-nowrap tabular-nums' },
     {
       clave: 'tipo', titulo: 'Tipo', valorOrden: m => textoTipo(m),

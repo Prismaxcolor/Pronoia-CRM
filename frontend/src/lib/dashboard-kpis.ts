@@ -3,6 +3,7 @@
 
 import { compararConPeriodoAnterior, type ComparacionPeriodo } from './comparacion';
 import type { Severidad } from './paleta';
+import { hoyNegocio } from './fecha-negocio';
 
 /** El dato real de Pronoia empieza entre el 14 y el 17 de septiembre de 2026: un periodo anterior que arranca antes de
  *  esa fecha está incompleto y compararlo daría porcentajes engañosos. */
@@ -15,10 +16,9 @@ export const MIN_DIAS_CON_DATOS_TENDENCIA = 3;
 
 const MS_HORA = 3_600_000;
 
-/** Fecha "AAAA-MM-DD" según el reloj LOCAL (no UTC: de noche en Venezuela UTC ya es "mañana"). */
+/** Fecha "AAAA-MM-DD" según el reloj LOCAL (no UTC: zona de negocio Caracas; de noche UTC ya es "mañana"). */
 export function fechaLocalIso(ahora: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${ahora.getFullYear()}-${p(ahora.getMonth() + 1)}-${p(ahora.getDate())}`;
+  return hoyNegocio(ahora);
 }
 
 /** Suma (o resta) días a una fecha ISO sin zonas horarias. */
@@ -97,11 +97,11 @@ export interface TicketMinimo {
 }
 
 export interface ResumenTickets {
-  /** Compras pesadas en bruto, pendientes de recepcionar (completar). */
+  /** Compras con pesaje global guardado, pendientes de recepcionar. */
   porRecepcionar: number;
   /** De ésas, las que llevan más de HORAS_TICKET_BRUTO_ALERTA horas. */
   brutoViejos: number;
-  /** Horas del ticket en bruto más antiguo (null si no hay). */
+  /** Horas del ticket por recepcionar más antiguo (null si no hay). */
   horasMasAntiguo: number | null;
   /** Compras completas que aún no tienen factura (un ticket unido a otro no se factura aparte). */
   sinFacturar: number;
@@ -212,7 +212,7 @@ export function construirAlertas(e: EntradaAlertas): AlertaDashboard[] {
       id: 'tickets-bruto',
       severidad: 'amarilla',
       texto: `${n} ${n === 1 ? 'pesaje lleva' : 'pesajes llevan'} más de ${horasAlerta} h sin recepcionarse`,
-      detalle: e.tickets.horasMasAntiguo !== null ? `El más antiguo lleva ${textoAntiguedadHoras(e.tickets.horasMasAntiguo)}. Recepcionar es completar la compra en el pesaje; mientras siga «en bruto» no suma al inventario ni se puede facturar.` : undefined,
+      detalle: e.tickets.horasMasAntiguo !== null ? `El más antiguo lleva ${textoAntiguedadHoras(e.tickets.horasMasAntiguo)}. Recepcionar es completar la compra en el pesaje; mientras siga «por recepcionar» no suma al inventario ni se puede facturar.` : undefined,
       enlace: { to: '/pesaje', etiqueta: 'Ir a pesajes' },
     });
   }

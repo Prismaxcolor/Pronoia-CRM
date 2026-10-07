@@ -27,6 +27,7 @@ import {
   type ResumenMermaInventario,
 } from '../utils/resumen-inventario.js';
 import type { ConfiguracionInventario } from '../schemas/configuracion-inventario.js';
+import { hoyNegocio } from '../utils/fecha-negocio.js';
 
 /** Por defecto 8 s: deja margen bajo el límite de la función serverless. */
 export const PRESUPUESTO_RESUMEN_MS = 8_000;
@@ -166,7 +167,7 @@ async function cargarCostosFacturas(avisos: string[]): Promise<Map<string, Costo
   }
 }
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+const hoyISO = () => hoyNegocio();
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Rango pedido (ambos extremos o ninguno) o el de por defecto. null si es inválido. */

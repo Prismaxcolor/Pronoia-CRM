@@ -110,6 +110,8 @@ export interface NotaAjusteDetalle {
   nombreProveedor: string;
   /** Nombre del usuario que la registró, ya resuelto — nunca el uuid crudo. */
   registradoPor: string | null;
+  /** Instante (timestamptz) en que se registró la nota; null si la fila no lo trae. */
+  registradoEn: string | null;
   anulaNotaId: string | null;
   /** Datos de la anulación (solo si anulada): cuándo, quién (nombre ya resuelto) y por qué. */
   anuladaAt: string | null;
@@ -131,6 +133,7 @@ interface NotaDetalleRow {
   numero: number | null;
   fecha: string;
   registrado_por: string | null;
+  created_at?: string | null;
   anula_nota_id: string | null;
   factura_id: string | null;
   anulada_at?: string | null;
@@ -169,6 +172,7 @@ export function construirNotaAjusteDetalle(
     proveedorId: row.proveedor_id,
     nombreProveedor,
     registradoPor: nombreRegistradoPor,
+    registradoEn: row.created_at ?? null,
     anulaNotaId: row.anula_nota_id,
     anuladaAt: row.anulada ? (row.anulada_at ?? null) : null,
     anuladaPor: row.anulada ? nombreAnuladaPor : null,
@@ -189,7 +193,7 @@ export async function obtenerNotaAjuste(
 ): Promise<NotaAjusteDetalle | { error: string }> {
   const { data: nota, error: errNota } = await supabaseAdmin
     .from('notas_ajuste_proveedor')
-    .select('id, proveedor_id, tipo, monto, motivo, anulada, pagada, numero, fecha, registrado_por, anula_nota_id, factura_id, anulada_at, anulada_por, anulada_motivo')
+    .select('id, proveedor_id, tipo, monto, motivo, anulada, pagada, numero, fecha, created_at, registrado_por, anula_nota_id, factura_id, anulada_at, anulada_por, anulada_motivo')
     .eq('id', notaId)
     .eq('proveedor_id', proveedorId)
     .maybeSingle();

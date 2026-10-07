@@ -197,7 +197,7 @@ function EstadoCuentaPage({ tipo }: Props) {
   };
 
   return (
-    <div className="max-w-7xl">
+    <div data-compartir-imagen className="max-w-7xl">
       {/* Las migas son navegación: no se imprimen (el título y el nombre sí). */}
       <div className="print:[&_nav]:hidden">
         <EncabezadoPagina
@@ -222,17 +222,19 @@ function EstadoCuentaPage({ tipo }: Props) {
                   </BotonAccion>
                 </span>
               )}
-              <CompartirBoton titulo="Estado de cuenta" />
+              <CompartirBoton titulo={`Estado de cuenta ${estado.entidad.nombre}`} />
             </div>
           )}
         />
       </div>
 
-      <EstadoCuentaFiltros
-        filtros={{ desde: desde || undefined, hasta: hasta || undefined, tipo: tipoEntrada }}
-        onCambiar={cambiar}
-        onLimpiar={limpiar}
-      />
+      <div data-no-imagen>
+        <EstadoCuentaFiltros
+          filtros={{ desde: desde || undefined, hasta: hasta || undefined, tipo: tipoEntrada }}
+          onCambiar={cambiar}
+          onLimpiar={limpiar}
+        />
+      </div>
 
       <div className={`print:hidden ${cargando ? 'opacity-60 transition-opacity' : ''}`}>
         <section aria-label="Indicadores principales">
@@ -251,6 +253,8 @@ function EstadoCuentaPage({ tipo }: Props) {
               entidadId={id}
               nombreEntidad={estado.entidad.nombre}
               filas={visibles}
+              saldoFinal={conSaldo.length > 0 ? conSaldo[conSaldo.length - 1].saldoCorrido : 0}
+              filtradoPorTipo={Boolean(tipoEntrada)}
               rutaVuelta={rutaVuelta}
               puedeAjustar={puedeAjustar}
               onAnular={setNotaAAnular}
@@ -291,7 +295,7 @@ function EstadoCuentaPage({ tipo }: Props) {
       </div>
 
       {/* Versión impresa: la tabla clásica y los totales, igual que antes del rediseño. */}
-      <EstadoCuentaTablaImpresion entradas={visibles} totales={estado.totales} />
+      <EstadoCuentaTablaImpresion entradas={visibles} saldoFinal={conSaldo.length > 0 ? conSaldo[conSaldo.length - 1].saldoCorrido : 0} filtradoPorTipo={Boolean(tipoEntrada)} />
 
       {pagoAbierto && (
         <PagoCobroModal

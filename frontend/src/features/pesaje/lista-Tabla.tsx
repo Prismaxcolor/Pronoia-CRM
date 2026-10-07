@@ -1,13 +1,14 @@
 import { Trash2 } from 'lucide-react';
 import TablaDatos from '../../components/ui/TablaDatos';
 import Insignia, { InsigniaEstado } from '../../components/ui/Insignia';
-import { formatearFecha, formatearNumero } from '../../lib/formato';
+import { formatearNumero } from '../../lib/formato';
 import { infoTipoOperacion } from '../../lib/paleta';
 import type { ColumnaTabla, OrdenTabla } from '../../lib/tabla-datos';
 import type { EstadoDiferencia } from '../../lib/pesaje-kpis';
 import type { Traslado, TicketPesaje } from '@shared/types/index.js';
 import type { FilaTicket } from './lista-filas';
 import CeldaObservacion from './CeldaObservacion';
+import { fechaConHora } from '../../lib/fecha-negocio';
 
 interface Props {
   filas: readonly FilaTicket[];
@@ -37,7 +38,7 @@ const ETIQUETA_DIF: Record<EstadoDiferencia, string> = {
 };
 
 function CeldaDiferencia({ f }: { f: FilaTicket }) {
-  if (f.difKg === null) return <span className="text-text-muted" title="No hay diferencia que medir: el ticket está en bruto, se pesó en báscula externa, está unido a otro ticket o es un traslado">—</span>;
+  if (f.difKg === null) return <span className="text-text-muted" title="No hay diferencia que medir: el ticket está por recepcionar, se pesó en báscula externa, está unido a otro ticket o es un traslado">—</span>;
   const mala = f.estadoDif === 'fuera' || f.estadoDif === 'favorece_proveedor';
   return (
     <span className="inline-flex flex-col items-end gap-0.5">
@@ -60,7 +61,7 @@ function CeldaEstado({ f }: { f: FilaTicket }) {
 }
 
 function CeldaFacturado({ f }: { f: FilaTicket }) {
-  if (f.facturado === null) return <span className="text-text-muted" title="No aplica: los traslados no se facturan, los tickets en bruto aún no se pueden facturar y los unidos a otro ticket se facturan junto con el principal">—</span>;
+  if (f.facturado === null) return <span className="text-text-muted" title="No aplica: los traslados no se facturan, los tickets por recepcionar aún no se pueden facturar y los unidos a otro ticket se facturan junto con el principal">—</span>;
   return <span className="whitespace-nowrap">{f.facturado ? <Insignia tono="exito">Facturado</Insignia> : <Insignia tono="aviso">Sin facturar</Insignia>}</span>;
 }
 
@@ -104,12 +105,12 @@ function ListaTabla({ filas, puedeCrear, puedeEliminar, puedeRecepcionarTraslado
 
   const columnas: ColumnaTabla<FilaTicket>[] = [
     { clave: 'codigo', titulo: 'N° control', valorOrden: f => f.codigo, celda: codigoCelda, claseCelda: 'whitespace-nowrap' },
-    { clave: 'fecha', titulo: 'Fecha', valorOrden: f => f.fecha, celda: f => formatearFecha(f.fecha), claseCelda: 'whitespace-nowrap' },
+    { clave: 'fecha', titulo: 'Fecha', valorOrden: f => f.fecha, celda: f => fechaConHora(f.fecha, f.instante), claseCelda: 'whitespace-nowrap' },
     { clave: 'entidad', titulo: 'Entidad / almacenes', valorOrden: f => f.entidad, ayuda: 'Con quién se hizo la operación: el proveedor en una compra, el cliente en una venta, o el almacén de origen → almacén de destino en un traslado.' },
     { clave: 'materiales', titulo: 'Materiales', valorOrden: f => f.materiales },
     {
       clave: 'peso', titulo: 'Peso (kg)', alinear: 'derecha', decimalesCsv: 2,
-      ayuda: 'Kilos de la operación. Ticket en bruto: el peso global del camión. Ticket completo: la suma del peso neto de sus materiales (sin tara). Traslado: los kg enviados, o los recibidos si el destino ya los confirmó.',
+      ayuda: 'Kilos de la operación. Ticket por recepcionar: el peso global del camión. Ticket completo: la suma del peso neto de sus materiales (sin tara). Traslado: los kg enviados, o los recibidos si el destino ya los confirmó.',
       valorOrden: f => f.pesoKg, celda: f => <span className="font-medium text-text-primary">{kg2(f.pesoKg)}</span>,
       total: filas => kg2(filas.reduce((a, f) => a + f.pesoKg, 0)),
     },
@@ -140,7 +141,7 @@ function ListaTabla({ filas, puedeCrear, puedeEliminar, puedeRecepcionarTraslado
           </div>
           <div className="shrink-0 text-right">
             <p className="text-lg font-bold tabular-nums text-text-primary">{kg2(f.pesoKg)}<span className="ml-1 text-xs font-medium text-text-secondary">kg</span></p>
-            <p className="text-xs text-text-secondary">{formatearFecha(f.fecha)}</p>
+            <p className="text-xs text-text-secondary">{fechaConHora(f.fecha, f.instante)}</p>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -172,7 +173,7 @@ function ListaTabla({ filas, puedeCrear, puedeEliminar, puedeRecepcionarTraslado
       onOrdenar={onOrdenar}
       agrupar={{
         clave: f => (f.porRecepcionar ? 'por-recepcionar' : 'completados'),
-        titulo: c => (c === 'por-recepcionar' ? 'Por recepcionar (completar)' : 'Completados: por facturar y facturados'),
+        titulo: c => (c === 'por-recepcionar' ? 'Por recepcionar (pesaje global)' : 'Completados: por facturar y facturados'),
         ordenGrupos: (a, b) => (a.clave === b.clave ? 0 : a.clave === 'por-recepcionar' ? -1 : 1),
         maxFilasAbiertasPorDefecto: 1000,
       }}

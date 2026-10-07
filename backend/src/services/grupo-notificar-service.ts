@@ -6,11 +6,15 @@ import { formatCodigoNotaCredito, formatCodigoNotaDebito, formatCodigoNotaCredit
 import { formatearMensaje, type ActorEvento } from '../utils/grupo-formato.js';
 import type { CambiosAuditoria } from '../utils/auditoria.js';
 import { obtenerTicket } from './ticket-pesaje-service.js';
-import { generarTicketPdf, nombreArchivoTicket } from './document-generator.js';
+import { obtenerTransformacion } from './transformacion-service.js';
+import { generarFacturaPdf, generarTicketPdf, nombreArchivoFactura, nombreArchivoTicket } from './document-generator.js';
+import { comprobantesReenviables } from './grupo-dinero.js';
+import { enviarACajas, lineasDeCuentas, cajasConfigurado } from './grupo-cajas-service.js';
+import type { FacturaPublica } from './factura-service.js';
 import { columnasDiff, detallesDeCambios, esTablaDiff, type TablaDiff } from './grupo-diff.js';
 import {
-  debeNotificar, resolverVariante, rec, txt, num,
-  type ContextoEvento, type EventoEncontrado, type ExtraEvento, type TablaLookup, type ContextoRef,
+  destinoEvento, resolverVariante, esTransformacionConMaterial, rec, txt, num,
+  type DestinoGrupo, type EventoCatalogo, type ContextoEvento, type EventoEncontrado, type ExtraEvento, type TablaLookup, type ContextoRef,
 } from './grupo-eventos.js';
 
 /** Lo que recibe el webhook de n8n "Notificar Grupo Pronoia". */
@@ -19,6 +23,8 @@ export interface PayloadGrupo {
   parseMode: 'HTML';
   /** Clave del evento del catálogo (informativo, n8n no la necesita). */
   evento?: string;
+  /** Grupo al que va el aviso (por defecto operaciones). El dinero va a cajas, nunca a operaciones. */
+  destino?: DestinoGrupo;
   documentoUrl?: string;
   nombreArchivo?: string;
   fotos?: string[];
@@ -42,6 +48,8 @@ const VENTANA_AUDITORIA_MS = 2 * 60 * 1000;
  */
 export async function notificarGrupo(payload: PayloadGrupo): Promise<void> {
   try {
+    // El dinero tiene su propio grupo: jamás cae al webhook del grupo de operaciones.
+    if (payload.destino === 'cajas') return await enviarACajas(payload);
     if (!ENV.GRUPO_NOTIFICACIONES_ACTIVAS || !ENV.N8N_WEBHOOK_GRUPO) return;
     const cuerpo: PayloadGrupo = {
       ...payload,
@@ -217,6 +225,11 @@ async function leerFilaParaDiff(tabla: TablaDiff, id: string): Promise<Fila | nu
 
 /** Foto del registro ANTES de que corra el handler (se llama desde el middleware, sin await). */
 export function fotoPreviaParaEdicion(encontrado: EventoEncontrado): Promise<Fila | null> | null {
+  // Una transformación borrada ya no se puede leer: se pide su detalle completo ANTES del handler.
+  if (encontrado.evento.clave === 'transformacion.eliminada') {
+    const idTr = encontrado.params.id;
+    return idTr ? leerTransformacion(idTr) : null;
+  }
   const tabla = tablaParaDiff(encontrado);
   const id = encontrado.params.id;
   return tabla && id ? leerFilaParaDiff(tabla, id) : null;
@@ -237,6 +250,38 @@ async function detallesPorDiff(
   if (!despues) return undefined;
   const contrasena = tabla === 'users' && typeof reqBody.password === 'string' && reqBody.password !== '';
   return detallesDeCambios(tabla, antes, despues, contrasena ? ['• contraseña restablecida'] : []);
+}
+
+/** Transformación con nombres de producto, lote y salidas. null si falla (nunca lanza). */
+async function leerTransformacion(id: string): Promise<Fila | null> {
+  try {
+    return ((await obtenerTransformacion(id)) as unknown as Fila | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Qué material se transforma: la transformación completa (nombres de entrada, lote, salidas) y el
+ * nombre del almacén. Prefiere la respuesta; si no trae datos, la lee por id; en un borrado usa la
+ * foto previa. Si algo falla devuelve {} y el aviso sale como antes (nunca lanza).
+ */
+async function leerExtraTransformacion(
+  clave: string, ctx: ContextoEvento, pet: PeticionEvento, id: string
+): Promise<ExtraEvento> {
+  if (!esTransformacionConMaterial(clave)) return {};
+  try {
+    const deRespuesta = rec(ctx.resBody.transformacion);
+    const previa = clave === 'transformacion.eliminada' && pet.fotoPrevia ? await pet.fotoPrevia.catch(() => null) : null;
+    const base = previa ?? (txt(deRespuesta.categoria) ? deRespuesta : null);
+    const tr = base ?? (await leerTransformacion(txt(deRespuesta.id) ?? id));
+    if (!tr) return {};
+    const almacenId = txt(tr.almacenId);
+    const almacenEntrada = txt(tr.nombreAlmacen) ?? (almacenId ? await buscarEtiquetaEnTabla('almacenes', almacenId) : null);
+    return { transformacion: tr, almacenEntrada };
+  } catch {
+    return {};
+  }
 }
 
 async function resolverContexto(ref: ContextoRef | null): Promise<string | null> {
@@ -299,6 +344,16 @@ export function recolectarFotosTicket(t: {
   return [...new Set(todas)].slice(0, MAX_FOTOS);
 }
 
+/** Sube un PDF al bucket privado y devuelve su URL firmada (24 h) para que n8n lo baje. */
+async function subirPdfGrupo(carpeta: string, id: string, nombreArchivo: string, pdf: Buffer): Promise<string> {
+  const ruta = `grupo/${carpeta}/${id}/${Date.now()}-${nombreArchivo}`;
+  const { error: errSubida } = await supabaseAdmin.storage.from(BUCKET).upload(ruta, pdf, { contentType: 'application/pdf' });
+  if (errSubida) throw new Error(errSubida.message);
+  const { data: firmada, error: errFirma } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(ruta, URL_FIRMADA_TTL_S);
+  if (errFirma || !firmada) throw new Error(errFirma?.message ?? 'sin URL firmada');
+  return firmada.signedUrl;
+}
+
 /** PDF del ticket terminado subido a Storage + URL firmada, y su álbum de fotos. */
 async function adjuntosDeTicket(ticketId: string, nombreEntidad: string | null): Promise<Partial<PayloadGrupo>> {
   const ticket = await obtenerTicket(ticketId);
@@ -308,20 +363,35 @@ async function adjuntosDeTicket(ticketId: string, nombreEntidad: string | null):
   if (fotos.length > 0) adjuntos.fotos = fotos;
 
   try {
-    const nombreArchivo = nombreArchivoTicket(ticket);
+    const nombreArchivo = nombreArchivoTicket(ticket, nombreEntidad);
     const pdf = generarTicketPdf(ticket, nombreEntidad ?? '—');
-    const ruta = `grupo/ticket/${ticketId}/${Date.now()}-${nombreArchivo}`;
-    const { error: errSubida } = await supabaseAdmin.storage.from(BUCKET).upload(ruta, pdf, { contentType: 'application/pdf' });
-    if (errSubida) throw new Error(errSubida.message);
-    const { data: firmada, error: errFirma } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(ruta, URL_FIRMADA_TTL_S);
-    if (errFirma || !firmada) throw new Error(errFirma?.message ?? 'sin URL firmada');
-    adjuntos.documentoUrl = firmada.signedUrl;
+    adjuntos.documentoUrl = await subirPdfGrupo('ticket', ticketId, nombreArchivo, pdf);
     adjuntos.nombreArchivo = nombreArchivo;
   } catch (err) {
     // El aviso de texto sale igual, solo sin el PDF.
     logger.error({ evento: 'grupo_notify_error_pdf_ticket', ticketId, mensaje: err instanceof Error ? err.message : String(err) });
   }
   return adjuntos;
+}
+
+/**
+ * PDF de la factura recién emitida (el mismo que ve el proveedor/cliente) para el grupo de
+ * cajas. Se genera aquí, en el backend, a partir de la respuesta de la ruta: no hace
+ * falta que el frontend suba ningún archivo. Una factura en borrador no se adjunta.
+ */
+async function adjuntosDeFactura(res: Readonly<Record<string, unknown>>): Promise<Partial<PayloadGrupo>> {
+  const f = rec(res.factura);
+  const id = txt(f.id);
+  if (f.estado !== 'emitida' || !id) return {};
+  try {
+    const factura = f as unknown as FacturaPublica;
+    const nombreArchivo = nombreArchivoFactura(factura);
+    const url = await subirPdfGrupo('factura', id, nombreArchivo, generarFacturaPdf(factura));
+    return { documentoUrl: url, nombreArchivo };
+  } catch (err) {
+    logger.error({ evento: 'grupo_notify_error_pdf_factura', facturaId: id, mensaje: err instanceof Error ? err.message : String(err) });
+    return {};
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -366,11 +436,13 @@ export async function construirPayloadGrupo(
     reqBody: rec(pet.reqBody), resBody: rec(pet.resBody), extra: {},
   };
   const evento = resolverVariante(encontrado.evento, ctxBase);
-  if (!debeNotificar(evento, filtro)) return null;
+  const destino = destinoEvento(evento, filtro);
+  // Dinero sin grupo de cajas configurado: no se envía (ni se gastan consultas armándolo).
+  if (!destino || (destino === 'cajas' && !(await cajasConfigurado()))) return null;
   const hallado: EventoEncontrado = { evento, params: encontrado.params };
 
   const previa = pet.etiquetaPrevia ? await pet.etiquetaPrevia.catch(() => null) : null;
-  const [actor, etiqueta, contexto, auditoria, detallesDiff] = await Promise.all([
+  const [actor, etiqueta, contexto, auditoria, detallesDiff, cuentas, material] = await Promise.all([
     actorDePeticion(pet),
     resolverEtiqueta(hallado, ctxBase, previa),
     resolverContexto(evento.contexto?.(ctxBase) ?? null),
@@ -378,30 +450,42 @@ export async function construirPayloadGrupo(
       ? leerAuditoriaReciente(evento.clave, encontrado.params.id ?? '', ahora)
       : Promise.resolve<ExtraEvento>({}),
     detallesPorDiff(hallado, pet, ctxBase.reqBody).catch((): undefined => undefined),
+    destino === 'cajas' ? lineasDeCuentas(ctxBase.reqBody) : Promise.resolve<string[]>([]),
+    leerExtraTransformacion(evento.clave, ctxBase, pet, encontrado.params.id ?? ''),
   ]);
   // Edición que no cambió nada real: sin aviso (silencioso).
   if (detallesDiff && detallesDiff.length === 0) return null;
 
-  const ctx: ContextoEvento = { ...ctxBase, extra: { ...auditoria, contexto } };
+  const ctx: ContextoEvento = { ...ctxBase, extra: { ...auditoria, ...material, contexto } };
   const entidad = [etiqueta, contexto].filter(Boolean).join(' · ') || null;
   const texto = formatearMensaje({
     icono: evento.icono,
     accion: evento.accion,
     entidad,
-    detalles: detallesDiff ?? evento.detalles?.(ctx) ?? [],
+    detalles: [...(detallesDiff ?? evento.detalles?.(ctx) ?? []), ...cuentas],
     actor,
     fecha: ahora,
     zona: ENV.GRUPO_ZONA_HORARIA,
   });
 
-  const payload: PayloadGrupo = { texto, parseMode: 'HTML', evento: evento.clave };
-  if (evento.enriquecer === 'ticket') {
-    const t = rec(ctxBase.resBody.ticket);
-    const id = txt(t.id);
-    if (t.estado === 'completo' && id) {
-      Object.assign(payload, await adjuntosDeTicket(id, contexto ? contexto.replace(/^\S+ /, '') : null));
-    }
+  const adjuntos = await adjuntosDeEvento(destino, evento, ctxBase, contexto);
+  return { texto, parseMode: 'HTML', evento: evento.clave, ...adjuntos };
+}
+
+/** Lo que acompaña al texto: comprobantes y PDF de la factura (cajas) o PDF + fotos del ticket (operaciones). */
+async function adjuntosDeEvento(
+  destino: DestinoGrupo, evento: EventoCatalogo, ctx: ContextoEvento, contexto: string | null
+): Promise<Partial<PayloadGrupo>> {
+  if (destino === 'cajas') {
+    const fotos = comprobantesReenviables(ctx.reqBody, ENV.SUPABASE_URL);
+    const pdf = evento.enriquecer === 'factura' ? await adjuntosDeFactura(ctx.resBody) : {};
+    return { destino, ...pdf, ...(fotos.length > 0 ? { fotos } : {}) };
   }
-  return payload;
+  if (evento.enriquecer === 'factura') return adjuntosDeFactura(ctx.resBody);
+  if (evento.enriquecer !== 'ticket') return {};
+  const t = rec(ctx.resBody.ticket);
+  const id = txt(t.id);
+  if (t.estado !== 'completo' || !id) return {};
+  return adjuntosDeTicket(id, contexto ? contexto.replace(/^\S+ /, '') : null);
 }
 

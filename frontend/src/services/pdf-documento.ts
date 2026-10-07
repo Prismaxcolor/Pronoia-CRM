@@ -30,7 +30,7 @@ const REEMPLAZOS_PDF: Array<[RegExp, string]> = [
   [/[‘’‛]/g, "'"],
   [/[“”‟]/g, '"'],
   [/…/g, '...'],
-  [/ /g, ' '],
+  [/\u00a0/g, ' '],
 ];
 
 export function sanitizarPdf(v: string): string {
@@ -78,6 +78,7 @@ const GRIS_GRID: [number, number, number] = [70, 70, 70];
 const BADGE_COLOR: Record<string, [number, number, number]> = {
   borrador: [90, 95, 105],
   emitida: [29, 78, 175],
+  pendiente: [180, 83, 9],
   pagada: [21, 128, 61],
   cobrada: [21, 128, 61],
   abierta: [161, 98, 7],
@@ -146,6 +147,21 @@ export function tituloConBadge(
 export function subtitulo(doc: any, y: number, texto: string): void {
   doc.setFontSize(10.5).setFont('helvetica', 'normal').setTextColor(110);
   doc.text(sanitizarPdf(texto), BOX_LEFT, y);
+  doc.setTextColor(0);
+}
+
+/**
+ * Pie de la última página con las leyendas de autoría ("Registrado por X · 07/10/2026 14:05",
+ * "Última edición por Y · ..."). Las líneas nulas se omiten. Va en posición fija abajo, sin mover el contenido.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function pieRegistro(doc: any, lineas: ReadonlyArray<string | null | undefined>): void {
+  const textos = lineas.filter((l): l is string => !!l);
+  if (textos.length === 0) return;
+  doc.setPage(doc.getNumberOfPages());
+  const alto: number = doc.internal.pageSize.getHeight();
+  doc.setFontSize(8.5).setFont('helvetica', 'normal').setTextColor(110);
+  textos.forEach((texto, i) => doc.text(sanitizarPdf(texto), BOX_LEFT, alto - 20 - (textos.length - 1 - i) * 11 - 20));
   doc.setTextColor(0);
 }
 

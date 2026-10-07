@@ -7,7 +7,8 @@ import type { TipoEntidad } from '../../services/estado-cuenta-service';
 import { descargarPagoPDF } from '../../services/pago-export';
 import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
-import { calcularCruce } from '../../lib/cruce';
+import { formatearFecha } from '../../lib/formato';
+import { nombreYMomento } from '../../lib/fecha-negocio';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -39,13 +40,20 @@ function PagoDetallePage({ tipoEntidad }: Props) {
   const ruta = navState?.volverA ?? `/${esProveedor ? 'proveedores' : 'clientes'}/${entidadId}/estado-cuenta`;
   const etiquetaVolver = navState?.volverALabel ?? 'Estado de cuenta';
 
-  const [pago, setPago] = useState<PagoDetalle | null>(null);
-  const [cargando, setCargando] = useState(true);
+  // El resultado guarda la clave con la que se pidió: mientras no coincida con
+  // la clave actual se muestra el spinner (sin setState síncrono en el efecto).
+  const clave = `${tipoEntidad}|${entidadId}|${grupoId}`;
+  const [resultado, setResultado] = useState<{ clave: string; pago: PagoDetalle | null } | null>(null);
+  const cargando = resultado?.clave !== clave;
+  const pago = resultado?.clave === clave ? resultado.pago : null;
 
   useEffect(() => {
-    setCargando(true);
-    obtenerPagoDetalle(tipoEntidad, entidadId, grupoId).then(setPago).finally(() => setCargando(false));
-  }, [tipoEntidad, entidadId, grupoId]);
+    let vigente = true;
+    obtenerPagoDetalle(tipoEntidad, entidadId, grupoId)
+      .catch(() => null)
+      .then(p => { if (vigente) setResultado({ clave, pago: p }); });
+    return () => { vigente = false; };
+  }, [tipoEntidad, entidadId, grupoId, clave]);
 
   if (cargando) {
     return (
@@ -70,8 +78,8 @@ function PagoDetallePage({ tipoEntidad }: Props) {
 
   const esCruce = pago.codigoCruce != null;
   const titulo = esCruce ? 'Comprobante de cruce' : esProveedor ? 'Comprobante de pago' : 'Comprobante de cobro';
-  const resumen = calcularCruce(pago.items.map(i => ({ tipo: i.tipo, montoUsd: i.montoUsd })));
-  const usaCreditos = resumen.totalCreditos > 0;
+  const tieneDesglose = pago.items.length > 0;
+  const filasResumen = (pago.resumen ?? []).filter(f => f.clave !== 'pagado');
 
   return (
     <div className="max-w-2xl print-documento print:max-w-none">
@@ -90,7 +98,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
             <div className="print:hidden flex flex-wrap items-center gap-2">
               <BotonAccion variante="secundario" onClick={() => descargarPagoPDF(pago, esProveedor)} icono={<FileDown size={16} />}>PDF</BotonAccion>
               <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
-              <CompartirBoton titulo={`${esCruce ? 'Cruce' : esProveedor ? 'Pago' : 'Cobro'} ${pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? pago.grupoId.slice(0, 8)}`} obtenerPdf={() => descargarPagoPDF(pago, esProveedor, 'blob')} />
+              <CompartirBoton titulo={`${esCruce ? 'Cruce' : esProveedor ? 'Pago' : 'Cobro'} ${pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? pago.grupoId.slice(0, 8)} ${pago.nombreEntidad}`} />
             </div>
           )}
         />
@@ -120,9 +128,9 @@ function PagoDetallePage({ tipoEntidad }: Props) {
        *  con divisor — el mismo patrón de encabezado de todo el sistema. */}
       <div className="mb-6">
         <FilaDocumento label={esProveedor ? 'Proveedor' : 'Cliente'} valor={pago.nombreEntidad} />
-        <FilaDocumento label="Fecha" valor={pago.fecha} />
+        <FilaDocumento label="Fecha" valor={formatearFecha(pago.fecha)} />
         {pago.items.length === 0 && pago.descripcion && <FilaDocumento label="Descripción" valor={pago.descripcion} />}
-        <FilaDocumento label="Registrado por" valor={pago.registradoPor ?? '—'} />
+        <FilaDocumento label="Registrado por" valor={nombreYMomento(pago.registradoPor, pago.registradoEn)} />
 
         {pago.items.length > 0 && (
           <div className="mt-4 pt-3 border-t border-border print:border-black">
@@ -138,16 +146,14 @@ function PagoDetallePage({ tipoEntidad }: Props) {
                 </span>
               </div>
             ))}
-            {usaCreditos && (
+            {filasResumen.length > 0 && (
               <div className="mt-2 pt-2 border-t border-border print:border-black space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-text-secondary">Facturas y notas de débito</span><span className="text-text-primary">${fmt(resumen.totalCargos)}</span></div>
-                {resumen.totalAdelantos > 0 && (
-                  <div className="flex justify-between"><span className="text-text-secondary">- {esProveedor ? 'Adelantos' : 'Anticipos'} aplicados</span><span className="text-green-600">-${fmt(resumen.totalAdelantos)}</span></div>
-                )}
-                {resumen.totalNotasCredito > 0 && (
-                  <div className="flex justify-between"><span className="text-text-secondary">- Notas de crédito</span><span className="text-green-600">-${fmt(resumen.totalNotasCredito)}</span></div>
-                )}
-                <div className="flex justify-between font-medium"><span className="text-text-primary">= A {esProveedor ? 'pagar' : 'cobrar'} en efectivo/banco</span><span className="text-text-primary">${fmt(resumen.efectivo)}</span></div>
+                {filasResumen.map(f => (
+                  <div key={f.clave} className={`flex justify-between ${f.clave === 'saldoPendiente' ? 'font-medium' : ''}`}>
+                    <span className={f.clave === 'saldoPendiente' ? 'text-text-primary' : 'text-text-secondary'}>{f.signo ? `${f.signo} ` : ''}{f.etiqueta}</span>
+                    <span className={f.signo === '-' ? 'text-green-600' : 'text-text-primary'}>{f.signo === '-' ? '-' : ''}${fmt(f.montoUsd)}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -183,7 +189,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
         )}
 
         <div className="flex justify-between items-baseline mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
-          <span className="font-semibold text-text-primary text-lg">{esCruce ? 'Total en efectivo/banco' : 'Total'}</span>
+          <span className="font-semibold text-text-primary text-lg">{tieneDesglose ? 'Pagado' : 'Total'}</span>
           <span className="text-2xl font-bold text-brand-700">${fmt(pago.totalUsd)}</span>
         </div>
       </div>

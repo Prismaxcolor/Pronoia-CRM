@@ -30,6 +30,7 @@ import {
   loteDe,
   resolverAlmacenEntre,
 } from './asistente-herr-catalogo.js';
+import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from './fecha-negocio.js';
 
 const coincide = coincidePorPalabras;
 
@@ -448,8 +449,8 @@ export const consultarTraslados = definirHerramienta({
       .order('created_at', { ascending: false })
       .limit(limiteEfectivo(limite));
     if (estado) q = q.eq('estado', estado);
-    if (desde) q = q.gte('created_at', desde);
-    if (hasta) q = q.lte('created_at', `${hasta}T23:59:59`);
+    if (desde) q = q.gte('created_at', inicioDiaNegocio(desde));
+    if (hasta) q = q.lte('created_at', finDiaNegocio(hasta));
     const { data } = await q;
     const traslados = (data ?? []) as unknown as TrasladoFila[];
     const idsAlmacen = [...new Set(traslados.flatMap(t => [t.almacen_origen_id, t.almacen_destino_id]).filter((x): x is string => !!x))];
@@ -460,7 +461,7 @@ export const consultarTraslados = definirHerramienta({
     }
     const filas = traslados.map(t => ({
       traslado: `Traslado-${String(t.numero ?? 0).padStart(4, '0')}`,
-      fecha: t.created_at.slice(0, 10),
+      fecha: diaNegocio(t.created_at) ?? t.created_at.slice(0, 10),
       origen: nombres.get(t.almacen_origen_id ?? '') ?? null,
       destino: nombres.get(t.almacen_destino_id ?? '') ?? null,
       estado: t.estado,

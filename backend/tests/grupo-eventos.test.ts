@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import {
-  CATALOGO_EVENTOS, buscarEvento, debeNotificar, resolverVariante, type ContextoEvento,
+  CATALOGO_EVENTOS, buscarEvento, debeNotificar, destinoEvento, resolverVariante, type ContextoEvento,
 } from '../src/services/grupo-eventos.js';
 import {
   esClaveSensible, sanitizarValor, escaparHtml, formatearCambios, formatearMensaje,
@@ -106,13 +106,17 @@ describe('debeNotificar', () => {
   it('nunca avisa ignorables', () => {
     expect(debeNotificar(ev('auth.login'), { ...base, incluirRuidosos: true })).toBe(false);
   });
-  it('nunca avisa eventos de dinero, ni con todos los interruptores', () => {
+  it('nunca avisa al grupo de operaciones eventos de dinero (facturas incluidas), ni con todos los interruptores', () => {
     const dinero = CATALOGO_EVENTOS.filter(e => ['tesoreria', 'facturacion', 'precios'].includes(e.categoria));
     expect(dinero.length).toBeGreaterThan(10);
     for (const e of [...dinero, ev('inventario.costos_referencia_editados'), ev('transformacion.valoracion')]) {
       expect(debeNotificar(e, { ...base, incluirRuidosos: true }), e.clave).toBe(false);
     }
     expect(debeNotificar(ev('vehiculo.creado'), base)).toBe(true);
+  });
+  it('la factura emitida NO va al grupo de operaciones (va a cajas)', () => {
+    expect(debeNotificar(ev('factura_compra.emitida'), base)).toBe(false);
+    expect(debeNotificar(ev('factura_venta.emitida'), base)).toBe(false);
   });
   it('los ruidosos solo con el interruptor', () => {
     expect(debeNotificar(ev('toma_fisica.pesaje'), base)).toBe(false);
@@ -130,9 +134,9 @@ describe('plantillas', () => {
     metodo: 'POST', ruta: '/x', params: {}, reqBody: {}, resBody: {}, extra: {}, ...over,
   });
 
-  it('ticket en bruto = "Se inició un pesaje"; completo desde el inicio cambia el texto', () => {
+  it('pesaje global por recepcionar = "Se guardó un pesaje global"; completo desde el inicio cambia el texto', () => {
     const e = CATALOGO_EVENTOS.find(x => x.clave === 'ticket.iniciado')!;
-    expect(resolverVariante(e, ctxBase({ resBody: { ticket: { estado: 'bruto' } } })).accion).toBe('Se inició un pesaje');
+    expect(resolverVariante(e, ctxBase({ resBody: { ticket: { estado: 'bruto' } } })).accion).toBe('Se guardó un pesaje global (por recepcionar)');
     expect(resolverVariante(e, ctxBase({ resBody: { ticket: { estado: 'completo' } } })).accion).toMatch(/terminó el pesaje/);
   });
 
@@ -242,5 +246,131 @@ describe('formatearMensaje', () => {
 
   it('escaparHtml', () => {
     expect(escaparHtml('a<b>&c')).toBe('a&lt;b&gt;&amp;c');
+  });
+});
+
+describe('destinoEvento (ruteo operaciones / cajas)', () => {
+  const base = { silenciados: [] as string[], incluirRuidosos: false };
+  const ev = (clave: string) => CATALOGO_EVENTOS.find(e => e.clave === clave)!;
+
+  it('pagos, cobros, cruces, bancas, notas y estados de cuenta van SOLO a cajas', () => {
+    const claves = [
+      'pago.registrado', 'pago.multiple', 'cobro.multiple', 'banca.movimiento', 'banca.creada', 'banca.archivada',
+      'proveedor.nota_creada', 'proveedor.nota_anulada', 'cliente.nota_creada', 'cliente.estado_cuenta_enviado',
+    ];
+    for (const clave of claves) {
+      expect(destinoEvento(ev(clave), base), clave).toBe('cajas');
+      expect(debeNotificar(ev(clave), base), clave).toBe(false);
+    }
+  });
+  it('la factura emitida va a cajas; los eventos operativos a operaciones', () => {
+    expect(destinoEvento(ev('factura_compra.emitida'), base)).toBe('cajas');
+    expect(destinoEvento(ev('factura_venta.emitida'), base)).toBe('cajas');
+    expect(destinoEvento(ev('factura_venta.emitida'), { ...base, silenciados: ['facturacion'] })).toBeNull();
+    expect(destinoEvento(ev('vehiculo.creado'), base)).toBe('operaciones');
+    expect(destinoEvento(ev('ticket.editado'), base)).toBe('operaciones');
+  });
+  it('precios, costos y valoración no van a ningún grupo', () => {
+    for (const clave of ['lista_precios.editada', 'lista_precios.eliminada', 'inventario.costos_referencia_editados', 'transformacion.valoracion']) {
+      expect(destinoEvento(ev(clave), base), clave).toBeNull();
+    }
+  });
+  it('ignorables, ruidosos y silenciados respetan los filtros también en cajas', () => {
+    expect(destinoEvento(ev('auth.login'), base)).toBeNull();
+    expect(destinoEvento(ev('pago.multiple'), { ...base, silenciados: ['pago.multiple'] })).toBeNull();
+    expect(destinoEvento(ev('banca.movimiento'), { ...base, silenciados: ['tesoreria'] })).toBeNull();
+  });
+});
+
+describe('transformaciones: el aviso dice EXACTAMENTE qué material se transforma', () => {
+  const evento = (clave: string) => CATALOGO_EVENTOS.find(e => e.clave === clave)!;
+  const ferroso = {
+    id: 't1', codigo: 'TR-0007', categoria: 'ferroso_no_ferroso', estado: 'completa', nombreProductoEntrada: 'Chatarra mixta',
+    almacenId: 'a1', nombreLoteOrigen: null, pesoNeto: 1000, entradaDetalle: [],
+    salidas: [
+      { nombreProducto: 'Hierro', nombreLoteDestino: null, nombreAlmacen: 'Patio 1', pesoNeto: 700, precioUnitario: 0.35 },
+      { nombreProducto: 'Aluminio', nombreLoteDestino: null, nombreAlmacen: 'Patio 1', pesoNeto: 250, precioUnitario: 1.2 },
+    ],
+    costoUnitario: 0.2, facturaCompraId: 'f9',
+  };
+  const ctx = (metodo: ContextoEvento['metodo'], ruta: string, transformacion: unknown, extra: ContextoEvento['extra'] = {}): ContextoEvento =>
+    ({ metodo, ruta, params: { id: 't1' }, reqBody: {}, resBody: { transformacion }, extra });
+  const texto = (clave: string, c: ContextoEvento) => evento(clave).detalles!(c).join('\n');
+
+  it('inicio ferroso/no ferroso: tipo, material, almacén y kilos de entrada (sin salidas aún)', () => {
+    const t = { ...ferroso, estado: 'bruto', salidas: [] };
+    const out = texto('transformacion.ferroso_creada', ctx('POST', '/api/transformaciones/ferroso', t, { almacenEntrada: 'Patio 1' }));
+    expect(out).toContain('Tipo: Ferroso / No ferroso');
+    expect(out).toContain('Material de entrada: Chatarra mixta');
+    expect(out).toContain('Almacén: Patio 1');
+    expect(out).toContain('Kilos de entrada: 1.000 kg');
+    expect(out).not.toContain('Salidas obtenidas');
+  });
+
+  it('completar ferroso: salidas por material con kilos netos, total y merma, sin precios', () => {
+    const out = texto('transformacion.ferroso_completada', ctx('PATCH', '/api/transformaciones/t1/completar-ferroso', ferroso, { almacenEntrada: 'Patio 1' }));
+    expect(out).toContain('Salidas obtenidas:');
+    expect(out).toContain('• Hierro (almacén Patio 1): 700 kg');
+    expect(out).toContain('• Aluminio (almacén Patio 1): 250 kg');
+    expect(out).toContain('Total salidas: 950 kg');
+    expect(out).toContain('Merma: 50 kg');
+    expect(out).not.toMatch(/\$|0[.,]35|1[.,]2|precio|costo/i);
+  });
+
+  it('PCB: inicio con lote de origen y completar con lote de destino', () => {
+    const pcb = {
+      categoria: 'pcb', estado: 'bruto', nombreProductoEntrada: null, nombreLoteOrigen: 'Lote Tarjetas 12', pesoNeto: 80, salidas: [],
+    };
+    const ini = texto('transformacion.pcb_creada', ctx('POST', '/api/transformaciones/pcb', pcb));
+    expect(ini).toContain('Tipo: PCB');
+    expect(ini).toContain('Lote de origen: Lote Tarjetas 12');
+    expect(ini).toContain('Kilos de entrada: 80 kg');
+    const fin = texto('transformacion.pcb_completada', ctx('PATCH', '/api/transformaciones/t1/completar-pcb', {
+      ...pcb, estado: 'completa',
+      salidas: [{ nombreProducto: null, nombreLoteDestino: 'Lote Placas Limpias', nombreAlmacen: 'Bodega', pesoNeto: 75 }],
+    }));
+    expect(fin).toContain('• Lote Lote Placas Limpias (almacén Bodega): 75 kg');
+    expect(fin).toContain('Merma: 5 kg');
+  });
+
+  it('mixta: marca salida mixta y muestra material → lote', () => {
+    const out = texto('transformacion.mixta_completada', ctx('PATCH', '/api/transformaciones/t1/completar-mixta', {
+      ...ferroso, categoria: 'pcb', pesoNeto: 100,
+      salidas: [
+        { nombreProducto: 'Oro', nombreLoteDestino: null, nombreAlmacen: 'Caja fuerte', pesoNeto: 2 },
+        { nombreProducto: 'Placa', nombreLoteDestino: 'Lote P', nombreAlmacen: null, pesoNeto: 90 },
+      ],
+    }));
+    expect(out).toContain('Salida mixta (material y lote)');
+    expect(out).toContain('• Oro (almacén Caja fuerte): 2 kg');
+    expect(out).toContain('• Placa → Lote Lote P: 90 kg');
+  });
+
+  it('legacy (lote-pool) inicio y completar', () => {
+    const t = { categoria: 'ferroso_no_ferroso', nombreLoteOrigen: 'Lote 5', pesoNeto: 300, salidas: [{ nombreLoteDestino: 'Lote 6', pesoNeto: 290 }] };
+    expect(texto('transformacion.creada', ctx('POST', '/api/transformaciones', { ...t, salidas: [] }))).toContain('Lote de origen: Lote 5');
+    expect(texto('transformacion.completada', ctx('PATCH', '/api/transformaciones/t1/completar', t))).toContain('• Lote Lote 6: 290 kg');
+  });
+
+  it('editada y merma: primero los cambios, luego el material actual', () => {
+    const extra = { cambios: { 'Peso neto': { antes: 1000, despues: 1100 } }, autorizadoPor: 'Luis', almacenEntrada: 'Patio 1' };
+    for (const [clave, ruta] of [['transformacion.editada', '/editar'], ['transformacion.merma_editada', '/merma']] as const) {
+      const out = texto(clave, ctx('PATCH', `/api/transformaciones/t1${ruta}`, ferroso, extra));
+      expect(out.indexOf('Cambios:'), clave).toBeLessThan(out.indexOf('Material de entrada'));
+      expect(out, clave).toContain('Con llave de edición de Luis');
+      expect(out, clave).toContain('• Hierro (almacén Patio 1): 700 kg');
+    }
+  });
+
+  it('eliminada: usa la transformación leída antes de borrar', () => {
+    const out = texto('transformacion.eliminada', { metodo: 'DELETE', ruta: '/api/transformaciones/t1', params: { id: 't1' }, reqBody: {}, resBody: { ok: true }, extra: { transformacion: ferroso, almacenEntrada: 'Patio 1' } });
+    expect(out).toContain('Material de entrada: Chatarra mixta');
+    expect(out).toContain('Total salidas: 950 kg');
+  });
+
+  it('sin datos de la transformación degrada a vacío (mensaje anterior), sin lanzar', () => {
+    for (const clave of ['transformacion.creada', 'transformacion.eliminada', 'transformacion.pcb_completada']) {
+      expect(evento(clave).detalles!({ metodo: 'POST', ruta: '/x', params: {}, reqBody: {}, resBody: {}, extra: {} })).toEqual([]);
+    }
   });
 });

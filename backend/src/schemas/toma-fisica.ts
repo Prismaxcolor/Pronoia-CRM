@@ -16,8 +16,16 @@ export const crearTomaFisicaSchema = z.object({
   /** 'categoria' (productos sin lote) o 'lote' (lotes completos). Opcional por
    *  compatibilidad: si falta, el servicio lo deduce de loteIds/categorías. */
   alcance: z.enum(['categoria', 'lote']).optional(),
+  /** Solo alcance 'categoria': materiales a contar. Ausente = toda la categoría. */
+  productoIds: z.array(z.string().uuid()).optional(),
   descripcion: textoOpcional(200),
 });
+
+/** Query ?categoriaIds=a,b,c -> lista de uuids. */
+export const categoriaIdsQuerySchema = z
+  .string()
+  .transform(v => v.split(',').map(x => x.trim()).filter(Boolean))
+  .pipe(z.array(z.string().uuid()).min(1).max(50));
 
 export const registrarPesajeTomaFisicaSchema = z
   .object({

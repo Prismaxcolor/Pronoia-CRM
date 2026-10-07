@@ -1,11 +1,13 @@
 import { apiFetch } from './api-client';
-import type { TicketPesaje } from '@shared/types/index.js';
+import type { TaraDetalle, TicketPesaje } from '@shared/types/index.js';
 
 export interface CrearTicketMaterialInput {
   productoId: string;
   subcategoria?: string | null;
   pesoBruto: number;
   tara: number;
+  /** Desglose opcional de la tara; su suma debe coincidir con `tara`. */
+  tarasDetalle?: TaraDetalle[];
   destinoTipo: 'mpp' | 'lote';
   loteId?: string | null;
 }

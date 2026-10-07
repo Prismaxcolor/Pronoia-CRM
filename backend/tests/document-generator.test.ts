@@ -65,14 +65,14 @@ const TICKET: TicketPublico = {
 };
 
 describe('nombreArchivoFactura', () => {
-  it('usa el código de la factura en minúsculas', () => {
-    expect(nombreArchivoFactura(FACTURA)).toBe('factura-compra-compra-0007.pdf');
+  it('incluye código y nombre del proveedor', () => {
+    expect(nombreArchivoFactura(FACTURA)).toBe('Factura-Compra-0007-Reciclados-El-Valle-C.A.pdf');
   });
 });
 
 describe('nombreArchivoTicket', () => {
-  it('usa el código del ticket en minúsculas', () => {
-    expect(nombreArchivoTicket(TICKET)).toBe('ticket-pesaje-0003.pdf');
+  it('usa el código del ticket (sin tercero si no se pasa)', () => {
+    expect(nombreArchivoTicket(TICKET)).toBe('Ticket-Pesaje-0003.pdf');
   });
 });
 

@@ -324,8 +324,8 @@ describe('herramientas de dinero', () => {
     const r = await datos('consultar_facturas', { tipo: 'compra' });
     expect(r.moneda).toBe('USD');
     expect(r.facturas).toHaveLength(2);
-    expect(r.facturas[0]).toEqual({ factura: 'C-0004', fecha: '2026-10-01', proveedor: 'Metales Caribe', estado: 'emitida', totalUsd: 1000, pagadoUsd: 250.5, pendienteUsd: 749.5, pendienteTexto: 'USD 749,50' });
-    const pend = await datos('consultar_facturas', { tipo: 'compra', estado: 'emitida', entidad: 'caribe' });
+    expect(r.facturas[0]).toEqual({ factura: 'C-0004', fecha: '2026-10-01', proveedor: 'Metales Caribe', estado: 'pendiente', totalUsd: 1000, pagadoUsd: 250.5, pendienteUsd: 749.5, pendienteTexto: 'USD 749,50' });
+    const pend = await datos('consultar_facturas', { tipo: 'compra', estado: 'pendiente', entidad: 'caribe' });
     expect(pend.facturas.map((f: any) => f.factura)).toEqual(['C-0004']); // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(JSON.stringify(r)).not.toMatch(/motivo reservado|nota interna/);
   });
