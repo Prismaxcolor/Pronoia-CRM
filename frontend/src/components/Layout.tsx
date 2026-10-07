@@ -28,11 +28,15 @@ function Layout() {
   }
 
   return (
-    // h-dvh (viewport dinámico), no h-screen (100vh fijo) — en mobile, 100vh
+    // fixed inset-0: el contenedor ocupa exactamente la pantalla visible y no aporta altura al
+    // documento, así la ventana nunca se desplaza (antes, con h-dvh, en Chrome móvil la ventana
+    // podía moverse unos píxeles, esconder la barra superior y dejar al descubierto el fondo
+    // blanco; con overscroll-y-contain en <main> ya no había cómo volver a subirla).
+    // Antes: h-dvh (viewport dinámico), no h-screen (100vh fijo) — en mobile, 100vh
     // no se ajusta cuando la barra de direcciones del navegador aparece o
     // desaparece, y deja una franja sin poder scrollear antes de llegar al
     // borde real del contenido (se siente como "topar con una pared").
-    <div className="flex h-dvh bg-surface-alt print:block print:h-auto print:bg-white">
+    <div className="fixed inset-0 flex bg-surface-alt print:static print:block print:h-auto print:bg-white">
       <Sidebar abierto={menuAbierto} onCerrar={() => setMenuAbierto(false)} />
       <div className="flex-1 flex flex-col min-w-0">
         {/* Barra superior solo en mobile — el sidebar normal ya cumple esta función en desktop.
