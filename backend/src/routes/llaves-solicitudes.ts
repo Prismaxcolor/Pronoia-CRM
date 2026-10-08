@@ -73,9 +73,9 @@ function secretosIguales(recibido: string, esperado: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** Autentica al flujo de n8n con X-Pronoia-Secret (N8N_WEBHOOK_SECRET). Sin secreto configurado se rechaza todo. */
+/** Autentica al flujo de n8n con X-Pronoia-Secret (N8N_CALLBACK_SECRET, propio de esta ruta). Sin secreto configurado se rechaza todo. */
 async function exigirSecretoN8n(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const esperado = await obtenerSecreto('N8N_WEBHOOK_SECRET');
+  const esperado = await obtenerSecreto('N8N_CALLBACK_SECRET');
   const recibido = req.header(HEADER_SECRETO);
   if (!esperado || !recibido || !secretosIguales(recibido, esperado)) {
     logger.warn({ evento: 'llave_callback_secreto_invalido', ip: req.ip });

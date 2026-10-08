@@ -12,6 +12,7 @@ import {
   desvincularTelegramUsuario,
   puedeGestionarTelegramDe,
 } from '../services/usuario-telegram-service.js';
+import { esSuperadminEnBd } from '../services/edicion-autorizada-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearUsuarioSchema, actualizarUsuarioSchema } from '../schemas/usuarios.js';
@@ -45,6 +46,10 @@ router.post('/:id/telegram/generar-link', async (req, res) => {
     res.status(403).json({ error: 'Solo un superadmin puede enlazar el Telegram de otra persona.' });
     return;
   }
+  if (objetivo.paraOtraPersona && !(await esSuperadminEnBd(req.user!.sub))) {
+    res.status(403).json({ error: 'Solo un superadmin activo puede enlazar el Telegram de otra persona.' });
+    return;
+  }
   const result = await generarLinkTelegramUsuario(objetivo.usuarioId);
   if ('error' in result) {
     res.status(result.status).json({ error: result.error });
@@ -71,6 +76,10 @@ router.delete('/:id/telegram', async (req, res) => {
   const objetivo = resolverObjetivoTelegram(req);
   if (!objetivo) {
     res.status(403).json({ error: 'Solo un superadmin puede desvincular el Telegram de otra persona.' });
+    return;
+  }
+  if (objetivo.paraOtraPersona && !(await esSuperadminEnBd(req.user!.sub))) {
+    res.status(403).json({ error: 'Solo un superadmin activo puede desvincular el Telegram de otra persona.' });
     return;
   }
   const result = await desvincularTelegramUsuario(objetivo.usuarioId);
