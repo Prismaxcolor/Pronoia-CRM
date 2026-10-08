@@ -36,9 +36,16 @@ export interface Movimiento {
   /** Solo transferencias entre monedas distintas: lo que entra a la banca destino. */
   montoDestino: number | null;
   creadoEn: string;
-  subtipo: 'pago' | 'adelanto' | null;
+  subtipo: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
   numero: number | null;
   grupoId: string | null;
+  comprobantes: string[];
+  /** true si el movimiento fue anulado: la fila se conserva, pero ya no cuenta en saldos ni estados de cuenta. */
+  anulado: boolean;
+  anuladoMotivo: string | null;
+  anuladoEn: string | null;
+  /** Id de quien anuló (el nombre lo resuelve quien lo muestre). */
+  anuladoPor: string | null;
 }
 
 function mapBanca(row: Record<string, unknown>): Banca {
@@ -70,9 +77,14 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
     montoUsd: row.monto_usd != null ? Number(row.monto_usd) : null,
     montoDestino: row.monto_destino != null ? Number(row.monto_destino) : null,
     creadoEn: row.creado_en as string,
-    subtipo: (row.subtipo as 'pago' | 'adelanto' | null) ?? null,
+    subtipo: (row.subtipo as Movimiento['subtipo']) ?? null,
     numero: row.numero != null ? Number(row.numero) : null,
     grupoId: (row.grupo_id as string) ?? null,
+    comprobantes: Array.isArray(row.comprobantes) ? (row.comprobantes as string[]) : [],
+    anulado: Boolean(row.anulado),
+    anuladoMotivo: (row.anulado_motivo as string) ?? null,
+    anuladoEn: (row.anulado_at as string) ?? null,
+    anuladoPor: (row.anulado_por as string) ?? null,
   };
 }
 
@@ -98,6 +110,13 @@ export async function listarMovimientos(): Promise<Movimiento[]> {
 
   if (error || !data) return [];
   return data.map(mapMovimiento);
+}
+
+/** Un movimiento por id (null si no existe o la BD falla). */
+export async function obtenerMovimiento(id: string): Promise<Movimiento | null> {
+  const { data, error } = await supabaseAdmin.from('movimientos').select('*').eq('id', id).maybeSingle();
+  if (error || !data) return null;
+  return mapMovimiento(data);
 }
 
 export async function crearBanca(input: CrearBancaInput): Promise<{ banca: Banca } | { error: string }> {

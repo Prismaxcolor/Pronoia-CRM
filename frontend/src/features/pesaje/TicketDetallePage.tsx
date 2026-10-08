@@ -33,6 +33,7 @@ import { type Producto, type TicketPesaje, type Lote, type Tara, type Vehiculo }
 import { descargarTicketPDF } from '../../services/ticket-export';
 import HistorialEdiciones from '../../components/HistorialEdiciones';
 import GenerarLlaveEdicion from '../../components/GenerarLlaveEdicion';
+import SolicitarLlave from '../../components/SolicitarLlave';
 import { obtenerConfigLlaves } from '../../services/llave-service';
 import CompartirBoton from '../../components/CompartirBoton';
 import PesajesGlobalesEditor from './PesajesGlobalesEditor';
@@ -634,6 +635,7 @@ function TicketDetalleContenido() {
                 autoComplete="off"
                 required
               />
+              <SolicitarLlave className="mt-2" entidadTipo="ticket_pesaje" entidadId={ticket.id} onLlave={setLlaveEdicion} />
             </div>
           )}
 

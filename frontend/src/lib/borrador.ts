@@ -6,6 +6,9 @@
  *  privado, con la cuota llena o con el storage bloqueado la app sigue
  *  funcionando, solo que sin borrador. */
 
+import { borrarTodasLasImagenes, idDeArchivo, type FotoPendiente } from './borrador-imagenes';
+import { almacenImagenesDelNavegador } from './borrador-imagenes-idb';
+
 export interface StorageMinimo {
   getItem(clave: string): string | null;
   setItem(clave: string, valor: string): void;
@@ -32,6 +35,8 @@ export const VERSION_SOBRE = 1;
 
 /** Claves de campos que jamás se persisten, aunque aparezcan por error en el estado. */
 const CLAVE_SENSIBLE = /pass(word)?|contrase|token|secret|api[-_]?key|authorization|credencial|llave/i;
+/** Marca que deja en el JSON una foto sin subir: `{ __fotoPerdida: true, id }`. El `id` apunta al
+ *  Blob guardado en el almacén de imágenes (borrador-imagenes.ts); los borradores antiguos no traen `id`. */
 const MARCA_FOTO_PERDIDA = '__fotoPerdida';
 
 /** Claves de datos personales que los formularios de proveedores y clientes NO persisten en el
@@ -66,6 +71,8 @@ export interface OpcionesBorrador {
   excluirCampos?: readonly string[];
   /** Huella del documento que se editaba al guardar (solo formularios de edición). */
   base?: string | null;
+  /** Al leer: no quitar las marcas de fotos pendientes (el llamador las rehidrata desde el almacén de imágenes). */
+  conservarFotos?: boolean;
 }
 
 export type ResultadoGuardado = 'guardado' | 'grande' | 'error' | 'serializacion';
@@ -77,6 +84,9 @@ export interface BorradorLeido<T> {
   base?: string;
   /** Fotos que estaban elegidas pero sin subir (File/Blob) y no se pudieron guardar. */
   fotosPerdidas: number;
+  /** Ids de las fotos pendientes cuyo Blob debe leerse del almacén de imágenes. Solo con
+   *  `conservarFotos`: en ese caso `datos` conserva las marcas para rehidratarlas con `rehidratarFotos`. */
+  idsFotos: string[];
 }
 
 /** Clave por usuario + formulario (+ id del documento si aplica): dos usuarios
@@ -95,28 +105,39 @@ function esFotoPendiente(valor: unknown): boolean {
 
 /** Reemplazador de JSON.stringify: quita campos sensibles, no serializa
  *  archivos y deja una marca donde había una foto sin subir. */
-function crearReemplazador(excluir?: readonly string[]) {
+function crearReemplazador(excluir?: readonly string[], alFoto?: (foto: FotoPendiente) => void) {
   const extra = excluir && excluir.length > 0 ? new Set(excluir) : null;
   return function reemplazador(this: unknown, clave: string, valor: unknown): unknown {
     if (clave !== '' && extra?.has(clave)) return undefined;
-    return reemplazadorBase.call(this, clave, valor);
+    return reemplazadorBase.call(this, clave, valor, alFoto);
   };
 }
 
-function reemplazadorBase(this: unknown, clave: string, valor: unknown): unknown {
+function reemplazadorBase(this: unknown, clave: string, valor: unknown, alFoto?: (foto: FotoPendiente) => void): unknown {
   if (clave !== '' && CLAVE_SENSIBLE.test(clave)) return undefined;
   if (typeof File !== 'undefined' && valor instanceof File) return undefined;
   if (typeof Blob !== 'undefined' && valor instanceof Blob) return undefined;
-  if (esFotoPendiente(valor)) return { [MARCA_FOTO_PERDIDA]: true };
+  if (esFotoPendiente(valor)) {
+    const archivo = (valor as { file: unknown }).file;
+    if (typeof archivo !== 'object' || archivo === null) return { [MARCA_FOTO_PERDIDA]: true };
+    const id = idDeArchivo(archivo);
+    alFoto?.({ id, file: archivo as Blob });
+    return { [MARCA_FOTO_PERDIDA]: true, id };
+  }
   // Una URL blob: solo vale en la pestaña que la creó; guardarla dejaría una vista previa rota.
   if (typeof valor === 'string' && valor.startsWith('blob:')) return undefined;
   return valor;
 }
 
-/** Serializa el estado de un formulario para guardarlo. Devuelve null si no es serializable. */
-export function serializarEstado(estado: unknown, excluirCampos?: readonly string[]): string | null {
+/** Serializa el estado de un formulario para guardarlo. Devuelve null si no es serializable.
+ *  `alFoto` recibe cada foto pendiente (File sin subir) que se reemplazó por su marca. */
+export function serializarEstado(
+  estado: unknown,
+  excluirCampos?: readonly string[],
+  alFoto?: (foto: FotoPendiente) => void,
+): string | null {
   try {
-    return JSON.stringify(estado, crearReemplazador(excluirCampos)) ?? null;
+    return JSON.stringify(estado, crearReemplazador(excluirCampos, alFoto)) ?? null;
   } catch {
     return null;
   }
@@ -143,6 +164,57 @@ export function quitarFotosPerdidas(valor: unknown): { datos: unknown; fotosPerd
     return v;
   };
   return { datos: limpiar(valor), fotosPerdidas };
+}
+
+/** Ids de las fotos pendientes que traen las marcas de un borrador leído con `conservarFotos`. */
+export function idsFotosEnDatos(valor: unknown): string[] {
+  const ids: string[] = [];
+  const recorrer = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      v.forEach(recorrer);
+    } else if (typeof v === 'object' && v !== null) {
+      const o = v as Record<string, unknown>;
+      if (MARCA_FOTO_PERDIDA in o) {
+        if (typeof o.id === 'string' && o.id) ids.push(o.id);
+        return;
+      }
+      Object.values(o).forEach(recorrer);
+    }
+  };
+  recorrer(valor);
+  return ids;
+}
+
+/** Cambia cada marca de foto por lo que devuelva `resolver(id)` (la foto rehidratada).
+ *  Si no hay resultado (marca antigua sin id, Blob perdido) la foto se quita y se cuenta como perdida. */
+export function rehidratarFotos(
+  valor: unknown,
+  resolver: (id: string) => unknown | undefined,
+): { datos: unknown; fotosPerdidas: number } {
+  let fotosPerdidas = 0;
+  const marca = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v) && MARCA_FOTO_PERDIDA in v;
+  const reemplazo = (v: Record<string, unknown>): unknown => (typeof v.id === 'string' ? resolver(v.id) : undefined);
+  const rehidratar = (v: unknown): unknown => {
+    if (Array.isArray(v)) {
+      const salida: unknown[] = [];
+      for (const item of v) {
+        if (marca(item)) {
+          const foto = reemplazo(item);
+          if (foto === undefined) fotosPerdidas += 1;
+          else salida.push(foto);
+        } else {
+          salida.push(rehidratar(item));
+        }
+      }
+      return salida;
+    }
+    if (typeof v === 'object' && v !== null) {
+      return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, rehidratar(val)]));
+    }
+    return v;
+  };
+  return { datos: rehidratar(valor), fotosPerdidas };
 }
 
 /** Cuenta cuántas fotos pendientes (sin subir) contiene un estado. */
@@ -220,11 +292,15 @@ export function leerBorrador<T>(
       borrarBorrador(storage, clave);
       return null;
     }
-    const { datos, fotosPerdidas } = quitarFotosPerdidas(sobre.datos);
+    const idsFotos = idsFotosEnDatos(sobre.datos);
+    const { datos, fotosPerdidas } = opciones.conservarFotos
+      ? { datos: sobre.datos, fotosPerdidas: 0 }
+      : quitarFotosPerdidas(sobre.datos);
     return {
       datos: datos as T,
       guardadoEn: sobre.guardadoEn as number,
       fotosPerdidas,
+      idsFotos: opciones.conservarFotos ? idsFotos : [],
       base: typeof sobre.base === 'string' ? sobre.base : undefined,
     };
   } catch {
@@ -349,6 +425,8 @@ export function storageSeguro(soloSesion = false): StorageMinimo | null {
 export function borrarTodosLosBorradores(): void {
   borrarBorradoresDeUsuario(storageSeguro(false));
   borrarBorradoresDeUsuario(storageSeguro(true));
+  // Las fotos de los borradores viven en IndexedDB: también salen al cerrar sesión.
+  void borrarTodasLasImagenes(almacenImagenesDelNavegador());
 }
 
 /** Huella determinista de un documento (claves ordenadas, hash FNV-1a de 32 bits

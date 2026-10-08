@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Ban, Pencil } from 'lucide-react';
 import { Insignia, TablaDatos, formatearNumero, type ColumnaTabla, type EstadoVacioProps, type OrdenTabla } from '../../components/ui';
 import { correlativoMovimiento, diaDe, montoUsdDe } from '../../lib/cochinito-kpis';
 import type { Banca, Movimiento, TipoMovimiento } from '@shared/types/index.js';
@@ -12,7 +12,7 @@ const ICONO_TIPO: Record<TipoMovimiento, React.ReactNode> = {
   transferencia: <ArrowLeftRight size={12} />,
 };
 const TONO_TIPO = { ingreso: 'marca', egreso: 'neutral', transferencia: 'info' } as const;
-const ETIQUETA_SUBTIPO = { pago: 'Pago', adelanto: 'Adelanto' } as const;
+const ETIQUETA_SUBTIPO = { pago: 'Pago', adelanto: 'Adelanto', cobro: 'Cobro', anticipo: 'Anticipo' } as const;
 
 const ORDEN_INICIAL: OrdenTabla = { columna: 'fecha', sentido: 'desc' };
 const FILAS_POR_PAGINA = 25;
@@ -26,10 +26,16 @@ interface Props {
   /** Nombre del proveedor/cliente si se conoce (requiere permiso de verlos); null si no. */
   nombreContraparte: (m: Movimiento) => string | null;
   vacio: Pick<EstadoVacioProps, 'mensaje' | 'descripcion' | 'accion'>;
+  /** Editar / anular un movimiento manual (con llave de edición). Sin estas funciones no se muestran las acciones. */
+  onEditar?: (m: Movimiento) => void;
+  onAnular?: (m: Movimiento) => void;
 }
 
+/** Solo los movimientos manuales se editan o anulan aquí; los de un pago o cobro se gestionan desde su comprobante. */
+const esManualVigente = (m: Movimiento) => !m.anulado && !m.grupoId && !m.subtipo;
+
 /** Tabla de movimientos de /cochinito: ordenable, exportable a CSV (solo lo filtrado) y apilada en móvil. */
-function TablaMovimientos({ filas, bancas, nombreContraparte, vacio }: Props) {
+function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, onAnular }: Props) {
   const bancaPorId = useMemo(() => new Map(bancas.map(b => [b.id, b.nombre])), [bancas]);
   const textoBanca = useMemo(() => (m: Movimiento) => {
     const origen = bancaPorId.get(m.bancaOrigenId) ?? 'Banca desconocida';
@@ -44,7 +50,12 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio }: Props) {
     { clave: 'numero', titulo: 'N°', valorOrden: m => correlativoMovimiento(m), claseCelda: 'whitespace-nowrap tabular-nums' },
     {
       clave: 'tipo', titulo: 'Tipo', valorOrden: m => textoTipo(m),
-      celda: m => <Insignia tono={TONO_TIPO[m.tipo]} icono={ICONO_TIPO[m.tipo]}>{textoTipo(m)}</Insignia>,
+      celda: m => (
+        <span className="inline-flex flex-wrap items-center gap-1">
+          <Insignia tono={TONO_TIPO[m.tipo]} icono={ICONO_TIPO[m.tipo]}>{textoTipo(m)}</Insignia>
+          {m.anulado && <Insignia tono="peligro" title={m.anuladoMotivo ? `Motivo: ${m.anuladoMotivo}` : undefined}>Anulado</Insignia>}
+        </span>
+      ),
     },
     { clave: 'descripcion', titulo: 'Descripción', valorOrden: m => m.descripcion, celda: m => <span className="line-clamp-2">{m.descripcion || '—'}</span> },
     {
@@ -61,11 +72,28 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio }: Props) {
     {
       clave: 'montoUsd', titulo: 'Monto en USD', alinear: 'derecha', valorOrden: m => montoUsdDe(m), valorCsv: m => montoUsdDe(m),
       celda: m => { const v = montoUsdDe(m); return v == null ? '—' : `USD ${formatearNumero(v, 2)}`; },
-      total: fs => `USD ${formatearNumero(fs.reduce((s, m) => s + (montoUsdDe(m) ?? 0), 0), 2)}`,
+      total: fs => `USD ${formatearNumero(fs.filter(m => !m.anulado).reduce((s, m) => s + (montoUsdDe(m) ?? 0), 0), 2)}`,
       ayuda: 'Equivalente en dólares (USD) del movimiento: el mismo monto si la banca es en USD, o el equivalente guardado en el movimiento si es en bolívares. Es "—" si no hay equivalente y entonces no se suma en el total de abajo.',
       claseCelda: 'whitespace-nowrap tabular-nums',
     },
-  ], [textoContraparte, textoBanca]);
+    ...(onEditar || onAnular ? [{
+      clave: 'acciones', titulo: 'Acciones', alinear: 'derecha' as const, ocultaEnMovil: false,
+      celda: (m: Movimiento) => (esManualVigente(m) ? (
+        <span className="inline-flex gap-1">
+          {onEditar && (
+            <button type="button" onClick={() => onEditar(m)} aria-label="Editar movimiento" title="Editar (requiere llave de edición)"
+              className="rounded p-1.5 text-text-secondary hover:bg-surface-hover hover:text-text-primary"><Pencil size={14} /></button>
+          )}
+          {onAnular && (
+            <button type="button" onClick={() => onAnular(m)} aria-label="Anular movimiento" title="Anular (requiere llave de edición)"
+              className="rounded p-1.5 text-red-600 hover:bg-red-50"><Ban size={14} /></button>
+          )}
+        </span>
+      ) : m.anulado ? null : (
+        <span className="text-xs text-text-muted" title="Este movimiento pertenece a un pago o cobro: edítalo o anúlalo desde su comprobante en el estado de cuenta.">Desde el pago</span>
+      )),
+    }] : []),
+  ], [textoContraparte, textoBanca, onEditar, onAnular]);
 
   return (
     <TablaDatos
@@ -78,6 +106,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio }: Props) {
       paginacion={{ tamano: FILAS_POR_PAGINA }}
       exportar={{ nombreArchivo: 'cochinito-movimientos', etiqueta: 'Exportar CSV' }}
       vacio={vacio}
+      claseFila={m => (m.anulado ? 'line-through text-text-muted' : '')}
       anchoMinimo="min-w-[64rem]"
     />
   );

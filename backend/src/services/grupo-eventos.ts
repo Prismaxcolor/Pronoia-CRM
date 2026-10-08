@@ -356,7 +356,7 @@ function entidadComercial(
       contexto: ctx => ({ rotulo, tabla, id: ctx.params.id ?? '' }),
       etiqueta: ctx => (txt(ctx.resBody.codigo) ? `Nota ${txt(ctx.resBody.codigo)}` : 'Nota de ajuste'), detalles: detallesNota,
     }),
-    ev(`${prefijo}.nota_anulada`, 'POST', `${base}/:id/notas-ajuste/:notaId/anular`, 'facturacion', 'critica', '🚫', 'Se ANULÓ una nota de ajuste', {
+    ev(`nota.anulada_${prefijo}`, 'POST', `${base}/:id/notas-ajuste/:notaId/anular`, 'facturacion', 'critica', '🚫', 'Se ANULÓ una nota de ajuste', {
       entidad: { rotulo: 'Nota', tabla: tablaNota, param: 'notaId' }, contexto: ctx => ({ rotulo, tabla, id: ctx.params.id ?? '' }),
       detalles: ctx => linea('Motivo', txt(ctx.reqBody.motivo)),
     }),
@@ -450,6 +450,10 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
     },
   }),
 
+  ...eventosModificacionDinero('pago', '/api/pagos', 'grupoId', 'Pago', 'pago', 'el'),
+  ...eventosModificacionDinero('cobro', '/api/cobros', 'grupoId', 'Cobro', 'cobro', 'el'),
+  ...eventosModificacionDinero('movimiento', '/api/cochinito/movimientos', 'id', 'Movimiento de banca', 'movimiento', 'el'),
+
   // --- Inventario: maestros y precios --------------------------------------
   ...maestro('/api/productos', 'producto', 'inventario', 'Producto', 'productos', 'el', 'producto', true, 'producto'),
   ev('producto.reordenado', 'PATCH', '/api/productos/reordenar', 'inventario', 'ignorable', '↕️', 'Se reordenaron los productos'),
@@ -531,6 +535,14 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
       return tipo ? [`Para: ${ENTIDAD_LLAVE[tipo] ?? sanitizarValor(tipo)}`] : [];
     },
   }),
+  // Solicitudes de llave: sus avisos (con botón) los emite services/solicitud-llave-aviso.ts, no el aviso genérico.
+  ev('llave_solicitud.creada', 'POST', '/api/llaves-solicitudes', 'seguridad', 'ignorable', '🔑', 'Solicitud de llave de edición'),
+  ev('llave_solicitud.aprobada', 'POST', '/api/llaves-solicitudes/:id/aprobar', 'seguridad', 'ignorable', '✅', 'Solicitud de llave aprobada'),
+  ev('llave_solicitud.rechazada', 'POST', '/api/llaves-solicitudes/:id/rechazar', 'seguridad', 'ignorable', '❌', 'Solicitud de llave rechazada'),
+  ev('llave_solicitud.telegram_callback', 'POST', '/api/llaves-solicitudes/telegram-callback', 'seguridad', 'ignorable', '🔑', 'Solicitud de llave resuelta desde Telegram'),
+  // Enlace del Telegram del propio usuario: se avisa en privado, no al grupo.
+  ev('usuario.telegram_link_generado', 'POST', '/api/usuarios/:id/telegram/generar-link', 'usuarios', 'ignorable', '🔗', 'Enlace de Telegram de usuario generado'),
+  ev('usuario.telegram_desvinculado', 'DELETE', '/api/usuarios/:id/telegram', 'usuarios', 'critica', '🔌', 'Se desvinculó el Telegram de un usuario'),
 
   // --- Citas de despacho ----------------------------------------------------
   ev('cita.creada', 'POST', '/api/citas', 'citas', 'normal', '📅', 'Se agendó una cita de despacho', {
@@ -573,6 +585,61 @@ function detallesCita(ctx: ContextoEvento): string[] {
 /** Montos de banca vienen en la moneda de la banca: se muestra el número sin símbolo. */
 function formatMontoBanca(monto: number, moneda: string | null): string {
   return moneda ? `${monto} ${moneda}` : String(monto);
+}
+
+// --- Modificación y anulación de dinero (pagos, cobros, movimientos de banca, notas) ---------
+
+const CLAVES_ETIQUETA_DINERO = ['codigo', 'numeroCodigo', 'numeroPago', 'numeroCobro', 'numero'];
+
+/** "Pago PAG-0042": código que traiga la respuesta (en la raíz o dentro de la clave indicada); si no, solo el rótulo. */
+function etiquetaDinero(rotulo: string, clave: string) {
+  return (ctx: ContextoEvento): string => {
+    for (const fuente of [ctx.resBody, rec(ctx.resBody[clave])]) {
+      for (const campo of CLAVES_ETIQUETA_DINERO) {
+        const valor = txt(fuente[campo]) ?? (num(fuente[campo]) !== null ? String(fuente[campo]) : null);
+        if (valor) return `${rotulo} ${valor}`;
+      }
+    }
+    return rotulo;
+  };
+}
+
+/** Quién entregó la llave: auditoría o, si la respuesta lo trae, su campo `autorizadoPor`. */
+function autorizoDinero(ctx: ContextoEvento): string[] {
+  const quien = ctx.extra.autorizadoPor ?? txt(ctx.resBody.autorizadoPor);
+  return quien ? [`🔑 Autorizó: ${sanitizarValor(quien)}`] : [];
+}
+
+/** Lo que cambió: auditoría, o `cambios` de la respuesta; sin ninguno, los valores nuevos del body. Solo dinero, sin precios de materiales. */
+function detallesModificacionDinero(ctx: ContextoEvento): string[] {
+  const deRespuesta = rec(ctx.resBody.cambios) as unknown as CambiosAuditoria;
+  const cambios = formatearCambios(ctx.extra.cambios ?? (Object.keys(deRespuesta).length > 0 ? deRespuesta : null));
+  if (cambios.length > 0) return [...autorizoDinero(ctx), 'Cambios:', ...cambios];
+  const monto = num(ctx.reqBody.montoUsd) ?? num(ctx.reqBody.monto);
+  const moneda = txt(ctx.reqBody.moneda);
+  return [
+    ...autorizoDinero(ctx),
+    ...(monto !== null ? [`Nuevo monto: ${moneda ? formatMontoBanca(monto, moneda) : usd(monto)}`] : []),
+    ...detallesExtraDinero(ctx.reqBody),
+  ];
+}
+
+function detallesAnulacionDinero(ctx: ContextoEvento): string[] {
+  return [...autorizoDinero(ctx), ...linea('Motivo', txt(ctx.reqBody.motivo))];
+}
+
+/** Par editado/anulado de un documento de dinero; ambos van al grupo de cajas. */
+function eventosModificacionDinero(
+  prefijo: string, base: string, param: string, rotulo: string, clave: string, articulo: 'el' | 'la'
+): EventoCatalogo[] {
+  return [
+    ev(`${prefijo}.editado`, 'PATCH', `${base}/:${param}`, 'tesoreria', 'critica', '✏️', `${rotulo} MODIFICAD${articulo === 'el' ? 'O' : 'A'}`, {
+      etiqueta: etiquetaDinero(rotulo, clave), detalles: detallesModificacionDinero, enriquecer: 'auditoria',
+    }),
+    ev(`${prefijo}.anulado`, 'POST', `${base}/:${param}/anular`, 'tesoreria', 'critica', '🗑️', `${rotulo} ANULAD${articulo === 'el' ? 'O' : 'A'}`, {
+      etiqueta: etiquetaDinero(rotulo, clave), detalles: detallesAnulacionDinero, enriquecer: 'auditoria',
+    }),
+  ];
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, PackageOpen, X } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, PackageOpen, KeyRound, X } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
+import TelegramPerfil from './TelegramPerfil';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
 import type { Recurso } from '@shared/types/index.js';
 
@@ -106,9 +107,11 @@ interface Props {
    *  sidebar siempre está visible sin importar este valor. */
   abierto: boolean;
   onCerrar: () => void;
+  /** Solicitudes de llave de edición por resolver (solo se consulta para el superadmin). */
+  llavesPendientes?: number;
 }
 
-function Sidebar({ abierto, onCerrar }: Props) {
+function Sidebar({ abierto, onCerrar, llavesPendientes = 0 }: Props) {
   const { usuario, logout, tienePermiso } = useAuth();
   const location = useLocation();
   const [ultimasRutas, setUltimasRutas] = useState(() => {
@@ -220,10 +223,35 @@ function Sidebar({ abierto, onCerrar }: Props) {
             })}
           </div>
         ))}
+        {usuario?.rol === 'superadmin' && (
+          <div className="mt-3">
+            <p className="px-6 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-brand-400">Autorizaciones</p>
+            <Link
+              to="/solicitudes-llave"
+              onClick={onCerrar}
+              aria-current={location.pathname === '/solicitudes-llave' ? 'page' : undefined}
+              className={`flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors ${
+                location.pathname === '/solicitudes-llave' ? 'bg-brand-700 text-white border-r-3 border-brand-300' : 'text-brand-200 hover:bg-brand-800 hover:text-white'
+              }`}
+            >
+              <KeyRound size={20} />
+              <span className="flex-1">Solicitudes de llave</span>
+              {llavesPendientes > 0 && (
+                <span
+                  className="min-w-6 rounded-full bg-amber-400 px-2 py-0.5 text-center text-xs font-bold text-brand-900"
+                  aria-label={`${llavesPendientes} pendientes`}
+                >
+                  {llavesPendientes}
+                </span>
+              )}
+            </Link>
+          </div>
+        )}
       </nav>
 
       {/* Perfil y logout */}
       <div className="p-4 border-t border-brand-800">
+        <TelegramPerfil />
         <div className="flex items-center gap-3 mb-3">
           <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-sm font-bold">
             {usuario?.nombre?.charAt(0).toUpperCase() ?? '?'}

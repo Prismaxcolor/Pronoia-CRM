@@ -2,6 +2,9 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearNotaAjusteInput } from '../schemas/notas-ajuste.js';
 import { formatCodigoNotaCreditoCliente, formatCodigoNotaDebitoCliente } from '../utils/codigos.js';
 import { notificarNota } from './telegram-eventos-service.js';
+import { anularNotaAutorizada, type ResultadoAnulacionNota } from './nota-anulacion-autorizada.js';
+import type { ActorEdicion } from './edicion-autorizada-service.js';
+import type { ErrorTransaccion } from '../utils/transaccion-edicion.js';
 
 /** Espejo de nota-ajuste-service.ts para clientes (Bloque 45) — misma forma,
  *  tabla y RPC propias (notas_ajuste_cliente / anular_nota_ajuste_cliente,
@@ -264,4 +267,20 @@ export async function anularNotaAjusteCliente(
   if (error || !data) return { error: error?.message ?? 'No se pudo anular la nota.' };
   notificarNota('cliente', clienteId, () => obtenerNotaAjusteCliente(clienteId, notaId), 'anulada');
   return { id: data as string };
+}
+
+/** Anular una nota exige llave de edición (o superadmin): autoriza, anula y deja el rastro en el historial. */
+export function anularNotaAjusteClienteConLlave(
+  clienteId: string,
+  notaId: string,
+  motivo: string,
+  actor: ActorEdicion
+): Promise<ResultadoAnulacionNota | ErrorTransaccion> {
+  return anularNotaAutorizada({
+    tipo: 'nota_ajuste_cliente',
+    notaId,
+    motivo,
+    actor,
+    anular: () => anularNotaAjusteCliente(clienteId, notaId, motivo, actor.userId),
+  });
 }

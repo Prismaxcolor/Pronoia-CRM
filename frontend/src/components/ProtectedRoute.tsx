@@ -1,4 +1,5 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
+import { recordarRutaDeRegreso } from '../lib/ruta-de-regreso';
 import { useAuth } from '../hooks/use-auth-context';
 import type { Recurso } from '@shared/types/index.js';
 
@@ -9,6 +10,7 @@ interface Props {
 
 function ProtectedRoute({ children, recurso }: Props) {
   const { usuario, cargando, tienePermiso } = useAuth();
+  const { pathname, search } = useLocation();
 
   if (cargando) {
     return (
@@ -19,6 +21,7 @@ function ProtectedRoute({ children, recurso }: Props) {
   }
 
   if (!usuario) {
+    recordarRutaDeRegreso(pathname + search);
     return <Navigate to="/auth" replace />;
   }
 

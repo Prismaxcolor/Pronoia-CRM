@@ -1,4 +1,4 @@
-import { Suspense, lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { Suspense, lazy, useState, type ComponentType, type LazyExoticComponent } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider } from './hooks/use-auth';
 import { useAuth } from './hooks/use-auth-context';
@@ -12,6 +12,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import InstallPwaBanner from './components/InstallPwaBanner';
 import PantallaCargando from './components/PantallaCargando';
 import { elegirRutaInicial } from './lib/ruta-inicial';
+import { consumirRutaDeRegreso } from './lib/ruta-de-regreso';
 import AuthPage from './features/auth/AuthPage';
 
 const CLAVE_RECARGA = 'pronoia:recarga-por-chunk';
@@ -71,6 +72,8 @@ const PortalEstadoCuentaPage = lazyConReintento(() => import('./features/portal/
 const PortalPreciosPage = lazyConReintento(() => import('./features/portal/PortalPreciosPage'));
 const PortalAgendarPage = lazyConReintento(() => import('./features/portal/PortalAgendarPage'));
 const PortalGuiasPage = lazyConReintento(() => import('./features/portal/PortalGuiasPage'));
+const AprobarLlavePage = lazyConReintento(() => import('./features/llaves/AprobarLlavePage'));
+const SolicitudesLlavePage = lazyConReintento(() => import('./features/llaves/SolicitudesLlavePage'));
 const CitasPage = lazyConReintento(() => import('./features/citas/CitasPage'));
 const DashboardPage = lazyConReintento(() => import('./features/dashboard/DashboardPage'));
 const MetricasPage = lazyConReintento(() => import('./features/metricas/MetricasPage'));
@@ -158,6 +161,12 @@ function PortalRoutes() {
   );
 }
 
+/** Tras iniciar sesión vuelve a donde se quería ir (p. ej. el enlace de Telegram) o al inicio. */
+function RegresoTrasLogin() {
+  const [destino] = useState(() => consumirRutaDeRegreso() ?? '/');
+  return <Navigate to={destino} replace />;
+}
+
 function AppRoutes() {
   const { usuario, cargando } = useAuth();
 
@@ -172,7 +181,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/portal/*" element={<PortalRoutes />} />
-      <Route path="/auth" element={usuario ? <Navigate to="/" replace /> : <AuthPage />} />
+      <Route path="/auth" element={usuario ? <RegresoTrasLogin /> : <AuthPage />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route element={<SalidaConSuspense />}>
         <Route path="/" element={<InicioPage />} />
@@ -213,6 +222,8 @@ function AppRoutes() {
         <Route path="/proveedores/:entidadId/notas/:notaId" element={<ProtectedRoute recurso="proveedores"><NotaDetallePage tipoEntidad="proveedor" /></ProtectedRoute>} />
         <Route path="/proveedores/:entidadId/pagos/:grupoId" element={<ProtectedRoute recurso="proveedores"><PagoDetallePage tipoEntidad="proveedor" /></ProtectedRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute recurso="usuarios"><UsuariosPage /></ProtectedRoute>} />
+        <Route path="/aprobar-llave/:id" element={<AprobarLlavePage />} />
+        <Route path="/solicitudes-llave" element={<SolicitudesLlavePage />} />
         <Route path="/citas" element={<ProtectedRoute recurso="despachos"><CitasPage /></ProtectedRoute>} />
         </Route>
       </Route>

@@ -136,6 +136,38 @@ export async function compartirImagen(blob: Blob, titulo: string, nombre = nombr
   }
 }
 
+/** Pausa entre descargas seguidas: los navegadores bloquean varias descargas simultáneas. */
+const PAUSA_ENTRE_DESCARGAS_MS = 350;
+
+/**
+ * Comparte varias imágenes juntas (una por página). En móvil, una sola hoja de compartir con
+ * todos los archivos; en escritorio, una descarga por imagen (el portapapeles solo admite una).
+ */
+export async function compartirImagenes(blobs: readonly Blob[], titulo: string): Promise<ResultadoCompartir> {
+  if (blobs.length === 1) return compartirImagen(blobs[0], titulo);
+  const nombres = blobs.map((_, i) => nombreArchivoImagen(`${titulo} ${i + 1} de ${blobs.length}`));
+  const archivos = blobs.map((b, i) => new File([b], nombres[i], { type: 'image/png' }));
+  const descargarTodas = async (): Promise<ResultadoCompartir> => {
+    for (const [i, blob] of blobs.entries()) {
+      if (i > 0) await new Promise(resolver => window.setTimeout(resolver, PAUSA_ENTRE_DESCARGAS_MS));
+      descargarImagen(blob, nombres[i]);
+    }
+    return 'descargado';
+  };
+  const puedeCompartir = typeof navigator.share === 'function'
+    && typeof navigator.canShare === 'function'
+    && navigator.canShare({ files: archivos });
+  if (!puedeCompartir) return descargarTodas();
+  try {
+    await navigator.share({ files: archivos, title: titulo });
+    return 'compartido';
+  } catch (e) {
+    if (esCancelacion(e)) return 'cancelado';
+    if (e instanceof DOMException && e.name === 'NotAllowedError') return descargarTodas();
+    throw new ErrorCompartirImagen('No se pudo compartir las imágenes', { cause: e });
+  }
+}
+
 /** Renderiza el elemento a imagen y la comparte. */
 export async function compartirElementoComoImagen(elemento: HTMLElement, titulo: string): Promise<ResultadoCompartir> {
   const blob = await renderizarElementoAPng(elemento);

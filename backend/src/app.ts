@@ -33,6 +33,7 @@ import metricasRouter from './routes/metricas.js';
 import tomasFisicasRouter from './routes/toma-fisica.js';
 import auditoriaRouter from './routes/auditoria.js';
 import llavesEdicionRouter from './routes/llaves-edicion.js';
+import llavesSolicitudesRouter from './routes/llaves-solicitudes.js';
 import { notificarGrupoMiddleware } from './middlewares/notificar-grupo.js';
 import { invalidarSaldosMiddleware } from './middlewares/invalidar-saldos.js';
 import asistenteRouter from './routes/asistente.js';
@@ -104,6 +105,7 @@ app.use('/api/metricas', metricasRouter);
 app.use('/api/tomas-fisicas', tomasFisicasRouter);
 app.use('/api/auditoria', auditoriaRouter);
 app.use('/api/llaves-edicion', llavesEdicionRouter);
+app.use('/api/llaves-solicitudes', llavesSolicitudesRouter);
 app.use('/api/asistente', asistenteRouter);
 
 export default app;

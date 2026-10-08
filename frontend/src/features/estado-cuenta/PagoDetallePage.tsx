@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
-import { Printer, FileDown } from 'lucide-react';
+import { Printer, FileDown, Pencil, Ban } from 'lucide-react';
 import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonBloque } from '../../components/ui';
 import { obtenerPagoDetalle, type PagoDetalle } from '../../services/pago-detalle-service';
 import type { TipoEntidad } from '../../services/estado-cuenta-service';
@@ -8,7 +8,12 @@ import { descargarPagoPDF } from '../../services/pago-export';
 import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
 import { formatearFecha } from '../../lib/formato';
-import { nombreYMomento } from '../../lib/fecha-negocio';
+import { nombreYMomento, formatearFechaHora } from '../../lib/fecha-negocio';
+import HistorialEdiciones from '../../components/HistorialEdiciones';
+import AnularConLlaveModal from '../../components/AnularConLlaveModal';
+import { anularPagoCobro } from '../../services/transaccion-edicion-service';
+import { useToast } from '../../hooks/use-toast-context';
+import EditarPagoModal from './EditarPagoModal';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -46,6 +51,9 @@ function PagoDetallePage({ tipoEntidad }: Props) {
   const [resultado, setResultado] = useState<{ clave: string; pago: PagoDetalle | null } | null>(null);
   const cargando = resultado?.clave !== clave;
   const pago = resultado?.clave === clave ? resultado.pago : null;
+  const toast = useToast();
+  const [modal, setModal] = useState<'editar' | 'anular' | null>(null);
+  const tipoOperacion = esProveedor ? 'pago' : 'cobro';
 
   useEffect(() => {
     let vigente = true;
@@ -76,6 +84,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
     );
   }
 
+  const actualizar = (detalle: PagoDetalle) => setResultado({ clave, pago: detalle });
   const esCruce = pago.codigoCruce != null;
   const titulo = esCruce ? 'Comprobante de cruce' : esProveedor ? 'Comprobante de pago' : 'Comprobante de cobro';
   const tieneDesglose = pago.items.length > 0;
@@ -96,6 +105,12 @@ function PagoDetallePage({ tipoEntidad }: Props) {
           subtitulo={pago.fecha}
           acciones={(
             <div className="print:hidden flex flex-wrap items-center gap-2">
+              {!pago.anulado && (
+                <>
+                  <BotonAccion variante="secundario" onClick={() => setModal('editar')} icono={<Pencil size={16} />}>Editar</BotonAccion>
+                  <BotonAccion variante="secundario" onClick={() => setModal('anular')} icono={<Ban size={16} />}>Anular</BotonAccion>
+                </>
+              )}
               <BotonAccion variante="secundario" onClick={() => descargarPagoPDF(pago, esProveedor)} icono={<FileDown size={16} />}>PDF</BotonAccion>
               <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
               <CompartirBoton titulo={`${esCruce ? 'Cruce' : esProveedor ? 'Pago' : 'Cobro'} ${pago.codigoPago ?? pago.codigoAdelanto ?? pago.codigoCruce ?? pago.grupoId.slice(0, 8)} ${pago.nombreEntidad}`} />
@@ -103,6 +118,17 @@ function PagoDetallePage({ tipoEntidad }: Props) {
           )}
         />
       </div>
+
+      {pago.anulado && (
+        <div role="alert" className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 print:border-black print:bg-transparent print:text-black">
+          <p className="font-bold uppercase tracking-wide">Anulado</p>
+          <p>
+            {pago.anuladoMotivo ? `Motivo: ${pago.anuladoMotivo}. ` : ''}
+            {pago.anuladoPor ? `Por ${pago.anuladoPor}` : ''}{pago.anuladoEn ? ` el ${formatearFechaHora(pago.anuladoEn)}` : ''}.
+            {' '}Ya no cuenta en el estado de cuenta ni en los saldos.
+          </p>
+        </div>
+      )}
 
       {(pago.codigoPago || pago.codigoCruce || pago.codigoAdelanto) && (
         <div className="-mt-3 mb-6 flex flex-wrap items-center gap-2">
@@ -188,7 +214,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
         </div>
         )}
 
-        <div className="flex justify-between items-baseline mt-4 pt-3 border-t-2 border-brand-700 print:border-black">
+        <div className={`flex justify-between items-baseline mt-4 pt-3 border-t-2 border-brand-700 print:border-black ${pago.anulado ? 'line-through text-text-muted' : ''}`}>
           <span className="font-semibold text-text-primary text-lg">{tieneDesglose ? 'Pagado' : 'Total'}</span>
           <span className="text-2xl font-bold text-brand-700">${fmt(pago.totalUsd)}</span>
         </div>
@@ -207,6 +233,48 @@ function PagoDetallePage({ tipoEntidad }: Props) {
             ))}
           </div>
         </div>
+      )}
+
+      <div className="print:hidden">
+        <HistorialEdiciones key={`${pago.grupoId}|${pago.anulado}|${pago.fecha}|${pago.totalUsd}`} entidadTipo={tipoOperacion} entidadId={pago.grupoId} />
+      </div>
+
+      {modal === 'editar' && (
+        <EditarPagoModal
+          tipo={tipoOperacion}
+          pago={pago}
+          onClose={() => setModal(null)}
+          onGuardado={(detalle, advertencia) => {
+            actualizar(detalle);
+            setModal(null);
+            if (advertencia) toast.errorMsg(advertencia); else toast.exito('Cambios guardados.');
+          }}
+        />
+      )}
+      {modal === 'anular' && (
+        <AnularConLlaveModal
+          titulo={`Anular ${esCruce ? 'cruce' : esProveedor ? 'pago' : 'cobro'}`}
+          entidadTipo={tipoOperacion}
+          entidadId={pago.grupoId}
+          etiquetaBoton="Anular"
+          onClose={() => setModal(null)}
+          onConfirmar={async (motivo, llave) => {
+            const r = await anularPagoCobro(tipoOperacion, pago.grupoId, motivo, llave);
+            if ('error' in r) return r.error;
+            actualizar(r.detalle);
+            setModal(null);
+            toast.exito('Operación anulada.');
+            return null;
+          }}
+        >
+          <div className="bg-surface-alt border border-border rounded-lg p-3 text-sm">
+            <p className="text-text-primary font-medium">{pago.codigoPago ?? pago.codigoCruce ?? pago.codigoAdelanto ?? 'Operación'} · ${fmt(pago.totalUsd)}</p>
+            <p className="text-text-secondary">{pago.nombreEntidad}</p>
+          </div>
+          <p className="text-xs text-text-muted">
+            Se devuelve el dinero a las bancas, las facturas aplicadas vuelven a quedar pendientes y las notas y adelantos usados quedan libres. El registro no se borra: queda marcado como anulado. Si el adelanto de esta operación ya se usó en otra, hay que anular primero esa.
+          </p>
+        </AnularConLlaveModal>
       )}
     </div>
   );

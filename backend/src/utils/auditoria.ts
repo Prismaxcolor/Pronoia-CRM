@@ -10,16 +10,31 @@ export const ENTIDADES_AUDITABLES = [
   'lote',
   'configuracion_inventario',
   'producto_costo',
+  // Dinero: un pago/cobro se identifica por su grupo (grupo_id), un movimiento de banca por su id.
+  'pago',
+  'cobro',
+  'movimiento_banca',
+  'nota_ajuste_proveedor',
+  'nota_ajuste_cliente',
 ] as const;
 export type EntidadAuditable = (typeof ENTIDADES_AUDITABLES)[number];
 
 /**
- * Entidades cuya edición exige llave. Ticket de pesaje, transformación y traslado llaman
- * a autorizarEdicion(). Las facturas son auditables pero hoy no tienen edición
+ * Entidades cuya edición exige llave. Ticket de pesaje, transformación, traslado, pagos, cobros,
+ * movimientos de banca y anulación de notas llaman a autorizarEdicion(). Las facturas son auditables pero hoy no tienen edición
  * (solo se crean), así que no aceptan llave; para conectarlas: agregar el tipo
  * aquí, su tabla en TABLA_POR_ENTIDAD y llamar a autorizarEdicion() al editar.
  */
-export const ENTIDADES_CON_LLAVE = ['ticket_pesaje', 'transformacion', 'traslado'] as const satisfies readonly EntidadAuditable[];
+export const ENTIDADES_CON_LLAVE = [
+  'ticket_pesaje',
+  'transformacion',
+  'traslado',
+  'pago',
+  'cobro',
+  'movimiento_banca',
+  'nota_ajuste_proveedor',
+  'nota_ajuste_cliente',
+] as const satisfies readonly EntidadAuditable[];
 export type EntidadConLlave = (typeof ENTIDADES_CON_LLAVE)[number];
 
 /** Tabla donde vive cada entidad (para verificar que existe antes de emitir una llave). */
@@ -27,6 +42,12 @@ export const TABLA_POR_ENTIDAD: Record<EntidadConLlave, string> = {
   ticket_pesaje: 'tickets_pesaje',
   transformacion: 'transformaciones',
   traslado: 'tickets_traslado',
+  // Vista pagos_grupo(id): ids de grupo de pagos/cobros y cruces (docs/migration_editar_anular_transacciones.sql).
+  pago: 'pagos_grupo',
+  cobro: 'pagos_grupo',
+  movimiento_banca: 'movimientos',
+  nota_ajuste_proveedor: 'notas_ajuste_proveedor',
+  nota_ajuste_cliente: 'notas_ajuste_cliente',
 };
 
 /** Recurso cuyo permiso 'ver' habilita leer el historial de cada entidad. */
@@ -39,6 +60,11 @@ export const RECURSO_POR_ENTIDAD: Record<EntidadAuditable, Recurso> = {
   lote: 'productos',
   configuracion_inventario: 'productos',
   producto_costo: 'facturacion',
+  pago: 'cochinito',
+  cobro: 'cochinito',
+  movimiento_banca: 'cochinito',
+  nota_ajuste_proveedor: 'proveedores',
+  nota_ajuste_cliente: 'clientes',
 };
 
 /** La configuración del inventario es un único conjunto de parámetros, sin id propio: se audita con este id fijo. */

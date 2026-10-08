@@ -422,7 +422,7 @@ describe('herramientas de dinero', () => {
 
   it('consultar_movimientos: sin referencias, descripciones ni comprobantes', async () => {
     tablas.bancas = [{ id: 'b1', nombre: 'Efectivo' }];
-    tablas.movimientos = [{ tipo: 'egreso', subtipo: 'pago', monto: 120, moneda: 'USD', monto_usd: 120, fecha: '2026-10-02', banca_origen_id: 'b1', banca_destino_id: null, proveedor_id: 'p1', cliente_id: null, referencia: 'REF-BANCO-777', descripcion: 'Cuenta 0102-0000-1111', comprobantes: ['comprobante.jpg'] }];
+    tablas.movimientos = [{ tipo: 'egreso', subtipo: 'pago', monto: 120, moneda: 'USD', monto_usd: 120, fecha: '2026-10-02', banca_origen_id: 'b1', banca_destino_id: null, proveedor_id: 'p1', cliente_id: null, referencia: 'REF-BANCO-777', descripcion: 'Cuenta 0102-0000-1111', comprobantes: ['comprobante.jpg'], anulado: false }];
     const r = await datos('consultar_movimientos', { subtipo: 'pago' });
     expect(r.movimientos).toEqual([{ fecha: '2026-10-02', tipo: 'egreso', subtipo: 'pago', monto: 120, moneda: 'USD', montoUsd: 120, bancaOrigen: 'Efectivo', bancaDestino: null, proveedor: 'Metales Caribe', cliente: null }]);
     for (const s of SECRETOS) expect(JSON.stringify(r)).not.toContain(s);

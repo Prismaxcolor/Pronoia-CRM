@@ -53,8 +53,8 @@ vi.mock('../src/services/cliente-service.js', () => ({
 }));
 vi.mock('../src/services/telegram-link-service.js', () => ({ generarLinkTelegram: vi.fn() }));
 vi.mock('../src/services/telegram-estado-cuenta-service.js', () => ({ enviarEstadoCuentaTelegram: vi.fn() }));
-vi.mock('../src/services/nota-ajuste-service.js', () => ({ crearNotaAjuste: vi.fn(), anularNotaAjuste: vi.fn(), obtenerNotaAjuste: vi.fn() }));
-vi.mock('../src/services/nota-ajuste-cliente-service.js', () => ({ crearNotaAjusteCliente: vi.fn(), anularNotaAjusteCliente: vi.fn(), obtenerNotaAjusteCliente: vi.fn() }));
+vi.mock('../src/services/nota-ajuste-service.js', () => ({ crearNotaAjuste: vi.fn(), anularNotaAjuste: vi.fn(), anularNotaAjusteConLlave: vi.fn(), obtenerNotaAjuste: vi.fn() }));
+vi.mock('../src/services/nota-ajuste-cliente-service.js', () => ({ crearNotaAjusteCliente: vi.fn(), anularNotaAjusteCliente: vi.fn(), anularNotaAjusteClienteConLlave: vi.fn(), obtenerNotaAjusteCliente: vi.fn() }));
 vi.mock('../src/services/pago-detalle-service.js', () => ({ obtenerPagoDetalle: vi.fn() }));
 vi.mock('../src/services/cruce-service.js', () => ({ listarAdelantosDisponibles: vi.fn() }));
 

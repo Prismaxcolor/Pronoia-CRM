@@ -15,6 +15,9 @@ interface UsuarioApi {
   activo: boolean;
   creadoEn: string;
   temaMarca?: 'azul' | null;
+  telegramVinculado?: boolean;
+  telegramLinkedAt?: string | null;
+  telegramChatId?: string | null;
 }
 
 function mapUsuario(api: UsuarioApi): Usuario {
@@ -32,6 +35,9 @@ function mapUsuario(api: UsuarioApi): Usuario {
     activo: api.activo,
     creadoEn: api.creadoEn,
     temaMarca: normalizarTemaMarca(api.temaMarca),
+    telegramVinculado: Boolean(api.telegramVinculado),
+    telegramLinkedAt: api.telegramLinkedAt ?? null,
+    telegramChatId: api.telegramChatId ?? null,
   };
 }
 
@@ -100,6 +106,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(null);
   };
 
+  const recargarUsuario = async () => {
+    try {
+      const { usuario: u } = await apiFetch<{ usuario: UsuarioApi }>('/api/auth/me');
+      setUsuario(mapUsuario(u));
+    } catch {
+      // Un fallo transitorio no debe cerrar la sesión; se conserva el usuario actual.
+    }
+  };
+
   // Marca de color por usuario: se aplica al autenticar y se quita al salir o
   // cambiar de usuario. Mientras carga /me se conserva la marca recordada
   // (la pintó main.tsx antes del primer render) para no parpadear.
@@ -116,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ usuario, cargando, error, login, registro, logout, tienePermiso: tienePermisoFn }}>
+    <AuthContext.Provider value={{ usuario, cargando, error, login, registro, logout, recargarUsuario, tienePermiso: tienePermisoFn }}>
       {children}
     </AuthContext.Provider>
   );

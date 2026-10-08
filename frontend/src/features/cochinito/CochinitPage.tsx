@@ -17,6 +17,9 @@ import type { Banca, Movimiento } from '@shared/types/index.js';
 import TasaCambioWidget from './TasaCambioWidget';
 import CrearMovimientoModal from './CrearMovimientoModal';
 import BancaFormModal from './BancaFormModal';
+import EditarMovimientoModal from './EditarMovimientoModal';
+import AnularConLlaveModal from '../../components/AnularConLlaveModal';
+import { anularMovimiento } from '../../services/transaccion-edicion-service';
 import KpisCochinito from './KpisCochinito';
 import SaldosBancas from './SaldosBancas';
 import TarjetaBanca from './TarjetaBanca';
@@ -62,6 +65,7 @@ function CochinitPage() {
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalBanca, setModalBanca] = useState<{ abierto: true; banca: Banca | null } | { abierto: false }>({ abierto: false });
+  const [edicion, setEdicion] = useState<{ modo: 'editar' | 'anular'; movimiento: Movimiento } | null>(null);
   const [nombres, setNombres] = useState<{ proveedores: Map<string, string>; clientes: Map<string, string> }>({ proveedores: new Map(), clientes: new Map() });
 
   const puedeCrear = tienePermiso('cochinito', 'crear');
@@ -120,10 +124,12 @@ function CochinitPage() {
     return desde && hasta ? { desde, hasta } : rangoDeAtajo('30d', hoyLocal());
   }, [filtros.desde, filtros.hasta]);
 
-  const kpis = useMemo(() => calcularKpis(bancas, movimientos, periodo), [bancas, movimientos, periodo]);
-  const movimientosPeriodo = useMemo(() => movimientosDelPeriodo(movimientos, periodo.desde, periodo.hasta), [movimientos, periodo]);
+  // Los movimientos anulados se ven (tachados) en la tabla, pero no cuentan en indicadores ni gráficas.
+  const vigentes = useMemo(() => movimientos.filter(m => !m.anulado), [movimientos]);
+  const kpis = useMemo(() => calcularKpis(bancas, vigentes, periodo), [bancas, vigentes, periodo]);
+  const movimientosPeriodo = useMemo(() => movimientosDelPeriodo(vigentes, periodo.desde, periodo.hasta), [vigentes, periodo]);
   const saldos = useMemo(() => saldosPorBanca(bancas), [bancas]);
-  const hayIngresos = useMemo(() => movimientos.some(m => m.tipo === 'ingreso'), [movimientos]);
+  const hayIngresos = useMemo(() => vigentes.some(m => m.tipo === 'ingreso'), [vigentes]);
   const bancaFiltro = str(filtros.banca);
 
   const movFiltrados = useMemo(
@@ -144,6 +150,12 @@ function CochinitPage() {
   const onMovimientoCreado = async () => {
     setModalAbierto(false);
     toast.exito('Movimiento registrado.');
+    await recargarTras();
+  };
+
+  const onMovimientoEditado = async (advertencia?: string) => {
+    setEdicion(null);
+    if (advertencia) toast.errorMsg(advertencia); else toast.exito('Movimiento actualizado.');
     await recargarTras();
   };
 
@@ -310,7 +322,14 @@ function CochinitPage() {
         queEstasViendo={`Los movimientos con fecha dentro del periodo (${bancaFiltro ? 'solo de la banca elegida, ' : ''}según los filtros de arriba), con su monto en la moneda de la banca y en USD. ${movFiltrados.length} ${movFiltrados.length === 1 ? 'resultado' : 'resultados'}.`}
       >
         <Suspense fallback={<SkeletonBloque alto="h-64" etiqueta="Cargando movimientos" />}>
-          <TablaMovimientos filas={movFiltrados} bancas={bancas} nombreContraparte={nombreContraparte} vacio={vacioTabla} />
+          <TablaMovimientos
+            filas={movFiltrados}
+            bancas={bancas}
+            nombreContraparte={nombreContraparte}
+            vacio={vacioTabla}
+            onEditar={m => setEdicion({ modo: 'editar', movimiento: m })}
+            onAnular={m => setEdicion({ modo: 'anular', movimiento: m })}
+          />
         </Suspense>
       </Bloque>
 
@@ -321,6 +340,37 @@ function CochinitPage() {
           onClose={() => setModalAbierto(false)}
           onCreado={onMovimientoCreado}
         />
+      )}
+      {edicion?.modo === 'editar' && (
+        <EditarMovimientoModal
+          movimiento={edicion.movimiento}
+          bancas={bancas}
+          onClose={() => setEdicion(null)}
+          onGuardado={(_m, advertencia) => onMovimientoEditado(advertencia)}
+        />
+      )}
+      {edicion?.modo === 'anular' && (
+        <AnularConLlaveModal
+          titulo="Anular movimiento"
+          entidadTipo="movimiento_banca"
+          entidadId={edicion.movimiento.id}
+          etiquetaBoton="Anular movimiento"
+          onClose={() => setEdicion(null)}
+          onConfirmar={async (motivo, llave) => {
+            const r = await anularMovimiento(edicion.movimiento.id, motivo, llave);
+            if ('error' in r) return r.error;
+            await onMovimientoEditado();
+            return null;
+          }}
+        >
+          <div className="bg-surface-alt border border-border rounded-lg p-3 text-sm">
+            <p className="text-text-primary font-medium">{edicion.movimiento.descripcion || 'Movimiento sin concepto'}</p>
+            <p className="text-text-secondary">{edicion.movimiento.moneda} {edicion.movimiento.monto.toLocaleString('es-VE', { minimumFractionDigits: 2 })} · {edicion.movimiento.fecha.slice(0, 10)}</p>
+          </div>
+          <p className="text-xs text-text-muted">
+            El saldo de la banca se corrige y el movimiento queda marcado como anulado en el historial (no se borra). Se rechaza si alguna banca quedaría sin fondos.
+          </p>
+        </AnularConLlaveModal>
       )}
       {modalBanca.abierto && (
         <BancaFormModal

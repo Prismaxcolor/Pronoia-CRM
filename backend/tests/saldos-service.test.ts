@@ -143,9 +143,9 @@ describe('cargarDatosSaldos / obtenerSaldos (con BD falsa)', () => {
       { id: 'f2', proveedor_id: 'p1', total: 50, monto_pagado: 0, estado: 'anulada', created_at: '2026-09-02T10:00:00Z' },
     ];
     bdFalsa.tablas.movimientos = [
-      { id: 'm1', proveedor_id: 'p1', cliente_id: null, tipo: 'egreso', monto: 30, monto_usd: null, fecha: '2026-09-10', subtipo: 'pago', grupo_id: null },
-      { id: 'm2', proveedor_id: null, cliente_id: 'c1', tipo: 'ingreso', monto: 500, monto_usd: null, fecha: '2026-09-10', subtipo: 'cobro', grupo_id: null },
-      { id: 'm3', proveedor_id: null, cliente_id: null, tipo: 'egreso', monto: 7, monto_usd: null, fecha: '2026-09-10', subtipo: null, grupo_id: null },
+      { id: 'm1', proveedor_id: 'p1', cliente_id: null, tipo: 'egreso', monto: 30, monto_usd: null, fecha: '2026-09-10', subtipo: 'pago', grupo_id: null, anulado: false },
+      { id: 'm2', proveedor_id: null, cliente_id: 'c1', tipo: 'ingreso', monto: 500, monto_usd: null, fecha: '2026-09-10', subtipo: 'cobro', grupo_id: null, anulado: false },
+      { id: 'm3', proveedor_id: null, cliente_id: null, tipo: 'egreso', monto: 7, monto_usd: null, fecha: '2026-09-10', subtipo: null, grupo_id: null, anulado: false },
     ];
     bdFalsa.tablas.notas_ajuste_proveedor = [
       { id: 'n1', proveedor_id: 'p1', tipo: 'credito', monto: 10, anulada: false, pagada: false, fecha: '2026-09-11' },
@@ -161,7 +161,7 @@ describe('cargarDatosSaldos / obtenerSaldos (con BD falsa)', () => {
 
   it('cargarDatosSaldos pagina cuando una tabla supera 1000 filas', async () => {
     bdFalsa.tablas.movimientos = Array.from({ length: 2300 }, (_, i) => ({
-      id: `m${i}`, proveedor_id: 'p1', cliente_id: null, tipo: 'egreso', monto: 1, monto_usd: null, fecha: '2026-09-10', subtipo: 'pago', grupo_id: null,
+      id: `m${i}`, proveedor_id: 'p1', cliente_id: null, tipo: 'egreso', monto: 1, monto_usd: null, fecha: '2026-09-10', subtipo: 'pago', grupo_id: null, anulado: false,
     }));
     const d = await cargarDatosSaldos('proveedor');
     expect(d.pagos).toHaveLength(2300);
@@ -192,7 +192,7 @@ describe('cargarDatosSaldos / obtenerSaldos (con BD falsa)', () => {
   it('usa caché dentro del TTL y la invalidacion fuerza recalcular', async () => {
     expect(TTL_CACHE_SALDOS_MS).toBe(20_000);
     const a = await obtenerSaldos('proveedor');
-    bdFalsa.tablas.movimientos.push({ id: 'm9', proveedor_id: 'p1', cliente_id: null, tipo: 'egreso', monto: 5, monto_usd: null, fecha: '2026-09-12', subtipo: 'pago', grupo_id: null });
+    bdFalsa.tablas.movimientos.push({ id: 'm9', proveedor_id: 'p1', cliente_id: null, tipo: 'egreso', monto: 5, monto_usd: null, fecha: '2026-09-12', subtipo: 'pago', grupo_id: null, anulado: false });
     const b = await obtenerSaldos('proveedor');
     expect(b).toBe(a);
     invalidarCacheSaldos();

@@ -18,6 +18,9 @@ export interface UsuarioRow {
   creado_en: string;
   /** Ausente mientras no se aplique la migración de tema_marca (select '*'). */
   tema_marca?: unknown;
+  /** Ausentes mientras no se aplique migration_users_telegram.sql. */
+  telegram_chat_id?: string | null;
+  telegram_linked_at?: string | null;
 }
 
 export interface UsuarioPublico {
@@ -29,6 +32,10 @@ export interface UsuarioPublico {
   activo: boolean;
   creadoEn: string;
   temaMarca: TemaMarca | null;
+  /** Esta respuesta es siempre del propio usuario (login / me), por eso lleva el chat id. */
+  telegramChatId: string | null;
+  telegramLinkedAt: string | null;
+  telegramVinculado: boolean;
 }
 
 export interface JwtPayload {
@@ -47,6 +54,9 @@ function toPublico(row: UsuarioRow): UsuarioPublico {
     activo: row.activo,
     creadoEn: row.creado_en,
     temaMarca: normalizarTemaMarca(row.tema_marca),
+    telegramChatId: row.telegram_chat_id ?? null,
+    telegramLinkedAt: row.telegram_linked_at ?? null,
+    telegramVinculado: Boolean(row.telegram_chat_id),
   };
 }
 

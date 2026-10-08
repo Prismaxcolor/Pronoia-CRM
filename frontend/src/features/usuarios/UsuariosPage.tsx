@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Shield, UserX, UserCheck, Trash2, Palette } from 'lucide-react';
+import { Plus, Pencil, Shield, UserX, UserCheck, Trash2, Palette, Send } from 'lucide-react';
 import {
   obtenerUsuarios,
   desactivarUsuario,
   reactivarUsuario,
   borrarUsuario,
+  desvincularTelegramUsuario,
 } from '../../services/usuario-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
@@ -12,6 +13,7 @@ import { useConfirm } from '../../hooks/use-confirm-context';
 import CrearUsuarioModal from './CrearUsuarioModal';
 import EditarPermisosModal from './EditarPermisosModal';
 import EditarUsuarioModal from './EditarUsuarioModal';
+import TelegramUsuarioModal from '../../components/TelegramUsuarioModal';
 import {
   EncabezadoPagina, Bloque, BotonAccion, GrillaKpis, TarjetaKpi, FiltrosBarra, EstadoVacio, SkeletonKpis, SkeletonBloque,
   Insignia, useFiltrosUrl, formatearNumero,
@@ -50,6 +52,7 @@ function UsuariosPage() {
   const [mostrarCrear, setMostrarCrear] = useState(false);
   const [editando, setEditando] = useState<Usuario | null>(null);
   const [editandoDatos, setEditandoDatos] = useState<Usuario | null>(null);
+  const [enlazandoTelegram, setEnlazandoTelegram] = useState<Usuario | null>(null);
   const { usuario: currentUser } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
@@ -108,6 +111,23 @@ function UsuariosPage() {
     cargar();
   };
 
+  const handleDesvincularTelegram = async (u: Usuario) => {
+    const ok = await confirmar({
+      titulo: `Desvincular el Telegram de ${u.nombre}`,
+      mensaje: 'Dejará de recibir avisos privados hasta que vuelva a vincularlo.',
+      confirmarLabel: 'Desvincular',
+      variante: 'warning',
+    });
+    if (!ok) return;
+    const result = await desvincularTelegramUsuario(u.id);
+    if ('error' in result) {
+      toast.errorMsg(result.error);
+      return;
+    }
+    toast.exito(`Telegram de ${u.nombre} desvinculado.`);
+    cargar();
+  };
+
   const kpis = useMemo(() => kpisUsuarios(usuarios), [usuarios]);
   const q = typeof filtros.q === 'string' ? filtros.q : undefined;
   const rolFiltro = typeof filtros.rol === 'string' ? filtros.rol : undefined;
@@ -118,6 +138,7 @@ function UsuariosPage() {
       && coincideTexto([u.nombre, u.email], q)),
     [usuarios, q, rolFiltro, estadoFiltro],
   );
+  const esSuperadmin = currentUser?.rol === 'superadmin';
   const hayFiltros = Boolean(q || rolFiltro || estadoFiltro);
   const activosDe = (rol: string) => kpis.activosPorRol[rol] ?? 0;
 
@@ -201,6 +222,7 @@ function UsuariosPage() {
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
                             <Insignia tono={rol.tono}>{rol.etiqueta}</Insignia>
                             <Insignia tono={u.activo ? 'exito' : 'neutral'}>{u.activo ? 'Activo' : 'Inactivo'}</Insignia>
+                            <Insignia tono={u.telegramVinculado ? 'exito' : 'neutral'}>{u.telegramVinculado ? 'Telegram vinculado' : 'Sin Telegram'}</Insignia>
                           </div>
                         </div>
                       </div>
@@ -226,6 +248,16 @@ function UsuariosPage() {
                         <button type="button" onClick={() => setEditando(u)} className={`${BOTON_ICONO} hover:bg-brand-50 hover:text-brand-600`} title="Editar permisos" aria-label={`Editar permisos de ${u.nombre}`}>
                           <Shield size={16} aria-hidden="true" />
                         </button>
+                        {esSuperadmin && !esYo && u.activo && (
+                          <button type="button" onClick={() => setEnlazandoTelegram(u)} className={`${BOTON_ICONO} hover:bg-brand-50 hover:text-brand-600`} title="Generar enlace de Telegram (lo debe abrir esa persona)" aria-label={`Generar enlace de Telegram para ${u.nombre}`}>
+                            <Send size={16} aria-hidden="true" />
+                          </button>
+                        )}
+                        {esSuperadmin && !esYo && u.telegramVinculado && (
+                          <button type="button" onClick={() => handleDesvincularTelegram(u)} className={`${BOTON_ICONO} hover:bg-amber-50 hover:text-amber-600`} title="Desvincular Telegram" aria-label={`Desvincular el Telegram de ${u.nombre}`}>
+                            <Send size={16} aria-hidden="true" className="opacity-60" />
+                          </button>
+                        )}
                         {!esYo && u.activo && (
                           <button type="button" onClick={() => handleDesactivar(u)} className={`${BOTON_ICONO} hover:bg-amber-50 hover:text-amber-600`} title="Desactivar" aria-label={`Desactivar a ${u.nombre}`}>
                             <UserX size={16} aria-hidden="true" />
@@ -263,6 +295,17 @@ function UsuariosPage() {
           usuario={editando}
           onClose={() => setEditando(null)}
           onGuardado={() => { setEditando(null); cargar(); }}
+        />
+      )}
+
+      {enlazandoTelegram && (
+        <TelegramUsuarioModal
+          usuarioId={enlazandoTelegram.id}
+          nombre={enlazandoTelegram.nombre}
+          esPropio={false}
+          linkedAtInicial={enlazandoTelegram.telegramLinkedAt ?? null}
+          onClose={() => setEnlazandoTelegram(null)}
+          onVinculado={() => { toast.exito(`Telegram de ${enlazandoTelegram.nombre} vinculado.`); setEnlazandoTelegram(null); cargar(); }}
         />
       )}
 

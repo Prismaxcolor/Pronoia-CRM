@@ -518,7 +518,8 @@ export const consultarMovimientos = definirHerramienta({
       .select('tipo, subtipo, monto, moneda, monto_usd, fecha, banca_origen_id, banca_destino_id, proveedor_id, cliente_id')
       .order('fecha', { ascending: false })
       .order('creado_en', { ascending: false })
-      .limit(limiteEfectivo(limite));
+      .limit(limiteEfectivo(limite))
+      .eq('anulado', false);
     if (tipo) q = q.eq('tipo', tipo);
     if (subtipo) q = q.eq('subtipo', subtipo);
     if (desde) q = q.gte('fecha', desde);

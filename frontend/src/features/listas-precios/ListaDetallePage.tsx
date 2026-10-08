@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Check, Coins, Lock, PackageCheck, CalendarClock, ArrowUpDown } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import CompartirBoton from '../../components/CompartirBoton';
@@ -9,6 +9,7 @@ import {
   reordenarPrecios,
 } from '../../services/lista-precios-service';
 import ReordenarPreciosPanel from './ReordenarPreciosPanel';
+import { renderizarImagenesListaPrecios } from './renderizar-tarjetas';
 import { obtenerProductos } from '../../services/producto-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
@@ -87,6 +88,19 @@ function ListaDetallePage() {
     () => new Map(productos.map(p => [p.id, p.tipoMaterialNombre ?? null])),
     [productos],
   );
+
+  // Imagen para compartir: una tarjeta dedicada (no la captura de la pantalla), con orden de la lista.
+  const renderizarImagenesCompartir = useCallback(() => renderizarImagenesListaPrecios({
+    nombreLista: lista?.nombre ?? '',
+    tipo: lista?.tipo === 'compra' ? 'compra' : 'venta',
+    vigenteDesde: lista?.vigenteDesde ?? null,
+    filas: precios.map(p => ({
+      id: p.id,
+      material: p.nombreProducto ?? p.productoId,
+      precio: p.precio,
+      categoria: categoriaPorProducto.get(p.productoId) ?? null,
+    })),
+  }), [lista, precios, categoriaPorProducto]);
 
   const guardarPrecio = async (productoId: string, valorCrudo: string) => {
     const valor = Number(valorCrudo);
@@ -264,7 +278,10 @@ function ListaDetallePage() {
         acciones={(
           <>
             {!lista.activo && <Insignia tono="neutral">Inactiva</Insignia>}
-            <CompartirBoton titulo={`Lista de precios ${lista.nombre}`} />
+            <CompartirBoton
+              titulo={`Lista de precios ${lista.nombre}`}
+              renderizarImagenes={puedeVerPrecios && precios.length > 0 ? renderizarImagenesCompartir : undefined}
+            />
           </>
         )}
       />

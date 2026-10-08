@@ -31,9 +31,17 @@ export interface Movimiento {
   montoDestino: number | null;
   creadoEn: string;
   /** Solo egresos a proveedor: distingue pago de adelanto (Bloque 38). */
-  subtipo: 'pago' | 'adelanto' | null;
+  subtipo: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
   /** Correlativo (PG-.../AD-...), null si `subtipo` es null. */
   numero: number | null;
   /** Agrupa las filas de una misma operación (pago repartido entre bancas). */
   grupoId: string | null;
+  /** URLs de los comprobantes (fotos) del movimiento. */
+  comprobantes: string[];
+  /** true si el movimiento fue anulado: se conserva la fila, pero no cuenta en saldos ni estados de cuenta. */
+  anulado: boolean;
+  anuladoMotivo: string | null;
+  anuladoEn: string | null;
+  /** Id de quien anuló. */
+  anuladoPor: string | null;
 }

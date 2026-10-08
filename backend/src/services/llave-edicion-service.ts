@@ -34,7 +34,7 @@ interface LlaveRow {
 const MSG_NO_DISPONIBLE = 'El sistema de llaves de edición no está disponible en este momento.';
 
 /** Verifica que el documento exista. Distingue "no existe" (404) de "BD/tabla no disponible" (503). */
-async function verificarEntidad(entidadTipo: EntidadConLlave, entidadId: string): Promise<{ error: string; codigo: number } | null> {
+export async function verificarEntidad(entidadTipo: EntidadConLlave, entidadId: string): Promise<{ error: string; codigo: number } | null> {
   const { data, error } = await supabaseAdmin
     .from(TABLA_POR_ENTIDAD[entidadTipo])
     .select('id')

@@ -40,6 +40,10 @@ interface MovimientoRow {
   registrado_por: string | null;
   banca_origen_id: string | null;
   creado_en?: string | null;
+  anulado?: boolean | null;
+  anulado_at?: string | null;
+  anulado_por?: string | null;
+  anulado_motivo?: string | null;
 }
 
 export interface BancaPagoDetalle {
@@ -52,6 +56,8 @@ export interface BancaPagoDetalle {
 }
 
 export interface ItemPagoDetalle {
+  /** Id del documento aplicado (factura, nota o grupo del adelanto): lo necesita la edición contable. */
+  id: string;
   tipo: TipoItemAplicacion;
   /** Código de control del documento aplicado (C-/V-/ND-/NC-/NDV-/NCV-).
    *  Null si el documento referenciado ya no tiene numero (no debería pasar
@@ -89,6 +95,26 @@ export interface PagoDetalle {
    *  saldo pendiente y, al final, lo pagado. Calculado aquí (utils/comprobante-resumen.ts); los
    *  clientes solo lo dibujan. */
   resumen: FilaComprobante[];
+  /** true si la operación fue anulada (la fila nunca se borra; sus saldos ya no cuentan). */
+  anulado: boolean;
+  anuladoMotivo: string | null;
+  /** Instante (timestamptz) de la anulación. */
+  anuladoEn: string | null;
+  /** Nombre de quien anuló. */
+  anuladoPor: string | null;
+}
+
+/** Datos de anulación de un grupo (movimientos o cruce), con el nombre de quien anuló. */
+async function datosAnulacion(
+  anulado: boolean, motivo: string | null | undefined, instante: string | null | undefined, porId: string | null | undefined
+): Promise<Pick<PagoDetalle, 'anulado' | 'anuladoMotivo' | 'anuladoEn' | 'anuladoPor'>> {
+  if (!anulado) return { anulado: false, anuladoMotivo: null, anuladoEn: null, anuladoPor: null };
+  let nombre: string | null = null;
+  if (porId) {
+    const { data } = await supabaseAdmin.from('users').select('nombre').eq('id', porId).maybeSingle();
+    nombre = (data as { nombre: string } | null)?.nombre ?? null;
+  }
+  return { anulado: true, anuladoMotivo: motivo ?? null, anuladoEn: instante ?? null, anuladoPor: nombre };
 }
 
 function formatCodigoPago(tipoEntidad: TipoEntidad, subtipo: Subtipo, numero: number | null): string | null {
@@ -125,7 +151,7 @@ export async function obtenerPagoDetalle(
 
   const { data, error } = await supabaseAdmin
     .from('movimientos')
-    .select('id, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion, referencia, fecha, comprobantes, registrado_por, banca_origen_id, creado_en')
+    .select('id, subtipo, numero, grupo_id, monto, moneda, monto_usd, descripcion, referencia, fecha, comprobantes, registrado_por, banca_origen_id, creado_en, anulado, anulado_at, anulado_por, anulado_motivo')
     .eq(columnaEntidad, entidadId)
     .eq('tipo', tipoMov)
     .or(`grupo_id.eq.${grupoId},id.eq.${grupoId}`);
@@ -169,6 +195,8 @@ export async function obtenerPagoDetalle(
 
   const { items, facturas } = await cargarItems(tipoEntidad, entidadId, grupoId);
   const totalUsd = propias.reduce((s, f) => s + Number(f.monto_usd ?? f.monto), 0);
+  const filaAnulada = propias.find(f => f.anulado) ?? null;
+  const anulacion = await datosAnulacion(propias.every(f => f.anulado), filaAnulada?.anulado_motivo, filaAnulada?.anulado_at, filaAnulada?.anulado_por);
 
   return {
     grupoId,
@@ -194,6 +222,7 @@ export async function obtenerPagoDetalle(
     codigoCruce: null,
     items,
     resumen: resumenComprobante(items, totalUsd, esProveedor, facturas),
+    ...anulacion,
   };
 }
 
@@ -269,6 +298,7 @@ async function cargarItems(
   }
 
   const items = aplicaciones.map(a => ({
+    id: a.item_id,
     tipo: a.tipo,
     codigo: (a.tipo === 'factura' ? codigoPorFacturaId : a.tipo === 'adelanto' ? codigoPorAdelantoId : codigoPorNotaId).get(a.item_id) ?? null,
     montoUsd: Number(a.monto_usd),
@@ -290,11 +320,11 @@ async function obtenerCruceDetalle(
 
   const { data } = await supabaseAdmin
     .from('cruces')
-    .select('grupo_id, numero, fecha, descripcion, registrado_por, created_at')
+    .select('grupo_id, numero, fecha, descripcion, registrado_por, created_at, anulado, anulado_at, anulado_por, anulado_motivo')
     .eq('grupo_id', grupoId)
     .eq(esProveedor ? 'proveedor_id' : 'cliente_id', entidadId)
     .maybeSingle();
-  const cruce = data as { grupo_id: string; numero: number; fecha: string; descripcion: string | null; registrado_por: string | null; created_at?: string | null } | null;
+  const cruce = data as { grupo_id: string; numero: number; fecha: string; descripcion: string | null; registrado_por: string | null; created_at?: string | null; anulado?: boolean | null; anulado_at?: string | null; anulado_por?: string | null; anulado_motivo?: string | null } | null;
   if (!cruce) return { error: 'Pago no encontrado para esta entidad.' };
 
   const [{ data: entidadData }, { data: usuario }, { items, facturas }] = await Promise.all([
@@ -322,5 +352,6 @@ async function obtenerCruceDetalle(
     codigoCruce: esProveedor ? formatCodigoCruce(cruce.numero) : formatCodigoCruceCliente(cruce.numero),
     items,
     resumen: resumenComprobante(items, 0, esProveedor, facturas),
+    ...(await datosAnulacion(Boolean(cruce.anulado), cruce.anulado_motivo, cruce.anulado_at, cruce.anulado_por)),
   };
 }

@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { X } from 'lucide-react';
 import { anularNotaAjuste } from '../../services/nota-ajuste-service';
 import { anularNotaAjusteCliente } from '../../services/nota-ajuste-cliente-service';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
+import AnularConLlaveModal from '../../components/AnularConLlaveModal';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -16,84 +15,37 @@ function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Anular nota, compartida entre proveedor y cliente (Bloque 45). */
+/** Anular nota, compartida entre proveedor y cliente (Bloque 45). Exige llave de edición salvo superadmin. */
 function AnularNotaModal({ tipoEntidad, entidadId, nota, onClose, onAnulada }: Props) {
-  const [motivo, setMotivo] = useState('');
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const monto = nota.tipo === 'nota_debito' ? nota.cargo : nota.abono;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (!motivo.trim()) { setError('El motivo de la anulación es obligatorio.'); return; }
-    if (!nota.notaId) { setError('Nota inválida.'); return; }
-
-    setGuardando(true);
+  const confirmar = async (motivo: string, llave: string): Promise<string | null> => {
+    if (!nota.notaId) return 'Nota inválida.';
     const result = tipoEntidad === 'proveedor'
-      ? await anularNotaAjuste(entidadId, nota.notaId, motivo.trim())
-      : await anularNotaAjusteCliente(entidadId, nota.notaId, motivo.trim());
-    setGuardando(false);
-
-    if ('error' in result) { setError(result.error); return; }
+      ? await anularNotaAjuste(entidadId, nota.notaId, motivo, llave)
+      : await anularNotaAjusteCliente(entidadId, nota.notaId, motivo, llave);
+    if ('error' in result) return result.error;
     onAnulada();
+    return null;
   };
 
-  const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
-  const labelClass = "block text-xs font-medium text-text-secondary mb-1";
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
-          <h2 className="text-lg font-bold text-text-primary">Anular nota</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div className="bg-surface-alt border border-border rounded-lg p-3 text-sm">
-            <p className="text-text-secondary">{nota.tipo === 'nota_debito' ? 'Nota de débito' : 'Nota de crédito'} · ${fmt(monto)}</p>
-            <p className="text-text-primary mt-1">{nota.descripcion}</p>
-          </div>
-
-          <p className="text-xs text-text-muted">
-            La nota queda marcada como anulada en el historial y deja de afectar el saldo del estado de cuenta. No se crea ninguna nota nueva. No se puede anular una nota que ya fue aplicada a un pago o cobro.
-          </p>
-
-          <div>
-            <label className={labelClass}>Motivo de la anulación *</label>
-            <textarea
-              required
-              value={motivo}
-              onChange={e => setMotivo(e.target.value)}
-              className={`${inputClass} resize-none`}
-              rows={3}
-              maxLength={300}
-              placeholder="Ej: Monto cargado por error"
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="text-red-600 text-sm">{error}</p>
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Anulando...' : 'Anular nota'}
-            </button>
-          </div>
-        </form>
+    <AnularConLlaveModal
+      titulo="Anular nota"
+      entidadTipo={tipoEntidad === 'proveedor' ? 'nota_ajuste_proveedor' : 'nota_ajuste_cliente'}
+      entidadId={nota.notaId ?? ''}
+      etiquetaBoton="Anular nota"
+      onConfirmar={confirmar}
+      onClose={onClose}
+    >
+      <div className="bg-surface-alt border border-border rounded-lg p-3 text-sm">
+        <p className="text-text-secondary">{nota.tipo === 'nota_debito' ? 'Nota de débito' : 'Nota de crédito'} · ${fmt(monto)}</p>
+        <p className="text-text-primary mt-1">{nota.descripcion}</p>
       </div>
-    </div>
+      <p className="text-xs text-text-muted">
+        La nota queda marcada como anulada en el historial y deja de afectar el saldo del estado de cuenta. No se crea ninguna nota nueva. No se puede anular una nota que ya fue aplicada a un pago o cobro: anula primero ese pago o cobro.
+      </p>
+    </AnularConLlaveModal>
   );
 }
 

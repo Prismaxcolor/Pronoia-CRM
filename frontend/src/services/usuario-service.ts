@@ -11,6 +11,9 @@ interface UsuarioApi {
   activo: boolean;
   creadoEn: string;
   temaMarca?: 'azul' | null;
+  telegramVinculado?: boolean;
+  telegramLinkedAt?: string | null;
+  telegramChatId?: string | null;
 }
 
 function mapApi(api: UsuarioApi): Usuario {
@@ -27,6 +30,9 @@ function mapApi(api: UsuarioApi): Usuario {
     activo: api.activo,
     creadoEn: api.creadoEn,
     temaMarca: api.temaMarca === 'azul' ? 'azul' : null,
+    telegramVinculado: Boolean(api.telegramVinculado),
+    telegramLinkedAt: api.telegramLinkedAt ?? null,
+    telegramChatId: api.telegramChatId ?? null,
   };
 }
 
@@ -105,5 +111,51 @@ export async function borrarUsuario(id: string): Promise<{ ok: true } | { error:
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo borrar el usuario.' };
+  }
+}
+
+export interface LinkTelegramUsuario {
+  deepLink: string;
+  /** True cuando un superadmin genera el enlace de otra persona: ELLA debe abrirlo. */
+  paraOtraPersona: boolean;
+  aviso?: string;
+}
+
+/** `'me'` = el propio usuario; cualquier otro valor es un id (solo superadmin). */
+async function generarLinkTelegramDe(objetivo: string): Promise<LinkTelegramUsuario | { error: string }> {
+  try {
+    return await apiFetch<LinkTelegramUsuario>(`/api/usuarios/${objetivo}/telegram/generar-link`, { method: 'POST' });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo generar el enlace de Telegram.' };
+  }
+}
+
+async function desvincularTelegramDe(objetivo: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/usuarios/${objetivo}/telegram`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo desvincular el Telegram.' };
+  }
+}
+
+export const generarLinkTelegramMe = () => generarLinkTelegramDe('me');
+export const desvincularTelegramMe = () => desvincularTelegramDe('me');
+export const generarLinkTelegramUsuario = (id: string) => generarLinkTelegramDe(id);
+export const desvincularTelegramUsuario = (id: string) => desvincularTelegramDe(id);
+
+/** Estado de Telegram de un usuario (superadmin ve a cualquiera por la lista de usuarios). */
+export async function leerTelegramUsuario(id: string): Promise<{ vinculado: boolean; linkedAt: string | null } | null> {
+  const usuario = (await obtenerUsuarios()).find(u => u.id === id);
+  return usuario ? { vinculado: Boolean(usuario.telegramVinculado), linkedAt: usuario.telegramLinkedAt ?? null } : null;
+}
+
+/** Estado de Telegram del usuario autenticado (relee /api/auth/me). */
+export async function leerTelegramMe(): Promise<{ vinculado: boolean; linkedAt: string | null } | null> {
+  try {
+    const { usuario } = await apiFetch<{ usuario: UsuarioApi }>('/api/auth/me');
+    return { vinculado: Boolean(usuario.telegramVinculado), linkedAt: usuario.telegramLinkedAt ?? null };
+  } catch {
+    return null;
   }
 }

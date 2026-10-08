@@ -62,7 +62,7 @@ describe('catálogo de eventos del grupo', () => {
         expect(e.importancia, e.clave).toBe('critica');
       }
     }
-    const criticos = ['ticket.editado', 'llave.generada', 'toma_fisica.culminada', 'toma_fisica.cancelada', 'pago.multiple', 'cobro.multiple', 'usuario.editado', 'proveedor.nota_anulada'];
+    const criticos = ['ticket.editado', 'llave.generada', 'toma_fisica.culminada', 'toma_fisica.cancelada', 'pago.multiple', 'cobro.multiple', 'usuario.editado', 'nota.anulada_proveedor'];
     for (const clave of criticos) {
       expect(CATALOGO_EVENTOS.find(e => e.clave === clave)?.importancia, clave).toBe('critica');
     }
@@ -256,7 +256,7 @@ describe('destinoEvento (ruteo operaciones / cajas)', () => {
   it('pagos, cobros, cruces, bancas, notas y estados de cuenta van SOLO a cajas', () => {
     const claves = [
       'pago.registrado', 'pago.multiple', 'cobro.multiple', 'banca.movimiento', 'banca.creada', 'banca.archivada',
-      'proveedor.nota_creada', 'proveedor.nota_anulada', 'cliente.nota_creada', 'cliente.estado_cuenta_enviado',
+      'proveedor.nota_creada', 'nota.anulada_proveedor', 'cliente.nota_creada', 'cliente.estado_cuenta_enviado',
     ];
     for (const clave of claves) {
       expect(destinoEvento(ev(clave), base), clave).toBe('cajas');

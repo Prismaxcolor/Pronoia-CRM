@@ -12,6 +12,10 @@ export interface Usuario {
   creadoEn: string;
   /** Color del sistema: 'azul' o null (verde por defecto). */
   temaMarca?: 'azul' | null;
+  /** Telegram enlazado (para avisos privados). El chat id solo llega al propio usuario y a superadmin. */
+  telegramVinculado?: boolean;
+  telegramLinkedAt?: string | null;
+  telegramChatId?: string | null;
 }
 
 /** Espejo de backend/src/utils/permisos.ts (ver el comentario ahí sobre por

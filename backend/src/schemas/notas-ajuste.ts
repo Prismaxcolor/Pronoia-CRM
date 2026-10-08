@@ -15,6 +15,8 @@ export const crearNotaAjusteSchema = z.object({
 /** Anula una nota existente (no se borra ni se crea nota contraria: queda marcada como anulada). */
 export const anularNotaAjusteSchema = z.object({
   motivo: z.string().trim().min(1, 'El motivo de la anulación es obligatorio.').max(300),
+  /** Llave de edición de un solo uso (obligatoria salvo para el superadmin). */
+  llaveEdicion: z.string().trim().max(64).optional(),
 });
 
 export type CrearNotaAjusteInput = z.infer<typeof crearNotaAjusteSchema>;

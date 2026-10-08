@@ -11,6 +11,8 @@ export interface BancaPagoDetalle {
 }
 
 export interface ItemPagoDetalle {
+  /** Id del documento aplicado (factura, nota o grupo del adelanto). */
+  id: string;
   tipo: 'factura' | 'nota_debito' | 'nota_credito' | 'adelanto';
   /** Código de control del documento aplicado (C-/V-/ND-/NC-/NDV-/NCV-).
    *  Null si el documento referenciado ya no tiene numero. */
@@ -50,6 +52,11 @@ export interface PagoDetalle {
    *  (calculado en el backend: utils/comprobante-resumen.ts). Opcional: un backend
    *  anterior no lo envía y la pantalla muestra solo el Total. */
   resumen?: FilaResumenPago[];
+  /** true si la operación fue anulada: se conserva el registro, pero ya no cuenta en saldos. */
+  anulado: boolean;
+  anuladoMotivo: string | null;
+  anuladoEn: string | null;
+  anuladoPor: string | null;
 }
 
 /** Detalle completo de un pago/cobro para su comprobante imprimible (vista

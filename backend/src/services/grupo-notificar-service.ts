@@ -3,6 +3,7 @@ import { ENV } from '../config/env.js';
 import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
 import { logger } from '../utils/logger.js';
 import { formatCodigoNotaCredito, formatCodigoNotaDebito, formatCodigoNotaCreditoCliente, formatCodigoNotaDebitoCliente, formatCodigoTransformacion } from '../utils/codigos.js';
+import { validarBotones, type BotonAviso } from '../utils/botones-aviso.js';
 import { formatearMensaje, type ActorEvento } from '../utils/grupo-formato.js';
 import type { CambiosAuditoria } from '../utils/auditoria.js';
 import { obtenerTicket } from './ticket-pesaje-service.js';
@@ -28,6 +29,8 @@ export interface PayloadGrupo {
   documentoUrl?: string;
   nombreArchivo?: string;
   fotos?: string[];
+  /** Botones de URL (solo https) que n8n pinta bajo el mensaje; sin ellos el aviso sale como texto. */
+  botones?: BotonAviso[];
 }
 
 const WEBHOOK_TIMEOUT_MS = 5_000;
@@ -51,8 +54,11 @@ export async function notificarGrupo(payload: PayloadGrupo): Promise<void> {
     // El dinero tiene su propio grupo: jamás cae al webhook del grupo de operaciones.
     if (payload.destino === 'cajas') return await enviarACajas(payload);
     if (!ENV.GRUPO_NOTIFICACIONES_ACTIVAS || !ENV.N8N_WEBHOOK_GRUPO) return;
+    const { botones: botonesCrudos, ...base } = payload;
+    const botones = validarBotones(botonesCrudos);
     const cuerpo: PayloadGrupo = {
-      ...payload,
+      ...base,
+      ...(botones.length > 0 ? { botones } : {}),
       texto: payload.texto.length > MAX_TEXTO ? `${payload.texto.slice(0, MAX_TEXTO)}…` : payload.texto,
     };
     const respuesta = await fetch(ENV.N8N_WEBHOOK_GRUPO, {
@@ -298,6 +304,12 @@ const ENTIDAD_AUDITORIA: Record<string, string> = {
   'ticket.editado': 'ticket_pesaje',
   'transformacion.editada': 'transformacion',
   'traslado.editado': 'traslado',
+  'pago.editado': 'pago',
+  'pago.anulado': 'pago',
+  'cobro.editado': 'cobro',
+  'cobro.anulado': 'cobro',
+  'movimiento.editado': 'movimiento_banca',
+  'movimiento.anulado': 'movimiento_banca',
 };
 
 interface FilaAuditoria {
@@ -447,7 +459,7 @@ export async function construirPayloadGrupo(
     resolverEtiqueta(hallado, ctxBase, previa),
     resolverContexto(evento.contexto?.(ctxBase) ?? null),
     evento.enriquecer === 'auditoria'
-      ? leerAuditoriaReciente(evento.clave, encontrado.params.id ?? '', ahora)
+      ? leerAuditoriaReciente(evento.clave, encontrado.params.id ?? encontrado.params.grupoId ?? '', ahora)
       : Promise.resolve<ExtraEvento>({}),
     detallesPorDiff(hallado, pet, ctxBase.reqBody).catch((): undefined => undefined),
     destino === 'cajas' ? lineasDeCuentas(ctxBase.reqBody) : Promise.resolve<string[]>([]),

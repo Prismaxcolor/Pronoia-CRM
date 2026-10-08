@@ -5,6 +5,7 @@ import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
 import { logger } from '../utils/logger.js';
 import { cuentasDeBody, htmlATextoPlano, lineaCuenta } from './grupo-dinero.js';
 import { repartirFotos } from './telegram-notify-service.js';
+import { validarBotones } from '../utils/botones-aviso.js';
 import type { PayloadGrupo } from './grupo-notificar-service.js';
 
 /**
@@ -92,11 +93,17 @@ export async function enviarACajas(payload: PayloadGrupo): Promise<void> {
     if (!ENV.GRUPO_NOTIFICACIONES_ACTIVAS || !(await cajasConfigurado())) return;
     const texto = htmlATextoPlano(payload.texto);
     const albumes = repartirFotos((payload.fotos ?? []).map(url => ({ url })));
-    const cabeEnPie = texto.length <= MAX_CAPTION;
+    // Con botones el texto va siempre como mensaje propio (el botón cuelga del mensaje, no de un pie de foto).
+    const botones = validarBotones(payload.botones);
+    const cabeEnPie = botones.length === 0 && texto.length <= MAX_CAPTION;
     const hayDocumento = Boolean(payload.documentoUrl);
     const hayAdjuntos = hayDocumento || albumes.length > 0;
 
-    const enviarTexto = () => llamarWebhook({ accion: 'mensaje', mensaje: recortar(texto, MAX_MENSAJE) }, WEBHOOK_TIMEOUT_MS);
+    const enviarTexto = () => llamarWebhook({
+      accion: 'mensaje',
+      mensaje: recortar(texto, MAX_MENSAJE),
+      ...(botones.length > 0 ? { botones } : {}),
+    }, WEBHOOK_TIMEOUT_MS);
     const textoPendiente = hayAdjuntos && cabeEnPie;
 
     if (!hayAdjuntos || !cabeEnPie) await enviarTexto();

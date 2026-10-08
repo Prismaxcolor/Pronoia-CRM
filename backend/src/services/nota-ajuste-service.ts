@@ -2,6 +2,9 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearNotaAjusteInput } from '../schemas/notas-ajuste.js';
 import { formatCodigoNotaCredito, formatCodigoNotaDebito } from '../utils/codigos.js';
 import { notificarNota } from './telegram-eventos-service.js';
+import { anularNotaAutorizada, type ResultadoAnulacionNota } from './nota-anulacion-autorizada.js';
+import type { ActorEdicion } from './edicion-autorizada-service.js';
+import type { ErrorTransaccion } from '../utils/transaccion-edicion.js';
 
 export interface NotaAjusteCruda {
   id: string;
@@ -279,4 +282,20 @@ export async function anularNotaAjuste(
   if (error || !data) return { error: error?.message ?? 'No se pudo anular la nota.' };
   notificarNota('proveedor', proveedorId, () => obtenerNotaAjuste(proveedorId, notaId), 'anulada');
   return { id: data as string };
+}
+
+/** Anular una nota exige llave de edición (o superadmin): autoriza, anula y deja el rastro en el historial. */
+export function anularNotaAjusteConLlave(
+  proveedorId: string,
+  notaId: string,
+  motivo: string,
+  actor: ActorEdicion
+): Promise<ResultadoAnulacionNota | ErrorTransaccion> {
+  return anularNotaAutorizada({
+    tipo: 'nota_ajuste_proveedor',
+    notaId,
+    motivo,
+    actor,
+    anular: () => anularNotaAjuste(proveedorId, notaId, motivo, actor.userId),
+  });
 }

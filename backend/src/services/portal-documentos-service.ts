@@ -29,6 +29,7 @@ async function listarComprobantes(entidadTipo: EntidadTelegram, entidadId: strin
     .from('movimientos')
     .select('id, fecha, monto_usd, comprobantes, grupo_id')
     .eq('proveedor_id', entidadId)
+    .eq('anulado', false)
     .not('comprobantes', 'eq', '[]')
     .order('fecha', { ascending: false });
 
@@ -44,7 +45,8 @@ async function listarComprobantes(entidadTipo: EntidadTelegram, entidadId: strin
     const { data: filasGrupo } = await supabaseAdmin
       .from('movimientos')
       .select('grupo_id, monto_usd')
-      .in('grupo_id', grupoIds);
+      .in('grupo_id', grupoIds)
+      .eq('anulado', false);
     for (const f of filasGrupo ?? []) {
       const clave = f.grupo_id as string;
       totalPorGrupo.set(clave, (totalPorGrupo.get(clave) ?? 0) + Number(f.monto_usd ?? 0));

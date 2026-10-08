@@ -158,9 +158,9 @@ export async function cargarDatosSaldos(tipo: TipoEntidad): Promise<DatosSaldos 
     leerTabla(t.entidad, 'id, nombre, activo'),
     // Igual que el estado de cuenta: las facturas anuladas no son deuda.
     leerTabla(t.facturas, `id, ${col}, total, monto_pagado, estado, created_at`, q => q.neq('estado', 'anulada')),
-    leerTabla('movimientos', `id, ${col}, monto, monto_usd, fecha, subtipo, grupo_id`, q => q.eq('tipo', t.tipoMov)),
+    leerTabla('movimientos', `id, ${col}, monto, monto_usd, fecha, subtipo, grupo_id`, q => q.eq('tipo', t.tipoMov).eq('anulado', false)),
     leerTabla(t.notas, `id, ${col}, tipo, monto, anulada, pagada, fecha`),
-    leerTabla('pago_aplicaciones', 'id, item_id, monto_usd', q => q.eq('tipo', 'adelanto')),
+    leerTabla('pago_aplicaciones', 'id, item_id, monto_usd', q => q.eq('tipo', 'adelanto').eq('anulada', false)),
   ]);
 
   const aplicadoPorAdelanto = new Map<string, number>();

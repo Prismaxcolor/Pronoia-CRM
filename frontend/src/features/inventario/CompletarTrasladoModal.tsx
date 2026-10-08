@@ -8,6 +8,7 @@ import type { Traslado } from '@shared/types/index.js';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import { difiereEstado } from '../../lib/borrador';
+import { fotoLocalDeFile, type FotoLocal } from '../../lib/foto-picker';
 
 interface Props {
   traslado: Traslado;
@@ -15,7 +16,8 @@ interface Props {
   onCompletado: () => void;
 }
 
-interface FotoLocal { file: File; preview: string }
+/** Fotos de evidencia: siempre nuevas (en esta pantalla no hay fotos ya subidas). */
+type FotoNueva = Extract<FotoLocal, { tipo: 'nueva' }>;
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,31 +28,34 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
   const [recibido, setRecibido] = useState<Record<string, string>>(
     Object.fromEntries(traslado.materiales.map(m => [m.id, String(m.pesoNeto)]))
   );
-  const [fotos, setFotos] = useState<FotoLocal[]>([]);
+  const [fotos, setFotos] = useState<FotoNueva[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const camaraRef = useRef<HTMLInputElement>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Borrador de lo recibido por material (las fotos de evidencia no se pueden guardar: hay que
-  // volver a tomarlas). Sobrevive a F5.
+  // Borrador de lo recibido por material y de las fotos de evidencia (los Blobs van a IndexedDB,
+  // ver lib/borrador-imagenes.ts). Sobrevive a F5. Los borradores anteriores no traen `fotos`.
   const recibidoInicial = () => Object.fromEntries(traslado.materiales.map(m => [m.id, String(m.pesoNeto)])) as Record<string, string>;
-  const estadoBorrador = { recibido };
+  const estadoBorrador = { recibido, fotos };
   const borrador = useBorradorPersistente<typeof estadoBorrador>({
     formulario: 'traslado-recepcion',
     docId: traslado.id,
     version: 1,
     estado: estadoBorrador,
-    hayCambios: difiereEstado(estadoBorrador, { recibido: recibidoInicial() }),
-    aplicar: d => setRecibido({ ...recibidoInicial(), ...d.recibido }),
-    restablecer: () => setRecibido(recibidoInicial()),
+    hayCambios: difiereEstado(estadoBorrador, { recibido: recibidoInicial(), fotos: [] }),
+    aplicar: d => {
+      setRecibido({ ...recibidoInicial(), ...d.recibido });
+      setFotos(d.fotos ?? []);
+    },
+    restablecer: () => { setRecibido(recibidoInicial()); setFotos([]); },
   });
   // Cerrar (X o Cancelar) descarta el borrador guardado.
   const cerrar = () => { borrador.limpiar(); onClose(); };
 
   const handleFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    setFotos(prev => [...prev, ...files.map(file => ({ file, preview: URL.createObjectURL(file) }))]);
+    setFotos(prev => [...prev, ...files.map(fotoLocalDeFile) as FotoNueva[]]);
     e.target.value = '';
   };
   const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));

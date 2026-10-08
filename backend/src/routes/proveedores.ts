@@ -8,6 +8,7 @@ import {
   borrarProveedor,
 } from '../services/proveedor-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
 import { estadoCuentaTelegramLimiter } from '../middlewares/rate-limit.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -15,7 +16,7 @@ import { crearProveedorSchema, actualizarProveedorSchema } from '../schemas/prov
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { generarLinkTelegram } from '../services/telegram-link-service.js';
 import { enviarEstadoCuentaTelegram } from '../services/telegram-estado-cuenta-service.js';
-import { crearNotaAjuste, anularNotaAjuste, obtenerNotaAjuste } from '../services/nota-ajuste-service.js';
+import { crearNotaAjuste, anularNotaAjusteConLlave, obtenerNotaAjuste } from '../services/nota-ajuste-service.js';
 import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-ajuste.js';
 import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
 import { listarAdelantosDisponibles } from '../services/cruce-service.js';
@@ -130,15 +131,20 @@ router.post(
 
 router.post(
   '/:id/notas-ajuste/:notaId/anular',
-  requirePermiso('proveedores', 'editar'),
+  requirePermisoOLlave('proveedores', 'editar'),
   validateBody(anularNotaAjusteSchema),
   async (req, res) => {
     const proveedorId = String(req.params.id);
     const notaId = String(req.params.notaId);
-    const result = await anularNotaAjuste(proveedorId, notaId, req.body.motivo, req.user!.sub);
+    // Anular una nota exige llave de edición (o ser superadmin), igual que editar un ticket.
+    const result = await anularNotaAjusteConLlave(proveedorId, notaId, req.body.motivo, {
+      userId: req.user!.sub,
+      email: req.user!.email,
+      rol: req.user!.rol,
+      llave: req.body.llaveEdicion,
+    });
     if ('error' in result) {
-      const status = result.error.includes('no encontrada') ? 404 : 400;
-      res.status(status).json(result);
+      res.status(result.codigo).json({ error: result.error });
       return;
     }
     logger.info({

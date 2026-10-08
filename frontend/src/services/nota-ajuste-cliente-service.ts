@@ -63,12 +63,13 @@ export async function crearNotaAjusteCliente(
 export async function anularNotaAjusteCliente(
   clienteId: string,
   notaId: string,
-  motivo: string
+  motivo: string,
+  llaveEdicion?: string
 ): Promise<{ id: string } | { error: string }> {
   try {
     return await apiFetch<{ id: string }>(`/api/clientes/${clienteId}/notas-ajuste/${notaId}/anular`, {
       method: 'POST',
-      body: { motivo },
+      body: { motivo, llaveEdicion: llaveEdicion || undefined },
     });
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo anular la nota.' };

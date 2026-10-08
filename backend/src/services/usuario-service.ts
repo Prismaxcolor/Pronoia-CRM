@@ -10,6 +10,10 @@ const BCRYPT_ROUNDS = 10;
 const COLUMNAS_BASE = 'id, email, nombre, rol, permisos, activo, creado_en';
 /** tema_marca llega con migration_usuarios_tema_marca.sql; antes no existe. */
 const COLUMNAS_CON_TEMA = `${COLUMNAS_BASE}, tema_marca`;
+/** telegram_* llegan con migration_users_telegram.sql; antes no existen. */
+const COLUMNAS_CON_TELEGRAM = `${COLUMNAS_CON_TEMA}, telegram_chat_id, telegram_linked_at`;
+/** De la más completa a la más básica: se degrada si falta una migración. */
+const NIVELES_COLUMNAS = [COLUMNAS_CON_TELEGRAM, COLUMNAS_CON_TEMA, COLUMNAS_BASE];
 
 interface UsuarioRow {
   id: string;
@@ -20,6 +24,8 @@ interface UsuarioRow {
   activo: boolean;
   creado_en: string;
   tema_marca?: unknown;
+  telegram_chat_id?: string | null;
+  telegram_linked_at?: string | null;
 }
 
 export interface UsuarioPublico {
@@ -31,9 +37,24 @@ export interface UsuarioPublico {
   activo: boolean;
   creadoEn: string;
   temaMarca: TemaMarca | null;
+  /** Chat id de Telegram: solo para el propio usuario y superadmin; al resto va null. */
+  telegramChatId: string | null;
+  telegramLinkedAt: string | null;
+  telegramVinculado: boolean;
 }
 
-function toPublico(row: UsuarioRow): UsuarioPublico {
+export interface OpcionesVisibilidad {
+  /** True cuando quien consulta es el propio usuario o un superadmin. */
+  verChatId?: boolean;
+}
+
+/** Puede ver el chat id de `targetId` el propio usuario o un superadmin. */
+export function puedeVerChatId(actor: { id: string; rol: string }, targetId: string): boolean {
+  return actor.rol === 'superadmin' || actor.id === targetId;
+}
+
+function toPublico(row: UsuarioRow, opciones: OpcionesVisibilidad = {}): UsuarioPublico {
+  const chatId = row.telegram_chat_id ?? null;
   return {
     id: row.id,
     email: row.email,
@@ -43,29 +64,37 @@ function toPublico(row: UsuarioRow): UsuarioPublico {
     activo: row.activo,
     creadoEn: row.creado_en,
     temaMarca: normalizarTemaMarca(row.tema_marca),
+    telegramChatId: opciones.verChatId ? chatId : null,
+    telegramLinkedAt: row.telegram_linked_at ?? null,
+    telegramVinculado: Boolean(chatId),
   };
 }
 
-export async function listarUsuarios(): Promise<UsuarioPublico[]> {
-  const conTema = await supabaseAdmin
-    .from('users')
-    .select(COLUMNAS_CON_TEMA)
-    .order('creado_en', { ascending: false });
-
-  // Migración de tema_marca aún sin aplicar: se degrada a la lista sin esa columna.
-  const { data, error } = esObjetoInexistente(conTema.error)
-    ? await supabaseAdmin.from('users').select(COLUMNAS_BASE).order('creado_en', { ascending: false })
-    : conTema;
-
-  if (error || !data) return [];
-  return (data as unknown as UsuarioRow[]).map(toPublico);
+/** Prueba cada nivel de columnas hasta que la BD no se queje de una columna inexistente. */
+async function consultarConFallback<T>(
+  consulta: (columnas: string) => PromiseLike<{ data: T | null; error: { code?: string; message?: string } | null }>
+): Promise<{ data: T | null; error: { code?: string; message?: string } | null }> {
+  let ultimo: Awaited<ReturnType<typeof consulta>> = { data: null, error: null };
+  for (const columnas of NIVELES_COLUMNAS) {
+    ultimo = await consulta(columnas);
+    if (!esObjetoInexistente(ultimo.error)) return ultimo;
+  }
+  return ultimo;
 }
 
-async function leerUsuarioPublico(id: string): Promise<UsuarioPublico | null> {
-  const conTema = await supabaseAdmin.from('users').select(COLUMNAS_CON_TEMA).eq('id', id).maybeSingle();
-  const data = conTema.data
-    ?? (await supabaseAdmin.from('users').select(COLUMNAS_BASE).eq('id', id).maybeSingle()).data;
-  return data ? toPublico(data as unknown as UsuarioRow) : null;
+export async function listarUsuarios(opciones: OpcionesVisibilidad = {}): Promise<UsuarioPublico[]> {
+  const { data, error } = await consultarConFallback(columnas =>
+    supabaseAdmin.from('users').select(columnas).order('creado_en', { ascending: false })
+  );
+  if (error || !data) return [];
+  return (data as unknown as UsuarioRow[]).map(row => toPublico(row, opciones));
+}
+
+async function leerUsuarioPublico(id: string, opciones: OpcionesVisibilidad = {}): Promise<UsuarioPublico | null> {
+  const { data } = await consultarConFallback(columnas =>
+    supabaseAdmin.from('users').select(columnas).eq('id', id).maybeSingle()
+  );
+  return data ? toPublico(data as unknown as UsuarioRow, opciones) : null;
 }
 
 export async function crearUsuarioAdmin(
@@ -203,7 +232,9 @@ export async function actualizarUsuarioAdmin(
     };
   }
   if (!data) return { error: 'Usuario no encontrado.', status: 404 };
-  const usuario = await leerUsuarioPublico(id);
+  const usuario = await leerUsuarioPublico(id, {
+    verChatId: actor ? puedeVerChatId({ id: actorId, rol: String(actor.rol) }, id) : actorId === id,
+  });
   if (!usuario) return { error: 'Usuario no encontrado.', status: 404 };
   return { usuario };
 }

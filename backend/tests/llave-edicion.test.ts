@@ -231,8 +231,19 @@ describe("esSuperadminVigente (rol releído de la BD)", () => {
 });
 
 describe("entidades con llave", () => {
-  it("hoy aceptan llave los tickets de pesaje, las transformaciones y los traslados", () => {
-    expect([...ENTIDADES_CON_LLAVE]).toEqual(["ticket_pesaje", "transformacion", "traslado"]);
+  it("hoy aceptan llave tickets, transformaciones, traslados, pagos, cobros, movimientos de banca y anulación de notas", () => {
+    expect([...ENTIDADES_CON_LLAVE]).toEqual([
+      "ticket_pesaje", "transformacion", "traslado",
+      "pago", "cobro", "movimiento_banca", "nota_ajuste_proveedor", "nota_ajuste_cliente",
+    ]);
+  });
+
+  it("pagos y cobros comparten la vista pagos_grupo (existencia del grupo) y los movimientos su tabla", () => {
+    expect(TABLA_POR_ENTIDAD.pago).toBe("pagos_grupo");
+    expect(TABLA_POR_ENTIDAD.cobro).toBe("pagos_grupo");
+    expect(TABLA_POR_ENTIDAD.movimiento_banca).toBe("movimientos");
+    expect(TABLA_POR_ENTIDAD.nota_ajuste_proveedor).toBe("notas_ajuste_proveedor");
+    expect(TABLA_POR_ENTIDAD.nota_ajuste_cliente).toBe("notas_ajuste_cliente");
   });
 
   it("crearLlaveSchema acepta transformación y rechaza facturas (no tienen edición)", () => {

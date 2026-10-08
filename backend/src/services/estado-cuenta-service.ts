@@ -314,7 +314,8 @@ export async function obtenerEstadoCuenta(
     .from('movimientos')
     .select('id, monto, monto_usd, descripcion, referencia, fecha, subtipo, numero, grupo_id, creado_en')
     .eq(columnaEntidad, id)
-    .eq('tipo', tipoMovAbono);
+    .eq('tipo', tipoMovAbono)
+    .eq('anulado', false);
   if (desde) qPagos = qPagos.gte('fecha', desde);
   if (hasta) qPagos = qPagos.lte('fecha', hasta);
   const { data: pagosData } = await qPagos;
@@ -411,7 +412,7 @@ async function cargarDatosCruce(
   };
   const columnaEntidad = esProveedor ? 'proveedor_id' : 'cliente_id';
 
-  let qCruces = supabaseAdmin.from('cruces').select('grupo_id, numero, fecha, descripcion').eq(columnaEntidad, entidadId);
+  let qCruces = supabaseAdmin.from('cruces').select('grupo_id, numero, fecha, descripcion').eq(columnaEntidad, entidadId).eq('anulado', false);
   if (desde) qCruces = qCruces.gte('fecha', desde);
   if (hasta) qCruces = qCruces.lte('fecha', hasta);
   const { data: crucesData, error: errCruces } = await qCruces;
@@ -453,6 +454,7 @@ async function sumarAplicaciones(
         .from('pago_aplicaciones')
         .select(`id, ${columnaClave}, monto_usd`)
         .eq('tipo', tipo)
+        .eq('anulada', false)
         .in(columnaClave, lote)
         .order('id', { ascending: true })
         .range(desde, hasta)
