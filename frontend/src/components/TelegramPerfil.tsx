@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Send } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import { useToast } from '../hooks/use-toast-context';
 import { useConfirm } from '../hooks/use-confirm-context';
@@ -7,7 +6,7 @@ import { desvincularTelegramMe } from '../services/usuario-service';
 import { formatearFechaHora } from '../lib/fecha-negocio';
 import TelegramUsuarioModal from './TelegramUsuarioModal';
 
-/** Estado del Telegram del usuario en sesión, con acciones para vincular o desvincular (va en el perfil del menú). */
+/** Estado del Telegram del usuario en sesión, con acciones para vincular o desvincular (va en la pantalla de perfil). */
 function TelegramPerfil() {
   const { usuario, recargarUsuario } = useAuth();
   const toast = useToast();
@@ -35,22 +34,31 @@ function TelegramPerfil() {
   };
 
   return (
-    <div className="mb-3 rounded-lg bg-brand-800/60 px-3 py-2 text-xs">
-      <div className="flex items-center gap-2 text-brand-100">
-        <Send size={14} aria-hidden="true" />
-        <span className="font-medium">Telegram</span>
-      </div>
-      <p className="mt-1 text-brand-300">
+    <div className="text-sm">
+      <p className="font-medium text-text-primary">
         {vinculado
           ? `Vinculado desde ${formatearFechaHora(usuario.telegramLinkedAt)}`
           : 'No vinculado'}
       </p>
-      <div className="mt-1.5 flex gap-3">
-        <button type="button" onClick={() => setModalAbierto(true)} className="font-medium text-brand-100 underline-offset-2 hover:underline">
+      {usuario.rol === 'superadmin' && (
+        <p className="mt-1 text-xs text-text-secondary">
+          Así recibes las solicitudes de llave de edición y las apruebas desde el chat.
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setModalAbierto(true)}
+          className="min-h-11 rounded-lg bg-brand-600 px-4 text-sm font-medium text-text-on-brand hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+        >
           {vinculado ? 'Revincular' : 'Vincular'}
         </button>
         {vinculado && (
-          <button type="button" onClick={desvincular} className="font-medium text-amber-300 underline-offset-2 hover:underline">
+          <button
+            type="button"
+            onClick={desvincular}
+            className="min-h-11 rounded-lg border border-border-strong px-4 text-sm font-medium text-text-primary hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+          >
             Desvincular
           </button>
         )}

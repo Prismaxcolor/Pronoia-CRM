@@ -137,7 +137,7 @@ test.describe('g) Cerrar sesion con pendientes', () => {
     await expect(page.getByText(/PEND-\d+/).first()).toBeVisible();
 
     await abrirMenu(page);
-    await page.getByRole('button', { name: /Cerrar sesion/ }).click();
+    await page.locator('aside').getByRole('button', { name: /Cerrar sesi[oó]n/ }).click();
     await expect(page.getByRole('heading', { name: 'Antes de cerrar sesión' })).toBeVisible();
     await expect(page.getByText(/1 pendiente sin enviar/)).toBeVisible();
     await expect(page.getByRole('button', { name: /Exportar respaldo/ })).toBeVisible();
@@ -147,7 +147,7 @@ test.describe('g) Cerrar sesion con pendientes', () => {
     expect(await leerLocalStorage(page, 'pronoia_token')).not.toBeNull();
 
     await abrirMenu(page);
-    await page.getByRole('button', { name: /Cerrar sesion/ }).click();
+    await page.locator('aside').getByRole('button', { name: /Cerrar sesi[oó]n/ }).click();
     await page.getByRole('button', { name: /^Salir/ }).first().click();
     await expect.poll(() => leerLocalStorage(page, 'pronoia_token')).toBeNull();
     expect(await leerColaIndexedDB(page)).toHaveLength(1); // la cola sobrevive al cierre de sesion

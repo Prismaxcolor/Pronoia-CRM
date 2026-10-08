@@ -126,7 +126,7 @@ export const botonGenerarTicket = (page: Page) => page.getByRole('button', { nam
 
 /** Abre el menu lateral (en movil es un drawer). Idempotente: si ya esta abierto no hace nada. */
 export async function abrirMenu(page: Page): Promise<void> {
-  const salir = page.getByRole('button', { name: /Cerrar sesion/ });
+  const salir = page.locator('aside').getByRole('button', { name: /Cerrar sesi[oó]n/ });
   const abierto = async () => (await salir.isVisible()) && (await salir.evaluate(el => {
     const r = el.getBoundingClientRect();
     return r.left >= 0 && r.right <= window.innerWidth;

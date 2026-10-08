@@ -1,17 +1,13 @@
-import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Send } from 'lucide-react';
 import { useAuth } from '../../hooks/use-auth-context';
-import { useToast } from '../../hooks/use-toast-context';
-import TelegramUsuarioModal from '../../components/TelegramUsuarioModal';
 
 /**
  * Aviso discreto, solo para superadmin sin Telegram vinculado: las solicitudes de llave le llegan
- * por chat privado y desde ahí las aprueba.
+ * por chat privado y desde ahí las aprueba. El enlace lleva a la tarjeta de Telegram del perfil.
  */
 function BannerVincularTelegram() {
-  const { usuario, recargarUsuario } = useAuth();
-  const toast = useToast();
-  const [modalAbierto, setModalAbierto] = useState(false);
+  const { usuario } = useAuth();
 
   if (!usuario || usuario.rol !== 'superadmin' || usuario.telegramVinculado) return null;
 
@@ -24,27 +20,12 @@ function BannerVincularTelegram() {
       <span className="min-w-0 flex-1">
         Vincula tu Telegram para recibir las solicitudes de llave y aprobarlas desde el chat.
       </span>
-      <button
-        type="button"
-        onClick={() => setModalAbierto(true)}
-        className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+      <Link
+        to="/perfil#telegram"
+        className="inline-flex min-h-9 items-center rounded-md bg-amber-600 px-3 text-xs font-semibold text-white hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
       >
         Vincular ahora
-      </button>
-      {modalAbierto && (
-        <TelegramUsuarioModal
-          usuarioId={usuario.id}
-          nombre={usuario.nombre}
-          esPropio
-          linkedAtInicial={usuario.telegramLinkedAt ?? null}
-          onClose={() => setModalAbierto(false)}
-          onVinculado={() => {
-            setModalAbierto(false);
-            toast.exito('Telegram vinculado.');
-            void recargarUsuario();
-          }}
-        />
-      )}
+      </Link>
     </div>
   );
 }

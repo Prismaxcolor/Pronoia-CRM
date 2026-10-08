@@ -137,7 +137,7 @@ test.describe('l) Exportar e importar respaldo de la cola', () => {
     const [op] = await leerColaIndexedDB(page);
 
     await abrirMenu(page);
-    await page.getByRole('button', { name: /Cerrar sesion/ }).click();
+    await page.locator('aside').getByRole('button', { name: /Cerrar sesi[oó]n/ }).click();
     const descarga = page.waitForEvent('download');
     await page.getByRole('button', { name: /Exportar respaldo/ }).click();
     const archivo = await descarga;

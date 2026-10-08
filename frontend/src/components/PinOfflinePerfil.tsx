@@ -1,12 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { KeyRound } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import { useToast } from '../hooks/use-toast-context';
 import { useEstadoConexion } from '../lib/offline/conexion';
 import { configurarPinOffline, PinAgotadoError, pinOfflineConfigurado, quitarPinOffline } from '../lib/offline/sesion';
 import { LARGO_PIN_MAX, validarFormatoPin } from '../lib/offline/pin-logica';
 
-/** Activa, cambia o quita el PIN de desbloqueo sin conexión (va en el perfil del menú). Solo se puede
+/** Activa, cambia o quita el PIN de desbloqueo sin conexión (va en la pantalla de perfil). Solo se puede
  *  configurar con internet y con el modo sin conexión activo para el usuario. */
 function PinOfflinePerfil() {
   const { usuario, offlineActivo, logout } = useAuth();
@@ -75,72 +74,73 @@ function PinOfflinePerfil() {
     }
   };
 
+  const CAMPO = 'min-h-11 w-full rounded-lg border border-border-strong bg-surface px-3 text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
+  const BOTON = 'min-h-11 rounded-lg border border-border-strong px-4 text-sm font-medium text-text-primary hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-50';
+  const BOTON_PRIMARIO = 'min-h-11 rounded-lg bg-brand-600 px-4 text-sm font-medium text-text-on-brand hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
+
   return (
-    <div className="mb-3 rounded-lg bg-brand-800/60 px-3 py-2 text-xs">
-      <div className="flex items-center gap-2 text-brand-100">
-        <KeyRound size={14} aria-hidden="true" />
-        <span className="font-medium">PIN sin conexión: {configurado ? 'activo' : 'no configurado'}</span>
-      </div>
-      <p className="mt-1 text-brand-200">Este PIN solo protege el arranque de la app sin conexión. No protege contra quien tenga el equipo con internet ni cifra los datos guardados en él.</p>
+    <div className="text-sm">
+      <p className="font-medium text-text-primary">PIN sin conexión: {configurado ? 'activo' : 'no configurado'}</p>
+      <p className="mt-1 text-xs text-text-secondary">Este PIN solo protege el arranque de la app sin conexión. No protege contra quien tenga el equipo con internet ni cifra los datos guardados en él.</p>
       {!editando && !quitando && (
-        <div className="mt-1.5 flex gap-3">
+        <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
             disabled={!online}
             onClick={() => setEditando(true)}
             title={online ? undefined : 'Necesitas internet para configurar el PIN'}
-            className="text-brand-200 hover:text-white underline disabled:opacity-50 disabled:no-underline"
+            className={BOTON}
           >
             {configurado ? 'Cambiar' : 'Activar'}
           </button>
           {configurado && (
-            <button type="button" onClick={() => setQuitando(true)} className="text-brand-200 hover:text-white underline">
+            <button type="button" onClick={() => setQuitando(true)} className={BOTON}>
               Quitar
             </button>
           )}
         </div>
       )}
       {quitando && (
-        <form onSubmit={e => void quitar(e)} className="mt-2 space-y-1.5">
+        <form onSubmit={e => void quitar(e)} className="mt-3 space-y-2">
           <input
             type="password" inputMode="numeric" autoComplete="off" maxLength={LARGO_PIN_MAX}
             value={pinActual} onChange={e => setPinActual(e.target.value.replace(/\D/g, ''))}
             placeholder="PIN actual" aria-label="PIN actual"
-            className="w-full rounded px-2 py-1 text-text-primary bg-surface"
+            className={CAMPO}
           />
-          {error && <p role="alert" className="text-red-200">{error}</p>}
-          <div className="flex gap-3">
-            <button type="submit" className="text-white font-medium underline">Quitar PIN</button>
-            <button type="button" onClick={cerrarFormulario} className="text-brand-200 hover:text-white underline">Cancelar</button>
+          {error && <p role="alert" className="text-red-700">{error}</p>}
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" className={BOTON_PRIMARIO}>Quitar PIN</button>
+            <button type="button" onClick={cerrarFormulario} className={BOTON}>Cancelar</button>
           </div>
         </form>
       )}
       {editando && (
-        <form onSubmit={guardar} className="mt-2 space-y-1.5">
+        <form onSubmit={guardar} className="mt-3 space-y-2">
           {configurado && (
             <input
               type="password" inputMode="numeric" autoComplete="off" maxLength={LARGO_PIN_MAX}
               value={pinActual} onChange={e => setPinActual(e.target.value.replace(/\D/g, ''))}
               placeholder="PIN actual" aria-label="PIN actual"
-              className="w-full rounded px-2 py-1 text-text-primary bg-surface"
+              className={CAMPO}
             />
           )}
           <input
             type="password" inputMode="numeric" autoComplete="new-password" maxLength={LARGO_PIN_MAX}
             value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
             placeholder="PIN (4 a 8 números)" aria-label="PIN nuevo"
-            className="w-full rounded px-2 py-1 text-text-primary bg-surface"
+            className={CAMPO}
           />
           <input
             type="password" inputMode="numeric" autoComplete="new-password" maxLength={LARGO_PIN_MAX}
             value={repetir} onChange={e => setRepetir(e.target.value.replace(/\D/g, ''))}
             placeholder="Repite el PIN" aria-label="Repetir PIN"
-            className="w-full rounded px-2 py-1 text-text-primary bg-surface"
+            className={CAMPO}
           />
-          {error && <p role="alert" className="text-red-200">{error}</p>}
-          <div className="flex gap-3">
-            <button type="submit" className="text-white font-medium underline">Guardar</button>
-            <button type="button" onClick={cerrarFormulario} className="text-brand-200 hover:text-white underline">Cancelar</button>
+          {error && <p role="alert" className="text-red-700">{error}</p>}
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" className={BOTON_PRIMARIO}>Guardar</button>
+            <button type="button" onClick={cerrarFormulario} className={BOTON}>Cancelar</button>
           </div>
         </form>
       )}

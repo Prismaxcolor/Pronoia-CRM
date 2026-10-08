@@ -12,7 +12,7 @@ const MENSAJES: Record<Exclude<Resultado, null>, string> = {
   actualizando: T.actualizando,
 };
 
-/** Versión instalada + botón manual 'Buscar actualización' (va en el perfil del menú). */
+/** Versión instalada + botón manual 'Buscar actualización' (va en la pantalla de perfil). */
 function BuscarActualizacionPerfil() {
   const [resultado, setResultado] = useState<Resultado>(null);
   const ocupado = resultado === 'buscando' || resultado === 'actualizando';
@@ -23,18 +23,21 @@ function BuscarActualizacionPerfil() {
   };
 
   return (
-    <div className="mb-3 rounded-lg bg-brand-800/60 px-3 py-2 text-xs">
+    <div className="text-sm">
+      <p className="text-text-secondary">
+        Versión instalada:{' '}
+        <span className="font-medium text-text-primary">{formatearVersion(VERSION_ACTUAL.version, VERSION_ACTUAL.compiladoEn)}</span>
+      </p>
       <button
         type="button"
         onClick={() => void buscar()}
         disabled={ocupado}
-        className="flex min-h-9 w-full items-center gap-2 text-brand-100 hover:text-white disabled:opacity-70"
+        className="mt-3 flex min-h-11 items-center gap-2 rounded-lg border border-border-strong px-4 text-sm font-medium text-text-primary hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-70"
       >
-        <RefreshCw size={14} aria-hidden="true" className={ocupado ? 'animate-spin motion-reduce:animate-none' : ''} />
-        <span className="flex-1 text-left font-medium">Buscar actualización</span>
+        <RefreshCw size={16} aria-hidden="true" className={ocupado ? 'animate-spin motion-reduce:animate-none' : ''} />
+        Buscar actualización
       </button>
-      <p className="mt-0.5 text-brand-300">{formatearVersion(VERSION_ACTUAL.version, VERSION_ACTUAL.compiladoEn)}</p>
-      <p role="status" className="min-h-4 text-brand-200">{resultado ? MENSAJES[resultado] : ''}</p>
+      <p role="status" className="mt-2 min-h-5 text-text-secondary">{resultado ? MENSAJES[resultado] : ''}</p>
     </div>
   );
 }

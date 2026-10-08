@@ -101,6 +101,7 @@ const PackingListsPage = lazyConReintento(() => import('./features/packing-list/
 const PackingListEditorPage = lazyConReintento(() => import('./features/packing-list/PackingListEditorPage'));
 const VehiculosPage = lazyConReintento(() => import('./features/vehiculos/VehiculosPage'));
 const PesajePage = lazyConReintento(() => import('./features/pesaje/PesajePage'));
+const PerfilPage = lazyConReintento(() => import('./features/perfil/PerfilPage'));
 const PendientesPage = lazyConReintento(() => import('./features/pendientes/PendientesPage'));
 const TicketDetallePage = lazyConReintento(() => import('./features/pesaje/TicketDetallePage'));
 const FacturaHistorialPage = lazyConReintento(() => import('./features/facturas/FacturaHistorialPage'));
@@ -209,6 +210,7 @@ function AppRoutes() {
          *  redirect por si alguien tiene el link viejo guardado. */}
         <Route path="/lotes" element={<Navigate to="/inventario-legacy?pestana=lotes" replace />} />
         <Route path="/pendientes" element={<PendientesPage />} />
+        <Route path="/perfil" element={<PerfilPage />} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
         <Route path="/pesaje/:id" element={<ProtectedRoute recurso="pesaje"><TicketDetallePage /></ProtectedRoute>} />
         <Route path="/pesaje/conteo/:tomaFisicaId" element={<ProtectedRoute recurso="toma_fisica"><ConteoTomaFisicaPage /></ProtectedRoute>} />

@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, PackageOpen, KeyRound, X } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, PackageOpen, KeyRound, X } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
-import TelegramPerfil from './TelegramPerfil';
-import BuscarActualizacionPerfil from './BuscarActualizacionPerfil';
-import PinOfflinePerfil from './PinOfflinePerfil';
+import BloqueUsuarioMenu from './BloqueUsuarioMenu';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
 import type { Recurso } from '@shared/types/index.js';
 
@@ -114,7 +112,7 @@ interface Props {
 }
 
 function Sidebar({ abierto, onCerrar, llavesPendientes = 0 }: Props) {
-  const { usuario, logout, tienePermiso } = useAuth();
+  const { usuario, tienePermiso } = useAuth();
   const location = useLocation();
   const [ultimasRutas, setUltimasRutas] = useState(() => {
     // Sanea sesiones que ya quedaron con una ruta no-recordable memorizada
@@ -251,29 +249,8 @@ function Sidebar({ abierto, onCerrar, llavesPendientes = 0 }: Props) {
         )}
       </nav>
 
-      {/* Perfil y logout */}
-      <div className="p-4 border-t border-brand-800">
-        <TelegramPerfil />
-        <PinOfflinePerfil />
-        <BuscarActualizacionPerfil />
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-sm font-bold">
-            {usuario?.nombre?.charAt(0).toUpperCase() ?? '?'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{usuario?.nombre}</p>
-            <p className="text-xs text-brand-300 capitalize">{usuario?.rol}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="flex items-center gap-2 text-brand-300 hover:text-white text-sm transition-colors w-full"
-        >
-          <LogOut size={16} />
-          Cerrar sesion
-        </button>
-      </div>
+      {/* Perfil (enlace a /perfil) y cerrar sesión */}
+      <BloqueUsuarioMenu onNavegar={onCerrar} />
       </aside>
     </>
   );

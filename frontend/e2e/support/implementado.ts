@@ -21,7 +21,7 @@ const colaReal = sinStub('lib/offline/cola.ts');
 export const IMPL = {
   /** F0/1: sesion local, barra "Sin conexion", sondeo de conexion. */
   sesionYConexion: existe('lib/offline/sesion.ts') && contiene('components/Layout.tsx', /EstadoConexion/),
-  pin: existe('components/PantallaDesbloqueoPin.tsx') && contiene('components/Sidebar.tsx', /PinOfflinePerfil/),
+  pin: existe('components/PantallaDesbloqueoPin.tsx') && contiene('features/perfil/PerfilPage.tsx', /PinOfflinePerfil/),
   /** F2: catalogos en IndexedDB y precarga. */
   catalogos: existe('lib/offline/catalogos.ts') && contiene('App.tsx', /PrecargaCatalogos/),
   avisoVersion: existe('components/AvisoNuevaVersion.tsx') && contiene('App.tsx', /AvisoNuevaVersion/),

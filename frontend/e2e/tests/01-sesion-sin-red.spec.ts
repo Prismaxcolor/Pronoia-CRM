@@ -44,8 +44,7 @@ test.describe('b) PIN local', () => {
   test('activar PIN con red; sin red pide PIN, rechaza uno malo y desbloquea con el correcto', async ({ env }) => {
     test.fixme(!IMPL.pin || !IMPL.sesionYConexion, RAZON.pin);
     const { page } = env;
-    await abrir(page, '/pesaje');
-    await abrirMenu(page);
+    await abrir(page, '/perfil');
     await page.getByRole('button', { name: 'Activar' }).click();
     await page.getByLabel('PIN nuevo').fill('4821');
     await page.getByLabel('Repetir PIN').fill('4821');
@@ -64,14 +63,13 @@ test.describe('b) PIN local', () => {
     await page.getByLabel('PIN', { exact: true }).fill('4821');
     await page.getByRole('button', { name: 'Desbloquear' }).click();
     await expect(page.getByRole('heading', { name: 'Desbloquear' })).toBeHidden();
-    await expect(page.getByRole('heading', { name: /Pesaje global/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Mi perfil' })).toBeVisible();
   });
 
   test('5 PIN malos bloquean temporalmente', async ({ env }) => {
     test.fixme(!IMPL.pin || !IMPL.sesionYConexion, RAZON.pin);
     const { page } = env;
-    await abrir(page, '/pesaje');
-    await abrirMenu(page);
+    await abrir(page, '/perfil');
     await page.getByRole('button', { name: 'Activar' }).click();
     await page.getByLabel('PIN nuevo').fill('4821');
     await page.getByLabel('Repetir PIN').fill('4821');
