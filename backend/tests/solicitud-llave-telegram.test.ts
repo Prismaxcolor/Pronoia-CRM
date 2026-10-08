@@ -189,11 +189,11 @@ describe('POST /api/llaves-solicitudes/telegram-callback', () => {
   afterAll(() => new Promise<void>(ok => server.close(() => ok())));
 
   beforeEach(() => {
-    process.env.N8N_WEBHOOK_SECRET = SECRETO;
+    process.env.N8N_CALLBACK_SECRET = SECRETO;
     configurarSecretosParaPruebas({ lector: async () => null });
   });
   afterEach(() => {
-    delete process.env.N8N_WEBHOOK_SECRET;
+    delete process.env.N8N_CALLBACK_SECRET;
     configurarSecretosParaPruebas();
   });
 
@@ -209,7 +209,7 @@ describe('POST /api/llaves-solicitudes/telegram-callback', () => {
   });
 
   it('sin secreto configurado en el servidor rechaza todo', async () => {
-    delete process.env.N8N_WEBHOOK_SECRET;
+    delete process.env.N8N_CALLBACK_SECRET;
     expect((await llamar({ 'x-pronoia-secret': '' }, cuerpoValido)).status).toBe(401);
   });
 

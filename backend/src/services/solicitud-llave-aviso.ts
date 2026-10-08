@@ -22,12 +22,14 @@ interface DestinoPrivado {
 }
 
 /** Datos de la solicitud sin la línea de vencimiento (sirve también para reescribir el mensaje al resolverse). */
+const enUnaLinea = (t: string): string => t.replace(/[\r\n]+/g, ' ').trim();
+
 export function textoDetalleSolicitud(s: Pick<SolicitudLlaveAviso, 'solicitanteNombre' | 'descripcion' | 'motivo'>): string {
   return [
     '🔑 Solicitud de llave',
-    `De: ${s.solicitanteNombre}`,
-    `Para editar: ${s.descripcion}`,
-    `Motivo: ${s.motivo}`,
+    `De: ${enUnaLinea(s.solicitanteNombre)}`,
+    `Para editar: ${enUnaLinea(s.descripcion)}`,
+    `Motivo: ${enUnaLinea(s.motivo)}`,
   ].join('\n');
 }
 
