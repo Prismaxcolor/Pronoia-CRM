@@ -9,7 +9,7 @@ import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import { CAMPOS_PERSONALES_BORRADOR, TTL_ALTA_BORRADOR_MS, difiereEstado, huellaDocumento, serializarEstado } from '../../lib/borrador';
-import type { Cliente } from '@shared/types/index.js';
+import type { Cliente, TipoVentaCliente } from '@shared/types/index.js';
 
 interface Props {
   /** Si se pasa, modo "editar". Si no, modo "crear". */
@@ -23,6 +23,8 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
   const editando = !!cliente;
 
   const [nombre, setNombre] = useState(cliente?.nombre ?? '');
+  // Sin predeterminado al crear: hay que elegirlo. Al editar parte del valor actual.
+  const [tipoVenta, setTipoVenta] = useState<TipoVentaCliente | ''>(cliente?.tipoVenta ?? '');
   const [identificacion, setIdentificacion] = useState(cliente?.identificacion ?? '');
   const [email, setEmail] = useState(cliente?.email ?? '');
   const [telefono, setTelefono] = useState(cliente?.telefono ?? '');
@@ -33,14 +35,14 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   // Borrador del formulario (uno por cliente, o uno para "nuevo"): sobrevive a F5.
-  const estadoBorrador = { nombre, identificacion, email, telefono, direccion, notas, fotos };
+  const estadoBorrador = { nombre, tipoVenta, identificacion, email, telefono, direccion, notas, fotos };
   const estadoInicial = () => ({
-    nombre: cliente?.nombre ?? '', identificacion: cliente?.identificacion ?? '', email: cliente?.email ?? '',
+    nombre: cliente?.nombre ?? '', tipoVenta: (cliente?.tipoVenta ?? '') as TipoVentaCliente | '', identificacion: cliente?.identificacion ?? '', email: cliente?.email ?? '',
     telefono: cliente?.telefono ?? '', direccion: cliente?.direccion ?? '', notas: cliente?.notas ?? '',
     fotos: fotosLocalDeUrls(cliente?.fotos ?? []),
   });
   const aplicarEstado = (e: ReturnType<typeof estadoInicial>) => {
-    setNombre(e.nombre); setIdentificacion(e.identificacion); setEmail(e.email);
+    setNombre(e.nombre); setTipoVenta(e.tipoVenta); setIdentificacion(e.identificacion); setEmail(e.email);
     setTelefono(e.telefono); setDireccion(e.direccion); setNotas(e.notas); setFotos(e.fotos);
   };
   const borrador = useBorradorPersistente<typeof estadoBorrador>({
@@ -58,7 +60,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
     aplicar: d => {
       const base = estadoInicial();
       aplicarEstado({
-        nombre: d.nombre ?? base.nombre, identificacion: d.identificacion ?? base.identificacion, email: d.email ?? base.email,
+        nombre: d.nombre ?? base.nombre, tipoVenta: d.tipoVenta ?? base.tipoVenta, identificacion: d.identificacion ?? base.identificacion, email: d.email ?? base.email,
         telefono: d.telefono ?? base.telefono, direccion: d.direccion ?? base.direccion, notas: d.notas ?? base.notas,
         fotos: d.fotos ?? base.fotos,
       });
@@ -73,6 +75,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!tipoVenta) { setError('Elige el tipo de venta del cliente.'); return; }
     setGuardando(true);
     setError(null);
 
@@ -86,6 +89,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
 
     const payload = {
       nombre: nombre.trim(),
+      tipoVenta,
       identificacion: identificacion.trim() || null,
       email: email.trim() || null,
       telefono: telefono.trim() || null,
@@ -138,6 +142,21 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
               className={inputClass}
               placeholder="Nombre o razón social"
             />
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor="cliente-tipo-venta">Tipo de venta *</label>
+            <select
+              id="cliente-tipo-venta"
+              required
+              value={tipoVenta}
+              onChange={e => setTipoVenta(e.target.value as TipoVentaCliente | '')}
+              className={inputClass}
+            >
+              <option value="" disabled>Selecciona…</option>
+              <option value="nacional">Venta nacional</option>
+              <option value="internacional">Venta internacional</option>
+            </select>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

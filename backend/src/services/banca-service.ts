@@ -20,6 +20,8 @@ export interface Banca {
   archivada: boolean;
   /** Clave de la paleta o hex #RRGGBB; null si la banca no tiene color (o la migración aún no se aplicó). */
   color: string | null;
+  /** Chat de Telegram al que van los avisos de esta banca; null = grupo general de cajas. */
+  telegramChatId: string | null;
 }
 
 export interface Movimiento {
@@ -41,6 +43,8 @@ export interface Movimiento {
   creadoEn: string;
   subtipo: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
   numero: number | null;
+  /** Correlativo del sistema (MV-) de un movimiento manual de Wallet; null en pagos/cobros (usan `numero`). */
+  numeroSistema: number | null;
   grupoId: string | null;
   comprobantes: string[];
   /** true si el movimiento fue anulado: la fila se conserva, pero ya no cuenta en saldos ni estados de cuenta. */
@@ -61,6 +65,7 @@ function mapBanca(row: Record<string, unknown>): Banca {
     descripcion: (row.descripcion as string) ?? '',
     archivada: Boolean(row.archivada),
     color: typeof row.color === 'string' && row.color ? row.color : null,
+    telegramChatId: typeof row.telegram_chat_id === 'string' && row.telegram_chat_id ? row.telegram_chat_id : null,
   };
 }
 
@@ -83,6 +88,7 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
     creadoEn: row.creado_en as string,
     subtipo: (row.subtipo as Movimiento['subtipo']) ?? null,
     numero: row.numero != null ? Number(row.numero) : null,
+    numeroSistema: row.numero_sistema != null ? Number(row.numero_sistema) : null,
     grupoId: (row.grupo_id as string) ?? null,
     comprobantes: Array.isArray(row.comprobantes) ? (row.comprobantes as string[]) : [],
     anulado: Boolean(row.anulado),
@@ -161,39 +167,87 @@ export async function obtenerDetalleMovimiento(id: string, opts: OpcionesDetalle
   return { movimiento, bancaOrigenNombre, bancaDestinoNombre, proveedorNombre, clienteNombre, registradoPorNombre, anuladoPorNombre };
 }
 
-/** Quita `color` de un objeto de escritura (para degradar si la columna aún no existe). */
-function sinColor<T extends { color?: unknown }>(campos: T): Omit<T, 'color'> {
-  const { color: _color, ...resto } = campos;
-  return resto;
+/** Campos opcionales de bancas que dependen de una migración: si la columna falta se degrada sin ellos. */
+type CamposBanca = { color?: unknown; telegramChatId?: unknown };
+
+/** Pasa los campos del schema a columnas de BD (telegramChatId -> telegram_chat_id). */
+function aColumnas<T extends CamposBanca>(campos: T): Record<string, unknown> {
+  const { telegramChatId, ...resto } = campos;
+  return telegramChatId === undefined ? resto : { ...resto, telegram_chat_id: telegramChatId };
 }
 
-export async function crearBanca(input: CrearBancaInput): Promise<{ banca: Banca } | { error: string }> {
+const COLUMNAS_OPCIONALES = ['color', 'telegram_chat_id'] as const;
+
+export const MENSAJE_TELEGRAM_BANCA_PENDIENTE =
+  'El grupo de Telegram por cuenta aún no está habilitado en la base de datos (falta aplicar migration_bancas_telegram_chat.sql). Guarda sin grupo o aplica la migración.';
+
+const usaColumnasOpcionales = (c: Record<string, unknown>): boolean => COLUMNAS_OPCIONALES.some(k => k in c);
+
+/** Columnas opcionales que cita un error de "columna inexistente"; si no cita ninguna, se asumen todas. */
+function columnasFaltantes(error: { message?: string }): string[] {
+  const citadas = COLUMNAS_OPCIONALES.filter(c => (error.message ?? '').includes(c));
+  return citadas.length > 0 ? citadas : [...COLUMNAS_OPCIONALES];
+}
+
+function sinColumnas(columnas: Record<string, unknown>, quitar: readonly string[]): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(columnas).filter(([k]) => !quitar.includes(k)));
+}
+
+type RespEscritura = { data: Record<string, unknown> | null; error: { code?: string; message: string } | null };
+type ResultadoEscritura = RespEscritura | { pendiente: true };
+
+/**
+ * Ejecuta la escritura degradando POR COLUMNA si una migración opcional falta (color / telegram_chat_id).
+ * Si falta telegram_chat_id y se intentaba guardar un valor, no se descarta en silencio: pendiente => 409.
+ * (Guardar telegram_chat_id = null sí se descarta: no hay nada que limpiar en una columna que no existe.)
+ */
+async function escribirDegradando(
+  columnas: Record<string, unknown>,
+  ejecutar: (c: Record<string, unknown>) => PromiseLike<RespEscritura>
+): Promise<ResultadoEscritura> {
+  let actuales = columnas;
+  for (let intento = 0; intento <= COLUMNAS_OPCIONALES.length; intento++) {
+    const resp = await ejecutar(actuales);
+    if (!resp.error || !esObjetoInexistente(resp.error) || !usaColumnasOpcionales(actuales)) return resp;
+    const faltan = columnasFaltantes(resp.error).filter(c => c in actuales);
+    if (faltan.length === 0) return resp;
+    if (faltan.includes('telegram_chat_id') && actuales.telegram_chat_id != null) return { pendiente: true };
+    actuales = sinColumnas(actuales, faltan);
+  }
+  return ejecutar(actuales);
+}
+
+export type ResultadoBanca = { banca: Banca } | { error: string; pendiente?: boolean };
+
+export async function crearBanca(input: CrearBancaInput): Promise<ResultadoBanca> {
   const base = { nombre: input.nombre, tipo: input.tipo, moneda: input.moneda, descripcion: input.descripcion, saldo: 0 };
-  // Solo si hay color: una banca sin color no depende de la columna.
-  const conColor = input.color ? { ...base, color: input.color } : base;
-  let { data, error } = await supabaseAdmin.from('bancas').insert(conColor).select().single();
-  // Migración del color sin aplicar: se crea la banca sin color en vez de fallar.
-  if (error && input.color && esObjetoInexistente(error)) {
-    ({ data, error } = await supabaseAdmin.from('bancas').insert(base).select().single());
-  }
-
-  if (error || !data) return { error: error?.message ?? 'No se pudo crear la banca.' };
-  return { banca: mapBanca(data) };
+  // Solo lo que venga: una banca sin color ni grupo no depende de las columnas opcionales.
+  const completo: Record<string, unknown> = {
+    ...base,
+    ...(input.color ? { color: input.color } : {}),
+    ...(input.telegramChatId ? { telegram_chat_id: input.telegramChatId } : {}),
+  };
+  const r = await escribirDegradando(completo, c => supabaseAdmin.from('bancas').insert(c).select().single());
+  if ('pendiente' in r) return { error: MENSAJE_TELEGRAM_BANCA_PENDIENTE, pendiente: true };
+  if (r.error || !r.data) return { error: r.error?.message ?? 'No se pudo crear la banca.' };
+  return { banca: mapBanca(r.data) };
 }
 
-export async function actualizarBanca(
-  id: string,
-  campos: ActualizarBancaInput
-): Promise<{ banca: Banca } | { error: string }> {
-  const escribir = (valores: object) => supabaseAdmin.from('bancas').update(valores).eq('id', id).select().maybeSingle();
-  let { data, error } = await escribir(campos);
-  if (error && campos.color !== undefined && esObjetoInexistente(error)) {
-    ({ data, error } = await escribir(sinColor(campos)));
-  }
+/** Grupo de Telegram actual de una banca (para auditar cambios). null si no tiene, no existe o la columna falta. */
+export async function leerTelegramChatIdBanca(id: string): Promise<string | null> {
+  const { data } = await supabaseAdmin.from('bancas').select('telegram_chat_id').eq('id', id).maybeSingle();
+  const valor = (data as { telegram_chat_id?: string | null } | null)?.telegram_chat_id;
+  return typeof valor === 'string' && valor ? valor : null;
+}
 
-  if (error) return { error: error.message };
-  if (!data) return { error: 'Banca no encontrada.' };
-  return { banca: mapBanca(data) };
+export async function actualizarBanca(id: string, campos: ActualizarBancaInput): Promise<ResultadoBanca> {
+  const r = await escribirDegradando(aColumnas(campos), c =>
+    supabaseAdmin.from('bancas').update(c).eq('id', id).select().maybeSingle()
+  );
+  if ('pendiente' in r) return { error: MENSAJE_TELEGRAM_BANCA_PENDIENTE, pendiente: true };
+  if (r.error) return { error: r.error.message };
+  if (!r.data) return { error: 'Banca no encontrada.' };
+  return { banca: mapBanca(r.data) };
 }
 
 export interface ArchivarBancaResult {

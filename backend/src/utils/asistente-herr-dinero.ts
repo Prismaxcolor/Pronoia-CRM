@@ -10,6 +10,8 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase.js';
 import { obtenerEstadoCuenta, type TipoEntidad } from '../services/estado-cuenta-service.js';
 import { listarBancas } from '../services/banca-service.js';
+import { bancasPermitidasDeUsuario } from '../services/banca-acceso-service.js';
+import { cuentaVisible, filtrarBancas, filtrarMovimientos, TEXTO_CUENTA_RESTRINGIDA, type BancasPermitidas } from './banca-acceso.js';
 import {
   definirHerramienta,
   fechaSchema,
@@ -452,8 +454,8 @@ export const consultarBancas = definirHerramienta({
   descripcion: 'Saldo actual de cada banca/caja/cochinito activa (nombre, tipo, moneda, saldo) y el total por moneda. Úsala para "cuánto dinero/efectivo hay", "saldo de las bancas/cajas". Un saldo negativo es real (la caja está en sobregiro); repórtalo tal cual.',
   parametros: z.object({}),
   permisos: [{ recurso: 'cochinito', accion: 'ver' }],
-  async ejecutar() {
-    const bancas = await listarBancas();
+  async ejecutar(_args, ctx) {
+    const bancas = filtrarBancas(await listarBancas(), await bancasPermitidasDeUsuario(ctx.userId));
     const porMoneda = new Map<string, number>();
     for (const b of bancas) porMoneda.set(b.moneda, (porMoneda.get(b.moneda) ?? 0) + Number(b.saldo));
     const filas = bancas.slice(0, 15).map(b => ({
@@ -495,6 +497,18 @@ interface MovimientoFila {
   cliente_id: string | null;
 }
 
+/** Filtro PostgREST: movimientos cuyo origen o destino está entre las bancas permitidas. */
+export function filtroBancas(permitidas: ReadonlySet<string>): string {
+  const lista = [...permitidas].join(',');
+  return `banca_origen_id.in.(${lista}),banca_destino_id.in.(${lista})`;
+}
+
+/** Nombre de la cuenta, o 'Cuenta restringida' si es la otra punta de una transferencia a la que no se tiene acceso. */
+function nombreBancaVisible(nombres: ReadonlyMap<string, string>, permitidas: BancasPermitidas, id: string | null): string | null {
+  if (!id) return null;
+  return cuentaVisible(permitidas, id) ? (nombres.get(id) ?? null) : TEXTO_CUENTA_RESTRINGIDA;
+}
+
 export const consultarMovimientos = definirHerramienta({
   nombre: 'consultar_movimientos',
   etiqueta: 'movimientos de bancas',
@@ -502,7 +516,10 @@ export const consultarMovimientos = definirHerramienta({
     'Movimientos recientes de dinero de las bancas/cochinito, del más nuevo al más viejo: ingresos, egresos y transferencias (monto, moneda, banca, proveedor/cliente, fecha). Úsala para "qué pagos hicimos" (subtipo pago/adelanto = salidas a proveedores), "qué cobros recibimos" (subtipo cobro/anticipo = entradas de clientes), "últimos movimientos". Para "esta semana" pasa desde/hasta con las fechas de la sección de fechas.',
   parametros: movimientosSchema,
   permisos: [{ recurso: 'cochinito', accion: 'ver' }],
-  async ejecutar({ tipo, subtipo, desde, hasta, entidad, limite }) {
+  async ejecutar({ tipo, subtipo, desde, hasta, entidad, limite }, ctx) {
+    const permitidas = await bancasPermitidasDeUsuario(ctx.userId);
+    // Sin ninguna cuenta no hay nada que consultar (y un in.() vacío no es válido en PostgREST).
+    if (permitidas !== null && permitidas.size === 0) return { filas: 0, datos: { fuente: 'movimientos de bancas', movimientos: [] } };
     let filtroEntidad: string | null = null;
     if (entidad) {
       const [provs, clis] = await Promise.all([idsPorNombre('proveedores', entidad), idsPorNombre('clientes', entidad)]);
@@ -525,8 +542,13 @@ export const consultarMovimientos = definirHerramienta({
     if (desde) q = q.gte('fecha', desde);
     if (hasta) q = q.lte('fecha', hasta);
     if (filtroEntidad) q = q.or(filtroEntidad);
+    // El filtro por cuenta va en la consulta, ANTES del límite: filtrar después dejaría pocas filas visibles.
+    if (permitidas !== null) q = q.or(filtroBancas(permitidas));
     const { data } = await q;
-    const movs = (data ?? []) as unknown as MovimientoFila[];
+    const movs = filtrarMovimientos(
+      ((data ?? []) as unknown as MovimientoFila[]).map(m => ({ ...m, bancaOrigenId: m.banca_origen_id ?? '', bancaDestinoId: m.banca_destino_id })),
+      permitidas
+    );
     const [bancas, provs, clis] = await Promise.all([
       nombresPorId('bancas', movs.flatMap(m => [m.banca_origen_id, m.banca_destino_id]).filter((x): x is string => !!x)),
       nombresPorId('proveedores', movs.map(m => m.proveedor_id).filter((x): x is string => !!x)),
@@ -539,8 +561,8 @@ export const consultarMovimientos = definirHerramienta({
       monto: dinero(m.monto),
       moneda: m.moneda,
       montoUsd: m.monto_usd != null ? dinero(m.monto_usd) : null,
-      bancaOrigen: bancas.get(m.banca_origen_id ?? '') ?? null,
-      bancaDestino: bancas.get(m.banca_destino_id ?? '') ?? null,
+      bancaOrigen: nombreBancaVisible(bancas, permitidas, m.banca_origen_id),
+      bancaDestino: nombreBancaVisible(bancas, permitidas, m.banca_destino_id),
       proveedor: provs.get(m.proveedor_id ?? '') ?? null,
       cliente: clis.get(m.cliente_id ?? '') ?? null,
     }));

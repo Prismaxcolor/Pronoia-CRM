@@ -31,8 +31,9 @@ const FUENTES_TASA: { key: FuenteTasaKey; label: string }[] = [
 
 function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
   const { usuario } = useAuth();
-  const [tipo, setTipo] = useState<Tipo>('ingreso');
-  const [bancaId, setBancaId] = useState(bancas[0]?.id ?? '');
+  // Sin valores predeterminados: tipo y cuenta/caja los elige la persona (obligatorios al guardar).
+  const [tipo, setTipo] = useState<Tipo | ''>('');
+  const [bancaId, setBancaId] = useState('');
   const [bancaDestinoId, setBancaDestinoId] = useState('');
   const [monto, setMonto] = useState('');
   const [montoDestino, setMontoDestino] = useState('');
@@ -106,8 +107,12 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
     e.preventDefault();
     setError(null);
 
+    if (!tipo) {
+      setError('Selecciona el tipo de movimiento: ingreso, egreso o transferencia.');
+      return;
+    }
     if (!bancaActual) {
-      setError('Selecciona una banca válida.');
+      setError('Selecciona la cuenta o caja del movimiento.');
       return;
     }
     if (!montoNum || montoNum <= 0) {
@@ -216,7 +221,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
           {/* Banca origen */}
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">
-              Banca {tipo === 'ingreso' ? 'destino' : tipo === 'egreso' ? 'origen' : 'de origen'}
+              {tipo === '' ? 'Cuenta o caja' : `Banca ${tipo === 'ingreso' ? 'destino' : tipo === 'egreso' ? 'origen' : 'de origen'}`}
             </label>
             <select
               required
@@ -227,6 +232,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
               }}
               className={inputClass}
             >
+              <option value="">— Selecciona —</option>
               {bancas.map(b => (
                 <option key={b.id} value={b.id}>
                   {b.nombre} — {b.moneda === 'USD' ? '$' : 'Bs '}{b.saldo.toLocaleString()}
@@ -416,7 +422,7 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
               disabled={guardando}
               className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
             >
-              {guardando ? 'Registrando...' : `Registrar ${tipo}`}
+              {guardando ? 'Registrando...' : `Registrar ${tipo || 'movimiento'}`}
             </button>
           </div>
         </form>

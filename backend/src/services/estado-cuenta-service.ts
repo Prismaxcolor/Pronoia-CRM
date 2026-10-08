@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
+import { cuentaVisible, TEXTO_CUENTA_RESTRINGIDA, type BancasPermitidas } from '../utils/banca-acceso.js';
 import { totalesEstadoCuenta } from '../utils/estado-cuenta-totales.js';
 import { leerPaginado, trocear } from '../utils/paginacion.js';
 import {
@@ -281,7 +282,8 @@ export async function obtenerEstadoCuenta(
   tipoEntidad: TipoEntidad,
   id: string,
   desde?: string,
-  hasta?: string
+  hasta?: string,
+  permitidas: BancasPermitidas = null
 ): Promise<EstadoCuenta | null> {
   const esProveedor = tipoEntidad === 'proveedor';
   const tablaEntidad = esProveedor ? 'proveedores' : 'clientes';
@@ -312,7 +314,7 @@ export async function obtenerEstadoCuenta(
 
   let qPagos = supabaseAdmin
     .from('movimientos')
-    .select('id, monto, monto_usd, descripcion, referencia, fecha, subtipo, numero, grupo_id, creado_en')
+    .select('id, monto, monto_usd, descripcion, referencia, fecha, subtipo, numero, grupo_id, creado_en, banca_origen_id')
     .eq(columnaEntidad, id)
     .eq('tipo', tipoMovAbono)
     .eq('anulado', false);
@@ -322,7 +324,7 @@ export async function obtenerEstadoCuenta(
   const pagosCrudos: PagoCrudo[] = ((pagosData as Array<{
     id: string; monto: number; monto_usd: number | null; descripcion: string | null;
     referencia: string | null; fecha: string; subtipo: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
-    numero: number | null; grupo_id: string | null; creado_en?: string | null;
+    numero: number | null; grupo_id: string | null; creado_en?: string | null; banca_origen_id?: string | null;
   }> | null) ?? [])
     // El estado de cuenta se lleva en USD (facturas_compra/venta.total está en USD).
     // monto_usd es el equivalente correcto cuando el pago salió de una banca en
@@ -331,7 +333,8 @@ export async function obtenerEstadoCuenta(
       id: p.id,
       monto: Number(p.monto_usd ?? p.monto),
       descripcion: p.descripcion,
-      referencia: p.referencia,
+      // Las filas no se filtran por banca (falsearía el saldo de la contraparte): solo se oculta la referencia.
+      referencia: cuentaVisible(permitidas, p.banca_origen_id) ? p.referencia : TEXTO_CUENTA_RESTRINGIDA,
       fecha: p.fecha,
       instante: p.creado_en ?? null,
       subtipo: p.subtipo,

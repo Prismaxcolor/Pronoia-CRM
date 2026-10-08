@@ -24,7 +24,8 @@ import {
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const UUID_B = '22222222-2222-4222-8222-222222222222';
-const CAPTURADO = '2026-10-07T12:30:00.000Z';
+// Relativo a ahora: acotarCapturadoEn descarta capturas viejas, así que una fecha fija caduca con el tiempo.
+const CAPTURADO = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
 /** Ejecutor falso con la semántica de ejecutarIdempotente: una sola ejecución por id. */
 function ejecutorFalso() {
@@ -100,7 +101,7 @@ describe('conOperacionCliente (altas de maestros)', () => {
   });
 
   it('cliente, tara, almacén y vehículo aceptan el id de cliente', () => {
-    expect(conOperacionCliente(crearClienteSchema).safeParse({ nombre: 'C', clientRequestId: ID }).success).toBe(true);
+    expect(conOperacionCliente(crearClienteSchema).safeParse({ nombre: 'C', tipoVenta: 'nacional', clientRequestId: ID }).success).toBe(true);
     expect(conOperacionCliente(crearTaraSchema).safeParse({ nombre: 'Caja', peso: 2, clientRequestId: ID }).success).toBe(true);
     expect(conOperacionCliente(crearAlmacenSchema).safeParse({ nombre: 'Patio', clientRequestId: ID }).success).toBe(true);
     expect(conOperacionCliente(crearVehiculoSchema).safeParse({ nombre: 'Camión', placa: 'ab-123', clientRequestId: ID }).success).toBe(true);

@@ -3,6 +3,10 @@ import type { GuardarPackingListInput } from '../../services/packing-list-servic
 import { parsearPeso, siguienteNumeroPaleta, type FilaPackingList } from '../../lib/packing-list';
 import type { FilaForm } from './PackingListFilas';
 import { hoyNegocio } from '../../lib/fecha-negocio';
+import { parsearValorKg, textoValorKg } from '../../lib/proyeccion-packing';
+
+/** Valores USD/kg en edición, por lote (clave '' = sin lote), como texto mientras se escribe. */
+export type ValoresProyeccionForm = Record<string, string>;
 
 export interface CabeceraForm {
   contenedor: string;
@@ -98,13 +102,34 @@ export function filaSiguiente(filas: readonly FilaForm[]): FilaForm {
   };
 }
 
+export function valoresDesde(p: PackingListDetalle): ValoresProyeccionForm {
+  return Object.fromEntries((p.proyeccion ?? []).map(l => [l.lote, textoValorKg(l.valorKgUsd)]));
+}
+
+/** Líneas de la proyección para enviar: solo lotes con valor. Un texto inválido devuelve el error. */
+function construirProyeccion(
+  valores: ValoresProyeccionForm,
+  lotesIncluidos: ReadonlySet<string>
+): { proyeccion: NonNullable<GuardarPackingListInput['proyeccion']> } | { error: string } {
+  const proyeccion: NonNullable<GuardarPackingListInput['proyeccion']> = [];
+  for (const [lote, texto] of Object.entries(valores)) {
+    if (!lotesIncluidos.has(lote) || texto.trim() === '') continue;
+    const valorKgUsd = parsearValorKg(texto);
+    if (valorKgUsd === null) return { error: `Proyección${lote ? ` (lote ${lote})` : ''}: el valor por kg no es válido (máximo 4 decimales).` };
+    proyeccion.push({ lote, valorKgUsd });
+  }
+  return { proyeccion };
+}
+
 const vacioANull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
 
 /** Valida y arma lo que se envía al backend. Devuelve el primer error legible. */
 export function construirEntrada(
   c: CabeceraForm,
   filas: readonly FilaForm[],
-  referencia: Pick<GuardarPackingListInput, 'referenciaTipo' | 'referenciaId' | 'version'>
+  referencia: Pick<GuardarPackingListInput, 'referenciaTipo' | 'referenciaId' | 'version'>,
+  /** Solo si el usuario ve valores (facturacion:ver); undefined = no enviar proyección. */
+  valores?: ValoresProyeccionForm
 ): { entrada: GuardarPackingListInput } | { error: string } {
   if (c.contenedor.trim() === '') return { error: 'Indica el número de contenedor.' };
   if (c.fecha === '') return { error: 'Indica la fecha.' };
@@ -116,8 +141,12 @@ export function construirEntrada(
     if (n.pesoPaleta > n.pesoBruto) return { error: `Fila ${i + 1}: la tara de la paleta no puede ser mayor al peso bruto.` };
     items.push({ numero: i + 1, numeroPaleta: n.numeroPaleta, lote: c.esPcb ? n.lote : null, color: c.esPcb ? n.color : null, pesoBruto: n.pesoBruto, pesoPaleta: n.pesoPaleta });
   }
+  const lotes = new Set(items.map(i => i.lote ?? ''));
+  const proy = valores ? construirProyeccion(valores, lotes) : null;
+  if (proy && 'error' in proy) return { error: proy.error };
   return {
     entrada: {
+      ...(proy ? { proyeccion: proy.proyeccion } : {}),
       contenedor: c.contenedor.trim(),
       fecha: c.fecha,
       tipoEmbalaje: c.tipoEmbalaje,

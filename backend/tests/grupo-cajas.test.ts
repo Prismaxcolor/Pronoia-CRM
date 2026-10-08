@@ -265,6 +265,63 @@ describe('dinero -> grupo de cajas', () => {
   });
 });
 
+describe('grupo de Telegram por banca', () => {
+  const bancasConChat = (chatB1: string | null, chatB2: string | null = null) => {
+    tablas.bancas = { data: [
+      { id: 'b1', nombre: 'Banesco', moneda: 'VES', telegram_chat_id: chatB1 },
+      { id: 'b2', nombre: 'Caja USD', moneda: 'USD', telegram_chat_id: chatB2 },
+    ] };
+  };
+
+  it('el aviso va al grupo de la banca cuando la banca tiene uno', async () => {
+    bancasConChat('-1005550001');
+    ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: PAGO }, 201, { numeroPago: 12 });
+    await esperarEnvios(1);
+    expect(llamadas()[0].cuerpo.chatId).toBe('-1005550001');
+  });
+
+  it('si la banca no tiene grupo cae al grupo general de cajas', async () => {
+    bancasConChat(null);
+    ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: PAGO }, 201, { numeroPago: 12 });
+    await esperarEnvios(1);
+    expect(llamadas()[0].cuerpo.chatId).toBe(CHAT_CAJAS);
+  });
+
+  it('con varias bancas se usa la primera que tenga grupo propio', async () => {
+    bancasConChat(null, '-1005550002');
+    const body = { ...PAGO, bancas: [...PAGO.bancas, { bancaId: 'b2', monto: 10, moneda: 'USD', montoUsd: 10 }], montoUsd: 310 };
+    ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body }, 201, { numeroPago: 12 });
+    await esperarEnvios(1);
+    expect(llamadas()[0].cuerpo.chatId).toBe('-1005550002');
+  });
+
+  it('sin grupo general, una banca con grupo propio igual envía', async () => {
+    sinChatIdCajas();
+    bancasConChat('-1005550001');
+    ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: PAGO }, 201, { numeroPago: 12 });
+    await esperarEnvios(1);
+    expect(llamadas()[0].cuerpo.chatId).toBe('-1005550001');
+  });
+
+  it('si falla la lectura de bancas cae al grupo general y registra el error', async () => {
+    const consola = vi.spyOn(console, 'error').mockImplementation(() => {});
+    tablas.bancas = { data: null, error: { code: '08006', message: 'conexion caida' } } as never;
+    ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: PAGO }, 201, { numeroPago: 12 });
+    await esperarEnvios(1);
+    expect(llamadas()[0].cuerpo.chatId).toBe(CHAT_CAJAS);
+    expect(consola.mock.calls.some(c => String(c[0]).includes('cajas_chat_banca_lectura_fallida'))).toBe(true);
+    consola.mockRestore();
+  });
+
+  it('sin grupo general ni de banca no se envía nada', async () => {
+    sinChatIdCajas();
+    bancasConChat(null);
+    ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: PAGO }, 201, { numeroPago: 12 });
+    await pausa();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('factura emitida -> grupo de cajas', () => {
   const factura = { id: 'f1', codigo: 'V-0006', tipo: 'venta', estado: 'emitida', total: 1234.5, nombreEntidad: 'Cliente SA', ticketIds: [] };
 

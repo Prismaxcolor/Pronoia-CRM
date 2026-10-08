@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { X, Check } from 'lucide-react';
-import { actualizarUsuario } from '../../services/usuario-service';
+import { actualizarUsuario, guardarBancasDeUsuario } from '../../services/usuario-service';
+import AccesoBancas from './AccesoBancas';
+import { ROLES_CON_TODAS_LAS_BANCAS } from './acceso-bancas';
+import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import Switch from '../../components/Switch';
 import { PERMISOS_POR_ROL } from '@shared/types/index.js';
@@ -38,6 +41,7 @@ const RECURSOS: { recurso: Recurso; label: string }[] = [
   { recurso: 'transformaciones', label: 'Transformaciones' },
   { recurso: 'facturacion', label: 'Facturacion' },
   { recurso: 'cochinito', label: 'Wallet (Tesoreria)' },
+  { recurso: 'mesa_cambio', label: 'Mesa de cambio (Tesoreria)' },
   { recurso: 'clientes', label: 'Clientes' },
   { recurso: 'proveedores', label: 'Proveedores' },
   { recurso: 'despachos', label: 'Despachos' },
@@ -47,12 +51,17 @@ const RECURSOS: { recurso: Recurso; label: string }[] = [
 const ACCIONES: Accion[] = ['ver', 'crear', 'editar', 'eliminar'];
 
 function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
+  const { usuario: currentUser } = useAuth();
+  // Solo el superadmin ve y asigna el acceso a cuentas/cajas (el backend lo exige).
+  const esSuperadmin = currentUser?.rol === 'superadmin';
   const [rol, setRol] = useState<RolUsuario>(usuario.rol);
   const [permisos, setPermisos] = useState<Permiso[]>(usuario.permisos);
   const [guardando, setGuardando] = useState(false);
   const [useCustom, setUseCustom] = useState(
     !mismosPermisos(usuario.permisos, PERMISOS_POR_ROL[usuario.rol])
   );
+  // Cuentas/cajas con acceso: null = aún no cargadas (no se guarda); solo se envía si la persona las tocó.
+  const [accesoBancas, setAccesoBancas] = useState<{ ids: string[] | null; modificado: boolean }>({ ids: null, modificado: false });
   const toast = useToast();
 
   const tienePermiso = (recurso: Recurso, accion: Accion): boolean => {
@@ -97,6 +106,10 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
     // corrupto) — así este guardado lo limpia en vez de reescribirlo.
     const permisosGuardar = rol === 'superadmin' ? [] : (useCustom ? permisos : []);
     const result = await actualizarUsuario(usuario.id, { rol, permisos: permisosGuardar });
+    if ('usuario' in result && accesoBancas.modificado && accesoBancas.ids !== null && !ROLES_CON_TODAS_LAS_BANCAS.includes(rol)) {
+      const bancasGuardadas = await guardarBancasDeUsuario(usuario.id, accesoBancas.ids);
+      if ('error' in bancasGuardadas) toast.errorMsg(`Los permisos se guardaron, pero no el acceso a cuentas: ${bancasGuardadas.error}`);
+    }
     setGuardando(false);
     if ('usuario' in result) {
       toast.exito(`Permisos de ${usuario.nombre} actualizados.`);
@@ -206,6 +219,14 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
                 ))}
               </div>
             </div>
+          )}
+
+          {esSuperadmin && (
+            <AccesoBancas
+              usuarioId={usuario.id}
+              rol={rol}
+              onCambio={(ids, modificado) => setAccesoBancas({ ids, modificado })}
+            />
           )}
 
           {/* Botones */}

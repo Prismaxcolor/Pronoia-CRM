@@ -34,6 +34,11 @@ export interface Movimiento {
   subtipo: 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
   /** Correlativo (PG-.../AD-...), null si `subtipo` es null. */
   numero: number | null;
+  /**
+   * Correlativo del sistema (MV-0001) de un movimiento manual de Wallet. Null en pagos/cobros (conservan
+   * su numeración PG-/AD-/CB-/AC-) y en movimientos anteriores a la migración.
+   */
+  numeroSistema: number | null;
   /** Agrupa las filas de una misma operación (pago repartido entre bancas). */
   grupoId: string | null;
   /** URLs de los comprobantes (fotos) del movimiento. */

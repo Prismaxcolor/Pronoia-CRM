@@ -24,14 +24,44 @@ const MAX_CAPTION = 1_000;
 const MAX_MENSAJE = 4_000;
 export const NOMBRE_GRUPO_CAJAS = 'P.S Cajas Pagos';
 
-/** Chat id del grupo de cajas: variable de entorno o, si no hay, configuracion_secreta. '' si no hay. Nunca lanza. */
+/** Chat id del grupo general de cajas: variable de entorno o, si no hay, configuracion_secreta. '' si no hay. Nunca lanza. */
 export async function chatIdCajas(): Promise<string> {
   return ((await obtenerSecreto('TELEGRAM_CAJAS_CHAT_ID')) ?? '').trim();
 }
 
-/** ¿Hay un grupo de cajas configurado y por dónde entregarle? */
-export async function cajasConfigurado(): Promise<boolean> {
-  return Boolean(ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO && (await chatIdCajas()));
+/** Grupo propio de la primera cuenta del body que tenga uno (columna bancas.telegram_chat_id). '' si ninguna. Nunca lanza. */
+async function chatIdDeBancas(body: Readonly<Record<string, unknown>>): Promise<string> {
+  const refs = cuentasDeBody(body);
+  if (refs.length === 0) return '';
+  try {
+    const ids = [...new Set(refs.map(r => r.id))];
+    const { data, error } = await supabaseAdmin.from('bancas').select('id, telegram_chat_id').in('id', ids);
+    if (error) {
+      // Cae al grupo general: se registra para no perder el aviso de por qué no fue al grupo de la cuenta.
+      logger.error({ evento: 'cajas_chat_banca_lectura_fallida', codigo: error.code, mensaje: error.message });
+      return '';
+    }
+    const filas = (data ?? []) as Array<{ id: string; telegram_chat_id?: string | null }>;
+    const porId = new Map(filas.map(f => [f.id, (f.telegram_chat_id ?? '').trim()]));
+    // Se respeta el orden de cuentasDeBody (origen primero). Columna inexistente => data null => ''.
+    return refs.map(r => porId.get(r.id) ?? '').find(chat => chat !== '') ?? '';
+  } catch (e) {
+    logger.error({ evento: 'cajas_chat_banca_lectura_fallida', mensaje: e instanceof Error ? e.message : String(e) });
+    return '';
+  }
+}
+
+/**
+ * Chat al que va el aviso de dinero: el de la banca que interviene (si tiene uno) o, si no, el grupo
+ * general de cajas. '' si no hay ninguno. Sin banca en el body (anulaciones, facturas) usa el general.
+ */
+export async function chatIdParaBody(body: Readonly<Record<string, unknown>>): Promise<string> {
+  return (await chatIdDeBancas(body)) || (await chatIdCajas());
+}
+
+/** ¿Hay webhook de entrega y un chat de destino? */
+export function puedeEnviarACajas(chatId: string): boolean {
+  return Boolean(ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO && chatId);
 }
 
 /** Líneas "Cuenta origen: Banesco — 1.200 VES" de las bancas que menciona el body. Nunca lanza. */
@@ -50,9 +80,8 @@ export async function lineasDeCuentas(body: Readonly<Record<string, unknown>>): 
 }
 
 /** Devuelve true si el webhook aceptó el envío. Nunca lanza. */
-async function llamarWebhook(cuerpo: Record<string, unknown>, timeoutMs: number): Promise<boolean> {
+async function llamarWebhook(chatId: string, cuerpo: Record<string, unknown>, timeoutMs: number): Promise<boolean> {
   try {
-    const chatId = await chatIdCajas();
     if (!chatId) return false;
     const respuesta = await fetch(ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO, {
       method: 'POST',
@@ -90,7 +119,9 @@ const recortar = (t: string, max: number): string => (t.length > max ? `${t.slic
  */
 export async function enviarACajas(payload: PayloadGrupo): Promise<void> {
   try {
-    if (!ENV.GRUPO_NOTIFICACIONES_ACTIVAS || !(await cajasConfigurado())) return;
+    // chatId lo resolvió construirPayloadGrupo (banca o general); sin él, el general.
+    const chatId = payload.chatId || (await chatIdCajas());
+    if (!ENV.GRUPO_NOTIFICACIONES_ACTIVAS || !puedeEnviarACajas(chatId)) return;
     const texto = htmlATextoPlano(payload.texto);
     const albumes = repartirFotos((payload.fotos ?? []).map(url => ({ url })));
     // Con botones el texto va siempre como mensaje propio (el botón cuelga del mensaje, no de un pie de foto).
@@ -99,7 +130,7 @@ export async function enviarACajas(payload: PayloadGrupo): Promise<void> {
     const hayDocumento = Boolean(payload.documentoUrl);
     const hayAdjuntos = hayDocumento || albumes.length > 0;
 
-    const enviarTexto = () => llamarWebhook({
+    const enviarTexto = () => llamarWebhook(chatId, {
       accion: 'mensaje',
       mensaje: recortar(texto, MAX_MENSAJE),
       ...(botones.length > 0 ? { botones } : {}),
@@ -108,7 +139,7 @@ export async function enviarACajas(payload: PayloadGrupo): Promise<void> {
 
     if (!hayAdjuntos || !cabeEnPie) await enviarTexto();
     if (hayDocumento) {
-      const enviado = await llamarWebhook({
+      const enviado = await llamarWebhook(chatId, {
         accion: 'documento',
         url: payload.documentoUrl,
         nombreArchivo: payload.nombreArchivo,
@@ -122,7 +153,7 @@ export async function enviarACajas(payload: PayloadGrupo): Promise<void> {
     for (const [i, album] of albumes.entries()) {
       const llevaPie = i === 0 && cabeEnPie && !hayDocumento;
       const fotos = album.map((f, j) => ({ url: f.url, caption: llevaPie && j === 0 ? texto : undefined }));
-      const enviado = await llamarWebhook({ accion: fotos.length === 1 ? 'foto' : 'fotos', fotos }, WEBHOOK_FOTOS_TIMEOUT_MS);
+      const enviado = await llamarWebhook(chatId, { accion: fotos.length === 1 ? 'foto' : 'fotos', fotos }, WEBHOOK_FOTOS_TIMEOUT_MS);
       if (!enviado && llevaPie && textoPendiente) {
         logger.error({ evento: 'cajas_notify_reintento_texto', clave: payload.evento });
         await enviarTexto();

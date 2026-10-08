@@ -9,7 +9,11 @@ type Fila = Record<string, unknown>;
 export const tablas: Record<string, Fila[]> = {};
 export const consultas: Array<{ tabla: string; limite: number | null; select: string }> = [];
 
+/** Filtros .or() recibidos, para afirmar que un filtro de acceso viaja en la consulta (no se evalúan). */
+export const filtrosOr: Array<{ tabla: string; filtro: string }> = [];
+
 export function reiniciar(): void {
+  filtrosOr.length = 0;
   for (const k of Object.keys(tablas)) delete tablas[k];
   consultas.length = 0;
 }
@@ -39,7 +43,7 @@ function consulta(tabla: string) {
     },
     gte: (c: string, v: string) => { filtros.push(f => comparable(f[c]) >= v); return b; },
     lte: (c: string, v: string) => { filtros.push(f => comparable(f[c]) <= v); return b; },
-    or: () => b,
+    or: (filtro: string) => { filtrosOr.push({ tabla, filtro }); return b; },
     order: () => b,
     limit: (n: number) => { limite = n; return b; },
     maybeSingle: async () => {

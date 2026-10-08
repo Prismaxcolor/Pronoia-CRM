@@ -91,6 +91,11 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
               )}
             </ul>
             <p className="text-xs text-text-muted mt-2 italic">Puedes personalizar permisos después de crear el usuario.</p>
+            {rol === 'trabajador' && (
+              <p className="text-xs text-amber-600 mt-1">
+                El usuario nuevo no tiene ninguna cuenta/caja asignada: solo un superadmin puede asignarlas (en sus permisos) para que pueda operar con dinero.
+              </p>
+            )}
           </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}

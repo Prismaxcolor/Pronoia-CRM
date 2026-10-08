@@ -41,6 +41,12 @@ vi.mock('../src/services/auth-service.js', () => ({
   },
 }));
 
+// Este test no trata el acceso por banca (ver banca-acceso.test.ts): todas las bancas permitidas.
+vi.mock('../src/services/banca-acceso-service.js', () => ({
+  bancasPermitidas: async () => null,
+  idsBancasDeMovimiento: async () => [],
+}));
+
 vi.mock('../src/services/movimiento-edicion-service.js', () => ({
   anularMovimientoBanca: vi.fn(),
   editarMovimientoBanca: vi.fn(),

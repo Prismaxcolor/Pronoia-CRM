@@ -139,7 +139,8 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       setNotaCreditoIdsSel([]);
       setMontosAdelanto({});
       setTotalEditadoManual(null);
-      setLineasBanca(bancas.length > 0 ? [{ id: nextLineaId.current++, bancaId: bancas[0].id, montoUsd: '', referencia: '' }] : []);
+      // La cuenta/caja inicia vacía: la persona la elige (obligatoria al registrar).
+      setLineasBanca([{ id: nextLineaId.current++, bancaId: '', montoUsd: '', referencia: '' }]);
       setBancaLineaTocada(false);
       setDescripcion('');
       setComprobantes([]);
@@ -154,7 +155,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     obtenerBancas().then(lista => {
       setBancas(lista);
       // Si ya hay líneas (borrador restaurado) se conservan; solo se crea la inicial cuando no hay ninguna.
-      setLineasBanca(prev => (prev.length > 0 ? prev : [{ id: nextLineaId.current++, bancaId: lista[0]?.id ?? '', montoUsd: '', referencia: '' }]));
+      setLineasBanca(prev => (prev.length > 0 ? prev : [{ id: nextLineaId.current++, bancaId: '', montoUsd: '', referencia: '' }]));
     });
     obtenerTasaOficial().then(t => setTasa(t?.tasa ?? null));
     obtenerFacturas(esProveedor ? 'compra' : 'venta', { entidadId }).then(lista => {
@@ -271,14 +272,13 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
 
   const bancasUsadas = new Set(lineasBanca.map(l => l.bancaId).filter(Boolean));
   const agregarLinea = () => {
-    const disponible = bancas.find(b => !bancasUsadas.has(b.id));
     setLineasBanca(prev => {
       // Materializa el monto auto-sincronizado antes de dejar de sincronizar
       // (a partir de 2 líneas cada una se edita a mano).
       const base = prev.length === 1 && !bancaLineaTocada
         ? [{ ...prev[0], montoUsd: totalEditado }]
         : prev;
-      return [...base, { id: nextLineaId.current++, bancaId: disponible?.id ?? '', montoUsd: '', referencia: '' }];
+      return [...base, { id: nextLineaId.current++, bancaId: '', montoUsd: '', referencia: '' }];
     });
   };
   const quitarLinea = (id: number) =>
@@ -337,7 +337,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     const bancasPayload: BancaPago[] = [];
     if (!esCrucePuro) {
     if (lineasEfectivas.length === 0 || lineasEfectivas.some(l => !l.bancaId)) {
-      setError('Seleccioná una banca válida en cada línea.');
+      setError('Seleccioná la cuenta o caja en cada línea de pago.');
       return;
     }
     const idsBanca = lineasEfectivas.map(l => l.bancaId);
@@ -678,6 +678,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
                         onChange={e => setLineaBancaId(linea.id, e.target.value)}
                         className={`${inputClass} w-full sm:flex-1`}
                       >
+                        <option value="">— Selecciona la cuenta o caja —</option>
                         {bancas
                           .filter(b => b.id === linea.bancaId || !bancasUsadas.has(b.id))
                           .map(b => (

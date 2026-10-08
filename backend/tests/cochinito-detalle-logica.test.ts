@@ -18,8 +18,16 @@ describe('numeroMovimiento', () => {
   it('da formato N000123 a los movimientos manuales', () => {
     expect(numeroMovimiento({ subtipo: null, numero: 123 })).toBe('N000123');
   });
+  it('los movimientos manuales usan el correlativo del sistema MV-0001', () => {
+    expect(numeroMovimiento({ subtipo: null, numero: null, numeroSistema: 5 })).toBe('MV-0005');
+    expect(numeroMovimiento({ subtipo: null, numero: 123, numeroSistema: 5 })).toBe('MV-0005');
+  });
+  it('los pagos y cobros nunca muestran el correlativo del sistema', () => {
+    expect(numeroMovimiento({ subtipo: 'pago', numero: 7, numeroSistema: 9 })).toBe('PG-0007');
+  });
   it('sin número muestra una raya', () => {
     expect(numeroMovimiento({ subtipo: null, numero: null })).toBe('—');
+    expect(numeroMovimiento({ subtipo: null, numero: null, numeroSistema: null })).toBe('—');
   });
 });
 

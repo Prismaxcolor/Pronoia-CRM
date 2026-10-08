@@ -39,6 +39,10 @@ export function montoUsdDe(m: Pick<Movimiento, 'monto' | 'moneda' | 'montoUsd'>)
   return m.moneda === 'USD' ? m.monto : null;
 }
 
+/** Correlativo del sistema de un movimiento manual ("MV-0005"); '' si no lo tiene. Para la búsqueda. */
+const correlativoWallet = (m: Pick<Movimiento, 'numeroSistema'>): string =>
+  m.numeroSistema == null ? '' : `MV-${String(m.numeroSistema).padStart(4, '0')}`;
+
 const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 export type NombreContraparte = (m: Movimiento) => string | null;
@@ -58,7 +62,7 @@ export function filtrarMovimientos(
     if (f.desde && dia < f.desde) return false;
     if (f.hasta && dia > f.hasta) return false;
     if (q) {
-      const texto = normalizar([m.descripcion, m.referencia, correlativoMovimiento(m), nombreContraparte?.(m) ?? ''].join(' '));
+      const texto = normalizar([m.descripcion, m.referencia, correlativoMovimiento(m), correlativoWallet(m), nombreContraparte?.(m) ?? ''].join(' '));
       if (!texto.includes(q)) return false;
     }
     return true;

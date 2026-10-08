@@ -9,7 +9,11 @@ const opcionalTrim = (max: number) =>
     .nullable()
     .transform(v => (v && v.length > 0 ? v : null));
 
-export const crearClienteSchema = z.object({
+export const TIPOS_VENTA_CLIENTE = ['nacional', 'internacional'] as const;
+
+const tipoVentaSchema = z.enum(TIPOS_VENTA_CLIENTE, { message: 'Tipo de venta inválido (nacional o internacional).' });
+
+const datosClienteSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(120),
   identificacion: opcionalTrim(40),
   email: z
@@ -30,13 +34,24 @@ export const crearClienteSchema = z.object({
   fotos: z.array(z.string().trim().max(500)).optional(),
 });
 
-export const actualizarClienteSchema = crearClienteSchema
-  .extend({ activo: z.boolean().optional() })
+/**
+ * Alta: el backend NO exige tipoVenta (la cola offline vieja puede mandar altas sin él) y asume
+ * 'nacional'. Que el usuario elija explícitamente es una regla del formulario, no de la API.
+ * El default va solo aquí: en actualizar (.partial()) dejaría la clave siempre presente y un PATCH
+ * cualquiera reescribiría el tipo de venta a 'nacional'.
+ */
+export const crearClienteSchema = datosClienteSchema.extend({
+  tipoVenta: tipoVentaSchema.default('nacional'),
+});
+
+export const actualizarClienteSchema = datosClienteSchema
+  .extend({ tipoVenta: tipoVentaSchema, activo: z.boolean().optional() })
   .partial()
   .refine(
     data => Object.keys(data).length > 0,
     { message: 'Debes enviar al menos un campo a actualizar.' }
   );
 
+export type TipoVentaCliente = (typeof TIPOS_VENTA_CLIENTE)[number];
 export type CrearClienteInput = z.infer<typeof crearClienteSchema>;
 export type ActualizarClienteInput = z.infer<typeof actualizarClienteSchema>;

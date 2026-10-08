@@ -38,3 +38,9 @@ export const actualizarUsuarioSchema = z.object({
 
 export type CrearUsuarioInput = z.infer<typeof crearUsuarioSchema>;
 export type ActualizarUsuarioInput = z.infer<typeof actualizarUsuarioSchema>;
+
+/** PUT /api/usuarios/:id/bancas: cuentas/cajas a las que el usuario tiene acceso (reemplaza la lista). */
+export const asignarBancasSchema = z.object({
+  bancaIds: z.array(z.string().uuid('Banca inválida.')).max(200, 'Demasiadas cuentas.'),
+});
+export type AsignarBancasInput = z.infer<typeof asignarBancasSchema>;

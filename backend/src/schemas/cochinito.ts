@@ -19,12 +19,22 @@ const colorBancaSchema = z
   .nullable()
   .optional();
 
+/** Id numérico del chat de Telegram al que van los avisos de la banca (grupos: negativo). '' o null = grupo general. */
+const telegramChatIdSchema = z
+  .string()
+  .trim()
+  .transform(v => (v === '' ? null : v))
+  .refine(v => v === null || /^-?\d{5,20}$/.test(v), 'El id del grupo de Telegram debe ser numérico (ej. -1001234567890).')
+  .nullable()
+  .optional();
+
 export const crearBancaSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(100),
   tipo: z.enum(['banco_nacional', 'banco_internacional', 'exchange', 'efectivo']),
   moneda: z.string().trim().min(1, 'La moneda es obligatoria.').max(10),
   descripcion: textoOpcional(200),
   color: colorBancaSchema,
+  telegramChatId: telegramChatIdSchema,
 });
 
 export const actualizarBancaSchema = z.object({
@@ -32,6 +42,7 @@ export const actualizarBancaSchema = z.object({
   tipo: z.enum(['banco_nacional', 'banco_internacional', 'exchange', 'efectivo']).optional(),
   descripcion: textoOpcional(200),
   color: colorBancaSchema,
+  telegramChatId: telegramChatIdSchema,
 });
 
 export const crearMovimientoSchema = z.object({

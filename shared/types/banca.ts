@@ -10,4 +10,6 @@ export interface Banca {
   archivada: boolean;
   /** Clave de la paleta (lib/color-banca) o hex #RRGGBB; null = sin color. */
   color?: string | null;
+  /** Chat de Telegram al que van los avisos de esta banca; null = grupo general de cajas. */
+  telegramChatId?: string | null;
 }

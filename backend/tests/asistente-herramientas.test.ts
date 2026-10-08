@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { tablas, consultas, reiniciar } from './helpers/supabase-consultas-falso';
+import { tablas, consultas, filtrosOr, reiniciar } from './helpers/supabase-consultas-falso';
 
 vi.mock('../src/config/supabase.js', async () => ({
   supabaseAdmin: (await import('./helpers/supabase-consultas-falso')).supabaseConsultasFalso,
@@ -19,6 +19,8 @@ vi.mock('../src/services/inventario-service.js', () => ({
 vi.mock('../src/services/lote-service.js', () => ({ listarLotes: servicios.listarLotes }));
 vi.mock('../src/services/transformacion-service.js', () => ({ reporteMerma: servicios.reporteMerma }));
 vi.mock('../src/services/estado-cuenta-service.js', () => ({ obtenerEstadoCuenta: servicios.obtenerEstadoCuenta }));
+const acceso = vi.hoisted(() => ({ permitidas: null as ReadonlySet<string> | null }));
+vi.mock('../src/services/banca-acceso-service.js', () => ({ bancasPermitidasDeUsuario: async () => acceso.permitidas }));
 vi.mock('../src/services/banca-service.js', () => ({ listarBancas: servicios.listarBancas }));
 
 import {
@@ -418,6 +420,33 @@ describe('herramientas de dinero', () => {
     const r = await datos('consultar_bancas');
     expect(r.totalPorMoneda).toEqual([{ moneda: 'VES', total: 1000, texto: 'VES 1.000,00' }, { moneda: 'USD', total: 300.46, texto: 'USD 300,46' }]);
     expect(JSON.stringify(r)).not.toContain('Cuenta 0102');
+  });
+
+  it('consultar_movimientos: el filtro por cuenta va en la consulta (antes del límite)', async () => {
+    acceso.permitidas = new Set(['b1', 'b2']);
+    tablas.movimientos = [];
+    await datos('consultar_movimientos', {});
+    expect(filtrosOr.find(f => f.tabla === 'movimientos')?.filtro)
+      .toBe('banca_origen_id.in.(b1,b2),banca_destino_id.in.(b1,b2)');
+    acceso.permitidas = null;
+  });
+
+  it('consultar_movimientos: sin cuentas asignadas no consulta nada', async () => {
+    acceso.permitidas = new Set();
+    const r = await datos('consultar_movimientos', {});
+    expect(r.movimientos).toEqual([]);
+    expect(consultas.filter(c => c.tabla === 'movimientos')).toHaveLength(0);
+    acceso.permitidas = null;
+  });
+
+  it('consultar_movimientos: la otra punta de una transferencia sin acceso sale como Cuenta restringida', async () => {
+    acceso.permitidas = new Set(['b2']);
+    tablas.bancas = [{ id: 'b1', nombre: 'Secreta' }, { id: 'b2', nombre: 'Caja USD' }];
+    tablas.movimientos = [{ tipo: 'transferencia', subtipo: null, monto: 50, moneda: 'USD', monto_usd: 50, fecha: '2026-10-02', banca_origen_id: 'b1', banca_destino_id: 'b2', proveedor_id: null, cliente_id: null, anulado: false }];
+    const r = await datos('consultar_movimientos', {});
+    expect(r.movimientos[0]).toMatchObject({ bancaOrigen: 'Cuenta restringida', bancaDestino: 'Caja USD' });
+    expect(JSON.stringify(r)).not.toContain('Secreta');
+    acceso.permitidas = null;
   });
 
   it('consultar_movimientos: sin referencias, descripciones ni comprobantes', async () => {

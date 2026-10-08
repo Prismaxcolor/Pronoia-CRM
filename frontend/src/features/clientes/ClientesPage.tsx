@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ControlSegmentado } from '../../components/ui';
 import {
   obtenerClientes,
   desactivarCliente,
@@ -12,7 +13,11 @@ import { useConfirm } from '../../hooks/use-confirm-context';
 import ClienteFormModal from './ClienteFormModal';
 import ListadoTerceros from '../proveedores/ListadoTerceros';
 import TelegramLinkModal from '../../components/TelegramLinkModal';
-import type { Cliente } from '@shared/types/index.js';
+import type { Cliente, TipoVentaCliente } from '@shared/types/index.js';
+
+const ETIQUETA_SEGMENTO: Record<TipoVentaCliente, string> = { nacional: 'Nacionales', internacional: 'Internacionales' };
+
+const contarPorTipo = (clientes: readonly Cliente[], tipo: TipoVentaCliente) => clientes.filter(c => c.tipoVenta === tipo).length;
 
 function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -20,6 +25,7 @@ function ClientesPage() {
   // Sube cada vez que la lista se recarga: ListadoTerceros vuelve a pedir los saldos.
   const [version, setVersion] = useState(0);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; cliente: Cliente | null } | { abierto: false }>({ abierto: false });
+  const [segmento, setSegmento] = useState<TipoVentaCliente>('nacional');
   const [telegramAbierto, setTelegramAbierto] = useState<Cliente | null>(null);
   const { tienePermiso } = useAuth();
   const toast = useToast();
@@ -36,6 +42,12 @@ function ClientesPage() {
   );
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  const delSegmento = useMemo(() => clientes.filter(c => c.tipoVenta === segmento), [clientes, segmento]);
+  const opcionesSegmento = useMemo(
+    () => (['nacional', 'internacional'] as const).map(valor => ({ valor, etiqueta: ETIQUETA_SEGMENTO[valor], sufijo: contarPorTipo(clientes, valor) })),
+    [clientes],
+  );
 
   const buscar = useCallback((id: string) => clientes.find(c => c.id === id), [clientes]);
 
@@ -93,9 +105,12 @@ function ClientesPage() {
 
   return (
     <>
+      <div className="max-w-7xl mb-4">
+        <ControlSegmentado opciones={opcionesSegmento} valor={segmento} onCambiar={setSegmento} etiquetaAria="Tipo de venta de los clientes" />
+      </div>
       <ListadoTerceros
         tipo="cliente"
-        terceros={clientes}
+        terceros={delSegmento}
         cargando={cargando}
         version={version}
         puedeCrear={puedeCrear}

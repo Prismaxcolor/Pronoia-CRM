@@ -14,6 +14,7 @@ import {
   formatCodigoCruce,
   formatCodigoCruceCliente,
 } from '../utils/codigos.js';
+import { cuentaVisible, TEXTO_CUENTA_RESTRINGIDA, type BancasPermitidas } from '../utils/banca-acceso.js';
 import { resumenComprobante, type FacturaComprobante, type FilaComprobante } from '../utils/comprobante-resumen.js';
 
 type Subtipo = 'pago' | 'adelanto' | 'cobro' | 'anticipo' | null;
@@ -133,11 +134,16 @@ function formatCodigoPago(tipoEntidad: TipoEntidad, subtipo: Subtipo, numero: nu
  * adelanto/anticipo si la hubo). Valida que pertenezcan a la entidad
  * indicada antes de devolver nada — mismo patrón defensivo que
  * obtenerNotaAjuste, para no filtrar el pago de otra entidad por id directo.
+ *
+ * `permitidas` (bancas del usuario que consulta; null = sin restricción, el valor por defecto para
+ * usos internos como auditoría o Telegram): las filas NO se quitan, para no falsear totales, pero el
+ * nombre, la referencia y los comprobantes de cuentas sin acceso se ocultan ('Cuenta restringida').
  */
 export async function obtenerPagoDetalle(
   tipoEntidad: TipoEntidad,
   entidadId: string,
-  grupoId: string
+  grupoId: string,
+  permitidas: BancasPermitidas = null
 ): Promise<PagoDetalle | { error: string }> {
   // grupoId se interpola en un filtro .or() crudo más abajo — se valida el
   // formato antes para no dejar que un route param arbitrario reescriba la
@@ -172,7 +178,8 @@ export async function obtenerPagoDetalle(
   ]);
   const nombreEntidad = (entidadData as { nombre: string } | null)?.nombre ?? '—';
 
-  const bancaIds = [...new Set(propias.map(f => f.banca_origen_id).filter((x): x is string => x != null))];
+  const visible = (f: MovimientoRow): boolean => cuentaVisible(permitidas, f.banca_origen_id);
+  const bancaIds = [...new Set(propias.filter(visible).map(f => f.banca_origen_id).filter((x): x is string => x != null))];
   const nombrePorBancaId = new Map<string, string>();
   if (bancaIds.length > 0) {
     const { data: bancasData } = await supabaseAdmin.from('bancas').select('id, nombre').in('id', bancaIds);
@@ -190,7 +197,7 @@ export async function obtenerPagoDetalle(
 
   const filaPago = propias.find(f => f.subtipo === 'pago' || f.subtipo === 'cobro') ?? null;
   const filaAdelanto = propias.find(f => f.subtipo === 'adelanto' || f.subtipo === 'anticipo') ?? null;
-  const filaComprobante = propias.find(f => f.comprobantes && f.comprobantes.length > 0) ?? null;
+  const filaComprobante = propias.find(f => visible(f) && f.comprobantes && f.comprobantes.length > 0) ?? null;
   const filaDescripcion = propias.find(f => f.descripcion) ?? propias[0];
 
   const { items, facturas } = await cargarItems(tipoEntidad, entidadId, grupoId);
@@ -208,14 +215,7 @@ export async function obtenerPagoDetalle(
     comprobantes: filaComprobante?.comprobantes ?? [],
     registradoPor: nombreRegistradoPor,
     registradoEn: propias.map(f => f.creado_en).filter((x): x is string => !!x).sort()[0] ?? null,
-    bancas: propias.map(f => ({
-      bancaId: f.banca_origen_id,
-      bancaNombre: f.banca_origen_id ? (nombrePorBancaId.get(f.banca_origen_id) ?? null) : null,
-      monto: Number(f.monto),
-      moneda: f.moneda,
-      montoUsd: Number(f.monto_usd ?? f.monto),
-      referencia: f.referencia,
-    })),
+    bancas: propias.map(f => aBancaPagoDetalle(f, visible(f), nombrePorBancaId)),
     totalUsd,
     codigoPago: filaPago ? formatCodigoPago(tipoEntidad, filaPago.subtipo, filaPago.numero) : null,
     codigoAdelanto: filaAdelanto ? formatCodigoPago(tipoEntidad, filaAdelanto.subtipo, filaAdelanto.numero) : null,
@@ -223,6 +223,17 @@ export async function obtenerPagoDetalle(
     items,
     resumen: resumenComprobante(items, totalUsd, esProveedor, facturas),
     ...anulacion,
+  };
+}
+
+function aBancaPagoDetalle(f: MovimientoRow, visible: boolean, nombrePorBancaId: ReadonlyMap<string, string>): BancaPagoDetalle {
+  return {
+    bancaId: visible ? f.banca_origen_id : null,
+    bancaNombre: !visible ? TEXTO_CUENTA_RESTRINGIDA : f.banca_origen_id ? (nombrePorBancaId.get(f.banca_origen_id) ?? null) : null,
+    monto: Number(f.monto),
+    moneda: f.moneda,
+    montoUsd: Number(f.monto_usd ?? f.monto),
+    referencia: visible ? f.referencia : TEXTO_CUENTA_RESTRINGIDA,
   };
 }
 
@@ -314,7 +325,8 @@ async function cargarItems(
 async function obtenerCruceDetalle(
   tipoEntidad: TipoEntidad,
   entidadId: string,
-  grupoId: string
+  grupoId: string,
+  permitidas: BancasPermitidas = null
 ): Promise<PagoDetalle | { error: string }> {
   const esProveedor = tipoEntidad === 'proveedor';
 

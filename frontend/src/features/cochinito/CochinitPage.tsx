@@ -377,6 +377,7 @@ function CochinitPage() {
       {modalBanca.abierto && (
         <BancaFormModal
           banca={modalBanca.banca}
+          bancas={bancas}
           onClose={() => setModalBanca({ abierto: false })}
           onGuardado={onBancaGuardada}
         />

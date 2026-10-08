@@ -18,5 +18,11 @@ export function esObjetoInexistente(error: ErrorBd | null | undefined): boolean 
   return /(relation|column|function) .* does not exist|could not find the (table|function|column)/i.test(error.message ?? '');
 }
 
+/** True solo si falta esa tabla concreta (42P01 / PGRST205 citando su nombre); no abarca columnas ni funciones. */
+export function esTablaInexistente(error: ErrorBd | null | undefined, tabla: string): boolean {
+  if (!error || !['42P01', 'PGRST205'].includes(error.code ?? '')) return false;
+  return (error.message ?? '').includes(tabla);
+}
+
 export const MENSAJE_INVENTARIO_NO_HABILITADO =
   'Esta función aún no está habilitada en la base de datos (falta aplicar migration_inventario_rediseno_fase1.sql).';

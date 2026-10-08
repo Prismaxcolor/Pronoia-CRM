@@ -3,7 +3,7 @@ import { altaMaestroF4, fotosYaSubidas, provisionalesDeMaestro } from './maestro
 import { offlineHabilitado } from '../lib/offline/sesion';
 import type { FotoLocal } from '../lib/foto-picker';
 import { obtenerCatalogo } from '../lib/offline/catalogos';
-import type { Cliente } from '@shared/types/index.js';
+import type { Cliente, TipoVentaCliente } from '@shared/types/index.js';
 
 interface ClienteApi {
   id: string;
@@ -19,14 +19,16 @@ interface ClienteApi {
   fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
+  tipoVenta?: TipoVentaCliente | null;
 }
 
 function mapApi(api: ClienteApi): Cliente {
-  return { ...api };
+  return { ...api, tipoVenta: api.tipoVenta ?? 'nacional' };
 }
 
 export interface ClienteInput {
   nombre: string;
+  tipoVenta: TipoVentaCliente;
   identificacion?: string | null;
   email?: string | null;
   telefono?: string | null;

@@ -10,7 +10,7 @@ import { obtenerTicket } from './ticket-pesaje-service.js';
 import { obtenerTransformacion } from './transformacion-service.js';
 import { generarFacturaPdf, generarTicketPdf, nombreArchivoFactura, nombreArchivoTicket } from './document-generator.js';
 import { comprobantesReenviables } from './grupo-dinero.js';
-import { enviarACajas, lineasDeCuentas, cajasConfigurado } from './grupo-cajas-service.js';
+import { enviarACajas, lineasDeCuentas, chatIdParaBody, puedeEnviarACajas } from './grupo-cajas-service.js';
 import type { FacturaPublica } from './factura-service.js';
 import { columnasDiff, detallesDeCambios, esTablaDiff, type TablaDiff } from './grupo-diff.js';
 import {
@@ -26,6 +26,8 @@ export interface PayloadGrupo {
   evento?: string;
   /** Grupo al que va el aviso (por defecto operaciones). El dinero va a cajas, nunca a operaciones. */
   destino?: DestinoGrupo;
+  /** Solo cajas: chat de Telegram de destino (el de la banca o el general). Sin él, el general. */
+  chatId?: string;
   documentoUrl?: string;
   nombreArchivo?: string;
   fotos?: string[];
@@ -450,7 +452,10 @@ export async function construirPayloadGrupo(
   const evento = resolverVariante(encontrado.evento, ctxBase);
   const destino = destinoEvento(evento, filtro);
   // Dinero sin grupo de cajas configurado: no se envía (ni se gastan consultas armándolo).
-  if (!destino || (destino === 'cajas' && !(await cajasConfigurado()))) return null;
+  if (!destino) return null;
+  // Cajas: el chat es el de la banca que interviene o el general; sin ninguno no se arma el aviso.
+  const chatCajas = destino === 'cajas' ? await chatIdParaBody(ctxBase.reqBody) : '';
+  if (destino === 'cajas' && !puedeEnviarACajas(chatCajas)) return null;
   const hallado: EventoEncontrado = { evento, params: encontrado.params };
 
   const previa = pet.etiquetaPrevia ? await pet.etiquetaPrevia.catch(() => null) : null;
@@ -481,7 +486,7 @@ export async function construirPayloadGrupo(
   });
 
   const adjuntos = await adjuntosDeEvento(destino, evento, ctxBase, contexto);
-  return { texto, parseMode: 'HTML', evento: evento.clave, ...adjuntos };
+  return { texto, parseMode: 'HTML', evento: evento.clave, ...adjuntos, ...(chatCajas ? { chatId: chatCajas } : {}) };
 }
 
 /** Lo que acompaña al texto: comprobantes y PDF de la factura (cajas) o PDF + fotos del ticket (operaciones). */

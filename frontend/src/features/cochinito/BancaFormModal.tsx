@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { X, Building2, Globe, Coins, Wallet, Check, Ban } from 'lucide-react';
 import { crearBanca, actualizarBanca } from '../../services/banca-service';
 import { PALETA_BANCAS, hexDeColorGuardado } from '../../lib/color-banca';
+import { useAuth } from '../../hooks/use-auth-context';
+import { esChatIdTelegramValido, gruposTelegramConocidos, normalizarChatIdTelegram } from './telegram-banca';
 import type { Banca, TipoBanca } from '@shared/types/index.js';
 
 interface TipoOption {
@@ -20,6 +22,8 @@ const TIPOS: TipoOption[] = [
 
 interface Props {
   banca?: Banca | null;
+  /** Bancas existentes: de ahí salen los grupos de Telegram ya usados, para reutilizarlos. */
+  bancas?: Banca[];
   onClose: () => void;
   onGuardado: (modo: 'crear' | 'editar') => void;
 }
@@ -67,13 +71,60 @@ function SelectorColor({ valor, onCambiar }: { valor: string | null; onCambiar: 
   );
 }
 
-function BancaFormModal({ banca, onClose, onGuardado }: Props) {
+const OPCION_GENERAL = '';
+const OPCION_OTRO = '__otro__';
+
+/** Grupo de Telegram al que se envía el comprobante/aviso de la banca: el general de cajas, uno ya usado u otro por id. */
+function SelectorGrupoTelegram(
+  { valor, otroTexto, grupos, onValor, onOtroTexto, claseInput, editable }:
+  { editable: boolean; valor: string; otroTexto: string; grupos: ReturnType<typeof gruposTelegramConocidos>;
+    onValor: (v: string) => void; onOtroTexto: (v: string) => void; claseInput: string }
+) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-text-secondary mb-1">
+        Grupo de Telegram del comprobante <span className="text-text-muted">(opcional)</span>
+      </label>
+      <select value={valor} onChange={e => onValor(e.target.value)} className={claseInput} disabled={!editable}>
+        <option value={OPCION_GENERAL}>Grupo general de cajas (predeterminado)</option>
+        {grupos.map(g => (
+          <option key={g.chatId} value={g.chatId}>{g.chatId} — {g.bancas.join(', ')}</option>
+        ))}
+        <option value={OPCION_OTRO}>Otro grupo (escribir el id)…</option>
+      </select>
+      {valor === OPCION_OTRO && (
+        <input
+          type="text"
+          inputMode="numeric"
+          value={otroTexto}
+          onChange={e => onOtroTexto(e.target.value)}
+          className={`${claseInput} mt-2`}
+          placeholder="Ej: -1001234567890"
+          aria-label="Id del grupo de Telegram"
+          disabled={!editable}
+        />
+      )}
+      <p className="text-xs text-text-muted mt-1">
+        Los avisos de esta banca llegan a ese grupo; sin elegir uno van al grupo general de cajas.
+        {!editable && ' Solo un superadmin puede cambiar este grupo.'}
+      </p>
+    </div>
+  );
+}
+
+function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
+  const { usuario: currentUser } = useAuth();
+  const puedeCambiarTelegram = currentUser?.rol === 'superadmin';
   const editando = !!banca;
   const [nombre, setNombre] = useState(banca?.nombre ?? '');
   const [tipo, setTipo] = useState<TipoBanca>(banca?.tipo ?? 'banco_nacional');
   const [moneda, setMoneda] = useState(banca?.moneda ?? 'USD');
   const [descripcion, setDescripcion] = useState(banca?.descripcion ?? '');
   const [color, setColor] = useState<string | null>(banca?.color ?? null);
+  const grupos = gruposTelegramConocidos(bancas);
+  const chatInicial = banca?.telegramChatId ?? '';
+  const [grupoSel, setGrupoSel] = useState(grupos.some(g => g.chatId === chatInicial) || chatInicial === '' ? chatInicial : OPCION_OTRO);
+  const [grupoOtro, setGrupoOtro] = useState(grupos.some(g => g.chatId === chatInicial) ? '' : chatInicial);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +138,12 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
       return;
     }
 
+    const chatId = normalizarChatIdTelegram(grupoSel === OPCION_OTRO ? grupoOtro : grupoSel);
+    if (chatId !== null && !esChatIdTelegramValido(chatId)) {
+      setError('El id del grupo de Telegram debe ser numérico (ej. -1001234567890).');
+      return;
+    }
+
     setGuardando(true);
 
     let ok: boolean;
@@ -96,6 +153,7 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
         tipo,
         descripcion: descripcion.trim(),
         color,
+        telegramChatId: chatId,
       });
     } else {
       const result = await crearBanca({
@@ -104,6 +162,7 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
         moneda,
         descripcion: descripcion.trim(),
         color,
+        telegramChatId: chatId,
       });
       ok = !!result;
     }
@@ -196,6 +255,16 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
           </div>
 
           <SelectorColor valor={color} onCambiar={setColor} />
+
+          <SelectorGrupoTelegram
+            editable={puedeCambiarTelegram}
+            valor={grupoSel}
+            otroTexto={grupoOtro}
+            grupos={grupos}
+            onValor={setGrupoSel}
+            onOtroTexto={setGrupoOtro}
+            claseInput={inputClass}
+          />
 
           {/* Descripción */}
           <div>

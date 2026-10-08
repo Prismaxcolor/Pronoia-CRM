@@ -5,6 +5,7 @@ import type {
   PackingListDetalle,
   PackingListItem,
   PackingListResumen,
+  ProyeccionLotePacking,
   ReferenciaPackingList,
   TipoEmbalajePackingList,
 } from '../../../shared/types/packing-list.js';
@@ -41,6 +42,17 @@ interface ListaRow {
   created_at: string;
   updated_at: string;
   version: number;
+}
+
+/** Opciones de lectura/escritura que dependen de quién pide: la proyección es un dato de valor. */
+export interface OpcionesValores {
+  /** facturacion:ver. Por defecto false: la proyección ni se lee, ni se devuelve, ni se escribe. */
+  puedeVerValores?: boolean;
+}
+
+interface LineaProyeccionRow {
+  lote: string;
+  valor_kg_usd: number;
 }
 
 interface ItemRow {
@@ -133,8 +145,21 @@ export async function listarPackingLists(): Promise<PackingListResumen[]> {
   });
 }
 
-export async function obtenerPackingList(id: string): Promise<PackingListDetalle | null> {
-  const { data, error } = await supabaseAdmin.from('packing_lists').select(COLUMNAS_LISTA).eq('id', id).maybeSingle();
+const proyeccionToPublica = (filas: readonly LineaProyeccionRow[] | null | undefined): ProyeccionLotePacking[] =>
+  (filas ?? []).map(l => ({ lote: l.lote, valorKgUsd: Number(l.valor_kg_usd) }));
+
+/** Lee la cabecera; con valores intenta incluir la proyección y, si la columna aún no existe, la lee sin ella. */
+async function leerCabecera(id: string, conValores: boolean) {
+  if (conValores) {
+    const r = await supabaseAdmin.from('packing_lists').select(`${COLUMNAS_LISTA}, proyeccion`).eq('id', id).maybeSingle();
+    if (!r.error || !esObjetoInexistente(r.error)) return r;
+  }
+  return supabaseAdmin.from('packing_lists').select(COLUMNAS_LISTA).eq('id', id).maybeSingle();
+}
+
+export async function obtenerPackingList(id: string, opciones: OpcionesValores = {}): Promise<PackingListDetalle | null> {
+  const conValores = opciones.puedeVerValores === true;
+  const { data, error } = await leerCabecera(id, conValores);
   if (error) {
     if (esObjetoInexistente(error)) return null;
     logger.error({ evento: 'packing_list_no_leido', packingListId: id, motivo: error.message });
@@ -150,13 +175,19 @@ export async function obtenerPackingList(id: string): Promise<PackingListDetalle
     logger.error({ evento: 'packing_list_items_no_leidos', packingListId: id, motivo: errItems.message });
     throw new Error(MENSAJE_PACKING_NO_LEIDO);
   }
-  const fila = data as ListaRow;
+  const fila = data as ListaRow & { proyeccion?: LineaProyeccionRow[] | null };
   const nombres = await nombresDeUsuarios([fila.creado_por]);
-  return { ...listaToPublico(fila, nombres), items: ((items ?? []) as ItemRow[]).map(itemToPublico) };
+  const detalle = { ...listaToPublico(fila, nombres), items: ((items ?? []) as ItemRow[]).map(itemToPublico) };
+  return conValores ? { ...detalle, proyeccion: proyeccionToPublica(fila.proyeccion) } : detalle;
 }
 
-function cabeceraParaRpc(input: GuardarPackingListInput) {
+/** La clave `proyeccion` solo viaja si el usuario ve valores Y la mandó: ausente, la BD conserva lo guardado. */
+function cabeceraParaRpc(input: GuardarPackingListInput, puedeVerValores: boolean) {
+  const proyeccion = puedeVerValores && input.proyeccion
+    ? { proyeccion: input.proyeccion.map(l => ({ lote: l.lote, valor_kg_usd: l.valorKgUsd })) }
+    : {};
   return {
+    ...proyeccion,
     contenedor: input.contenedor,
     fecha: input.fecha,
     tipo_embalaje: input.tipoEmbalaje,
@@ -174,8 +205,11 @@ function cabeceraParaRpc(input: GuardarPackingListInput) {
 export async function guardarPackingList(
   id: string | null,
   input: GuardarPackingListInput,
-  userId: string
+  userId: string,
+  opciones: OpcionesValores = {}
 ): Promise<ResultadoPacking<PackingListDetalle>> {
+  const puedeVerValores = opciones.puedeVerValores === true;
+  const cabecera = cabeceraParaRpc(input, puedeVerValores);
   if (id !== null && input.version === undefined) {
     return { ok: false, error: MENSAJE_PACKING_SIN_VERSION, status: 400 };
   }
@@ -194,20 +228,20 @@ export async function guardarPackingList(
       capturadoEn: input.capturadoEn,
       envoltorio: 'guardar_packing_list_idem',
       original: 'guardar_packing_list',
-      args: { p_id: null, p_cabecera: cabeceraParaRpc(input), p_items: items, p_usuario: userId, p_version_esperada: null },
+      args: { p_id: null, p_cabecera: cabecera, p_items: items, p_usuario: userId, p_version_esperada: null },
       // El envoltorio solo crea: no recibe p_id ni la versión.
       omitirEnvoltorio: ['p_id', 'p_version_esperada'],
     })
     : await supabaseAdmin.rpc('guardar_packing_list', {
       p_id: id,
-      p_cabecera: cabeceraParaRpc(input),
+      p_cabecera: cabecera,
       p_items: items,
       p_usuario: userId,
       p_version_esperada: id === null ? null : input.version,
     });
   if (error || !data) return { ok: false, ...clasificarError(error ?? { message: 'No se pudo guardar el packing list.' }) };
   const guardadoId = String((data as { id?: string }).id ?? '');
-  const detalle = guardadoId ? await obtenerPackingList(guardadoId) : null;
+  const detalle = guardadoId ? await obtenerPackingList(guardadoId, { puedeVerValores }) : null;
   if (!detalle) return { ok: false, error: 'El packing list se guardó pero no se pudo leer de vuelta.', status: 500 };
   return { ok: true, valor: detalle };
 }

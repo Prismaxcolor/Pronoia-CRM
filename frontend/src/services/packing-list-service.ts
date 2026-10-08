@@ -7,6 +7,7 @@ import type {
   IdiomaPackingList,
   PackingListDetalle,
   PackingListResumen,
+  ProyeccionLotePacking,
   ReferenciaPackingList,
   TipoEmbalajePackingList,
 } from '@shared/types/index.js';
@@ -34,6 +35,8 @@ export interface GuardarPackingListInput {
   /** Versión del packing list que se cargó; el backend la exige al editar. */
   version?: number;
   items: ItemPackingListInput[];
+  /** Proyección de exportación (interna). Solo la envía quien tiene facturacion:ver; ausente = no tocar. */
+  proyeccion?: ProyeccionLotePacking[];
 }
 
 export type EmpresaInput = Omit<EmpresaPackingList, 'idioma'>;

@@ -15,7 +15,9 @@ import {
 import { esSuperadminEnBd } from '../services/edicion-autorizada-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearUsuarioSchema, actualizarUsuarioSchema } from '../schemas/usuarios.js';
+import { crearUsuarioSchema, actualizarUsuarioSchema, asignarBancasSchema } from '../schemas/usuarios.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { listarBancasDeUsuario, reemplazarBancasDeUsuario } from '../services/banca-acceso-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -115,6 +117,55 @@ router.post(
       rol: result.usuario.rol,
     });
     res.status(201).json(result);
+  }
+);
+
+// Acceso del usuario a cuentas/cajas. Sin filas = ninguna; solo el superadmin ve todas sin filas.
+const MENSAJE_BANCAS_SOLO_SUPERADMIN =
+  'Solo un superadmin puede ver o cambiar el acceso de los usuarios a cuentas y cajas.';
+
+/** Solo un superadmin activo (según la BD) ve o cambia el acceso de cualquier usuario a cuentas/cajas. */
+async function puedeGestionarBancasDe(actorId: string, _objetivoId: string): Promise<boolean> {
+  return esSuperadminEnBd(actorId);
+}
+
+router.get('/:id/bancas', validarUuidParam('id'), requirePermiso('usuarios', 'ver'), async (req, res) => {
+  if (!(await puedeGestionarBancasDe(req.user!.sub, String(req.params.id)))) {
+    res.status(403).json({ error: MENSAJE_BANCAS_SOLO_SUPERADMIN });
+    return;
+  }
+  const result = await listarBancasDeUsuario(String(req.params.id));
+  if (!Array.isArray(result)) {
+    res.status(409).json(result);
+    return;
+  }
+  res.json({ bancaIds: result });
+});
+
+router.put(
+  '/:id/bancas',
+  validarUuidParam('id'),
+  requirePermiso('usuarios', 'editar'),
+  validateBody(asignarBancasSchema),
+  async (req, res) => {
+    const id = String(req.params.id);
+    if (!(await puedeGestionarBancasDe(req.user!.sub, id))) {
+      res.status(403).json({ error: MENSAJE_BANCAS_SOLO_SUPERADMIN });
+      return;
+    }
+    const result = await reemplazarBancasDeUsuario(id, req.body.bancaIds);
+    if ('error' in result) {
+      res.status(result.pendiente ? 409 : 500).json({ error: result.error });
+      return;
+    }
+    logger.info({
+      evento: 'usuario_bancas_actualizadas',
+      ip: clienteIp(req),
+      adminId: req.user!.sub,
+      targetUserId: id,
+      cantidad: req.body.bancaIds.length,
+    });
+    res.json({ ok: true });
   }
 );
 

@@ -1,6 +1,6 @@
 import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
-import type { CrearClienteInput, ActualizarClienteInput } from '../schemas/clientes.js';
+import type { TipoVentaCliente, CrearClienteInput, ActualizarClienteInput } from '../schemas/clientes.js';
 
 interface ClienteRow {
   id: string;
@@ -16,6 +16,7 @@ interface ClienteRow {
   fotos: string[] | null;
   telegram_chat_id: string | null;
   telegram_linked_at: string | null;
+  tipo_venta: TipoVentaCliente | null;
 }
 
 export interface ClientePublico {
@@ -32,6 +33,7 @@ export interface ClientePublico {
   fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
+  tipoVenta: TipoVentaCliente;
 }
 
 function toPublico(row: ClienteRow): ClientePublico {
@@ -49,6 +51,7 @@ function toPublico(row: ClienteRow): ClientePublico {
     fotos: row.fotos ?? [],
     telegramChatId: row.telegram_chat_id,
     telegramLinkedAt: row.telegram_linked_at,
+    tipoVenta: row.tipo_venta ?? 'nacional',
   };
 }
 
@@ -74,6 +77,7 @@ export async function crearCliente(
     direccion: input.direccion,
     notas: input.notas,
     fotos: input.fotos ?? [],
+    tipo_venta: input.tipoVenta,
     creado_por: creadoPor,
   }, { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn });
 
@@ -93,6 +97,7 @@ export async function actualizarCliente(
   if (cambios.direccion !== undefined) update.direccion = cambios.direccion;
   if (cambios.notas !== undefined) update.notas = cambios.notas;
   if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
+  if (cambios.tipoVenta !== undefined) update.tipo_venta = cambios.tipoVenta;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
 
   const { data, error } = await supabaseAdmin

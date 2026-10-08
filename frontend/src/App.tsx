@@ -90,6 +90,8 @@ const TransformacionDetallePage = lazyConReintento(() => import('./features/tran
 const MermaPage = lazyConReintento(() => import('./features/transformaciones/MermaPage'));
 const CochinitPage = lazyConReintento(() => import('./features/cochinito/CochinitPage'));
 const MovimientoDetallePage = lazyConReintento(() => import('./features/cochinito/MovimientoDetallePage'));
+const MesaCambioPage = lazyConReintento(() => import('./features/mesa-cambio/MesaCambioPage'));
+const CambistaDetallePage = lazyConReintento(() => import('./features/mesa-cambio/CambistaDetallePage'));
 const UsuariosPage = lazyConReintento(() => import('./features/usuarios/UsuariosPage'));
 const ClientesPage = lazyConReintento(() => import('./features/clientes/ClientesPage'));
 const ProveedoresPage = lazyConReintento(() => import('./features/proveedores/ProveedoresPage'));
@@ -222,6 +224,8 @@ function AppRoutes() {
         <Route path="/ventas/:id" element={<ProtectedRoute recurso="facturacion"><FacturaDetallePage tipo="venta" /></ProtectedRoute>} />
         <Route path="/cochinito" element={<ProtectedRoute recurso="cochinito"><CochinitPage /></ProtectedRoute>} />
         <Route path="/cochinito/movimientos/:id" element={<ProtectedRoute recurso="cochinito"><MovimientoDetallePage /></ProtectedRoute>} />
+        <Route path="/mesa-cambio" element={<ProtectedRoute recurso="mesa_cambio"><RequiereConexion seccion="Mesa de cambio"><MesaCambioPage /></RequiereConexion></ProtectedRoute>} />
+        <Route path="/mesa-cambio/:id" element={<ProtectedRoute recurso="mesa_cambio"><RequiereConexion seccion="Mesa de cambio"><CambistaDetallePage /></RequiereConexion></ProtectedRoute>} />
         <Route path="/clientes" element={<ProtectedRoute recurso="clientes"><ClientesPage /></ProtectedRoute>} />
         <Route path="/clientes/:id/estado-cuenta" element={<ProtectedRoute recurso="clientes"><EstadoCuentaPage tipo="cliente" /></ProtectedRoute>} />
         <Route path="/clientes/:entidadId/notas/:notaId" element={<ProtectedRoute recurso="clientes"><NotaDetallePage tipoEntidad="cliente" /></ProtectedRoute>} />

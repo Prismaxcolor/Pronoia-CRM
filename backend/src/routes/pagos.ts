@@ -8,6 +8,8 @@ import { anularTransaccionSchema, editarPagoSchema, type EditarPagoInput } from 
 import { validateBody } from '../middlewares/validate.js';
 import { registrarPagoSchema, registrarPagoMultipleSchema } from '../schemas/pagos.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { exigirAccesoBancas } from '../middlewares/exigir-acceso-bancas.js';
+import { idsBancasDeGrupo } from '../services/banca-acceso-service.js';
 
 const router = Router();
 
@@ -18,6 +20,7 @@ router.post(
   '/',
   requirePermiso('cochinito', 'crear'),
   validateBody(registrarPagoSchema),
+  exigirAccesoBancas(),
   async (req, res) => {
     const result = await registrarPago(req.body, req.user!.sub);
     if ('error' in result) {
@@ -42,6 +45,7 @@ router.post(
   '/multiple',
   requirePermiso('cochinito', 'crear'),
   validateBody(registrarPagoMultipleSchema),
+  exigirAccesoBancas(),
   async (req, res) => {
     const result = await registrarPagoMultiple(req.body, req.user!.sub);
     if ('error' in result) {
@@ -70,6 +74,7 @@ router.patch(
   validarUuidParam('grupoId'),
   requirePermisoOLlave('cochinito', 'editar'),
   validateBody(editarPagoSchema),
+  exigirAccesoBancas(req => idsBancasDeGrupo(String(req.params.grupoId))),
   async (req, res) => {
     const { llaveEdicion, ...datos } = req.body as EditarPagoInput;
     const grupoId = String(req.params.grupoId);
@@ -91,6 +96,7 @@ router.post(
   validarUuidParam('grupoId'),
   requirePermisoOLlave('cochinito', 'editar'),
   validateBody(anularTransaccionSchema),
+  exigirAccesoBancas(req => idsBancasDeGrupo(String(req.params.grupoId))),
   async (req, res) => {
     const grupoId = String(req.params.grupoId);
     const result = await anularPagoCobro('pago', grupoId, req.body.motivo, {

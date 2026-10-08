@@ -42,8 +42,20 @@ export interface PackingListResumen extends PackingList {
   totalNeto: number;
 }
 
+/**
+ * Valoración estimada de un lote incluido en el packing list (proyección de exportación, INTERNA).
+ * Los kg no se guardan: se derivan del neto de los ítems del lote. `lote` '' = ítems sin lote.
+ */
+export interface ProyeccionLotePacking {
+  lote: string;
+  /** USD por kg, ingresado a mano. */
+  valorKgUsd: number;
+}
+
 export interface PackingListDetalle extends PackingList {
   items: PackingListItem[];
+  /** Solo viaja a quien tiene facturacion:ver; ausente para el resto. Nunca va en los PDF. */
+  proyeccion?: ProyeccionLotePacking[];
 }
 
 /** Datos de la empresa que encabeza el documento en cada idioma (es = Venezuela, en = EE.UU.). */

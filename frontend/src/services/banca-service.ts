@@ -42,6 +42,8 @@ export interface CrearBancaInput {
   descripcion: string;
   /** Clave de la paleta; null/omitido = sin color. */
   color?: string | null;
+  /** Chat de Telegram de los avisos de la banca; null/omitido = grupo general de cajas. */
+  telegramChatId?: string | null;
 }
 
 /** Crea una banca con saldo 0. Para establecer saldo inicial se debe registrar un ingreso. */
@@ -64,6 +66,8 @@ export interface ActualizarBancaInput {
   descripcion?: string;
   /** null quita el color. */
   color?: string | null;
+  /** null vuelve al grupo general de cajas. */
+  telegramChatId?: string | null;
 }
 
 export async function actualizarBanca(id: string, campos: ActualizarBancaInput): Promise<boolean> {

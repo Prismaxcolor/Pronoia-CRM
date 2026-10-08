@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, Wallet, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, PackageOpen, KeyRound, X } from 'lucide-react';
+import { LayoutDashboard, Package, Wallet, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, PackageOpen, KeyRound, ArrowLeftRight, X } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import BloqueUsuarioMenu from './BloqueUsuarioMenu';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
@@ -65,6 +65,7 @@ const NAV_SECTIONS: NavSection[] = [
     header: 'Tesorería',
     items: [
       { label: 'Wallet', to: '/cochinito', icon: <Wallet size={20} />, recurso: 'cochinito' },
+      { label: 'Mesa de cambio', to: '/mesa-cambio', icon: <ArrowLeftRight size={20} />, recurso: 'mesa_cambio', recordable: true },
     ],
   },
   {

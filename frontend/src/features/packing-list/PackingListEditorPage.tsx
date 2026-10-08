@@ -9,9 +9,11 @@ import { guardarPackingList, obtenerEmpresasPackingList, obtenerPackingList } fr
 import { calcularTotales, resumirPorLote } from '../../lib/packing-list';
 import PackingListFilas, { type FilaForm } from './PackingListFilas';
 import PackingListTotales from './PackingListTotales';
+import PackingListProyeccion from './PackingListProyeccion';
+import { kgPorLote } from '../../lib/proyeccion-packing';
 import {
-  OPCIONES_EMBALAJE, aFilaNumerica, cabeceraDesde, cabeceraInicial, construirEntrada, filaSiguiente, filasDesde,
-  type CabeceraForm,
+  OPCIONES_EMBALAJE, aFilaNumerica, cabeceraDesde, cabeceraInicial, construirEntrada, filaSiguiente, filasDesde, valoresDesde,
+  type CabeceraForm, type ValoresProyeccionForm,
 } from './formulario';
 import LeyendaRegistro from '../../components/LeyendaRegistro';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
@@ -43,8 +45,11 @@ function PackingListEditorPage() {
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [hayConflicto, setHayConflicto] = useState(false);
   const [recargando, setRecargando] = useState(false);
-  const [instantanea, setInstantanea] = useState(() => JSON.stringify([cabeceraInicial(), []]));
+  const [valores, setValores] = useState<ValoresProyeccionForm>({});
+  const [instantanea, setInstantanea] = useState(() => JSON.stringify([cabeceraInicial(), [], {}]));
 
+  // La proyección es un dato de valor (USD estimados): solo con facturacion:ver.
+  const puedeVerValores = tienePermiso('facturacion', 'ver');
   const puedeEditar = esNuevo ? tienePermiso('despachos', 'crear') : tienePermiso('despachos', 'editar');
 
   const aplicar = useCallback((p: PackingListDetalle) => {
@@ -54,7 +59,9 @@ function PackingListEditorPage() {
     setHayConflicto(false);
     setCabecera(c);
     setFilas(f);
-    setInstantanea(JSON.stringify([c, f.map(datosFila)]));
+    const v = valoresDesde(p);
+    setValores(v);
+    setInstantanea(JSON.stringify([c, f.map(datosFila), v]));
   }, []);
 
   useEffect(() => {
@@ -70,7 +77,8 @@ function PackingListEditorPage() {
   const totales = useMemo(() => calcularTotales(filasNumericas), [filasNumericas]);
   const grupos = useMemo(() => resumirPorLote(filasNumericas, cabecera.esPcb), [filasNumericas, cabecera.esPcb]);
   const nombreBulto = OPCIONES_EMBALAJE.find(o => o.valor === cabecera.tipoEmbalaje)?.bulto ?? 'Bulto';
-  const sinGuardar = JSON.stringify([cabecera, filas.map(datosFila)]) !== instantanea;
+  const kgs = useMemo(() => kgPorLote(filasNumericas), [filasNumericas]);
+  const sinGuardar = JSON.stringify([cabecera, filas.map(datosFila), valores]) !== instantanea;
 
   const cambiarCabecera = <K extends keyof CabeceraForm>(k: K, v: CabeceraForm[K]) => setCabecera(c => ({ ...c, [k]: v }));
   const cambiarFila = (clave: string, campo: keyof Omit<FilaForm, 'clave'>, valor: string) =>
@@ -81,7 +89,7 @@ function PackingListEditorPage() {
       referenciaTipo: guardado?.referenciaTipo ?? null,
       referenciaId: guardado?.referenciaId ?? null,
       version: esNuevo ? undefined : guardado?.version,
-    });
+    }, puedeVerValores ? valores : undefined);
     if ('error' in r) { toast.errorMsg(r.error); return; }
     setGuardando(true);
     const res = await guardarPackingList(esNuevo ? null : id, r.entrada);
@@ -214,6 +222,14 @@ function PackingListEditorPage() {
       <Bloque titulo="Totales" queEstasViendo="Se recalculan al escribir. Es lo que sale en la primera página del documento.">
         <PackingListTotales grupos={grupos} totales={totales} esPcb={cabecera.esPcb} nombreBulto={`${nombreBulto}s`} />
       </Bloque>
+
+      {puedeVerValores && (
+        <Bloque titulo="Proyección de exportación"
+          queEstasViendo="Uso interno: NO sale en los PDF. Escribe el valor estimado por kg (USD) de cada lote; el total es kg netos × valor.">
+          <PackingListProyeccion kgs={kgs} valores={valores} puedeEditar={puedeEditar}
+            onCambiar={(lote, texto) => setValores(v => ({ ...v, [lote]: texto }))} />
+        </Bloque>
+      )}
     </div>
   );
 }

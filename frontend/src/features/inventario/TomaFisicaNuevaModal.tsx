@@ -48,7 +48,8 @@ export default function NuevaTomaFisicaModal({
   onCreada: (t: TomaFisicaInventario) => void;
 }) {
   const toast = useToast();
-  const [almacenId, setAlmacenId] = useState(almacenes.find(a => a.activo)?.id ?? '');
+  // Sin almacén predeterminado: la persona lo elige (obligatorio al crear la toma).
+  const [almacenId, setAlmacenId] = useState('');
   const [alcance, setAlcance] = useState<Alcance>('categoria');
   const [categoriaIds, setCategoriaIds] = useState<string[]>([]);
   const [loteIds, setLoteIds] = useState<string[]>([]);
@@ -60,7 +61,7 @@ export default function NuevaTomaFisicaModal({
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const almacenInicial = almacenes.find(a => a.activo)?.id ?? '';
+  const almacenInicial = '';
   const estadoBorrador = { almacenId, alcance, categoriaIds, loteIds, productosExcluidos, descripcion };
   const restablecer = () => {
     setAlmacenId(almacenInicial);
@@ -153,7 +154,7 @@ export default function NuevaTomaFisicaModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!almacenId) { setError('Elige un almacén.'); return; }
+    if (!almacenId) { setError('Elige el almacén de la toma física.'); return; }
     if (categoriaIds.length === 0) {
       setError(alcance === 'categoria' ? 'Elige al menos una categoría a inventariar.' : 'Elige la categoría a la que pertenecen los lotes.');
       return;
@@ -204,6 +205,7 @@ export default function NuevaTomaFisicaModal({
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">Almacén *</label>
             <select value={almacenId} onChange={e => setAlmacenId(e.target.value)} className={inputClass}>
+              <option value="">— Selecciona el almacén —</option>
               {almacenes.filter(a => a.activo).map(a => (
                 <option key={a.id} value={a.id}>{a.nombre}</option>
               ))}

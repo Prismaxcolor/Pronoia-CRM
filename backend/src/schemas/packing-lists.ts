@@ -34,6 +34,21 @@ export const itemPackingListSchema = z
     path: ['pesoPaleta'],
   });
 
+const TOPE_VALOR_KG = 1_000_000;
+
+/** USD por kg, hasta 4 decimales (columna JSONB, no numeric). */
+const valorKgUsd = z
+  .number({ message: 'El valor por kg debe ser un número.' })
+  .min(0, 'El valor por kg no puede ser negativo.')
+  .max(TOPE_VALOR_KG, 'El valor por kg es demasiado grande.')
+  .refine(n => Math.abs(n * 10_000 - Math.round(n * 10_000)) < 1e-6, 'Usa máximo 4 decimales.');
+
+/** Proyección de exportación (interna): un valor por lote. `lote` '' = ítems sin lote. */
+export const lineaProyeccionSchema = z.object({
+  lote: z.string().trim().max(40),
+  valorKgUsd,
+});
+
 const fechaIso = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (formato YYYY-MM-DD).')
@@ -55,16 +70,24 @@ export const guardarPackingListSchema = z
     /** Versión que el cliente cargó; obligatoria al editar (PUT), se ignora al crear. */
     version: z.number().int().min(1).optional(),
     items: z.array(itemPackingListSchema).max(MAX_ITEMS, `Máximo ${MAX_ITEMS} paletas por packing list.`),
+    /** Ausente = no tocar lo guardado; lista (aun vacía) = reemplazar. Solo se persiste con facturacion:ver. */
+    proyeccion: z.array(lineaProyeccionSchema).max(MAX_ITEMS).optional(),
+  })
+  .refine(d => new Set(d.proyeccion?.map(l => l.lote)).size === (d.proyeccion?.length ?? 0), {
+    message: 'Hay lotes repetidos en la proyección.',
+    path: ['proyeccion'],
   })
   .refine(d => (d.referenciaTipo === null) === (d.referenciaId === null), {
     message: 'La referencia necesita tipo e id.',
     path: ['referenciaId'],
   })
-  .transform(d => ({
-    ...d,
+  .transform(d => {
     // Lote y color solo existen en PCB: se descartan por si el cliente los envía de más.
-    items: d.items.map(i => (d.esPcb ? i : { ...i, lote: null, color: null })),
-  }));
+    const items = d.items.map(i => (d.esPcb ? i : { ...i, lote: null, color: null }));
+    // La proyección solo valora lotes que siguen incluidos en los ítems.
+    const lotes = new Set(items.map(i => i.lote ?? ''));
+    return { ...d, items, proyeccion: d.proyeccion?.filter(l => lotes.has(l.lote)) };
+  });
 
 export const packingListParamsSchema = z.object({
   id: z.string().uuid('El id del packing list no es válido.'),

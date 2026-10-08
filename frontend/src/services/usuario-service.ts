@@ -159,3 +159,22 @@ export async function leerTelegramMe(): Promise<{ vinculado: boolean; linkedAt: 
     return null;
   }
 }
+
+/** Ids de las cuentas/cajas a las que el usuario tiene acceso asignado (solo el superadmin ve todas sin asignar). */
+export async function obtenerBancasDeUsuario(id: string): Promise<{ bancaIds: string[] } | { error: string }> {
+  try {
+    return await apiFetch<{ bancaIds: string[] }>(`/api/usuarios/${id}/bancas`);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo leer el acceso a cuentas.' };
+  }
+}
+
+/** Reemplaza las cuentas/cajas a las que el usuario tiene acceso. */
+export async function guardarBancasDeUsuario(id: string, bancaIds: string[]): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/usuarios/${id}/bancas`, { method: 'PUT', body: { bancaIds } });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo guardar el acceso a cuentas.' };
+  }
+}

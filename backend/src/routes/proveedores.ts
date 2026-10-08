@@ -21,6 +21,7 @@ import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-
 import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
 import { listarAdelantosDisponibles } from '../services/cruce-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { bancasPermitidas } from '../services/banca-acceso-service.js';
 import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 import { responderSaldos } from './saldos-handler.js';
 
@@ -42,7 +43,9 @@ router.get('/:id/estado-cuenta', requirePermiso('proveedores', 'ver'), async (re
     'proveedor',
     String(req.params.id),
     desde ? String(desde) : undefined,
-    hasta ? String(hasta) : undefined
+    hasta ? String(hasta) : undefined,
+    // Las filas se muestran completas (saldo exacto); solo se ocultan las referencias de cuentas sin acceso.
+    await bancasPermitidas(req.user!.sub, req.user!.rol)
   );
   if (!estado) {
     res.status(404).json({ error: 'Proveedor no encontrado.' });
@@ -87,7 +90,7 @@ router.get('/:id/notas-ajuste/:notaId', requirePermiso('proveedores', 'ver'), as
 router.get('/:id/pagos/:grupoId', requirePermiso('proveedores', 'ver'), async (req, res) => {
   const proveedorId = String(req.params.id);
   const grupoId = String(req.params.grupoId);
-  const result = await obtenerPagoDetalle('proveedor', proveedorId, grupoId);
+  const result = await obtenerPagoDetalle('proveedor', proveedorId, grupoId, await bancasPermitidas(req.user!.sub, req.user!.rol));
   if ('error' in result) {
     res.status(404).json(result);
     return;

@@ -8,7 +8,7 @@ import {
   obtenerPackingList,
   MENSAJE_PACKING_NO_LEIDO,
 } from '../services/packing-list-service.js';
-import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
 import { validateBody, validateParams } from '../middlewares/validate.js';
 import {
   empresaParamsSchema,
@@ -28,6 +28,10 @@ router.use(requireAuth);
 // El packing list se arma al preparar un despacho/exportación → permiso 'despachos'
 // (ver / crear / editar / eliminar). Los datos de la empresa (dirección por idioma) son
 // configuración del documento: requieren 'editar'.
+
+// La proyección de exportación es un dato de valor (USD estimados): solo con facturacion:ver, igual que el
+// precio estimado de los lotes. Sin ese permiso no se lee, no se devuelve y no se modifica.
+const opcionesValores = (req: Request) => ({ puedeVerValores: reqTienePermiso(req, 'facturacion', 'ver') });
 
 function errorInterno(req: Request, res: Response, evento: string, err: unknown) {
   logger.error({ evento, ip: clienteIp(req), userId: req.user?.sub, motivo: err instanceof Error ? err.message : String(err) });
@@ -70,7 +74,7 @@ router.put(
 
 router.get('/:id', requirePermiso('despachos', 'ver'), validateParams(packingListParamsSchema), async (req, res) => {
   try {
-    const packingList = await obtenerPackingList(String(req.params.id));
+    const packingList = await obtenerPackingList(String(req.params.id), opcionesValores(req));
     if (!packingList) {
       res.status(404).json({ error: 'Packing list no encontrado.' });
       return;
@@ -83,7 +87,7 @@ router.get('/:id', requirePermiso('despachos', 'ver'), validateParams(packingLis
 
 router.post('/', requirePermiso('despachos', 'crear'), validateBody(guardarPackingListSchema), async (req, res) => {
   const envio = await ejecutarOperacion(res, TIPO_OPERACION.packingListCrear, req.body, req.user!.sub, () =>
-    guardarPackingList(null, req.body, req.user!.sub)
+    guardarPackingList(null, req.body, req.user!.sub, opcionesValores(req))
   );
   if (!envio) return;
   const { resultado: result, repetida } = envio;
@@ -104,7 +108,7 @@ router.put(
   async (req, res) => {
     const id = String(req.params.id);
     const envio = await ejecutarOperacion(res, tipoDeRecurso(TIPO_OPERACION.packingListEditar, id), req.body, req.user!.sub, () =>
-      guardarPackingList(id, req.body, req.user!.sub)
+      guardarPackingList(id, req.body, req.user!.sub, opcionesValores(req))
     );
     if (!envio) return;
     const { resultado: result, repetida } = envio;

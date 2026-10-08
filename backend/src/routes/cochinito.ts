@@ -8,6 +8,7 @@ import {
   desarchivarBanca,
   crearMovimiento,
   obtenerDetalleMovimiento,
+  leerTelegramChatIdBanca,
 } from '../services/banca-service.js';
 import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
@@ -17,6 +18,9 @@ import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearBancaSchema, actualizarBancaSchema, crearMovimientoSchema } from '../schemas/cochinito.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { exigirAccesoBancas } from '../middlewares/exigir-acceso-bancas.js';
+import { bancasPermitidas, concederBancaAUsuario, idsBancasDeMovimiento } from '../services/banca-acceso-service.js';
+import { bancaPermitida, filtrarBancas, enmascararDetalleMovimiento, filtrarMovimientos, puedeCambiarTelegramBanca, MENSAJE_SIN_ACCESO_BANCA, MENSAJE_SOLO_ADMIN_TELEGRAM } from '../utils/banca-acceso.js';
 
 const router = Router();
 
@@ -24,7 +28,8 @@ router.use(requireAuth);
 
 router.get('/bancas', requirePermiso('cochinito', 'ver'), async (req, res) => {
   const incluirArchivadas = req.query.incluirArchivadas === 'true';
-  const bancas = await listarBancas({ incluirArchivadas });
+  const permitidas = await bancasPermitidas(req.user!.sub, req.user!.rol);
+  const bancas = filtrarBancas(await listarBancas({ incluirArchivadas }), permitidas);
   res.json({ bancas });
 });
 
@@ -33,10 +38,25 @@ router.post(
   requirePermiso('cochinito', 'crear'),
   validateBody(crearBancaSchema),
   async (req, res) => {
+    if (req.body.telegramChatId && !puedeCambiarTelegramBanca(req.user!.rol)) {
+      res.status(403).json({ error: MENSAJE_SOLO_ADMIN_TELEGRAM });
+      return;
+    }
     const result = await crearBanca(req.body);
     if ('error' in result) {
-      res.status(400).json(result);
+      res.status(result.pendiente ? 409 : 400).json({ error: result.error });
       return;
+    }
+    // Quien crea una banca debe poder usarla aunque no sea superadmin (el superadmin ve todas igual).
+    const concedida = await concederBancaAUsuario(req.user!.sub, result.banca.id);
+    if ('error' in concedida) {
+      logger.error({ evento: 'banca_acceso_creador_fallido', userId: req.user!.sub, bancaId: result.banca.id, mensaje: concedida.error });
+      if (!puedeCambiarTelegramBanca(req.user!.rol)) {
+        // Sin acceso la cuenta quedaría invisible para quien la creó: se archiva (saldo 0) y se avisa.
+        await archivarBanca(result.banca.id);
+        res.status(500).json({ error: 'No se pudo asignarte acceso a la cuenta nueva; no se creó. Inténtalo de nuevo.' });
+        return;
+      }
     }
     logger.info({
       evento: 'banca_creada',
@@ -52,12 +72,20 @@ router.patch(
   '/bancas/:id',
   requirePermiso('cochinito', 'editar'),
   validateBody(actualizarBancaSchema),
+  exigirAccesoBancas(async req => [String(req.params.id)]),
   async (req, res) => {
     const id = String(req.params.id);
+    const nuevoChat: string | null | undefined = req.body.telegramChatId;
+    const anteriorChat = nuevoChat === undefined ? null : await leerTelegramChatIdBanca(id);
+    const cambiaChat = nuevoChat !== undefined && nuevoChat !== anteriorChat;
+    if (cambiaChat && !puedeCambiarTelegramBanca(req.user!.rol)) {
+      res.status(403).json({ error: MENSAJE_SOLO_ADMIN_TELEGRAM });
+      return;
+    }
     const result = await actualizarBanca(id, req.body);
     if ('error' in result) {
-      const status = result.error.includes('no encontrada') ? 404 : 400;
-      res.status(status).json(result);
+      const status = result.pendiente ? 409 : result.error.includes('no encontrada') ? 404 : 400;
+      res.status(status).json({ error: result.error });
       return;
     }
     logger.info({
@@ -66,11 +94,14 @@ router.patch(
       userId: req.user!.sub,
       bancaId: id,
     });
+    if (cambiaChat) {
+      logger.info({ evento: 'banca_telegram_chat_modificado', userId: req.user!.sub, bancaId: id, anterior: anteriorChat, nuevo: nuevoChat });
+    }
     res.json(result);
   }
 );
 
-router.post('/bancas/:id/archivar', requirePermiso('cochinito', 'editar'), async (req, res) => {
+router.post('/bancas/:id/archivar', requirePermiso('cochinito', 'editar'), exigirAccesoBancas(async req => [String(req.params.id)]), async (req, res) => {
   const id = String(req.params.id);
   const result = await archivarBanca(id);
   if (!result.ok) {
@@ -86,7 +117,7 @@ router.post('/bancas/:id/archivar', requirePermiso('cochinito', 'editar'), async
   res.json({ ok: true });
 });
 
-router.post('/bancas/:id/desarchivar', requirePermiso('cochinito', 'editar'), async (req, res) => {
+router.post('/bancas/:id/desarchivar', requirePermiso('cochinito', 'editar'), exigirAccesoBancas(async req => [String(req.params.id)]), async (req, res) => {
   const id = String(req.params.id);
   const ok = await desarchivarBanca(id);
   if (!ok) {
@@ -102,8 +133,9 @@ router.post('/bancas/:id/desarchivar', requirePermiso('cochinito', 'editar'), as
   res.json({ ok: true });
 });
 
-router.get('/movimientos', requirePermiso('cochinito', 'ver'), async (_req, res) => {
-  const movimientos = await listarMovimientos();
+router.get('/movimientos', requirePermiso('cochinito', 'ver'), async (req, res) => {
+  const permitidas = await bancasPermitidas(req.user!.sub, req.user!.rol);
+  const movimientos = filtrarMovimientos(await listarMovimientos(), permitidas);
   res.json({ movimientos });
 });
 
@@ -118,13 +150,21 @@ router.get('/movimientos/:id', validarUuidParam('id'), requirePermiso('cochinito
     res.status(404).json({ error: 'Movimiento no encontrado.' });
     return;
   }
-  res.json(detalle);
+  const { bancaOrigenId, bancaDestinoId } = detalle.movimiento;
+  const permitidas = await bancasPermitidas(req.user!.sub, req.user!.rol);
+  const visible = bancaPermitida(permitidas, bancaOrigenId) || (bancaDestinoId !== null && bancaPermitida(permitidas, bancaDestinoId));
+  if (!visible) {
+    res.status(403).json({ error: MENSAJE_SIN_ACCESO_BANCA });
+    return;
+  }
+  res.json(enmascararDetalleMovimiento(detalle, permitidas));
 });
 
 router.post(
   '/movimientos',
   requirePermiso('cochinito', 'crear'),
   validateBody(crearMovimientoSchema),
+  exigirAccesoBancas(),
   async (req, res) => {
     const result = await crearMovimiento(req.body, req.user!.sub);
     if ('error' in result) {
@@ -149,6 +189,7 @@ router.patch(
   validarUuidParam('id'),
   requirePermisoOLlave('cochinito', 'editar'),
   validateBody(editarMovimientoSchema),
+  exigirAccesoBancas(req => idsBancasDeMovimiento(String(req.params.id))),
   async (req, res) => {
     const { llaveEdicion, ...datos } = req.body as EditarMovimientoInput;
     const id = String(req.params.id);
@@ -169,6 +210,7 @@ router.post(
   validarUuidParam('id'),
   requirePermisoOLlave('cochinito', 'editar'),
   validateBody(anularTransaccionSchema),
+  exigirAccesoBancas(req => idsBancasDeMovimiento(String(req.params.id))),
   async (req, res) => {
     const id = String(req.params.id);
     const result = await anularMovimientoBanca(id, req.body.motivo, {

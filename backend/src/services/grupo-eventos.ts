@@ -453,6 +453,18 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ...eventosModificacionDinero('pago', '/api/pagos', 'grupoId', 'Pago', 'pago', 'el'),
   ...eventosModificacionDinero('cobro', '/api/cobros', 'grupoId', 'Cobro', 'cobro', 'el'),
   ...eventosModificacionDinero('movimiento', '/api/cochinito/movimientos', 'id', 'Movimiento de banca', 'movimiento', 'el'),
+  // Mesa de cambio: anotaciones de deuda con cambistas (no mueven bancas).
+  ev('cambista.creado', 'POST', '/api/mesa-cambio/cambistas', 'tesoreria', 'normal', '💱', 'Se registró un cambista', { entidad: { rotulo: 'Cambista', resp: 'cambista' } }),
+  ev('cambista.editado', 'PATCH', '/api/mesa-cambio/cambistas/:id', 'tesoreria', 'normal', '✏️', 'Se editó un cambista', { entidad: { rotulo: 'Cambista', resp: 'cambista' } }),
+  ev('mesa_cambio.asiento', 'POST', '/api/mesa-cambio/asientos', 'tesoreria', 'critica', '💱', 'Se registró un asiento de mesa de cambio', {
+    detalles: ctx => {
+      const monto = num(ctx.reqBody.montoUsd);
+      return [...linea('Tipo', txt(ctx.reqBody.tipo)), ...(monto !== null ? [`Monto: ${usd(monto)}`] : [])];
+    },
+  }),
+  ev('mesa_cambio.asiento_anulado', 'POST', '/api/mesa-cambio/asientos/:id/anular', 'tesoreria', 'critica', '🗑️', 'Se ANULÓ un asiento de mesa de cambio', {
+    detalles: ctx => linea('Motivo', txt(ctx.reqBody.motivo)),
+  }),
 
   // --- Inventario: maestros y precios --------------------------------------
   ...maestro('/api/productos', 'producto', 'inventario', 'Producto', 'productos', 'el', 'producto', true, 'producto'),
@@ -525,6 +537,7 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('usuario.editado', 'PATCH', '/api/usuarios/:id', 'usuarios', 'critica', '✏️', 'Se editó un usuario', {
     entidad: { rotulo: 'Usuario', tabla: 'users' }, detalles: detallesUsuarioEditado,
   }),
+  ev('usuario.bancas', 'PUT', '/api/usuarios/:id/bancas', 'usuarios', 'critica', '🏦', 'Se cambió el acceso de un usuario a cuentas/cajas', { entidad: { rotulo: 'Usuario', tabla: 'users' } }),
   ev('usuario.desactivado', 'POST', '/api/usuarios/:id/desactivar', 'usuarios', 'critica', '⏸️', 'Se DESACTIVÓ un usuario', { entidad: { rotulo: 'Usuario', tabla: 'users' } }),
   ev('usuario.reactivado', 'POST', '/api/usuarios/:id/reactivar', 'usuarios', 'critica', '▶️', 'Se reactivó un usuario', { entidad: { rotulo: 'Usuario', tabla: 'users' } }),
   ev('usuario.eliminado', 'DELETE', '/api/usuarios/:id', 'usuarios', 'critica', '🗑️', 'Se ELIMINÓ un usuario', { entidad: { rotulo: 'Usuario', tabla: 'users' } }),

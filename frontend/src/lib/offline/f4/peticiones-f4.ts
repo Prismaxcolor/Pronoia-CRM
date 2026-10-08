@@ -115,7 +115,7 @@ const DEFINICIONES: Record<TipoMaestro, DefinicionMaestro> = {
   },
   cliente: {
     tipo: TIPO_F4.clienteCrear, endpoint: ENDPOINT_F4.clientes, entidad: 'cliente', etiqueta: 'Nuevo cliente',
-    porDefecto: { identificacion: null, email: null, telefono: null, direccion: null, notas: null, creadoPor: '', telegramChatId: null, telegramLinkedAt: null },
+    porDefecto: { identificacion: null, email: null, telefono: null, direccion: null, notas: null, creadoPor: '', telegramChatId: null, telegramLinkedAt: null, tipoVenta: 'nacional' },
   },
   producto: {
     tipo: TIPO_F4.productoCrear, endpoint: ENDPOINT_F4.productos, entidad: 'producto', etiqueta: 'Nuevo producto',
