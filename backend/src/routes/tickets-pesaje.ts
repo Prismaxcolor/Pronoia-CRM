@@ -2,13 +2,18 @@ import { Router } from 'express';
 import {
   listarTickets,
   obtenerTicket,
-  crearTicket,
-  completarTicket,
   editarTicket,
+  borrarTicket,
 } from '../services/ticket-pesaje-service.js';
+import { crearTicketIdempotente, completarTicketIdempotente } from '../services/operaciones-idempotentes.js';
+import { responderErrorIdempotencia } from '../services/idempotencia-service.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { rechazarCapturaAntigua } from '../middlewares/rechazar-captura-antigua.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
+import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import { crearTicketSchema, completarTicketSchema, editarTicketSchema } from '../schemas/tickets-pesaje.js';
+import type { EditarTicketInput } from '../schemas/tickets-pesaje.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
@@ -21,7 +26,8 @@ router.get('/', requirePermiso('pesaje', 'ver'), async (req, res) => {
   const soloNoFacturados = req.query.soloNoFacturados === 'true';
   const entidadId = req.query.entidadId ? String(req.query.entidadId) : undefined;
   const tipo = req.query.tipo === 'venta' ? 'venta' : req.query.tipo === 'compra' ? 'compra' : undefined;
-  const tickets = await listarTickets({ soloNoFacturados, entidadId, tipo });
+  const estado = req.query.estado === 'bruto' ? 'bruto' : req.query.estado === 'completo' ? 'completo' : undefined;
+  const tickets = await listarTickets({ soloNoFacturados, entidadId, tipo, estado });
   res.json({ tickets });
 });
 
@@ -39,7 +45,14 @@ router.post(
   requirePermiso('pesaje', 'crear'),
   validateBody(crearTicketSchema),
   async (req, res) => {
-    const result = await crearTicket(req.body, req.user!.sub);
+    let envio;
+    try {
+      envio = await crearTicketIdempotente(req.body, req.user!.sub);
+    } catch (e) {
+      if (responderErrorIdempotencia(res, e)) return;
+      throw e;
+    }
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -50,16 +63,25 @@ router.post(
       userId: req.user!.sub,
       ticketId: result.ticket.id,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(repetida ? { ...result, repetida } : result);
   }
 );
 
 router.patch(
   '/:id/completar',
+  validarUuidParam('id'),
+  rechazarCapturaAntigua,
   requirePermiso('pesaje', 'crear'),
   validateBody(completarTicketSchema),
   async (req, res) => {
-    const result = await completarTicket(String(req.params.id), req.body, req.user!.sub);
+    let envio;
+    try {
+      envio = await completarTicketIdempotente(String(req.params.id), req.body, req.user!.sub);
+    } catch (e) {
+      if (responderErrorIdempotencia(res, e)) return;
+      throw e;
+    }
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -70,18 +92,24 @@ router.patch(
       userId: req.user!.sub,
       ticketId: result.ticket.id,
     });
-    res.json(result);
+    res.json(repetida ? { ...result, repetida } : result);
   }
 );
 
 router.patch(
   '/:id',
-  requirePermiso('pesaje', 'editar'),
+  requirePermisoOLlave('pesaje', 'editar'),
   validateBody(editarTicketSchema),
   async (req, res) => {
-    const result = await editarTicket(String(req.params.id), req.body);
+    const { llaveEdicion, ...datos } = req.body as EditarTicketInput;
+    const result = await editarTicket(String(req.params.id), datos, {
+      userId: req.user!.sub,
+      email: req.user!.email,
+      rol: req.user!.rol,
+      llave: llaveEdicion,
+    });
     if ('error' in result) {
-      res.status(400).json(result);
+      res.status(result.codigo ?? 400).json({ error: result.error });
       return;
     }
     logger.info({
@@ -93,5 +121,21 @@ router.patch(
     res.json(result);
   }
 );
+
+router.delete('/:id', requirePermiso('pesaje', 'eliminar'), async (req, res) => {
+  const id = String(req.params.id);
+  const result = await borrarTicket(id);
+  if (!result.ok) {
+    res.status(result.noEncontrado ? 404 : 409).json({ error: result.razon });
+    return;
+  }
+  logger.info({
+    evento: 'ticket_pesaje_eliminado',
+    ip: clienteIp(req),
+    userId: req.user!.sub,
+    ticketId: id,
+  });
+  res.json({ ok: true });
+});
 
 export default router;

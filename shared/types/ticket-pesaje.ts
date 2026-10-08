@@ -2,6 +2,18 @@ import type { DestinoTipo } from './lote.js';
 
 export type TipoTicketPesaje = 'compra' | 'venta';
 
+/** Una tara individual del desglose de un material (p. ej. saca ×2, cesta).
+ *  `kg` es el total de esa tara (cantidad × peso unitario si es de la tabla). */
+export interface TaraDetalle {
+  tipo: 'tabla' | 'manual';
+  /** Tara de la tabla de taras (solo `tipo === 'tabla'`). */
+  taraId?: string;
+  nombre: string;
+  /** Unidades usadas (solo `tipo === 'tabla'`). */
+  cantidad?: number;
+  kg: number;
+}
+
 /**
  * Una línea de material dentro de un ticket de pesaje. Un ticket puede tener
  * varias (cada material con su propio peso).
@@ -18,6 +30,9 @@ export interface TicketPesajeMaterial {
   subcategoria: string | null;
   pesoBruto: number;
   tara: number;
+  /** Desglose de la tara (suma = `tara`). Null/ausente en tickets anteriores:
+   *  solo se conoce el total. */
+  tarasDetalle?: TaraDetalle[] | null;
   /** Peso devuelto/descontado. Por defecto 0. */
   devolucion: number;
   /** Calculado en BD (columna generada). Solo lectura. */
@@ -28,6 +43,29 @@ export interface TicketPesajeMaterial {
   loteId: string | null;
   /** Nombre del lote, resuelto vía join. Solo lectura. */
   nombreLote?: string | null;
+  /** URLs de fotos de este material — cada material tiene las suyas, en vez
+   *  de una sola foto general para todo el ticket (Bloque 46). */
+  fotos: string[];
+}
+
+/** Una pesada individual que compone el peso global — el camión puede pasar
+ *  varias veces por la báscula, cada una con sus propias tara y fotos. Solo
+ *  se carga al crear el ticket, no se edita después (como el peso global). */
+export interface PesajeGlobal {
+  id: string;
+  peso: number;
+  tara: number;
+  fotos: string[];
+}
+
+/** Pesajes globales de un ticket que se unió a otro (secundario): se muestran
+ *  junto con los del ticket principal. */
+export interface PesajeGlobalUnido {
+  ticketId: string;
+  codigo: string;
+  /** Fecha del pesaje global de ese ticket (YYYY-MM-DD). */
+  fecha: string | null;
+  pesajes: PesajeGlobal[];
 }
 
 /**
@@ -54,17 +92,41 @@ export interface TicketPesaje {
   materiales: TicketPesajeMaterial[];
   /** Suma de los pesos netos de todos los materiales. Solo lectura. */
   pesoNetoTotal: number;
-  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor. */
+  /** Mismo valor que pesoNetoTotal, nombre explícito para distinguirlo de la
+   *  devolución (que se suma aparte, no está incluida acá). */
+  pesoNetoMateriales: number;
+  /** Pesaje único de todos los materiales juntos, tomado al llegar el proveedor.
+   *  0 cuando pesajeExterior es true (no hay lectura propia de báscula). */
   pesoGlobal: number;
+  /** Desglose de pesadas individuales que suman pesoGlobal. */
+  pesajesGlobales: PesajeGlobal[];
+  /** true si el camión se pesó en una báscula externa a la que Pronoia no tiene acceso. */
+  pesajeExterior: boolean;
   /**
-   * pesoGlobal - (suma de netos + devolución total). Mide la merma/discrepancia
+   * Kg de devolución del ticket completo (no atada a ningún material). Se
+   * suma a pesoNetoMateriales para reconciliar contra pesoGlobal — NO resta
+   * del inventario ni de la factura, es solo un campo de conciliación.
+   */
+  devolucion: number;
+  /** URLs de fotos de la devolución del ticket completo (no por material). */
+  fotosDevolucion: string[];
+  /**
+   * pesoGlobal - pesoNetoMateriales - devolucion. Mide la merma/discrepancia
    * entre el pesaje global de entrada y lo que terminó contabilizado por
-   * material. Solo lectura, derivado (no se guarda en BD).
+   * material + devolución. Solo lectura, derivado (no se guarda en BD).
    */
   diferencia: number;
-  /** URLs o paths de fotos del material/pesada. */
+  /** URLs de fotos generales del ticket completo — campo legacy, anterior al
+   *  Bloque 46. Ya no se llena desde el formulario (las fotos ahora se
+   *  cargan por material, ver TicketPesajeMaterial.fotos), pero se conserva
+   *  para no perder las fotos de tickets creados antes de ese cambio. */
   fotos: string[] | null;
   observaciones: string | null;
+  /** Notas escritas al completar el ticket (distintas de las observaciones del
+   *  pesaje). Ausente/null si no hay o si la columna aún no existe en la BD. */
+  notasCompletado?: string | null;
+  /** Pesajes globales (con fotos) de los tickets que se unieron a este al completar. */
+  pesajesGlobalesUnidos?: PesajeGlobalUnido[];
   /** true cuando ya existe una factura (compra o venta) asociada. */
   facturado: boolean;
   /**
@@ -78,11 +140,48 @@ export interface TicketPesaje {
   completadoPor: string | null;
   /** ISO timestamp de cuándo se completó un ticket en bruto. */
   completadoEn: string | null;
+  /** Placa/identificador del vehículo que trajo o se llevó el material. */
+  vehiculo: string | null;
+  /** Si este ticket se unió a otro al completar (pesaje global sumado): id del
+   *  ticket principal. Null en tickets normales. Un ticket unido no genera
+   *  stock propio y no se factura por separado. */
+  ticketPrincipalId?: string | null;
+  /** Código del ticket principal (ej. "Compra-0012") para mostrar "Unido a". */
+  ticketPrincipalCodigo?: string | null;
+  /** Nombre de quien registró el ticket (pesadoPor) y de quien lo completó. Solo viene en el detalle (obtenerTicket). */
+  pesadoPorNombre?: string | null;
+  completadoPorNombre?: string | null;
+  /** Última edición según la auditoría (null si nunca se editó). Solo viene en el detalle. */
+  ultimaEdicion?: { nombre: string; en: string } | null;
   /** ISO timestamp (created_at en BD). */
   createdAt: string;
 }
 
-/** Formatea el correlativo de un ticket de pesaje: 1 → "Pesaje 0001". */
-export function formatCodigoPesaje(numero: number): string {
-  return `Pesaje ${String(numero).padStart(4, '0')}`;
+/** Formatea el correlativo de un ticket de pesaje: (1, 'compra') → "Compra-0001".
+ *  Cada tipo tiene su propio contador desde el Bloque 35. */
+export function formatCodigoPesaje(numero: number, tipo: 'compra' | 'venta'): string {
+  const prefijo = tipo === 'compra' ? 'Compra' : 'Venta';
+  return `${prefijo}-${String(numero).padStart(4, '0')}`;
+}
+
+/** Redondea a 3 decimales (gramos): elimina el ruido de punto flotante
+ *  (0.2 * 3 = 0.6000000000000001) antes de sumar, guardar o comparar pesos.
+ *  Duplicado en backend/src/utils/peso-kg.ts (hay test de paridad). */
+export function redondearKg(n: number): number {
+  return Math.round((n + Number.EPSILON) * 1000) / 1000 || 0;
+}
+
+/** Texto del desglose de tara de un material: 'Saca ×2 = 1,20 kg · Cesta = 0,50 kg'.
+ *  `fmtKg` da formato a los kg (sin unidad). Vacío si no hay desglose. */
+export function describirTarasDetalle(detalle: TaraDetalle[] | null | undefined, fmtKg: (kg: number) => string): string {
+  return (detalle ?? [])
+    .map(t => `${t.nombre}${t.tipo === 'tabla' && (t.cantidad ?? 1) !== 1 ? ` ×${t.cantidad}` : ''} = ${fmtKg(t.kg)} kg`)
+    .join(' · ');
+}
+
+/** Diferencia de un ticket = peso global - suma neta de materiales - devolución.
+ *  Positiva: la báscula global registró más que lo itemizado (merma / peso sin
+ *  clasificar). Negativa: se itemizó más que el global. */
+export function calcularDiferenciaPeso(p: { pesoGlobal: number; netoMateriales: number; devolucion: number }): number {
+  return redondearKg(redondearKg(p.pesoGlobal) - redondearKg(p.netoMateriales) - redondearKg(p.devolucion));
 }

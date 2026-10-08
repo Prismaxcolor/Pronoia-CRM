@@ -1,0 +1,124 @@
+import { Router } from 'express';
+import {
+  listarTomasFisicas,
+  obtenerTomaFisica,
+  crearTomaFisica,
+  listarDetalleTomaFisica,
+  registrarPesajeTomaFisica,
+  eliminarPesajeTomaFisica,
+  resumenTomaFisica,
+  culminarTomaFisica,
+  cancelarTomaFisica,
+} from '../services/toma-fisica-service.js';
+import { lotesElegiblesDeCategorias } from '../services/toma-fisica-opciones-service.js';
+import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { validateBody } from '../middlewares/validate.js';
+import { crearTomaFisicaSchema, registrarPesajeTomaFisicaSchema, categoriaIdsQuerySchema } from '../schemas/toma-fisica.js';
+import { logger, clienteIp } from '../utils/logger.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { cuerpoConRepetida, ejecutarOperacion, tipoDeRecurso, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
+
+const router = Router();
+
+router.use(requireAuth);
+
+router.get('/', requirePermiso('toma_fisica', 'ver'), async (_req, res) => {
+  const tomasFisicas = await listarTomasFisicas();
+  res.json({ tomasFisicas });
+});
+
+/** Lotes que se pueden contar para las categorías elegidas (PCB sin Lote 4; PGM solo Lote 4). */
+router.get('/lotes-elegibles', requirePermiso('toma_fisica', 'ver'), async (req, res) => {
+  const parsed = categoriaIdsQuerySchema.safeParse(req.query.categoriaIds);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Indica las categorías (categoriaIds) separadas por coma.' });
+    return;
+  }
+  try {
+    res.json({ loteIds: await lotesElegiblesDeCategorias(parsed.data) });
+  } catch (err) {
+    logger.error({ evento: 'toma_fisica_lotes_elegibles_error', ip: clienteIp(req), userId: req.user!.sub, motivo: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: 'No se pudieron calcular los lotes elegibles.' });
+  }
+});
+
+router.get('/:id', requirePermiso('toma_fisica', 'ver'), async (req, res) => {
+  const id = String(req.params.id);
+  const tomaFisica = await obtenerTomaFisica(id);
+  if (!tomaFisica) {
+    res.status(404).json({ error: 'Toma física no encontrada.' });
+    return;
+  }
+  const detalle = await listarDetalleTomaFisica(id);
+  res.json({ tomaFisica, detalle });
+});
+
+router.get('/:id/resumen', requirePermiso('toma_fisica', 'ver'), async (req, res) => {
+  const lineas = await resumenTomaFisica(String(req.params.id));
+  res.json({ lineas });
+});
+
+router.post('/', requirePermiso('toma_fisica', 'crear'), validateBody(crearTomaFisicaSchema), async (req, res) => {
+  const envio = await ejecutarOperacion(res, TIPO_OPERACION.tomaFisicaCrear, req.body, req.user!.sub, () => crearTomaFisica(req.body, req.user!.sub));
+  if (!envio) return;
+  const { resultado: result, repetida } = envio;
+  if ('error' in result) {
+    res.status(400).json(result);
+    return;
+  }
+  logger.info({ evento: 'toma_fisica_creada', ip: clienteIp(req), userId: req.user!.sub, tomaFisicaId: result.tomaFisica.id });
+  res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
+});
+
+router.post(
+  '/:id/pesajes',
+  validarUuidParam('id'),
+  requirePermiso('toma_fisica', 'crear'),
+  validateBody(registrarPesajeTomaFisicaSchema),
+  async (req, res) => {
+    const tomaId = String(req.params.id);
+    const envio = await ejecutarOperacion(res, tipoDeRecurso(TIPO_OPERACION.tomaFisicaPesaje, tomaId), req.body, req.user!.sub, () =>
+      registrarPesajeTomaFisica(tomaId, req.body, req.user!.sub)
+    );
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
+  }
+);
+
+router.delete('/:id/pesajes/:detalleId', requirePermiso('toma_fisica', 'crear'), async (req, res) => {
+  const result = await eliminarPesajeTomaFisica(String(req.params.detalleId));
+  if ('error' in result) {
+    res.status(400).json(result);
+    return;
+  }
+  res.json(result);
+});
+
+router.post('/:id/culminar', requirePermiso('toma_fisica', 'editar'), async (req, res) => {
+  const id = String(req.params.id);
+  const result = await culminarTomaFisica(id, req.user!.sub);
+  if ('error' in result) {
+    res.status(400).json(result);
+    return;
+  }
+  logger.info({ evento: 'toma_fisica_culminada', ip: clienteIp(req), userId: req.user!.sub, tomaFisicaId: id });
+  res.json(result);
+});
+
+router.post('/:id/cancelar', requirePermiso('toma_fisica', 'editar'), async (req, res) => {
+  const id = String(req.params.id);
+  const result = await cancelarTomaFisica(id, req.user!.sub);
+  if ('error' in result) {
+    res.status(400).json(result);
+    return;
+  }
+  logger.info({ evento: 'toma_fisica_cancelada', ip: clienteIp(req), userId: req.user!.sub, tomaFisicaId: id });
+  res.json(result);
+});
+
+export default router;

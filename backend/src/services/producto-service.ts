@@ -1,5 +1,9 @@
+import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearProductoInput, ActualizarProductoInput } from '../schemas/productos.js';
+import { logger } from '../utils/logger.js';
+import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { esCategoriaConLimpieza, esLimpiezaMaterial } from '../utils/inventario-vistas.js';
 
 type TipoProducto = 'amarillo' | 'azul' | 'verde';
 
@@ -11,15 +15,22 @@ interface ProductoRow {
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagen_url: string | null;
+  fotos: string[] | null;
   creado_por: string | null;
   creado_en: string;
   peso: number | null;
   variantes: unknown;
   sub_productos: unknown;
-  // join con tipos_material(nombre)
-  tipos_material?: { nombre: string } | null;
+  /** Ausente si la migración migration_productos_estado_limpieza.sql aún no se aplicó. */
+  estado_limpieza?: string | null;
+  // join con tipos_material(nombre, sin_lote)
+  tipos_material?: { nombre: string; sin_lote: boolean } | null;
+  // join con producto_lotes(lote_id)
+  producto_lotes?: Array<{ lote_id: string }> | null;
 }
+
+/** Columnas + joins que devuelven todas las lecturas de productos. */
+const SELECT_PRODUCTO = '*, tipos_material(nombre, sin_lote), producto_lotes(lote_id)';
 
 export interface ProductoPublico {
   id: string;
@@ -27,10 +38,15 @@ export interface ProductoPublico {
   descripcion: string;
   tipoMaterialId: string | null;
   tipoMaterialNombre: string | null;
+  tipoMaterialSinLote: boolean | null;
+  /** Lotes posibles del producto; vacío = no está anclado a ningún lote. */
+  loteIds: string[];
+  /** 'limpio' | 'sucio' (Ferroso y No ferroso); null = sin definir. */
+  estadoLimpieza: 'limpio' | 'sucio' | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagenUrl: string | null;
+  fotos: string[];
   creadoPor: string;
   creadoEn: string;
   peso?: number;
@@ -45,10 +61,13 @@ function toPublico(row: ProductoRow): ProductoPublico {
     descripcion: row.descripcion ?? '',
     tipoMaterialId: row.tipo_material_id,
     tipoMaterialNombre: row.tipos_material?.nombre ?? null,
+    tipoMaterialSinLote: row.tipos_material?.sin_lote ?? null,
+    loteIds: (row.producto_lotes ?? []).map(r => r.lote_id),
+    estadoLimpieza: esLimpiezaMaterial(row.estado_limpieza) ? row.estado_limpieza : null,
     moneda: row.moneda,
     activo: row.activo,
     tipo: row.tipo,
-    imagenUrl: row.imagen_url,
+    fotos: row.fotos ?? [],
     creadoPor: row.creado_por ?? '',
     creadoEn: row.creado_en,
   };
@@ -69,9 +88,14 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
     moneda: input.moneda,
     activo: input.activo,
     tipo: input.tipo,
-    imagen_url: input.imagenUrl ?? null,
+    fotos: input.fotos ?? [],
   };
   if (creadoPor !== undefined) row.creado_por = creadoPor;
+  // Al crear solo se envía si hay valor (null = sin definir ya es el defecto de la columna);
+  // al editar, undefined no toca el campo y null lo borra.
+  if (input.estadoLimpieza !== undefined && (creadoPor === undefined || input.estadoLimpieza !== null)) {
+    row.estado_limpieza = input.estadoLimpieza;
+  }
 
   if (input.tipo === 'amarillo') {
     row.peso = input.peso;
@@ -90,30 +114,112 @@ function inputToRow(input: CrearProductoInput, creadoPor?: string): Record<strin
   return row;
 }
 
+/**
+ * Rechaza un estado de limpieza (limpio/sucio) en una categoría que no es Ferroso ni No ferroso.
+ * null y ausente siempre se permiten. Devuelve el mensaje de error o null si todo está bien.
+ */
+async function validarEstadoLimpieza(input: CrearProductoInput): Promise<string | null> {
+  if (input.estadoLimpieza == null) return null;
+  const { data, error } = await supabaseAdmin
+    .from('tipos_material')
+    .select('nombre')
+    .eq('id', input.tipoMaterialId)
+    .maybeSingle();
+  if (error) return error.message;
+  if (!esCategoriaConLimpieza((data as { nombre: string } | null)?.nombre)) {
+    return 'El estado de limpieza (limpio/sucio) solo aplica a las categorías Ferroso y No ferroso.';
+  }
+  return null;
+}
+
+/**
+ * Ejecuta una escritura de productos; si falla porque la columna estado_limpieza aún no existe
+ * (migración pendiente), reintenta sin ese campo en vez de dar error: el resto del producto se guarda.
+ */
+async function conToleranciaLimpieza<R extends { error: { code?: string; message?: string } | null }>(
+  row: Record<string, unknown>,
+  ejecutar: (fila: Record<string, unknown>) => PromiseLike<R>
+): Promise<R> {
+  const resultado = await ejecutar(row);
+  if (!resultado.error || !('estado_limpieza' in row) || !esObjetoInexistente(resultado.error)) return resultado;
+  logger.warn({ evento: 'producto_sin_columna_estado_limpieza', motivo: resultado.error.message });
+  const { estado_limpieza: _omitido, ...sinLimpieza } = row;
+  return ejecutar(sinLimpieza);
+}
+
+/** Reemplaza de forma atómica los lotes posibles de un producto (RPC). */
+async function guardarLotesProducto(productoId: string, loteIds: string[]): Promise<string | null> {
+  const { error } = await supabaseAdmin.rpc('reemplazar_producto_lotes', {
+    p_producto_id: productoId,
+    p_lote_ids: loteIds,
+  });
+  return error ? error.message : null;
+}
+
 export async function listarProductos(): Promise<ProductoPublico[]> {
   const { data, error } = await supabaseAdmin
     .from('productos')
-    .select('*, tipos_material(nombre)')
-    .order('creado_en', { ascending: false });
+    .select(SELECT_PRODUCTO)
+    .order('orden', { ascending: true });
 
   if (error || !data) return [];
   return (data as unknown as ProductoRow[]).map(toPublico);
 }
 
 export async function crearProducto(
-  input: CrearProductoInput,
+  input: CrearProductoInput & MetaOperacion,
   creadoPor: string
 ): Promise<{ producto: ProductoPublico } | { error: string }> {
+  const errorLimpieza = await validarEstadoLimpieza(input);
+  if (errorLimpieza) return { error: errorLimpieza };
   const row = inputToRow(input, creadoPor);
 
-  const { data, error } = await supabaseAdmin
+  // Los productos nuevos aparecen primero (orden más bajo), igual que antes
+  // cuando el catálogo se mostraba por fecha de creación descendente. El
+  // usuario puede reordenarlo manualmente después con reordenarProductos.
+  const { data: primero } = await supabaseAdmin
     .from('productos')
-    .insert(row)
-    .select('*, tipos_material(nombre)')
-    .single();
+    .select('orden')
+    .order('orden', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  row.orden = ((primero as { orden: number } | null)?.orden ?? 0) - 1;
+
+  const { data, error } = await conToleranciaLimpieza(row, fila =>
+    insertarMaestroIdempotente<ProductoRow>('productos', fila, { ...{ clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn }, columnas: SELECT_PRODUCTO })
+  );
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el producto.' };
-  return { producto: toPublico(data as unknown as ProductoRow) };
+  const creado = data as unknown as ProductoRow;
+
+  const loteIdsNuevos = [...new Set(input.loteIds ?? [])];
+  const errorLotes = await guardarLotesProducto(creado.id, loteIdsNuevos);
+  if (errorLotes) {
+    // El producto no debe quedar creado a medias: sin sus lotes elegidos.
+    const { error: errorRollback } = await supabaseAdmin.from('productos').delete().eq('id', creado.id);
+    if (errorRollback) {
+      logger.error({ evento: 'producto.rollback_crear_fallido', productoId: creado.id, errorLotes, errorRollback: errorRollback.message });
+      return {
+        error: `No se pudieron guardar los lotes (${errorLotes}) y tampoco se pudo deshacer la creación: el producto "${creado.nombre}" quedó creado sin lotes. Revísalo en el catálogo.`,
+      };
+    }
+    return { error: errorLotes };
+  }
+  return { producto: toPublico({ ...creado, producto_lotes: loteIdsNuevos.map(lote_id => ({ lote_id })) }) };
+}
+
+/** Persiste el nuevo orden manual del catálogo: ids en el orden deseado,
+ *  de arriba a abajo. Asigna orden = índice en el arreglo recibido. */
+export async function reordenarProductos(ids: string[]): Promise<{ ok: true } | { error: string }> {
+  const resultados = await Promise.all(
+    ids.map((id, indice) =>
+      supabaseAdmin.from('productos').update({ orden: indice }).eq('id', id)
+    )
+  );
+
+  const fallo = resultados.find(r => r.error);
+  if (fallo?.error) return { error: fallo.error.message };
+  return { ok: true };
 }
 
 export async function actualizarProducto(
@@ -133,18 +239,50 @@ export async function actualizarProducto(
     return { error: `No se puede cambiar el tipo de un producto existente (era "${existente.tipo}", recibido "${input.tipo}").` };
   }
 
+  const errorLimpieza = await validarEstadoLimpieza(input);
+  if (errorLimpieza) return { error: errorLimpieza };
   const row = inputToRow(input);
 
-  const { data, error } = await supabaseAdmin
-    .from('productos')
-    .update(row)
-    .eq('id', id)
-    .select('*, tipos_material(nombre)')
-    .maybeSingle();
+  // Los lotes (RPC atómico, puede rechazar el cambio) se guardan primero: si
+  // fallan no se toca ningún campo. Si luego falla el update de campos, se
+  // restauran los lotes anteriores para no dejar el producto a medias.
+  const loteIds = input.loteIds === undefined ? null : [...new Set(input.loteIds)];
+  let lotesAnteriores: string[] | null = null;
+  if (loteIds) {
+    const { data: previos, error: errPrevios } = await supabaseAdmin
+      .from('producto_lotes')
+      .select('lote_id')
+      .eq('producto_id', id);
+    if (errPrevios) return { error: errPrevios.message };
+    lotesAnteriores = ((previos ?? []) as Array<{ lote_id: string }>).map(p => p.lote_id);
 
-  if (error) return { error: error.message };
-  if (!data) return { error: 'Producto no encontrado al actualizar.' };
-  return { producto: toPublico(data as unknown as ProductoRow) };
+    const errorLotes = await guardarLotesProducto(id, loteIds);
+    if (errorLotes) return { error: errorLotes };
+  }
+
+  const { data, error } = await conToleranciaLimpieza(row, fila =>
+    supabaseAdmin.from('productos').update(fila).eq('id', id).select(SELECT_PRODUCTO).maybeSingle()
+  );
+
+  if (error || !data) {
+    const mensaje = error?.message ?? 'Producto no encontrado al actualizar.';
+    if (lotesAnteriores) {
+      const errorRestaurar = await guardarLotesProducto(id, lotesAnteriores);
+      if (errorRestaurar) {
+        logger.error({ evento: 'producto.rollback_lotes_fallido', productoId: id, errorUpdate: mensaje, errorRestaurar });
+        return { error: `${mensaje} Además no se pudieron restaurar los lotes anteriores (${errorRestaurar}): revisa los lotes del producto.` };
+      }
+    }
+    return { error: mensaje };
+  }
+
+  if (!loteIds) return { producto: toPublico(data as unknown as ProductoRow) };
+  return {
+    producto: toPublico({
+      ...(data as unknown as ProductoRow),
+      producto_lotes: loteIds.map(lote_id => ({ lote_id })),
+    }),
+  };
 }
 
 export async function desactivarProducto(id: string): Promise<boolean> {

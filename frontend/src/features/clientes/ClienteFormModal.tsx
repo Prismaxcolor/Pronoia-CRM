@@ -1,7 +1,14 @@
 import { useState } from 'react';
+import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X } from 'lucide-react';
 import { crearCliente, actualizarCliente } from '../../services/cliente-service';
-import { useToast } from '../../hooks/use-toast';
+import { subirFotoCliente } from '../../services/storage-service';
+import { useToast } from '../../hooks/use-toast-context';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { CAMPOS_PERSONALES_BORRADOR, TTL_ALTA_BORRADOR_MS, difiereEstado, huellaDocumento, serializarEstado } from '../../lib/borrador';
 import type { Cliente } from '@shared/types/index.js';
 
 interface Props {
@@ -21,13 +28,61 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
   const [telefono, setTelefono] = useState(cliente?.telefono ?? '');
   const [direccion, setDireccion] = useState(cliente?.direccion ?? '');
   const [notas, setNotas] = useState(cliente?.notas ?? '');
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(cliente?.fotos ?? []));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Borrador del formulario (uno por cliente, o uno para "nuevo"): sobrevive a F5.
+  const estadoBorrador = { nombre, identificacion, email, telefono, direccion, notas, fotos };
+  const estadoInicial = () => ({
+    nombre: cliente?.nombre ?? '', identificacion: cliente?.identificacion ?? '', email: cliente?.email ?? '',
+    telefono: cliente?.telefono ?? '', direccion: cliente?.direccion ?? '', notas: cliente?.notas ?? '',
+    fotos: fotosLocalDeUrls(cliente?.fotos ?? []),
+  });
+  const aplicarEstado = (e: ReturnType<typeof estadoInicial>) => {
+    setNombre(e.nombre); setIdentificacion(e.identificacion); setEmail(e.email);
+    setTelefono(e.telefono); setDireccion(e.direccion); setNotas(e.notas); setFotos(e.fotos);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'cliente',
+    docId: cliente?.id ?? null,
+    version: 1,
+    // Alta de maestro: sin pesos ni dinero, conserva el TTL largo. Identificación, correo y teléfono
+    // no se guardan en el navegador (se vuelven a escribir); el resto de la base se toma del cliente actual.
+    ttlMs: TTL_ALTA_BORRADOR_MS,
+    excluirCampos: CAMPOS_PERSONALES_BORRADOR,
+    // Editar: si el cliente cambió en el servidor desde que se guardó el borrador, este se descarta con aviso.
+    huellaBase: cliente ? huellaDocumento(serializarEstado(estadoInicial(), CAMPOS_PERSONALES_BORRADOR)) : null,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, estadoInicial(), CAMPOS_PERSONALES_BORRADOR),
+    aplicar: d => {
+      const base = estadoInicial();
+      aplicarEstado({
+        nombre: d.nombre ?? base.nombre, identificacion: d.identificacion ?? base.identificacion, email: d.email ?? base.email,
+        telefono: d.telefono ?? base.telefono, direccion: d.direccion ?? base.direccion, notas: d.notas ?? base.notas,
+        fotos: d.fotos ?? base.fotos,
+      });
+    },
+    restablecer: () => aplicarEstado(estadoInicial()),
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
+
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGuardando(true);
     setError(null);
+
+    const enCola = !editando && altaEnColaActiva();
+    const urls = enCola ? [] : await subirFotosLocal(fotos, subirFotoCliente);
+    if (!urls) {
+      setError('Error al subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
+    }
 
     const payload = {
       nombre: nombre.trim(),
@@ -36,16 +91,18 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
       telefono: telefono.trim() || null,
       direccion: direccion.trim() || null,
       notas: notas.trim() || null,
+      fotos: urls,
     };
 
     const result = editando && cliente
       ? await actualizarCliente(cliente.id, payload)
-      : await crearCliente(payload);
+      : await crearCliente(payload, enCola ? fotos : undefined);
 
     setGuardando(false);
 
     if ('cliente' in result) {
-      toast.exito(editando ? `"${result.cliente.nombre}" actualizado.` : `"${result.cliente.nombre}" creado.`);
+      toast.exito(editando ? `"${result.cliente.nombre}" actualizado.` : `"${result.cliente.nombre}" ${'enCola' in result ? 'guardado en el teléfono; se enviará al volver la conexión' : 'creado'}.`);
+      borrador.limpiar();
       onGuardado(editando ? 'editar' : 'crear');
     } else {
       setError(result.error);
@@ -62,12 +119,15 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
           <h2 className="text-lg font-bold text-text-primary">
             {editando ? 'Editar cliente' : 'Nuevo cliente'}
           </h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <AvisoBorrador formulario="este cliente" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
+
           <div>
             <label className={labelClass}>Nombre *</label>
             <input
@@ -80,7 +140,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>RIF / Cédula</label>
               <input
@@ -139,7 +199,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">

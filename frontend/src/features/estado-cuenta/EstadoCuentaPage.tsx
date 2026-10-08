@@ -1,78 +1,164 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, DollarSign, FileEdit, Ban } from 'lucide-react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { useParams, useLocation } from 'react-router-dom';
+import { Printer, DollarSign, FileEdit, Send } from 'lucide-react';
 import {
   obtenerEstadoCuenta,
+  enviarEstadoCuentaTelegram,
   type EntradaEstadoCuenta,
   type EstadoCuenta,
   type TipoEntidad,
 } from '../../services/estado-cuenta-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import RegistrarPagoModal from '../proveedores/RegistrarPagoModal';
-import NotaAjusteModal from '../proveedores/NotaAjusteModal';
-import AnularNotaModal from '../proveedores/AnularNotaModal';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import PagoCobroModal from './PagoCobroModal';
+import NotaAjusteModal from './NotaAjusteModal';
+import AnularNotaModal from './AnularNotaModal';
+import type { ResultadoCobroMultiple } from '../../services/cobro-service';
+import CompartirBoton from '../../components/CompartirBoton';
+import {
+  Bloque, BotonAccion, EncabezadoPagina, EstadoVacio, ListaAlertas, SkeletonBloque, SkeletonKpis, SkeletonTabla, useFiltrosUrl,
+} from '../../components/ui';
+import type { EsquemaFiltros } from '../../lib/filtros-url';
+import { hoyLocal } from '../../lib/rango-fechas';
+import {
+  TIPOS_ENTRADA, alertasAntiguedadEstadoCuenta, facturasPendientesEstimadas, filtrarEntradasPorTipo, kpisEstadoCuenta, saldoCorrido,
+} from '../../lib/terceros-kpis';
+import EstadoCuentaFiltros from './EstadoCuentaFiltros';
+import EstadoCuentaKpis from './EstadoCuentaKpis';
+import EstadoCuentaTablaImpresion from './EstadoCuentaTablaImpresion';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+
+// Lo pesado se carga aparte y después de los indicadores.
+const EstadoCuentaTabla = lazy(() => import('./EstadoCuentaTabla'));
+const EstadoCuentaGrafica = lazy(() => import('./EstadoCuentaGrafica'));
+
+/** Filtros compartibles en la URL. Desde y Hasta son independientes (sin ninguno se ve todo el historial). */
+const ESQUEMA_FILTROS: EsquemaFiltros = {
+  campos: {
+    desde: { tipo: 'fecha' },
+    hasta: { tipo: 'fecha' },
+    tipo: { tipo: 'opcion', opciones: TIPOS_ENTRADA },
+  },
+};
+
+/** Espera antes de montar los bloques pesados, para que los indicadores pinten primero. */
+const RETARDO_BLOQUES_PESADOS_MS = 150;
 
 interface Props {
   /** Define de dónde se jalan los datos. La pantalla es idéntica para ambos. */
   tipo: TipoEntidad;
 }
 
-function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Correlativo del pago/adelanto (proveedor, PG-/AD-) o cobro/anticipo
+ *  (cliente, CB-/AC-) — solo para el mensaje del toast tras registrar. */
+function formatCodigoPago(tipo: TipoEntidad, numero: number | null): string {
+  if (numero == null) return '';
+  return tipo === 'proveedor'
+    ? `PG-${String(numero).padStart(4, '0')}`
+    : `CB-${String(numero).padStart(4, '0')}`;
 }
-
-const LABEL_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
-  factura: 'Factura',
-  pago: 'Pago',
-  nota_credito: 'Nota crédito',
-  nota_debito: 'Nota débito',
-};
-
-const BADGE_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
-  factura: 'bg-amber-100 text-amber-700',
-  pago: 'bg-green-100 text-green-700',
-  nota_credito: 'bg-blue-100 text-blue-700',
-  nota_debito: 'bg-purple-100 text-purple-700',
-};
+function formatCodigoAdelanto(tipo: TipoEntidad, numero: number | null): string {
+  if (numero == null) return '';
+  return tipo === 'proveedor'
+    ? `AD-${String(numero).padStart(4, '0')}`
+    : `AC-${String(numero).padStart(4, '0')}`;
+}
 
 function EstadoCuentaPage({ tipo }: Props) {
   const { id = '' } = useParams();
-  const navigate = useNavigate();
+  const location = useLocation();
   const { tienePermiso } = useAuth();
   const toast = useToast();
+  const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
+  const desde = (filtros.desde as string | undefined) ?? '';
+  const hasta = (filtros.hasta as string | undefined) ?? '';
+  const tipoEntrada = filtros.tipo as string | undefined;
 
   const [estado, setEstado] = useState<EstadoCuenta | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
+  const [mostrarPesados, setMostrarPesados] = useState(false);
   const [pagoAbierto, setPagoAbierto] = useState(false);
   const [notaAbierta, setNotaAbierta] = useState(false);
   const [notaAAnular, setNotaAAnular] = useState<EntradaEstadoCuenta | null>(null);
+  const [enviandoTelegram, setEnviandoTelegram] = useState(false);
 
   const volverA = tipo === 'proveedor' ? '/proveedores' : '/clientes';
   const etiquetaEntidad = tipo === 'proveedor' ? 'Proveedores' : 'Clientes';
-  const puedePagar = tipo === 'proveedor' && tienePermiso('cochinito', 'crear');
-  const puedeAjustar = tipo === 'proveedor' && tienePermiso('proveedores', 'editar');
+  const recursoEntidad = tipo === 'proveedor' ? 'proveedores' : 'clientes';
+  const etiquetaAccionPago = tipo === 'proveedor' ? 'Registrar pago' : 'Registrar cobro';
+  // Un pago/cobro mueve dinero de/hacia una banca (Cochinito) → mismo
+  // permiso para ambos tipos de entidad, igual que un ajuste de saldo usa el
+  // permiso de editar la entidad correspondiente (proveedores o clientes).
+  const puedePagar = tienePermiso('cochinito', 'crear');
+  const puedeAjustar = tienePermiso(recursoEntidad, 'editar');
 
-  const cargar = () => {
-    setCargando(true);
+  const enviarPorTelegram = async () => {
+    setEnviandoTelegram(true);
+    const r = await enviarEstadoCuentaTelegram(tipo, id);
+    setEnviandoTelegram(false);
+    if ('error' in r) toast.errorMsg(r.error);
+    else toast.exito('Estado de cuenta enviado por Telegram.');
+  };
+
+  const recargar = () =>
     obtenerEstadoCuenta(tipo, id, desde || undefined, hasta || undefined)
       .then(setEstado)
       .finally(() => setCargando(false));
-  };
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tipo, id, desde, hasta]);
+  /* recargar() se redefine cada render cerrando sobre estas mismas deps;
+   * agregarla dispararía el efecto en cada render en vez de solo cuando
+   * cambian tipo/id/desde/hasta. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { recargar(); }, [tipo, id, desde, hasta]);
 
-  const handlePagoRegistrado = () => {
+  useEffect(() => {
+    if (!estado) return;
+    const t = setTimeout(() => setMostrarPesados(true), RETARDO_BLOQUES_PESADOS_MS);
+    return () => clearTimeout(t);
+  }, [estado]);
+
+  const notasDebitoPendientes = useMemo(
+    () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_debito' && !e.anulada && !e.pagada),
+    [estado]
+  );
+  const notasCreditoPendientes = useMemo(
+    () => (estado?.entradas ?? []).filter(e => e.tipo === 'nota_credito' && !e.anulada && !e.pagada),
+    [estado]
+  );
+
+  // El saldo corrido se calcula con TODAS las entradas del periodo; el filtro por tipo solo decide qué filas se ven.
+  const conSaldo = useMemo(() => saldoCorrido(estado?.entradas ?? []), [estado]);
+  const visibles = useMemo(() => filtrarEntradasPorTipo(conSaldo, tipoEntrada), [conSaldo, tipoEntrada]);
+  const kpis = useMemo(() => (estado ? kpisEstadoCuenta(estado.totales, estado.entradas) : null), [estado]);
+  const fechaReferencia = hasta ? new Date(`${hasta}T00:00:00Z`) : hoyLocal();
+  const alertas = useMemo(
+    () => (estado && !desde ? alertasAntiguedadEstadoCuenta(facturasPendientesEstimadas(estado.entradas, fechaReferencia)) : []),
+    // fechaReferencia se deriva de `hasta`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [estado, desde, hasta]
+  );
+
+  const handlePagoRegistrado = (resultado: ResultadoCobroMultiple) => {
     setPagoAbierto(false);
-    toast.exito('Pago registrado.');
+    const etiquetaDoc = tipo === 'proveedor' ? 'Pago' : 'Cobro';
+    const etiquetaAdel = tipo === 'proveedor' ? 'adelanto' : 'anticipo';
+    if (resultado.numeroCruce != null) {
+      toast.exito(`Cruce ${tipo === 'proveedor' ? 'CR' : 'CRV'}-${String(resultado.numeroCruce).padStart(4, '0')} registrado.`);
+      cargar();
+      return;
+    }
+    const partes = [
+      resultado.numeroCobro != null ? `${etiquetaDoc} ${formatCodigoPago(tipo, resultado.numeroCobro)}` : null,
+      resultado.numeroAnticipo != null ? `${etiquetaAdel} ${formatCodigoAdelanto(tipo, resultado.numeroAnticipo)}` : null,
+    ].filter(Boolean);
+    toast.exito(partes.length > 0 ? `${partes.join(' y ')} registrados.` : `${etiquetaDoc} registrado.`);
     cargar();
   };
 
-  const handleNotaCreada = () => {
+  const handleNotaCreada = (codigo?: string | null) => {
     setNotaAbierta(false);
-    toast.exito('Nota registrada.');
+    toast.exito(codigo ? `Nota ${codigo} registrada.` : 'Nota registrada.');
     cargar();
   };
 
@@ -84,190 +170,158 @@ function EstadoCuentaPage({ tipo }: Props) {
 
   if (cargando && !estado) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-7xl" aria-busy="true">
+        <SkeletonBloque alto="h-16" conMargen etiqueta="Cargando encabezado" />
+        <SkeletonKpis />
+        <SkeletonTabla />
       </div>
     );
   }
 
-  if (!estado) {
+  if (!estado || !kpis) {
     return (
-      <div className="text-center py-12">
-        <p className="text-text-muted mb-4">No se encontró {tipo === 'proveedor' ? 'el proveedor' : 'el cliente'}.</p>
-        <button type="button" onClick={() => navigate(volverA)} className="text-brand-600 hover:underline text-sm">
-          Volver a {etiquetaEntidad}
-        </button>
+      <div className="max-w-xl">
+        <EstadoVacio
+          mensaje={`No se encontró ${tipo === 'proveedor' ? 'el proveedor' : 'el cliente'}`}
+          descripcion="Puede que se haya eliminado o que el enlace sea incorrecto."
+          accion={{ etiqueta: `Volver a ${etiquetaEntidad}`, to: volverA }}
+        />
       </div>
     );
   }
 
-  const { totales } = estado;
-  const saldoEnRojo = totales.saldo > 0;
-  const inputClass = "px-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
+  const rutaVuelta = `${volverA}/${id}/estado-cuenta${location.search}`;
+  const hayFiltros = Boolean(desde || hasta || tipoEntrada);
+  const vacioTabla = {
+    mensaje: hayFiltros ? 'Ningún movimiento coincide con los filtros' : 'Aún no hay movimientos en esta cuenta',
+    descripcion: hayFiltros ? 'Amplía las fechas o quita el tipo de movimiento para ver más.' : 'Aparecerán aquí las facturas, pagos, adelantos y notas.',
+  };
 
   return (
-    <div>
-      {/* Controles (no se imprimen) */}
-      <div className="print:hidden">
-        <button
-          type="button"
-          onClick={() => navigate(volverA)}
-          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors mb-4"
+    <div data-compartir-imagen className="max-w-7xl">
+      {/* Las migas son navegación: no se imprimen (el título y el nombre sí). */}
+      <div className="print:[&_nav]:hidden">
+        <EncabezadoPagina lecturas={LECTURAS.estadoCuenta}
+          migas={[{ etiqueta: etiquetaEntidad, to: volverA }, { etiqueta: estado.entidad.nombre }]}
+          titulo="Estado de cuenta"
+          subtitulo={estado.entidad.nombre}
+          acciones={(
+            <div className="print:hidden flex flex-wrap items-center gap-2">
+              {puedeAjustar && (
+                <BotonAccion soloEnLinea variante="secundario" onClick={() => setNotaAbierta(true)} icono={<FileEdit size={16} />}>Nota crédito/débito</BotonAccion>
+              )}
+              {puedePagar && (
+                <span title="Selecciona facturas y/o notas, cruzalas con adelantos y notas de crédito, o regístralo como adelanto">
+                  <BotonAccion soloEnLinea onClick={() => setPagoAbierto(true)} icono={<DollarSign size={16} />}>{etiquetaAccionPago}</BotonAccion>
+                </span>
+              )}
+              <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
+              {puedeAjustar && (
+                <span title="Manda el estado de cuenta (PDF) al Telegram vinculado">
+                  <BotonAccion soloEnLinea variante="secundario" onClick={enviarPorTelegram} disabled={enviandoTelegram} icono={<Send size={16} />}>
+                    {enviandoTelegram ? 'Enviando...' : 'Enviar por Telegram'}
+                  </BotonAccion>
+                </span>
+              )}
+              <CompartirBoton titulo={`Estado de cuenta ${estado.entidad.nombre}`} />
+            </div>
+          )}
+        />
+      </div>
+
+      <div data-no-imagen>
+        <EstadoCuentaFiltros
+          filtros={{ desde: desde || undefined, hasta: hasta || undefined, tipo: tipoEntrada }}
+          onCambiar={cambiar}
+          onLimpiar={limpiar}
+        />
+      </div>
+
+      <div className={`print:hidden ${cargando ? 'opacity-60 transition-opacity' : ''}`}>
+        <section aria-label="Indicadores principales">
+          <EstadoCuentaKpis tipo={tipo} kpis={kpis} conFiltroFechas={Boolean(desde || hasta)} />
+        </section>
+      </div>
+
+      <div className={`print:hidden ${cargando ? 'opacity-60 transition-opacity' : ''}`}>
+        <Bloque
+          titulo="Movimientos"
+          queEstasViendo={`Cada factura, ${tipo === 'proveedor' ? 'pago' : 'cobro'}, adelanto y nota, de la más antigua a la más reciente. La columna Saldo muestra cuánto quedaba por ${tipo === 'proveedor' ? 'pagar' : 'cobrar'} después de cada movimiento${desde ? ' (con el filtro Desde, el saldo arranca en 0 en la primera fila)' : ''}.`}
         >
-          <ArrowLeft size={16} />
-          {etiquetaEntidad}
-        </button>
-      </div>
+          <Suspense fallback={<SkeletonTabla />}>
+            <EstadoCuentaTabla
+              tipo={tipo}
+              entidadId={id}
+              nombreEntidad={estado.entidad.nombre}
+              filas={visibles}
+              saldoFinal={conSaldo.length > 0 ? conSaldo[conSaldo.length - 1].saldoCorrido : 0}
+              filtradoPorTipo={Boolean(tipoEntrada)}
+              rutaVuelta={rutaVuelta}
+              puedeAjustar={puedeAjustar}
+              onAnular={setNotaAAnular}
+              vacio={vacioTabla}
+            />
+          </Suspense>
+        </Bloque>
 
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Estado de cuenta</h1>
-          <p className="text-sm text-text-secondary mt-1">{estado.entidad.nombre}</p>
-        </div>
-        <div className="print:hidden flex items-center gap-2 shrink-0">
-          {puedeAjustar && (
-            <button
-              type="button"
-              onClick={() => setNotaAbierta(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
+        {mostrarPesados ? (
+          <>
+            <Bloque
+              titulo="Evolución del saldo"
+              queEstasViendo="Cómo cambió el saldo de la cuenta, día por día, en USD. Sube con cada factura o nota de débito y baja con cada pago, adelanto o nota de crédito."
             >
-              <FileEdit size={16} />
-              Nota crédito/débito
-            </button>
-          )}
-          {puedePagar && (
-            <button
-              type="button"
-              onClick={() => setPagoAbierto(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-            >
-              <DollarSign size={16} />
-              Registrar pago
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
-          >
-            <Printer size={16} />
-            Imprimir
-          </button>
-        </div>
-      </div>
+              <Suspense fallback={<SkeletonBloque alto="h-56" etiqueta="Cargando gráfica" />}>
+                <EstadoCuentaGrafica entradas={conSaldo} />
+              </Suspense>
+            </Bloque>
 
-      {/* Filtro de fechas */}
-      <div className="print:hidden flex flex-wrap items-end gap-3 mb-6">
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Desde</label>
-          <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className={inputClass} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Hasta</label>
-          <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className={inputClass} />
-        </div>
-        {(desde || hasta) && (
-          <button
-            type="button"
-            onClick={() => { setDesde(''); setHasta(''); }}
-            className="text-xs text-text-muted hover:text-text-primary underline pb-2"
-          >
-            Limpiar
-          </button>
+            <Bloque
+              titulo="Facturas sin pagar por antigüedad"
+              queEstasViendo="Estimado: se suma todo lo pagado (pagos, adelantos y notas de crédito) y se resta de las facturas empezando por la más antigua; lo que sobra queda como factura sin pagar. Los días se cuentan desde la fecha de cada factura hasta hoy, porque no hay fecha de vencimiento."
+            >
+              {desde ? (
+                <EstadoVacio
+                  mensaje="La estimación necesita el historial completo"
+                  descripcion="Con el filtro Desde se dejan fuera las facturas y pagos anteriores, y los días sin pagar saldrían mal."
+                  accion={{ etiqueta: 'Quitar el filtro Desde', onClick: () => cambiar({ desde: undefined }) }}
+                />
+              ) : (
+                <ListaAlertas alertas={alertas} vacio={<EstadoVacio mensaje="Ninguna factura lleva 30 días o más sin pagar (estimado)" />} />
+              )}
+            </Bloque>
+          </>
+        ) : (
+          <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando bloques" />
         )}
       </div>
 
-      {/* Movimientos */}
-      <div className="bg-surface rounded-xl border border-border overflow-hidden mb-6">
-        <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-xs text-text-muted">
-              <th className="px-5 py-3 font-medium">Fecha</th>
-              <th className="px-5 py-3 font-medium">Concepto</th>
-              <th className="px-5 py-3 font-medium">Referencia</th>
-              <th className="px-5 py-3 font-medium text-right">Cargo</th>
-              <th className="px-5 py-3 font-medium text-right">Abono</th>
-              {puedeAjustar && <th className="px-5 py-3 font-medium text-right print:hidden">Acción</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {estado.entradas.map((e, i) => (
-              <tr key={i} className={`border-b border-border last:border-b-0 ${e.anulada ? 'opacity-50' : ''}`}>
-                <td className="px-5 py-3 text-text-secondary whitespace-nowrap">{e.fecha}</td>
-                <td className="px-5 py-3 text-text-primary">
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs mr-2 ${BADGE_POR_TIPO[e.tipo]}`}>
-                    {LABEL_POR_TIPO[e.tipo]}
-                  </span>
-                  <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
-                  {e.anulada && <span className="text-xs text-text-muted ml-2">(anulada)</span>}
-                </td>
-                <td className="px-5 py-3 text-text-muted">{e.referencia ?? '—'}</td>
-                <td className="px-5 py-3 text-right text-text-primary">{e.cargo ? fmt(e.cargo) : '—'}</td>
-                <td className="px-5 py-3 text-right text-text-primary">{e.abono ? fmt(e.abono) : '—'}</td>
-                {puedeAjustar && (
-                  <td className="px-5 py-3 text-right print:hidden">
-                    {(e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && (
-                      <button
-                        type="button"
-                        onClick={() => setNotaAAnular(e)}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700"
-                        title="Anular nota"
-                      >
-                        <Ban size={13} />
-                        Anular
-                      </button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
+      {/* Versión impresa: la tabla clásica y los totales, igual que antes del rediseño. */}
+      <EstadoCuentaTablaImpresion entradas={visibles} saldoFinal={conSaldo.length > 0 ? conSaldo[conSaldo.length - 1].saldoCorrido : 0} filtradoPorTipo={Boolean(tipoEntrada)} />
 
-        {estado.entradas.length === 0 && (
-          <p className="text-center text-text-muted py-12 text-sm">
-            Sin movimientos en este período.
-          </p>
-        )}
-      </div>
-
-      {/* Totales */}
-      <div className="flex flex-col items-end gap-2">
-        <div className="flex justify-between w-full max-w-xs text-sm">
-          <span className="text-text-secondary">Total facturado</span>
-          <span className="font-medium text-text-primary">{fmt(totales.facturado)}</span>
-        </div>
-        <div className="flex justify-between w-full max-w-xs text-sm">
-          <span className="text-text-secondary">Total pagado</span>
-          <span className="font-medium text-text-primary">{fmt(totales.pagado)}</span>
-        </div>
-        <div className="flex justify-between w-full max-w-xs text-base pt-2 border-t border-border">
-          <span className="font-semibold text-text-primary">Saldo pendiente</span>
-          <span className={`font-bold ${saldoEnRojo ? 'text-red-600' : 'text-text-primary'}`}>
-            {fmt(totales.saldo)}
-          </span>
-        </div>
-      </div>
-
-      {pagoAbierto && tipo === 'proveedor' && (
-        <RegistrarPagoModal
-          proveedorId={estado.entidad.id}
+      {pagoAbierto && (
+        <PagoCobroModal
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
+          notasDebitoPendientes={notasDebitoPendientes}
+          notasCreditoPendientes={notasCreditoPendientes}
           onClose={() => setPagoAbierto(false)}
           onRegistrado={handlePagoRegistrado}
         />
       )}
 
-      {notaAbierta && tipo === 'proveedor' && (
+      {notaAbierta && (
         <NotaAjusteModal
-          proveedorId={estado.entidad.id}
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
           onClose={() => setNotaAbierta(false)}
           onCreada={handleNotaCreada}
         />
       )}
 
-      {notaAAnular && tipo === 'proveedor' && (
+      {notaAAnular && (
         <AnularNotaModal
-          proveedorId={estado.entidad.id}
+          tipoEntidad={tipo}
+          entidadId={estado.entidad.id}
           nota={notaAAnular}
           onClose={() => setNotaAAnular(null)}
           onAnulada={handleNotaAnulada}

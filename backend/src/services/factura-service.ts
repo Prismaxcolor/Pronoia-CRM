@@ -1,9 +1,16 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearFacturaInput } from '../schemas/facturas.js';
-import { notificarDocumento } from './telegram-notify-service.js';
-import { generarFacturaPdf, nombreArchivoFactura } from './document-generator.js';
+import { notificarFacturaEmitida } from './telegram-eventos-service.js';
+import { idsTicketsUnidos } from './ticket-principal.js';
+import { formatCodigoCompra, formatCodigoVenta } from '../utils/codigos.js';
+import { derivarEstadoFactura, type EstadoFacturaDerivado, type EstadoFacturaGuardado } from '../utils/estado-factura.js';
+import { inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
+import { nombresDeUsuarios, ultimaEdicionDe, type AutoriaEdicion } from './autoria-documento.js';
+import { logger } from '../utils/logger.js';
 
 export type TipoFactura = 'compra' | 'venta';
+/** 'anulada': se conserva para historial, pero ya no es deuda ni se puede pagar. */
+export type EstadoFactura = EstadoFacturaGuardado;
 
 interface Config {
   tabla: 'facturas_compra' | 'facturas_venta';
@@ -36,23 +43,20 @@ const CONFIG: Record<TipoFactura, Config> = {
   },
 };
 
-/** Formatea el correlativo de una factura de compra: 1 → "Compra 0001". */
-function formatCodigoCompra(numero: number): string {
-  return `Compra ${String(numero).padStart(4, '0')}`;
-}
-
 interface DetalleRow {
   id: string;
   producto_id: string | null;
   peso: number | null;
   precio_unitario: number | null;
   subtotal: number | null;
+  /** Solo presente en detalle_facturas_compra. */
+  descuento_kg?: number | null;
   productos?: { nombre: string } | null;
 }
 
 interface FacturaRow {
   id: string;
-  /** Solo presente en facturas_compra (correlativo automático). */
+  /** Correlativo automático, presente en ambas tablas. */
   numero?: number | null;
   proveedor_id?: string | null;
   cliente_id?: string | null;
@@ -61,8 +65,10 @@ interface FacturaRow {
   monto_pagado?: number | null;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFactura;
   created_at: string;
+  /** Quién creó la factura; ausente si la migración migration_facturas_created_by.sql aún no se aplicó. */
+  created_by?: string | null;
   proveedores?: { nombre: string } | null;
   clientes?: { nombre: string } | null;
   detalle_facturas_compra?: DetalleRow[] | null;
@@ -78,13 +84,15 @@ export interface ItemPublico {
   peso: number;
   precioUnitario: number;
   subtotal: number;
+  /** Kg descontados al facturar (0 salvo en compra). `peso` ya viene neto de esto. */
+  descuentoKg: number;
 }
 
 export interface FacturaPublica {
   id: string;
-  /** Correlativo automático. Solo en compras (null en ventas). */
+  /** Correlativo automático, en ambos tipos de factura. */
   numero: number | null;
-  /** Código de control formateado ("Compra 0001"). Solo en compras. */
+  /** Código de control formateado ("C-0001" / "V-0001"). */
   codigo: string | null;
   tipo: TipoFactura;
   entidadId: string | null;
@@ -93,12 +101,18 @@ export interface FacturaPublica {
   ticketIds: string[];
   items: ItemPublico[];
   total: number;
-  /** Acumulado de pagos aplicados (USD). Solo compras; 0 en ventas. */
+  /** Acumulado aplicado a la factura (USD): pagos, adelantos y notas de crédito. */
   montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  /** Estado según los pagos (emitida | pendiente | pagada), o borrador / anulada. Ver utils/estado-factura.ts. */
+  estado: EstadoFacturaDerivado;
   createdAt: string;
+  /** Id de quien creó la factura (null en facturas anteriores a la columna created_by). */
+  createdBy?: string | null;
+  /** Nombre de quien la creó y última edición según auditoría; solo en obtenerFactura. */
+  registradoPorNombre?: string | null;
+  ultimaEdicion?: AutoriaEdicion | null;
 }
 
 function detalleToPublico(d: DetalleRow): ItemPublico {
@@ -109,6 +123,7 @@ function detalleToPublico(d: DetalleRow): ItemPublico {
     peso: Number(d.peso ?? 0),
     precioUnitario: Number(d.precio_unitario ?? 0),
     subtotal: Number(d.subtotal ?? 0),
+    descuentoKg: Number(d.descuento_kg ?? 0),
   };
 }
 
@@ -119,11 +134,12 @@ function toPublico(row: FacturaRow, tipo: TipoFactura): FacturaPublica {
   const items = (detalle ?? []).map(detalleToPublico);
   const ticketsJoin = tipo === 'compra' ? row.facturas_compra_tickets : row.facturas_venta_tickets;
   const ticketIds = (ticketsJoin ?? []).map(t => t.ticket_id);
-  const numero = tipo === 'compra' && row.numero != null ? Number(row.numero) : null;
+  const numero = row.numero != null ? Number(row.numero) : null;
+  const codigo = numero == null ? null : tipo === 'compra' ? formatCodigoCompra(numero) : formatCodigoVenta(numero);
   return {
     id: row.id,
     numero,
-    codigo: numero != null ? formatCodigoCompra(numero) : null,
+    codigo,
     tipo,
     entidadId,
     nombreEntidad,
@@ -133,8 +149,9 @@ function toPublico(row: FacturaRow, tipo: TipoFactura): FacturaPublica {
     montoPagado: Number(row.monto_pagado ?? 0),
     descripcion: row.descripcion,
     observaciones: row.observaciones,
-    estado: row.estado,
+    estado: derivarEstadoFactura({ estado: row.estado, total: Number(row.total), montoPagado: Number(row.monto_pagado ?? 0) }),
     createdAt: row.created_at,
+    createdBy: row.created_by ?? null,
   };
 }
 
@@ -159,8 +176,8 @@ export async function listarFacturas(
     .select(selectJoins(cfg))
     .order('created_at', { ascending: false });
 
-  if (opts.desde) query = query.gte('created_at', opts.desde);
-  if (opts.hasta) query = query.lte('created_at', `${opts.hasta}T23:59:59`);
+  if (opts.desde) query = query.gte('created_at', inicioDiaNegocio(opts.desde));
+  if (opts.hasta) query = query.lte('created_at', finDiaNegocio(opts.hasta));
   if (opts.entidadId) query = query.eq(cfg.entidadCol, opts.entidadId);
 
   const { data, error } = await query;
@@ -183,24 +200,29 @@ export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<Fac
     .maybeSingle();
 
   if (error || !data) return null;
-  return toPublico(data as unknown as FacturaRow, tipo);
+  const publica = toPublico(data as unknown as FacturaRow, tipo);
+  const [nombres, ultimaEdicion] = await Promise.all([
+    nombresDeUsuarios([publica.createdBy]),
+    ultimaEdicionDe(tipo === 'compra' ? 'factura_compra' : 'factura_venta', id),
+  ]);
+  return { ...publica, registradoPorNombre: publica.createdBy ? (nombres.get(publica.createdBy) ?? null) : null, ultimaEdicion };
 }
 
 /** Dispara el envío de la factura por Telegram cuando queda 'emitida' (fire-and-forget). */
 function notificarFacturaSiCorresponde(factura: FacturaPublica): void {
-  if (factura.estado !== 'emitida' || !factura.entidadId) return;
-  void notificarDocumento({
-    entidadTipo: factura.tipo === 'compra' ? 'proveedor' : 'cliente',
-    entidadId: factura.entidadId,
-    tipoDocumento: 'factura',
-    nombreArchivo: nombreArchivoFactura(factura),
-    generarBuffer: () => generarFacturaPdf(factura),
-  });
+  notificarFacturaEmitida(factura); // PDF; solo si está 'emitida' (ver telegram-eventos-service.ts)
+}
+
+/** Guarda quién creó la factura. Best-effort: si la columna aún no existe (migración sin aplicar) solo se loguea. */
+async function marcarCreadorFactura(cfg: Config, facturaId: string, userId: string): Promise<void> {
+  const { error } = await supabaseAdmin.from(cfg.tabla).update({ created_by: userId }).eq('id', facturaId);
+  if (error) logger.warn({ evento: 'factura_created_by_no_guardado', facturaId, motivo: error.message });
 }
 
 export async function crearFactura(
   tipo: TipoFactura,
-  input: CrearFacturaInput
+  input: CrearFacturaInput,
+  creadoPor?: string
 ): Promise<{ factura: FacturaPublica } | { error: string }> {
   const cfg = CONFIG[tipo];
   const ticketIds = input.ticketIds ?? [];
@@ -220,7 +242,10 @@ export async function crearFactura(
       return { error: 'Alguno de los tickets de pesaje ya fue facturado.' };
     }
     if (tickets.some(t => t.estado === 'bruto')) {
-      return { error: 'Alguno de los tickets está en bruto (sin completar); no se puede facturar hasta terminarlo.' };
+      return { error: 'Alguno de los tickets está por recepcionar (pesaje global sin completar); no se puede facturar hasta terminarlo.' };
+    }
+    if ((await idsTicketsUnidos(ticketIds)).length > 0) {
+      return { error: 'Alguno de los tickets está unido a otro ticket; factura el ticket principal.' };
     }
     if (tickets.some(t => t.entidad_id !== input.entidadId)) {
       return { error: 'Todos los tickets deben ser del mismo proveedor/cliente que la factura.' };
@@ -238,11 +263,13 @@ export async function crearFactura(
       producto_id: i.productoId,
       peso: i.peso,
       precio_unitario: i.precioUnitario,
+      descuento_kg: i.descuentoKg,
     })),
   });
 
   if (error || !facturaId) return { error: error?.message ?? 'No se pudo crear la factura.' };
 
+  if (creadoPor) await marcarCreadorFactura(cfg, facturaId as string, creadoPor);
   const factura = await obtenerFactura(tipo, facturaId as string);
   if (!factura) return { error: 'La factura se creó pero no se pudo leer de vuelta.' };
   notificarFacturaSiCorresponde(factura);

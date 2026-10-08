@@ -5,9 +5,11 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { logger, clienteIp } from '../utils/logger.js';
 import type { Accion, Recurso } from '../utils/permisos.js';
+import { detectarFormatoImagen, infoFormatoImagen } from '../utils/firma-imagen.js';
 
 const MIME_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const TAMANO_MAXIMO = 5 * 1024 * 1024; // 5 MB
+/** Igual que MAX_BYTES_IMAGEN del cliente (frontend/src/lib/borrador-imagenes.ts): el teléfono sube hasta 6 MB. */
+export const TAMANO_MAXIMO = 6 * 1024 * 1024; // 6 MB
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -25,8 +27,15 @@ const upload = multer({
 const TIPOS: Record<string, { bucket: string; recurso: Recurso; accion: Accion }> = {
   productos: { bucket: 'productos', recurso: 'productos', accion: 'crear' },
   tickets: { bucket: 'tickets', recurso: 'pesaje', accion: 'crear' },
-  taras: { bucket: 'taras', recurso: 'productos', accion: 'crear' },
+  // Reusa el bucket "tickets" a propósito — misma naturaleza de evidencia
+  // fotográfica de pesaje, no amerita un bucket de Storage nuevo.
+  traslados: { bucket: 'tickets', recurso: 'traslados', accion: 'crear' },
+  taras: { bucket: 'taras', recurso: 'taras', accion: 'crear' },
   comprobantes: { bucket: 'comprobantes', recurso: 'cochinito', accion: 'crear' },
+  clientes: { bucket: 'clientes', recurso: 'clientes', accion: 'crear' },
+  proveedores: { bucket: 'proveedores', recurso: 'proveedores', accion: 'crear' },
+  almacenes: { bucket: 'almacenes', recurso: 'almacenes', accion: 'crear' },
+  lotes: { bucket: 'lotes', recurso: 'productos', accion: 'crear' },
 };
 
 declare global {
@@ -38,7 +47,8 @@ declare global {
 }
 
 function resolverTipo(req: Request, res: Response, next: NextFunction) {
-  const tipo = TIPOS[String(req.params.tipo)];
+  const clave = String(req.params.tipo);
+  const tipo = Object.hasOwn(TIPOS, clave) ? TIPOS[clave] : undefined;
   if (!tipo) {
     res.status(404).json({ error: 'Tipo de imagen no reconocido.' });
     return;
@@ -67,13 +77,20 @@ router.post('/:tipo', resolverTipo, subirArchivoMiddleware, async (req, res) => 
     return;
   }
 
+  // El nombre y el MIME los declara el cliente: el formato, la extensión y el contentType salen de la firma real.
+  const formato = detectarFormatoImagen(req.file.buffer);
+  const info = formato ? infoFormatoImagen(formato) : null;
+  if (!info) {
+    res.status(400).json({ error: 'El archivo no es una imagen válida (JPG, PNG o WEBP).' });
+    return;
+  }
+
   const bucket = req.tipoUpload!.bucket;
-  const ext = req.file.originalname.split('.').pop() ?? 'jpg';
-  const nombre = `${randomUUID()}.${ext}`;
+  const nombre = `${randomUUID()}.${info.extension}`;
 
   const { error } = await supabaseAdmin.storage
     .from(bucket)
-    .upload(nombre, req.file.buffer, { contentType: req.file.mimetype });
+    .upload(nombre, req.file.buffer, { contentType: info.mime });
 
   if (error) {
     res.status(500).json({ error: 'No se pudo subir el archivo.' });

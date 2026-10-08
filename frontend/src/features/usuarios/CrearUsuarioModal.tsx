@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { crearUsuario } from '../../services/usuario-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import type { RolUsuario } from '@shared/types/index.js';
 
 interface Props {
@@ -62,8 +62,8 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">Rol</label>
             <select value={rol} onChange={e => setRol(e.target.value as RolUsuario)} className={inputClass}>
-              <option value="trabajador">Trabajador — solo productos</option>
-              <option value="administracion">Administracion — finanzas y productos</option>
+              <option value="trabajador">Trabajador — operación diaria (pesaje, traslados, productos)</option>
+              <option value="administracion">Administración — facturación, clientes, proveedores y wallet</option>
               <option value="superadmin">Superadmin — acceso total</option>
             </select>
           </div>
@@ -76,14 +76,17 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
               {rol === 'superadmin' && <li>Acceso total a todas las secciones</li>}
               {rol === 'administracion' && (
                 <>
-                  <li>Dashboard (ver)</li>
-                  <li>Productos (ver)</li>
-                  <li>Cochinito (ver, crear, editar)</li>
+                  <li>Facturación, wallet, clientes, proveedores, pesaje, traslados, despachos y toma física: ver, crear y editar</li>
+                  <li>Dashboard, productos, categorías, taras, vehículos, almacenes, listas de precios y transformaciones: solo ver</li>
+                  <li>No gestiona usuarios y no puede eliminar</li>
                 </>
               )}
               {rol === 'trabajador' && (
                 <>
-                  <li>Productos (ver, crear, editar)</li>
+                  <li>Productos, categorías, taras, vehículos, almacenes y listas de precios: ver, crear y editar</li>
+                  <li>Pesaje, traslados, transformaciones y toma física: ver y crear</li>
+                  <li>Clientes, proveedores y despachos: solo ver</li>
+                  <li>No tiene facturación, wallet ni usuarios, y no puede eliminar</li>
                 </>
               )}
             </ul>

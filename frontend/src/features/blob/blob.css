@@ -1,0 +1,22 @@
+/* BLOB: la cara viene de la librería blobatar (motion.css / gaze.css); aquí solo van
+   el dormir/despertar del contenedor y los efectos de la burbuja y el chat. Solo transform/opacity. */
+@keyframes blob-escribiendo {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+@keyframes blob-burbuja-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.blob-cuerpo { transition: opacity 0.6s ease, filter 0.6s ease; }
+.blob-dormido .blob-cuerpo { opacity: 0.7; filter: saturate(0.7); }
+.blob-punto { animation: blob-escribiendo 1s infinite; }
+.blob-punto:nth-child(2) { animation-delay: 0.15s; }
+.blob-punto:nth-child(3) { animation-delay: 0.3s; }
+.blob-burbuja { animation: blob-burbuja-in 0.18s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .blob-punto, .blob-burbuja { animation: none !important; }
+  .blob-cuerpo { transition: none; }
+}

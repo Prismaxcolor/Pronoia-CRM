@@ -17,6 +17,21 @@ export function validateBody<T>(schema: ZodType<T>) {
   };
 }
 
+/** Valida req.params contra un schema zod (p. ej. ids uuid). Si falla, responde 400 con el primer mensaje. */
+export function validateParams<T>(schema: ZodType<T>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const result = schema.safeParse(req.params);
+    if (!result.success) {
+      res.status(400).json({
+        error: result.error.issues[0]?.message ?? 'Parámetros inválidos.',
+        detalles: formatearErrores(result.error),
+      });
+      return;
+    }
+    next();
+  };
+}
+
 function formatearErrores(err: ZodError): Array<{ campo: string; mensaje: string }> {
   return err.issues.map(i => ({
     campo: i.path.join('.') || '(raíz)',

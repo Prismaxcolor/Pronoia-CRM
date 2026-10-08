@@ -1,62 +1,79 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  Wallet, ArrowDownLeft, ArrowUpRight, ArrowLeftRight,
-  Plus, TrendingDown, TrendingUp, Coins, Search,
-  Building2, Globe, Pencil, Archive, ArchiveRestore,
-} from 'lucide-react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, Wallet } from 'lucide-react';
 import { obtenerBancas, obtenerMovimientos, archivarBanca, desarchivarBanca } from '../../services/banca-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
-import type { Banca, Movimiento, TipoMovimiento, TipoBanca } from '@shared/types/index.js';
+import { obtenerProveedores } from '../../services/proveedor-service';
+import { obtenerClientes } from '../../services/cliente-service';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
+import {
+  AlertaItem, BotonAccion, Bloque, EncabezadoPagina, EstadoVacio, FiltrosBarra, SkeletonBloque, SkeletonKpis, useFiltrosUrl,
+} from '../../components/ui';
+import { hoyLocal, rangoDeAtajo } from '../../lib/rango-fechas';
+import {
+  SUBTIPOS_EGRESO, TIPOS_MOVIMIENTO, calcularKpis, filtrarMovimientos, movimientosDelPeriodo, saldosPorBanca,
+} from '../../lib/cochinito-kpis';
+import type { Banca, Movimiento } from '@shared/types/index.js';
 import TasaCambioWidget from './TasaCambioWidget';
 import CrearMovimientoModal from './CrearMovimientoModal';
 import BancaFormModal from './BancaFormModal';
+import EditarMovimientoModal from './EditarMovimientoModal';
+import AnularConLlaveModal from '../../components/AnularConLlaveModal';
+import { anularMovimiento } from '../../services/transaccion-edicion-service';
+import KpisCochinito from './KpisCochinito';
+import SaldosBancas from './SaldosBancas';
+import TarjetaBanca from './TarjetaBanca';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
-const TIPO_MOV_ICON: Record<TipoMovimiento, React.ReactNode> = {
-  ingreso: <ArrowDownLeft size={16} className="text-green-600" />,
-  egreso: <ArrowUpRight size={16} className="text-red-600" />,
-  transferencia: <ArrowLeftRight size={16} className="text-blue-600" />,
-};
+// Lo pesado se carga aparte y después de los indicadores.
+const BloquesGraficas = lazy(() => import('./BloquesGraficas'));
+const TablaMovimientos = lazy(() => import('./TablaMovimientos'));
 
-const TIPO_BANCA_ICON: Record<TipoBanca, React.ReactNode> = {
-  banco_nacional: <Building2 size={14} />,
-  banco_internacional: <Globe size={14} />,
-  exchange: <Coins size={14} />,
-  efectivo: <Wallet size={14} />,
-};
+/** Filtros en la URL. Todos son parámetros nuevos de esta pantalla (no había ninguno). */
+const ESQUEMA_FILTROS = {
+  campos: {
+    tipo: { tipo: 'opcion', opciones: TIPOS_MOVIMIENTO },
+    subtipo: { tipo: 'opcion', opciones: SUBTIPOS_EGRESO },
+    banca: { tipo: 'texto' },
+    q: { tipo: 'texto' },
+    desde: { tipo: 'fecha' },
+    hasta: { tipo: 'fecha' },
+  },
+  rangos: [['desde', 'hasta']],
+} as const;
 
-const TIPO_BANCA_LABEL: Record<TipoBanca, string> = {
-  banco_nacional: 'Nacional',
-  banco_internacional: 'Internacional',
-  exchange: 'Exchange',
-  efectivo: 'Efectivo',
-};
+const OPCIONES_TIPO = [
+  { valor: 'ingreso', etiqueta: 'Ingresos' },
+  { valor: 'egreso', etiqueta: 'Egresos' },
+  { valor: 'transferencia', etiqueta: 'Transferencias' },
+] as const;
 
-type FiltroTipo = 'todos' | TipoMovimiento;
+const OPCIONES_SUBTIPO = [
+  { valor: 'pago', etiqueta: 'Pagos' },
+  { valor: 'adelanto', etiqueta: 'Adelantos' },
+] as const;
 
-function inicioDelMes(): Date {
-  const ahora = new Date();
-  return new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-}
+const str = (v: string | boolean | undefined): string | undefined => (typeof v === 'string' ? v : undefined);
 
 function CochinitPage() {
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
+  const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
   const [bancas, setBancas] = useState<Banca[]>([]);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [bancaSeleccionada, setBancaSeleccionada] = useState<string | null>(null);
-  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');
-  const [busqueda, setBusqueda] = useState('');
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalBanca, setModalBanca] = useState<{ abierto: true; banca: Banca | null } | { abierto: false }>({ abierto: false });
+  const [edicion, setEdicion] = useState<{ modo: 'editar' | 'anular'; movimiento: Movimiento } | null>(null);
+  const [nombres, setNombres] = useState<{ proveedores: Map<string, string>; clientes: Map<string, string> }>({ proveedores: new Map(), clientes: new Map() });
 
   const puedeCrear = tienePermiso('cochinito', 'crear');
   const puedeEditar = tienePermiso('cochinito', 'editar');
   const puedeArchivar = tienePermiso('cochinito', 'eliminar');
+  const puedeVerProveedores = tienePermiso('proveedores', 'ver');
+  const puedeVerClientes = tienePermiso('clientes', 'ver');
 
   const cargar = async () => {
     const [b, m] = await Promise.all([
@@ -67,59 +84,86 @@ function CochinitPage() {
     setMovimientos(m);
   };
 
+  // Igual que cargar(), pero sin pasar por una función async con nombre: el
+  // linter no puede ver más allá del await y marca el setState de adentro
+  // como "síncrono dentro del efecto" aunque no lo sea.
   useEffect(() => {
-    setCargando(true);
-    cargar().finally(() => setCargando(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    Promise.all([
+      obtenerBancas({ incluirArchivadas: mostrarArchivadas }),
+      obtenerMovimientos(),
+    ])
+      .then(([b, m]) => { setBancas(b); setMovimientos(m); })
+      .finally(() => setCargando(false));
   }, [mostrarArchivadas]);
 
-  const stats = useMemo(() => {
-    const activas = bancas.filter(b => !b.archivada);
-    const saldoUSD = activas.filter(b => b.moneda === 'USD').reduce((s, b) => s + b.saldo, 0);
-    const saldoVES = activas.filter(b => b.moneda === 'VES').reduce((s, b) => s + b.saldo, 0);
-    const desde = inicioDelMes();
-    const delMes = movimientos.filter(m => new Date(m.fecha) >= desde);
-    const ingresosMes = delMes
-      .filter(m => m.tipo === 'ingreso')
-      .reduce((s, m) => s + m.monto, 0);
-    const egresosMes = delMes
-      .filter(m => m.tipo === 'egreso')
-      .reduce((s, m) => s + m.monto, 0);
-    return { saldoUSD, saldoVES, ingresosMes, egresosMes };
-  }, [bancas, movimientos]);
+  // Nombres de proveedores/clientes para la tabla: una sola llamada por tipo y solo con permiso de verlos.
+  useEffect(() => {
+    let cancelado = false;
+    Promise.all([
+      puedeVerProveedores ? obtenerProveedores() : Promise.resolve([]),
+      puedeVerClientes ? obtenerClientes() : Promise.resolve([]),
+    ]).then(([p, c]) => {
+      if (cancelado) return;
+      setNombres({
+        proveedores: new Map(p.map(x => [x.id, x.nombre])),
+        clientes: new Map(c.map(x => [x.id, x.nombre])),
+      });
+    });
+    return () => { cancelado = true; };
+  }, [puedeVerProveedores, puedeVerClientes]);
 
-  const movFiltrados = useMemo(() => {
-    let lista = movimientos;
-    if (bancaSeleccionada) {
-      lista = lista.filter(m => m.bancaOrigenId === bancaSeleccionada || m.bancaDestinoId === bancaSeleccionada);
-    }
-    if (filtroTipo !== 'todos') {
-      lista = lista.filter(m => m.tipo === filtroTipo);
-    }
-    if (busqueda.trim()) {
-      const q = busqueda.toLowerCase();
-      lista = lista.filter(m =>
-        m.descripcion.toLowerCase().includes(q) ||
-        m.referencia.toLowerCase().includes(q)
-      );
-    }
-    return lista;
-  }, [movimientos, bancaSeleccionada, filtroTipo, busqueda]);
+  const nombreContraparte = useCallback(
+    (m: Movimiento): string | null =>
+      (m.proveedorId ? nombres.proveedores.get(m.proveedorId) : m.clienteId ? nombres.clientes.get(m.clienteId) : null) ?? null,
+    [nombres],
+  );
 
-  const onMovimientoCreado = async () => {
-    setModalAbierto(false);
-    toast.exito('Movimiento registrado.');
+  // Sin periodo en la URL se muestran los últimos 30 días (igual que /inventario).
+  const periodo = useMemo(() => {
+    const desde = str(filtros.desde);
+    const hasta = str(filtros.hasta);
+    return desde && hasta ? { desde, hasta } : rangoDeAtajo('30d', hoyLocal());
+  }, [filtros.desde, filtros.hasta]);
+
+  // Los movimientos anulados se ven (tachados) en la tabla, pero no cuentan en indicadores ni gráficas.
+  const vigentes = useMemo(() => movimientos.filter(m => !m.anulado), [movimientos]);
+  const kpis = useMemo(() => calcularKpis(bancas, vigentes, periodo), [bancas, vigentes, periodo]);
+  const movimientosPeriodo = useMemo(() => movimientosDelPeriodo(vigentes, periodo.desde, periodo.hasta), [vigentes, periodo]);
+  const saldos = useMemo(() => saldosPorBanca(bancas), [bancas]);
+  const hayIngresos = useMemo(() => vigentes.some(m => m.tipo === 'ingreso'), [vigentes]);
+  const bancaFiltro = str(filtros.banca);
+
+  const movFiltrados = useMemo(
+    () => filtrarMovimientos(
+      movimientos,
+      { tipo: str(filtros.tipo), subtipo: str(filtros.subtipo), banca: bancaFiltro, q: str(filtros.q), desde: periodo.desde, hasta: periodo.hasta },
+      nombreContraparte,
+    ),
+    [movimientos, filtros.tipo, filtros.subtipo, filtros.q, bancaFiltro, periodo, nombreContraparte],
+  );
+
+  const recargarTras = async () => {
     setCargando(true);
     await cargar();
     setCargando(false);
   };
 
+  const onMovimientoCreado = async () => {
+    setModalAbierto(false);
+    toast.exito('Movimiento registrado.');
+    await recargarTras();
+  };
+
+  const onMovimientoEditado = async (advertencia?: string) => {
+    setEdicion(null);
+    if (advertencia) toast.errorMsg(advertencia); else toast.exito('Movimiento actualizado.');
+    await recargarTras();
+  };
+
   const onBancaGuardada = async (modo: 'crear' | 'editar') => {
     setModalBanca({ abierto: false });
     toast.exito(modo === 'crear' ? 'Banca creada.' : 'Banca actualizada.');
-    setCargando(true);
-    await cargar();
-    setCargando(false);
+    await recargarTras();
   };
 
   const handleArchivarBanca = async (banca: Banca) => {
@@ -135,11 +179,9 @@ function CochinitPage() {
       toast.errorMsg(result.razon ?? 'No se pudo archivar la banca.');
       return;
     }
-    if (bancaSeleccionada === banca.id) setBancaSeleccionada(null);
+    if (bancaFiltro === banca.id) cambiar({ banca: undefined });
     toast.exito(`Banca "${banca.nombre}" archivada.`);
-    setCargando(true);
-    await cargar();
-    setCargando(false);
+    await recargarTras();
   };
 
   const handleDesarchivarBanca = async (banca: Banca) => {
@@ -149,303 +191,149 @@ function CochinitPage() {
       return;
     }
     toast.exito(`Banca "${banca.nombre}" restaurada.`);
-    setCargando(true);
-    await cargar();
-    setCargando(false);
+    await recargarTras();
   };
+
+  const abrirNuevaBanca = () => setModalBanca({ abierto: true, banca: null });
 
   if (cargando) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-7xl" aria-busy="true">
+        <EncabezadoPagina lecturas={LECTURAS.cochinito} titulo="Wallet" subtitulo="Cargando la tesorería de Pronoia…" />
+        <SkeletonBloque alto="h-20" conMargen etiqueta="Cargando filtros" />
+        <SkeletonKpis />
+        <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando bancas" />
       </div>
     );
   }
 
-  const bancaActual = bancas.find(b => b.id === bancaSeleccionada);
+  const vacioTabla = movimientos.length === 0
+    ? {
+        mensaje: 'Aún no hay movimientos registrados',
+        descripcion: 'Aquí aparecerán los pagos, adelantos, ingresos y transferencias de las bancas.',
+        accion: puedeCrear ? { etiqueta: 'Registrar el primero', onClick: () => setModalAbierto(true) } : undefined,
+      }
+    : {
+        mensaje: 'Ningún movimiento coincide con los filtros',
+        descripcion: 'Prueba con el periodo "Todo", otro tipo de movimiento o una búsqueda distinta.',
+        accion: { etiqueta: 'Limpiar filtros', onClick: limpiar },
+      };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-            <Wallet size={22} className="text-brand-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary leading-tight">Cochinito</h1>
-            <p className="text-xs text-text-muted">Tesorería de Pronoia · {bancas.length} bancas activas</p>
-          </div>
-        </div>
+    <div className="max-w-7xl">
+      <EncabezadoPagina lecturas={LECTURAS.cochinito}
+        titulo="Wallet"
+        subtitulo={`Tesorería de Pronoia: cuánto hay en cada banca, qué se ha pagado y a cuánto está la tasa de cambio. ${bancas.filter(b => !b.archivada).length} bancas activas.`}
+        acciones={puedeCrear ? <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setModalAbierto(true)}>Nuevo movimiento</BotonAccion> : undefined}
+      />
 
-        {puedeCrear && (
-          <button
-            type="button"
-            onClick={() => setModalAbierto(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors shadow-sm"
-          >
-            <Plus size={16} />
-            Nuevo movimiento
-          </button>
-        )}
-      </div>
+      <FiltrosBarra
+        rango={{ desde: str(filtros.desde), hasta: str(filtros.hasta), onCambiar: r => cambiar({ desde: r.desde, hasta: r.hasta }) }}
+        selectores={[{ id: 'cochinito-tipo', etiqueta: 'Tipo de movimiento', valor: str(filtros.tipo), opciones: OPCIONES_TIPO, onCambiar: v => cambiar({ tipo: v }) }]}
+        buscador={{ id: 'cochinito-q', valor: str(filtros.q), onCambiar: v => cambiar({ q: v }), placeholder: 'Descripción, referencia, N° o proveedor…' }}
+        avanzados={[
+          { id: 'cochinito-banca', etiqueta: 'Banca', valor: bancaFiltro, opciones: bancas.map(b => ({ valor: b.id, etiqueta: b.nombre })), cargando: false, onCambiar: v => cambiar({ banca: v }) },
+          { id: 'cochinito-subtipo', etiqueta: 'Pago o adelanto', valor: str(filtros.subtipo), opciones: OPCIONES_SUBTIPO, onCambiar: v => cambiar({ subtipo: v }) },
+        ]}
+        onLimpiar={limpiar}
+      />
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Saldo USD" valor={`$${stats.saldoUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} icon={<Coins size={18} />} colorBg="bg-brand-500" />
-        <StatCard label="Saldo VES" valor={`Bs. ${stats.saldoVES.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`} icon={<Coins size={18} />} colorBg="bg-brand-700" />
-        <StatCard label="Ingresos del mes" valor={`+${stats.ingresosMes.toLocaleString()}`} icon={<TrendingUp size={18} />} colorBg="bg-green-500" />
-        <StatCard label="Egresos del mes" valor={`-${stats.egresosMes.toLocaleString()}`} icon={<TrendingDown size={18} />} colorBg="bg-red-500" />
-      </div>
+      <section aria-label="Indicadores principales">
+        <KpisCochinito kpis={kpis} periodo={periodo} />
+      </section>
 
-      {/* Bancas + tasa widget */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Bancas</h2>
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={mostrarArchivadas}
-                  onChange={e => setMostrarArchivadas(e.target.checked)}
-                  className="w-3.5 h-3.5 accent-brand-600"
-                />
-                Ver archivadas
-              </label>
-              {puedeCrear && (
-                <button
-                  type="button"
-                  onClick={() => setModalBanca({ abierto: true, banca: null })}
-                  className="inline-flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700 font-medium"
-                >
-                  <Plus size={14} />
-                  Nueva banca
-                </button>
-              )}
-            </div>
-          </div>
-
-          {bancas.length === 0 ? (
-            <div className="bg-surface rounded-xl p-8 border-2 border-dashed border-border text-center">
-              <Wallet size={28} className="mx-auto text-text-muted mb-2 opacity-50" />
-              <p className="text-text-secondary text-sm mb-3">Aún no hay bancas registradas.</p>
-              {puedeCrear && (
-                <button
-                  type="button"
-                  onClick={() => setModalBanca({ abierto: true, banca: null })}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700"
-                >
-                  <Plus size={14} />
-                  Crear la primera banca
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {bancas.map(banca => {
-                const activa = bancaSeleccionada === banca.id;
-                return (
-                  <div
-                    key={banca.id}
-                    className={`group relative bg-surface rounded-xl p-5 shadow-sm border-2 transition-all hover:shadow-md ${
-                      banca.archivada ? 'opacity-60' : ''
-                    } ${
-                      activa ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'
-                    }`}
-                  >
-                    {banca.archivada && (
-                      <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted bg-surface-alt px-1.5 py-0.5 rounded">
-                        <Archive size={10} /> Archivada
-                      </span>
-                    )}
-
-                    {/* Acciones de banca (top-right, hover) */}
-                    {(puedeEditar || puedeArchivar) && (
-                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {puedeEditar && !banca.archivada && (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setModalBanca({ abierto: true, banca }); }}
-                            className="p-1.5 rounded-md bg-surface-alt hover:bg-brand-50 text-text-muted hover:text-brand-600 transition-colors"
-                            title="Editar banca"
-                          >
-                            <Pencil size={13} />
-                          </button>
-                        )}
-                        {puedeArchivar && !banca.archivada && (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleArchivarBanca(banca); }}
-                            className="p-1.5 rounded-md bg-surface-alt hover:bg-amber-50 text-text-muted hover:text-amber-600 transition-colors"
-                            title="Archivar banca"
-                          >
-                            <Archive size={13} />
-                          </button>
-                        )}
-                        {puedeArchivar && banca.archivada && (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleDesarchivarBanca(banca); }}
-                            className="p-1.5 rounded-md bg-surface-alt hover:bg-green-50 text-text-muted hover:text-green-600 transition-colors"
-                            title="Restaurar banca"
-                          >
-                            <ArchiveRestore size={13} />
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Cuerpo clickeable para filtrar */}
-                    <button
-                      type="button"
-                      onClick={() => setBancaSeleccionada(activa ? null : banca.id)}
-                      className="text-left w-full"
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${banca.moneda === 'USD' ? 'bg-brand-50 text-brand-600' : 'bg-brand-100 text-brand-800'}`}>
-                          {TIPO_BANCA_ICON[banca.tipo]}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="font-semibold text-text-primary text-sm truncate">{banca.nombre}</h3>
-                          <p className="text-xs text-text-muted">{TIPO_BANCA_LABEL[banca.tipo]}</p>
-                        </div>
-                      </div>
-                      {banca.descripcion && (
-                        <p className="text-text-muted text-xs mb-3 line-clamp-1">{banca.descripcion}</p>
-                      )}
-                      <p className="text-2xl font-bold text-brand-600 leading-none">
-                        {banca.moneda === 'USD' ? '$' : 'Bs '}
-                        {banca.saldo.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-text-muted mt-1.5">{banca.moneda}</p>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="lg:col-span-1">
-          <TasaCambioWidget />
-        </div>
-      </div>
-
-      {/* Tabs + búsqueda */}
-      <div className="flex items-center justify-between flex-wrap gap-3 border-b border-border">
-        <div className="flex gap-1 overflow-x-auto">
-          <FiltroTab activo={filtroTipo === 'todos'} onClick={() => setFiltroTipo('todos')} label="Todos" />
-          <FiltroTab activo={filtroTipo === 'ingreso'} onClick={() => setFiltroTipo('ingreso')} label="Ingresos" />
-          <FiltroTab activo={filtroTipo === 'egreso'} onClick={() => setFiltroTipo('egreso')} label="Egresos" />
-          <FiltroTab activo={filtroTipo === 'transferencia'} onClick={() => setFiltroTipo('transferencia')} label="Transferencias" />
-        </div>
-
-        <div className="relative w-full sm:w-64">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-          <input
-            type="text"
-            value={busqueda}
-            onChange={e => setBusqueda(e.target.value)}
-            placeholder="Buscar descripción o referencia..."
-            className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
-          />
-        </div>
-      </div>
-
-      {/* Filtro de banca activo */}
-      {bancaSeleccionada && (
-        <div className="flex items-center gap-2 -mt-3">
-          <span className="text-xs text-text-secondary">
-            Filtrando por: <strong>{bancaActual?.nombre}</strong>
-          </span>
-          <button
-            type="button"
-            onClick={() => setBancaSeleccionada(null)}
-            className="text-xs text-brand-600 hover:text-brand-800 underline"
-          >
-            quitar filtro
-          </button>
-        </div>
+      {kpis.bancasNegativas > 0 && (
+        <section aria-label="Alertas" className="mb-8">
+          <ul>
+            <AlertaItem
+              severidad="amarilla"
+              texto={`${kpis.bancasNegativas} ${kpis.bancasNegativas === 1 ? 'banca tiene' : 'bancas tienen'} saldo negativo`}
+              detalle={hayIngresos
+                ? 'En esas bancas ha salido más dinero del que se registró como entrada. Revisa si falta registrar algún ingreso o transferencia.'
+                : 'Hasta ahora solo hay egresos registrados: falta registrar los ingresos (o el saldo inicial) para que el saldo refleje la realidad.'}
+            />
+          </ul>
+        </section>
       )}
 
-      {/* Lista de movimientos */}
-      <div className="bg-surface rounded-xl shadow-sm border border-border">
-        {movFiltrados.length === 0 ? (
-          <div className="p-12 text-center">
-            <Wallet size={32} className="mx-auto text-text-muted mb-2 opacity-50" />
-            <p className="text-text-muted text-sm">
-              No hay movimientos
-              {bancaSeleccionada ? ' en esta banca' : ''}
-              {filtroTipo !== 'todos' ? ` del tipo ${filtroTipo}` : ''}
-              {busqueda ? ' que coincidan con la búsqueda' : ''}
-            </p>
-            {puedeCrear && movimientos.length === 0 && (
-              <button
-                type="button"
-                onClick={() => setModalAbierto(true)}
-                className="mt-3 text-sm text-brand-600 hover:text-brand-800 underline"
-              >
-                Registra el primero
-              </button>
-            )}
+      <Bloque
+        titulo="Bancas"
+        queEstasViendo="El saldo actual de cada banca en su propia moneda (lo que ha entrado menos lo que ha salido). Pulsa una banca para ver solo sus movimientos en la tabla de abajo."
+        acciones={
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-text-secondary">
+              <input type="checkbox" checked={mostrarArchivadas} onChange={e => setMostrarArchivadas(e.target.checked)} className="h-4 w-4 accent-brand-600" />
+              Ver archivadas
+            </label>
+            {puedeCrear && <BotonAccion soloEnLinea variante="secundario" icono={<Plus size={14} />} onClick={abrirNuevaBanca}>Nueva banca</BotonAccion>}
           </div>
+        }
+      >
+        {bancas.length === 0 ? (
+          <EstadoVacio
+            icono={<Wallet size={28} />}
+            mensaje="Aún no hay bancas registradas"
+            descripcion="Una banca es un lugar donde Pronoia guarda dinero: una caja de efectivo, un banco o un exchange."
+            accion={puedeCrear ? { etiqueta: 'Crear la primera banca', onClick: abrirNuevaBanca, soloEnLinea: true } : undefined}
+          />
         ) : (
-          <div className="divide-y divide-border">
-            {movFiltrados.map(mov => {
-              const bancaOrigen = bancas.find(b => b.id === mov.bancaOrigenId);
-              const bancaDestino = mov.bancaDestinoId ? bancas.find(b => b.id === mov.bancaDestinoId) : null;
-              return (
-                <div key={mov.id} className="flex items-center gap-4 p-4 hover:bg-surface-hover transition-colors">
-                  <div className="w-10 h-10 rounded-full bg-surface-alt flex items-center justify-center shrink-0">
-                    {TIPO_MOV_ICON[mov.tipo]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-text-primary truncate">{mov.descripcion}</p>
-                      {mov.proveedorId && (
-                        <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
-                          Pago a proveedor
-                        </span>
-                      )}
-                      {mov.clienteId && (
-                        <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-700">
-                          Cobro a cliente
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-text-muted mt-0.5">
-                      <span>{mov.fecha}</span>
-                      {mov.referencia && <><span>·</span><span>{mov.referencia}</span></>}
-                      {bancaOrigen && (
-                        <>
-                          <span>·</span>
-                          <span>
-                            {bancaOrigen.nombre}
-                            {bancaDestino && ` → ${bancaDestino.nombre}`}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className={`text-sm font-bold ${
-                      mov.tipo === 'ingreso' ? 'text-green-600' :
-                      mov.tipo === 'egreso' ? 'text-red-600' :
-                      'text-blue-600'
-                    }`}>
-                      {mov.tipo === 'ingreso' ? '+' : mov.tipo === 'egreso' ? '-' : ''}
-                      {mov.moneda === 'USD' ? '$' : 'Bs '}
-                      {mov.monto.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-text-muted capitalize">{mov.tipo}</p>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-3">
+              {bancas.map((banca, i) => (
+                <TarjetaBanca
+                  key={banca.id}
+                  banca={banca}
+                  indice={i}
+                  seleccionada={bancaFiltro === banca.id}
+                  onAlternarFiltro={() => cambiar({ banca: bancaFiltro === banca.id ? undefined : banca.id })}
+                  onEditar={puedeEditar ? () => setModalBanca({ abierto: true, banca }) : undefined}
+                  onArchivar={puedeArchivar ? () => handleArchivarBanca(banca) : undefined}
+                  onDesarchivar={puedeArchivar ? () => handleDesarchivarBanca(banca) : undefined}
+                />
+              ))}
+            </div>
+            <div className="lg:col-span-2">
+              <SaldosBancas saldos={saldos} />
+            </div>
           </div>
         )}
-      </div>
+      </Bloque>
+
+      <Bloque
+        titulo="Tasas de cambio"
+        queEstasViendo="Cuántos bolívares (Bs) cuesta hoy 1 USD (tasa oficial BCV y tasa de Binance) y 1 EUR (BCV). Cada tarjeta muestra cuánto cambió en las últimas lecturas, cuándo se actualizó y cuándo se vuelve a consultar."
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <TasaCambioWidget fuenteKey="bcv" titulo="Tasa BCV" subtitulo="Dólar oficial · Banco Central de Venezuela" monedaOrigen="USD" cacheMs={24 * 60 * 60 * 1000} acento="brand" />
+          <TasaCambioWidget fuenteKey="binance" titulo="Tasa Binance" subtitulo="Dólar paralelo · Binance P2P, precio de venta" monedaOrigen="USD" cacheMs={15 * 60 * 1000} acento="binance" />
+          <TasaCambioWidget fuenteKey="euro" titulo="Tasa Euro" subtitulo="Euro oficial · Banco Central de Venezuela" monedaOrigen="EUR" cacheMs={24 * 60 * 60 * 1000} acento="euro" />
+        </div>
+      </Bloque>
+
+      <Suspense fallback={<SkeletonBloque alto="h-64" conMargen etiqueta="Cargando gráficas" />}>
+        <BloquesGraficas
+          movimientos={movimientosPeriodo}
+          puedeCrear={puedeCrear}
+          hayIngresosEnHistorial={hayIngresos}
+          onRegistrar={() => setModalAbierto(true)}
+        />
+      </Suspense>
+
+      <Bloque
+        titulo="Movimientos"
+        queEstasViendo={`Los movimientos con fecha dentro del periodo (${bancaFiltro ? 'solo de la banca elegida, ' : ''}según los filtros de arriba), con su monto en la moneda de la banca y en USD. ${movFiltrados.length} ${movFiltrados.length === 1 ? 'resultado' : 'resultados'}.`}
+      >
+        <Suspense fallback={<SkeletonBloque alto="h-64" etiqueta="Cargando movimientos" />}>
+          <TablaMovimientos
+            filas={movFiltrados}
+            bancas={bancas}
+            nombreContraparte={nombreContraparte}
+            vacio={vacioTabla}
+            onEditar={m => setEdicion({ modo: 'editar', movimiento: m })}
+            onAnular={m => setEdicion({ modo: 'anular', movimiento: m })}
+          />
+        </Suspense>
+      </Bloque>
 
       {/* Modales */}
       {modalAbierto && (
@@ -455,6 +343,37 @@ function CochinitPage() {
           onCreado={onMovimientoCreado}
         />
       )}
+      {edicion?.modo === 'editar' && (
+        <EditarMovimientoModal
+          movimiento={edicion.movimiento}
+          bancas={bancas}
+          onClose={() => setEdicion(null)}
+          onGuardado={(_m, advertencia) => onMovimientoEditado(advertencia)}
+        />
+      )}
+      {edicion?.modo === 'anular' && (
+        <AnularConLlaveModal
+          titulo="Anular movimiento"
+          entidadTipo="movimiento_banca"
+          entidadId={edicion.movimiento.id}
+          etiquetaBoton="Anular movimiento"
+          onClose={() => setEdicion(null)}
+          onConfirmar={async (motivo, llave) => {
+            const r = await anularMovimiento(edicion.movimiento.id, motivo, llave);
+            if ('error' in r) return r.error;
+            await onMovimientoEditado();
+            return null;
+          }}
+        >
+          <div className="bg-surface-alt border border-border rounded-lg p-3 text-sm">
+            <p className="text-text-primary font-medium">{edicion.movimiento.descripcion || 'Movimiento sin concepto'}</p>
+            <p className="text-text-secondary">{edicion.movimiento.moneda} {edicion.movimiento.monto.toLocaleString('es-VE', { minimumFractionDigits: 2 })} · {edicion.movimiento.fecha.slice(0, 10)}</p>
+          </div>
+          <p className="text-xs text-text-muted">
+            El saldo de la banca se corrige y el movimiento queda marcado como anulado en el historial (no se borra). Se rechaza si alguna banca quedaría sin fondos.
+          </p>
+        </AnularConLlaveModal>
+      )}
       {modalBanca.abierto && (
         <BancaFormModal
           banca={modalBanca.banca}
@@ -463,47 +382,6 @@ function CochinitPage() {
         />
       )}
     </div>
-  );
-}
-
-interface StatCardProps {
-  label: string;
-  valor: string;
-  icon: React.ReactNode;
-  colorBg: string;
-}
-
-function StatCard({ label, valor, icon, colorBg }: StatCardProps) {
-  return (
-    <div className="bg-surface rounded-xl p-4 shadow-sm border border-border">
-      <div className="flex items-center gap-2 mb-2">
-        <div className={`${colorBg} text-white p-1.5 rounded-md`}>{icon}</div>
-        <span className="text-text-secondary text-xs font-medium">{label}</span>
-      </div>
-      <p className="text-xl font-bold text-text-primary truncate">{valor}</p>
-    </div>
-  );
-}
-
-interface FiltroTabProps {
-  activo: boolean;
-  onClick: () => void;
-  label: string;
-}
-
-function FiltroTab({ activo, onClick, label }: FiltroTabProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-        activo
-          ? 'border-brand-600 text-brand-600'
-          : 'border-transparent text-text-secondary hover:text-text-primary'
-      }`}
-    >
-      {label}
-    </button>
   );
 }
 

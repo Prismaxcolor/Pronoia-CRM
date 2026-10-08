@@ -1,20 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { verificarLoginPortal } from '../../services/portal-auth-service';
-import { usePortalAuth } from '../../hooks/use-portal-auth';
+import { usePortalAuth } from '../../hooks/use-portal-auth-context';
 
 function PortalVerificarPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { refrescar } = usePortalAuth();
-  const [error, setError] = useState<string | null>(null);
+  // Sin token no hay nada que verificar — se calcula en el estado inicial
+  // (derivable de la URL en el primer render) en vez de vía setState síncrono
+  // dentro del efecto.
+  const [error, setError] = useState<string | null>(() =>
+    params.get('token') ? null : 'Falta el link completo. Pide uno nuevo desde el portal.'
+  );
 
   useEffect(() => {
     const token = params.get('token');
-    if (!token) {
-      setError('Falta el link completo. Pide uno nuevo desde el portal.');
-      return;
-    }
+    if (!token) return;
 
     verificarLoginPortal(token).then(async result => {
       if ('error' in result) {

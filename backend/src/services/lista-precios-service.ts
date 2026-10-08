@@ -1,4 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { mensajeDeErrorBd } from '../utils/errores-bd.js';
 import type {
   CrearListaInput,
   ActualizarListaInput,
@@ -10,6 +12,7 @@ import type {
 interface ListaRow {
   id: string;
   nombre: string;
+  tipo: 'compra' | 'venta';
   vigente_desde: string | null;
   activo: boolean;
   created_at: string;
@@ -30,6 +33,7 @@ interface PrecioRow {
 export interface ListaPublica {
   id: string;
   nombre: string;
+  tipo: 'compra' | 'venta';
   vigenteDesde: string | null;
   activo: boolean;
   createdAt: string;
@@ -56,6 +60,7 @@ function listaToPublico(row: ListaRow): ListaPublica {
   return {
     id: row.id,
     nombre: row.nombre,
+    tipo: row.tipo,
     vigenteDesde: row.vigente_desde,
     activo: row.activo,
     createdAt: row.created_at,
@@ -75,12 +80,13 @@ function precioToPublico(row: PrecioRow): PrecioPublico {
 
 // ---- cabeceras --------------------------------------------------------------
 
-export async function listarListas(): Promise<ListaPublica[]> {
-  const { data, error } = await supabaseAdmin
-    .from('listas_precios')
-    .select('*')
-    .order('created_at', { ascending: false });
+/** Sin `tipo`, devuelve todas (pantalla de Configuración, que las administra
+ *  juntas). Con `tipo`, filtra — usado por el selector de una factura. */
+export async function listarListas(tipo?: 'compra' | 'venta'): Promise<ListaPublica[]> {
+  let query = supabaseAdmin.from('listas_precios').select('*').order('created_at', { ascending: false });
+  if (tipo) query = query.eq('tipo', tipo);
 
+  const { data, error } = await query;
   if (error || !data) return [];
   return (data as ListaRow[]).map(listaToPublico);
 }
@@ -96,18 +102,67 @@ export async function obtenerListaDetalle(
 
   if (errLista || !lista) return null;
 
-  const { data: precios, error: errPrecios } = await supabaseAdmin
-    .from('precios_lista')
-    .select('*, productos(nombre)')
-    .eq('lista_id', id)
-    .order('created_at', { ascending: true });
-
-  if (errPrecios) return null;
+  const precios = await leerPreciosOrdenados(id);
+  if (!precios) return null;
 
   return {
     lista: listaToPublico(lista as ListaRow),
-    precios: (precios as PrecioRow[] | null ?? []).map(precioToPublico),
+    precios: precios.map(precioToPublico),
   };
+}
+
+const CONSULTA_PRECIOS = '*, productos(nombre)';
+
+/** Lee los precios de la lista en el orden manual (columna `orden`). Si la
+ *  columna aún no existe (migración sin aplicar) cae al orden de alta. */
+async function leerPreciosOrdenados(listaId: string): Promise<PrecioRow[] | null> {
+  const conOrden = await supabaseAdmin
+    .from('precios_lista')
+    .select(CONSULTA_PRECIOS)
+    .eq('lista_id', listaId)
+    .order('orden', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (!conOrden.error) return (conOrden.data as PrecioRow[] | null) ?? [];
+
+  const sinOrden = await supabaseAdmin
+    .from('precios_lista')
+    .select(CONSULTA_PRECIOS)
+    .eq('lista_id', listaId)
+    .order('created_at', { ascending: true });
+  if (sinOrden.error) return null;
+  return (sinOrden.data as PrecioRow[] | null) ?? [];
+}
+
+/** Posición al final para un material nuevo; null si la columna `orden` no existe aún. */
+async function ordenAlFinal(listaId: string): Promise<number | null> {
+  const { data, error } = await supabaseAdmin
+    .from('precios_lista')
+    .select('orden')
+    .eq('lista_id', listaId)
+    .order('orden', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return ((data as { orden: number } | null)?.orden ?? -1) + 1;
+}
+
+export const MENSAJE_ORDEN_NO_HABILITADO =
+  'Falta aplicar la migración del orden de listas de precios (docs/migration_reordenar_precios_lista.sql).';
+
+/** Persiste el orden manual en UNA operación atómica (RPC `reordenar_precios_lista`): productoIds en
+ *  el orden deseado, de arriba a abajo. La función SQL exige que cubra exactamente los materiales
+ *  de la lista (sin faltantes, ajenos ni duplicados) y, si no, no cambia nada. */
+export async function reordenarPrecios(
+  listaId: string,
+  productoIds: string[]
+): Promise<{ ok: true } | { error: string }> {
+  const { error } = await supabaseAdmin.rpc('reordenar_precios_lista', {
+    p_lista_id: listaId,
+    p_producto_ids: productoIds,
+  });
+  if (!error) return { ok: true };
+  if (esObjetoInexistente(error)) return { error: MENSAJE_ORDEN_NO_HABILITADO };
+  return { error: mensajeDeErrorBd(error, 'No se pudo reordenar la lista.') };
 }
 
 export async function crearLista(
@@ -115,7 +170,7 @@ export async function crearLista(
 ): Promise<{ lista: ListaPublica } | { error: string }> {
   const { data, error } = await supabaseAdmin
     .from('listas_precios')
-    .insert({ nombre: input.nombre, vigente_desde: input.vigenteDesde ?? null })
+    .insert({ nombre: input.nombre, tipo: input.tipo, vigente_desde: input.vigenteDesde ?? null })
     .select('*')
     .single();
 
@@ -158,10 +213,24 @@ export async function upsertPrecioEnLista(
   listaId: string,
   input: UpsertPrecioInput
 ): Promise<{ precio: PrecioPublico } | { error: string }> {
+  // Un material nuevo entra al final; uno existente conserva su posición.
+  const { data: existente } = await supabaseAdmin
+    .from('precios_lista')
+    .select('id')
+    .eq('lista_id', listaId)
+    .eq('producto_id', input.productoId)
+    .maybeSingle();
+  const orden = existente ? null : await ordenAlFinal(listaId);
+
   const { data, error } = await supabaseAdmin
     .from('precios_lista')
     .upsert(
-      { lista_id: listaId, producto_id: input.productoId, precio: input.precio },
+      {
+        lista_id: listaId,
+        producto_id: input.productoId,
+        precio: input.precio,
+        ...(orden === null ? {} : { orden }),
+      },
       { onConflict: 'lista_id,producto_id' }
     )
     .select('*, productos(nombre)')
@@ -185,12 +254,16 @@ export async function eliminarPrecio(
 
 // ---- selector ---------------------------------------------------------------
 
-export async function listasParaProducto(productoId: string): Promise<ListaParaProducto[]> {
+export async function listasParaProducto(
+  productoId: string,
+  tipo: 'compra' | 'venta'
+): Promise<ListaParaProducto[]> {
   const { data, error } = await supabaseAdmin
     .from('precios_lista')
-    .select('precio, listas_precios!inner(id, nombre, vigente_desde, activo)')
+    .select('precio, listas_precios!inner(id, nombre, vigente_desde, activo, tipo)')
     .eq('producto_id', productoId)
-    .eq('listas_precios.activo', true);
+    .eq('listas_precios.activo', true)
+    .eq('listas_precios.tipo', tipo);
 
   if (error || !data) return [];
 

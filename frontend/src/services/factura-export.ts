@@ -1,21 +1,34 @@
+import { saldoFactura } from '../lib/estado-factura';
+import { nombreArchivoDocumento } from '../lib/nombre-archivo';
 import { consolidarItems, type FacturaCV } from './factura-cv-service';
+import { type TicketPesaje } from '@shared/types/index.js';
+import {
+  fmt, fmtMoneda, sanitizarPdf, descargarBlob, entregarPdf, type ArchivoPdf, type ModoPdf,
+  encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, pieRegistro, tablaMonetaria, tablaPesaje,
+} from './pdf-documento';
+import { pieSinConexion } from '../lib/offline/lectura';
+import { formatearFechaHora, leyendaRegistro, leyendaUltimaEdicion } from '../lib/fecha-negocio';
 
 // jspdf y docx se cargan bajo demanda (dynamic import) para no inflar el bundle
 // inicial: solo pesan cuando el usuario descarga una factura.
 
-function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-/** Referencia visible de la factura: correlativo ("Compra 0001") o, si no lo
- *  tiene (ventas), los primeros dígitos del id. */
+/** Referencia visible de la factura: correlativo ("C-0001"/"V-0001") o, si no
+ *  lo tiene, los primeros dígitos del id. */
 function refFactura(f: FacturaCV): string {
   return f.codigo ?? `N.º ${f.id.slice(0, 8)}`;
 }
 
+/** Texto del origen del peso: códigos reales de los tickets si están
+ *  cargados (mismo criterio que FacturaDetallePage), o un conteo genérico si
+ *  no se pasaron. */
+function origenPeso(f: FacturaCV, tickets: TicketPesaje[]): string {
+  if (f.ticketIds.length === 0) return 'Peso manual';
+  if (tickets.length > 0) return `${tickets.length} ticket${tickets.length === 1 ? '' : 's'} · ${tickets.map(t => t.codigo).join(', ')}`;
+  return `${f.ticketIds.length} ticket${f.ticketIds.length === 1 ? '' : 's'} de pesaje`;
+}
+
 function nombreArchivo(f: FacturaCV, ext: string): string {
-  const ref = (f.codigo ?? f.id.slice(0, 8)).replace(/\s+/g, '-').toLowerCase();
-  return `factura-${f.tipo}-${ref}.${ext}`;
+  return nombreArchivoDocumento({ prefijo: 'Factura', codigo: f.codigo ?? f.id.slice(0, 8), entidad: f.nombreEntidad, extension: ext });
 }
 
 /** Filas (etiqueta, valor) de la cabecera de la factura (sin las líneas). */
@@ -29,72 +42,102 @@ function filasFactura(f: FacturaCV): Array<[string, string]> {
   return filas;
 }
 
-/** Una línea de la factura como texto: "Material · 12,00 kg × 3,00 = 36,00". */
+/** Una línea de la factura como texto: "Material · 12,00 kg × 3,00 = 36,00" (Word). */
 function lineaTexto(it: FacturaCV['items'][number]): string {
-  return `${it.nombreProducto ?? 'material'} · ${fmt(it.peso)} kg × ${fmt(it.precioUnitario)} = ${fmt(it.subtotal)}`;
+  return `${it.nombreProducto ?? 'material'} · ${fmt(it.peso)} kg × ${fmtMoneda(it.precioUnitario)} = ${fmtMoneda(it.subtotal)}`;
 }
 
-function descargarBlob(blob: Blob, nombre: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = nombre;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-export async function descargarFacturaPDF(f: FacturaCV): Promise<void> {
+export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] = [], modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
   const { default: jsPDF } = await import('jspdf');
+  const { default: autoTable } = await import('jspdf-autotable');
   const esCompra = f.tipo === 'compra';
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-  let y = 56;
-  doc.setFontSize(20).setFont('helvetica', 'bold').text('Pronoia', 56, y);
-  doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(130).text('Sistema de compras', 56, y + 15);
-  doc.setTextColor(0);
+  encabezadoMarca(doc);
 
-  y += 52;
-  doc.setFontSize(15).setFont('helvetica', 'bold').text(`Factura de ${esCompra ? 'compra' : 'venta'}`, 56, y);
+  let y = 56 + 52;
+  tituloConBadge(doc, y, `Factura de ${esCompra ? 'compra' : 'venta'}`, f.estado);
 
-  y += 20;
-  doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(refFactura(f), 56, y);
-  doc.text(`Fecha: ${f.createdAt.slice(0, 10)}`, 250, y);
-  doc.text(`Estado: ${f.estado}`, 420, y);
+  y += 16;
+  subtitulo(doc, y, `Ref. ${refFactura(f)}  ·  ${formatearFechaHora(f.createdAt)}`);
+
+  y += 26;
+  y = filaEncabezado(doc, y, esCompra ? 'Proveedor' : 'Cliente', f.nombreEntidad ?? '—');
+  y = filaEncabezado(doc, y, 'Origen del peso', origenPeso(f, tickets));
+  for (const [k, v] of filasFactura(f).slice(1)) {
+    y = filaEncabezado(doc, y, k, v);
+  }
+
+  y += 6;
+  const itemsBody = consolidarItems(f.items).map(it => [
+    sanitizarPdf(it.nombreProducto ?? '—'),
+    fmt(it.peso),
+    fmtMoneda(it.precioUnitario),
+    fmtMoneda(it.subtotal),
+  ]);
+  y = tablaMonetaria(doc, autoTable, {
+    startY: y,
+    head: [['Ítem', 'Cantidad (kg)', 'Precio unitario', 'Monto total']],
+    body: itemsBody,
+  });
 
   y += 30;
-  doc.setFontSize(11);
-  for (const [k, v] of filasFactura(f)) {
-    doc.setFont('helvetica', 'bold').text(k, 56, y);
-    doc.setFont('helvetica', 'normal').text(v, 250, y);
+  doc.setFontSize(20).setFont('helvetica', 'bold').text('Total', 56, y);
+  doc.text(fmtMoneda(f.total), 539, y, { align: 'right' });
+
+  if (f.montoPagado > 0) {
     y += 20;
-  }
-
-  // Líneas de la factura.
-  y += 6;
-  doc.setFont('helvetica', 'bold').text('Líneas', 56, y);
-  y += 18;
-  doc.setFont('helvetica', 'normal').setFontSize(10);
-  for (const it of consolidarItems(f.items)) {
-    doc.text(lineaTexto(it), 56, y);
+    doc.setFontSize(10).setFont('helvetica', 'normal');
+    doc.text('Pagado', 56, y);
+    doc.text(fmtMoneda(f.montoPagado), 539, y, { align: 'right' });
     y += 16;
+    doc.text('Saldo pendiente', 56, y);
+    doc.text(fmtMoneda(saldoFactura(f)), 539, y, { align: 'right' });
   }
-  doc.setFontSize(11);
 
-  y += 12;
-  doc.setDrawColor(200).line(56, y, 539, y);
+  const totalPeso = consolidarItems(f.items).reduce((acc, it) => acc + it.peso, 0);
   y += 26;
-  doc.setFontSize(14).setFont('helvetica', 'bold').text('Total', 56, y);
-  doc.text(fmt(f.total), 539, y, { align: 'right' });
+  doc.setDrawColor(120).setLineWidth(1.5).line(56, y, 539, y);
+  y += 24;
+  doc.setFontSize(15).setFont('helvetica', 'bold').text('Total de kilos facturados', 56, y);
+  doc.text(`${fmt(totalPeso)} kg`, 539, y, { align: 'right' });
 
-  doc.save(nombreArchivo(f, 'pdf'));
+  const pageHeight = doc.internal.pageSize.getHeight();
+  for (const ticket of tickets) {
+    y += 34;
+    if (y > pageHeight - 120) { doc.addPage(); y = 56; }
+    doc.setFontSize(15).setFont('helvetica', 'bold').setTextColor(0);
+    doc.text(sanitizarPdf(`Ticket de pesaje · ${ticket.codigo}`), 56, y);
+    y += 14;
+    const materialesBody = ticket.materiales.map(m => [
+      sanitizarPdf(m.nombreProducto ?? '-'),
+      fmt(m.pesoBruto),
+      fmt(m.tara),
+      fmt(m.pesoNeto),
+    ]);
+    y = tablaPesaje(doc, autoTable, {
+      startY: y,
+      head: [['Material', 'Bruto', 'Tara', 'Neto (kg)']],
+      body: materialesBody,
+    });
+
+    const totalDevolucion = ticket.materiales.reduce((acc, m) => acc + (m.devolucion || 0), 0);
+    if (totalDevolucion > 0) {
+      y += 16;
+      doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(90).text('Devolución', 56, y);
+      doc.setTextColor(15).setFont('helvetica', 'bold').text(`${fmt(totalDevolucion)} kg`, 539, y, { align: 'right' });
+      doc.setTextColor(0);
+    }
+  }
+
+  pieRegistro(doc, [leyendaRegistro(f.registradoPorNombre, f.createdAt, 'Registrada'), leyendaUltimaEdicion(f.ultimaEdicion?.nombre, f.ultimaEdicion?.en)]);
+  return entregarPdf(doc, nombreArchivo(f, 'pdf'), modo);
 }
 
 export async function descargarFacturaWord(f: FacturaCV): Promise<void> {
   const { Document, Packer, Paragraph, TextRun } = await import('docx');
   const esCompra = f.tipo === 'compra';
+  const pie = pieSinConexion();
   const vacio = () => new Paragraph({ text: '' });
   const fila = (k: string, v: string) =>
     new Paragraph({ children: [new TextRun({ text: `${k}: `, bold: true }), new TextRun(v)] });
@@ -105,7 +148,8 @@ export async function descargarFacturaWord(f: FacturaCV): Promise<void> {
     vacio(),
     new Paragraph({ children: [new TextRun({ text: `Factura de ${esCompra ? 'compra' : 'venta'}`, bold: true, size: 28 })] }),
     fila('N.º', f.codigo ?? f.id.slice(0, 8)),
-    fila('Fecha', f.createdAt.slice(0, 10)),
+    fila('Fecha', formatearFechaHora(f.createdAt)),
+    new Paragraph({ text: leyendaRegistro(f.registradoPorNombre, f.createdAt, 'Registrada') }),
     fila('Estado', f.estado),
     vacio(),
     ...filasFactura(f).map(([k, v]) => fila(k, v)),
@@ -113,7 +157,8 @@ export async function descargarFacturaWord(f: FacturaCV): Promise<void> {
     new Paragraph({ children: [new TextRun({ text: 'Líneas', bold: true })] }),
     ...consolidarItems(f.items).map(it => new Paragraph({ text: `• ${lineaTexto(it)}` })),
     vacio(),
-    new Paragraph({ children: [new TextRun({ text: `Total: ${fmt(f.total)}`, bold: true, size: 28 })] }),
+    new Paragraph({ children: [new TextRun({ text: `Total: ${fmtMoneda(f.total)}`, bold: true, size: 28 })] }),
+    ...(pie ? [vacio(), new Paragraph({ children: [new TextRun({ text: pie, italics: true, color: '888888', size: 16 })] })] : []),
   ];
 
   const doc = new Document({ sections: [{ children }] });

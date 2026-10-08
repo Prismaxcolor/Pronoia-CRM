@@ -19,11 +19,25 @@ import inventarioRouter from './routes/inventario.js';
 import transformacionesRouter from './routes/transformaciones.js';
 import lotesRouter from './routes/lotes.js';
 import tarasRouter from './routes/tara.js';
+import vehiculosRouter from './routes/vehiculo.js';
 import pagosRouter from './routes/pagos.js';
+import cobrosRouter from './routes/cobros.js';
 import cochinitoRouter from './routes/cochinito.js';
 import uploadsRouter from './routes/uploads.js';
 import portalRouter from './routes/portal.js';
 import citasRouter from './routes/citas.js';
+import almacenesRouter from './routes/almacenes.js';
+import trasladosRouter from './routes/traslados.js';
+import packingListsRouter from './routes/packing-lists.js';
+import metricasRouter from './routes/metricas.js';
+import tomasFisicasRouter from './routes/toma-fisica.js';
+import auditoriaRouter from './routes/auditoria.js';
+import llavesEdicionRouter from './routes/llaves-edicion.js';
+import llavesSolicitudesRouter from './routes/llaves-solicitudes.js';
+import { notificarGrupoMiddleware } from './middlewares/notificar-grupo.js';
+import { invalidarSaldosMiddleware } from './middlewares/invalidar-saldos.js';
+import { operacionesClienteLimiter } from './middlewares/rate-limit.js';
+import asistenteRouter from './routes/asistente.js';
 
 const app = express();
 
@@ -57,6 +71,19 @@ app.use(express.json({ limit: '100kb' }));
 // Solo para la cookie httpOnly de sesión del portal — el staff sigue usando
 // Bearer token, no depende de esto.
 app.use(cookieParser());
+// Avisos al grupo interno de Telegram por cada acción importante (observa respuestas, no las altera).
+app.use(notificarGrupoMiddleware);
+// Vacía la caché de saldos tras cualquier escritura (pagos, cobros, notas, facturas, cruces).
+app.use(invalidarSaldosMiddleware);
+
+// Limitador por usuario de las escrituras idempotentes (clientRequestId): evita llenar operaciones_cliente.
+app.use(
+  [
+    '/api/tickets-pesaje', '/api/traslados', '/api/tomas-fisicas', '/api/proveedores', '/api/clientes',
+    '/api/productos', '/api/taras', '/api/almacenes', '/api/vehiculos', '/api/transformaciones', '/api/packing-lists',
+  ],
+  operacionesClienteLimiter,
+);
 
 app.use(healthRouter);
 app.use('/api/auth', authRouter);
@@ -73,11 +100,22 @@ app.use('/api/inventario', inventarioRouter);
 app.use('/api/transformaciones', transformacionesRouter);
 app.use('/api/lotes', lotesRouter);
 app.use('/api/taras', tarasRouter);
+app.use('/api/vehiculos', vehiculosRouter);
 app.use('/api/pagos', pagosRouter);
+app.use('/api/cobros', cobrosRouter);
 app.use('/api/cochinito', cochinitoRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/tasas', tasasRouter);
 app.use('/api/portal', portalRouter);
 app.use('/api/citas', citasRouter);
+app.use('/api/almacenes', almacenesRouter);
+app.use('/api/traslados', trasladosRouter);
+app.use('/api/packing-lists', packingListsRouter);
+app.use('/api/metricas', metricasRouter);
+app.use('/api/tomas-fisicas', tomasFisicasRouter);
+app.use('/api/auditoria', auditoriaRouter);
+app.use('/api/llaves-edicion', llavesEdicionRouter);
+app.use('/api/llaves-solicitudes', llavesSolicitudesRouter);
+app.use('/api/asistente', asistenteRouter);
 
 export default app;

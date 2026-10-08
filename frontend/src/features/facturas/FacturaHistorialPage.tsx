@@ -1,40 +1,65 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import {
   obtenerFacturas,
   type FacturaCV,
-  type FiltrosFacturas,
   type TipoFactura,
 } from '../../services/factura-cv-service';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerProductos } from '../../services/producto-service';
-import { useAuth } from '../../hooks/use-auth';
-import type { Producto } from '@shared/types/index.js';
+import { useAuth } from '../../hooks/use-auth-context';
+import { coincideCodigo, type Producto } from '@shared/types/index.js';
+import {
+  BarraProgreso, Bloque, BotonAccion, EncabezadoPagina, FiltrosBarra, GrillaKpis, ListaAlertas, SkeletonBloque, TarjetaKpi, useFiltrosUrl,
+  EstadoVacio, formatearFecha, formatearNumero, formatearUsdDecimales, type AlertaDatos,
+} from '../../components/ui';
+import PesajesPendientesFacturar from './PesajesPendientesFacturar';
+import { INICIO_HISTORICO, hoyLocal } from '../../lib/rango-fechas';
+import {
+  antiguedadSaldos, compararTotalFacturado, porcentajeEntero, periodoAnterior, periodoEfectivo, porcentajePagado, resumirFacturas,
+  severidadAntiguedad, textoDesglosePorEstado, type PeriodoEfectivo,
+} from '../../lib/facturas-kpis';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+
+// Lo pesado se carga aparte, después de los indicadores.
+const FacturaGraficas = lazy(() => import('./factura-graficas'));
+const FacturaTabla = lazy(() => import('./factura-tabla'));
+
+/** Espera antes de montar las gráficas, para que indicadores y tabla pinten primero. */
+const RETARDO_GRAFICAS_MS = 150;
 
 interface Entidad { id: string; nombre: string }
 
-const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
-  borrador: { label: 'Borrador', clase: 'bg-gray-100 text-gray-600' },
-  emitida: { label: 'Emitida', clase: 'bg-blue-100 text-blue-700' },
-  pagada: { label: 'Pagada', clase: 'bg-green-100 text-green-700' },
-};
+const ESTADOS_FILTRO = ['borrador', 'emitida', 'pendiente', 'pagada', 'anulada'] as const;
+const OPCIONES_ESTADO = [
+  { valor: 'borrador', etiqueta: 'Borrador' },
+  { valor: 'emitida', etiqueta: 'Emitida' },
+  { valor: 'pendiente', etiqueta: 'Pendiente' },
+  { valor: 'pagada', etiqueta: 'Pagada' },
+  { valor: 'anulada', etiqueta: 'Anulada' },
+] as const;
 
-function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Filtros compartibles en la URL. Los nombres de los parámetros son nuevos (esta pantalla no tenía ninguno). */
+const ESQUEMA = {
+  campos: {
+    desde: { tipo: 'fecha' },
+    hasta: { tipo: 'fecha' },
+    entidad: { tipo: 'texto' },
+    producto: { tipo: 'texto' },
+    estado: { tipo: 'opcion', opciones: ESTADOS_FILTRO },
+    q: { tipo: 'texto' },
+  },
+} as const;
+
+function textoPeriodo(p: PeriodoEfectivo): string {
+  if (p.origen === 'todo' || p.desde === INICIO_HISTORICO) return 'todo el historial';
+  if (p.origen === 'defecto') return 'los últimos 30 días';
+  return `del ${formatearFecha(p.desde)} al ${formatearFecha(p.hasta)}`;
 }
 
-/** Resumen de materiales de una factura: nombre si es uno, "N materiales" si varios. */
-function resumenMateriales(f: FacturaCV): string {
-  if (f.items.length === 0) return '—';
-  if (f.items.length === 1) return f.items[0].nombreProducto ?? 'material';
-  return `${f.items.length} materiales`;
-}
-
-/** Suma del peso de todas las líneas de la factura. */
-function pesoTotal(f: FacturaCV): number {
-  return f.items.reduce((acc, it) => acc + it.peso, 0);
+function SinFacturasSkeleton() {
+  return <SkeletonBloque alto="h-64" conMargen etiqueta="Cargando facturas" />;
 }
 
 interface Props {
@@ -42,124 +67,279 @@ interface Props {
 }
 
 function FacturaHistorialPage({ tipo }: Props) {
-  const navigate = useNavigate();
   const { tienePermiso } = useAuth();
   const puedeCrear = tienePermiso('facturacion', 'crear');
+  const puedeVer = tienePermiso('facturacion', 'ver');
 
   const esCompra = tipo === 'compra';
   const ruta = esCompra ? '/compras' : '/ventas';
   const titulo = esCompra ? 'Compras' : 'Ventas';
-  const subtitulo = esCompra ? 'Facturas de compra a proveedores' : 'Facturas de venta a clientes';
+  const subtitulo = esCompra
+    ? 'Facturas de compra a proveedores: cuánto se facturó, cuánto se ha pagado y cuánto falta.'
+    : 'Facturas de venta a clientes: cuánto se facturó y qué facturas siguen emitidas.';
   const labelEntidad = esCompra ? 'Proveedor' : 'Cliente';
 
-  const [facturas, setFacturas] = useState<FacturaCV[]>([]);
-  const [entidades, setEntidades] = useState<Entidad[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [filtros, setFiltros] = useState<FiltrosFacturas>({});
+  const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA);
+  const desdeUrl = filtros.desde as string | undefined;
+  const hastaUrl = filtros.hasta as string | undefined;
+  const entidadId = filtros.entidad as string | undefined;
+  const productoId = filtros.producto as string | undefined;
+  const estado = filtros.estado as (typeof ESTADOS_FILTRO)[number] | undefined;
+  const busqueda = filtros.q as string | undefined;
 
+  const hoy = hoyLocal().toISOString().slice(0, 10);
+  const periodo = useMemo(() => periodoEfectivo(desdeUrl, hastaUrl, Boolean(busqueda), hoy), [desdeUrl, hastaUrl, busqueda, hoy]);
+  const rangoAnterior = useMemo(
+    () => (periodo.origen === 'todo' || periodo.desde === INICIO_HISTORICO ? null : periodoAnterior(periodo.desde, periodo.hasta)),
+    [periodo],
+  );
+
+  const [facturas, setFacturas] = useState<FacturaCV[]>([]);
+  const [previas, setPrevias] = useState<FacturaCV[] | null>(null);
+  const [todas, setTodas] = useState<FacturaCV[] | null>(null);
+  const [entidades, setEntidades] = useState<Entidad[] | undefined>(undefined);
+  const [productos, setProductos] = useState<Producto[] | undefined>(undefined);
+  const [claveCargada, setClaveCargada] = useState<string | null>(null);
+  const [mostrarGraficas, setMostrarGraficas] = useState(false);
+  const productosPedidos = useRef(false);
+
+  // Catálogo de proveedores/clientes (como antes, al entrar). Los materiales se piden al abrir "Más filtros".
   useEffect(() => {
+    let cancelado = false;
     const cargar = (): Promise<Entidad[]> => (esCompra ? obtenerProveedores() : obtenerClientes());
-    cargar().then(setEntidades);
-    obtenerProductos().then(setProductos);
+    void cargar().then(l => { if (!cancelado) setEntidades(l); });
+    return () => { cancelado = true; };
   }, [esCompra]);
 
+  const cargarProductos = useCallback(() => {
+    if (productosPedidos.current) return;
+    productosPedidos.current = true;
+    void obtenerProductos().then(setProductos);
+  }, []);
+
+  // Facturas del periodo (+ las del periodo anterior para comparar). Los filtros de entidad/material los resuelve el servidor.
+  const claveActual = `${tipo}|${periodo.desde ?? ''}|${periodo.hasta ?? ''}|${entidadId ?? ''}|${productoId ?? ''}`;
+  const cargando = claveCargada !== claveActual;
   useEffect(() => {
-    setCargando(true);
-    obtenerFacturas(tipo, filtros).then(setFacturas).finally(() => setCargando(false));
-  }, [tipo, filtros]);
+    let cancelado = false;
+    const base = { entidadId, productoId };
+    void Promise.all([
+      obtenerFacturas(tipo, { ...base, desde: periodo.desde, hasta: periodo.hasta }),
+      rangoAnterior ? obtenerFacturas(tipo, { ...base, ...rangoAnterior }) : Promise.resolve(null),
+    ]).then(([actuales, anteriores]) => {
+      if (cancelado) return;
+      setFacturas(actuales);
+      setPrevias(anteriores);
+      setClaveCargada(claveActual);
+    });
+    return () => { cancelado = true; };
+  }, [tipo, periodo, rangoAnterior, entidadId, productoId, claveActual]);
 
-  const setFiltro = (campo: keyof FiltrosFacturas, valor: string) =>
-    setFiltros(prev => ({ ...prev, [campo]: valor || undefined }));
+  // Todas las facturas del tipo (sin filtros): para la antigüedad de las emitidas y para saber si de verdad no hay ninguna.
+  useEffect(() => {
+    let cancelado = false;
+    // El reinicio al cambiar de compras a ventas evita mostrar un instante la alerta del otro tipo.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTodas(null);
+    void obtenerFacturas(tipo, {}).then(l => { if (!cancelado) setTodas(l); });
+    return () => { cancelado = true; };
+  }, [tipo]);
 
-  const inputClass = "px-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
+  useEffect(() => {
+    if (claveCargada === null) return;
+    const t = setTimeout(() => setMostrarGraficas(true), RETARDO_GRAFICAS_MS);
+    return () => clearTimeout(t);
+  }, [claveCargada]);
+
+  const resumen = useMemo(() => resumirFacturas(facturas, tipo), [facturas, tipo]);
+  // Facturas con saldo vivo: emitidas + pendientes (con pago parcial).
+  const cantidadConSaldo = resumen.porEstado.emitida.cantidad + resumen.porEstado.pendiente.cantidad;
+  const resumenPrevio = useMemo(() => (previas ? resumirFacturas(previas, tipo) : null), [previas, tipo]);
+  const comparacion = useMemo(() => compararTotalFacturado(resumen, resumenPrevio, tipo), [resumen, resumenPrevio, tipo]);
+  const antiguedad = useMemo(() => (todas ? antiguedadSaldos(todas, tipo, hoy) : null), [todas, tipo, hoy]);
+
+  const facturasFiltradas = useMemo(
+    () => facturas.filter(f => (!busqueda || coincideCodigo(f.codigo, busqueda)) && (!estado || f.estado === estado)),
+    [facturas, busqueda, estado],
+  );
+
+  const nombresProveedor = useMemo(() => new Map((entidades ?? []).map(e => [e.id, e.nombre])), [entidades]);
+
+  const hayFiltros = Boolean(desdeUrl || hastaUrl || entidadId || productoId || estado || busqueda);
+  const periodoTxt = textoPeriodo(periodo);
+  const primeraCarga = claveCargada === null;
+  const kpiEstado = !puedeVer ? 'sinPermiso' : primeraCarga ? 'cargando' : resumen.facturadas === 0 ? 'vacio' : 'listo';
+  const formatoDeltaUsd = (d: number) => formatearUsdDecimales(d);
+
+  const textoSinComparacion = periodo.origen === 'todo' || periodo.desde === INICIO_HISTORICO
+    ? 'Sin comparación: se está viendo todo el historial.'
+    : 'Sin historial comparable: no hay facturas en el periodo anterior.';
+  const comparacionSinDato = comparacion === null && kpiEstado === 'listo'
+    ? <p className="mt-2 text-xs text-text-muted">{textoSinComparacion}</p>
+    : null;
+
+  // ---- vacíos de la tabla
+  const sinFacturasNunca = todas !== null && todas.length === 0;
+  const vacioTabla = sinFacturasNunca
+    ? {
+        mensaje: esCompra ? 'Aún no hay compras.' : 'Aún no hay ventas.',
+        descripcion: esCompra ? 'Las facturas de compra se emiten a partir de los tickets de pesaje de compra.' : 'Las facturas de venta se emiten a partir de los tickets de pesaje de venta.',
+        accion: { etiqueta: esCompra ? 'Registra un pesaje de compra y factúralo' : 'Registra un pesaje de venta y factúralo', to: '/pesaje' },
+      }
+    : hayFiltros
+      ? { mensaje: 'No hay facturas con estos filtros.', descripcion: 'Prueba con otro periodo, otro estado o quita algún filtro.', accion: { etiqueta: 'Limpiar filtros', onClick: limpiar } }
+      : {
+          mensaje: 'No hay facturas en los últimos 30 días.',
+          descripcion: 'Hay facturas anteriores: amplía el periodo para verlas.',
+          accion: { etiqueta: 'Ver todo el historial', onClick: () => cambiar({ desde: INICIO_HISTORICO, hasta: hoy }) },
+        };
+
+  // ---- alerta de antigüedad
+  const alertas = useMemo<AlertaDatos[]>(() => {
+    if (!antiguedad || antiguedad.facturas.length === 0) return [];
+    const n = antiguedad.facturas.length;
+    const sev = severidadAntiguedad(tipo, antiguedad.diasMasAntigua);
+    const dias = antiguedad.diasMasAntigua;
+    const texto = esCompra
+      ? `${n} ${n === 1 ? 'factura emitida tiene' : 'facturas emitidas tienen'} saldo por pagar (${formatearUsdDecimales(antiguedad.totalSaldo)}). La más antigua se emitió hace ${dias} ${dias === 1 ? 'día' : 'días'}.`
+      : `${n} ${n === 1 ? 'factura de venta emitida' : 'facturas de venta emitidas'} sin registro de cobro (${formatearUsdDecimales(antiguedad.totalSaldo)}). La más antigua se emitió hace ${dias} ${dias === 1 ? 'día' : 'días'}.`;
+    const tramos = antiguedad.tramos.filter(t => t.cantidad > 0).map(t => `${t.etiqueta}: ${t.cantidad} (${formatearUsdDecimales(t.monto)})`).join(' · ');
+    const detalle = esCompra ? tramos : `${tramos}. El sistema no registra cobros de ventas: esto no indica si están cobradas o pendientes.`;
+    return [{
+      id: 'antiguedad', severidad: sev, texto, detalle,
+      enlace: antiguedad.masAntigua ? { to: `${ruta}/${antiguedad.masAntigua.id}`, etiqueta: 'Abrir la más antigua' } : undefined,
+    }];
+  }, [antiguedad, tipo, esCompra, ruta]);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
-          <p className="text-sm text-text-secondary mt-1">{subtitulo}</p>
-        </div>
-        {puedeCrear && (
-          <button type="button" onClick={() => navigate(`${ruta}/nueva`)} className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors">
-            <Plus size={18} />
-            Nueva factura
-          </button>
-        )}
-      </div>
+    <div className="max-w-7xl">
+      <EncabezadoPagina lecturas={LECTURAS.facturas}
+        titulo={titulo}
+        subtitulo={subtitulo}
+        acciones={puedeCrear ? <BotonAccion soloEnLinea to={`${ruta}/nueva`} icono={<Plus size={18} />}>Nueva factura</BotonAccion> : undefined}
+      />
 
-      <div className="flex flex-wrap items-end gap-3 mb-4">
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Desde</label>
-          <input type="date" value={filtros.desde ?? ''} onChange={e => setFiltro('desde', e.target.value)} className={inputClass} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Hasta</label>
-          <input type="date" value={filtros.hasta ?? ''} onChange={e => setFiltro('hasta', e.target.value)} className={inputClass} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">{labelEntidad}</label>
-          <select value={filtros.entidadId ?? ''} onChange={e => setFiltro('entidadId', e.target.value)} className={`${inputClass} w-44`}>
-            <option value="">Todos</option>
-            {entidades.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Material</label>
-          <select value={filtros.productoId ?? ''} onChange={e => setFiltro('productoId', e.target.value)} className={`${inputClass} w-44`}>
-            <option value="">Todos</option>
-            {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-          </select>
-        </div>
-        {(filtros.desde || filtros.hasta || filtros.entidadId || filtros.productoId) && (
-          <button type="button" onClick={() => setFiltros({})} className="text-xs text-text-muted hover:text-text-primary underline pb-2">
-            Limpiar
-          </button>
-        )}
-      </div>
+      <FiltrosBarra
+        rango={{ desde: desdeUrl && hastaUrl ? desdeUrl : undefined, hasta: desdeUrl && hastaUrl ? hastaUrl : undefined, onCambiar: r => cambiar({ desde: r.desde, hasta: r.hasta }) }}
+        selectores={[{
+          id: 'fact-entidad', etiqueta: labelEntidad, valor: entidadId, opciones: entidades?.map(e => ({ valor: e.id, etiqueta: e.nombre })),
+          onCambiar: v => cambiar({ entidad: v }), textoTodas: 'Todos',
+        }]}
+        buscador={{ id: 'fact-q', etiqueta: 'N° control', valor: busqueda, placeholder: esCompra ? 'Ej. C-0018' : 'Ej. V-0002', onCambiar: v => cambiar({ q: v }) }}
+        avanzados={[
+          { id: 'fact-producto', etiqueta: 'Material', valor: productoId, opciones: productos?.map(p => ({ valor: p.id, etiqueta: p.nombre })), onCambiar: v => cambiar({ producto: v }) },
+          { id: 'fact-estado', etiqueta: 'Estado', valor: estado, opciones: OPCIONES_ESTADO, cargando: false, onCambiar: v => cambiar({ estado: v }) },
+        ]}
+        onAbrirAvanzados={cargarProductos}
+        onLimpiar={limpiar}
+      />
 
-      <div className="bg-surface rounded-xl border border-border overflow-hidden">
-        {cargando ? (
-          <div className="flex justify-center py-12">
-            <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      {esCompra && puedeVer && <PesajesPendientesFacturar nombresProveedor={nombresProveedor} puedeFacturar={puedeCrear} />}
+
+      <section aria-label="Indicadores principales">
+        <div className={!primeraCarga && cargando ? 'opacity-60 transition-opacity' : ''}>
+          <GrillaKpis>
+            <TarjetaKpi
+              titulo="Total facturado"
+              ayuda={`Dinero (USD) que suman las facturas ${esCompra ? 'de compra' : 'de venta'} emitidas, pendientes o pagadas con fecha de emisión dentro del periodo (${periodoTxt}). No cuenta las anuladas ni los borradores. La flecha compara con el periodo anterior de la misma duración, y solo aparece si ese periodo tuvo facturas.`}
+              valor={formatearUsdDecimales(resumen.total)}
+              subtitulo={`${formatearNumero(resumen.facturadas, 0)} ${resumen.facturadas === 1 ? 'factura' : 'facturas'} · ${periodoTxt}`}
+              comparacion={comparacion ?? undefined}
+              formatoDelta={formatoDeltaUsd}
+              estado={kpiEstado}
+              mensajeVacio="Sin facturas en este periodo"
+            >
+              {comparacionSinDato}
+            </TarjetaKpi>
+
+            {esCompra ? (
+              <>
+                <TarjetaKpi
+                  titulo="Pagado"
+                  ayuda="Dinero (USD) que ya se pagó de las facturas de compra emitidas, pendientes o pagadas del periodo. Los pagos se registran desde el estado de cuenta del proveedor. El porcentaje de abajo es lo pagado dividido entre el total facturado."
+                  valor={formatearUsdDecimales(resumen.pagado)}
+                  subtitulo={`${formatearNumero(porcentajeEntero(porcentajePagado(resumen.total, resumen.pagado)), 0)} % de lo facturado`}
+                  estado={kpiEstado}
+                  mensajeVacio="Sin facturas en este periodo"
+                >
+                  <div className="mt-2"><BarraProgreso valor={porcentajePagado(resumen.total, resumen.pagado)} etiqueta="Porcentaje pagado de lo facturado" /></div>
+                </TarjetaKpi>
+                <TarjetaKpi
+                  titulo="Pendiente de pago"
+                  ayuda="Dinero (USD) que todavía se le debe a los proveedores en las facturas de compra emitidas y pendientes del periodo: total de cada factura menos lo ya pagado. Las facturas ya pagadas, las anuladas y los borradores no tienen saldo."
+                  valor={formatearUsdDecimales(resumen.pendiente)}
+                  subtitulo={`${formatearNumero(cantidadConSaldo, 0)} ${cantidadConSaldo === 1 ? 'factura emitida' : 'facturas emitidas'} con saldo`}
+                  estado={kpiEstado}
+                  mensajeVacio="Sin facturas en este periodo"
+                />
+              </>
+            ) : (
+              <TarjetaKpi
+                titulo="Emitido sin registro de cobros"
+                ayuda="Dinero (USD) que suman las facturas de venta en estado «emitida» del periodo. El sistema todavía no registra cuándo los clientes pagan, así que este monto no dice si ya se cobró o si falta cobrar: solo que la factura se emitió."
+                valor={formatearUsdDecimales(resumen.totalEmitidas)}
+                subtitulo="Aún no se registran cobros de ventas: no es un saldo por cobrar."
+                estado={kpiEstado}
+                mensajeVacio="Sin facturas en este periodo"
+              />
+            )}
+
+            <TarjetaKpi
+              titulo="Kg facturados"
+              ayuda="Kilos (kg) que suman las facturas emitidas o pagadas del periodo. Si al facturar una compra se descontó merma o tara, ese peso ya está restado."
+              valor={formatearNumero(resumen.kg, 0)}
+              unidad="kg"
+              subtitulo={esCompra ? `${formatearNumero(resumen.cantidad, 0)} ${resumen.cantidad === 1 ? 'factura' : 'facturas'}: ${textoDesglosePorEstado(resumen)}` : 'Facturas emitidas y pagadas'}
+              estado={kpiEstado}
+              mensajeVacio="Sin facturas en este periodo"
+            />
+
+            {!esCompra && (
+              <TarjetaKpi
+                titulo="Facturas"
+                ayuda="Cuántas facturas de venta se emitieron en el periodo, de cualquier estado. Debajo se separan por estado: pagada, pendiente, emitida, borrador (aún no emitida) y anulada (cancelada)."
+                valor={formatearNumero(resumen.cantidad, 0)}
+                subtitulo={textoDesglosePorEstado(resumen) || undefined}
+                estado={!puedeVer ? 'sinPermiso' : primeraCarga ? 'cargando' : resumen.cantidad === 0 ? 'vacio' : 'listo'}
+                mensajeVacio="Sin facturas en este periodo"
+              />
+            )}
+          </GrillaKpis>
+        </div>
+      </section>
+
+      {puedeVer && antiguedad && (
+        <Bloque
+          titulo={esCompra ? 'Antigüedad de facturas emitidas con saldo' : 'Antigüedad de facturas emitidas sin cobro registrado'}
+          queEstasViendo="cuántos días hace que se emitieron las facturas emitidas que aún tienen saldo. Los días se cuentan desde la fecha de emisión hasta hoy (el sistema no maneja fecha de vencimiento) y se agrupan en tramos de 0 a 7, 8 a 15, 16 a 30 y más de 30 días. No depende del periodo elegido arriba."
+        >
+          <ListaAlertas
+            alertas={alertas}
+            vacio={<EstadoVacio mensaje={esCompra ? 'Todo en orden: no hay facturas emitidas con saldo por pagar.' : 'No hay facturas de venta emitidas.'} />}
+          />
+        </Bloque>
+      )}
+
+      <Bloque
+        titulo="Facturas"
+        queEstasViendo={`las facturas con fecha de emisión dentro del periodo elegido (${periodoTxt})${hayFiltros ? ' que cumplen los filtros' : ''}. Pulsa el N° de control para abrir el documento y el título de una columna para ordenar.`}
+      >
+        {primeraCarga ? <SinFacturasSkeleton /> : (
+          <div className={cargando ? 'opacity-60 transition-opacity' : ''}>
+            <Suspense fallback={<SinFacturasSkeleton />}>
+              <FacturaTabla facturas={facturasFiltradas} tipo={tipo} ruta={ruta} vacio={vacioTabla} />
+            </Suspense>
           </div>
-        ) : facturas.length === 0 ? (
-          <p className="text-center text-text-muted py-12 text-sm">No hay facturas con estos filtros.</p>
-        ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-text-muted">
-                {esCompra && <th className="px-4 py-3 font-medium">N° Control</th>}
-                <th className="px-4 py-3 font-medium">Fecha</th>
-                <th className="px-4 py-3 font-medium">{labelEntidad}</th>
-                <th className="px-4 py-3 font-medium">Materiales</th>
-                <th className="px-4 py-3 font-medium text-right">Peso (kg)</th>
-                <th className="px-4 py-3 font-medium text-right">Total</th>
-                <th className="px-4 py-3 font-medium text-right">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {facturas.map(f => {
-                const cfg = ESTADO_CFG[f.estado] ?? ESTADO_CFG.emitida;
-                return (
-                  <tr key={f.id} onClick={() => navigate(`${ruta}/${f.id}`)} className="border-b border-border last:border-b-0 hover:bg-surface-alt cursor-pointer transition-colors">
-                    {esCompra && <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{f.codigo ?? '—'}</td>}
-                    <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{f.createdAt.slice(0, 10)}</td>
-                    <td className="px-4 py-3 text-text-primary">{f.nombreEntidad ?? '—'}</td>
-                    <td className="px-4 py-3 text-text-secondary">{resumenMateriales(f)}</td>
-                    <td className="px-4 py-3 text-right">{fmt(pesoTotal(f))}</td>
-                    <td className="px-4 py-3 text-right font-medium text-text-primary">{fmt(f.total)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${cfg.clase}`}>{cfg.label}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table></div>
         )}
-      </div>
+      </Bloque>
+
+      {mostrarGraficas ? (
+        <Suspense fallback={<SkeletonBloque alto="h-56" conMargen etiqueta="Cargando gráficas" />}>
+          <FacturaGraficas facturas={facturas} tipo={tipo} rutaNueva={puedeCrear ? `${ruta}/nueva` : undefined} />
+        </Suspense>
+      ) : (
+        <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando gráficas" />
+      )}
     </div>
   );
 }

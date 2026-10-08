@@ -1,11 +1,20 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { X, Plus, Trash2, ImagePlus } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { altaEnColaActiva } from '../../services/maestros-cola';
+import { X, Plus, Trash2 } from 'lucide-react';
 import { crearProducto, actualizarProducto, obtenerProductos } from '../../services/producto-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
+import { obtenerLotes } from '../../services/lote-service';
+import LotesPosiblesPicker from './LotesPosiblesPicker';
 import { subirImagenProducto } from '../../services/storage-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial } from '@shared/types/index.js';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { TTL_ALTA_BORRADOR_MS, difiereEstado, huellaDocumento } from '../../lib/borrador';
+import { admiteEstadoLimpieza, estadoLimpiezaAApi, ETIQUETA_ESTADO_LIMPIEZA, type EstadoLimpiezaForm } from './estado-limpieza';
+import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial, Lote } from '@shared/types/index.js';
 
 interface Props {
   /** Si se pasa, el form arranca en modo "editar". Si no, modo "crear". */
@@ -38,14 +47,20 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       setCategorias(tipos.filter(t => t.activo || t.id === producto?.tipoMaterialId))
     );
   }, [producto?.tipoMaterialId]);
+  const [lotesDisponibles, setLotesDisponibles] = useState<Lote[]>([]);
+  const [loteIds, setLoteIds] = useState<string[]>(producto?.loteIds ?? []);
+  useEffect(() => {
+    obtenerLotes().then(lotes =>
+      setLotesDisponibles(lotes.filter(l => l.activo || (producto?.loteIds ?? []).includes(l.id)))
+    );
+  }, [producto?.loteIds]);
   const [activo, setActivo] = useState(producto?.activo ?? true);
+  const [estadoLimpieza, setEstadoLimpieza] = useState<EstadoLimpiezaForm>(producto?.estadoLimpieza ?? '');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Imagen
-  const [imagenFile, setImagenFile] = useState<File | null>(null);
-  const [imagenPreview, setImagenPreview] = useState<string | null>(producto?.imagenUrl ?? null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Fotos
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(producto?.fotos ?? []));
 
   // Amarillo
   const initialAmarillo = producto?.tipo === 'amarillo' ? producto : null;
@@ -63,6 +78,45 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     initialVerde?.subProductos ?? [{ tipo: 'ref', productoId: '', cantidad: 1 }]
   );
 
+  // Borrador del formulario (uno por producto, o uno para "nuevo"): sobrevive a F5. La base
+  // para detectar cambios se captura una sola vez, con los valores con que arrancó el formulario.
+  const estadoBorrador = { tipo, nombre, descripcion, tipoMaterialId, moneda, loteIds, activo, fotos, peso, variantes, subProductos, estadoLimpieza };
+  const [estadoInicial] = useState(() => estadoBorrador);
+  const aplicarEstado = (e: typeof estadoBorrador) => {
+    setTipo(e.tipo); setNombre(e.nombre); setDescripcion(e.descripcion); setTipoMaterialId(e.tipoMaterialId);
+    setMoneda(e.moneda); setLoteIds(e.loteIds); setActivo(e.activo); setFotos(e.fotos);
+    setPeso(e.peso); setVariantes(e.variantes); setSubProductos(e.subProductos); setEstadoLimpieza(e.estadoLimpieza);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'producto',
+    docId: producto?.id ?? null,
+    version: 1,
+    // Alta de maestro: sin pesos de operación ni dinero, conserva el TTL largo.
+    ttlMs: TTL_ALTA_BORRADOR_MS,
+    // Editar: si el producto cambió en el servidor desde que se guardó el borrador, este se descarta con aviso.
+    huellaBase: producto ? huellaDocumento(producto) : null,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, estadoInicial),
+    aplicar: d => aplicarEstado({
+      tipo: d.tipo ?? estadoInicial.tipo,
+      nombre: d.nombre ?? estadoInicial.nombre,
+      descripcion: d.descripcion ?? estadoInicial.descripcion,
+      tipoMaterialId: d.tipoMaterialId ?? estadoInicial.tipoMaterialId,
+      moneda: d.moneda ?? estadoInicial.moneda,
+      loteIds: d.loteIds ?? estadoInicial.loteIds,
+      activo: d.activo ?? estadoInicial.activo,
+      fotos: d.fotos ?? estadoInicial.fotos,
+      peso: d.peso ?? estadoInicial.peso,
+      variantes: d.variantes && d.variantes.length > 0 ? d.variantes : estadoInicial.variantes,
+      subProductos: d.subProductos && d.subProductos.length > 0 ? d.subProductos : estadoInicial.subProductos,
+      // Borradores guardados antes de este campo no lo traen: se usa el valor inicial ('' = sin definir es un valor válido).
+      estadoLimpieza: d.estadoLimpieza ?? estadoInicial.estadoLimpieza,
+    }),
+    restablecer: () => aplicarEstado(estadoInicial),
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
+
   // Catálogo para el select de subproductos (solo se carga cuando el tipo es verde)
   const [catalogo, setCatalogo] = useState<Producto[]>([]);
   useEffect(() => {
@@ -76,12 +130,10 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     [catalogo, producto?.id]
   );
 
-  const handleImagenChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImagenFile(file);
-    setImagenPreview(URL.createObjectURL(file));
-  };
+  const admiteLimpieza = admiteEstadoLimpieza(categorias.find(c => c.id === tipoMaterialId)?.nombre ?? producto?.tipoMaterialNombre);
+
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const addVariante = () => setVariantes([...variantes, { id: crypto.randomUUID(), nombre: '', cantidad: 0, precioUnitario: 0 }]);
   const removeVariante = (idx: number) => setVariantes(variantes.filter((_, i) => i !== idx));
@@ -115,15 +167,12 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     setGuardando(true);
     setError(null);
 
-    let imagenUrl: string | null = producto?.imagenUrl ?? null;
-    if (imagenFile) {
-      const subida = await subirImagenProducto(imagenFile);
-      if (!subida) {
-        setError('Error al subir la imagen. Intenta de nuevo.');
-        setGuardando(false);
-        return;
-      }
-      imagenUrl = subida;
+    const enCola = !editando && altaEnColaActiva();
+    const urls = enCola ? [] : await subirFotosLocal(fotos, subirImagenProducto);
+    if (!urls) {
+      setError('Error al subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
 
     if (!tipoMaterialId) {
@@ -132,7 +181,11 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       return;
     }
 
-    const base = { nombre, descripcion, tipoMaterialId, moneda, activo, imagenUrl };
+    // Fuera de Ferroso / No ferroso el estado no aplica: viaja null (borra un valor viejo si cambió de categoría).
+    const base = {
+      nombre, descripcion, tipoMaterialId, moneda, activo, fotos: urls, loteIds,
+      estadoLimpieza: admiteLimpieza ? estadoLimpiezaAApi(estadoLimpieza) : null,
+    };
 
     let payload;
     if (tipo === 'amarillo') {
@@ -145,12 +198,13 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
 
     const result = editando && producto
       ? await actualizarProducto(producto.id, payload as never)
-      : await crearProducto({ ...payload, creadoPor: usuario?.id ?? '' } as never);
+      : await crearProducto({ ...payload, creadoPor: usuario?.id ?? '' } as never, enCola ? fotos : undefined);
 
     setGuardando(false);
 
     if ('producto' in result) {
-      toast.exito(editando ? `"${result.producto.nombre}" actualizado.` : `"${result.producto.nombre}" creado.`);
+      toast.exito(editando ? `"${result.producto.nombre}" actualizado.` : `"${result.producto.nombre}" ${'enCola' in result ? 'guardado en el teléfono; se enviará al volver la conexión' : 'creado'}.`);
+      borrador.limpiar();
       onGuardado(editando ? 'editar' : 'crear');
     } else {
       setError(result.error);
@@ -167,7 +221,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
           <h2 className="text-lg font-bold text-text-primary">
             {editando ? 'Editar producto' : 'Nuevo producto'}
           </h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -201,32 +255,8 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
         )}
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className={labelClass}>Imagen del producto</label>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border rounded-xl p-4 cursor-pointer hover:border-brand-400 transition-colors flex flex-col items-center justify-center min-h-[120px]"
-            >
-              {imagenPreview ? (
-                <img src={imagenPreview} alt="Preview" className="max-h-28 object-contain rounded-lg" />
-              ) : (
-                <>
-                  <ImagePlus size={32} className="text-text-muted mb-2" />
-                  <p className="text-xs text-text-muted">Click para seleccionar imagen</p>
-                </>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImagenChange}
-              className="hidden"
-            />
-            {imagenFile && (
-              <p className="text-xs text-text-secondary mt-1">{imagenFile.name}</p>
-            )}
-          </div>
+          <AvisoBorrador formulario="este producto" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos del producto" />
 
           <div>
             <label className={labelClass}>Nombre</label>
@@ -236,7 +266,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
             <label className={labelClass}>Descripcion</label>
             <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Descripcion breve" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Categoría</label>
               <select
@@ -267,6 +297,28 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
             </div>
           </div>
 
+          {admiteLimpieza && (
+            <div>
+              <label className={labelClass} htmlFor="producto-estado-limpieza">Estado del material</label>
+              <select
+                id="producto-estado-limpieza"
+                value={estadoLimpieza}
+                onChange={e => setEstadoLimpieza(e.target.value as EstadoLimpiezaForm)}
+                className={inputClass}
+              >
+                {(Object.keys(ETIQUETA_ESTADO_LIMPIEZA) as EstadoLimpiezaForm[]).map(v => (
+                  <option key={v || 'sin-definir'} value={v}>{ETIQUETA_ESTADO_LIMPIEZA[v]}</option>
+                ))}
+              </select>
+              <p className="text-xs text-text-muted mt-1">Material limpio: sin residuos. Material sucio: trae residuos. Sirve para separarlos en el inventario; si no lo indicas queda como “Sin definir”.</p>
+            </div>
+          )}
+
+          <div>
+            <label className={labelClass}>Lotes ancla <span className="text-text-muted">(opcional)</span></label>
+            <LotesPosiblesPicker lotes={lotesDisponibles} seleccionados={loteIds} onChange={setLoteIds} />
+          </div>
+
           {editando && (
             <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer select-none">
               <input
@@ -283,7 +335,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
             <div className="grid grid-cols-2 gap-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
               <div>
                 <label className={labelClass}>Peso (kg)</label>
-                <input type="number" step="0.01" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
+                <input type="number" step="0.001" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
               </div>
             </div>
           )}
@@ -424,7 +476,7 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
               Cancelar
             </button>
             <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
