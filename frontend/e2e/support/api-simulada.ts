@@ -48,6 +48,8 @@ export class ApiSimulada {
   readonly postsTicket: Array<Record<string, unknown>> = [];
   /** Tickets realmente CREADOS (despues de la idempotencia). */
   readonly ticketsCreados: Array<Record<string, unknown>> = [];
+  /** Peticiones que intentaron salir a un origen distinto del de pruebas (deben ser SIEMPRE 0). */
+  readonly bloqueadas: string[] = [];
   subidas = 0;
   conteosCreados = 0;
   proveedoresCreados = 0;
@@ -73,6 +75,7 @@ export class ApiSimulada {
     await context.route(url => { const r = new URL(url).pathname; return r.startsWith('/api/') || r === '/health'; }, route => this.manejar(route));
     // Cualquier otro origen externo (fuentes, analiticas, Supabase) se bloquea: aislamiento total.
     await context.route(url => new URL(url).origin !== this.origenPermitido && !/^(data|blob|about):/.test(url.href), route => {
+      this.bloqueadas.push(`${route.request().method()} ${route.request().url()}`);
       void route.abort('blockedbyclient');
     });
   }
@@ -252,6 +255,11 @@ export class ApiSimulada {
       const r = { id: `cdcdcdcd-0000-4000-8000-${String(this.conteosCreados).padStart(12, '0')}` };
       if (clave) this.resultadosPorClave.set(clave, r);
       return { status: 201, cuerpo: r };
+    }
+
+    // --- Completar ticket en bruto
+    if (/^\/api\/tickets-pesaje\/[^/]+\/completar$/.test(p) && metodo === 'PATCH') {
+      return ok({ ticket: { ...TICKETS_INICIALES[0], estado: 'completo' } });
     }
 
     // --- Pesaje: crear ticket (idempotente por clientRequestId)

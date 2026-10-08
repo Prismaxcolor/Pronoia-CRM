@@ -158,10 +158,12 @@ test.describe('l) Exportar e importar respaldo de la cola', () => {
     }));
     expect(await leerColaIndexedDB(page)).toHaveLength(0);
     await abrir(page, '/pendientes');
+    const dialogo = page.getByRole('dialog', { name: 'Importar respaldo' });
     await page.locator('input[type=file][accept*="json"]').setInputFiles(ruta);
+    await dialogo.getByRole('button', { name: /^Importar 1$/ }).click();
     await expect.poll(async () => (await leerColaIndexedDB(page)).map(o => o.id)).toContain(op.id);
 
-    // Importar dos veces el mismo archivo no duplica.
+    // Importar dos veces el mismo archivo no duplica (ya no hay nada nuevo: no se abre el dialogo).
     await page.locator('input[type=file][accept*="json"]').setInputFiles(ruta);
     await page.waitForTimeout(1_000);
     expect((await leerColaIndexedDB(page)).filter(o => o.id === op.id)).toHaveLength(1);

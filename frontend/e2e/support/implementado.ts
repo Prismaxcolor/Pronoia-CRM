@@ -29,7 +29,7 @@ export const IMPL = {
   cola: colaReal,
   pesajeEnCola: colaReal && contiene('features/pesaje/PesajePage.tsx', /encolar|lib\/offline\/cola/i),
   panelCola: colaReal && (existe('components/PanelCola.tsx') || existe('features/cola/ColaPage.tsx') || existe('components/ColaPendientes.tsx')),
-  importarCola: existe('features/pendientes/PendientesPage.tsx') && contiene('features/pendientes/PendientesPage.tsx', /importarCola/) && contiene('App.tsx', /\/pendientes/),
+  importarCola: existe('features/pendientes/PendientesPage.tsx') && contiene('features/pendientes/PendientesPage.tsx', /importarCola|prepararImportacion/) && contiene('App.tsx', /\/pendientes/),
   respaldoCola: colaReal && !contiene('lib/offline/cola.ts', /operaciones: \[\]/),
   /** F4. */
   tomaFisicaEnCola: colaReal && contiene('services/toma-fisica-service.ts', /toma-fisica-cola/),
