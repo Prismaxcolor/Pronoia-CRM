@@ -26,6 +26,7 @@ import {
 import EstadoCuentaFiltros from './EstadoCuentaFiltros';
 import EstadoCuentaKpis from './EstadoCuentaKpis';
 import EstadoCuentaTablaImpresion from './EstadoCuentaTablaImpresion';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // Lo pesado se carga aparte y después de los indicadores.
 const EstadoCuentaTabla = lazy(() => import('./EstadoCuentaTabla'));
@@ -200,24 +201,24 @@ function EstadoCuentaPage({ tipo }: Props) {
     <div data-compartir-imagen className="max-w-7xl">
       {/* Las migas son navegación: no se imprimen (el título y el nombre sí). */}
       <div className="print:[&_nav]:hidden">
-        <EncabezadoPagina
+        <EncabezadoPagina lecturas={LECTURAS.estadoCuenta}
           migas={[{ etiqueta: etiquetaEntidad, to: volverA }, { etiqueta: estado.entidad.nombre }]}
           titulo="Estado de cuenta"
           subtitulo={estado.entidad.nombre}
           acciones={(
             <div className="print:hidden flex flex-wrap items-center gap-2">
               {puedeAjustar && (
-                <BotonAccion variante="secundario" onClick={() => setNotaAbierta(true)} icono={<FileEdit size={16} />}>Nota crédito/débito</BotonAccion>
+                <BotonAccion soloEnLinea variante="secundario" onClick={() => setNotaAbierta(true)} icono={<FileEdit size={16} />}>Nota crédito/débito</BotonAccion>
               )}
               {puedePagar && (
                 <span title="Selecciona facturas y/o notas, cruzalas con adelantos y notas de crédito, o regístralo como adelanto">
-                  <BotonAccion onClick={() => setPagoAbierto(true)} icono={<DollarSign size={16} />}>{etiquetaAccionPago}</BotonAccion>
+                  <BotonAccion soloEnLinea onClick={() => setPagoAbierto(true)} icono={<DollarSign size={16} />}>{etiquetaAccionPago}</BotonAccion>
                 </span>
               )}
               <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
               {puedeAjustar && (
                 <span title="Manda el estado de cuenta (PDF) al Telegram vinculado">
-                  <BotonAccion variante="secundario" onClick={enviarPorTelegram} disabled={enviandoTelegram} icono={<Send size={16} />}>
+                  <BotonAccion soloEnLinea variante="secundario" onClick={enviarPorTelegram} disabled={enviandoTelegram} icono={<Send size={16} />}>
                     {enviandoTelegram ? 'Enviando...' : 'Enviar por Telegram'}
                   </BotonAccion>
                 </span>

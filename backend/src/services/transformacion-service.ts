@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { formatCodigoTransformacion } from '../utils/codigos.js';
 import { leerPaginado } from '../utils/paginacion.js';
 import { esErrorFuncionInexistente } from './ticket-principal.js';
+import { rpcConIdempotencia } from './rpc-idempotente.js';
 import { validarSalidasMixtasPorCategoria } from '../schemas/transformaciones.js';
 import { completarAlmacenSalidas } from '../utils/almacen-salida-transformacion.js';
 import { almacenPorDefectoSalidas } from './transformacion-almacen-salida-service.js';
@@ -366,15 +367,21 @@ export async function crearTransformacionFerroso(
   input: CrearTransformacionFerrosoInput,
   registradoPor: string
 ): Promise<{ transformacion: TransformacionPublica } | { error: string }> {
-  const { data: id, error } = await supabaseAdmin.rpc('crear_transformacion_ferroso', {
-    p_producto_entrada_id: input.productoEntradaId,
-    p_almacen_id: input.almacenId,
-    p_peso_bruto: input.pesoBruto,
-    p_tara: input.tara,
-    p_fecha: input.fecha,
-    p_notas: input.notas ?? null,
-    p_fotos_entrada: input.fotosEntrada,
-    p_registrado_por: registradoPor,
+  const { data: id, error } = await rpcConIdempotencia({
+    clientRequestId: input.clientRequestId,
+    capturadoEn: input.capturadoEn,
+    envoltorio: 'crear_transformacion_ferroso_idem',
+    original: 'crear_transformacion_ferroso',
+    args: {
+      p_producto_entrada_id: input.productoEntradaId,
+      p_almacen_id: input.almacenId,
+      p_peso_bruto: input.pesoBruto,
+      p_tara: input.tara,
+      p_fecha: input.fecha,
+      p_notas: input.notas ?? null,
+      p_fotos_entrada: input.fotosEntrada,
+      p_registrado_por: registradoPor,
+    },
   });
 
   if (error || !id) return { error: error?.message ?? 'No se pudo registrar la transformación.' };
@@ -459,15 +466,21 @@ export async function crearTransformacionPCB(
   input: CrearTransformacionPCBInput,
   registradoPor: string
 ): Promise<{ transformacion: TransformacionPublica } | { error: string }> {
-  const { data, error } = await supabaseAdmin.rpc('crear_transformacion_pcb', {
-    p_lote_origen_id: input.loteOrigenId,
-    p_peso_bruto: input.pesoBruto,
-    p_tara: input.tara,
-    p_fecha: input.fecha,
-    p_notas: input.notas,
-    p_fotos_entrada: input.fotosEntrada,
-    p_registrado_por: registradoPor,
-    p_almacen_id: input.almacenId,
+  const { data, error } = await rpcConIdempotencia({
+    clientRequestId: input.clientRequestId,
+    capturadoEn: input.capturadoEn,
+    envoltorio: 'crear_transformacion_pcb_idem',
+    original: 'crear_transformacion_pcb',
+    args: {
+      p_lote_origen_id: input.loteOrigenId,
+      p_peso_bruto: input.pesoBruto,
+      p_tara: input.tara,
+      p_fecha: input.fecha,
+      p_notas: input.notas,
+      p_fotos_entrada: input.fotosEntrada,
+      p_registrado_por: registradoPor,
+      p_almacen_id: input.almacenId,
+    },
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar la transformación.' };

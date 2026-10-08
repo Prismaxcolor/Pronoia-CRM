@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
 import { X, Loader2, ImagePlus, Camera } from 'lucide-react';
 import { completarTraslado } from '../../services/traslado-service';
-import { subirFotoTraslado } from '../../services/storage-service';
-import { comprimirImagen } from '../../lib/image-compress';
+import { iniciarEnvio, enviarOEncolar } from '../pesaje/pesaje-envio';
+import { mensajeGuardadoEnTelefono } from '../../lib/offline/cola-guardado';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Traslado } from '@shared/types/index.js';
 import AvisoBorrador from '../../components/AvisoBorrador';
@@ -32,6 +32,7 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const camaraRef = useRef<HTMLInputElement>(null);
   const [guardando, setGuardando] = useState(false);
+  const idEnvioRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Borrador de lo recibido por material y de las fotos de evidencia (los Blobs van a IndexedDB,
@@ -72,25 +73,31 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
 
     setGuardando(true);
 
-    const resultados = await Promise.all(
-      fotos.map(async f => subirFotoTraslado(await comprimirImagen(f.file)))
-    );
-    if (resultados.some(url => url === null)) {
-      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
+    const envio = iniciarEnvio(idEnvioRef.current);
+    idEnvioRef.current = envio.id;
+    const urls = await envio.subirFotos(fotos);
+    if (!urls) {
+      await envio.guardador?.descartar();
+      setError('No se pudieron guardar las fotos. Intenta de nuevo.');
       setGuardando(false);
       return;
     }
-    const urls = resultados as string[];
 
-    const result = await completarTraslado(
-      traslado.id,
-      traslado.materiales.map(m => ({ detalleId: m.id, pesoRecibido: Number(recibido[m.id]) || 0 })),
-      urls
-    );
+    const recepciones = traslado.materiales.map(m => ({ detalleId: m.id, pesoRecibido: Number(recibido[m.id]) || 0 }));
+    const r = await enviarOEncolar({
+      envio,
+      tipo: 'traslado_completar',
+      endpoint: `/api/traslados/${traslado.id}/completar`,
+      metodo: 'PATCH',
+      payload: { recepciones, fotos: urls },
+      descripcion: `Recepción de ${traslado.codigo}`,
+      enviarEnLinea: c => completarTraslado(traslado.id, recepciones, urls, { clientRequestId: c.clientRequestId, capturadoEn: c.capturadoEn }),
+    });
     setGuardando(false);
 
-    if ('error' in result) { setError(result.error); return; }
-    toast.exito(`${result.traslado.codigo} recepcionado.`);
+    if (r.tipo === 'error') { setError(r.mensaje); return; }
+    idEnvioRef.current = null;
+    toast.exito(r.tipo === 'encolado' ? mensajeGuardadoEnTelefono(`Recepción de ${traslado.codigo}`) : `${r.resultado.traslado.codigo} recepcionado.`);
     onCompletado();
     cerrar();
   };

@@ -7,8 +7,9 @@ import {
   archivarBanca,
   desarchivarBanca,
   crearMovimiento,
+  obtenerDetalleMovimiento,
 } from '../services/banca-service.js';
-import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import { anularMovimientoBanca, editarMovimientoBanca } from '../services/movimiento-edicion-service.js';
 import { anularTransaccionSchema, editarMovimientoSchema, type EditarMovimientoInput } from '../schemas/transacciones-editar.js';
@@ -104,6 +105,20 @@ router.post('/bancas/:id/desarchivar', requirePermiso('cochinito', 'editar'), as
 router.get('/movimientos', requirePermiso('cochinito', 'ver'), async (_req, res) => {
   const movimientos = await listarMovimientos();
   res.json({ movimientos });
+});
+
+// Detalle de un movimiento con los nombres resueltos. Los nombres de proveedor y cliente solo se
+// incluyen si quien consulta puede verlos (mismo criterio que la tabla).
+router.get('/movimientos/:id', validarUuidParam('id'), requirePermiso('cochinito', 'ver'), async (req, res) => {
+  const detalle = await obtenerDetalleMovimiento(String(req.params.id), {
+    verProveedores: reqTienePermiso(req, 'proveedores', 'ver'),
+    verClientes: reqTienePermiso(req, 'clientes', 'ver'),
+  });
+  if (!detalle) {
+    res.status(404).json({ error: 'Movimiento no encontrado.' });
+    return;
+  }
+  res.json(detalle);
 });
 
 router.post(

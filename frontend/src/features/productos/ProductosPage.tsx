@@ -28,6 +28,7 @@ import ProductosTarjetas from './ProductosTarjetas';
 import { TIPO_INSIGNIA } from './productos-tipos';
 import type { AccionesComunes } from './AccionesProducto';
 import type { Producto, TipoProducto } from '@shared/types/index.js';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // Lo pesado se carga después de los indicadores.
 const ProductosDona = lazy(() => import('./ProductosDona'));
@@ -178,7 +179,7 @@ function ProductosPage() {
   };
 
   const encabezado = (
-    <EncabezadoPagina
+    <EncabezadoPagina lecturas={LECTURAS.catalogos}
       titulo="Productos"
       subtitulo="Los materiales que se pesan, se compran y se venden: su categoría, su estado y a qué lotes pertenecen."
       acciones={
@@ -189,7 +190,7 @@ function ProductosPage() {
             </BotonAccion>
           )}
           {puedeCrear && (
-            <BotonAccion icono={<Plus size={16} />} onClick={() => setFormAbierto({ abierto: true, producto: null })}>
+            <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setFormAbierto({ abierto: true, producto: null })}>
               Nuevo producto
             </BotonAccion>
           )}

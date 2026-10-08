@@ -10,6 +10,7 @@ import KpisInventario, { KpisSkeleton } from './nuevo/KpisInventario';
 import ProximoContenedor from './nuevo/ProximoContenedor';
 import TablaDetalleInventario from './nuevo/TablaDetalleInventario';
 import { BotonAccion, EncabezadoPagina, SkeletonBloque } from '../../components/ui';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // Orden de la pantalla: filtros -> KPIs -> detalle -> vistas -> alertas -> próximo contenedor.
 // El detalle se importa directo (sin lazy ni retardo) para que se vea de inmediato; lo demás se carga aparte.
@@ -54,7 +55,7 @@ function InventarioNuevoPage() {
 
   return (
     <div className="max-w-7xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.inventario}
         titulo="Inventario"
         subtitulo="Cuánto hay, dónde está, qué está listo para salir y qué se pierde en el proceso."
         acciones={

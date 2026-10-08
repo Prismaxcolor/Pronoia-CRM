@@ -3,6 +3,7 @@
 
 import type { Banca, Movimiento } from '@shared/types/index.js';
 import { formatearFechaCorta } from './formato';
+import { colorDeBanca } from './color-banca';
 
 export const TIPOS_MOVIMIENTO = ['ingreso', 'egreso', 'transferencia'] as const;
 export const SUBTIPOS_EGRESO = ['pago', 'adelanto'] as const;
@@ -201,13 +202,16 @@ export interface SaldoBanca {
   nombre: string;
   moneda: string;
   saldo: number;
+  /** Hex ya resuelto (el de la banca o un gris neutro según su posición en `bancas`). */
+  color: string;
 }
 
 /** Saldos de las bancas activas, ordenados de mayor a menor dentro de cada moneda. */
 export function saldosPorBanca(bancas: readonly Banca[]): SaldoBanca[] {
   return bancas
-    .filter(b => !b.archivada)
-    .map(b => ({ id: b.id, nombre: b.nombre, moneda: b.moneda, saldo: b.saldo }))
+    .map((b, i) => ({ b, i }))
+    .filter(({ b }) => !b.archivada)
+    .map(({ b, i }) => ({ id: b.id, nombre: b.nombre, moneda: b.moneda, saldo: b.saldo, color: colorDeBanca(b, i) }))
     .sort((a, b) => a.moneda.localeCompare(b.moneda) || b.saldo - a.saldo);
 }
 

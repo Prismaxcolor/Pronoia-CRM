@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { clienteOperacionCampos } from './cliente-operacion.js';
 
 /** Una línea de material del traslado. El peso neto enviado lo calcula la BD.
  *  Cada línea lleva su propia foto — mismo criterio que el pesaje de compra/venta. */
@@ -37,6 +38,7 @@ export const loteTrasladoSchema = z
 
 export const crearTrasladoSchema = z
   .object({
+    ...clienteOperacionCampos,
     almacenOrigenId: z.string().uuid('Almacén de origen inválido.'),
     almacenDestinoId: z.string().uuid('Almacén de destino inválido.'),
     materiales: z.array(materialTrasladoSchema).default([]),
@@ -70,6 +72,7 @@ export const crearTrasladoSchema = z
 /** Recepción de un traslado pendiente: cuánto llegó realmente por línea de
  *  material (puede diferir de lo enviado) + evidencia fotográfica obligatoria. */
 export const completarTrasladoSchema = z.object({
+  ...clienteOperacionCampos,
   recepciones: z
     .array(
       z.object({

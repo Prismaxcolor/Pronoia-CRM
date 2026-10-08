@@ -93,7 +93,7 @@ function TomaFisicaPanel() {
           </p>
         </div>
         {puedeCrear && (
-          <BotonAccion onClick={() => setModalAbierto(true)} icono={<Plus size={18} />}>Nueva toma física</BotonAccion>
+          <BotonAccion soloEnLinea onClick={() => setModalAbierto(true)} icono={<Plus size={18} />}>Nueva toma física</BotonAccion>
         )}
       </div>
 

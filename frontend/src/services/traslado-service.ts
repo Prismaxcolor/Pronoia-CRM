@@ -1,4 +1,6 @@
-import { apiFetch } from './api-client';
+import { apiFetch, esErrorDeRed } from './api-client';
+import { leerGet } from './lectura-service';
+import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
 import type { Traslado } from '@shared/types/index.js';
 
 export interface CrearTrasladoMaterialInput {
@@ -25,6 +27,10 @@ export interface CrearTrasladoInput {
   /** Placa/identificador del vehículo que hace el traslado. */
   vehiculo?: string | null;
   observaciones?: string | null;
+  /** Identificador de la operación (modo sin conexión): hace seguro un reintento. */
+  clientRequestId?: string;
+  /** Momento real (ISO) en que se hizo la operación. */
+  capturadoEn?: string;
 }
 
 export interface RecepcionMaterialInput {
@@ -34,7 +40,9 @@ export interface RecepcionMaterialInput {
 
 export async function obtenerTraslados(): Promise<Traslado[]> {
   try {
-    const { traslados } = await apiFetch<{ traslados: Traslado[] }>('/api/traslados');
+    const { traslados } = await leerGet<{ traslados: Traslado[] }>('/api/traslados', {
+      recortar: d => recortarCampo(d, 'traslados', f => ultimasFilas(f as Traslado[], LIMITES_CACHE.maxTraslados, t => t.createdAt)),
+    });
     return traslados;
   } catch {
     return [];
@@ -43,7 +51,7 @@ export async function obtenerTraslados(): Promise<Traslado[]> {
 
 export async function obtenerTraslado(id: string): Promise<Traslado | null> {
   try {
-    const { traslado } = await apiFetch<{ traslado: Traslado }>(`/api/traslados/${id}`);
+    const { traslado } = await leerGet<{ traslado: Traslado }>(`/api/traslados/${id}`);
     return traslado;
   } catch {
     return null;
@@ -52,7 +60,7 @@ export async function obtenerTraslado(id: string): Promise<Traslado | null> {
 
 export async function crearTraslado(
   input: CrearTrasladoInput
-): Promise<{ traslado: Traslado } | { error: string }> {
+): Promise<{ traslado: Traslado } | { error: string; red?: true }> {
   try {
     const { traslado } = await apiFetch<{ traslado: Traslado }>('/api/traslados', {
       method: 'POST',
@@ -60,23 +68,31 @@ export async function crearTraslado(
     });
     return { traslado };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo guardar el traslado.' };
+    return {
+      error: err instanceof Error ? err.message : 'No se pudo guardar el traslado.',
+      ...(esErrorDeRed(err) ? { red: true as const } : {}),
+    };
   }
 }
 
 export async function completarTraslado(
   id: string,
   recepciones: RecepcionMaterialInput[],
-  fotos: string[]
-): Promise<{ traslado: Traslado } | { error: string }> {
+  fotos: string[],
+  /** Identidad de la operación (modo sin conexión): reintentos seguros. */
+  identidad: { clientRequestId?: string; capturadoEn?: string } = {}
+): Promise<{ traslado: Traslado } | { error: string; red?: true }> {
   try {
     const { traslado } = await apiFetch<{ traslado: Traslado }>(`/api/traslados/${id}/completar`, {
       method: 'PATCH',
-      body: { recepciones, fotos },
+      body: { recepciones, fotos, ...identidad },
     });
     return { traslado };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo completar el traslado.' };
+    return {
+      error: err instanceof Error ? err.message : 'No se pudo completar el traslado.',
+      ...(esErrorDeRed(err) ? { red: true as const } : {}),
+    };
   }
 }
 

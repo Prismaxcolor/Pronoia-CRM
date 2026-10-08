@@ -23,6 +23,7 @@ import { anularMovimiento } from '../../services/transaccion-edicion-service';
 import KpisCochinito from './KpisCochinito';
 import SaldosBancas from './SaldosBancas';
 import TarjetaBanca from './TarjetaBanca';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // Lo pesado se carga aparte y después de los indicadores.
 const BloquesGraficas = lazy(() => import('./BloquesGraficas'));
@@ -198,7 +199,7 @@ function CochinitPage() {
   if (cargando) {
     return (
       <div className="max-w-7xl" aria-busy="true">
-        <EncabezadoPagina titulo="Wallet" subtitulo="Cargando la tesorería de Pronoia…" />
+        <EncabezadoPagina lecturas={LECTURAS.cochinito} titulo="Wallet" subtitulo="Cargando la tesorería de Pronoia…" />
         <SkeletonBloque alto="h-20" conMargen etiqueta="Cargando filtros" />
         <SkeletonKpis />
         <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando bancas" />
@@ -220,10 +221,10 @@ function CochinitPage() {
 
   return (
     <div className="max-w-7xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.cochinito}
         titulo="Wallet"
         subtitulo={`Tesorería de Pronoia: cuánto hay en cada banca, qué se ha pagado y a cuánto está la tasa de cambio. ${bancas.filter(b => !b.archivada).length} bancas activas.`}
-        acciones={puedeCrear ? <BotonAccion icono={<Plus size={16} />} onClick={() => setModalAbierto(true)}>Nuevo movimiento</BotonAccion> : undefined}
+        acciones={puedeCrear ? <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setModalAbierto(true)}>Nuevo movimiento</BotonAccion> : undefined}
       />
 
       <FiltrosBarra
@@ -264,7 +265,7 @@ function CochinitPage() {
               <input type="checkbox" checked={mostrarArchivadas} onChange={e => setMostrarArchivadas(e.target.checked)} className="h-4 w-4 accent-brand-600" />
               Ver archivadas
             </label>
-            {puedeCrear && <BotonAccion variante="secundario" icono={<Plus size={14} />} onClick={abrirNuevaBanca}>Nueva banca</BotonAccion>}
+            {puedeCrear && <BotonAccion soloEnLinea variante="secundario" icono={<Plus size={14} />} onClick={abrirNuevaBanca}>Nueva banca</BotonAccion>}
           </div>
         }
       >
@@ -273,15 +274,16 @@ function CochinitPage() {
             icono={<Wallet size={28} />}
             mensaje="Aún no hay bancas registradas"
             descripcion="Una banca es un lugar donde Pronoia guarda dinero: una caja de efectivo, un banco o un exchange."
-            accion={puedeCrear ? { etiqueta: 'Crear la primera banca', onClick: abrirNuevaBanca } : undefined}
+            accion={puedeCrear ? { etiqueta: 'Crear la primera banca', onClick: abrirNuevaBanca, soloEnLinea: true } : undefined}
           />
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-3">
-              {bancas.map(banca => (
+              {bancas.map((banca, i) => (
                 <TarjetaBanca
                   key={banca.id}
                   banca={banca}
+                  indice={i}
                   seleccionada={bancaFiltro === banca.id}
                   onAlternarFiltro={() => cambiar({ banca: bancaFiltro === banca.id ? undefined : banca.id })}
                   onEditar={puedeEditar ? () => setModalBanca({ abierto: true, banca }) : undefined}

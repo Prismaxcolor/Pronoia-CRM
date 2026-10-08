@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X } from 'lucide-react';
 import { crearTara, actualizarTara } from '../../services/tara-service';
 import { subirFotoTara } from '../../services/storage-service';
@@ -36,7 +37,8 @@ function TaraFormModal({ tara, onClose, onGuardado }: Props) {
 
     setGuardando(true);
 
-    const urls = await subirFotosLocal(fotos, subirFotoTara);
+    const enCola = !editando && altaEnColaActiva();
+    const urls = enCola ? [] : await subirFotosLocal(fotos, subirFotoTara);
     if (!urls) {
       setError('Error al subir una de las fotos. Intenta de nuevo.');
       setGuardando(false);
@@ -45,12 +47,12 @@ function TaraFormModal({ tara, onClose, onGuardado }: Props) {
 
     const result = editando && tara
       ? await actualizarTara(tara.id, { nombre, peso, fotos: urls })
-      : await crearTara({ nombre, peso, fotos: urls });
+      : await crearTara({ nombre, peso, fotos: urls }, enCola ? fotos : undefined);
 
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    toast.exito(editando ? `Tara "${result.tara.nombre}" actualizada.` : `Tara "${result.tara.nombre}" creada.`);
+    toast.exito(editando ? `Tara "${result.tara.nombre}" actualizada.` : `Tara "${result.tara.nombre}" ${'enCola' in result ? 'guardada en el teléfono; se enviará al volver la conexión' : 'creada'}.`);
     onGuardado();
   };
 

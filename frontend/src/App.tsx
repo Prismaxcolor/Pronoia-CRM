@@ -10,7 +10,10 @@ import { PesajeBorradorProvider } from './hooks/use-pesaje-borrador';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import InstallPwaBanner from './components/InstallPwaBanner';
+import AvisoNuevaVersion from './components/AvisoNuevaVersion';
+import PrecargaCatalogos from './components/PrecargaCatalogos';
 import PantallaCargando from './components/PantallaCargando';
+import RequiereConexion from './components/RequiereConexion';
 import { elegirRutaInicial } from './lib/ruta-inicial';
 import { consumirRutaDeRegreso } from './lib/ruta-de-regreso';
 import AuthPage from './features/auth/AuthPage';
@@ -86,6 +89,7 @@ const TransformacionesPage = lazyConReintento(() => import('./features/transform
 const TransformacionDetallePage = lazyConReintento(() => import('./features/transformaciones/TransformacionDetallePage'));
 const MermaPage = lazyConReintento(() => import('./features/transformaciones/MermaPage'));
 const CochinitPage = lazyConReintento(() => import('./features/cochinito/CochinitPage'));
+const MovimientoDetallePage = lazyConReintento(() => import('./features/cochinito/MovimientoDetallePage'));
 const UsuariosPage = lazyConReintento(() => import('./features/usuarios/UsuariosPage'));
 const ClientesPage = lazyConReintento(() => import('./features/clientes/ClientesPage'));
 const ProveedoresPage = lazyConReintento(() => import('./features/proveedores/ProveedoresPage'));
@@ -97,6 +101,7 @@ const PackingListsPage = lazyConReintento(() => import('./features/packing-list/
 const PackingListEditorPage = lazyConReintento(() => import('./features/packing-list/PackingListEditorPage'));
 const VehiculosPage = lazyConReintento(() => import('./features/vehiculos/VehiculosPage'));
 const PesajePage = lazyConReintento(() => import('./features/pesaje/PesajePage'));
+const PendientesPage = lazyConReintento(() => import('./features/pendientes/PendientesPage'));
 const TicketDetallePage = lazyConReintento(() => import('./features/pesaje/TicketDetallePage'));
 const FacturaHistorialPage = lazyConReintento(() => import('./features/facturas/FacturaHistorialPage'));
 const FacturaFormPage = lazyConReintento(() => import('./features/facturas/FacturaFormPage'));
@@ -180,7 +185,7 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/portal/*" element={<PortalRoutes />} />
+      <Route path="/portal/*" element={<RequiereConexion seccion="El portal"><PortalRoutes /></RequiereConexion>} />
       <Route path="/auth" element={usuario ? <RegresoTrasLogin /> : <AuthPage />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route element={<SalidaConSuspense />}>
@@ -203,6 +208,7 @@ function AppRoutes() {
         {/* "Lotes" pasó a ser una pestaña dentro de Inventario — se mantiene el
          *  redirect por si alguien tiene el link viejo guardado. */}
         <Route path="/lotes" element={<Navigate to="/inventario-legacy?pestana=lotes" replace />} />
+        <Route path="/pendientes" element={<PendientesPage />} />
         <Route path="/pesaje" element={<ProtectedRoute recurso="pesaje"><PesajePage /></ProtectedRoute>} />
         <Route path="/pesaje/:id" element={<ProtectedRoute recurso="pesaje"><TicketDetallePage /></ProtectedRoute>} />
         <Route path="/pesaje/conteo/:tomaFisicaId" element={<ProtectedRoute recurso="toma_fisica"><ConteoTomaFisicaPage /></ProtectedRoute>} />
@@ -213,6 +219,7 @@ function AppRoutes() {
         <Route path="/ventas/nueva" element={<ProtectedRoute recurso="facturacion"><FacturaFormPage tipo="venta" /></ProtectedRoute>} />
         <Route path="/ventas/:id" element={<ProtectedRoute recurso="facturacion"><FacturaDetallePage tipo="venta" /></ProtectedRoute>} />
         <Route path="/cochinito" element={<ProtectedRoute recurso="cochinito"><CochinitPage /></ProtectedRoute>} />
+        <Route path="/cochinito/movimientos/:id" element={<ProtectedRoute recurso="cochinito"><MovimientoDetallePage /></ProtectedRoute>} />
         <Route path="/clientes" element={<ProtectedRoute recurso="clientes"><ClientesPage /></ProtectedRoute>} />
         <Route path="/clientes/:id/estado-cuenta" element={<ProtectedRoute recurso="clientes"><EstadoCuentaPage tipo="cliente" /></ProtectedRoute>} />
         <Route path="/clientes/:entidadId/notas/:notaId" element={<ProtectedRoute recurso="clientes"><NotaDetallePage tipoEntidad="cliente" /></ProtectedRoute>} />
@@ -221,9 +228,9 @@ function AppRoutes() {
         <Route path="/proveedores/:id/estado-cuenta" element={<ProtectedRoute recurso="proveedores"><EstadoCuentaPage tipo="proveedor" /></ProtectedRoute>} />
         <Route path="/proveedores/:entidadId/notas/:notaId" element={<ProtectedRoute recurso="proveedores"><NotaDetallePage tipoEntidad="proveedor" /></ProtectedRoute>} />
         <Route path="/proveedores/:entidadId/pagos/:grupoId" element={<ProtectedRoute recurso="proveedores"><PagoDetallePage tipoEntidad="proveedor" /></ProtectedRoute>} />
-        <Route path="/usuarios" element={<ProtectedRoute recurso="usuarios"><UsuariosPage /></ProtectedRoute>} />
-        <Route path="/aprobar-llave/:id" element={<AprobarLlavePage />} />
-        <Route path="/solicitudes-llave" element={<SolicitudesLlavePage />} />
+        <Route path="/usuarios" element={<ProtectedRoute recurso="usuarios"><RequiereConexion seccion="Usuarios"><UsuariosPage /></RequiereConexion></ProtectedRoute>} />
+        <Route path="/aprobar-llave/:id" element={<RequiereConexion seccion="Aprobar llave"><AprobarLlavePage /></RequiereConexion>} />
+        <Route path="/solicitudes-llave" element={<RequiereConexion seccion="Solicitudes de llave"><SolicitudesLlavePage /></RequiereConexion>} />
         <Route path="/citas" element={<ProtectedRoute recurso="despachos"><CitasPage /></ProtectedRoute>} />
         </Route>
       </Route>
@@ -242,6 +249,8 @@ function App() {
               <PesajeBorradorProvider>
                 <AppRoutes />
                 <InstallPwaBanner />
+                <AvisoNuevaVersion />
+                <PrecargaCatalogos />
               </PesajeBorradorProvider>
             </PortalAuthProvider>
           </AuthProvider>

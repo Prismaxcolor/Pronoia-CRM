@@ -1,4 +1,6 @@
-import { apiFetch } from './api-client';
+import { apiFetch, esErrorDeRed } from './api-client';
+import { leerGet } from './lectura-service';
+import { recortarCampo, ticketsParaCache } from '../lib/offline/lectura-logica';
 import type { TaraDetalle, TicketPesaje } from '@shared/types/index.js';
 
 export interface CrearTicketMaterialInput {
@@ -44,6 +46,10 @@ export interface CrearTicketInput {
   observaciones?: string | null;
   /** Placa/identificador del vehículo que trajo o se llevó el material. */
   vehiculo?: string | null;
+  /** Identificador de la operación (modo sin conexión): hace seguro un reintento. */
+  clientRequestId?: string;
+  /** Momento real (ISO) en que se hizo la operación. */
+  capturadoEn?: string;
 }
 
 export interface ObtenerTicketsOpts {
@@ -61,8 +67,9 @@ export async function obtenerTickets(opts: ObtenerTicketsOpts = {}): Promise<Tic
   if (opts.estado) params.set('estado', opts.estado);
   const qs = params.toString();
   try {
-    const { tickets } = await apiFetch<{ tickets: TicketPesaje[] }>(
-      `/api/tickets-pesaje${qs ? `?${qs}` : ''}`
+    const { tickets } = await leerGet<{ tickets: TicketPesaje[] }>(
+      `/api/tickets-pesaje${qs ? `?${qs}` : ''}`,
+      { recortar: d => recortarCampo(d, 'tickets', f => ticketsParaCache(f as TicketPesaje[], !!opts.soloNoFacturados || opts.estado === 'bruto', Date.now())) },
     );
     return tickets;
   } catch {
@@ -72,7 +79,7 @@ export async function obtenerTickets(opts: ObtenerTicketsOpts = {}): Promise<Tic
 
 export async function obtenerTicket(id: string): Promise<TicketPesaje | null> {
   try {
-    const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}`);
+    const { ticket } = await leerGet<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}`);
     return ticket;
   } catch {
     return null;
@@ -81,7 +88,7 @@ export async function obtenerTicket(id: string): Promise<TicketPesaje | null> {
 
 export async function crearTicket(
   input: CrearTicketInput
-): Promise<{ ticket: TicketPesaje } | { error: string }> {
+): Promise<{ ticket: TicketPesaje } | { error: string; red?: true }> {
   try {
     const { ticket } = await apiFetch<{ ticket: TicketPesaje }>('/api/tickets-pesaje', {
       method: 'POST',
@@ -89,7 +96,10 @@ export async function crearTicket(
     });
     return { ticket };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo guardar el ticket.' };
+    return {
+      error: err instanceof Error ? err.message : 'No se pudo guardar el ticket.',
+      ...(esErrorDeRed(err) ? { red: true as const } : {}),
+    };
   }
 }
 
@@ -102,23 +112,46 @@ export async function completarTicket(
    *  viene vacío no se envía el campo (mismo request de siempre). */
   ticketsUnidosIds: string[] = [],
   /** Notas opcionales al completar; si vienen vacías no se envía el campo. */
-  notas = ''
-): Promise<{ ticket: TicketPesaje } | { error: string }> {
+  notas = '',
+  /** Identidad de la operación (modo sin conexión): reintentos seguros. */
+  identidad: IdentidadOperacion = {}
+): Promise<{ ticket: TicketPesaje } | { error: string; red?: true }> {
   try {
     const { ticket } = await apiFetch<{ ticket: TicketPesaje }>(`/api/tickets-pesaje/${id}/completar`, {
       method: 'PATCH',
-      body: {
-        materiales,
-        devolucion,
-        fotosDevolucion,
-        ...(ticketsUnidosIds.length > 0 ? { ticketsUnidosIds } : {}),
-        ...(notas.trim() ? { notas: notas.trim() } : {}),
-      },
+      body: cuerpoCompletarTicket(materiales, devolucion, fotosDevolucion, ticketsUnidosIds, notas, identidad),
     });
     return { ticket };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo completar el ticket.' };
+    return {
+      error: err instanceof Error ? err.message : 'No se pudo completar el ticket.',
+      ...(esErrorDeRed(err) ? { red: true as const } : {}),
+    };
   }
+}
+
+export interface IdentidadOperacion {
+  clientRequestId?: string;
+  capturadoEn?: string;
+}
+
+/** Cuerpo del PATCH de completar (también es lo que se guarda en la cola sin conexión). */
+export function cuerpoCompletarTicket(
+  materiales: CrearTicketMaterialInput[],
+  devolucion = 0,
+  fotosDevolucion: string[] = [],
+  ticketsUnidosIds: string[] = [],
+  notas = '',
+  identidad: IdentidadOperacion = {}
+) {
+  return {
+    materiales,
+    devolucion,
+    fotosDevolucion,
+    ...(ticketsUnidosIds.length > 0 ? { ticketsUnidosIds } : {}),
+    ...(notas.trim() ? { notas: notas.trim() } : {}),
+    ...identidad,
+  };
 }
 
 /** Qué pasó con la factura del ticket editado (la decide el backend). */

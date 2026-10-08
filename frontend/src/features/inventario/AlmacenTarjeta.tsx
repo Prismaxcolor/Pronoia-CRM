@@ -3,6 +3,7 @@ import { Eye, EyeOff, Image as ImagenIcono, Pencil, Star, Warehouse } from 'luci
 import { BarraProgreso, Insignia, formatearFecha, formatearKg, formatearNumero } from '../../components/ui';
 import type { TarjetaAlmacen } from '../../lib/almacenes-kpis';
 import type { Almacen } from '@shared/types/index.js';
+import { useSoloEnLinea } from '../../lib/offline/solo-en-linea';
 
 interface Props {
   tarjeta: TarjetaAlmacen;
@@ -20,6 +21,7 @@ const BOTON_ICONO = 'rounded-md p-1.5 text-text-muted transition-colors hover:bg
 
 /** Tarjeta de un almacén: imagen, kg, última toma física y las acciones de siempre. */
 function AlmacenTarjeta({ tarjeta, puedeEditar, puedeVerKg, onVerFotos, onEditar, onDesactivar, onReactivar, onPredeterminado }: Props) {
+  const { props: soloEnLinea } = useSoloEnLinea();
   const a = tarjeta.almacen;
   const foto = a.fotos[0];
   return (
@@ -97,15 +99,15 @@ function AlmacenTarjeta({ tarjeta, puedeEditar, puedeVerKg, onVerFotos, onEditar
             )}
             {puedeEditar && (
               <>
-                <button type="button" onClick={() => onEditar(a)} title="Editar almacén" aria-label={`Editar ${a.nombre}`} className={`${BOTON_ICONO} hover:text-brand-600`}>
+                <button type="button" onClick={() => onEditar(a)} {...soloEnLinea(false, 'Editar almacén')} aria-label={`Editar ${a.nombre}`} className={`${BOTON_ICONO} hover:text-brand-600`}>
                   <Pencil size={15} aria-hidden="true" />
                 </button>
                 {a.activo ? (
-                  <button type="button" onClick={() => onDesactivar(a)} title="Desactivar" aria-label={`Desactivar ${a.nombre}`} className={`${BOTON_ICONO} hover:text-amber-600`}>
+                  <button type="button" onClick={() => onDesactivar(a)} {...soloEnLinea(false, 'Desactivar')} aria-label={`Desactivar ${a.nombre}`} className={`${BOTON_ICONO} hover:text-amber-600`}>
                     <EyeOff size={15} aria-hidden="true" />
                   </button>
                 ) : (
-                  <button type="button" onClick={() => onReactivar(a)} title="Reactivar" aria-label={`Reactivar ${a.nombre}`} className={`${BOTON_ICONO} hover:text-brand-700`}>
+                  <button type="button" onClick={() => onReactivar(a)} {...soloEnLinea(false, 'Reactivar')} aria-label={`Reactivar ${a.nombre}`} className={`${BOTON_ICONO} hover:text-brand-700`}>
                     <Eye size={15} aria-hidden="true" />
                   </button>
                 )}

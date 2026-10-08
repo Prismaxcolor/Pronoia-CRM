@@ -1,4 +1,9 @@
 import { apiFetch } from './api-client';
+import { altaMaestroF4, fotosYaSubidas, provisionalesDeMaestro } from './maestros-cola';
+import { offlineHabilitado } from '../lib/offline/sesion';
+import type { FotoLocal } from '../lib/foto-picker';
+import { leerGet } from './lectura-service';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import type { Almacen } from '@shared/types/index.js';
 
 export interface AlmacenInput {
@@ -9,17 +14,20 @@ export interface AlmacenInput {
 
 export async function obtenerAlmacenes(): Promise<Almacen[]> {
   try {
-    const { almacenes } = await apiFetch<{ almacenes: Almacen[] }>('/api/almacenes');
-    return almacenes;
+    const { datos } = await obtenerCatalogo('almacenes', async () => {
+      const { almacenes } = await apiFetch<{ almacenes: Almacen[] }>('/api/almacenes');
+      return almacenes;
+    });
+    return [...datos, ...(await provisionalesDeMaestro<Almacen>('almacen'))];
   } catch {
-    return [];
+    return provisionalesDeMaestro<Almacen>('almacen');
   }
 }
 
 /** Stock actual (kg) por productoId en un almacén, derivado de traslados completados. */
 export async function obtenerStockAlmacen(almacenId: string): Promise<Map<string, number>> {
   try {
-    const { stock } = await apiFetch<{ stock: Record<string, number> }>(`/api/almacenes/${almacenId}/stock`);
+    const { stock } = await leerGet<{ stock: Record<string, number> }>(`/api/almacenes/${almacenId}/stock`);
     return new Map(Object.entries(stock));
   } catch {
     return new Map();
@@ -31,14 +39,20 @@ export async function obtenerStockAlmacen(almacenId: string): Promise<Map<string
  *  bloquea la operación. */
 export async function obtenerStockGlobal(): Promise<Map<string, number>> {
   try {
-    const { stock } = await apiFetch<{ stock: Record<string, number> }>('/api/almacenes/stock-global');
+    const { stock } = await leerGet<{ stock: Record<string, number> }>('/api/almacenes/stock-global');
     return new Map(Object.entries(stock));
   } catch {
     return new Map();
   }
 }
 
-export async function crearAlmacen(input: AlmacenInput): Promise<{ almacen: Almacen } | { error: string }> {
+export async function crearAlmacen(input: AlmacenInput, fotosLocales?: FotoLocal[]): Promise<{ almacen: Almacen; enCola?: true } | { error: string }> {
+  if (offlineHabilitado()) {
+    const { fotos, ...datos } = input;
+    const r = await altaMaestroF4<Almacen>('almacen', datos, fotosLocales ?? fotosYaSubidas(fotos));
+    if ('error' in r) return r;
+    return { almacen: r.entidad, ...(r.enCola ? { enCola: true as const } : {}) };
+  }
   try {
     const { almacen } = await apiFetch<{ almacen: Almacen }>('/api/almacenes', {
       method: 'POST',

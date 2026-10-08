@@ -1,3 +1,4 @@
+import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearProductoInput, ActualizarProductoInput } from '../schemas/productos.js';
 import { logger } from '../utils/logger.js';
@@ -166,7 +167,7 @@ export async function listarProductos(): Promise<ProductoPublico[]> {
 }
 
 export async function crearProducto(
-  input: CrearProductoInput,
+  input: CrearProductoInput & MetaOperacion,
   creadoPor: string
 ): Promise<{ producto: ProductoPublico } | { error: string }> {
   const errorLimpieza = await validarEstadoLimpieza(input);
@@ -185,7 +186,7 @@ export async function crearProducto(
   row.orden = ((primero as { orden: number } | null)?.orden ?? 0) - 1;
 
   const { data, error } = await conToleranciaLimpieza(row, fila =>
-    supabaseAdmin.from('productos').insert(fila).select(SELECT_PRODUCTO).single()
+    insertarMaestroIdempotente<ProductoRow>('productos', fila, { ...{ clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn }, columnas: SELECT_PRODUCTO })
   );
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el producto.' };

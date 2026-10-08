@@ -13,6 +13,7 @@ import {
 import { coincideEstadoActivo, coincideTexto, kpisVehiculos } from '../../lib/catalogos-kpis';
 import { etiquetaVehiculo } from '../../lib/vehiculo';
 import type { Vehiculo } from '@shared/types/index.js';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 /** Datos secundarios en una línea: marca, modelo, color, chofer y descripción. */
 function detalle(v: Vehiculo): string {
@@ -82,11 +83,11 @@ function VehiculosPage() {
 
   return (
     <div>
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.vehiculos}
         titulo="Vehículos"
         subtitulo="Lista de vehículos propios (global) para elegir al pesar. Los vehículos de terceros se escriben a mano en el pesaje y no se guardan aquí."
         acciones={puedeCrear ? (
-          <BotonAccion onClick={() => setFormAbierto({ abierto: true, vehiculo: null })} icono={<Plus size={18} aria-hidden="true" />}>Nuevo vehículo</BotonAccion>
+          <BotonAccion soloEnLinea onClick={() => setFormAbierto({ abierto: true, vehiculo: null })} icono={<Plus size={18} aria-hidden="true" />}>Nuevo vehículo</BotonAccion>
         ) : undefined}
       />
 

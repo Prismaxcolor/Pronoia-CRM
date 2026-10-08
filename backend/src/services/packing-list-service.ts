@@ -14,6 +14,7 @@ import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { mensajeDeErrorBd } from '../utils/errores-bd.js';
 import { logger } from '../utils/logger.js';
 import { nombresDeUsuarios } from './autoria-documento.js';
+import { rpcConIdempotencia } from './rpc-idempotente.js';
 
 export const MENSAJE_PACKING_NO_HABILITADO =
   'Esta función aún no está habilitada en la base de datos (falta aplicar migration_packing_list.sql).';
@@ -186,13 +187,24 @@ export async function guardarPackingList(
     peso_bruto: redondear2(i.pesoBruto),
     peso_paleta: redondear2(i.pesoPaleta),
   }));
-  const { data, error } = await supabaseAdmin.rpc('guardar_packing_list', {
-    p_id: id,
-    p_cabecera: cabeceraParaRpc(input),
-    p_items: items,
-    p_usuario: userId,
-    p_version_esperada: id === null ? null : input.version,
-  });
+  // Al CREAR con clave, el envoltorio garantiza una sola fila; editar ya lo protege la versión (PL409).
+  const { data, error } = id === null && input.clientRequestId
+    ? await rpcConIdempotencia({
+      clientRequestId: input.clientRequestId,
+      capturadoEn: input.capturadoEn,
+      envoltorio: 'guardar_packing_list_idem',
+      original: 'guardar_packing_list',
+      args: { p_id: null, p_cabecera: cabeceraParaRpc(input), p_items: items, p_usuario: userId, p_version_esperada: null },
+      // El envoltorio solo crea: no recibe p_id ni la versión.
+      omitirEnvoltorio: ['p_id', 'p_version_esperada'],
+    })
+    : await supabaseAdmin.rpc('guardar_packing_list', {
+      p_id: id,
+      p_cabecera: cabeceraParaRpc(input),
+      p_items: items,
+      p_usuario: userId,
+      p_version_esperada: id === null ? null : input.version,
+    });
   if (error || !data) return { ok: false, ...clasificarError(error ?? { message: 'No se pudo guardar el packing list.' }) };
   const guardadoId = String((data as { id?: string }).id ?? '');
   const detalle = guardadoId ? await obtenerPackingList(guardadoId) : null;

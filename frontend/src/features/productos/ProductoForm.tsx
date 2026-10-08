@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { crearProducto, actualizarProducto, obtenerProductos } from '../../services/producto-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
@@ -166,7 +167,8 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     setGuardando(true);
     setError(null);
 
-    const urls = await subirFotosLocal(fotos, subirImagenProducto);
+    const enCola = !editando && altaEnColaActiva();
+    const urls = enCola ? [] : await subirFotosLocal(fotos, subirImagenProducto);
     if (!urls) {
       setError('Error al subir una de las fotos. Intenta de nuevo.');
       setGuardando(false);
@@ -196,12 +198,12 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
 
     const result = editando && producto
       ? await actualizarProducto(producto.id, payload as never)
-      : await crearProducto({ ...payload, creadoPor: usuario?.id ?? '' } as never);
+      : await crearProducto({ ...payload, creadoPor: usuario?.id ?? '' } as never, enCola ? fotos : undefined);
 
     setGuardando(false);
 
     if ('producto' in result) {
-      toast.exito(editando ? `"${result.producto.nombre}" actualizado.` : `"${result.producto.nombre}" creado.`);
+      toast.exito(editando ? `"${result.producto.nombre}" actualizado.` : `"${result.producto.nombre}" ${'enCola' in result ? 'guardado en el teléfono; se enviará al volver la conexión' : 'creado'}.`);
       borrador.limpiar();
       onGuardado(editando ? 'editar' : 'crear');
     } else {

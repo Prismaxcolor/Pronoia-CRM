@@ -20,6 +20,7 @@ import {
   antiguedadSaldos, compararTotalFacturado, porcentajeEntero, periodoAnterior, periodoEfectivo, porcentajePagado, resumirFacturas,
   severidadAntiguedad, textoDesglosePorEstado, type PeriodoEfectivo,
 } from '../../lib/facturas-kpis';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // Lo pesado se carga aparte, después de los indicadores.
 const FacturaGraficas = lazy(() => import('./factura-graficas'));
@@ -212,10 +213,10 @@ function FacturaHistorialPage({ tipo }: Props) {
 
   return (
     <div className="max-w-7xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.facturas}
         titulo={titulo}
         subtitulo={subtitulo}
-        acciones={puedeCrear ? <BotonAccion to={`${ruta}/nueva`} icono={<Plus size={18} />}>Nueva factura</BotonAccion> : undefined}
+        acciones={puedeCrear ? <BotonAccion soloEnLinea to={`${ruta}/nueva`} icono={<Plus size={18} />}>Nueva factura</BotonAccion> : undefined}
       />
 
       <FiltrosBarra

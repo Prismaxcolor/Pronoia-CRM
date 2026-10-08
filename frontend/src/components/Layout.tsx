@@ -4,6 +4,8 @@ import { Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Blob from '../features/blob/Blob';
 import BannerVincularTelegram from '../features/llaves/BannerVincularTelegram';
+import EstadoConexion from './EstadoConexion';
+import IndicadorPendientes from '../features/pendientes/IndicadorPendientes';
 import { useAuth } from '../hooks/use-auth-context';
 import { useSolicitudesLlavePendientes } from '../hooks/use-solicitudes-llave-pendientes';
 
@@ -44,6 +46,8 @@ function Layout() {
     <div className="fixed inset-0 flex bg-surface-alt print:static print:block print:h-auto print:bg-white">
       <Sidebar abierto={menuAbierto} onCerrar={() => setMenuAbierto(false)} llavesPendientes={llavesPendientes} />
       <div className="flex-1 flex flex-col min-w-0">
+        <EstadoConexion />
+        <IndicadorPendientes />
         {/* Barra superior solo en mobile — el sidebar normal ya cumple esta función en desktop.
             Mismo azul oscuro que el sidebar (bg-brand-900): el logo es blanco sobre fondo
             transparente, en una barra clara desaparecía. */}

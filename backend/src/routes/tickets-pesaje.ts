@@ -2,11 +2,13 @@ import { Router } from 'express';
 import {
   listarTickets,
   obtenerTicket,
-  crearTicket,
-  completarTicket,
   editarTicket,
   borrarTicket,
 } from '../services/ticket-pesaje-service.js';
+import { crearTicketIdempotente, completarTicketIdempotente } from '../services/operaciones-idempotentes.js';
+import { responderErrorIdempotencia } from '../services/idempotencia-service.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { rechazarCapturaAntigua } from '../middlewares/rechazar-captura-antigua.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
@@ -43,7 +45,14 @@ router.post(
   requirePermiso('pesaje', 'crear'),
   validateBody(crearTicketSchema),
   async (req, res) => {
-    const result = await crearTicket(req.body, req.user!.sub);
+    let envio;
+    try {
+      envio = await crearTicketIdempotente(req.body, req.user!.sub);
+    } catch (e) {
+      if (responderErrorIdempotencia(res, e)) return;
+      throw e;
+    }
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -54,16 +63,25 @@ router.post(
       userId: req.user!.sub,
       ticketId: result.ticket.id,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(repetida ? { ...result, repetida } : result);
   }
 );
 
 router.patch(
   '/:id/completar',
+  validarUuidParam('id'),
+  rechazarCapturaAntigua,
   requirePermiso('pesaje', 'crear'),
   validateBody(completarTicketSchema),
   async (req, res) => {
-    const result = await completarTicket(String(req.params.id), req.body, req.user!.sub);
+    let envio;
+    try {
+      envio = await completarTicketIdempotente(String(req.params.id), req.body, req.user!.sub);
+    } catch (e) {
+      if (responderErrorIdempotencia(res, e)) return;
+      throw e;
+    }
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -74,7 +92,7 @@ router.patch(
       userId: req.user!.sub,
       ticketId: result.ticket.id,
     });
-    res.json(result);
+    res.json(repetida ? { ...result, repetida } : result);
   }
 );
 

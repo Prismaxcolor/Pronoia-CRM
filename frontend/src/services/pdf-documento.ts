@@ -1,5 +1,6 @@
 import type { RowInput } from 'jspdf-autotable';
 import { PRONOIA_LOGO_ICON_PNG_BASE64 } from '../assets/pronoia-logo-icon';
+import { pieSinConexion } from '../lib/offline/lectura';
 
 /**
  * Motor de diseño compartido para todos los PDF que genera el sistema —
@@ -59,6 +60,7 @@ export type ModoPdf = 'descargar' | 'blob';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function entregarPdf(doc: any, nombre: string, modo: ModoPdf): ArchivoPdf | undefined {
+  pieSinConexionPdf(doc);
   if (modo === 'blob') return { blob: doc.output('blob') as Blob, nombre };
   doc.save(nombre);
   return undefined;
@@ -91,6 +93,21 @@ const BADGE_COLOR: Record<string, [number, number, number]> = {
   facturado: [21, 128, 61],
   'pendiente por facturar': [161, 98, 7],
 };
+
+/** Si los datos del documento vienen de caché, añade abajo de cada página 'Generado sin conexión con datos de hace X h'. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function pieSinConexionPdf(doc: any): void {
+  const pie = pieSinConexion();
+  if (!pie) return;
+  const paginas: number = doc.getNumberOfPages();
+  for (let i = 1; i <= paginas; i++) {
+    doc.setPage(i);
+    const alto: number = doc.internal.pageSize.getHeight();
+    doc.setFontSize(8).setFont('helvetica', 'italic').setTextColor(110);
+    doc.text(sanitizarPdf(pie), BOX_LEFT, alto - 14);
+  }
+  doc.setTextColor(0);
+}
 
 /**
  * Encabezado de marca — solo el logo, arriba a la derecha. Estándar en

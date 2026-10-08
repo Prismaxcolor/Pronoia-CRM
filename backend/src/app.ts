@@ -36,6 +36,7 @@ import llavesEdicionRouter from './routes/llaves-edicion.js';
 import llavesSolicitudesRouter from './routes/llaves-solicitudes.js';
 import { notificarGrupoMiddleware } from './middlewares/notificar-grupo.js';
 import { invalidarSaldosMiddleware } from './middlewares/invalidar-saldos.js';
+import { operacionesClienteLimiter } from './middlewares/rate-limit.js';
 import asistenteRouter from './routes/asistente.js';
 
 const app = express();
@@ -74,6 +75,15 @@ app.use(cookieParser());
 app.use(notificarGrupoMiddleware);
 // Vacía la caché de saldos tras cualquier escritura (pagos, cobros, notas, facturas, cruces).
 app.use(invalidarSaldosMiddleware);
+
+// Limitador por usuario de las escrituras idempotentes (clientRequestId): evita llenar operaciones_cliente.
+app.use(
+  [
+    '/api/tickets-pesaje', '/api/traslados', '/api/tomas-fisicas', '/api/proveedores', '/api/clientes',
+    '/api/productos', '/api/taras', '/api/almacenes', '/api/vehiculos', '/api/transformaciones', '/api/packing-lists',
+  ],
+  operacionesClienteLimiter,
+);
 
 app.use(healthRouter);
 app.use('/api/auth', authRouter);

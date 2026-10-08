@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X } from 'lucide-react';
 import { crearCliente, actualizarCliente } from '../../services/cliente-service';
 import { subirFotoCliente } from '../../services/storage-service';
@@ -75,7 +76,8 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
     setGuardando(true);
     setError(null);
 
-    const urls = await subirFotosLocal(fotos, subirFotoCliente);
+    const enCola = !editando && altaEnColaActiva();
+    const urls = enCola ? [] : await subirFotosLocal(fotos, subirFotoCliente);
     if (!urls) {
       setError('Error al subir una de las fotos. Intenta de nuevo.');
       setGuardando(false);
@@ -94,12 +96,12 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
 
     const result = editando && cliente
       ? await actualizarCliente(cliente.id, payload)
-      : await crearCliente(payload);
+      : await crearCliente(payload, enCola ? fotos : undefined);
 
     setGuardando(false);
 
     if ('cliente' in result) {
-      toast.exito(editando ? `"${result.cliente.nombre}" actualizado.` : `"${result.cliente.nombre}" creado.`);
+      toast.exito(editando ? `"${result.cliente.nombre}" actualizado.` : `"${result.cliente.nombre}" ${'enCola' in result ? 'guardado en el teléfono; se enviará al volver la conexión' : 'creado'}.`);
       borrador.limpiar();
       onGuardado(editando ? 'editar' : 'crear');
     } else {

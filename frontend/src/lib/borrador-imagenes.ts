@@ -12,14 +12,19 @@
  *  compresión se inyectan. Todo acceso al almacén va en try/catch: en modo
  *  privado o con la cuota llena la app sigue, solo que sin fotos de borrador. */
 
+import { esClaveDeCola } from './offline/cola-tipos';
+
 /** Una foto del borrador no puede pesar más que esto (ya comprimida). */
-export const MAX_BYTES_IMAGEN = 6 * 1024 * 1024;
+/** Tope por foto en el cliente: menor que el del servidor para que nunca la rechace después de la espera. */
+export const MAX_BYTES_IMAGEN = 5 * 1024 * 1024;
 /** Tope de todas las imágenes guardadas (suma de todos los borradores del origen). */
 export const MAX_BYTES_TOTAL_IMAGENES = 60 * 1024 * 1024;
 /** Edad máxima absoluta de una imagen, aunque su borrador de texto siga vivo. */
 export const MAX_EDAD_IMAGEN_MS = 7 * 24 * 60 * 60 * 1000;
 /** Una imagen recién guardada no se considera huérfana: su borrador de texto se escribe con debounce. */
 export const GRACIA_HUERFANA_MS = 2 * 60 * 1000;
+/** Tope aparte para las fotos de la cola de pendientes de envío (claves `cola:`). */
+export const MAX_BYTES_TOTAL_COLA = 400 * 1024 * 1024;
 
 export interface MetaImagen {
   clave: string;
@@ -93,8 +98,14 @@ export function registrarIdArchivo(archivo: object, id: string): void {
 
 // ---- operaciones sobre el almacén --------------------------------------------
 
+/** Las fotos de la cola de envío (`cola:<id>`) no caducan ni se purgan como huérfanas: solo se
+ *  borran al enviarse o descartarse la operación a la que pertenecen. */
+function esProtegida(meta: Pick<MetaImagen, 'clave'>): boolean {
+  return esClaveDeCola(meta.clave);
+}
+
 function esCaducada(meta: MetaImagen, ahora: number): boolean {
-  return ahora - meta.guardadoEn > MAX_EDAD_IMAGEN_MS;
+  return !esProtegida(meta) && ahora - meta.guardadoEn > MAX_EDAD_IMAGEN_MS;
 }
 
 /** Guarda (o reemplaza) una imagen. Comprime antes si se inyectó compresión. */
@@ -116,13 +127,15 @@ export async function guardarImagen(
       }
     }
     if (final.size > (opciones.maxBytesImagen ?? MAX_BYTES_IMAGEN)) return 'grande';
-    const maxTotal = opciones.maxBytesTotal ?? MAX_BYTES_TOTAL_IMAGENES;
+    const protegida = esClaveDeCola(clave);
+    const maxTotal = opciones.maxBytesTotal ?? (protegida ? MAX_BYTES_TOTAL_COLA : MAX_BYTES_TOTAL_IMAGENES);
     let metas = await almacen.listar();
     for (const m of metas) {
       if (esCaducada(m, ahora)) await almacen.borrar(m.clave, m.id);
     }
     metas = metas.filter(m => !esCaducada(m, ahora));
     const usado = metas
+      .filter(m => esProtegida(m) === protegida)
       .filter(m => !(m.clave === clave && m.id === id))
       .reduce((suma, m) => suma + m.bytes, 0);
     if (usado + final.size > maxTotal) return 'sin-cupo';
@@ -238,7 +251,7 @@ export async function limpiarImagenesHuerfanas(
     for (const m of await almacen.listar()) {
       const llave = `${m.soloSesion ? 's' : 'l'}|${m.clave}`;
       if (!existencia.has(llave)) existencia.set(llave, opciones.existeBorrador(m.clave, m.soloSesion));
-      const huerfana = !existencia.get(llave) && ahora - m.guardadoEn > gracia;
+      const huerfana = !esProtegida(m) && !existencia.get(llave) && ahora - m.guardadoEn > gracia;
       if (huerfana || esCaducada(m, ahora)) {
         await almacen.borrar(m.clave, m.id);
         borradas += 1;
@@ -250,10 +263,13 @@ export async function limpiarImagenesHuerfanas(
   return borradas;
 }
 
+/** Borra todas las imágenes de borradores. Las de la cola de envío se conservan siempre. */
 export async function borrarTodasLasImagenes(almacen: AlmacenImagenes | null): Promise<void> {
   if (!almacen) return;
   try {
-    await almacen.borrarTodo();
+    for (const m of await almacen.listar()) {
+      if (!esProtegida(m)) await almacen.borrar(m.clave, m.id);
+    }
   } catch {
     // Almacén bloqueado.
   }

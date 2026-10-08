@@ -21,6 +21,7 @@ import TrasladosPanel from './TrasladosPanel';
 import TomaFisicaPanel from './TomaFisicaPanel';
 import LotesPanel from '../lotes/LotesPanel';
 import type { TipoMaterial, Producto, Lote, Almacen, ComposicionPCBItem, TomaFisicaInventario, Transformacion } from '@shared/types/index.js';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -299,7 +300,7 @@ function InventarioPage() {
       <p className="mb-2 text-xs text-text-muted">
         Esta es la pantalla anterior · <Link to="/inventario" className="text-brand-700 underline hover:text-brand-800">Volver a la nueva</Link>
       </p>
-      <EncabezadoPagina titulo="Inventario" subtitulo={SUBTITULO_PESTANA[pestana]} />
+      <EncabezadoPagina lecturas={LECTURAS.inventario} titulo="Inventario" subtitulo={SUBTITULO_PESTANA[pestana]} />
 
       <Pestanas pestanas={PESTANAS_DEF} valor={pestana} onCambiar={cambiarPestana} etiquetaAria="Secciones del inventario">
       {pestana === 'almacenes' && <AlmacenesPanel />}

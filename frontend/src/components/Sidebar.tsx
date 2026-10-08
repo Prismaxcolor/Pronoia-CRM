@@ -3,6 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Package, Wallet, LogOut, Users, Contact, Tag, Truck, Scale, ShoppingCart, ShoppingBag, Boxes, Recycle, TrendingDown, Weight, CalendarClock, BarChart3, Car, PackageOpen, KeyRound, X } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth-context';
 import TelegramPerfil from './TelegramPerfil';
+import BuscarActualizacionPerfil from './BuscarActualizacionPerfil';
+import PinOfflinePerfil from './PinOfflinePerfil';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
 import type { Recurso } from '@shared/types/index.js';
 
@@ -252,6 +254,8 @@ function Sidebar({ abierto, onCerrar, llavesPendientes = 0 }: Props) {
       {/* Perfil y logout */}
       <div className="p-4 border-t border-brand-800">
         <TelegramPerfil />
+        <PinOfflinePerfil />
+        <BuscarActualizacionPerfil />
         <div className="flex items-center gap-3 mb-3">
           <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-sm font-bold">
             {usuario?.nombre?.charAt(0).toUpperCase() ?? '?'}

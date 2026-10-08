@@ -24,6 +24,8 @@ import type { Tono } from '../../lib/paleta';
 import TomaFisicaTablasImpresion from './TomaFisicaTablasImpresion';
 import type { FotosGaleria } from './TomaFisicaTablasDetalle';
 import { formatearFechaHora, nombreYMomento } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import { useSoloEnLinea } from '../../lib/offline/solo-en-linea';
 
 const TomaFisicaTablasDetalle = lazy(() => import('./TomaFisicaTablasDetalle'));
 const BarrasHorizontales = lazy(() => import('../../components/ui/graficas/BarrasHorizontales'));
@@ -46,6 +48,7 @@ function TomaFisicaDetallePage() {
   const toast = useToast();
   const confirmar = useConfirm();
 
+  const enLinea = useSoloEnLinea();
   const puedeCulminar = tienePermiso('toma_fisica', 'editar');
   const puedeContar = tienePermiso('toma_fisica', 'crear');
 
@@ -185,7 +188,7 @@ function TomaFisicaDetallePage() {
       </div>
 
       <div className="print:hidden">
-        <EncabezadoPagina
+        <EncabezadoPagina lecturas={LECTURAS.tomasFisicas}
           migas={[
             { etiqueta: 'Inventario', to: '/inventario' },
             { etiqueta: 'Tomas físicas', to: '/inventario-legacy?pestana=toma-fisica' },
@@ -290,7 +293,8 @@ function TomaFisicaDetallePage() {
           <button
             type="button"
             onClick={handleCancelar}
-            disabled={cancelando || culminando}
+            disabled={cancelando || culminando || enLinea.deshabilitado}
+            title={enLinea.titulo}
             className="flex items-center gap-2 px-4 py-2.5 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
           >
             <XCircle size={16} />
@@ -299,7 +303,8 @@ function TomaFisicaDetallePage() {
           <button
             type="button"
             onClick={handleCulminar}
-            disabled={culminando || cancelando}
+            disabled={culminando || cancelando || enLinea.deshabilitado}
+            title={enLinea.titulo}
             className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
           >
             <CheckCircle2 size={18} />

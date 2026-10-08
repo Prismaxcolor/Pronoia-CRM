@@ -1,4 +1,5 @@
 import { apiFetch, ApiError } from './api-client';
+import { leerGet } from './lectura-service';
 
 export type TipoEntidad = 'proveedor' | 'cliente';
 
@@ -71,7 +72,7 @@ export async function obtenerEstadoCuenta(
   if (hasta) params.set('hasta', hasta);
   const qs = params.toString();
   try {
-    return await apiFetch<EstadoCuenta>(`${base}/${id}/estado-cuenta${qs ? `?${qs}` : ''}`);
+    return await leerGet<EstadoCuenta>(`${base}/${id}/estado-cuenta${qs ? `?${qs}` : ''}`);
   } catch {
     return null;
   }

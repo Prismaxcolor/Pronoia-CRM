@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X, Building2, Globe, Coins, Wallet } from 'lucide-react';
+import { X, Building2, Globe, Coins, Wallet, Check, Ban } from 'lucide-react';
 import { crearBanca, actualizarBanca } from '../../services/banca-service';
+import { PALETA_BANCAS, hexDeColorGuardado } from '../../lib/color-banca';
 import type { Banca, TipoBanca } from '@shared/types/index.js';
 
 interface TipoOption {
@@ -23,12 +24,56 @@ interface Props {
   onGuardado: (modo: 'crear' | 'editar') => void;
 }
 
+const BOTON_COLOR = 'relative flex h-10 w-10 items-center justify-center rounded-full border-2 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2';
+
+/** Selector de color de la banca: 12 colores de la paleta + "Sin color". Botones de 40 px (táctiles); el elegido lleva una marca. */
+function SelectorColor({ valor, onCambiar }: { valor: string | null; onCambiar: (c: string | null) => void }) {
+  const hexActual = hexDeColorGuardado(valor);
+  return (
+    <div role="radiogroup" aria-label="Color de la banca">
+      <p className="mb-2 text-xs font-medium text-text-secondary">Color <span className="text-text-muted">(opcional)</span></p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!hexActual}
+          aria-label="Sin color"
+          title="Sin color"
+          onClick={() => onCambiar(null)}
+          className={`${BOTON_COLOR} bg-surface text-text-secondary ${!hexActual ? 'border-text-primary' : 'border-border'}`}
+        >
+          <Ban size={16} aria-hidden="true" />
+        </button>
+        {PALETA_BANCAS.map(c => {
+          const activo = valor === c.clave;
+          return (
+            <button
+              key={c.clave}
+              type="button"
+              role="radio"
+              aria-checked={activo}
+              aria-label={c.nombre}
+              title={c.nombre}
+              onClick={() => onCambiar(c.clave)}
+              style={{ backgroundColor: c.hex }}
+              className={`${BOTON_COLOR} text-white ${activo ? 'border-text-primary scale-110' : 'border-transparent'}`}
+            >
+              {activo && <Check size={18} strokeWidth={3} aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function BancaFormModal({ banca, onClose, onGuardado }: Props) {
   const editando = !!banca;
   const [nombre, setNombre] = useState(banca?.nombre ?? '');
   const [tipo, setTipo] = useState<TipoBanca>(banca?.tipo ?? 'banco_nacional');
   const [moneda, setMoneda] = useState(banca?.moneda ?? 'USD');
   const [descripcion, setDescripcion] = useState(banca?.descripcion ?? '');
+  const [color, setColor] = useState<string | null>(banca?.color ?? null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +95,7 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
         nombre: nombreTrim,
         tipo,
         descripcion: descripcion.trim(),
+        color,
       });
     } else {
       const result = await crearBanca({
@@ -57,6 +103,7 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
         tipo,
         moneda,
         descripcion: descripcion.trim(),
+        color,
       });
       ok = !!result;
     }
@@ -147,6 +194,8 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
               </p>
             )}
           </div>
+
+          <SelectorColor valor={color} onCambiar={setColor} />
 
           {/* Descripción */}
           <div>

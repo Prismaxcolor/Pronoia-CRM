@@ -1,4 +1,4 @@
-import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
 import type { TipoEntidad } from './estado-cuenta-service';
 
 export interface BancaPagoDetalle {
@@ -69,7 +69,7 @@ export async function obtenerPagoDetalle(
 ): Promise<PagoDetalle | null> {
   const base = tipo === 'proveedor' ? '/api/proveedores' : '/api/clientes';
   try {
-    const { pago } = await apiFetch<{ pago: PagoDetalle }>(`${base}/${entidadId}/pagos/${grupoId}`);
+    const { pago } = await leerGet<{ pago: PagoDetalle }>(`${base}/${entidadId}/pagos/${grupoId}`);
     return pago;
   } catch {
     return null;

@@ -8,4 +8,6 @@ export interface Banca {
   moneda: string;
   descripcion: string;
   archivada: boolean;
+  /** Clave de la paleta (lib/color-banca) o hex #RRGGBB; null = sin color. */
+  color?: string | null;
 }

@@ -1,5 +1,5 @@
 import type { EmpresaPackingList, IdiomaPackingList, PackingListDetalle, TipoEmbalajePackingList } from '@shared/types/index.js';
-import { descargarBlob, sanitizarPdf } from './pdf-documento';
+import { descargarBlob, pieSinConexionPdf, sanitizarPdf } from './pdf-documento';
 import {
   ETIQUETA_EMBALAJE,
   NOMBRE_BULTO,
@@ -241,5 +241,6 @@ export async function descargarPackingListPDF(
   y = dibujarTitulo(doc, y, [nombre, t.tituloDetalle].filter(Boolean).join(' - '));
   dibujarDetalle(doc, autoTable, p, idioma, y);
 
+  pieSinConexionPdf(doc);
   descargarBlob(doc.output('blob') as Blob, nombreArchivoPackingList(p, idioma));
 }

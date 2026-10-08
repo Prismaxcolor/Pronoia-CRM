@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
 
 export interface ArticuloInventario {
   productoId: string;
@@ -52,7 +53,7 @@ export async function obtenerInventario(filtros: FiltrosInventario = {}): Promis
   if (filtros.almacenId) params.set('almacenId', filtros.almacenId);
   const qs = params.toString();
   try {
-    const { grupos } = await apiFetch<{ grupos: GrupoInventario[] }>(`/api/inventario${qs ? `?${qs}` : ''}`);
+    const { grupos } = await leerGet<{ grupos: GrupoInventario[] }>(`/api/inventario${qs ? `?${qs}` : ''}`);
     return grupos;
   } catch {
     return [];

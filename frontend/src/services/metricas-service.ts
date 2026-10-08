@@ -1,4 +1,4 @@
-import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
 
 export interface MetricaCompraLinea {
   facturaId: string;
@@ -18,6 +18,6 @@ export interface MetricaCompraLinea {
  *  línea de factura. */
 export async function obtenerMetricasCompras(desde: string, hasta: string): Promise<MetricaCompraLinea[]> {
   const params = new URLSearchParams({ desde, hasta });
-  const { lineas } = await apiFetch<{ lineas: MetricaCompraLinea[] }>(`/api/metricas/compras?${params}`);
+  const { lineas } = await leerGet<{ lineas: MetricaCompraLinea[] }>(`/api/metricas/compras?${params}`);
   return lineas;
 }

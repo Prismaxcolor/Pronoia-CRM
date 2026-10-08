@@ -83,6 +83,8 @@ export interface ListaPreciosTarjetaProps {
   vigencia: string | null;
   /** "07/10/2026 14:05" en hora de Caracas. */
   generadoEn: string;
+  /** Pie 'Generado sin conexión con datos de hace X h' cuando los precios vienen de caché (reemplaza 'Precios al…'). */
+  avisoSinConexion?: string | null;
   unidades: readonly UnidadTarjeta[];
   pagina: number;
   totalPaginas: number;
@@ -102,7 +104,7 @@ function EncabezadoGrupo({ unidad }: { unidad: Extract<UnidadTarjeta, { tipo: 'g
 
 /** Una página de la imagen compartida. Presentacional puro: no depende de la pantalla ni de permisos. */
 export default function ListaPreciosTarjeta({
-  nombreLista, tipoLista, vigencia, generadoEn, unidades, pagina, totalPaginas, contacto,
+  nombreLista, tipoLista, vigencia, generadoEn, avisoSinConexion, unidades, pagina, totalPaginas, contacto,
 }: ListaPreciosTarjetaProps) {
   const hayVarias = totalPaginas > 1;
   let indiceFila = 0;
@@ -123,7 +125,7 @@ export default function ListaPreciosTarjeta({
           <span style={estilos.dato}>{tipoLista}</span>
           {vigencia && <span style={estilos.dato}>{vigencia}</span>}
         </div>
-        <div style={estilos.actualizado}>Precios al {generadoEn} (hora de Caracas)</div>
+        <div style={estilos.actualizado}>{avisoSinConexion ?? `Precios al ${generadoEn} (hora de Caracas)`}</div>
       </div>
 
       <div style={estilos.tabla}>

@@ -13,6 +13,7 @@ import {
 } from '../../components/ui';
 import { kpisCitas } from '../../lib/catalogos-kpis';
 import { hoyNegocio } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 type Vista = 'lista' | 'semana';
 
@@ -106,11 +107,11 @@ function CitasPage() {
 
   return (
     <div>
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.citas}
         titulo="Despachos agendados"
         subtitulo="Citas que proveedores y clientes agendaron desde el portal, o agendadas por el staff."
         acciones={puedeCrear ? (
-          <BotonAccion onClick={() => setNuevaCitaAbierta(true)} icono={<Plus size={18} aria-hidden="true" />}>Agendar</BotonAccion>
+          <BotonAccion soloEnLinea onClick={() => setNuevaCitaAbierta(true)} icono={<Plus size={18} aria-hidden="true" />}>Agendar</BotonAccion>
         ) : undefined}
       />
 
@@ -186,7 +187,7 @@ function CitasPage() {
             <EstadoVacio
               mensaje={verHistorico ? 'Aún no hay citas registradas.' : 'No hay citas próximas.'}
               descripcion="Las citas aparecen cuando un proveedor o cliente agenda desde el portal, o cuando el staff agenda una."
-              accion={puedeCrear ? { etiqueta: 'Agendar una cita', onClick: () => setNuevaCitaAbierta(true) } : undefined}
+              accion={puedeCrear ? { etiqueta: 'Agendar una cita', onClick: () => setNuevaCitaAbierta(true), soloEnLinea: true } : undefined}
             />
           )
         ) : (

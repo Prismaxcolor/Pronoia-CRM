@@ -1,4 +1,8 @@
 import { apiFetch } from './api-client';
+import { altaMaestroF4, fotosYaSubidas, provisionalesDeMaestro } from './maestros-cola';
+import { offlineHabilitado } from '../lib/offline/sesion';
+import type { FotoLocal } from '../lib/foto-picker';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import type { Proveedor } from '@shared/types/index.js';
 
 interface ProveedorApi {
@@ -28,16 +32,26 @@ export interface ProveedorInput {
 
 export async function obtenerProveedores(): Promise<Proveedor[]> {
   try {
-    const { proveedores } = await apiFetch<{ proveedores: ProveedorApi[] }>('/api/proveedores');
-    return proveedores.map(mapApi);
+    const { datos } = await obtenerCatalogo('proveedores', async () => {
+      const { proveedores } = await apiFetch<{ proveedores: ProveedorApi[] }>('/api/proveedores');
+      return proveedores.map(mapApi);
+    });
+    return [...datos, ...(await provisionalesDeMaestro<Proveedor>('proveedor'))];
   } catch {
-    return [];
+    return provisionalesDeMaestro<Proveedor>('proveedor');
   }
 }
 
 export async function crearProveedor(
-  proveedor: ProveedorInput
-): Promise<{ proveedor: Proveedor } | { error: string }> {
+  proveedor: ProveedorInput,
+  fotosLocales?: FotoLocal[]
+): Promise<{ proveedor: Proveedor; enCola?: true } | { error: string }> {
+  if (offlineHabilitado()) {
+    const { fotos, ...datos } = proveedor;
+    const r = await altaMaestroF4<ProveedorApi>('proveedor', datos, fotosLocales ?? fotosYaSubidas(fotos));
+    if ('error' in r) return r;
+    return { proveedor: mapApi(r.entidad), ...(r.enCola ? { enCola: true as const } : {}) };
+  }
   try {
     const { proveedor: creado } = await apiFetch<{ proveedor: ProveedorApi }>('/api/proveedores', {
       method: 'POST',

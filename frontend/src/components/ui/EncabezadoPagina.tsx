@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
+import BannerSinConexion from '../BannerSinConexion';
 
 /** CUÁNDO USARLO: arriba de CADA pantalla. Un solo título (h1), una línea que dice para qué sirve la pantalla y,
  *  a la derecha, las acciones principales (máximo una primaria). Las migas solo en pantallas de detalle. */
@@ -16,9 +17,11 @@ export interface EncabezadoPaginaProps {
   /** Botones a la derecha (usa <BotonAccion/>). */
   acciones?: ReactNode;
   migas?: Miga[];
+  /** Prefijos de las rutas de API que alimentan la pantalla: muestra el banner 'Sin conexión · datos de hace X h'. */
+  lecturas?: readonly string[];
 }
 
-function EncabezadoPagina({ titulo, subtitulo, acciones, migas }: EncabezadoPaginaProps) {
+function EncabezadoPagina({ titulo, subtitulo, acciones, migas, lecturas }: EncabezadoPaginaProps) {
   return (
     <header className="mb-6">
       {migas && migas.length > 0 && (
@@ -42,6 +45,7 @@ function EncabezadoPagina({ titulo, subtitulo, acciones, migas }: EncabezadoPagi
         </div>
         {acciones && <div className="flex flex-wrap items-center gap-2">{acciones}</div>}
       </div>
+      {lecturas && <BannerSinConexion prefijos={lecturas} className="mt-3" />}
     </header>
   );
 }

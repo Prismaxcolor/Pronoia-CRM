@@ -14,6 +14,7 @@ import {
   type CabeceraForm,
 } from './formulario';
 import LeyendaRegistro from '../../components/LeyendaRegistro';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 const INPUT = 'w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:opacity-70';
 const LABEL = 'block text-xs font-medium text-text-secondary mb-1';
@@ -90,7 +91,8 @@ function PackingListEditorPage() {
       if (res.conflicto) setHayConflicto(true); else toast.errorMsg(res.error);
       return;
     }
-    toast.exito('Packing list guardado.');
+    if (res.enCola) toast.info('Packing list guardado en el teléfono. Se enviará al volver la conexión.');
+    else toast.exito('Packing list guardado.');
     aplicar(res.packingList);
     if (esNuevo) navigate(`/packing-list/${res.packingList.id}`, { replace: true });
   };
@@ -128,7 +130,7 @@ function PackingListEditorPage() {
 
   return (
     <div className="max-w-6xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.packingLists}
         titulo={esNuevo ? 'Nuevo packing list' : `Packing list ${guardado?.contenedor ?? ''}`}
         subtitulo="Arma la lista de paletas del contenedor. El peso neto de cada paleta es bruto menos el peso de la paleta; los totales se calculan solos."
         migas={[{ etiqueta: 'Packing list', to: '/packing-list' }, { etiqueta: esNuevo ? 'Nuevo' : guardado?.contenedor ?? '' }]}

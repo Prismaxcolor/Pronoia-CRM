@@ -36,6 +36,9 @@ import {
   obtenerTransformacionConValoracion,
 } from '../services/transformacion-valoracion-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { rechazarCapturaAntigua } from '../middlewares/rechazar-captura-antigua.js';
+import { cuerpoConRepetida, ejecutarOperacion, tipoDeRecurso, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 
 const router = Router();
 
@@ -219,28 +222,38 @@ router.post(
   requirePermiso('transformaciones', 'crear'),
   validateBody(crearTransformacionFerrosoSchema),
   async (req, res) => {
-    const result = await crearTransformacionFerroso(req.body, req.user!.sub);
+    const envio = await ejecutarOperacion(res, TIPO_OPERACION.transformacionFerrosoCrear, req.body, req.user!.sub, () =>
+      crearTransformacionFerroso(req.body, req.user!.sub)
+    );
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
     }
     logger.info({ evento: 'transformacion_ferroso_creada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 
 router.patch(
   '/:id/completar-ferroso',
+  validarUuidParam('id'),
+  rechazarCapturaAntigua,
   requirePermiso('transformaciones', 'crear'),
   validateBody(completarTransformacionFerrosoSchema),
   async (req, res) => {
-    const result = await completarTransformacionFerroso(String(req.params.id), req.body, req.user!.sub);
+    const envio = await ejecutarOperacion(res, tipoDeRecurso(TIPO_OPERACION.transformacionFerrosoCompletar, String(req.params.id)), req.body, req.user!.sub, () =>
+      completarTransformacionFerroso(String(req.params.id), req.body, req.user!.sub)
+    );
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
     }
     logger.info({ evento: 'transformacion_ferroso_completada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
-    res.json(result);
+    res.json(cuerpoConRepetida(result, repetida));
   }
 );
 
@@ -253,43 +266,59 @@ router.post(
   requirePermiso('transformaciones', 'crear'),
   validateBody(crearTransformacionPCBSchema),
   async (req, res) => {
-    const result = await crearTransformacionPCB(req.body, req.user!.sub);
+    const envio = await ejecutarOperacion(res, TIPO_OPERACION.transformacionPcbCrear, req.body, req.user!.sub, () =>
+      crearTransformacionPCB(req.body, req.user!.sub)
+    );
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
     }
     logger.info({ evento: 'transformacion_pcb_creada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 
 router.patch(
   '/:id/completar-pcb',
+  validarUuidParam('id'),
+  rechazarCapturaAntigua,
   requirePermiso('transformaciones', 'crear'),
   validateBody(completarTransformacionPCBSchema),
   async (req, res) => {
-    const result = await completarTransformacionPCB(String(req.params.id), req.body, req.user!.sub);
+    const envio = await ejecutarOperacion(res, tipoDeRecurso(TIPO_OPERACION.transformacionPcbCompletar, String(req.params.id)), req.body, req.user!.sub, () =>
+      completarTransformacionPCB(String(req.params.id), req.body, req.user!.sub)
+    );
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
     }
     logger.info({ evento: 'transformacion_pcb_completada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
-    res.json(result);
+    res.json(cuerpoConRepetida(result, repetida));
   }
 );
 
 router.patch(
   '/:id/completar-mixta',
+  validarUuidParam('id'),
+  rechazarCapturaAntigua,
   requirePermiso('transformaciones', 'crear'),
   validateBody(completarTransformacionMixtaSchema),
   async (req, res) => {
-    const result = await completarTransformacionMixta(String(req.params.id), req.body, req.user!.sub);
+    const envio = await ejecutarOperacion(res, tipoDeRecurso(TIPO_OPERACION.transformacionMixtaCompletar, String(req.params.id)), req.body, req.user!.sub, () =>
+      completarTransformacionMixta(String(req.params.id), req.body, req.user!.sub)
+    );
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(result.status ?? 400).json({ error: result.error });
       return;
     }
     logger.info({ evento: 'transformacion_mixta_completada', ip: clienteIp(req), userId: req.user!.sub, transformacionId: result.transformacion.id });
-    res.json(result);
+    res.json(cuerpoConRepetida(result, repetida));
   }
 );
 

@@ -9,6 +9,8 @@ import {
   type Accion,
   type RolUsuario,
 } from '../utils/permisos.js';
+import { estadoUsuario } from '../utils/usuario-activo.js';
+import { logger } from '../utils/logger.js';
 
 declare global {
   namespace Express {
@@ -20,7 +22,8 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+/** Valida el JWT y que el usuario siga activo en la BD (caché de 30 s), también el superadmin. */
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Falta token de autenticación.' });
@@ -28,12 +31,30 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 
   const token = header.slice('Bearer '.length).trim();
+  let payload: JwtPayload;
   try {
-    req.user = verificarToken(token);
-    next();
+    payload = verificarToken(token);
   } catch {
     res.status(401).json({ error: 'Token inválido o expirado.' });
+    return;
   }
+
+  try {
+    const estado = await estadoUsuario(payload.sub);
+    if (!estado.activo) {
+      res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
+      return;
+    }
+    // El rol del JWT puede estar desactualizado (vive 7 días): manda el de la BD (caché de 30 s).
+    if (estado.rol) payload = { ...payload, rol: estado.rol as JwtPayload['rol'] };
+  } catch (e) {
+    logger.error({ evento: 'auth_verificar_activo_fallido', error: e instanceof Error ? e.message : String(e) });
+    res.status(503).json({ error: 'No se pudo verificar tu sesión. Intenta de nuevo.' });
+    return;
+  }
+
+  req.user = payload;
+  next();
 }
 
 /**
@@ -100,6 +121,20 @@ export function requireAlgunPermiso(...requisitos: Permiso[]) {
       res.status(401).json({ error: 'No autenticado.' });
       return;
     }
+
+    // El rol del JWT puede estar degradado en la BD: se confirma el rol real (caché de 30 s) antes de dar paso libre.
+    let estado;
+    try {
+      estado = await estadoUsuario(req.user.sub);
+    } catch {
+      res.status(503).json({ error: 'No se pudo verificar tu sesión. Intenta de nuevo.' });
+      return;
+    }
+    if (!estado.activo) {
+      res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
+      return;
+    }
+    if (estado.rol) req.user = { ...req.user, rol: estado.rol as JwtPayload['rol'] };
 
     if (req.user.rol === 'superadmin') {
       next();

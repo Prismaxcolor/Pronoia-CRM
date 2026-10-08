@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
 
 export interface CrearNotaAjusteInput {
   tipo: 'credito' | 'debito';
@@ -40,7 +41,7 @@ export interface NotaAjusteDetalle {
  *  + impresión). Devuelve null si no existe o no pertenece a este proveedor. */
 export async function obtenerNotaAjuste(proveedorId: string, notaId: string): Promise<NotaAjusteDetalle | null> {
   try {
-    const { nota } = await apiFetch<{ nota: NotaAjusteDetalle }>(`/api/proveedores/${proveedorId}/notas-ajuste/${notaId}`);
+    const { nota } = await leerGet<{ nota: NotaAjusteDetalle }>(`/api/proveedores/${proveedorId}/notas-ajuste/${notaId}`);
     return nota;
   } catch {
     return null;

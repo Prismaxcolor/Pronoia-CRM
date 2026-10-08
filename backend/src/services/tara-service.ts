@@ -1,3 +1,4 @@
+import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearTaraInput, ActualizarTaraInput } from '../schemas/tara.js';
 
@@ -41,13 +42,13 @@ export async function listarTaras(): Promise<TaraPublica[]> {
 }
 
 export async function crearTara(
-  input: CrearTaraInput
+  input: CrearTaraInput & MetaOperacion
 ): Promise<{ tara: TaraPublica } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('taras')
-    .insert({ nombre: input.nombre, peso: input.peso, fotos: input.fotos ?? [] })
-    .select('*')
-    .single();
+  const { data, error } = await insertarMaestroIdempotente<TaraRow>(
+    'taras',
+    { nombre: input.nombre, peso: input.peso, fotos: input.fotos ?? [] },
+    { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn }
+  );
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la tara.' };
   return { tara: toPublico(data as TaraRow) };

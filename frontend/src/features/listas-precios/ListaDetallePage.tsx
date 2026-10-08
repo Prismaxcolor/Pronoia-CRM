@@ -24,6 +24,7 @@ import { derivarKpisPreciosLista } from '../../lib/productos-kpis';
 import { estiloCategoria } from '../../lib/colores-categoria';
 import type { ListaPrecios, PrecioLista, Producto } from '@shared/types/index.js';
 import { formatearFechaHora } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // lazy pierde el genérico de TablaDatos<T>: se restaura con su tipo.
 const TablaDatos = lazy(() => import('../../components/ui/TablaDatos')) as unknown as typeof TablaDatosTipo;
@@ -246,7 +247,7 @@ function ListaDetallePage() {
   if (cargando) {
     return (
       <div className="max-w-7xl">
-        <EncabezadoPagina titulo="Lista de precios" subtitulo="Cargando…" />
+        <EncabezadoPagina lecturas={LECTURAS.listasPrecios} titulo="Lista de precios" subtitulo="Cargando…" />
         <SkeletonKpis cantidad={3} />
         <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando precios" />
       </div>
@@ -256,7 +257,7 @@ function ListaDetallePage() {
   if (!lista) {
     return (
       <div className="max-w-7xl">
-        <EncabezadoPagina titulo="Lista de precios" migas={[{ etiqueta: 'Listas de precios', to: '/listas-precios' }, { etiqueta: 'No encontrada' }]} />
+        <EncabezadoPagina lecturas={LECTURAS.listasPrecios} titulo="Lista de precios" migas={[{ etiqueta: 'Listas de precios', to: '/listas-precios' }, { etiqueta: 'No encontrada' }]} />
         <EstadoVacio
           mensaje="No se encontró la lista"
           descripcion="Puede que se haya eliminado o que el enlace esté incompleto."
@@ -271,7 +272,7 @@ function ListaDetallePage() {
 
   return (
     <div data-compartir-imagen className="max-w-7xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.listasPrecios}
         titulo={lista.nombre}
         subtitulo={`Lista de ${tipoTexto} · ${lista.vigenteDesde ? `vigente desde ${formatearFecha(lista.vigenteDesde)}` : 'sin fecha de vigencia'}`}
         migas={[{ etiqueta: 'Listas de precios', to: '/listas-precios' }, { etiqueta: lista.nombre }]}

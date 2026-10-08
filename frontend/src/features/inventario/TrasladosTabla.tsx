@@ -5,6 +5,7 @@ import {
 } from '../../lib/almacenes-kpis';
 import type { Traslado } from '@shared/types/index.js';
 import { formatearFechaHora } from '../../lib/fecha-negocio';
+import { useSoloEnLinea } from '../../lib/offline/solo-en-linea';
 
 const kg2 = (n: number) => formatearNumero(n, 2);
 const BOTON_FILA = 'rounded px-1 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
@@ -19,14 +20,15 @@ export interface AccionesTraslado {
 
 /** Botones de una fila/tarjeta de traslado. Mismas condiciones que antes: Editar con permiso o llave; Recepcionar solo pendientes. */
 export function BotonesTraslado({ t, a }: { t: Traslado; a: AccionesTraslado }) {
+  const { props: soloEnLinea } = useSoloEnLinea();
   return (
     <span className="inline-flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
       <button type="button" onClick={() => a.onDetalle(t)} aria-label={`Ver detalle de ${t.codigo}`} className={`${BOTON_FILA} text-text-secondary hover:text-text-primary`}>Detalle</button>
       {a.puedeEditar && (
-        <button type="button" onClick={() => a.onEditar(t)} aria-label={`Editar ${t.codigo}`} className={`${BOTON_FILA} text-text-secondary hover:text-text-primary`}>Editar</button>
+        <button type="button" onClick={() => a.onEditar(t)} aria-label={`Editar ${t.codigo}`} {...soloEnLinea()} className={`${BOTON_FILA} text-text-secondary hover:text-text-primary`}>Editar</button>
       )}
       {a.puedeCompletar && t.estado === 'pendiente' && (
-        <button type="button" onClick={() => a.onCompletar(t)} aria-label={`Recepcionar ${t.codigo}`} className={`${BOTON_FILA} text-brand-700 hover:text-brand-800`}>Recepcionar</button>
+        <button type="button" onClick={() => a.onCompletar(t)} aria-label={`Recepcionar ${t.codigo}`} {...soloEnLinea()} className={`${BOTON_FILA} text-brand-700 hover:text-brand-800`}>Recepcionar</button>
       )}
     </span>
   );

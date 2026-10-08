@@ -6,6 +6,7 @@ import {
   fmt, fmtMoneda, sanitizarPdf, descargarBlob, entregarPdf, type ArchivoPdf, type ModoPdf,
   encabezadoMarca, tituloConBadge, subtitulo, filaEncabezado, pieRegistro, tablaMonetaria, tablaPesaje,
 } from './pdf-documento';
+import { pieSinConexion } from '../lib/offline/lectura';
 import { formatearFechaHora, leyendaRegistro, leyendaUltimaEdicion } from '../lib/fecha-negocio';
 
 // jspdf y docx se cargan bajo demanda (dynamic import) para no inflar el bundle
@@ -136,6 +137,7 @@ export async function descargarFacturaPDF(f: FacturaCV, tickets: TicketPesaje[] 
 export async function descargarFacturaWord(f: FacturaCV): Promise<void> {
   const { Document, Packer, Paragraph, TextRun } = await import('docx');
   const esCompra = f.tipo === 'compra';
+  const pie = pieSinConexion();
   const vacio = () => new Paragraph({ text: '' });
   const fila = (k: string, v: string) =>
     new Paragraph({ children: [new TextRun({ text: `${k}: `, bold: true }), new TextRun(v)] });
@@ -156,6 +158,7 @@ export async function descargarFacturaWord(f: FacturaCV): Promise<void> {
     ...consolidarItems(f.items).map(it => new Paragraph({ text: `• ${lineaTexto(it)}` })),
     vacio(),
     new Paragraph({ children: [new TextRun({ text: `Total: ${fmtMoneda(f.total)}`, bold: true, size: 28 })] }),
+    ...(pie ? [vacio(), new Paragraph({ children: [new TextRun({ text: pie, italics: true, color: '888888', size: 16 })] })] : []),
   ];
 
   const doc = new Document({ sections: [{ children }] });

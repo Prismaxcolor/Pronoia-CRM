@@ -112,6 +112,17 @@ body {
   }
 }
 
+/* Hoja/tarjeta de actualización de la app y barra de progreso indeterminada. */
+@keyframes hoja-in {
+  from { opacity: 0; transform: translateY(1.5rem); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes barra-indeterminada {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;

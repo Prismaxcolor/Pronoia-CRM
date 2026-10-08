@@ -180,10 +180,11 @@ export default function NuevaTomaFisicaModal({
         ? { productoIds: productosElegidos.map(p => p.id) }
         : {}),
       descripcion: descripcion.trim() || null,
-    });
+    }, { almacenNombre });
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
-    toast.exito(`${result.tomaFisica.codigo} creada — esas categorías quedan bloqueadas hasta culminarla.`);
+    if (result.enCola) toast.info('Toma física guardada en el teléfono. Se creará en el servidor al volver la conexión; ya puedes registrar conteos.');
+    else toast.exito(`${result.tomaFisica.codigo} creada — esas categorías quedan bloqueadas hasta culminarla.`);
     borrador.limpiar();
     onCreada(result.tomaFisica);
   };

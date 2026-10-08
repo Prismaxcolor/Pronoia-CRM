@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
 import type {
   AlertasPantalla,
   CategoriasPantalla,
@@ -17,7 +18,7 @@ export type Resultado<T> = { dato: T } | { error: string };
 async function pedir<T>(ruta: string, clave: string, params: URLSearchParams, mensajeError: string): Promise<Resultado<T>> {
   const qs = params.toString();
   try {
-    const r = await apiFetch<Record<string, T>>(`/api/inventario/pantalla/${ruta}${qs ? `?${qs}` : ''}`);
+    const r = await leerGet<Record<string, T>>(`/api/inventario/pantalla/${ruta}${qs ? `?${qs}` : ''}`);
     const dato = r[clave];
     if (!dato) return { error: mensajeError };
     return { dato };
@@ -44,7 +45,7 @@ function mensajeDe(err: unknown, porDefecto: string): string {
 /** GET /api/inventario/costos: productos con stock, costo de facturas, referencia manual y costo efectivo. */
 export async function obtenerCostosInventario(): Promise<Resultado<CostosInventario>> {
   try {
-    const r = await apiFetch<{ costos?: CostosInventario }>('/api/inventario/costos');
+    const r = await leerGet<{ costos?: CostosInventario }>('/api/inventario/costos');
     return r.costos ? { dato: r.costos } : { error: 'No se pudieron cargar los costos del inventario.' };
   } catch (err) {
     return { error: mensajeDe(err, 'No se pudieron cargar los costos del inventario.') };
@@ -77,7 +78,7 @@ export async function obtenerComposicionLote(loteId: string, parametros: Paramet
   if (parametros.almacenId) qs.set('almacenId', parametros.almacenId);
   const q = qs.toString();
   try {
-    const r = await apiFetch<{ composicion?: ComposicionLote }>(
+    const r = await leerGet<{ composicion?: ComposicionLote }>(
       `/api/inventario/pantalla/lotes/${encodeURIComponent(loteId)}/composicion${q ? `?${q}` : ''}`
     );
     return r.composicion ? { dato: r.composicion } : { error: 'No se pudo cargar la composición de este lote.' };

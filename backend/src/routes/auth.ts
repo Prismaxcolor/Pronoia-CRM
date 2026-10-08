@@ -5,6 +5,7 @@ import { validateBody } from '../middlewares/validate.js';
 import { loginLimiter, registerLimiter } from '../middlewares/rate-limit.js';
 import { loginSchema, registerSchema } from '../schemas/auth.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { obtenerOfflineConfig } from '../services/offline-config-service.js';
 
 const router = Router();
 
@@ -53,6 +54,12 @@ router.get('/me', requireAuth, async (req, res) => {
     return;
   }
   res.json({ usuario });
+});
+
+/** Interruptor del modo sin conexión (configuracion_secreta.OFFLINE_ACTIVO). Ligero: el cliente lo
+ *  consulta junto con /me y recuerda el último valor para usarlo sin red. */
+router.get('/offline-config', requireAuth, async (req, res) => {
+  res.json(await obtenerOfflineConfig(req.user!.sub));
 });
 
 export default router;

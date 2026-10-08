@@ -1,4 +1,7 @@
 import { apiFetch } from './api-client';
+import { descartarTransformacionProvisional, esTransformacionProvisional, transformacionesProvisionales } from './transformacion-cola';
+import { leerGet } from './lectura-service';
+import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
 import type { Transformacion, SalidaComun } from '@shared/types/index.js';
 import type { SalidaMixtaInput } from '../lib/salida-mixta';
 import type { MermaRenglon, TipoMerma } from '../lib/merma-tipificada';
@@ -125,7 +128,7 @@ export async function obtenerReporteMerma(opts: ObtenerReporteMermaOpts = {}): P
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(opts)) if (v) params.set(k, v);
   const qs = params.toString();
-  return apiFetch<ReporteMerma>(`/api/transformaciones/merma${qs ? `?${qs}` : ''}`);
+  return leerGet<ReporteMerma>(`/api/transformaciones/merma${qs ? `?${qs}` : ''}`);
 }
 
 export interface ObtenerTransformacionesOpts {
@@ -149,18 +152,27 @@ export async function obtenerTransformaciones(
   if (opts.categoria) params.set('categoria', opts.categoria);
   const qs = params.toString();
   try {
-    const { transformaciones } = await apiFetch<{ transformaciones: Transformacion[] }>(
-      `/api/transformaciones${qs ? `?${qs}` : ''}`
+    const { transformaciones } = await leerGet<{ transformaciones: Transformacion[] }>(
+      `/api/transformaciones${qs ? `?${qs}` : ''}`,
+      { recortar: d => recortarCampo(d, 'transformaciones', f => ultimasFilas(f as Transformacion[], LIMITES_CACHE.maxTransformaciones, t => t.fecha)) },
     );
-    return transformaciones;
+    return [...(await provisionalesDeLista(opts)), ...transformaciones];
   } catch {
-    return [];
+    return provisionalesDeLista(opts);
   }
 }
 
+/** Transformaciones creadas sin conexión y aún sin enviar, filtradas como el listado. */
+async function provisionalesDeLista(opts: ObtenerTransformacionesOpts): Promise<Transformacion[]> {
+  return (await transformacionesProvisionales()).filter(
+    t => (!opts.estado || t.estado === opts.estado) && (!opts.categoria || t.categoria === opts.categoria)
+  );
+}
+
 export async function obtenerTransformacion(id: string): Promise<Transformacion | null> {
+  if (esTransformacionProvisional(id)) return (await transformacionesProvisionales()).find(t => t.id === id) ?? null;
   try {
-    const { transformacion } = await apiFetch<{ transformacion: Transformacion }>(`/api/transformaciones/${id}`);
+    const { transformacion } = await leerGet<{ transformacion: Transformacion }>(`/api/transformaciones/${id}`);
     return transformacion;
   } catch {
     return null;
@@ -241,7 +253,7 @@ export async function completarTransformacionFerroso(
 export async function obtenerSalidasComunes(productoEntradaId?: string): Promise<SalidaComun[]> {
   const qs = productoEntradaId ? `?productoEntradaId=${productoEntradaId}` : '';
   try {
-    const { salidas } = await apiFetch<{ salidas: SalidaComun[] }>(`/api/transformaciones/config/salidas-comunes${qs}`);
+    const { salidas } = await leerGet<{ salidas: SalidaComun[] }>(`/api/transformaciones/config/salidas-comunes${qs}`);
     return salidas;
   } catch {
     return [];
@@ -342,6 +354,8 @@ export async function completarTransformacionMixta(
 // ---------------------------------------------------------------------------
 
 export async function borrarTransformacion(id: string): Promise<{ ok: true } | { error: string }> {
+  // Creada sin conexión y aún sin enviar: solo existe en el teléfono, se quita de la cola.
+  if (esTransformacionProvisional(id) && (await descartarTransformacionProvisional(id))) return { ok: true };
   try {
     await apiFetch(`/api/transformaciones/${id}`, { method: 'DELETE' });
     return { ok: true };

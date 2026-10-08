@@ -10,6 +10,7 @@ import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
 import { formatearFecha } from '../../lib/formato';
 import { formatearFechaHora, nombreYMomento } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -96,7 +97,7 @@ function NotaDetallePage({ tipoEntidad }: Props) {
 
       {/* Cabecera del estándar. Las migas son navegación: no se imprimen. */}
       <div className="print:[&_nav]:hidden">
-        <EncabezadoPagina
+        <EncabezadoPagina lecturas={LECTURAS.estadoCuenta}
           migas={[{ etiqueta: etiquetaVolver, to: ruta }, { etiqueta: titulo }]}
           titulo={titulo}
           subtitulo={`Ref. ${nota.codigo ?? `N.º ${nota.id.slice(0, 8)}`} · ${formatearFecha(nota.fecha)}`}

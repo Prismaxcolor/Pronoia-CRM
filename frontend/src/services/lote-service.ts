@@ -1,10 +1,15 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import type { Lote, ClaseLote } from '@shared/types/index.js';
 
 export async function obtenerLotes(): Promise<Lote[]> {
   try {
-    const { lotes } = await apiFetch<{ lotes: Lote[] }>('/api/lotes');
-    return lotes;
+    const { datos } = await obtenerCatalogo('lotes', async () => {
+      const { lotes } = await apiFetch<{ lotes: Lote[] }>('/api/lotes');
+      return lotes;
+    });
+    return datos;
   } catch {
     return [];
   }
@@ -74,7 +79,7 @@ export interface MarcarEmbaladoInput {
 
 export async function obtenerEmbalajes(loteId: string, incluirAnulados = false): Promise<EmbalajeLote[]> {
   try {
-    const { embalajes } = await apiFetch<{ embalajes: EmbalajeLote[] }>(
+    const { embalajes } = await leerGet<{ embalajes: EmbalajeLote[] }>(
       `/api/lotes/${loteId}/embalajes${incluirAnulados ? '?incluirAnulados=true' : ''}`
     );
     return embalajes;

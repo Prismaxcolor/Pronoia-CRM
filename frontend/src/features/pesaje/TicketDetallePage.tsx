@@ -42,6 +42,7 @@ import VisorFotos from '../../components/VisorFotos';
 import { etiquetaPesadaGlobal, lineasAutoriaTicket, pesadasGlobalesConUnidos, tituloTicket } from '../../lib/ticket-documento';
 import LeyendaRegistro from '../../components/LeyendaRegistro';
 import { diaNegocio } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -351,7 +352,7 @@ function TicketDetalleContenido() {
   if (cargando) {
     return (
       <div className="max-w-5xl" aria-busy="true">
-        <EncabezadoPagina titulo="Ticket de pesaje" subtitulo="Cargando el documento…" migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: 'Ticket' }]} />
+        <EncabezadoPagina lecturas={LECTURAS.pesaje} titulo="Ticket de pesaje" subtitulo="Cargando el documento…" migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: 'Ticket' }]} />
         <SkeletonKpis />
         <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando materiales" />
       </div>
@@ -361,7 +362,7 @@ function TicketDetalleContenido() {
   if (!ticket) {
     return (
       <div className="max-w-5xl">
-        <EncabezadoPagina titulo="Ticket de pesaje" migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: 'No encontrado' }]} />
+        <EncabezadoPagina lecturas={LECTURAS.pesaje} titulo="Ticket de pesaje" migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: 'No encontrado' }]} />
         <EstadoVacio
           mensaje="No se encontró el ticket."
           descripcion="Puede que se haya eliminado o que el enlace no sea correcto."
@@ -405,7 +406,7 @@ function TicketDetalleContenido() {
 
       {/* Cabecera de pantalla (la hoja impresa usa CabeceraImpresion, con el logo y el marcado de siempre). */}
       <div className="print:hidden">
-        <EncabezadoPagina
+        <EncabezadoPagina lecturas={LECTURAS.pesaje}
           titulo={tituloTicket(ticket.estado)}
           subtitulo={`${ticket.codigo} · ${esCompra ? 'Proveedor' : 'Cliente'}: ${nombreEntidad} · ${formatearFecha(ticket.fecha ?? ticket.createdAt)}`}
           migas={[{ etiqueta: 'Pesaje', to: '/pesaje' }, { etiqueta: ticket.codigo }]}
@@ -415,7 +416,7 @@ function TicketDetalleContenido() {
                 <GenerarLlaveEdicion entidadTipo="ticket_pesaje" entidadId={ticket.id} />
               )}
               {puedeEditarEsteTicket && (
-                <BotonAccion icono={<Pencil size={16} />} onClick={iniciarEdicion}>Editar</BotonAccion>
+                <BotonAccion soloEnLinea icono={<Pencil size={16} />} onClick={iniciarEdicion}>Editar</BotonAccion>
               )}
               <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => descargarPdf()}>PDF</BotonAccion>
               <BotonAccion variante="secundario" icono={<Printer size={16} />} onClick={() => window.print()}>Imprimir</BotonAccion>

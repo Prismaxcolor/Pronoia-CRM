@@ -72,7 +72,7 @@ function IngresosBloque({ movimientos, puedeCrear, hayIngresosEnHistorial, onReg
           icono={<ArrowDownLeft size={22} />}
           mensaje={hayIngresosEnHistorial ? 'No hay ingresos en este periodo' : 'Aún no hay ingresos registrados'}
           descripcion="En este periodo solo hay egresos. Cuando registres un ingreso (por ejemplo el cobro de un cliente) aparecerá aquí, y los saldos de las bancas dejarán de depender solo de los egresos."
-          accion={puedeCrear ? { etiqueta: 'Registrar un ingreso', onClick: onRegistrar } : undefined}
+          accion={puedeCrear ? { etiqueta: 'Registrar un ingreso', onClick: onRegistrar, soloEnLinea: true } : undefined}
         />
       )}
     </Bloque>

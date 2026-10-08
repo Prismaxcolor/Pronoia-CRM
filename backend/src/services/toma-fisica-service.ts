@@ -12,6 +12,7 @@ import {
   type AlcanceToma,
 } from '../utils/toma-fisica-alcance.js';
 import { nombresDeUsuarios } from './autoria-documento.js';
+import { rpcConIdempotencia } from './rpc-idempotente.js';
 
 /** Duplicado intencional de shared/types/toma-fisica.ts (mismo patrón que
  *  formatCodigoPesaje / formatCodigoTraslado — @shared no resuelve limpio
@@ -256,19 +257,34 @@ export async function crearTomaFisica(
   input: CrearTomaFisicaInput,
   abiertaPor: string
 ): Promise<{ tomaFisica: TomaFisicaPublica } | { error: string }> {
+  // Reintento de una creación que ya se hizo (misma clave): se devuelve esa toma sin volver a validar
+  // (la validación de solapamiento la rechazaría porque la toma ya está abierta).
+  if (input.clientRequestId) {
+    const { data: previa } = await supabaseAdmin
+      .from('tomas_fisicas_inventario').select('id').eq('client_request_id', input.clientRequestId).maybeSingle();
+    const existente = previa ? await obtenerTomaFisica((previa as { id: string }).id) : null;
+    if (existente) return { tomaFisica: existente };
+  }
   const validacion = await validarCreacion(input);
   if ('error' in validacion) return validacion;
 
   // Por categoría nunca guarda lote_ids; por lote siempre (lista explícita).
   const loteIds = validacion.alcance === 'lote' ? (input.loteIds ?? []) : [];
-  const { data, error } = await supabaseAdmin.rpc('crear_toma_fisica_inventario', {
-    p_almacen_id: input.almacenId,
-    p_categorias: input.categoriaIds,
-    p_descripcion: input.descripcion,
-    p_abierta_por: abiertaPor,
-    p_lote_ids: loteIds.length > 0 ? loteIds : null,
-    // Solo con selección parcial: sin ella el RPC histórico (sin este argumento) sigue valiendo.
-    ...(validacion.productoIds ? { p_producto_ids: validacion.productoIds } : {}),
+  const { data, error } = await rpcConIdempotencia({
+    clientRequestId: input.clientRequestId,
+    capturadoEn: input.capturadoEn,
+    envoltorio: 'crear_toma_fisica_inventario_idem',
+    original: 'crear_toma_fisica_inventario',
+    args: {
+      p_almacen_id: input.almacenId,
+      p_categorias: input.categoriaIds,
+      p_descripcion: input.descripcion,
+      p_abierta_por: abiertaPor,
+      p_lote_ids: loteIds.length > 0 ? loteIds : null,
+      // Solo con selección parcial: sin ella el RPC histórico (sin este argumento) sigue valiendo.
+      ...(validacion.productoIds ? { p_producto_ids: validacion.productoIds } : {}),
+    },
+    extraEnvoltorio: validacion.productoIds ? undefined : { p_producto_ids: null },
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la toma física.' };
@@ -306,14 +322,20 @@ export async function registrarPesajeTomaFisica(
   input: RegistrarPesajeTomaFisicaInput,
   registradoPor: string
 ): Promise<{ id: string } | { error: string }> {
-  const { data, error } = await supabaseAdmin.rpc('registrar_pesaje_toma_fisica', {
-    p_toma_fisica_id: tomaFisicaId,
-    p_producto_id: input.productoId ?? null,
-    p_lote_id: input.loteId ?? null,
-    p_peso_bruto: input.pesoBruto,
-    p_tara: input.tara,
-    p_fotos: input.fotos,
-    p_registrado_por: registradoPor,
+  const { data, error } = await rpcConIdempotencia({
+    clientRequestId: input.clientRequestId,
+    capturadoEn: input.capturadoEn,
+    envoltorio: 'registrar_pesaje_toma_fisica_idem',
+    original: 'registrar_pesaje_toma_fisica',
+    args: {
+      p_toma_fisica_id: tomaFisicaId,
+      p_producto_id: input.productoId ?? null,
+      p_lote_id: input.loteId ?? null,
+      p_peso_bruto: input.pesoBruto,
+      p_tara: input.tara,
+      p_fotos: input.fotos,
+      p_registrado_por: registradoPor,
+    },
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pesaje.' };

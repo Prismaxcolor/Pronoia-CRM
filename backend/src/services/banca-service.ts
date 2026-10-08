@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import type { CrearBancaInput, ActualizarBancaInput, CrearMovimientoInput } from '../schemas/cochinito.js';
 
 /**
@@ -17,6 +18,8 @@ export interface Banca {
   moneda: string;
   descripcion: string;
   archivada: boolean;
+  /** Clave de la paleta o hex #RRGGBB; null si la banca no tiene color (o la migración aún no se aplicó). */
+  color: string | null;
 }
 
 export interface Movimiento {
@@ -57,6 +60,7 @@ function mapBanca(row: Record<string, unknown>): Banca {
     moneda: row.moneda as string,
     descripcion: (row.descripcion as string) ?? '',
     archivada: Boolean(row.archivada),
+    color: typeof row.color === 'string' && row.color ? row.color : null,
   };
 }
 
@@ -119,18 +123,59 @@ export async function obtenerMovimiento(id: string): Promise<Movimiento | null> 
   return mapMovimiento(data);
 }
 
+export interface DetalleMovimiento {
+  movimiento: Movimiento;
+  bancaOrigenNombre: string | null;
+  bancaDestinoNombre: string | null;
+  /** Solo si quien consulta puede ver proveedores / clientes (si no, null). */
+  proveedorNombre: string | null;
+  clienteNombre: string | null;
+  registradoPorNombre: string | null;
+  anuladoPorNombre: string | null;
+}
+
+export interface OpcionesDetalleMovimiento {
+  verProveedores: boolean;
+  verClientes: boolean;
+}
+
+/** Nombre por id en una tabla con columna `nombre` (null si no hay id o no existe). */
+async function nombreDe(tabla: 'bancas' | 'proveedores' | 'clientes' | 'users', id: string | null): Promise<string | null> {
+  if (!id) return null;
+  const { data } = await supabaseAdmin.from(tabla).select('nombre').eq('id', id).maybeSingle();
+  return (data as { nombre: string } | null)?.nombre ?? null;
+}
+
+/** Un movimiento con los nombres ya resueltos (bancas, tercero, quién lo registró y quién lo anuló). null si no existe. */
+export async function obtenerDetalleMovimiento(id: string, opts: OpcionesDetalleMovimiento): Promise<DetalleMovimiento | null> {
+  const movimiento = await obtenerMovimiento(id);
+  if (!movimiento) return null;
+  const [bancaOrigenNombre, bancaDestinoNombre, proveedorNombre, clienteNombre, registradoPorNombre, anuladoPorNombre] = await Promise.all([
+    nombreDe('bancas', movimiento.bancaOrigenId),
+    nombreDe('bancas', movimiento.bancaDestinoId),
+    opts.verProveedores ? nombreDe('proveedores', movimiento.proveedorId) : Promise.resolve(null),
+    opts.verClientes ? nombreDe('clientes', movimiento.clienteId) : Promise.resolve(null),
+    nombreDe('users', movimiento.registradoPor || null),
+    nombreDe('users', movimiento.anuladoPor),
+  ]);
+  return { movimiento, bancaOrigenNombre, bancaDestinoNombre, proveedorNombre, clienteNombre, registradoPorNombre, anuladoPorNombre };
+}
+
+/** Quita `color` de un objeto de escritura (para degradar si la columna aún no existe). */
+function sinColor<T extends { color?: unknown }>(campos: T): Omit<T, 'color'> {
+  const { color: _color, ...resto } = campos;
+  return resto;
+}
+
 export async function crearBanca(input: CrearBancaInput): Promise<{ banca: Banca } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('bancas')
-    .insert({
-      nombre: input.nombre,
-      tipo: input.tipo,
-      moneda: input.moneda,
-      descripcion: input.descripcion,
-      saldo: 0,
-    })
-    .select()
-    .single();
+  const base = { nombre: input.nombre, tipo: input.tipo, moneda: input.moneda, descripcion: input.descripcion, saldo: 0 };
+  // Solo si hay color: una banca sin color no depende de la columna.
+  const conColor = input.color ? { ...base, color: input.color } : base;
+  let { data, error } = await supabaseAdmin.from('bancas').insert(conColor).select().single();
+  // Migración del color sin aplicar: se crea la banca sin color en vez de fallar.
+  if (error && input.color && esObjetoInexistente(error)) {
+    ({ data, error } = await supabaseAdmin.from('bancas').insert(base).select().single());
+  }
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la banca.' };
   return { banca: mapBanca(data) };
@@ -140,12 +185,11 @@ export async function actualizarBanca(
   id: string,
   campos: ActualizarBancaInput
 ): Promise<{ banca: Banca } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('bancas')
-    .update(campos)
-    .eq('id', id)
-    .select()
-    .maybeSingle();
+  const escribir = (valores: object) => supabaseAdmin.from('bancas').update(valores).eq('id', id).select().maybeSingle();
+  let { data, error } = await escribir(campos);
+  if (error && campos.color !== undefined && esObjetoInexistente(error)) {
+    ({ data, error } = await escribir(sinColor(campos)));
+  }
 
   if (error) return { error: error.message };
   if (!data) return { error: 'Banca no encontrada.' };

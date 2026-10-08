@@ -3,6 +3,7 @@ import { Settings, Send, Trash2, X, ArrowLeft } from 'lucide-react';
 import type { MensajeChat } from '../../services/asistente-service';
 import type { BlobConfig } from './config';
 import { BlobConfigPanel } from './BlobConfigPanel';
+import { useEstadoConexion } from '../../lib/offline/conexion';
 
 export const MAX_MENSAJE = 500;
 
@@ -22,6 +23,8 @@ interface Props {
 export function BlobChat({ config, semilla, mensajes, escribiendo, onEnviar, onBorrar, onCerrar, onCambiarConfig }: Props) {
   const [verConfig, setVerConfig] = useState(false);
   const [texto, setTexto] = useState('');
+  const { online } = useEstadoConexion();
+  const puedeEscribir = config.iaActiva && online;
   const finRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -127,15 +130,16 @@ export function BlobChat({ config, semilla, mensajes, escribiendo, onEnviar, onB
               value={texto}
               onChange={e => setTexto(e.target.value)}
               maxLength={MAX_MENSAJE}
-              disabled={!config.iaActiva}
-              placeholder={config.iaActiva ? 'Escribe un mensaje…' : 'IA apagada'}
+              disabled={!puedeEscribir}
+              placeholder={!online ? 'El asistente requiere conexión' : config.iaActiva ? 'Escribe un mensaje…' : 'IA apagada'}
               aria-label="Mensaje para BLOB"
               className="min-w-0 flex-1 rounded-full border border-border bg-surface px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:bg-surface-alt"
             />
             <button
               type="submit"
               aria-label="Enviar mensaje"
-              disabled={!config.iaActiva || !texto.trim() || escribiendo}
+              disabled={!puedeEscribir || !texto.trim() || escribiendo}
+              title={online ? undefined : 'Requiere conexión'}
               className="rounded-full bg-brand-600 p-2 text-text-on-brand hover:bg-brand-700 disabled:opacity-40"
             >
               <Send size={16} />

@@ -14,6 +14,7 @@ import AnularConLlaveModal from '../../components/AnularConLlaveModal';
 import { anularPagoCobro } from '../../services/transaccion-edicion-service';
 import { useToast } from '../../hooks/use-toast-context';
 import EditarPagoModal from './EditarPagoModal';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -99,7 +100,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
 
       {/* Cabecera del estándar. Las migas son navegación: no se imprimen. */}
       <div className="print:[&_nav]:hidden">
-        <EncabezadoPagina
+        <EncabezadoPagina lecturas={LECTURAS.estadoCuenta}
           migas={[{ etiqueta: etiquetaVolver, to: ruta }, { etiqueta: titulo }]}
           titulo={titulo}
           subtitulo={pago.fecha}
@@ -107,8 +108,8 @@ function PagoDetallePage({ tipoEntidad }: Props) {
             <div className="print:hidden flex flex-wrap items-center gap-2">
               {!pago.anulado && (
                 <>
-                  <BotonAccion variante="secundario" onClick={() => setModal('editar')} icono={<Pencil size={16} />}>Editar</BotonAccion>
-                  <BotonAccion variante="secundario" onClick={() => setModal('anular')} icono={<Ban size={16} />}>Anular</BotonAccion>
+                  <BotonAccion soloEnLinea variante="secundario" onClick={() => setModal('editar')} icono={<Pencil size={16} />}>Editar</BotonAccion>
+                  <BotonAccion soloEnLinea variante="secundario" onClick={() => setModal('anular')} icono={<Ban size={16} />}>Anular</BotonAccion>
                 </>
               )}
               <BotonAccion variante="secundario" onClick={() => descargarPagoPDF(pago, esProveedor)} icono={<FileDown size={16} />}>PDF</BotonAccion>

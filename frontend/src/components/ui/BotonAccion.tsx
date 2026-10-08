@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { useSoloEnLinea } from '../../lib/offline/solo-en-linea';
 
 /** CUÁNDO USARLO: acciones del encabezado de página o de un bloque. 'primario' (verde de marca, máx. uno por pantalla),
  *  'secundario' (borde). Con `to` es un enlace; con `onClick` un botón. */
@@ -8,6 +9,8 @@ export interface BotonAccionProps {
   to?: string;
   onClick?: () => void;
   disabled?: boolean;
+  /** La acción escribe datos: sin conexión se deshabilita con el mensaje 'Requiere conexión'. */
+  soloEnLinea?: boolean;
   icono?: ReactNode;
   children: ReactNode;
 }
@@ -18,11 +21,13 @@ const VARIANTES = {
   secundario: 'border border-border bg-surface text-text-primary hover:bg-surface-hover',
 } as const;
 
-function BotonAccion({ variante = 'primario', to, onClick, disabled, icono, children }: BotonAccionProps) {
+function BotonAccion({ variante = 'primario', to, onClick, disabled, soloEnLinea, icono, children }: BotonAccionProps) {
+  const enLinea = useSoloEnLinea();
+  const bloqueado = !!soloEnLinea && enLinea.deshabilitado;
   const clase = `${BASE} ${VARIANTES[variante]}`;
   const contenido = (<>{icono && <span aria-hidden="true" className="flex">{icono}</span>}{children}</>);
-  if (to) return <Link to={to} className={clase}>{contenido}</Link>;
-  return <button type="button" onClick={onClick} disabled={disabled} className={clase}>{contenido}</button>;
+  if (to && !bloqueado) return <Link to={to} className={clase}>{contenido}</Link>;
+  return <button type="button" onClick={bloqueado ? undefined : onClick} disabled={disabled || bloqueado} title={bloqueado ? enLinea.titulo : undefined} className={clase}>{contenido}</button>;
 }
 
 export default BotonAccion;

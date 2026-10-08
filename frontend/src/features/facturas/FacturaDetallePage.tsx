@@ -17,6 +17,8 @@ import { porcentajeEntero, porcentajePagado, saldoCompra } from '../../lib/factu
 import { CabeceraFactura, TituloSeccion } from './factura-cabecera';
 import LeyendaRegistro from '../../components/LeyendaRegistro';
 import { formatearFechaHora } from '../../lib/fecha-negocio';
+import BannerSinConexion from '../../components/BannerSinConexion';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 /** Etiqueta del estado en el encabezado impreso (la insignia de pantalla vive en CabeceraFactura). */
 const ESTADO_CFG: Record<string, { label: string; clase: string }> = {
@@ -144,6 +146,7 @@ function FacturaDetallePage({ tipo }: Props) {
         migas={[{ etiqueta: etiquetaLista, to: ruta }, { etiqueta: codigoVisible }]}
         acciones={acciones}
       />
+      <BannerSinConexion prefijos={LECTURAS.facturas} className="mb-4" />
 
       {anulada && (
         <p role="status" className="mb-6 rounded-lg border border-border-strong bg-surface-alt px-3 py-2 text-sm text-text-primary print:hidden">

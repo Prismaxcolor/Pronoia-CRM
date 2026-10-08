@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X } from 'lucide-react';
 import { crearAlmacen, actualizarAlmacen } from '../../services/almacen-service';
 import { subirFotoAlmacen } from '../../services/storage-service';
@@ -34,17 +35,18 @@ function AlmacenFormModal({ almacen, onClose, onGuardado }: Props) {
 
     setGuardando(true);
 
-    const urls = await subirFotosLocal(fotos, subirFotoAlmacen);
+    const enCola = !editando && altaEnColaActiva();
+    const urls = enCola ? [] : await subirFotosLocal(fotos, subirFotoAlmacen);
     if (!urls) { setError('Error al subir una de las fotos.'); setGuardando(false); return; }
 
     const result = editando && almacen
       ? await actualizarAlmacen(almacen.id, { nombre, detalle: detalle.trim() || null, fotos: urls })
-      : await crearAlmacen({ nombre, detalle: detalle.trim() || null, fotos: urls });
+      : await crearAlmacen({ nombre, detalle: detalle.trim() || null, fotos: urls }, enCola ? fotos : undefined);
 
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    toast.exito(editando ? `Almacén "${result.almacen.nombre}" actualizado.` : `Almacén "${result.almacen.nombre}" creado.`);
+    toast.exito(editando ? `Almacén "${result.almacen.nombre}" actualizado.` : `Almacén "${result.almacen.nombre}" ${'enCola' in result ? 'guardado en el teléfono; se enviará al volver la conexión' : 'creado'}.`);
     onGuardado();
   };
 

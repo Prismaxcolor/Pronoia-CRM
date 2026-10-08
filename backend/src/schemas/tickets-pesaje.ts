@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { clienteOperacionCampos } from './cliente-operacion.js';
 import { MAX_TICKETS_UNIDOS } from '../services/ticket-union.js';
 import { desgloseTaraCoincide, tarasDetalleSchema, TOLERANCIA_TARAS_KG } from '../utils/taras-detalle.js';
 
@@ -56,6 +57,7 @@ export const pesajeGlobalSchema = z.object({
 
 export const crearTicketSchema = z
   .object({
+    ...clienteOperacionCampos,
     tipo: z.enum(['compra', 'venta']).default('compra'),
     entidadId: z.string().uuid('Proveedor/cliente inválido.'),
     /** Almacén donde se registra el movimiento. Opcional: si no se manda,
@@ -134,6 +136,7 @@ export const crearTicketSchema = z
 /** Completa un ticket que se guardó en bruto: agrega los materiales/destinos definitivos. */
 export const completarTicketSchema = z
   .object({
+    ...clienteOperacionCampos,
     materiales: z.array(materialSchema).min(1, 'Agrega al menos un material.'),
     devolucion: z.number().nonnegative('La devolución no puede ser negativa.').default(0),
     fotosDevolucion: z.array(z.string()).default([]),

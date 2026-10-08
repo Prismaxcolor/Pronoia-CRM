@@ -1,4 +1,5 @@
 import { getToken } from './api-client';
+import { rastrearTrabajo } from '../lib/trabajo-en-vuelo';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -7,11 +8,11 @@ async function subirArchivo(tipo: 'productos' | 'tickets' | 'taras' | 'comproban
   formData.append('file', file);
 
   const token = getToken();
-  const resp = await fetch(`${API_URL}/api/uploads/${tipo}`, {
+  const resp = await rastrearTrabajo('subida', () => fetch(`${API_URL}/api/uploads/${tipo}`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,
-  });
+  }));
 
   if (!resp.ok) return null;
   const data = (await resp.json()) as { url: string };

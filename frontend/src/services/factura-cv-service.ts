@@ -1,4 +1,6 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
+import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
 import type { EstadoFacturaDerivado } from '../lib/estado-factura';
 
 export type TipoFactura = 'compra' | 'venta';
@@ -105,7 +107,9 @@ export async function obtenerFacturas(
   if (filtros.productoId) params.set('productoId', filtros.productoId);
   const qs = params.toString();
   try {
-    const { facturas } = await apiFetch<{ facturas: FacturaCV[] }>(`${base(tipo)}${qs ? `?${qs}` : ''}`);
+    const { facturas } = await leerGet<{ facturas: FacturaCV[] }>(`${base(tipo)}${qs ? `?${qs}` : ''}`, {
+      recortar: d => recortarCampo(d, 'facturas', f => ultimasFilas(f as FacturaCV[], LIMITES_CACHE.maxFacturas, x => x.createdAt)),
+    });
     return facturas;
   } catch {
     return [];
@@ -114,7 +118,7 @@ export async function obtenerFacturas(
 
 export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<FacturaCV | null> {
   try {
-    const { factura } = await apiFetch<{ factura: FacturaCV }>(`${base(tipo)}/${id}`);
+    const { factura } = await leerGet<{ factura: FacturaCV }>(`${base(tipo)}/${id}`);
     return factura;
   } catch {
     return null;

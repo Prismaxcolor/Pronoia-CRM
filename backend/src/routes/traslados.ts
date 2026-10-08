@@ -1,5 +1,9 @@
 import { Router } from 'express';
-import { listarTraslados, obtenerTraslado, crearTraslado, completarTraslado } from '../services/traslado-service.js';
+import { listarTraslados, obtenerTraslado } from '../services/traslado-service.js';
+import { crearTrasladoIdempotente, completarTrasladoIdempotente } from '../services/operaciones-idempotentes.js';
+import { responderErrorIdempotencia } from '../services/idempotencia-service.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { rechazarCapturaAntigua } from '../middlewares/rechazar-captura-antigua.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearTrasladoSchema, completarTrasladoSchema } from '../schemas/traslados.js';
@@ -33,7 +37,14 @@ router.post(
   requirePermiso('traslados', 'crear'),
   validateBody(crearTrasladoSchema),
   async (req, res) => {
-    const result = await crearTraslado(req.body, req.user!.sub);
+    let envio;
+    try {
+      envio = await crearTrasladoIdempotente(req.body, req.user!.sub);
+    } catch (e) {
+      if (responderErrorIdempotencia(res, e)) return;
+      throw e;
+    }
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -44,16 +55,25 @@ router.post(
       userId: req.user!.sub,
       trasladoId: result.traslado.id,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(repetida ? { ...result, repetida } : result);
   }
 );
 
 router.patch(
   '/:id/completar',
+  validarUuidParam('id'),
+  rechazarCapturaAntigua,
   requirePermiso('traslados', 'crear'),
   validateBody(completarTrasladoSchema),
   async (req, res) => {
-    const result = await completarTraslado(String(req.params.id), req.body, req.user!.sub);
+    let envio;
+    try {
+      envio = await completarTrasladoIdempotente(String(req.params.id), req.body, req.user!.sub);
+    } catch (e) {
+      if (responderErrorIdempotencia(res, e)) return;
+      throw e;
+    }
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -64,7 +84,7 @@ router.patch(
       userId: req.user!.sub,
       trasladoId: result.traslado.id,
     });
-    res.json(result);
+    res.json(repetida ? { ...result, repetida } : result);
   }
 );
 

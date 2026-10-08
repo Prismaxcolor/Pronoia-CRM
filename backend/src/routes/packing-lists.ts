@@ -17,6 +17,9 @@ import {
   packingListParamsSchema,
 } from '../schemas/packing-lists.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { rechazarCapturaAntigua } from '../middlewares/rechazar-captura-antigua.js';
+import { cuerpoConRepetida, ejecutarOperacion, tipoDeRecurso, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 
 const router = Router();
 
@@ -79,29 +82,38 @@ router.get('/:id', requirePermiso('despachos', 'ver'), validateParams(packingLis
 });
 
 router.post('/', requirePermiso('despachos', 'crear'), validateBody(guardarPackingListSchema), async (req, res) => {
-  const result = await guardarPackingList(null, req.body, req.user!.sub);
+  const envio = await ejecutarOperacion(res, TIPO_OPERACION.packingListCrear, req.body, req.user!.sub, () =>
+    guardarPackingList(null, req.body, req.user!.sub)
+  );
+  if (!envio) return;
+  const { resultado: result, repetida } = envio;
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
   }
   logger.info({ evento: 'packing_list_creado', ip: clienteIp(req), userId: req.user!.sub, packingListId: result.valor.id });
-  res.status(201).json({ packingList: result.valor });
+  res.status(repetida ? 200 : 201).json(cuerpoConRepetida({ packingList: result.valor }, repetida));
 });
 
 router.put(
   '/:id',
-  requirePermiso('despachos', 'editar'),
   validateParams(packingListParamsSchema),
+  rechazarCapturaAntigua,
+  requirePermiso('despachos', 'editar'),
   validateBody(guardarPackingListSchema),
   async (req, res) => {
     const id = String(req.params.id);
-    const result = await guardarPackingList(id, req.body, req.user!.sub);
+    const envio = await ejecutarOperacion(res, tipoDeRecurso(TIPO_OPERACION.packingListEditar, id), req.body, req.user!.sub, () =>
+      guardarPackingList(id, req.body, req.user!.sub)
+    );
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if (!result.ok) {
       res.status(result.status).json({ error: result.error });
       return;
     }
     logger.info({ evento: 'packing_list_actualizado', ip: clienteIp(req), userId: req.user!.sub, packingListId: id });
-    res.json({ packingList: result.valor });
+    res.json(cuerpoConRepetida({ packingList: result.valor }, repetida));
   }
 );
 

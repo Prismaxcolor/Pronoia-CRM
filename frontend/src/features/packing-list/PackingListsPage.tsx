@@ -11,6 +11,7 @@ import { formatearFechaDocumento, formatearPeso } from '../../lib/packing-list';
 import { OPCIONES_EMBALAJE } from './formulario';
 import PackingListEmpresasModal from './PackingListEmpresasModal';
 import { nombreYMomento } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 const TH = 'px-3 py-2 text-left text-xs font-semibold text-text-secondary whitespace-nowrap';
 
@@ -56,14 +57,14 @@ function PackingListsPage() {
 
   const acciones = (
     <>
-      {puedeEditar && <BotonAccion variante="secundario" icono={<Building2 size={16} />} onClick={() => setModalEmpresas(true)}>Datos de la empresa</BotonAccion>}
-      {puedeCrear && <BotonAccion icono={<Plus size={16} />} to="/packing-list/nuevo">Nuevo packing list</BotonAccion>}
+      {puedeEditar && <BotonAccion soloEnLinea variante="secundario" icono={<Building2 size={16} />} onClick={() => setModalEmpresas(true)}>Datos de la empresa</BotonAccion>}
+      {puedeCrear && <BotonAccion soloEnLinea icono={<Plus size={16} />} to="/packing-list/nuevo">Nuevo packing list</BotonAccion>}
     </>
   );
 
   return (
     <div className="max-w-6xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.packingLists}
         titulo="Packing list de exportación"
         subtitulo="Lista de paletas, pesos y lotes de cada contenedor. Se exporta en español (empresa de Venezuela) y en inglés (empresa de EE.UU.)."
         acciones={acciones}

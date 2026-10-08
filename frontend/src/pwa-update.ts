@@ -1,24 +1,30 @@
 import { registerSW } from 'virtual:pwa-register';
+import { marcarSwEnEspera } from './lib/offline/actualizador-servicio';
 
-/** Registra el service worker y fuerza UNA recarga automática cuando entra
- *  en control una versión nueva — sin esto, el navegador puede seguir
- *  sirviendo el shell/JS viejo desde caché varias recargas después de un
- *  deploy (el usuario ve la app "congelada" en una versión anterior). */
+/** Registro del service worker (registerType 'prompt'): el SW nuevo queda en espera y NUNCA
+ *  recarga la página por su cuenta. Aplicarlo es decisión de lib/offline/actualizador-servicio.ts,
+ *  que solo lo hace en un momento seguro o cuando el usuario toca "Actualizar ahora", y siempre
+ *  después de guardar los borradores. */
+
+const INTERVALO_BUSCAR_VERSION_MS = 15 * 60 * 1000;
+
+function programarBusquedaDeVersion(registro: ServiceWorkerRegistration): void {
+  const buscar = () => {
+    if (navigator.onLine === false) return;
+    registro.update().catch(() => undefined);
+  };
+  setInterval(buscar, INTERVALO_BUSCAR_VERSION_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') buscar();
+  });
+}
+
 export function iniciarActualizacionPwa(): void {
-  registerSW({ immediate: true });
-
-  if (!('serviceWorker' in navigator)) return;
-
-  // Si ya había un service worker controlando la página, un controllerchange
-  // es una actualización real y toca recargar. Si todavía no había ninguno,
-  // el primer controllerchange es solo la primera instalación — no recargar
-  // (la página ya está sirviendo el contenido correcto).
-  let yaHabiaControlador = !!navigator.serviceWorker.controller;
-  let recargando = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!yaHabiaControlador) { yaHabiaControlador = true; return; }
-    if (recargando) return;
-    recargando = true;
-    window.location.reload();
+  registerSW({
+    immediate: true,
+    onNeedRefresh: marcarSwEnEspera,
+    onRegisteredSW(_url, registro) {
+      if (registro) programarBusquedaDeVersion(registro);
+    },
   });
 }

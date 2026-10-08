@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { clienteOperacionCampos } from './cliente-operacion.js';
 
 const TOPE_PESO = 9_999_999;
 const MAX_ITEMS = 500;
@@ -40,6 +41,7 @@ const fechaIso = z
 
 export const guardarPackingListSchema = z
   .object({
+    ...clienteOperacionCampos,
     contenedor: z.string().trim().min(1, 'El número de contenedor es obligatorio.').max(60),
     fecha: fechaIso,
     tipoEmbalaje: z.enum(['big_bag', 'paleta', 'paquete'], { message: 'Tipo de embalaje inválido.' }),

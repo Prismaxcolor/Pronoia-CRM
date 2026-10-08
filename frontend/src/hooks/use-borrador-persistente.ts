@@ -26,6 +26,7 @@ import {
 } from '../lib/borrador-imagenes';
 import { almacenImagenesDelNavegador } from '../lib/borrador-imagenes-idb';
 import { comprimirImagen } from '../lib/image-compress';
+import { registrarGuardadoPendiente } from '../lib/guardado-pendiente';
 
 /** Aviso discreto cuando el navegador no deja guardar las fotos del borrador (modo privado, cuota llena). */
 export const MENSAJE_FOTOS_NO_GUARDADAS = 'No se pudieron guardar las fotos del borrador';
@@ -233,6 +234,23 @@ export function useBorradorPersistente<T>(opciones: OpcionesBorradorPersistente<
     resultadoGuardado.current = r;
     return r;
   }, [clave, version]);
+
+  // Registro central: antes de actualizar la app se guarda ya (sin debounce) y se espera la
+  // confirmación de escritura del texto y de las fotos. false = algo NO quedó guardado.
+  useEffect(() => {
+    if (!clave) return;
+    const guardarTodoAhora = async (): Promise<boolean> => {
+      if (restaurando.current) return true;
+      const r = guardarAhora(true);
+      if (r === 'grande' || r === 'error' || r === 'serializacion') return false;
+      await colaImagenes.current.catch(() => undefined);
+      const { fotos, hayCambios: cambios } = ultimo.current;
+      if (!cambios || fotos.length === 0) return true;
+      if (!almacenImagenesDelNavegador()) return false;
+      return fotos.every(f => persistidas.current.has(f.id));
+    };
+    return registrarGuardadoPendiente(guardarTodoAhora, () => ultimo.current.hayCambios);
+  }, [clave, guardarAhora]);
 
   // Guardado con debounce en cada cambio del estado.
   useEffect(() => {

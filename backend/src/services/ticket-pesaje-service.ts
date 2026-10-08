@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
+import { llamarRpcCrear } from './idempotencia-service.js';
 import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput, PesajeGlobalInput } from '../schemas/tickets-pesaje.js';
 import { notificarTicket, notificarFacturasAnuladas, huboCambioVisible } from './telegram-eventos-service.js';
 import { obtenerFactura } from './factura-service.js';
@@ -325,7 +326,7 @@ export async function crearTicket(
   pesadoPor: string
 ): Promise<{ ticket: TicketPublico } | { error: string }> {
   // RPC atómica: inserta el header (numero vía default) + N líneas de material.
-  const { data: ticketId, error } = await supabaseAdmin.rpc('crear_ticket_pesaje', {
+  const { data: ticketId, error } = await llamarRpcCrear('crear_ticket_pesaje', 'tickets_pesaje', {
     p_tipo: input.tipo,
     p_entidad_id: input.entidadId,
     p_fecha: input.fecha,
@@ -341,7 +342,7 @@ export async function crearTicket(
     p_pesajes_globales: pesajesGlobalesARpc(input.pesajesGlobales),
     p_almacen_id: input.almacenId ?? null,
     p_vehiculo: input.vehiculo,
-  });
+  }, input);
 
   if (error || !ticketId) return { error: error?.message ?? 'No se pudo guardar el ticket.' };
 

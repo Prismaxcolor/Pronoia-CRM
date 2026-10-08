@@ -7,6 +7,7 @@ import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cue
 import { totalesEstadoCuenta } from '@shared/types/estado-cuenta-totales.js';
 import { AYUDA_POR_TIPO, LABEL_POR_TIPO, TONO_POR_TIPO, fmt, rutaDetalle } from './estado-cuenta-comun';
 import { fechaConHora } from '../../lib/fecha-negocio';
+import { useSoloEnLinea } from '../../lib/offline/solo-en-linea';
 
 interface Props {
   tipo: TipoEntidad;
@@ -55,6 +56,7 @@ function Importe({ e, lado }: { e: EntradaEstadoCuenta; lado: 'cargo' | 'abono' 
 
 /** Tabla cronológica del estado de cuenta (cargo, abono y saldo corrido). Ordenable y exportable a CSV; en móvil, tarjetas. */
 function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, saldoFinal, filtradoPorTipo, rutaVuelta, puedeAjustar, onAnular, vacio }: Props) {
+  const { props: soloEnLinea } = useSoloEnLinea();
   const referencia = (e: EntradaConSaldo) => {
     const destino = rutaDetalle(tipo, entidadId, e);
     const texto = e.referencia ?? '—';
@@ -69,7 +71,7 @@ function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, saldoFinal, 
   };
   const botonAnular = (e: EntradaConSaldo) => (
     (e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && !e.pagada ? (
-      <button type="button" onClick={() => onAnular(e)} className="inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" title="Anular nota">
+      <button type="button" onClick={() => onAnular(e)} className="inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-50" {...soloEnLinea(false, 'Anular nota')}>
         <Ban size={13} aria-hidden="true" /> Anular
       </button>
     ) : null

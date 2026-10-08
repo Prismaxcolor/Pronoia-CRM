@@ -4,6 +4,10 @@ export interface AuthState {
   usuario: Usuario | null;
   cargando: boolean;
   error: string | null;
+  /** true si se está usando la sesión guardada en el equipo (sin haber podido validar con el servidor). */
+  sesionLocal: boolean;
+  /** Interruptor del servidor (OFFLINE_ACTIVO) para este usuario; false = comportamiento de siempre. */
+  offlineActivo: boolean;
 }
 
 export interface AuthContextType extends AuthState {

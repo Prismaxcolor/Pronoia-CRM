@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import type { TipoMaterial } from '@shared/types/index.js';
 
 export interface TipoMaterialInput {
@@ -11,8 +12,11 @@ export interface TipoMaterialInput {
 
 export async function obtenerTiposMaterial(): Promise<TipoMaterial[]> {
   try {
-    const { tipos } = await apiFetch<{ tipos: TipoMaterial[] }>('/api/tipos-material');
-    return tipos;
+    const { datos } = await obtenerCatalogo('tipos-material', async () => {
+      const { tipos } = await apiFetch<{ tipos: TipoMaterial[] }>('/api/tipos-material');
+      return tipos;
+    });
+    return datos;
   } catch {
     return [];
   }

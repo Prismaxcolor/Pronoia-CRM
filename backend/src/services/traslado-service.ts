@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { llamarRpcCrear } from './idempotencia-service.js';
 import type { CrearTrasladoInput, CompletarTrasladoInput } from '../schemas/traslados.js';
 
 /** Formatea el correlativo de traslado: 1 → "Traslado-0001". Duplicado
@@ -153,7 +154,7 @@ export async function crearTraslado(
   input: CrearTrasladoInput,
   pesadoPor: string
 ): Promise<{ traslado: TrasladoPublico } | { error: string }> {
-  const { data: trasladoId, error } = await supabaseAdmin.rpc('crear_traslado', {
+  const { data: trasladoId, error } = await llamarRpcCrear('crear_traslado', 'tickets_traslado', {
     p_almacen_origen_id: input.almacenOrigenId,
     p_almacen_destino_id: input.almacenDestinoId,
     p_observaciones: input.observaciones,
@@ -172,7 +173,7 @@ export async function crearTraslado(
       fotos: l.fotos,
     })),
     p_vehiculo: input.vehiculo,
-  });
+  }, input);
 
   if (error || !trasladoId) return { error: error?.message ?? 'No se pudo guardar el traslado.' };
 

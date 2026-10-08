@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Plus, Trash2, Loader2, Scale, ChevronDown } from 'lucide-react';
-import { completarTicket, obtenerTickets } from '../../services/ticket-pesaje-service';
+import { completarTicket, cuerpoCompletarTicket, obtenerTickets } from '../../services/ticket-pesaje-service';
+import { iniciarEnvio, enviarOEncolar } from './pesaje-envio';
+import { mensajeGuardadoEnTelefono } from '../../lib/offline/cola-guardado';
 import { useToast } from '../../hooks/use-toast-context';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { difiereEstado } from '../../lib/borrador';
 import { intersectarIds, mensajeReseteos, mensajeSaneoBorrador, sanearFilasRestauradas } from '../../lib/borrador-vigentes';
-import { filaVacia, filasDesdeBorrador, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, taraKgFila, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
+import { filaVacia, filasDesdeBorrador, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, taraKgFila, netoFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila, type FotoMaterial } from './material-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
@@ -44,6 +46,8 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const [notas, setNotas] = useState('');
   const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
   const [guardando, setGuardando] = useState(false);
+  // Id de la operación en curso: se conserva si el envío falla para que un reintento no duplique.
+  const idEnvioRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filaActivaUid, setFilaActivaUid] = useState<number | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
@@ -171,30 +175,48 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
     }
 
     setGuardando(true);
+    const envio = iniciarEnvio(idEnvioRef.current);
+    idEnvioRef.current = envio.id;
+    const falloFotos = async (mensaje: string) => {
+      await envio.guardador?.descartar();
+      setError(mensaje);
+      setGuardando(false);
+    };
 
-    const materialesConFotos = [];
+    const materialesConFotos: Array<ReturnType<typeof materialAPayload> & { fotos: string[] }> = [];
     for (const f of materiales) {
-      const urls = await subirFotosFila(f.fotos);
+      const urls = await envio.subirFotos(f.fotos);
       if (!urls) {
-        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
-        setGuardando(false);
+        await falloFotos('No se pudieron guardar las fotos. Revisa la conexión y el espacio del teléfono; tu formulario sigue intacto.');
         return;
       }
       materialesConFotos.push({ ...materialAPayload(f, taras, productos), fotos: urls });
     }
 
-    const urlsDevolucion = await subirFotosFila(fotosDevolucion);
+    const urlsDevolucion = await envio.subirFotos(fotosDevolucion);
     if (!urlsDevolucion) {
-      setError('No se pudo subir una de las fotos de la devolución. Revisa que el bucket "tickets" exista en Supabase Storage.');
-      setGuardando(false);
+      await falloFotos('No se pudieron guardar las fotos de la devolución. Revisa la conexión y el espacio del teléfono.');
       return;
     }
 
-    const result = await completarTicket(ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion, unidos.map(t => t.id), notas);
+    const cuerpo = cuerpoCompletarTicket(materialesConFotos, Number(devolucion) || 0, urlsDevolucion, unidos.map(t => t.id), notas);
+    const r = await enviarOEncolar({
+      envio,
+      tipo: 'ticket_completar',
+      endpoint: `/api/tickets-pesaje/${ticket.id}/completar`,
+      metodo: 'PATCH',
+      payload: cuerpo,
+      descripcion: `Completar ${ticket.codigo}`,
+      enviarEnLinea: c => completarTicket(
+        ticket.id, materialesConFotos, Number(devolucion) || 0, urlsDevolucion, unidos.map(t => t.id), notas,
+        { clientRequestId: c.clientRequestId, capturadoEn: c.capturadoEn },
+      ),
+    });
     setGuardando(false);
 
-    if ('error' in result) { setError(result.error); return; }
-    toast.exito(`${result.ticket.codigo} completado.`);
+    if (r.tipo === 'error') { setError(r.mensaje); return; }
+    idEnvioRef.current = null;
+    toast.exito(r.tipo === 'encolado' ? mensajeGuardadoEnTelefono(`Completar ${ticket.codigo}`) : `${r.resultado.ticket.codigo} completado.`);
     onCompletado();
     cerrar();
   };

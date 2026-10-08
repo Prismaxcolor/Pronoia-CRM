@@ -9,6 +9,7 @@ import DashboardAlertas from './DashboardAlertas';
 import ProximosDespachos from './ProximosDespachos';
 import { useDashboardCarga } from './useDashboardCarga';
 import { cargarBancas, cargarMerma, cargarSaldosProveedores, cargarSemanasKg, cargarTickets, cargarTomasAbiertas } from './dashboardFuentes';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // Las gráficas se cargan aparte y después de los indicadores.
 const TendenciaKg = lazy(() => import('./DashboardGraficas').then(m => ({ default: m.TendenciaKg })));
@@ -40,7 +41,7 @@ function DashboardPage() {
 
   return (
     <div className="max-w-7xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.dashboard}
         titulo="Dashboard"
         subtitulo="Cómo va la operación hoy: lo que se compró, lo que está pendiente, lo que se debe y lo que necesita atención."
         acciones={(puedePesar || puedeComprar || puedeTransformar) ? (

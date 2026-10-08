@@ -1,5 +1,7 @@
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import { pieSinConexion } from '../../lib/offline/lectura';
 import { renderizarElementoAPng } from '../../lib/compartir-imagen';
 import { formatearFechaNegocio, formatearFechaHora } from '../../lib/fecha-negocio';
 import { paginarListaPrecios, type FilaPrecioImagen } from '../../lib/lista-precios-imagen';
@@ -27,6 +29,7 @@ function datosComunes(datos: DatosImagenListaPrecios): DatosPagina {
     tipoLista: datos.tipo === 'venta' ? 'Lista de venta · Para clientes' : 'Lista de compra · Para proveedores',
     vigencia: datos.vigenteDesde ? `Vigente desde ${formatearFechaNegocio(datos.vigenteDesde)}` : null,
     generadoEn: formatearFechaHora(datos.ahora ?? new Date()),
+    avisoSinConexion: pieSinConexion(LECTURAS.listasPrecios),
     contacto: datos.contacto,
   };
 }

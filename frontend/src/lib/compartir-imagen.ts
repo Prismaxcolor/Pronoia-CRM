@@ -70,7 +70,8 @@ export async function renderizarElementoAPng(elemento: HTMLElement): Promise<Blo
       pixelRatio: pixelRatioSeguro(elemento.scrollWidth, elemento.scrollHeight),
       imagePlaceholder: IMAGEN_RESPALDO,
       backgroundColor: colorFondo(),
-      cacheBust: true,
+      // Sin red, añadir ?parámetros a las imágenes locales las saca de la caché del service worker: se omite.
+      cacheBust: typeof navigator === 'undefined' || navigator.onLine !== false,
       filter: nodo => !esNodoExcluido(nodo),
     });
     if (!blob) throw new Error('El navegador devolvió una imagen vacía');

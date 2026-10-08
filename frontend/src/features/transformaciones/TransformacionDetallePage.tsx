@@ -28,6 +28,7 @@ import { mermaTransformacion, severidadMerma } from '../../lib/transformaciones-
 import DiagramaFlujoTransformacion from './DiagramaFlujoTransformacion';
 import { etiquetaCategoria, nombreEntrada, useUmbralMerma, kgFino } from './transformaciones-comun';
 import { formatearFechaHora } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 function fmt(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -156,7 +157,7 @@ function TransformacionDetallePage() {
   if (!t || !merma) {
     return (
       <div className="max-w-5xl">
-        <EncabezadoPagina titulo="Transformación" migas={[{ etiqueta: 'Transformaciones', to: '/transformaciones' }, { etiqueta: 'Detalle' }]} />
+        <EncabezadoPagina lecturas={LECTURAS.transformaciones} titulo="Transformación" migas={[{ etiqueta: 'Transformaciones', to: '/transformaciones' }, { etiqueta: 'Detalle' }]} />
         <EstadoVacio
           mensaje={errorCarga ?? 'No se encontró la transformación.'}
           descripcion="Puede que se haya cancelado o que el enlace sea incorrecto."
@@ -185,7 +186,7 @@ function TransformacionDetallePage() {
     <div className="max-w-5xl print-documento print:max-w-none">
       {/* Encabezado de pantalla (la impresión usa el suyo, más abajo). */}
       <div className="print:hidden">
-        <EncabezadoPagina
+        <EncabezadoPagina lecturas={LECTURAS.transformaciones}
           titulo={`Transformación ${referencia}`}
           subtitulo={`${completa ? 'Completada' : 'Pendiente de completar'} · ${t.categoria === 'pcb' ? 'PCB' : 'Ferroso / No ferroso'} · ${formatearFecha(t.fecha)}`}
           migas={[{ etiqueta: 'Transformaciones', to: '/transformaciones' }, { etiqueta: referencia }]}
@@ -193,7 +194,7 @@ function TransformacionDetallePage() {
             <>
               {esSuperadmin && puedeEditar && <GenerarLlaveEdicion entidadTipo="transformacion" entidadId={t.id} />}
               {(puedeEditar || (requiereLlave && !esSuperadmin)) && (
-                <BotonAccion variante="secundario" icono={<Pencil size={16} />} onClick={() => setEditando(true)}>Editar</BotonAccion>
+                <BotonAccion soloEnLinea variante="secundario" icono={<Pencil size={16} />} onClick={() => setEditando(true)}>Editar</BotonAccion>
               )}
               <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarTransformacionPDF(t, nombres)}>PDF</BotonAccion>
               <BotonAccion variante="secundario" icono={<Printer size={16} />} onClick={() => window.print()}>Imprimir</BotonAccion>

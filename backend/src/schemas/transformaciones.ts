@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { mermaDetalleSchema } from './merma-tipificada.js';
+import { clienteOperacionCampos } from './cliente-operacion.js';
+import { aplicarEntradaConsolidada, camposEntradaShape, validarYConsolidarEntrada } from './transformaciones-entrada.js';
 
 const textoOpcional = (max: number) =>
   z
@@ -31,15 +33,18 @@ export const completarTransformacionSchema = z.object({
 });
 
 /** Ferroso/No Ferroso: retira producto sin lote de un almacén. */
-export const crearTransformacionFerrosoSchema = z.object({
-  productoEntradaId: z.string().uuid('Selecciona el material de entrada.'),
-  almacenId: z.string().uuid('Selecciona el almacén.'),
-  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
-  tara: z.number().min(0, 'La tara no puede ser negativa.').default(0),
-  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
-  notas: textoOpcional(500),
-  fotosEntrada: z.array(z.string()).min(1, 'Agrega al menos una foto de entrada.'),
-});
+export const crearTransformacionFerrosoSchema = z
+  .object({
+    ...clienteOperacionCampos,
+    productoEntradaId: z.string().uuid('Selecciona el material de entrada.'),
+    almacenId: z.string().uuid('Selecciona el almacén.'),
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
+    notas: textoOpcional(500),
+    // Entrada: un solo peso (contrato anterior) o varias pesadas (pesadasEntrada); ver transformaciones-entrada.ts.
+    ...camposEntradaShape,
+  })
+  .superRefine(validarYConsolidarEntrada)
+  .transform(aplicarEntradaConsolidada);
 
 const salidaFerrosoSchema = z.object({
   productoId: z.string().uuid('Selecciona el material de salida.'),
@@ -49,6 +54,7 @@ const salidaFerrosoSchema = z.object({
 });
 
 export const completarTransformacionFerrosoSchema = z.object({
+  ...clienteOperacionCampos,
   salidas: z.array(salidaFerrosoSchema).min(1, 'Agrega al menos una salida.'),
   /** Merma por tipo (opcional): se guarda tras completar, no cambia el flujo actual. */
   mermaDetalle: mermaDetalleSchema.optional(),
@@ -65,17 +71,19 @@ export type CrearTransformacionFerrosoInput = z.infer<typeof crearTransformacion
 export type CompletarTransformacionFerrosoInput = z.infer<typeof completarTransformacionFerrosoSchema>;
 
 /** PCB: retira de un lote de origen hacia un lote de destino. */
-export const crearTransformacionPCBSchema = z.object({
-  loteOrigenId: z.string().uuid('Selecciona el lote de origen.'),
-  /** De qué almacén sale físicamente el lote origen — un lote puede tener
-   *  porciones en más de un almacén, hay que saber de cuál se está pesando. */
-  almacenId: z.string().uuid('Selecciona el almacén de origen.'),
-  pesoBruto: z.number().positive('El peso bruto debe ser mayor a 0.'),
-  tara: z.number().min(0).default(0),
-  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
-  notas: textoOpcional(500),
-  fotosEntrada: z.array(z.string()).min(1, 'Agrega al menos una foto de entrada.'),
-});
+export const crearTransformacionPCBSchema = z
+  .object({
+    ...clienteOperacionCampos,
+    loteOrigenId: z.string().uuid('Selecciona el lote de origen.'),
+    /** De qué almacén sale físicamente el lote origen — un lote puede tener
+     *  porciones en más de un almacén, hay que saber de cuál se está pesando. */
+    almacenId: z.string().uuid('Selecciona el almacén de origen.'),
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
+    notas: textoOpcional(500),
+    ...camposEntradaShape,
+  })
+  .superRefine(validarYConsolidarEntrada)
+  .transform(aplicarEntradaConsolidada);
 
 const salidaPCBSchema = z.object({
   loteDestinoId: z.string().uuid('Selecciona el lote de destino.'),
@@ -88,6 +96,7 @@ const salidaPCBSchema = z.object({
 });
 
 export const completarTransformacionPCBSchema = z.object({
+  ...clienteOperacionCampos,
   salidas: z.array(salidaPCBSchema).min(1, 'Agrega al menos un lote de destino.'),
   mermaDetalle: mermaDetalleSchema.optional(),
 });
@@ -129,6 +138,7 @@ const salidaMixtaLoteSchema = z.object({
 export const salidaMixtaSchema = z.discriminatedUnion('tipo', [salidaMixtaMaterialSchema, salidaMixtaLoteSchema]);
 
 export const completarTransformacionMixtaSchema = z.object({
+  ...clienteOperacionCampos,
   mermaDetalle: mermaDetalleSchema.optional(),
   salidas: z
     .array(salidaMixtaSchema)

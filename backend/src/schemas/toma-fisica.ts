@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { clienteOperacionCampos } from './cliente-operacion.js';
 
 const textoOpcional = (max: number) =>
   z
@@ -10,6 +11,7 @@ const textoOpcional = (max: number) =>
     .transform(v => (v && v.length > 0 ? v : null));
 
 export const crearTomaFisicaSchema = z.object({
+  ...clienteOperacionCampos,
   almacenId: z.string().uuid('Elige un almacén.'),
   categoriaIds: z.array(z.string().uuid()).min(1, 'Elige al menos una categoría a inventariar.'),
   loteIds: z.array(z.string().uuid()).optional().default([]),
@@ -29,6 +31,7 @@ export const categoriaIdsQuerySchema = z
 
 export const registrarPesajeTomaFisicaSchema = z
   .object({
+    ...clienteOperacionCampos,
     // Categorías "sin lote" (Ferroso/No Ferroso) pesan un producto puntual.
     // Categorías "con lote" (PCB) pesan el lote completo — no se puede
     // desarmar un lote mezclado material por material al contarlo, así que

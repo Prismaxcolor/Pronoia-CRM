@@ -1,4 +1,7 @@
 import { apiFetch, ApiError } from './api-client';
+import { leerGet } from './lectura-service';
+import { offlineHabilitado } from '../lib/offline/sesion';
+import { guardarPackingListF4, idServidorDePackingList, packingListTemporal, packingListsProvisionalesResumen } from './packing-list-cola';
 import type {
   EmpresaPackingList,
   IdiomaPackingList,
@@ -45,16 +48,21 @@ const mensaje = (err: unknown, respaldo: string) => (err instanceof Error ? err.
 
 export async function obtenerPackingLists(): Promise<PackingListResumen[] | { error: string }> {
   try {
-    const { packingLists } = await apiFetch<{ packingLists: PackingListResumen[] }>('/api/packing-lists');
-    return packingLists;
+    const { packingLists } = await leerGet<{ packingLists: PackingListResumen[] }>('/api/packing-lists');
+    // Los creados sin conexión que aún no se enviaron aparecen primero.
+    return [...(await packingListsProvisionalesResumen()), ...packingLists];
   } catch (err) {
+    const provisionales = await packingListsProvisionalesResumen();
+    if (provisionales.length > 0) return provisionales;
     return { error: mensaje(err, 'No se pudieron cargar los packing lists.') };
   }
 }
 
 export async function obtenerPackingList(id: string): Promise<PackingListDetalle | { error: string }> {
+  const temporal = packingListTemporal(id);
+  if (temporal) return temporal;
   try {
-    const { packingList } = await apiFetch<{ packingList: PackingListDetalle }>(`/api/packing-lists/${id}`);
+    const { packingList } = await leerGet<{ packingList: PackingListDetalle }>(`/api/packing-lists/${idServidorDePackingList(id)}`);
     return packingList;
   } catch (err) {
     return { error: mensaje(err, 'No se pudo cargar el packing list.') };
@@ -65,7 +73,9 @@ export async function obtenerPackingList(id: string): Promise<PackingListDetalle
 export async function guardarPackingList(
   id: string | null,
   input: GuardarPackingListInput
-): Promise<{ packingList: PackingListDetalle } | { error: string; conflicto?: true }> {
+): Promise<{ packingList: PackingListDetalle; enCola?: true } | { error: string; conflicto?: true }> {
+  // Con el modo sin conexión activo el guardado pasa por la cola (en línea sigue siendo inmediato).
+  if (offlineHabilitado()) return guardarPackingListF4(id, input);
   try {
     return await apiFetch<{ packingList: PackingListDetalle }>(id ? `/api/packing-lists/${id}` : '/api/packing-lists', {
       method: id ? 'PUT' : 'POST',
@@ -88,7 +98,7 @@ export async function eliminarPackingList(id: string): Promise<{ ok: true } | { 
 
 export async function obtenerEmpresasPackingList(): Promise<EmpresaPackingList[] | { error: string }> {
   try {
-    const { empresas } = await apiFetch<{ empresas: EmpresaPackingList[] }>('/api/packing-lists/empresas');
+    const { empresas } = await leerGet<{ empresas: EmpresaPackingList[] }>('/api/packing-lists/empresas');
     return empresas;
   } catch (err) {
     return { error: mensaje(err, 'No se pudieron cargar los datos de la empresa.') };

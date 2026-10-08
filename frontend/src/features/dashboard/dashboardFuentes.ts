@@ -1,4 +1,4 @@
-import { apiFetch } from '../../services/api-client';
+import { leerGet } from '../../services/lectura-service';
 import { obtenerMetricasCompras, type MetricaCompraLinea } from '../../services/metricas-service';
 import { listarCitas, type Cita } from '../../services/citas-service';
 import { listarSaldosProveedores } from '../../services/saldos-service';
@@ -27,7 +27,7 @@ export async function cargarSemanasKg(hoyIso: string): Promise<SemanasKg> {
 }
 
 const pedirTickets = (consulta: string) =>
-  apiFetch<{ tickets: TicketPesaje[] }>(`/api/tickets-pesaje?${consulta}`).then(r => r.tickets);
+  leerGet<{ tickets: TicketPesaje[] }>(`/api/tickets-pesaje?${consulta}`).then(r => r.tickets);
 
 export async function cargarTickets(ahoraMs: number): Promise<ResumenTickets> {
   const [bruto, noFacturados] = await Promise.all([
@@ -40,10 +40,10 @@ export async function cargarTickets(ahoraMs: number): Promise<ResumenTickets> {
 export const cargarSaldosProveedores = (): Promise<RespuestaSaldos> => listarSaldosProveedores();
 
 export const cargarBancas = (): Promise<BancaMinima[]> =>
-  apiFetch<{ bancas: BancaMinima[] }>('/api/cochinito/bancas').then(r => r.bancas);
+  leerGet<{ bancas: BancaMinima[] }>('/api/cochinito/bancas').then(r => r.bancas);
 
 export async function cargarTomasAbiertas(): Promise<Array<{ id: string; codigo: string; almacenNombre: string | null }>> {
-  const { tomasFisicas } = await apiFetch<{ tomasFisicas: TomaFisicaInventario[] }>('/api/tomas-fisicas');
+  const { tomasFisicas } = await leerGet<{ tomasFisicas: TomaFisicaInventario[] }>('/api/tomas-fisicas');
   return tomasFisicas.filter(t => t.estado === 'abierta').map(t => ({ id: t.id, codigo: t.codigo, almacenNombre: t.almacenNombre }));
 }
 

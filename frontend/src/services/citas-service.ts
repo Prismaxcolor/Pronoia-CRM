@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
 
 export type EstadoCita = 'pendiente' | 'confirmada' | 'reprogramada' | 'cancelada' | 'completada';
 
@@ -19,7 +20,7 @@ export async function listarCitas(desde?: string, hasta?: string): Promise<Cita[
   if (desde) params.set('desde', desde);
   if (hasta) params.set('hasta', hasta);
   const query = params.toString() ? `?${params.toString()}` : '';
-  const result = await apiFetch<{ citas: Cita[] }>(`/api/citas${query}`);
+  const result = await leerGet<{ citas: Cita[] }>(`/api/citas${query}`);
   return result.citas;
 }
 
@@ -35,7 +36,7 @@ export async function actualizarEstadoCita(id: string, estado: EstadoCita): Prom
  *  en cita-despacho-service.ts) — no se hardcodean acá para no desincronizarse. */
 export async function obtenerHorarios(): Promise<string[]> {
   try {
-    const { horarios } = await apiFetch<{ horarios: string[] }>('/api/citas/horarios');
+    const { horarios } = await leerGet<{ horarios: string[] }>('/api/citas/horarios');
     return horarios;
   } catch {
     return [];

@@ -1,20 +1,37 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
+import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
 import type { TomaFisicaInventario, DetalleTomaFisica, ResumenTomaFisicaLinea } from '@shared/types/index.js';
+import { offlineHabilitado } from '../lib/offline/sesion';
+import { provisionalesDe } from '../lib/offline/f4/servicio-f4';
+import type { NombresTomaProvisional } from '../lib/offline/f4/peticiones-f4';
+import {
+  crearTomaFisicaF4, detallesPendientesDeToma, idRealDeToma, motivoNoCulminarToma, quitarPesajePendiente, tomaTemporal,
+} from './toma-fisica-cola';
 
 export async function obtenerTomasFisicas(): Promise<TomaFisicaInventario[]> {
   try {
-    const { tomasFisicas } = await apiFetch<{ tomasFisicas: TomaFisicaInventario[] }>('/api/tomas-fisicas');
-    return tomasFisicas;
+    const { tomasFisicas } = await leerGet<{ tomasFisicas: TomaFisicaInventario[] }>('/api/tomas-fisicas', {
+      recortar: d => recortarCampo(d, 'tomasFisicas', f => ultimasFilas(f as TomaFisicaInventario[], LIMITES_CACHE.maxTomasFisicas, t => t.createdAt)),
+    });
+    // Las tomas creadas sin conexión que aún no se enviaron aparecen primero.
+    return [...(await provisionalesDe<TomaFisicaInventario>('toma_fisica')), ...tomasFisicas];
   } catch {
-    return [];
+    return provisionalesDe<TomaFisicaInventario>('toma_fisica');
   }
 }
 
 export async function obtenerTomaFisica(
   id: string
 ): Promise<{ tomaFisica: TomaFisicaInventario; detalle: DetalleTomaFisica[] } | null> {
+  // Toma creada sin conexión: mientras no se sincronice solo existe en el teléfono (con sus conteos pendientes).
+  const temporal = tomaTemporal(id);
+  if (temporal) return { tomaFisica: temporal, detalle: await detallesPendientesDeToma(id) };
+  const idServidor = idRealDeToma(id) ?? id;
   try {
-    return await apiFetch<{ tomaFisica: TomaFisicaInventario; detalle: DetalleTomaFisica[] }>(`/api/tomas-fisicas/${id}`);
+    const r = await leerGet<{ tomaFisica: TomaFisicaInventario; detalle: DetalleTomaFisica[] }>(`/api/tomas-fisicas/${idServidor}`);
+    // Los conteos aún sin enviar se muestran junto a los ya guardados (el servidor no los conoce todavía).
+    return { ...r, detalle: [...r.detalle, ...(await detallesPendientesDeToma(id))] };
   } catch {
     return null;
   }
@@ -24,7 +41,7 @@ export async function obtenerTomaFisica(
 export async function obtenerLotesElegiblesToma(categoriaIds: string[]): Promise<string[]> {
   if (categoriaIds.length === 0) return [];
   try {
-    const { loteIds } = await apiFetch<{ loteIds: string[] }>(
+    const { loteIds } = await leerGet<{ loteIds: string[] }>(
       `/api/tomas-fisicas/lotes-elegibles?categoriaIds=${encodeURIComponent(categoriaIds.join(','))}`
     );
     return loteIds;
@@ -35,7 +52,7 @@ export async function obtenerLotesElegiblesToma(categoriaIds: string[]): Promise
 
 export async function obtenerResumenTomaFisica(id: string): Promise<ResumenTomaFisicaLinea[]> {
   try {
-    const { lineas } = await apiFetch<{ lineas: ResumenTomaFisicaLinea[] }>(`/api/tomas-fisicas/${id}/resumen`);
+    const { lineas } = await leerGet<{ lineas: ResumenTomaFisicaLinea[] }>(`/api/tomas-fisicas/${id}/resumen`);
     return lineas;
   } catch {
     return [];
@@ -50,7 +67,9 @@ export async function crearTomaFisica(input: {
   /** Solo alcance 'categoria': materiales a contar (omitir = toda la categoría). */
   productoIds?: string[];
   descripcion?: string | null;
-}): Promise<{ tomaFisica: TomaFisicaInventario } | { error: string }> {
+}, nombres?: NombresTomaProvisional): Promise<{ tomaFisica: TomaFisicaInventario; enCola?: boolean } | { error: string }> {
+  // Con el modo sin conexión activo la creación pasa por la cola (en línea sigue siendo inmediata).
+  if (offlineHabilitado()) return crearTomaFisicaF4(input, nombres);
   try {
     const { tomaFisica } = await apiFetch<{ tomaFisica: TomaFisicaInventario }>('/api/tomas-fisicas', {
       method: 'POST',
@@ -77,6 +96,8 @@ export async function registrarPesajeTomaFisica(
 }
 
 export async function eliminarPesajeTomaFisica(tomaFisicaId: string, detalleId: string): Promise<{ ok: true } | { error: string }> {
+  // Un conteo aún no enviado solo está en el teléfono: se quita de la cola.
+  if (await quitarPesajePendiente(detalleId)) return { ok: true };
   try {
     await apiFetch(`/api/tomas-fisicas/${tomaFisicaId}/pesajes/${detalleId}`, { method: 'DELETE' });
     return { ok: true };
@@ -86,8 +107,10 @@ export async function eliminarPesajeTomaFisica(tomaFisicaId: string, detalleId: 
 }
 
 export async function culminarTomaFisica(id: string): Promise<{ ok: true } | { error: string }> {
+  const bloqueo = await motivoNoCulminarToma(id);
+  if (bloqueo) return { error: bloqueo };
   try {
-    await apiFetch(`/api/tomas-fisicas/${id}/culminar`, { method: 'POST' });
+    await apiFetch(`/api/tomas-fisicas/${idRealDeToma(id) ?? id}/culminar`, { method: 'POST' });
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo culminar la toma física.' };
@@ -95,8 +118,10 @@ export async function culminarTomaFisica(id: string): Promise<{ ok: true } | { e
 }
 
 export async function cancelarTomaFisica(id: string): Promise<{ ok: true } | { error: string }> {
+  const bloqueo = await motivoNoCulminarToma(id);
+  if (bloqueo) return { error: bloqueo };
   try {
-    await apiFetch(`/api/tomas-fisicas/${id}/cancelar`, { method: 'POST' });
+    await apiFetch(`/api/tomas-fisicas/${idRealDeToma(id) ?? id}/cancelar`, { method: 'POST' });
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo cancelar la toma física.' };

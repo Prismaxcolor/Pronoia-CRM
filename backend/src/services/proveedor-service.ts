@@ -1,3 +1,4 @@
+import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearProveedorInput, ActualizarProveedorInput } from '../schemas/proveedores.js';
 
@@ -53,19 +54,15 @@ export async function listarProveedores(): Promise<ProveedorPublico[]> {
 }
 
 export async function crearProveedor(
-  input: CrearProveedorInput
+  input: CrearProveedorInput & MetaOperacion
 ): Promise<{ proveedor: ProveedorPublico } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('proveedores')
-    .insert({
-      nombre: input.nombre,
-      rfc: input.rfc,
-      telefono: input.telefono,
-      email: input.email,
-      fotos: input.fotos ?? [],
-    })
-    .select('*')
-    .single();
+  const { data, error } = await insertarMaestroIdempotente<ProveedorRow>('proveedores', {
+    nombre: input.nombre,
+    rfc: input.rfc,
+    telefono: input.telefono,
+    email: input.email,
+    fotos: input.fotos ?? [],
+  }, { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el proveedor.' };
   return { proveedor: toPublico(data as ProveedorRow) };

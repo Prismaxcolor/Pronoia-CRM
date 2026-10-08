@@ -21,6 +21,7 @@ import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-
 import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
 import { listarAdelantosDisponibles } from '../services/cruce-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 import { responderSaldos } from './saldos-handler.js';
 
 const router = Router();
@@ -161,9 +162,11 @@ router.post(
 router.post(
   '/',
   requirePermiso('clientes', 'crear'),
-  validateBody(crearClienteSchema),
+  validateBody(conOperacionCliente(crearClienteSchema)),
   async (req, res) => {
-    const result = await crearCliente(req.body, req.user!.sub);
+    const envio = await ejecutarOperacion(res, TIPO_OPERACION.clienteCrear, req.body, req.user!.sub, () => crearCliente(req.body, req.user!.sub));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -174,7 +177,7 @@ router.post(
       userId: req.user!.sub,
       clienteId: result.cliente.id,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 

@@ -20,6 +20,7 @@ import { etiquetaCortaPeriodo, rangoAnterior, severidadMerma } from '../../lib/t
 import {
   CATEGORIAS_TRANSFORMACION, OPCIONES_FILTRO_CATEGORIA, etiquetaCategoria, rangoEfectivo, useUmbralMerma, type UmbralMerma, kgFino } from './transformaciones-comun';
 import type { EstadoReporte } from './BloquesMermaReporte';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 const BloquesCategoriaYTipo = lazy(() => import('./BloquesMermaCategoriaYTipo'));
 
@@ -195,7 +196,7 @@ function MermaPage() {
 
   return (
     <div className="max-w-7xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.transformaciones}
         titulo="Merma"
         subtitulo="Cuánto material se pierde al transformar: lo que entró (kg netos) menos todo lo que salió, solo de las transformaciones ya completadas, según la fecha de cada una."
         migas={[{ etiqueta: 'Transformaciones', to: '/transformaciones' }, { etiqueta: 'Merma' }]}

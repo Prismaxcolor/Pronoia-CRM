@@ -1,3 +1,4 @@
+import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearVehiculoInput, ActualizarVehiculoInput } from '../schemas/vehiculo.js';
 
@@ -63,22 +64,18 @@ export async function listarVehiculos(): Promise<VehiculoPublico[]> {
 }
 
 export async function crearVehiculo(
-  input: CrearVehiculoInput
+  input: CrearVehiculoInput & MetaOperacion
 ): Promise<{ vehiculo: VehiculoPublico } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('vehiculos')
-    .insert({
-      nombre: input.nombre,
-      placa: input.placa,
-      marca: input.marca,
-      modelo: input.modelo,
-      color: input.color,
-      conductor: input.conductor,
-      descripcion: input.descripcion,
-      fotos: input.fotos ?? [],
-    })
-    .select('*')
-    .single();
+  const { data, error } = await insertarMaestroIdempotente<VehiculoRow>('vehiculos', {
+    nombre: input.nombre,
+    placa: input.placa,
+    marca: input.marca,
+    modelo: input.modelo,
+    color: input.color,
+    conductor: input.conductor,
+    descripcion: input.descripcion,
+    fotos: input.fotos ?? [],
+  }, { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn });
 
   if (error) {
     if (error.code === '23505') return { error: mensajeDuplicado(error.message) };

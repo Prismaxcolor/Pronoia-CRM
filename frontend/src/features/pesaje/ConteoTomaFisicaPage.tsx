@@ -5,11 +5,13 @@ import { difiereEstado } from '../../lib/borrador';
 import { idVigenteOVacio, mensajeSaneoBorrador, sanearTara } from '../../lib/borrador-vigentes';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, Trash2, Images, ZoomIn, X } from 'lucide-react';
-import { obtenerTomaFisica, obtenerResumenTomaFisica, registrarPesajeTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
+import { obtenerTomaFisica, obtenerResumenTomaFisica, eliminarPesajeTomaFisica } from '../../services/toma-fisica-service';
+import { registrarPesajeTomaFisicaF4 } from '../../services/toma-fisica-cola';
+import { conNombresDePendientes } from '../../lib/offline/f4/pendientes-f4';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerLotes } from '../../services/lote-service';
 import { obtenerTaras } from '../../services/tara-service';
-import { subirFotosFila, taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from './material-fila';
+import { taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from './material-fila';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import SeleccionarMaterialModal from './SeleccionarMaterialModal';
 import SeleccionarTaraModal from './SeleccionarTaraModal';
@@ -70,7 +72,7 @@ function ConteoTomaFisicaPage() {
       obtenerLotes(),
       obtenerTaras(),
     ]).then(([res, resumen, prods, lts, tars]) => {
-      if (res) { setTomaFisica(res.tomaFisica); setDetalle(res.detalle); }
+      if (res) { setTomaFisica(res.tomaFisica); setDetalle(conNombresDePendientes(res.detalle, prods, lts)); }
       setLineas(resumen);
       setProductos(prods);
       setLotes(lts);
@@ -228,23 +230,18 @@ function ConteoTomaFisicaPage() {
     if (fotos.length === 0) { setError('Agrega al menos una foto.'); return; }
 
     setGuardando(true);
-    const urls = await subirFotosFila(fotos);
-    if (!urls) {
-      setGuardando(false);
-      setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
-      return;
-    }
-    const result = await registrarPesajeTomaFisica(tomaFisicaId, {
+    // En línea sube las fotos y registra; sin conexión guarda el conteo y sus fotos en el teléfono (cola).
+    const result = await registrarPesajeTomaFisicaF4(tomaFisicaId, {
       productoId: esConLote ? null : productoId,
       loteId: esConLote ? loteId : (requiereLote ? loteId : null),
       pesoBruto: Number(pesoBruto) || 0,
       tara: taraKgFila(campoTara, taras),
-      fotos: urls,
-    });
+    }, fotos, productoSel?.nombre ?? loteSeleccionado?.nombre);
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
 
-    toast.exito('Pesaje registrado.');
+    if (result.enCola) toast.info('Conteo guardado en el teléfono. Se enviará solo al volver la conexión.');
+    else toast.exito('Pesaje registrado.');
     borrador.limpiar();
     setPesoBruto('');
     setCampoTara(taraVacia());

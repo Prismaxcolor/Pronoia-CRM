@@ -92,7 +92,7 @@ function AlmacenesPanel() {
   }
 
   const accionNuevo = puedeCrear ? (
-    <BotonAccion icono={<Plus size={16} />} onClick={() => setFormAbierto({ abierto: true, almacen: null })}>Nuevo almacén</BotonAccion>
+    <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setFormAbierto({ abierto: true, almacen: null })}>Nuevo almacén</BotonAccion>
   ) : undefined;
 
   return (

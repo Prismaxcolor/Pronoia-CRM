@@ -1,5 +1,6 @@
 import { Archive, ArchiveRestore, Building2, Coins, Globe, Pencil, Wallet } from 'lucide-react';
 import { Insignia, formatearNumero } from '../../components/ui';
+import { colorDeBanca, nombreDeColor } from '../../lib/color-banca';
 import type { Banca, TipoBanca } from '@shared/types/index.js';
 
 const ICONO_TIPO: Record<TipoBanca, React.ReactNode> = {
@@ -20,6 +21,8 @@ const BOTON_ACCION = 'rounded-md border border-border bg-surface p-2 text-text-s
 
 interface Props {
   banca: Banca;
+  /** Posición en el listado: da el gris neutro a las bancas sin color. */
+  indice?: number;
   /** La banca está usada como filtro de la tabla de movimientos. */
   seleccionada: boolean;
   onAlternarFiltro: () => void;
@@ -30,12 +33,14 @@ interface Props {
 }
 
 /** Tarjeta de una banca: saldo con su unidad, tipo, filtro por clic y acciones de editar/archivar/restaurar. */
-function TarjetaBanca({ banca, seleccionada, onAlternarFiltro, onEditar, onArchivar, onDesarchivar }: Props) {
+function TarjetaBanca({ banca, indice = 0, seleccionada, onAlternarFiltro, onEditar, onArchivar, onDesarchivar }: Props) {
   const negativo = banca.saldo < 0;
   const simbolo = banca.moneda === 'USD' ? 'USD' : banca.moneda === 'VES' ? 'Bs' : banca.moneda;
+  const color = colorDeBanca(banca, indice);
+  const nombreColor = nombreDeColor(banca.color);
   const hayAcciones = Boolean(onEditar || onArchivar || onDesarchivar);
   return (
-    <article className={`rounded-xl border bg-surface p-4 ${banca.archivada ? 'opacity-70' : ''} ${seleccionada ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'}`}>
+    <article style={{ borderTopColor: color }} className={`rounded-xl border border-t-4 bg-surface p-4 ${banca.archivada ? 'opacity-70' : ''} ${seleccionada ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'}`}>
       <button
         type="button"
         onClick={onAlternarFiltro}
@@ -46,7 +51,11 @@ function TarjetaBanca({ banca, seleccionada, onAlternarFiltro, onEditar, onArchi
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700" aria-hidden="true">{ICONO_TIPO[banca.tipo]}</span>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-semibold text-text-primary">{banca.nombre}</h3>
+            <h3 className="truncate text-sm font-semibold text-text-primary">
+              <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-baseline" style={{ backgroundColor: color }} aria-hidden="true" />
+              {banca.nombre}
+              {nombreColor && <span className="sr-only"> (color {nombreColor})</span>}
+            </h3>
             <p className="text-xs text-text-secondary">{ETIQUETA_TIPO[banca.tipo]} · {banca.moneda}</p>
           </div>
           {banca.archivada && <Insignia forma="cuadrada" icono={<Archive size={10} />}>Archivada</Insignia>}

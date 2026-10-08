@@ -12,6 +12,7 @@ import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearProductoSchema, actualizarProductoSchema, reordenarProductosSchema } from '../schemas/productos.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 
 const router = Router();
 
@@ -25,9 +26,11 @@ router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
 router.post(
   '/',
   requirePermiso('productos', 'crear'),
-  validateBody(crearProductoSchema),
+  validateBody(conOperacionCliente(crearProductoSchema)),
   async (req, res) => {
-    const result = await crearProducto(req.body, req.user!.sub);
+    const envio = await ejecutarOperacion(res, TIPO_OPERACION.productoCrear, req.body, req.user!.sub, () => crearProducto(req.body, req.user!.sub));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -40,7 +43,7 @@ router.post(
       tipo: result.producto.tipo,
       estadoLimpieza: result.producto.estadoLimpieza,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 

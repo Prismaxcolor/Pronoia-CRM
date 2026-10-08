@@ -1,3 +1,4 @@
+import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearAlmacenInput, ActualizarAlmacenInput } from '../schemas/almacen.js';
 
@@ -62,13 +63,13 @@ export async function listarAlmacenes(): Promise<AlmacenPublico[]> {
 }
 
 export async function crearAlmacen(
-  input: CrearAlmacenInput
+  input: CrearAlmacenInput & MetaOperacion
 ): Promise<{ almacen: AlmacenPublico } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('almacenes')
-    .insert({ nombre: input.nombre, detalle: input.detalle ?? null, fotos: input.fotos ?? [] })
-    .select('*')
-    .single();
+  const { data, error } = await insertarMaestroIdempotente<AlmacenRow>(
+    'almacenes',
+    { nombre: input.nombre, detalle: input.detalle ?? null, fotos: input.fotos ?? [] },
+    { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn }
+  );
 
   if (error) {
     if (error.code === '23505') return { error: 'Ya existe un almacén con ese nombre.' };

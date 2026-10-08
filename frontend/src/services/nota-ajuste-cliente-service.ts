@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
 
 /** Espejo de nota-ajuste-service.ts para clientes (Bloque 45) — mismo shape,
  *  apunta a /api/clientes/.../notas-ajuste en vez de /api/proveedores/. */
@@ -37,7 +38,7 @@ export interface NotaAjusteClienteDetalle {
 
 export async function obtenerNotaAjusteCliente(clienteId: string, notaId: string): Promise<NotaAjusteClienteDetalle | null> {
   try {
-    const { nota } = await apiFetch<{ nota: NotaAjusteClienteDetalle }>(`/api/clientes/${clienteId}/notas-ajuste/${notaId}`);
+    const { nota } = await leerGet<{ nota: NotaAjusteClienteDetalle }>(`/api/clientes/${clienteId}/notas-ajuste/${notaId}`);
     return nota;
   } catch {
     return null;

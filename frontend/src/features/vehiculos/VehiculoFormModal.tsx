@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X } from 'lucide-react';
 import { crearVehiculo, actualizarVehiculo } from '../../services/vehiculo-service';
 import { subirFotoTicket } from '../../services/storage-service';
@@ -43,7 +44,8 @@ function VehiculoFormModal({ vehiculo, onClose, onGuardado }: Props) {
     if (placaObligatoria && !placa.trim()) { setError('La placa es obligatoria.'); return; }
 
     setGuardando(true);
-    const urls = await subirFotosLocal(fotos, subirFotoTicket);
+    const enCola = !editando && altaEnColaActiva();
+    const urls = enCola ? [] : await subirFotosLocal(fotos, subirFotoTicket);
     if (!urls) {
       setError('Error al subir una de las fotos. Intenta de nuevo.');
       setGuardando(false);
@@ -62,11 +64,11 @@ function VehiculoFormModal({ vehiculo, onClose, onGuardado }: Props) {
     };
     const result = editando && vehiculo
       ? await actualizarVehiculo(vehiculo.id, datos)
-      : await crearVehiculo(datos);
+      : await crearVehiculo(datos, enCola ? fotos : undefined);
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    toast.exito(editando ? `Vehículo "${result.vehiculo.nombre}" actualizado.` : `Vehículo "${result.vehiculo.nombre}" creado.`);
+    toast.exito(editando ? `Vehículo "${result.vehiculo.nombre}" actualizado.` : `Vehículo "${result.vehiculo.nombre}" ${'enCola' in result ? 'guardado en el teléfono; se enviará al volver la conexión' : 'creado'}.`);
     onGuardado();
   };
 

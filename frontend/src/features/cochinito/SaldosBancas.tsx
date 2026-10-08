@@ -18,7 +18,10 @@ function Fila({ banca, minimo, maximo }: { banca: SaldoBanca; minimo: number; ma
   return (
     <li className="py-2" aria-label={`${banca.nombre}: ${texto}${negativo ? ', en negativo' : ''}`}>
       <div className="flex items-baseline justify-between gap-3 text-sm">
-        <span className="min-w-0 truncate font-medium text-text-primary">{banca.nombre}</span>
+        <span className="min-w-0 truncate font-medium text-text-primary">
+          <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-baseline" style={{ backgroundColor: banca.color }} aria-hidden="true" />
+          {banca.nombre}
+        </span>
         <span className={`shrink-0 font-semibold tabular-nums ${negativo ? 'text-amber-800' : 'text-text-primary'}`}>
           {texto}{negativo && <span className="ml-1 text-xs font-normal">(en negativo)</span>}
         </span>
@@ -26,8 +29,8 @@ function Fila({ banca, minimo, maximo }: { banca: SaldoBanca; minimo: number; ma
       <div className="relative mt-1.5 h-3 rounded bg-surface-alt" aria-hidden="true">
         {ancho > 0 && (
           <div
-            className={`absolute top-0 h-3 rounded ${negativo ? 'bg-amber-500' : 'bg-brand-600'}`}
-            style={{ left: `${izquierda}%`, width: `${Math.max(ancho, 1)}%` }}
+            className="absolute top-0 h-3 rounded"
+            style={{ left: `${izquierda}%`, width: `${Math.max(ancho, 1)}%`, backgroundColor: banca.color }}
           />
         )}
         {minimo < 0 && maximo > 0 && <div className="absolute top-[-2px] h-4 w-px bg-text-muted" style={{ left: `${cero}%` }} />}

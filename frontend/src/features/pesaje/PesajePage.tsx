@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Scale, Loader2, Plus, Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
 import { obtenerProveedores } from '../../services/proveedor-service';
@@ -30,19 +30,24 @@ import { CLAVES_FILTROS_PESAJE } from '../../lib/pesaje-lista';
 import { idVigenteOVacio, mensajeReseteos, mensajeSaneoBorrador, sanearFilasRestauradas } from '../../lib/borrador-vigentes';
 import TarasExtraEditor from './TarasExtraEditor';
 import { filaTaraIncompleta } from './tara-multiple';
-import { filaVacia, taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, netoFila, subirFotosFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila } from './material-fila';
+import { filaVacia, taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, netoFila, materialAPayload, esFilaSinLote, loteIdsPosiblesFila, seleccionarTaraFila, type MaterialFila } from './material-fila';
 import { obtenerVehiculos } from '../../services/vehiculo-service';
 import VehiculoSelector from '../../components/VehiculoSelector';
 import { loteTrasladoFilaVacia, netoLoteTrasladoFila } from './lote-traslado-fila';
 import AvisoBorrador from '../../components/AvisoBorrador';
-import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales, subirFotosPesajeGlobal } from './pesaje-global-fila';
+import { pesajeGlobalVacio, netoPesajeGlobalFila, sumaPesajesGlobales } from './pesaje-global-fila';
 import { diferenciaFavoreceProveedor, colorClaseDiferencia, calcularDiferenciaPeso, redondearKg, descripcionDiferencia } from './diferencia-peso';
 import { lotesSeleccionables } from '@shared/types/lote.js';
 import { type Producto, type TicketPesaje, type Lote, type Tara, type Almacen, type Traslado, type TomaFisicaInventario, type Vehiculo } from '@shared/types/index.js';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import { iniciarEnvio, enviarOEncolar } from './pesaje-envio';
+import { mensajeGuardadoEnTelefono } from '../../lib/offline/cola-guardado';
 
 interface Entidad { id: string; nombre: string; activo: boolean; fotos?: string[] }
 
 type Pestana = 'nuevo' | 'tickets';
+
+const MENSAJE_FALLO_FOTOS = 'No se pudieron guardar las fotos. Revisa la conexión y el espacio del teléfono; tu formulario sigue intacto.';
 
 function PesajePage() {
   const { tienePermiso } = useAuth();
@@ -276,6 +281,9 @@ function PesajePage() {
   const quitarFotoLoteFila = (uid: number, idx: number) =>
     setLoteFilas(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
 
+  // Id de la operación en curso: se conserva si el envío falla para que un reintento no duplique.
+  const idEnvioRef = useRef<string | null>(null);
+
   const guardarTraslado = async () => {
     setError(null);
 
@@ -300,13 +308,19 @@ function PesajePage() {
     if (loteFilas.some(f => f.fotos.length === 0)) { setError('Cada lote necesita al menos una foto del pesaje.'); return; }
 
     setGuardando(true);
+    const envio = iniciarEnvio(idEnvioRef.current);
+    idEnvioRef.current = envio.id;
+    const falloFotos = async (mensaje: string) => {
+      await envio.guardador?.descartar();
+      setError(mensaje);
+      setGuardando(false);
+    };
 
     const materialesConFotos: Array<{ productoId: string; subcategoria: string | null; pesoBruto: number; tara: number; fotos: string[] }> = [];
     for (const f of materialesLlenos) {
-      const urls = await subirFotosFila(f.fotos);
+      const urls = await envio.subirFotos(f.fotos);
       if (!urls) {
-        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
-        setGuardando(false);
+        await falloFotos(MENSAJE_FALLO_FOTOS);
         return;
       }
       materialesConFotos.push({
@@ -320,10 +334,9 @@ function PesajePage() {
 
     const lotesConFotos: Array<{ loteId: string; pesoBruto: number; tara: number; fotos: string[] }> = [];
     for (const f of loteFilas) {
-      const urls = await subirFotosFila(f.fotos);
+      const urls = await envio.subirFotos(f.fotos);
       if (!urls) {
-        setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
-        setGuardando(false);
+        await falloFotos(MENSAJE_FALLO_FOTOS);
         return;
       }
       lotesConFotos.push({
@@ -334,18 +347,30 @@ function PesajePage() {
       });
     }
 
-    const result = await crearTraslado({
-      almacenOrigenId,
-      almacenDestinoId,
-      materiales: materialesConFotos,
-      lotes: lotesConFotos,
-      vehiculo: vehiculo.trim() || null,
-      observaciones: observaciones.trim() || null,
+    const r = await enviarOEncolar({
+      envio,
+      tipo: 'traslado',
+      endpoint: '/api/traslados',
+      descripcion: 'Traslado entre almacenes',
+      payload: {
+        almacenOrigenId,
+        almacenDestinoId,
+        materiales: materialesConFotos,
+        lotes: lotesConFotos,
+        vehiculo: vehiculo.trim() || null,
+        observaciones: observaciones.trim() || null,
+      },
+      enviarEnLinea: cuerpo => crearTraslado(cuerpo),
     });
     setGuardando(false);
 
-    if ('error' in result) { setError(result.error); return; }
-    toast.exito(`${result.traslado.codigo} generado (${fmt(result.traslado.pesoNetoEnviado)} kg). Queda pendiente hasta que el almacén destino confirme la recepción.`);
+    if (r.tipo === 'error') { setError(r.mensaje); return; }
+    idEnvioRef.current = null;
+    if (r.tipo === 'encolado') {
+      toast.exito(mensajeGuardadoEnTelefono(r.op.codigoProvisional));
+    } else {
+      toast.exito(`${r.resultado.traslado.codigo} generado (${fmt(r.resultado.traslado.pesoNetoEnviado)} kg). Queda pendiente hasta que el almacén destino confirme la recepción.`);
+    }
     limpiar();
   };
 
@@ -380,16 +405,22 @@ function PesajePage() {
     }
 
     setGuardando(true);
+    const envio = iniciarEnvio(idEnvioRef.current);
+    idEnvioRef.current = envio.id;
+    const falloFotos = async (mensaje: string) => {
+      await envio.guardador?.descartar();
+      setError(mensaje);
+      setGuardando(false);
+    };
 
     // Fotos por material — cada línea sube las suyas (Bloque 46), en vez de
     // una sola galería general al final del ticket.
     const materialesConFotos: Array<ReturnType<typeof materialAPayload> & { fotos: string[] }> = [];
     if (estado !== 'bruto') {
       for (const f of materiales) {
-        const urls = await subirFotosFila(f.fotos);
+        const urls = await envio.subirFotos(f.fotos);
         if (!urls) {
-          setError('No se pudo subir una de las fotos. Revisa que el bucket "tickets" exista en Supabase Storage.');
-          setGuardando(false);
+          await falloFotos(MENSAJE_FALLO_FOTOS);
           return;
         }
         materialesConFotos.push({ ...materialAPayload(f, taras, productos), fotos: urls });
@@ -398,10 +429,9 @@ function PesajePage() {
 
     let urlsDevolucion: string[] = [];
     if (estado !== 'bruto') {
-      const urls = await subirFotosFila(fotosDevolucion);
+      const urls = await envio.subirFotos(fotosDevolucion);
       if (!urls) {
-        setError('No se pudo subir una de las fotos de la devolución. Revisa que el bucket "tickets" exista en Supabase Storage.');
-        setGuardando(false);
+        await falloFotos(MENSAJE_FALLO_FOTOS);
         return;
       }
       urlsDevolucion = urls;
@@ -412,10 +442,9 @@ function PesajePage() {
       for (const f of pesajesGlobales) {
         let fotosUrls: string[] = [];
         if (f.fotos.length > 0) {
-          const uploaded = await subirFotosPesajeGlobal(f);
+          const uploaded = await envio.subirFotos(f.fotos);
           if (!uploaded) {
-            setError('No se pudo subir una foto del pesaje global. Revisa que el bucket "tickets" exista en Supabase Storage.');
-            setGuardando(false);
+            await falloFotos(MENSAJE_FALLO_FOTOS);
             return;
           }
           fotosUrls = uploaded;
@@ -424,32 +453,44 @@ function PesajePage() {
       }
     }
 
-    const result = await crearTicket({
-      tipo: tipo === 'venta' ? 'venta' : 'compra',
-      entidadId,
-      almacenId: almacenes.length > 1 ? (almacenOrigenId || almacenPredeterminado?.id || null) : null,
-      fecha,
-      pesoGlobal: sinPesajeGlobal ? null : sumaPesajesGlobales(pesajesGlobales),
-      pesajesGlobales: pesajesGlobalesPayload,
-      // El backend marca "sin peso global propio" con este flag.
-      pesajeExterior: sinPesajeGlobal,
-      devolucion: Number(devolucion) || 0,
-      fotosDevolucion: urlsDevolucion,
-      estado,
-      materiales: materialesConFotos,
-      fotos: [],
-      observaciones: observaciones.trim() || null,
-      vehiculo: vehiculo.trim() || null,
+    const r = await enviarOEncolar({
+      envio,
+      tipo: 'ticket_pesaje',
+      endpoint: '/api/tickets-pesaje',
+      descripcion: `${tipo === 'venta' ? 'Venta' : 'Compra'}${estado === 'bruto' ? ' (pesaje global)' : ''}`,
+      payload: {
+        tipo: tipo === 'venta' ? ('venta' as const) : ('compra' as const),
+        entidadId,
+        almacenId: almacenes.length > 1 ? (almacenOrigenId || almacenPredeterminado?.id || null) : null,
+        fecha,
+        pesoGlobal: sinPesajeGlobal ? null : sumaPesajesGlobales(pesajesGlobales),
+        pesajesGlobales: pesajesGlobalesPayload,
+        // El backend marca "sin peso global propio" con este flag.
+        pesajeExterior: sinPesajeGlobal,
+        devolucion: Number(devolucion) || 0,
+        fotosDevolucion: urlsDevolucion,
+        estado,
+        materiales: materialesConFotos,
+        fotos: [],
+        observaciones: observaciones.trim() || null,
+        vehiculo: vehiculo.trim() || null,
+      },
+      enviarEnLinea: cuerpo => crearTicket(cuerpo),
     });
 
     setGuardando(false);
 
-    if ('error' in result) { setError(result.error); return; }
-    toast.exito(
-      estado === 'bruto'
-        ? `${result.ticket.codigo} guardado como pesaje global (por recepcionar). Complétalo luego desde la lista.`
-        : `${result.ticket.codigo} generado (neto ${fmt(result.ticket.pesoNetoTotal)} kg).`
-    );
+    if (r.tipo === 'error') { setError(r.mensaje); return; }
+    idEnvioRef.current = null;
+    if (r.tipo === 'encolado') {
+      toast.exito(mensajeGuardadoEnTelefono(r.op.codigoProvisional));
+    } else {
+      toast.exito(
+        estado === 'bruto'
+          ? `${r.resultado.ticket.codigo} guardado como pesaje global (por recepcionar). Complétalo luego desde la lista.`
+          : `${r.resultado.ticket.codigo} generado (neto ${fmt(r.resultado.ticket.pesoNetoTotal)} kg).`
+      );
+    }
     limpiar();
     cargarTickets();
   };
@@ -1047,7 +1088,7 @@ function PesajePage() {
 
   return (
     <div>
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.pesaje}
         titulo="Pesaje"
         subtitulo="Registra la pesada del material antes de facturar y sigue qué falta recepcionar, facturar o revisar."
       />

@@ -3,14 +3,7 @@ import { X, Plus, Loader2, Trash2, ChevronDown, AlertTriangle, TrendingDown } fr
 import {
   obtenerTransformaciones,
   borrarTransformacion,
-  crearTransformacionFerroso,
-  completarTransformacionFerroso,
   obtenerSalidasComunes,
-  crearTransformacionPCB,
-  completarTransformacionPCB,
-  completarTransformacionMixta,
-  type CrearTransformacionFerrosoInput,
-  type CompletarTransformacionFerrosoSalidaInput,
 } from '../../services/transformacion-service';
 import { obtenerProductos } from '../../services/producto-service';
 import { obtenerAlmacenes, obtenerStockAlmacen } from '../../services/almacen-service';
@@ -20,18 +13,18 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
-import { subirFotoTicket } from '../../services/storage-service';
-import { subirFotosLocal } from '../../lib/foto-picker';
 import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
-import SeleccionarTaraModal from '../pesaje/SeleccionarTaraModal';
-import CantidadTaraInput from '../pesaje/CantidadTaraInput';
 import CampoTaraSalida from './CampoTaraSalida';
+import PesadasEntradaCampo from './PesadasEntradaCampo';
+import { aPesadasConFotos, pesadaEntradaVacia, pesadasDeBorrador, totalesEntrada, validarPesadasEntrada, type PesadaEntradaForm } from '../../lib/entrada-pesadas';
+import { completarTransformacionF4, crearTransformacionF4 } from '../../services/transformacion-cola';
+import { salidasParaCompletar, varianteDeCompletar } from '../../lib/offline/f4/salidas-f4';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
-import { taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, seleccionarTaraFila, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
+import { taraKgFila, taraFilaNoVigente, MENSAJE_TARA_NO_VIGENTE, taraVacia, type CampoTara, type FotoMaterial } from '../pesaje/material-fila';
 import type { Transformacion, SalidaComun, Tara, Lote } from '@shared/types/index.js';
 import { SelectorTipoSalida, BloqueLoteDestino, BloqueMaterialDestino } from './SalidaMixtaFila';
-import { hayFilasMixtas, validarSalidas, armarSalidaMixta, type TipoSalida } from '../../lib/salida-mixta';
+import { validarSalidas, type TipoSalida } from '../../lib/salida-mixta';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import MermaPorTipoBloque from './MermaPorTipoBloque';
 import { armarMermaDetalle, mermaFormVacio, validarMermaForm, type MermaForm } from '../../lib/merma-tipificada';
@@ -48,6 +41,7 @@ import {
 import type { Producto } from '@shared/types/index.js';
 import type { Almacen } from '@shared/types/index.js';
 import { hoyNegocio } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 type Categoria = 'ferroso_no_ferroso' | 'pcb';
 
@@ -180,27 +174,18 @@ function CompletarFerrosoModal({
     if (errorMerma) { setError(errorMerma); return; }
 
     setGuardando(true);
-    const fotasPorFila = await Promise.all(filasEfectivas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
-    if (fotasPorFila.some(urls => urls === null)) {
-      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
-      setGuardando(false);
-      return;
-    }
-    const result = hayFilasMixtas('ferroso_no_ferroso', filasEfectivas)
-      ? await completarTransformacionMixta(
-        transformacion.id,
-        filasEfectivas.map((f, i) => armarSalidaMixta('ferroso_no_ferroso', f, Number(f.pesoBruto), taraKgFila(f, taras), fotasPorFila[i] as string[])),
-        armarMermaDetalle(mermaForm)
-      )
-      : await completarTransformacionFerroso(transformacion.id, filasEfectivas.map((f, i): CompletarTransformacionFerrosoSalidaInput => ({
-        productoId: f.productoId,
-        pesoBruto: Number(f.pesoBruto),
-        tara: taraKgFila(f, taras),
-        fotos: fotasPorFila[i] as string[],
-      })), armarMermaDetalle(mermaForm));
+    // En línea sube las fotos y completa; sin conexión guarda las salidas y sus fotos en el teléfono (cola).
+    const variante = varianteDeCompletar('ferroso_no_ferroso', filasEfectivas);
+    const result = await completarTransformacionF4(
+      variante,
+      transformacion,
+      salidasParaCompletar(variante, 'ferroso_no_ferroso', filasEfectivas.map(f => ({ ...f, pesoBruto: Number(f.pesoBruto), tara: taraKgFila(f, taras) }))),
+      armarMermaDetalle(mermaForm),
+    );
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
-    toast.exito('Transformación completada.');
+    if (result.enCola) toast.info('Salidas guardadas en el teléfono. La transformación se completará al volver la conexión.');
+    else toast.exito('Transformación completada.');
     if (result.advertencia) toast.advertencia(result.advertencia);
     borrador.limpiar();
     onCompletada();
@@ -358,25 +343,21 @@ function NuevaFerrosoForm({
 
   const [productoEntradaId, setProductoEntradaId] = useState('');
   const [almacenId, setAlmacenId] = useState('');
-  const [pesoBruto, setPesoBruto] = useState('');
-  const [campoTara, setCampoTara] = useState<CampoTara>(taraVacia());
-  const [fotos, setFotos] = useState<FotoMaterial[]>([]);
+  // Varias pesadas de entrada: cada una con bruto, tara y fotos; se suman en el neto de entrada.
+  const [pesadas, setPesadas] = useState<PesadaEntradaForm[]>(() => [pesadaEntradaVacia()]);
   const [fecha, setFecha] = useState(hoyISO());
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
-  const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
   const [stockAlmacen, setStockAlmacen] = useState<Map<string, number>>(new Map());
   const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
 
-  const estadoBorrador = { productoEntradaId, almacenId, pesoBruto, campoTara, fotos, fecha, notas };
+  const estadoBorrador = { productoEntradaId, almacenId, pesadasEntrada: pesadas, fecha, notas };
   const restablecer = () => {
     setProductoEntradaId('');
     setAlmacenId('');
-    setPesoBruto('');
-    setCampoTara(taraVacia());
-    setFotos([]);
+    setPesadas([pesadaEntradaVacia()]);
     setFecha(hoyISO());
     setNotas('');
     setAvisoSaneo(null);
@@ -386,22 +367,27 @@ function NuevaFerrosoForm({
     version: 1,
     habilitado: catalogosListos,
     estado: estadoBorrador,
-    hayCambios: difiereEstado(estadoBorrador, { productoEntradaId: '', almacenId: '', pesoBruto: '', campoTara: taraVacia(), fotos: [], fecha: hoyISO(), notas: '' }),
+    hayCambios: difiereEstado(estadoBorrador, { productoEntradaId: '', almacenId: '', pesadasEntrada: [pesadaEntradaVacia()], fecha: hoyISO(), notas: '' }),
     aplicar: d => {
       // Material, almacén o tara que ya no existen quedan sin elegir, con aviso.
       const productoOk = idVigenteOVacio(d.productoEntradaId ?? '', productos.map(p => p.id));
       const almacenOk = idVigenteOVacio(d.almacenId ?? '', almacenes.map(a => a.id));
-      const tara = sanearTara({ ...taraVacia(), ...d.campoTara }, taras.map(t => t.id));
+      // Los borradores anteriores guardaban un solo peso: se convierten en una pesada.
+      const restauradas = pesadasDeBorrador(d as Parameters<typeof pesadasDeBorrador>[0]);
+      let tarasReseteadas = 0;
+      const saneadas = restauradas.map(p => {
+        const t = sanearTara(p, taras.map(x => x.id));
+        if (t.cambiada) tarasReseteadas += 1;
+        return { ...p, ...t.fila };
+      });
       const reseteos: string[] = [];
       if (productoOk !== (d.productoEntradaId ?? '')) reseteos.push('el material de entrada');
       if (almacenOk !== (d.almacenId ?? '')) reseteos.push('el almacén');
-      if (tara.cambiada) reseteos.push('la tara');
+      if (tarasReseteadas > 0) reseteos.push(tarasReseteadas === 1 ? 'una tara' : `${tarasReseteadas} taras`);
       setAvisoSaneo(mensajeSaneoBorrador(reseteos));
       setProductoEntradaId(productoOk);
       setAlmacenId(almacenOk);
-      setPesoBruto(d.pesoBruto ?? '');
-      setCampoTara(tara.fila);
-      setFotos(d.fotos ?? []);
+      setPesadas(saneadas);
       // Una fecha vieja no se restaura en silencio: una transformación nueva lleva la fecha de hoy.
       setFecha(fechaRestaurable(d.fecha, hoyISO()));
       setNotas(d.notas ?? '');
@@ -409,7 +395,7 @@ function NuevaFerrosoForm({
     restablecer,
   });
 
-  const neto = (Number(pesoBruto) || 0) - taraKgFila(campoTara, taras);
+  const neto = totalesEntrada(pesadas, taras).neto;
 
   // Aviso (sin bloquear, mismo criterio que traslados en Pesaje) si retirar
   // este neto deja el material en negativo en el almacén elegido.
@@ -426,32 +412,21 @@ function NuevaFerrosoForm({
     setError(null);
     if (!productoEntradaId) { setError('Selecciona el material de entrada.'); return; }
     if (!almacenId) { setError('Selecciona el almacén.'); return; }
-    if (taraFilaNoVigente(campoTara, taras)) { setError(MENSAJE_TARA_NO_VIGENTE); return; }
-    if (neto <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
-    if (fotos.length === 0) { setError('Agrega al menos una foto de entrada.'); return; }
+    const errorPesadas = validarPesadasEntrada(pesadas, taras);
+    if (errorPesadas) { setError(errorPesadas); return; }
 
     setGuardando(true);
-    const fotosUrls = await subirFotosLocal(fotos, subirFotoTicket);
-    if (!fotosUrls) {
-      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
-      setGuardando(false);
-      return;
-    }
-
-    const input: CrearTransformacionFerrosoInput = {
-      productoEntradaId,
-      almacenId,
-      pesoBruto: Number(pesoBruto),
-      tara: taraKgFila(campoTara, taras),
-      fecha,
-      notas: notas.trim() || null,
-      fotosEntrada: fotosUrls,
-    };
-    const result = await crearTransformacionFerroso(input);
+    // En línea sube las fotos y crea; sin conexión guarda todo en el teléfono (cola) con las mismas fotos.
+    const result = await crearTransformacionF4(
+      'ferroso',
+      { productoEntradaId, almacenId, fecha, notas: notas.trim() || null },
+      aPesadasConFotos(pesadas, taras),
+    );
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
-    toast.exito('Transformación iniciada. Complétala cuando tengas las salidas pesadas.');
+    if (result.enCola) toast.info('Transformación guardada en el teléfono. Se enviará al volver la conexión; podrás completarla cuando la tengas.');
+    else toast.exito('Transformación iniciada. Complétala cuando tengas las salidas pesadas.');
     borrador.limpiar();
     restablecer();
     onCreada();
@@ -483,47 +458,7 @@ function NuevaFerrosoForm({
         </select>
       </div>
 
-      <div>
-        <label className={labelClass}>Peso bruto (kg) *</label>
-        <input type="number" step="0.001" min="0.001" required value={pesoBruto}
-          onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
-      </div>
-
-      <div>
-        <label className={labelClass}>Tara</label>
-        <div className="flex rounded-md overflow-hidden border border-border text-[11px] w-fit mb-1.5">
-          <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'preconfigurada' }))} className={`px-2 py-1 ${campoTara.taraModo === 'preconfigurada' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-            Preconfigurada
-          </button>
-          <button type="button" onClick={() => setCampoTara(prev => ({ ...prev, taraModo: 'manual' }))} className={`px-2 py-1 ${campoTara.taraModo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface text-text-secondary'}`}>
-            Manual
-          </button>
-        </div>
-        {campoTara.taraModo === 'preconfigurada' ? (
-          <div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setMostrarSelectorTara(true)}
-                className={`${inputClass} flex items-center justify-between gap-2 text-left`}
-              >
-                <span className={campoTara.taraId ? 'text-text-primary truncate' : 'text-text-muted'}>
-                  {taras.find(t => t.id === campoTara.taraId)?.nombre ?? '— Sin tara —'}
-                </span>
-                <ChevronDown size={14} className="text-text-muted shrink-0" />
-              </button>
-              <CantidadTaraInput value={campoTara.taraCantidad} onChange={v => setCampoTara(prev => ({ ...prev, taraCantidad: v }))} />
-            </div>
-            <p className="text-[11px] text-text-muted mt-1">= {fmt(taraKgFila(campoTara, taras))} kg</p>
-          </div>
-        ) : (
-          <input type="number" step="0.001" min="0" value={campoTara.taraManual} onChange={e => setCampoTara(prev => ({ ...prev, taraManual: e.target.value }))} className={inputClass} placeholder="0.00" />
-        )}
-      </div>
-
-      <p className="text-xs text-text-muted -mt-2">
-        Neto a retirar: <span className="font-semibold text-text-primary">{fmt(neto)} kg</span>
-      </p>
+      <PesadasEntradaCampo pesadas={pesadas} taras={taras} onCambiar={setPesadas} />
 
       {quedaEnNegativo && (
         <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 -mt-2">
@@ -533,8 +468,6 @@ function NuevaFerrosoForm({
           </span>
         </div>
       )}
-
-      <FotoMaterialPicker fotos={fotos} onAgregar={files => setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))])} onQuitar={idx => setFotos(prev => prev.filter((_, i) => i !== idx))} label="Fotos de entrada *" />
 
       <div>
         <label className={labelClass}>Fecha</label>
@@ -561,14 +494,6 @@ function NuevaFerrosoForm({
           onSeleccionar={id => { setProductoEntradaId(id); setMostrarSelectorMaterial(false); }}
         />
       )}
-      {mostrarSelectorTara && (
-        <SeleccionarTaraModal
-          taras={taras}
-          taraSeleccionada={campoTara.taraId || undefined}
-          onClose={() => setMostrarSelectorTara(false)}
-          onSeleccionar={taraId => { setCampoTara(prev => ({ ...prev, ...seleccionarTaraFila(prev, taraId) })); setMostrarSelectorTara(false); }}
-        />
-      )}
     </form>
   );
 }
@@ -576,82 +501,78 @@ function NuevaFerrosoForm({
 // ---------------------------------------------------------------------------
 // Formulario: Nueva transformación PCB
 // ---------------------------------------------------------------------------
-function NuevaPCBForm({ lotes, almacenes, catalogosListos, onCreada }: { lotes: Lote[]; almacenes: Almacen[]; catalogosListos: boolean; onCreada: () => void }) {
+function NuevaPCBForm({ lotes, almacenes, taras, catalogosListos, onCreada }: { lotes: Lote[]; almacenes: Almacen[]; taras: Tara[]; catalogosListos: boolean; onCreada: () => void }) {
   const toast = useToast();
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400";
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   const [loteOrigenId, setLoteOrigenId] = useState('');
   const [almacenId, setAlmacenId] = useState('');
-  const [pesoBruto, setPesoBruto] = useState('');
-  const [tara, setTara] = useState('');
+  // Varias pesadas de entrada: cada una con bruto, tara y fotos; se suman en el neto de entrada.
+  const [pesadas, setPesadas] = useState<PesadaEntradaForm[]>(() => [pesadaEntradaVacia()]);
   const [fecha, setFecha] = useState(hoyISO());
   const [notas, setNotas] = useState('');
-  const [fotos, setFotos] = useState<FotoMaterial[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mostrarSelectorLote, setMostrarSelectorLote] = useState(false);
   const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
 
-  const estadoBorrador = { loteOrigenId, almacenId, pesoBruto, tara, fecha, notas, fotos };
+  const estadoBorrador = { loteOrigenId, almacenId, pesadasEntrada: pesadas, fecha, notas };
   const restablecer = () => {
-    setLoteOrigenId(''); setAlmacenId(''); setPesoBruto(''); setTara(''); setFotos([]); setFecha(hoyISO()); setNotas(''); setAvisoSaneo(null);
+    setLoteOrigenId(''); setAlmacenId(''); setPesadas([pesadaEntradaVacia()]); setFecha(hoyISO()); setNotas(''); setAvisoSaneo(null);
   };
   const borrador = useBorradorPersistente<typeof estadoBorrador>({
     formulario: 'transformacion-nueva-pcb',
     version: 1,
     habilitado: catalogosListos,
     estado: estadoBorrador,
-    hayCambios: difiereEstado(estadoBorrador, { loteOrigenId: '', almacenId: '', pesoBruto: '', tara: '', fecha: hoyISO(), notas: '', fotos: [] }),
+    hayCambios: difiereEstado(estadoBorrador, { loteOrigenId: '', almacenId: '', pesadasEntrada: [pesadaEntradaVacia()], fecha: hoyISO(), notas: '' }),
     aplicar: d => {
       // Lote o almacén que ya no existen (o se desactivó el lote) quedan sin elegir, con aviso.
       const loteOk = idVigenteOVacio(d.loteOrigenId ?? '', lotes.filter(l => l.activo).map(l => l.id));
       const almacenOk = idVigenteOVacio(d.almacenId ?? '', almacenes.map(a => a.id));
+      // Los borradores anteriores guardaban un solo peso y una tara manual: se convierten en una pesada.
+      const restauradas = pesadasDeBorrador(d as Parameters<typeof pesadasDeBorrador>[0]);
+      let tarasReseteadas = 0;
+      const saneadas = restauradas.map(p => {
+        const t = sanearTara(p, taras.map(x => x.id));
+        if (t.cambiada) tarasReseteadas += 1;
+        return { ...p, ...t.fila };
+      });
       const reseteos: string[] = [];
       if (loteOk !== (d.loteOrigenId ?? '')) reseteos.push('el lote de origen');
       if (almacenOk !== (d.almacenId ?? '')) reseteos.push('el almacén');
+      if (tarasReseteadas > 0) reseteos.push(tarasReseteadas === 1 ? 'una tara' : `${tarasReseteadas} taras`);
       setAvisoSaneo(mensajeSaneoBorrador(reseteos));
       setLoteOrigenId(loteOk);
       setAlmacenId(almacenOk);
-      setPesoBruto(d.pesoBruto ?? '');
-      setTara(d.tara ?? '');
+      setPesadas(saneadas);
       // Una fecha vieja no se restaura en silencio: una transformación nueva lleva la fecha de hoy.
       setFecha(fechaRestaurable(d.fecha, hoyISO()));
       setNotas(d.notas ?? '');
-      setFotos(d.fotos ?? []);
     },
     restablecer,
   });
 
   const loteOrigen = lotes.find(l => l.id === loteOrigenId);
-  const neto = (Number(pesoBruto) || 0) - (Number(tara) || 0);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!loteOrigenId) { setError('Selecciona el lote de origen.'); return; }
     if (!almacenId) { setError('Selecciona de qué almacén sale el lote.'); return; }
-    if (neto <= 0) { setError('El peso neto debe ser mayor a 0.'); return; }
-    if (fotos.length === 0) { setError('Agrega al menos una foto de entrada.'); return; }
+    const errorPesadas = validarPesadasEntrada(pesadas, taras);
+    if (errorPesadas) { setError(errorPesadas); return; }
     setGuardando(true);
-    const fotosUrls = await subirFotosLocal(fotos, subirFotoTicket);
-    if (!fotosUrls) {
-      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
-      setGuardando(false);
-      return;
-    }
-    const result = await crearTransformacionPCB({
-      loteOrigenId,
-      almacenId,
-      pesoBruto: Number(pesoBruto),
-      tara: Number(tara) || 0,
-      fecha,
-      notas: notas.trim() || null,
-      fotosEntrada: fotosUrls,
-    });
+    // En línea sube las fotos y crea; sin conexión guarda todo en el teléfono (cola) con las mismas fotos.
+    const result = await crearTransformacionF4(
+      'pcb',
+      { loteOrigenId, almacenId, fecha, notas: notas.trim() || null },
+      aPesadasConFotos(pesadas, taras),
+    );
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
-    toast.exito('Transformación PCB iniciada. Complétala cuando tengas las salidas pesadas.');
+    if (result.enCola) toast.info('Transformación PCB guardada en el teléfono. Se enviará al volver la conexión.');
+    else toast.exito('Transformación PCB iniciada. Complétala cuando tengas las salidas pesadas.');
     borrador.limpiar();
     restablecer();
     onCreada();
@@ -711,20 +632,7 @@ function NuevaPCBForm({ lotes, almacenes, catalogosListos, onCreada }: { lotes: 
           );
         })()}
       </div>
-      <div>
-        <label className={labelClass}>Peso bruto a retirar (kg) *</label>
-        <input type="number" step="0.001" min="0.001" required value={pesoBruto}
-          onChange={e => setPesoBruto(e.target.value)} className={inputClass} placeholder="0.00" />
-      </div>
-      <div>
-        <label className={labelClass}>Tara (kg)</label>
-        <input type="number" step="0.001" min="0" value={tara}
-          onChange={e => setTara(e.target.value)} className={inputClass} placeholder="0.00" />
-      </div>
-      <p className="text-xs text-text-muted -mt-2">Neto a retirar: <span className="font-semibold text-text-primary">{fmt(neto)} kg</span></p>
-      <FotoMaterialPicker fotos={fotos}
-        onAgregar={files => setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))])}
-        onQuitar={idx => setFotos(prev => prev.filter((_, i) => i !== idx))} label="Fotos de entrada *" />
+      <PesadasEntradaCampo pesadas={pesadas} taras={taras} onCambiar={setPesadas} />
       <div>
         <label className={labelClass}>Fecha</label>
         <input type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
@@ -855,27 +763,18 @@ function CompletarPCBModal({
     if (errorMerma) { setError(errorMerma); return; }
 
     setGuardando(true);
-    const fotasPorFila = await Promise.all(filasEfectivas.map(f => subirFotosLocal(f.fotos, subirFotoTicket)));
-    if (fotasPorFila.some(urls => urls === null)) {
-      setError('No se pudo subir una de las fotos. Intenta de nuevo.');
-      setGuardando(false);
-      return;
-    }
-    const result = hayFilasMixtas('pcb', filasEfectivas)
-      ? await completarTransformacionMixta(
-        transformacion.id,
-        filasEfectivas.map((f, i) => armarSalidaMixta('pcb', f, Number(f.pesoBruto), taraKgFila(f, taras), fotasPorFila[i] as string[])),
-        armarMermaDetalle(mermaForm)
-      )
-      : await completarTransformacionPCB(transformacion.id, filasEfectivas.map((f, i) => ({
-        loteDestinoId: f.loteDestinoId,
-        pesoBruto: Number(f.pesoBruto),
-        tara: taraKgFila(f, taras),
-        fotos: fotasPorFila[i] as string[],
-      })), armarMermaDetalle(mermaForm));
+    // En línea sube las fotos y completa; sin conexión guarda las salidas y sus fotos en el teléfono (cola).
+    const variante = varianteDeCompletar('pcb', filasEfectivas);
+    const result = await completarTransformacionF4(
+      variante,
+      transformacion,
+      salidasParaCompletar(variante, 'pcb', filasEfectivas.map(f => ({ ...f, pesoBruto: Number(f.pesoBruto), tara: taraKgFila(f, taras) }))),
+      armarMermaDetalle(mermaForm),
+    );
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
-    toast.exito('Transformación PCB completada.');
+    if (result.enCola) toast.info('Salidas guardadas en el teléfono. La transformación PCB se completará al volver la conexión.');
+    else toast.exito('Transformación PCB completada.');
     if (result.advertencia) toast.advertencia(result.advertencia);
     borrador.limpiar();
     onCompletada();
@@ -1085,7 +984,7 @@ function TransformacionesPage() {
 
   return (
     <div className="max-w-7xl">
-      <EncabezadoPagina
+      <EncabezadoPagina lecturas={LECTURAS.transformaciones}
         titulo="Transformaciones"
         subtitulo="Procesa materiales: retíralos del inventario, transforma, y registra lo que salió y cuánto se perdió."
         acciones={
@@ -1116,6 +1015,7 @@ function TransformacionesPage() {
                     <NuevaPCBForm
                       lotes={lotes}
                       almacenes={almacenes}
+                      taras={taras}
                       catalogosListos={catalogosListos}
                       onCreada={() => { void cargar(); irAPestana('pendientes'); }}
                     />

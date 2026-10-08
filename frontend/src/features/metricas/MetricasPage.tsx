@@ -16,6 +16,7 @@ import { ErrorDeBloque } from '../dashboard/DashboardComun';
 import MetricasInventarioValor from './MetricasInventarioValor';
 import MetricasKpis from './MetricasKpis';
 import MetricasListas, { type VistaMetricas } from './MetricasListas';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // Las gráficas se cargan aparte y después de los indicadores.
 const TendenciaCompras = lazy(() => import('./MetricasGraficas').then(m => ({ default: m.TendenciaCompras })));
@@ -79,7 +80,7 @@ function MetricasPage() {
       {seccion === 'inventario' ? (
         <>
           <div className="print:hidden">
-            <EncabezadoPagina titulo="Inventario valorizado" subtitulo="Cuánto dinero hay en los galpones hoy: kilos por costo por kg, por categoría y por almacén." />
+            <EncabezadoPagina lecturas={LECTURAS.metricas} titulo="Inventario valorizado" subtitulo="Cuánto dinero hay en los galpones hoy: kilos por costo por kg, por categoría y por almacén." />
           </div>
           <MetricasInventarioValor />
         </>
@@ -140,7 +141,7 @@ function MetricasCompras() {
   return (
     <div className="print-documento max-w-7xl print:max-w-none">
       <div className="print:hidden">
-        <EncabezadoPagina
+        <EncabezadoPagina lecturas={LECTURAS.metricas}
           titulo="Métricas de compras"
           subtitulo="Cuántos kilos se compraron, a qué costo, a quién y de qué material, comparado con el periodo anterior de la misma duración."
           acciones={

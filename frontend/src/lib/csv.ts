@@ -54,9 +54,21 @@ export function nombreArchivoCsv(prefijo: string, hoy: Date): string {
   return `${limpio}-${hoyNegocio(hoy)}.csv`;
 }
 
-/** Descarga un CSV ya armado en el navegador. */
+let proveedorPie: (() => string | null) | null = null;
+
+/** Registra quién dice si los datos exportados son de caché (lo conecta lib/offline/lectura.ts; así csv.ts sigue siendo pura). */
+export function registrarProveedorPieCsv(proveedor: (() => string | null) | null): void {
+  proveedorPie = proveedor;
+}
+
+/** Añade al final del CSV una línea con el pie (p. ej. 'Generado sin conexión con datos de hace 3 h'). */
+export function conPieCsv(contenido: string, pie: string | null): string {
+  return pie ? contenido + escaparCampoCsv(pie) + SALTO_CSV : contenido;
+}
+
+/** Descarga un CSV ya armado en el navegador. Si los datos vienen de caché lleva el pie de antigüedad. */
 export function exportarCsv(nombreArchivo: string, contenido: string): void {
-  const blob = new Blob([contenido], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob([conPieCsv(contenido, proveedorPie ? proveedorPie() : null)], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

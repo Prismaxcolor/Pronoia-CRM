@@ -10,6 +10,7 @@ import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearTaraSchema, actualizarTaraSchema } from '../schemas/tara.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 
 const router = Router();
 
@@ -25,9 +26,11 @@ router.get('/', requirePermiso('taras', 'ver'), async (_req, res) => {
 router.post(
   '/',
   requirePermiso('taras', 'crear'),
-  validateBody(crearTaraSchema),
+  validateBody(conOperacionCliente(crearTaraSchema)),
   async (req, res) => {
-    const result = await crearTara(req.body);
+    const envio = await ejecutarOperacion(res, TIPO_OPERACION.taraCrear, req.body, req.user!.sub, () => crearTara(req.body));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -38,7 +41,7 @@ router.post(
       userId: req.user!.sub,
       taraId: result.tara.id,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 

@@ -19,6 +19,7 @@ import { derivarKpisListas } from '../../lib/productos-kpis';
 import ListaFormModal from './ListaFormModal';
 import type { ListaPrecios } from '@shared/types/index.js';
 import { formatearFechaHora } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
 // lazy pierde el genérico de TablaDatos<T>: se restaura con su tipo.
 const TablaDatos = lazy(() => import('../../components/ui/TablaDatos')) as unknown as typeof TablaDatosTipo;
@@ -138,11 +139,11 @@ function ListasPreciosPage() {
   }, [puedeEditar, puedeBorrar]);
 
   const encabezado = (
-    <EncabezadoPagina
+    <EncabezadoPagina lecturas={LECTURAS.listasPrecios}
       titulo="Listas de precios"
       subtitulo="Cuánto se paga por cada material (compra) y a cuánto se vende (venta). Se usan al facturar."
       acciones={puedeCrear ? (
-        <BotonAccion icono={<Plus size={16} />} onClick={() => setFormAbierto({ abierto: true, lista: null })}>Nueva lista</BotonAccion>
+        <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setFormAbierto({ abierto: true, lista: null })}>Nueva lista</BotonAccion>
       ) : undefined}
     />
   );

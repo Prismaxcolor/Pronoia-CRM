@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { comprobanteUrlSchema } from './comprobantes.js';
+import { esColorBancaValido, normalizarColorBanca } from '../utils/color-banca.js';
 
 const textoOpcional = (max: number) =>
   z
@@ -10,17 +11,27 @@ const textoOpcional = (max: number) =>
     .nullable()
     .transform(v => (v && v.length > 0 ? v : null));
 
+/** Clave de la paleta o hex #RRGGBB. Opcional; null = sin color. */
+const colorBancaSchema = z
+  .string()
+  .transform(normalizarColorBanca)
+  .refine(esColorBancaValido, 'Color inválido: usa un color de la paleta.')
+  .nullable()
+  .optional();
+
 export const crearBancaSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(100),
   tipo: z.enum(['banco_nacional', 'banco_internacional', 'exchange', 'efectivo']),
   moneda: z.string().trim().min(1, 'La moneda es obligatoria.').max(10),
   descripcion: textoOpcional(200),
+  color: colorBancaSchema,
 });
 
 export const actualizarBancaSchema = z.object({
   nombre: z.string().trim().min(1).max(100).optional(),
   tipo: z.enum(['banco_nacional', 'banco_internacional', 'exchange', 'efectivo']).optional(),
   descripcion: textoOpcional(200),
+  color: colorBancaSchema,
 });
 
 export const crearMovimientoSchema = z.object({

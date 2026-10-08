@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearUsuarioInput, ActualizarUsuarioInput } from '../schemas/usuarios.js';
 import { validarEdicionUsuario, validarPrivilegiosEdicion } from '../utils/usuario-reglas.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { invalidarUsuarioActivo } from '../utils/usuario-activo.js';
 import { normalizarTemaMarca, type TemaMarca } from '../utils/tema-marca.js';
 
 const BCRYPT_ROUNDS = 10;
@@ -232,6 +233,7 @@ export async function actualizarUsuarioAdmin(
     };
   }
   if (!data) return { error: 'Usuario no encontrado.', status: 404 };
+  invalidarUsuarioActivo(id); // rol/activo pueden haber cambiado: que el siguiente request relea la BD
   const usuario = await leerUsuarioPublico(id, {
     verChatId: actor ? puedeVerChatId({ id: actorId, rol: String(actor.rol) }, id) : actorId === id,
   });
@@ -245,6 +247,7 @@ export async function desactivarUsuario(id: string): Promise<boolean> {
     .from('users')
     .update({ activo: false })
     .eq('id', id);
+  invalidarUsuarioActivo(id);
   return !error;
 }
 
@@ -253,6 +256,7 @@ export async function reactivarUsuario(id: string): Promise<boolean> {
     .from('users')
     .update({ activo: true })
     .eq('id', id);
+  invalidarUsuarioActivo(id);
   return !error;
 }
 
@@ -293,6 +297,7 @@ export async function borrarUsuario(id: string): Promise<BorrarUsuarioResult> {
   }
 
   const { error } = await supabaseAdmin.from('users').delete().eq('id', id);
+  invalidarUsuarioActivo(id);
   if (error) return { ok: false, razon: error.message };
   return { ok: true };
 }

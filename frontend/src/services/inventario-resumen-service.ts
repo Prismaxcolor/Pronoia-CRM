@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
 import type { ClaseLote } from '@shared/types/index.js';
 import type { ResumenMermaPorTipo } from './transformacion-service';
 
@@ -130,7 +131,7 @@ export async function obtenerResumenInventario(
   if (opts.sinValor) params.set('sinValor', '1');
   const qs = params.toString();
   try {
-    const { resumen } = await apiFetch<{ resumen: ResumenInventario }>(`/api/inventario/resumen${qs ? `?${qs}` : ''}`);
+    const { resumen } = await leerGet<{ resumen: ResumenInventario }>(`/api/inventario/resumen${qs ? `?${qs}` : ''}`);
     return { resumen };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo cargar el resumen del inventario.' };
@@ -139,7 +140,7 @@ export async function obtenerResumenInventario(
 
 export async function obtenerConfiguracionInventario(): Promise<ConfiguracionInventario | null> {
   try {
-    const { configuracion } = await apiFetch<{ configuracion: ConfiguracionInventario }>('/api/inventario/configuracion');
+    const { configuracion } = await leerGet<{ configuracion: ConfiguracionInventario }>('/api/inventario/configuracion');
     return configuracion;
   } catch {
     return null;

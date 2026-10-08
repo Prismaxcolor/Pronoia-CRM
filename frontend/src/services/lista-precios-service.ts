@@ -1,4 +1,6 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import type { ListaPrecios, PrecioLista, TipoListaPrecios } from '@shared/types/index.js';
 
 /** Lista activa con el precio de un material concreto (para el selector). */
@@ -26,8 +28,11 @@ export interface ActualizarListaInput {
 export async function obtenerListas(tipo?: TipoListaPrecios): Promise<ListaPrecios[]> {
   try {
     const qs = tipo ? `?tipo=${tipo}` : '';
-    const { listas } = await apiFetch<{ listas: ListaPrecios[] }>(`/api/listas-precios${qs}`);
-    return listas;
+    const { datos } = await obtenerCatalogo(`listas-precios:${tipo ?? 'todas'}`, async () => {
+      const { listas } = await apiFetch<{ listas: ListaPrecios[] }>(`/api/listas-precios${qs}`);
+      return listas;
+    });
+    return datos;
   } catch {
     return [];
   }
@@ -133,7 +138,7 @@ export async function obtenerListasParaProducto(
   tipo: TipoListaPrecios
 ): Promise<ListaParaProducto[]> {
   try {
-    const { listas } = await apiFetch<{ listas: ListaParaProducto[] }>(
+    const { listas } = await leerGet<{ listas: ListaParaProducto[] }>(
       `/api/listas-precios/para-producto/${productoId}?tipo=${tipo}`
     );
     return listas;

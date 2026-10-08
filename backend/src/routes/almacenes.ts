@@ -14,6 +14,7 @@ import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearAlmacenSchema, actualizarAlmacenSchema } from '../schemas/almacen.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 
 const router = Router();
 
@@ -44,9 +45,11 @@ router.get('/:id/inventario', requirePermiso('almacenes', 'ver'), async (req, re
 router.post(
   '/',
   requirePermiso('almacenes', 'crear'),
-  validateBody(crearAlmacenSchema),
+  validateBody(conOperacionCliente(crearAlmacenSchema)),
   async (req, res) => {
-    const result = await crearAlmacen(req.body);
+    const envio = await ejecutarOperacion(res, TIPO_OPERACION.almacenCrear, req.body, req.user!.sub, () => crearAlmacen(req.body));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -57,7 +60,7 @@ router.post(
       userId: req.user!.sub,
       almacenId: result.almacen.id,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 
