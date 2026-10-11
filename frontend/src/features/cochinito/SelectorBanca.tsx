@@ -65,6 +65,7 @@ function SelectorBanca({ bancas, valor, onChange, titulo = 'Elegir cuenta o caja
           entidades={entidades}
           seleccionadoId={valor}
           mensajeVacio="No hay cuentas o cajas disponibles."
+          tamanoTarjeta="compacto"
           renderSinFoto={e => (
             <span className="flex h-full w-full items-center justify-center text-4xl font-bold text-white" style={{ backgroundColor: e.color }}>
               {inicialDeBanca(e.nombre)}

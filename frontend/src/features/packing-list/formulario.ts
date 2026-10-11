@@ -1,4 +1,4 @@
-import type { PackingListDetalle, TipoEmbalajePackingList } from '@shared/types/index.js';
+import type { Cliente, PackingListDetalle, TipoEmbalajePackingList } from '@shared/types/index.js';
 import type { GuardarPackingListInput } from '../../services/packing-list-service';
 import { parsearPeso, siguienteNumeroPaleta, type FilaPackingList } from '../../lib/packing-list';
 import type { FilaForm } from './PackingListFilas';
@@ -203,4 +203,17 @@ export function construirEntrada(
       items,
     },
   };
+}
+
+export interface OpcionCliente {
+  id: string;
+  nombre: string;
+}
+
+/** Solo clientes internacionales activos; si el packing list ya apunta a otro (o a uno desactivado), se conserva visible. */
+export function opcionesCliente(clientes: readonly Cliente[], actualId: string, actualNombre: string | null): OpcionCliente[] {
+  const validos = clientes.filter(c => c.tipoVenta === 'internacional' && c.activo).map(c => ({ id: c.id, nombre: c.nombre }));
+  if (actualId === '' || validos.some(c => c.id === actualId)) return validos;
+  const conocido = clientes.find(c => c.id === actualId)?.nombre ?? actualNombre ?? 'Cliente vinculado';
+  return [{ id: actualId, nombre: conocido }, ...validos];
 }

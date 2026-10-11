@@ -6,7 +6,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import type { DetallePantalla, FilaDetalleInventario } from '@shared/types/inventario-pantalla.js';
-import { fechaCorteSaldo, formatearKg, formatearNumero, rotuloSaldo, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
+import { conciliarKgConKpi, fechaCorteSaldo, formatearKg, formatearNumero, rotuloSaldo, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
 import { estiloCategoria } from '../../../lib/colores-categoria';
 import {
   ETIQUETA_ETAPA, EXPLICACION_ETAPAS_PCB, LIMITE_FILAS_INICIAL, ORDEN_TABLA_POR_DEFECTO, PASOS_LIMITE, agruparFilas, agruparPorVista, alternarOrden, ariaSort,
@@ -290,6 +290,9 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
   const filtrosComp = useMemo(() => filtrosComposicion(filtros), [filtros.desde, filtros.hasta, filtros.almacen]); // eslint-disable-line react-hooks/exhaustive-deps
   const siguienteLimite = PASOS_LIMITE.find(p => p > limite);
   const hayFiltrosTabla = Boolean(filtros.categoria || filtros.q || filtros.almacen || filtros.etapa);
+  // Lo que el KPI cuenta y la tabla no lista (clasificaciones de compra PCB sin lote): se muestra como fila, no oculto.
+  const conciliacion = conciliarKgConKpi({ kgTabla: totales.kg, kgOcultos: dato?.totales.kgClasificacionesCompraOcultas ?? 0, verClasificaciones });
+  const hayOcultos = conciliacion.kgOcultosNoListados > 0;
 
   const acciones = (
     <div className="flex flex-wrap items-center gap-3">
@@ -400,6 +403,22 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
                         kg={totales.kg}
                         clase="border-t-2 border-border-strong bg-surface-alt font-semibold"
                       />
+                      {hayOcultos && (
+                        <>
+                          <FilaTotales
+                            columnas={columnas}
+                            primera={<span className="text-amber-800">+ Clasificaciones de compra PCB sin lote (no listadas)</span>}
+                            kg={conciliacion.kgOcultosNoListados}
+                            clase="bg-amber-50 text-amber-900"
+                          />
+                          <FilaTotales
+                            columnas={columnas}
+                            primera={<span className="font-semibold">{hayFiltrosTabla ? 'Total con clasificaciones' : 'Total en galpón (igual al KPI)'}</span>}
+                            kg={conciliacion.kgTotalConOcultos}
+                            clase="bg-surface-alt font-semibold"
+                          />
+                        </>
+                      )}
                     </tfoot>
                   </table>
                 </div>
@@ -433,15 +452,21 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
                   ))}
                   <div className="rounded-lg bg-surface-alt p-3 text-sm font-semibold">
                     {rotulo ? `${rotulo}: ` : 'Total en galpón: '}<span className="tabular-nums">{formatearKg(totales.kg)}</span>
+                  
+                    {hayOcultos && (
+                      <p className="mt-1 text-xs font-normal text-amber-900">
+                        + <span className="tabular-nums">{formatearKg(conciliacion.kgOcultosNoListados)}</span> de clasificaciones de compra PCB sin lote (no listadas)
+                        {' = '}<span className="font-semibold tabular-nums">{formatearKg(conciliacion.kgTotalConOcultos)}</span>{hayFiltrosTabla ? '' : ', igual al KPI'}
+                      </p>
+                    )}
                   </div>
                 </div>
                 )}
                 <div className="mt-2 space-y-1 text-[11px] text-text-secondary">
                   <p>Los días en inventario son un estimado (el «?» del encabezado explica cómo se calcula). Limpio/sucio y recuperable/desecho se toman del producto o se deducen del nombre del material.</p>
-                  {dato.totales.kgClasificacionesCompraOcultas > 0 && !verClasificaciones && (
+                  {hayOcultos && (
                     <p>
-                      Hay {formatearKg(dato.totales.kgClasificacionesCompraOcultas)}
-                      {' '}de clasificaciones de compra PCB sin lote que no se listan: explican la diferencia de kg con el KPI. Activa «Ver clasificaciones de compra PCB» para verlas.
+                      Las clasificaciones de compra PCB sin lote ({formatearKg(conciliacion.kgOcultosNoListados)}) cuentan en el KPI pero no se listan: son la diferencia entre la tabla y el KPI. Activa «Ver clasificaciones de compra PCB» para verlas.
                     </p>
                   )}
                   {dato.limite.truncado && (

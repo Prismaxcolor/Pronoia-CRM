@@ -197,3 +197,16 @@ export function parametrosResumen(f: FiltrosPantalla, hoy?: string): { desde?: s
 // La implementación vive en lib/rango-fechas.ts; se re-exporta aquí.
 export { INICIO_HISTORICO, atajoActivo, rangoDeAtajo } from './rango-fechas';
 export type { AtajoRango } from './rango-fechas';
+
+// ---------------------------------------------------------------- conciliación tabla <-> KPI
+const redondearKg3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * El KPI «Kg en galpón» cuenta TODO el stock; la tabla no lista las clasificaciones de compra PCB sin lote
+ * (salvo que se active «Ver clasificaciones»). `kgTotalConOcultos` es la tabla más esas clasificaciones: es la
+ * cifra que debe coincidir con el KPI, y `kgOcultosNoListados` la diferencia que hay que mostrar (0 = nada oculto).
+ */
+export function conciliarKgConKpi(e: { kgTabla: number; kgOcultos: number; verClasificaciones: boolean }): { kgOcultosNoListados: number; kgTotalConOcultos: number } {
+  const ocultos = !e.verClasificaciones && Number.isFinite(e.kgOcultos) && e.kgOcultos > 0 ? redondearKg3(e.kgOcultos) : 0;
+  return { kgOcultosNoListados: ocultos, kgTotalConOcultos: redondearKg3(e.kgTabla + ocultos) };
+}

@@ -4,6 +4,7 @@ import {
   calcularFaltanKg,
   calcularProgresoPct,
   compararConPeriodoAnterior,
+  conciliarKgConKpi,
   contarFiltrosAvanzados,
   derivarKpis,
   esFechaIso,
@@ -191,5 +192,24 @@ describe('derivarKpis', () => {
     expect(kpis().merma.pctAnterior).toBeNull();
     expect(kpis({ merma: { ...base.merma, anterior: merma(4, 500) } }).merma.pctAnterior).toBe(4);
     expect(kpis().merma.sinClasificarKg).toBe(5);
+  });
+});
+
+describe('conciliarKgConKpi', () => {
+  it('suma los kg de clasificaciones ocultas al total de la tabla para igualar el KPI (caso real: 116907.325 + 1.185)', () => {
+    const r = conciliarKgConKpi({ kgTabla: 116907.325, kgOcultos: 1.185, verClasificaciones: false });
+    expect(r.kgOcultosNoListados).toBe(1.185);
+    expect(r.kgTotalConOcultos).toBe(116908.51);
+  });
+
+  it('no avisa nada cuando las clasificaciones ya se listan', () => {
+    const r = conciliarKgConKpi({ kgTabla: 100, kgOcultos: 1.185, verClasificaciones: true });
+    expect(r.kgOcultosNoListados).toBe(0);
+    expect(r.kgTotalConOcultos).toBe(100);
+  });
+
+  it('no avisa nada cuando no hay kg ocultos o el dato no es finito', () => {
+    expect(conciliarKgConKpi({ kgTabla: 50, kgOcultos: 0, verClasificaciones: false }).kgOcultosNoListados).toBe(0);
+    expect(conciliarKgConKpi({ kgTabla: 50, kgOcultos: Number.NaN, verClasificaciones: false }).kgOcultosNoListados).toBe(0);
   });
 });

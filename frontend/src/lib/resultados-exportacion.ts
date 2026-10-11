@@ -69,3 +69,12 @@ export function calcularResultados(kgs: readonly KgLote[], estimados: ValoresPor
     diferenciaPct: porcentaje(diferenciaUsd, totalEstimadoUsd),
   };
 }
+
+/** Aviso bajo la comparación total: cuántos lotes entran y cuántos quedan fuera, con singular y plural correctos. */
+export function textoComparacionTotal(comparados: number, incompletos: number): string {
+  if (comparados === 0) return 'Aún no hay ningún lote con valor estimado y valor real; la comparación total queda en blanco.';
+  if (incompletos === 0) return comparados === 1 ? 'El total compara el único lote.' : `El total compara los ${comparados} lotes.`;
+  const comp = comparados === 1 ? '1 lote' : `${comparados} lotes`;
+  const falta = incompletos === 1 ? '1 lote no tiene valor estimado o real y no se suma.' : `${incompletos} lotes no tienen valor estimado o real y no se suman.`;
+  return `El total compara solo ${comp} con ambos valores. ${falta}`;
+}

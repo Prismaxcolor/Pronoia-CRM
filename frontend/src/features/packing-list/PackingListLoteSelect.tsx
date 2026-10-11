@@ -39,7 +39,7 @@ function PackingListLoteSelect({ lote, almacenId, opciones, disabled, etiqueta, 
   };
 
   return (
-    <select aria-label={etiqueta} value={valor} disabled={disabled} onChange={e => cambiar(e.target.value)} className={className}>
+    <select aria-label={etiqueta} title={actual ? etiquetaOpcionLote(actual) : undefined} value={valor} disabled={disabled} onChange={e => cambiar(e.target.value)} className={className}>
       <option value="">— Elige un lote —</option>
       {hayGuardadoSinOpcion && <option value={GUARDADO}>{lote.trim()} (guardado antes)</option>}
       {opciones.map(o => <option key={claveOpcionLote(o)} value={claveOpcionLote(o)}>{etiquetaOpcionLote(o)}</option>)}

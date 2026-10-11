@@ -179,7 +179,7 @@ export async function listarPackingLists(): Promise<PackingListResumen[]> {
 const numeroOnull = (v: number | string | null | undefined): number | null => (v == null ? null : Number(v));
 
 /** El valor real solo viaja cuando existe: así una línea sin resultados conserva su forma anterior. */
-const proyeccionToPublica = (filas: readonly LineaProyeccionRow[] | null | undefined): ProyeccionLotePacking[] =>
+export const proyeccionToPublica = (filas: readonly LineaProyeccionRow[] | null | undefined): ProyeccionLotePacking[] =>
   (filas ?? []).map(l => {
     const real = numeroOnull(l.valor_real_kg_usd);
     return { lote: l.lote, valorKgUsd: numeroOnull(l.valor_kg_usd), ...(real === null ? {} : { valorRealKgUsd: real }) };

@@ -104,6 +104,8 @@ const ListaDetallePage = lazyConReintento(() => import('./features/listas-precio
 const TarasPage = lazyConReintento(() => import('./features/taras/TarasPage'));
 const PackingListsPage = lazyConReintento(() => import('./features/packing-list/PackingListsPage'));
 const PackingListEditorPage = lazyConReintento(() => import('./features/packing-list/PackingListEditorPage'));
+const ExportacionesPage = lazyConReintento(() => import('./features/exportaciones/ExportacionesPage'));
+const ExportacionAsistentePage = lazyConReintento(() => import('./features/exportaciones/ExportacionAsistentePage'));
 const VehiculosPage = lazyConReintento(() => import('./features/vehiculos/VehiculosPage'));
 const PesajePage = lazyConReintento(() => import('./features/pesaje/PesajePage'));
 const PerfilPage = lazyConReintento(() => import('./features/perfil/PerfilPage'));
@@ -203,6 +205,8 @@ function AppRoutes() {
         <Route path="/taras" element={<ProtectedRoute recurso="taras"><TarasPage /></ProtectedRoute>} />
         <Route path="/packing-list" element={<ProtectedRoute recurso="despachos"><PackingListsPage /></ProtectedRoute>} />
         <Route path="/packing-list/:id" element={<ProtectedRoute recurso="despachos"><PackingListEditorPage /></ProtectedRoute>} />
+        <Route path="/exportaciones" element={<ProtectedRoute recurso="despachos"><RequiereConexion seccion="Exportaciones"><ExportacionesPage /></RequiereConexion></ProtectedRoute>} />
+        <Route path="/exportaciones/:id" element={<ProtectedRoute recurso="despachos"><RequiereConexion seccion="Exportaciones"><ExportacionAsistentePage /></RequiereConexion></ProtectedRoute>} />
         <Route path="/vehiculos" element={<ProtectedRoute recurso="vehiculos"><VehiculosPage /></ProtectedRoute>} />
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioNuevoPage /></ProtectedRoute>} />
         {/* Pantalla anterior, íntegra. Acepta ?pestana=almacenes|lotes|traslados|toma-fisica. */}

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { X, User, Search, Check, Maximize2 } from 'lucide-react';
 import VisorFotos from './VisorFotos';
+import { useCerrarConEscape } from '../hooks/use-cerrar-con-escape';
 
 interface EntidadConFoto {
   id: string;
@@ -28,14 +29,20 @@ interface Props<T extends EntidadConFoto> {
   ampliarFotos?: boolean;
   /** Reemplaza el ícono genérico cuando la entidad no tiene foto (ej. inicial sobre el color de una cuenta). */
   renderSinFoto?: (entidad: T) => ReactNode;
+  /** 'compacto' limita la imagen de cada tarjeta (selector de cuentas); 'normal' la deja cuadrada (materiales de pesaje). */
+  tamanoTarjeta?: 'normal' | 'compacto';
 }
 
 /** Selector visual con foto: mismo patrón que SeleccionarMaterialModal de
  *  Pesaje, generalizado a cualquier entidad con {id, nombre, fotos}
  *  (cliente, proveedor, lote). No reemplaza el <select>, conviven ambos. */
-function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos', mensajeVacio, seleccionadoId, ampliarFotos = false, renderSinFoto }: Props<T>) {
+function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos', mensajeVacio, seleccionadoId, ampliarFotos = false, renderSinFoto, tamanoTarjeta = 'normal' }: Props<T>) {
   const [busqueda, setBusqueda] = useState('');
   const [visor, setVisor] = useState<{ fotos: string[]; indice: number; nombre: string } | null>(null);
+  // Escape cierra primero el visor de fotos (que atiende su propia tecla) y luego este selector, sin tocar el modal padre.
+  useCerrarConEscape(onClose, visor !== null, true);
+  const claseImagen = tamanoTarjeta === 'compacto' ? 'aspect-[4/3] max-h-28' : 'aspect-square';
+  const columnas = tamanoTarjeta === 'compacto' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3';
 
   const filtrados = entidades.filter(e =>
     e.nombre.toLowerCase().includes(busqueda.trim().toLowerCase())
@@ -55,7 +62,7 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
         className={`relative rounded-xl border overflow-hidden hover:border-brand-400 hover:ring-2 hover:ring-brand-100 transition-all ${borde}`}
       >
         <button type="button" onClick={() => onSeleccionar(e.id)} className="block w-full text-left">
-          <div className="w-full aspect-square bg-brand-100 flex items-center justify-center text-brand-700">
+          <div className={`w-full ${claseImagen} bg-brand-100 flex items-center justify-center text-brand-700`}>
             {e.fotos?.[0] ? (
               <img src={e.fotos[0]} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
             ) : (
@@ -120,11 +127,11 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
               {hayDestacados && (
                 <>
                   <p className="text-xs font-semibold text-brand-700 mb-2">{etiquetaDestacados}</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">{destacados.map(tarjeta)}</div>
+                  <div className={`grid ${columnas} gap-3 mb-4`}>{destacados.map(tarjeta)}</div>
                   {resto.length > 0 && <p className="text-xs font-semibold text-text-muted mb-2">Otros</p>}
                 </>
               )}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{resto.map(tarjeta)}</div>
+              <div className={`grid ${columnas} gap-3`}>{resto.map(tarjeta)}</div>
             </>
           )}
         </div>

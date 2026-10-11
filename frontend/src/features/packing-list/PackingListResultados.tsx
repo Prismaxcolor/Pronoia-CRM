@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { formatearPeso } from '../../lib/packing-list';
 import { parsearValorKg, textoValorKg, type KgLote } from '../../lib/proyeccion-packing';
-import { calcularResultados } from '../../lib/resultados-exportacion';
+import { calcularResultados, textoComparacionTotal } from '../../lib/resultados-exportacion';
 import type { ValoracionForm } from './formulario';
 
 interface Props {
@@ -23,13 +23,6 @@ const colorDiferencia = (n: number | null): string => (n === null || n === 0 ? '
 
 const numericos = (textos: Record<string, string>) =>
   Object.fromEntries(Object.entries(textos).map(([lote, t]) => [lote, parsearValorKg(t)]));
-
-function avisoFaltantes(comparados: number, incompletos: number): string {
-  if (comparados === 0) return 'Aún no hay ningún lote con valor estimado y valor real; la comparación total queda en blanco.';
-  if (incompletos === 0) return `El total compara los ${comparados} lotes.`;
-  const lotes = incompletos === 1 ? 'lote no tiene' : 'lotes no tienen';
-  return `El total compara solo ${comparados} lotes con ambos valores. ${incompletos} ${lotes} valor estimado o real y no se suman.`;
-}
 
 /** Resultados de la exportación (interno, no sale en el PDF): proyección inicial frente a lo realmente obtenido, por lote. */
 function PackingListResultados({ kgs, valoracion, puedeEditar, onCambiarReal }: Props) {
@@ -99,7 +92,7 @@ function PackingListResultados({ kgs, valoracion, puedeEditar, onCambiarReal }: 
         </table>
       </div>
       <p className="mt-2 text-xs text-text-muted" role="status">
-        {avisoFaltantes(resumen.lotesComparados, resumen.lotesIncompletos)} Diferencia = real menos proyectado; «{SIN_DATO}» significa que falta el dato.
+        {textoComparacionTotal(resumen.lotesComparados, resumen.lotesIncompletos)} Diferencia = real menos proyectado; «{SIN_DATO}» significa que falta el dato.
       </p>
     </div>
   );

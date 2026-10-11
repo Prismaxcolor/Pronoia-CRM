@@ -95,7 +95,7 @@ function PackingListFilas({
                 <tr className="border-b border-border/60 align-top">
                   <td className="px-2 py-1.5 tabular-nums text-text-secondary">{i + 1}</td>
                   {esPcb && (
-                    <td className={`px-2 py-1.5 ${opcionesLote ? 'w-72' : 'w-24'}`}>
+                    <td className={`px-2 py-1.5 ${opcionesLote ? 'w-[23rem] min-w-[23rem]' : 'w-24'}`}>
                       {opcionesLote
                         ? <PackingListLoteSelect lote={f.lote} almacenId={f.almacenId} opciones={opcionesLote} disabled={!puedeEditar}
                           etiqueta={`Lote (fila ${i + 1})`} className={INPUT} onElegir={e => onElegirLote(f.clave, e)} />

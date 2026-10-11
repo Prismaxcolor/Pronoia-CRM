@@ -104,3 +104,31 @@ export interface EmpresaPackingList {
   telefono: string | null;
   email: string | null;
 }
+
+/** Kg netos de un lote dentro de una exportación (derivado de las paletas). `lote` '' = ítems sin lote. */
+export interface KgLoteExportacion {
+  lote: string;
+  kg: number;
+}
+
+/**
+ * Una exportación es un packing list con cliente internacional vinculado. No tiene datos propios: la
+ * valoración vive en la proyección del packing list y el estado se deriva de ella (ver lib/exportaciones.ts).
+ */
+export interface ExportacionResumen {
+  packingListId: string;
+  contenedor: string;
+  fecha: string;
+  clienteId: string;
+  clienteNombre: string | null;
+  totalNeto: number;
+  kgPorLote: KgLoteExportacion[];
+  /** Solo viaja a quien tiene facturacion:ver; ausente para el resto. */
+  proyeccion?: ProyeccionLotePacking[];
+}
+
+export interface ListadoExportaciones {
+  exportaciones: ExportacionResumen[];
+  /** true = falta aplicar migration_packing_list_cliente_resultados.sql (no hay cliente_id en packing_lists). */
+  migracionPendiente?: true;
+}

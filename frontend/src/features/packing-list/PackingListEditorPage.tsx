@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Download, RefreshCw, Save } from 'lucide-react';
-import type { Cliente, EmpresaPackingList, FotoPaletaPacking, IdiomaPackingList, OpcionLotePacking, PackingListDetalle } from '@shared/types/index.js';
+import type { Cliente, EmpresaPackingList, FotoPaletaPacking, IdiomaPackingList, PackingListDetalle } from '@shared/types/index.js';
 import { Bloque, BotonAccion, EncabezadoPagina, SkeletonBloque } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
@@ -12,14 +12,14 @@ import PackingListControlLotes from './PackingListControlLotes';
 import type { EleccionLote } from './PackingListLoteSelect';
 import { MAX_FOTOS_POR_PALETA } from './PackingListFotosPaleta';
 import { obtenerOpcionesLotePacking } from '../../services/packing-list-fotos-service';
-import { controlarDisponible } from '../../lib/lotes-packing';
+import { CARGA_LOTES_INICIAL, cargaLotesDesdeRespuesta, controlarDisponible, mostrarAvisoLotesNoCargados, type CargaLotes } from '../../lib/lotes-packing';
 import PackingListTotales from './PackingListTotales';
 import PackingListProyeccion from './PackingListProyeccion';
 import PackingListResultados from './PackingListResultados';
 import { obtenerClientes } from '../../services/cliente-service';
 import { kgPorLote } from '../../lib/proyeccion-packing';
 import {
-  OPCIONES_EMBALAJE, aFilaNumerica, cabeceraDesde, cabeceraInicial, construirEntrada, filaSiguiente, filasDesde, valoracionDesde, valoracionVacia,
+  OPCIONES_EMBALAJE, opcionesCliente, aFilaNumerica, cabeceraDesde, cabeceraInicial, construirEntrada, filaSiguiente, filasDesde, valoracionDesde, valoracionVacia,
   type CabeceraForm, type ValoracionForm,
 } from './formulario';
 import LeyendaRegistro from '../../components/LeyendaRegistro';
@@ -30,19 +30,6 @@ const LABEL = 'block text-xs font-medium text-text-secondary mb-1';
 
 /** Datos de la fila sin su clave interna de React: sirve para detectar cambios sin guardar. */
 const datosFila = (f: FilaForm) => [f.numeroPaleta, f.lote, f.color, f.almacenId, f.fotos.map(x => x.ruta), f.pesoBruto, f.pesoPaleta];
-
-interface OpcionCliente {
-  id: string;
-  nombre: string;
-}
-
-/** Solo clientes internacionales activos; si el packing list ya apunta a otro (o a uno desactivado), se conserva visible. */
-function opcionesCliente(clientes: readonly Cliente[], actualId: string, actualNombre: string | null): OpcionCliente[] {
-  const validos = clientes.filter(c => c.tipoVenta === 'internacional' && c.activo).map(c => ({ id: c.id, nombre: c.nombre }));
-  if (actualId === '' || validos.some(c => c.id === actualId)) return validos;
-  const conocido = clientes.find(c => c.id === actualId)?.nombre ?? actualNombre ?? 'Cliente vinculado';
-  return [{ id: actualId, nombre: conocido }, ...validos];
-}
 
 const IDIOMAS: ReadonlyArray<{ idioma: IdiomaPackingList; etiqueta: string }> = [
   { idioma: 'es', etiqueta: 'Español' },
@@ -67,8 +54,9 @@ function PackingListEditorPage() {
   const [recargando, setRecargando] = useState(false);
   const [valoracion, setValoracion] = useState<ValoracionForm>(valoracionVacia);
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  // null = no se pudo cargar la lista de lotes de exportación (entonces el lote se escribe a mano).
-  const [opcionesLote, setOpcionesLote] = useState<OpcionLotePacking[] | null>(null);
+  // Estado de la carga de la lista de lotes: solo 'error' (no 'cargando') avisa y deja el lote a mano.
+  const [cargaLotes, setCargaLotes] = useState<CargaLotes>(CARGA_LOTES_INICIAL);
+  const opcionesLote = cargaLotes.opciones;
   const [instantanea, setInstantanea] = useState(() => JSON.stringify([cabeceraInicial(), [], valoracionVacia()]));
 
   // La proyección es un dato de valor (USD estimados): solo con facturacion:ver.
@@ -92,7 +80,7 @@ function PackingListEditorPage() {
   useEffect(() => {
     obtenerEmpresasPackingList().then(r => { if (Array.isArray(r)) setEmpresas(r); });
     obtenerClientes().then(setClientes);
-    obtenerOpcionesLotePacking().then(r => setOpcionesLote(Array.isArray(r) ? r : null));
+    obtenerOpcionesLotePacking().then(r => setCargaLotes(cargaLotesDesdeRespuesta(r)));
     if (esNuevo) return;
     obtenerPackingList(id).then(r => {
       if ('error' in r) setErrorCarga(r.error); else aplicar(r);
@@ -267,7 +255,7 @@ function PackingListEditorPage() {
       </Bloque>
 
       <Bloque titulo={`Detalle de ${nombreBulto.toLowerCase()}s`} queEstasViendo="Una fila por cada bulto. Al agregar una fila nueva se copian el lote, el color y el peso de la paleta de la anterior. El disponible, el almacén y las fotos son de control interno: no salen en los PDF.">
-        {cabecera.esPcb && opcionesLote === null && (
+        {mostrarAvisoLotesNoCargados(cargaLotes, cabecera.esPcb) && (
           <p role="status" className="mb-3 text-xs text-amber-800">
             No se pudo cargar la lista de lotes de exportación (¿sin conexión?). Mientras tanto el lote se escribe a mano; no se compara con el inventario.
           </p>

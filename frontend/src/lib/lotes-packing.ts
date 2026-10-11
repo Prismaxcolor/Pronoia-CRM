@@ -73,3 +73,19 @@ export function etiquetaOpcionLote(o: OpcionLotePacking): string {
   const kg = o.disponibleKg.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${o.nombre} · ${o.almacenNombre ?? 'sin stock en almacenes'} · ${kg} kg disponibles`;
 }
+
+/** Estado de la carga de la lista de lotes: «cargando» no es un fallo, solo «error» justifica el aviso. */
+export type CargaLotes =
+  | { estado: 'cargando'; opciones: null }
+  | { estado: 'listo'; opciones: OpcionLotePacking[] }
+  | { estado: 'error'; opciones: null };
+
+export const CARGA_LOTES_INICIAL: CargaLotes = { estado: 'cargando', opciones: null };
+
+/** Traduce la respuesta del servicio ({error} o la lista) al estado de carga. */
+export function cargaLotesDesdeRespuesta(r: OpcionLotePacking[] | { error: string }): CargaLotes {
+  return Array.isArray(r) ? { estado: 'listo', opciones: r } : { estado: 'error', opciones: null };
+}
+
+/** El aviso «no se pudo cargar la lista de lotes» solo aparece si la carga falló de verdad. */
+export const mostrarAvisoLotesNoCargados = (carga: CargaLotes, esPcb: boolean): boolean => esPcb && carga.estado === 'error';
