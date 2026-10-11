@@ -171,6 +171,21 @@ export function rotuloSaldo(saldoAl: string | null | undefined): string | null {
   return saldoAl ? `Saldo al ${formatearFechaNegocio(saldoAl)}` : null;
 }
 
+/** «en galpón ahora» o, en saldo histórico, «en galpón al 05/10/2026». */
+export function textoEnGalpon(saldoAl: string | null | undefined): string {
+  return saldoAl ? `en galpón al ${formatearFechaNegocio(saldoAl)}` : 'en galpón ahora';
+}
+
+/** «Los kg son los de hoy» o, en saldo histórico, «Los kg son los del 05/10/2026». */
+export function textoKgDeFecha(saldoAl: string | null | undefined): string {
+  return saldoAl ? `Los kg son los del ${formatearFechaNegocio(saldoAl)}` : 'Los kg son los de hoy';
+}
+
+/** El valor del inventario en Métricas es el de hoy: no se enlaza desde un saldo histórico. */
+export function mostrarEnlaceMetricas(saldoAl: string | null | undefined, tienePermiso: boolean): boolean {
+  return tienePermiso && !saldoAl;
+}
+
 /** Parámetros para /api/inventario/resumen: el endpoint exige desde y hasta juntos; `al` pide el saldo a esa fecha. */
 export function parametrosResumen(f: FiltrosPantalla, hoy?: string): { desde?: string; hasta?: string; al?: string } {
   if (!f.desde || !f.hasta) return {};

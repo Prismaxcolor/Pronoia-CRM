@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fechaCorteSaldo, parametrosResumen, rotuloSaldo } from '../../frontend/src/lib/inventario-nuevo';
+import { fechaCorteSaldo, parametrosResumen, rotuloSaldo, textoEnGalpon, textoKgDeFecha, mostrarEnlaceMetricas } from '../../frontend/src/lib/inventario-nuevo';
 import { parametrosPantalla } from '../../frontend/src/lib/inventario-pantalla';
 
 const HOY = '2026-10-11';
@@ -39,5 +39,22 @@ describe('rotuloSaldo', () => {
   it('sin fecha no rotula (stock actual)', () => {
     expect(rotuloSaldo(null)).toBeNull();
     expect(rotuloSaldo(undefined)).toBeNull();
+  });
+});
+
+describe('textos del saldo historico', () => {
+  it('sin fecha de saldo los textos quedan en presente', () => {
+    expect(textoEnGalpon(undefined)).toBe('en galpón ahora');
+    expect(textoEnGalpon(null)).toBe('en galpón ahora');
+    expect(textoKgDeFecha(undefined)).toBe('Los kg son los de hoy');
+  });
+  it('con fecha de saldo pasan a pasado con la fecha dd/mm/aaaa', () => {
+    expect(textoEnGalpon('2026-10-05')).toBe('en galpón al 05/10/2026');
+    expect(textoKgDeFecha('2026-10-05')).toBe('Los kg son los del 05/10/2026');
+  });
+  it('el enlace a Metricas (valor de hoy) solo se ofrece con permiso y sin saldo historico', () => {
+    expect(mostrarEnlaceMetricas(undefined, true)).toBe(true);
+    expect(mostrarEnlaceMetricas(undefined, false)).toBe(false);
+    expect(mostrarEnlaceMetricas('2026-10-05', true)).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { ATAJOS_RANGO, atajoActivo, hoyLocal, rangoDeAtajo, type AtajoRango } from '../../lib/rango-fechas';
 
@@ -18,6 +18,10 @@ export interface SelectorFiltro {
   /** Texto de la opción vacía (por defecto "Todos"). */
   textoTodas?: string;
   cargando?: boolean;
+  /** Deshabilita el selector sin ocultarlo (p. ej. aún no hay opciones). */
+  deshabilitado?: boolean;
+  /** Texto o enlace bajo el selector (p. ej. por qué está deshabilitado). */
+  aviso?: ReactNode;
 }
 
 export interface RangoFiltro {
@@ -62,10 +66,11 @@ function Selector({ s }: { s: SelectorFiltro }) {
   return (
     <div>
       <label htmlFor={s.id} className={etiquetaCampo}>{s.etiqueta}</label>
-      <select id={s.id} value={s.valor ?? ''} disabled={cargando} onChange={e => s.onCambiar(e.target.value || undefined)} className={`${campo} w-full`}>
+      <select id={s.id} value={s.valor ?? ''} disabled={cargando || s.deshabilitado} onChange={e => s.onCambiar(e.target.value || undefined)} className={`${campo} w-full`}>
         <option value="">{cargando ? 'Cargando…' : (s.textoTodas ?? 'Todos')}</option>
         {s.opciones?.map(o => <option key={o.valor} value={o.valor}>{o.etiqueta}</option>)}
       </select>
+      {s.aviso && <p className="mt-1 text-xs text-text-muted">{s.aviso}</p>}
     </div>
   );
 }

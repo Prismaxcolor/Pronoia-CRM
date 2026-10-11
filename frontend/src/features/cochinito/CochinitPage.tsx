@@ -27,10 +27,11 @@ import { useTasasUsd } from './useTasasUsd';
 import SaldosBancas from './SaldosBancas';
 import TarjetaBanca from './TarjetaBanca';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import AvisoSinCategorias from './categorias/AvisoSinCategorias';
 import NavegacionWallet from './categorias/NavegacionWallet';
 import CambiarCategoriaModal from './categorias/CambiarCategoriaModal';
 import { useCategorias } from './categorias/useCategorias';
-import { armarArbol, resolverFiltroCategoria, VALOR_SIN_CATEGORIA } from './categorias/categorias-logica';
+import { armarArbol, filtrosCategoriaDeshabilitados, resolverFiltroCategoria, VALOR_SIN_CATEGORIA } from './categorias/categorias-logica';
 
 // Lo pesado se carga aparte y después de los indicadores.
 const BloquesGraficas = lazy(() => import('./BloquesGraficas'));
@@ -167,6 +168,8 @@ function CochinitPage() {
     { valor: VALOR_SIN_CATEGORIA, etiqueta: 'Sin categoría' },
     ...arbolCategorias.map(n => ({ valor: n.categoria.id, etiqueta: n.categoria.nombre })),
   ], [arbolCategorias]);
+  const sinCategorias = filtrosCategoriaDeshabilitados(catWallet.categorias);
+  const avisoSinCategorias = sinCategorias ? <AvisoSinCategorias /> : undefined;
   const opcionesSubcategoria = useMemo(
     () => (arbolCategorias.find(n => n.categoria.id === categoriaFiltro)?.hijas ?? []).map(h => ({ valor: h.id, etiqueta: h.nombre })),
     [arbolCategorias, categoriaFiltro],
@@ -280,16 +283,12 @@ function CochinitPage() {
         rango={{ desde: str(filtros.desde), hasta: str(filtros.hasta), onCambiar: r => cambiar({ desde: r.desde, hasta: r.hasta }) }}
         selectores={[
           { id: 'cochinito-tipo', etiqueta: 'Tipo de movimiento', valor: str(filtros.tipo), opciones: OPCIONES_TIPO, onCambiar: v => cambiar({ tipo: v }) },
-          ...(catWallet.categorias.length > 0
-            ? [{ id: 'cochinito-categoria', etiqueta: 'Categoría', valor: categoriaFiltro, opciones: opcionesCategoria, cargando: false, onCambiar: (v: string | undefined) => cambiar({ categoria: v, subcategoria: undefined }) }]
-            : []),
+          { id: 'cochinito-categoria', etiqueta: 'Categoría', valor: categoriaFiltro, opciones: opcionesCategoria, cargando: false, deshabilitado: sinCategorias, aviso: avisoSinCategorias, textoTodas: sinCategorias ? 'Sin categorías' : undefined, onCambiar: (v: string | undefined) => cambiar({ categoria: v, subcategoria: undefined }) },
         ]}
         buscador={{ id: 'cochinito-q', valor: str(filtros.q), onCambiar: v => cambiar({ q: v }), placeholder: 'Descripción, referencia, N° o proveedor…' }}
         avanzados={[
           { id: 'cochinito-banca', etiqueta: 'Banca', valor: bancaFiltro, opciones: bancas.map(b => ({ valor: b.id, etiqueta: b.nombre })), cargando: false, onCambiar: v => cambiar({ banca: v }) },
-          ...(opcionesSubcategoria.length > 0
-            ? [{ id: 'cochinito-subcategoria', etiqueta: 'Subcategoría', valor: subcategoriaFiltro, opciones: opcionesSubcategoria, cargando: false, onCambiar: (v: string | undefined) => cambiar({ subcategoria: v }) }]
-            : []),
+          { id: 'cochinito-subcategoria', etiqueta: 'Subcategoría', valor: subcategoriaFiltro, opciones: opcionesSubcategoria, cargando: false, deshabilitado: sinCategorias || opcionesSubcategoria.length === 0, aviso: avisoSinCategorias, textoTodas: sinCategorias ? 'Sin categorías' : undefined, onCambiar: (v: string | undefined) => cambiar({ subcategoria: v }) },
           { id: 'cochinito-subtipo', etiqueta: 'Pago o adelanto', valor: str(filtros.subtipo), opciones: OPCIONES_SUBTIPO, onCambiar: v => cambiar({ subtipo: v }) },
         ]}
         onLimpiar={limpiar}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { registrarAsiento } from '../../services/mesa-cambio-service';
 import { useToast } from '../../hooks/use-toast-context';
+import { useCerrarConEscape } from '../../hooks/use-cerrar-con-escape';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import { ETIQUETA_TIPO_ASIENTO, TIPOS_ASIENTO, formatearNumeroDocumento, type TipoAsiento } from '@shared/types/mesa-cambio';
 
@@ -34,6 +35,7 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
   const [referencia, setReferencia] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useCerrarConEscape(onClose, guardando);
   const notaObligatoria = tipo === 'NC' || tipo === 'ND';
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,9 +59,9 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="asiento-titulo">
         <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">Registrar asiento · {cambistaNombre}</h2>
+          <h2 id="asiento-titulo" className="text-lg font-bold text-text-primary">Registrar asiento · {cambistaNombre}</h2>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors">
             <X size={20} />
           </button>

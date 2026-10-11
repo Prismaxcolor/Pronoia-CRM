@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { actualizarTrabajador, crearTrabajador, type TrabajadorInput } from '../../services/nomina-service';
 import { useToast } from '../../hooks/use-toast-context';
+import { useCerrarConEscape } from '../../hooks/use-cerrar-con-escape';
 import { ETIQUETA_TIPO_TRABAJADOR, nombreCompleto, type TipoTrabajador, type Trabajador } from '@shared/types/nomina';
 import { leerNumero } from './nomina-editor';
 
@@ -66,6 +67,7 @@ function TrabajadorFormModal({ tipo, trabajador, onClose, onGuardado }: Props) {
   });
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useCerrarConEscape(onClose, guardando);
   const poner = (campo: keyof typeof f) => (v: string) => setF(prev => ({ ...prev, [campo]: v }));
 
   const handleSubmit = async (e: React.FormEvent) => {

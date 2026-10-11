@@ -5,7 +5,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import type { CategoriasPantalla, TarjetaInventario } from '@shared/types/inventario-pantalla.js';
-import { formatearKg, formatearPct, type FiltrosPantalla, type VistaUrl } from '../../../lib/inventario-nuevo';
+import { fechaCorteSaldo, formatearKg, formatearPct, textoEnGalpon, textoKgDeFecha, type FiltrosPantalla, type VistaUrl } from '../../../lib/inventario-nuevo';
 import { estiloCategoria } from '../../../lib/colores-categoria';
 import {
   ETIQUETA_OTRAS, MENSAJE_VACIO_VISTA, VISTAS_PRINCIPALES, claveParametros, formatearDiasEstimados, parametrosPantalla,
@@ -78,9 +78,11 @@ interface TarjetaProps {
   t: TarjetaInventario;
   seleccionada: boolean;
   onElegir: (t: TarjetaInventario) => void;
+  /** Fecha del saldo histórico; undefined = stock de hoy. */
+  saldoAl?: string;
 }
 
-function TarjetaCategoria({ t, seleccionada, onElegir }: TarjetaProps) {
+function TarjetaCategoria({ t, seleccionada, onElegir, saldoAl }: TarjetaProps) {
   const estilo = estiloCategoria(t.nombre);
   const esExportacion = t.vista === 'exportacion';
   const alActivar = () => onElegir(t);
@@ -105,7 +107,7 @@ function TarjetaCategoria({ t, seleccionada, onElegir }: TarjetaProps) {
       </div>
 
       <p className="mt-3 text-2xl font-bold tabular-nums text-text-primary">{formatearKg(t.kgEnGalpon)}</p>
-      <p className="text-[11px] text-text-secondary">en galpón ahora</p>
+      <p className="text-[11px] text-text-secondary">{textoEnGalpon(saldoAl)}</p>
       {t.enTransformacionKg > 0 && (
         <p className="mt-0.5 text-[11px] text-text-secondary">
           + {formatearKg(t.enTransformacionKg)} retirados para una transformación que aún no termina (ya no están en el galpón; cuentan como «En proceso»)
@@ -222,6 +224,7 @@ function VistasCategorias({ filtros, recarga = 0 }: VistasCategoriasProps) {
   const params = useMemo(() => parametrosPantalla(filtros, { sinCategoria: true, sinValor: true }), [filtros]);
   const { dato, error, actualizando, recargar } = useDatosPantalla<CategoriasPantalla>(`${claveParametros(params)}|r${recarga}`, () => obtenerCategoriasPantalla(params));
   const vista = vistaActiva(filtros);
+  const saldoAl = fechaCorteSaldo(filtros);
   const descripcion = [...VISTAS_PRINCIPALES, ETIQUETA_OTRAS].find(o => o.clave === vista)?.descripcion ?? '';
 
   const kgPorVista = useMemo(() => {
@@ -240,7 +243,7 @@ function VistasCategorias({ filtros, recarga = 0 }: VistasCategoriasProps) {
   };
 
   return (
-    <Bloque titulo="Vistas y categorías" queEstasViendo="el inventario separado en Exportación (Lote 1 a 4), Venta nacional (solo Ferroso y No ferroso) y Trabajo interno (lotes de trabajo, Procesadores y desarme), con una tarjeta por categoría: kg en galpón, kg por etapa y días en inventario. Los kg son los de hoy; el rendimiento, la merma y lo despachado dependen del rango de fechas. Haz clic en una categoría para filtrar la tabla de detalle de arriba.">
+    <Bloque titulo="Vistas y categorías" queEstasViendo={`el inventario separado en Exportación (Lote 1 a 4), Venta nacional (solo Ferroso y No ferroso) y Trabajo interno (lotes de trabajo, Procesadores y desarme), con una tarjeta por categoría: kg en galpón, kg por etapa y días en inventario. ${textoKgDeFecha(saldoAl)}; el rendimiento, la merma y lo despachado dependen del rango de fechas. Haz clic en una categoría para filtrar la tabla de detalle de arriba.`}>
       {!dato && !error && <SkeletonBloque alto="h-72" />}
       {error && !dato && <ErrorBloque mensaje={error} onReintentar={recargar} />}
       {dato && (
@@ -264,7 +267,7 @@ function VistasCategorias({ filtros, recarga = 0 }: VistasCategoriasProps) {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {tarjetas.map(t => (
-                <TarjetaCategoria key={t.clave} t={t} seleccionada={filtros.categoria === t.nombre} onElegir={elegir} />
+                <TarjetaCategoria key={t.clave} t={t} seleccionada={filtros.categoria === t.nombre} onElegir={elegir} saldoAl={saldoAl} />
               ))}
             </div>
           )}

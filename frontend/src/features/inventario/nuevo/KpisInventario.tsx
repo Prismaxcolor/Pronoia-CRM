@@ -7,6 +7,7 @@ import {
   formatearKg,
   formatearNumero,
   formatearPct,
+  mostrarEnlaceMetricas,
   rotuloSaldo,
   type FiltrosPantalla,
 } from '../../../lib/inventario-nuevo';
@@ -64,7 +65,7 @@ function TarjetaItemsConStock({ filtros, recarga }: { filtros: FiltrosPantalla; 
           ))}
         </ul>
       )}
-      {tienePermiso('facturacion', 'ver') && (
+      {mostrarEnlaceMetricas(dato?.saldoAl, tienePermiso('facturacion', 'ver')) && (
         <Link to="/metricas?seccion=inventario" className="mt-2 inline-block text-xs font-medium text-brand-700 underline underline-offset-2">Ver valor del inventario en Métricas →</Link>
       )}
     </TarjetaKpi>

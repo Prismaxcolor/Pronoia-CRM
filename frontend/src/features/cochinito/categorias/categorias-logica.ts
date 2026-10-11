@@ -122,3 +122,16 @@ export function resolverFiltroCategoria(
   const ids = categorias.filter(c => c.id === f.categoria || c.padreId === f.categoria).map(c => c.id);
   return { categoriaIds: new Set(ids) };
 }
+
+export const AVISO_SIN_CATEGORIAS = 'Aún no hay categorías. Créalas en Categorías';
+export const RUTA_CATEGORIAS = '/cochinito/categorias';
+
+/** ¿Hay categorías activas que acepten este tipo? Si no, el selector se ve deshabilitado y no se exige elegir. */
+export function hayOpcionesCategoria(categorias: readonly CategoriaWallet[], movimiento: 'ingreso' | 'egreso'): boolean {
+  return opcionesParaTipo(categorias, movimiento).length > 0;
+}
+
+/** Los filtros de categoría/subcategoría de la tabla se ven siempre; se deshabilitan si no existe ninguna categoría. */
+export function filtrosCategoriaDeshabilitados(categorias: readonly CategoriaWallet[]): boolean {
+  return categorias.length === 0;
+}

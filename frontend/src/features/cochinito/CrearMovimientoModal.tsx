@@ -28,7 +28,7 @@ import { hoyNegocio } from '../../lib/fecha-negocio';
 import { bancasEditables } from '../usuarios/acceso-bancas';
 import SelectorCategoria from './categorias/SelectorCategoria';
 import { useCategorias } from './categorias/useCategorias';
-import { ELECCION_VACIA, categoriaIdDeEleccion, mensajeEleccion, opcionesParaTipo } from './categorias/categorias-logica';
+import { ELECCION_VACIA, categoriaIdDeEleccion, hayOpcionesCategoria, mensajeEleccion } from './categorias/categorias-logica';
 
 interface Props {
   bancas: Banca[];
@@ -68,7 +68,7 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
   const [error, setError] = useState<string | null>(null);
   const [comprobantes, setComprobantes] = useState<FotoLocal[]>([]);
   const mesa = useTransferenciaMesa();
-  // Categoría (solo ingreso/egreso): sin valor por defecto; si no hay categorías configuradas el selector no aparece.
+  // Categoría (solo ingreso/egreso): sin valor por defecto. El selector se ve siempre; si no hay categorías queda deshabilitado y no se exige.
   const { categorias } = useCategorias();
   const [eleccionCategoria, setEleccionCategoria] = useState(ELECCION_VACIA);
   const [errorCategoria, setErrorCategoria] = useState<string | null>(null);
@@ -113,7 +113,7 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
   const bancaDestino = bancas.find(b => b.id === bancaDestinoId);
   const bancasDestinoDisponibles = bancas.filter(b => b.id !== bancaId);
   const montoNum = parseFloat(monto) || 0;
-  const mostrarCategoria = (tipo === 'ingreso' || tipo === 'egreso') && opcionesParaTipo(categorias, tipo).length > 0;
+  const mostrarCategoria = (tipo === 'ingreso' || tipo === 'egreso') && hayOpcionesCategoria(categorias, tipo);
   const monedasDistintas = tipo === 'transferencia' && !!bancaActual && !!bancaDestino && bancaActual.moneda !== bancaDestino.moneda;
   const ofertaComision = { disponible: comision.disponible, tipo, moneda: bancaActual?.moneda ?? '', mesaActiva: mesa.activa };
   const comisionOfrecida = ofrecerComision(ofertaComision);
@@ -458,7 +458,7 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
           )}
 
           {/* Categoría y subcategoría — solo ingreso y egreso */}
-          {mostrarCategoria && (tipo === 'ingreso' || tipo === 'egreso') && (
+          {(tipo === 'ingreso' || tipo === 'egreso') && (
             <SelectorCategoria
               tipo={tipo}
               categorias={categorias}

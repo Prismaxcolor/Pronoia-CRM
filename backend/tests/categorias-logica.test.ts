@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   armarArbol, categoriaIdDeEleccion, colorTextoSobre, eleccionDeCategoriaId, esHexValido, etiquetaCategoria, indicePorId,
   mensajeEleccion, normalizarHex, opcionesParaTipo, resolverFiltroCategoria, ELECCION_VACIA,
+  hayOpcionesCategoria, AVISO_SIN_CATEGORIAS, RUTA_CATEGORIAS, filtrosCategoriaDeshabilitados,
 } from '../../frontend/src/features/cochinito/categorias/categorias-logica';
 import { filtrarMovimientos } from '../../frontend/src/lib/cochinito-kpis';
 
@@ -102,5 +103,28 @@ describe('resolverFiltroCategoria + filtrarMovimientos', () => {
     expect(r).toEqual([]);
     const r2 = filtrarMovimientos(movs, { ...resolverFiltroCategoria({ categoria: 'serv' }, todas), desde: '2026-10-06' });
     expect(r2).toEqual([]);
+  });
+});
+
+describe('categorias siempre visibles (sin categorias creadas)', () => {
+  it('sin categorias del tipo no se exige elegir y el selector se muestra deshabilitado', () => {
+    expect(hayOpcionesCategoria([], 'egreso')).toBe(false);
+    expect(hayOpcionesCategoria([cat('ven', 'Ventas', 'INGRESO')], 'egreso')).toBe(false);
+    expect(hayOpcionesCategoria([], 'ingreso')).toBe(false);
+  });
+  it('con categorias del tipo hay que elegir', () => {
+    expect(hayOpcionesCategoria(todas, 'egreso')).toBe(true);
+    expect(hayOpcionesCategoria(todas, 'ingreso')).toBe(true);
+  });
+  it('una categoria archivada no cuenta', () => {
+    expect(hayOpcionesCategoria([cat('arch', 'Vieja', 'EGRESO', null, false)], 'egreso')).toBe(false);
+  });
+  it('el aviso invita a crearlas en Categorias', () => {
+    expect(AVISO_SIN_CATEGORIAS).toBe('Aún no hay categorías. Créalas en Categorías');
+    expect(RUTA_CATEGORIAS).toBe('/cochinito/categorias');
+  });
+  it('los filtros de categoria se deshabilitan solo si no existe ninguna categoria', () => {
+    expect(filtrosCategoriaDeshabilitados([])).toBe(true);
+    expect(filtrosCategoriaDeshabilitados(todas)).toBe(false);
   });
 });

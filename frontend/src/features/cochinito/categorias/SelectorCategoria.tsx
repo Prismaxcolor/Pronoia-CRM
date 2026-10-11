@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import AvisoSinCategorias from './AvisoSinCategorias';
 import type { CategoriaWallet } from '@shared/types/index.js';
 import {
   VALOR_SIN_CATEGORIA, opcionesParaTipo, type EleccionCategoria,
@@ -26,6 +27,7 @@ function SelectorCategoria({ tipo, categorias, valor, onChange, error }: Props) 
   const hijas = elegida?.hijas ?? [];
   const idCategoria = `${base}-cat`;
   const idError = `${base}-err`;
+  const sinCategorias = opciones.length === 0;
 
   return (
     <div className="space-y-2">
@@ -37,15 +39,17 @@ function SelectorCategoria({ tipo, categorias, valor, onChange, error }: Props) 
             id={idCategoria}
             value={valor.categoria}
             onChange={e => onChange({ categoria: e.target.value, subcategoria: '' })}
+            disabled={sinCategorias}
             aria-invalid={!!error}
             aria-describedby={error ? idError : undefined}
             className={CAMPO}
           >
-            <option value="">— Elige una categoría —</option>
+            <option value="">{sinCategorias ? 'Sin categorías disponibles' : '— Elige una categoría —'}</option>
             <option value={VALOR_SIN_CATEGORIA}>Sin categoría</option>
             {opciones.map(n => <option key={n.categoria.id} value={n.categoria.id}>{n.categoria.nombre}</option>)}
           </select>
         </div>
+        {sinCategorias && <p className="mt-1 text-xs text-text-muted"><AvisoSinCategorias /></p>}
       </div>
       {hijas.length > 0 && (
         <div>

@@ -71,8 +71,9 @@ function PackingListFilas({
 
   return (
     <div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[40rem] text-sm">
+      <p className="mb-1 text-xs text-text-muted md:hidden" aria-hidden="true">Desliza la tabla → para ver todas las columnas</p>
+      <div className="max-w-full overflow-x-auto overscroll-x-contain rounded-lg border-r-4 border-r-brand-200 md:border-r-0">
+        <table className="w-full min-w-[46rem] text-sm">
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>{nombreBulto}</th>
@@ -102,13 +103,13 @@ function PackingListFilas({
                     </td>
                   )}
                   {esPcb && (
-                    <td className="px-2 py-1.5 w-32">
+                    <td className="px-2 py-1.5 w-32 min-w-[6.5rem]">
                       <select
                         aria-label={`Color (fila ${i + 1})`}
                         value={f.color}
                         disabled={!puedeEditar}
                         onChange={e => onCambiar(f.clave, 'color', e.target.value)}
-                        className={INPUT}
+                        className={`${INPUT} min-w-[5.5rem]`}
                       >
                         <option value="">—</option>
                         {COLORES_LOTE.map(c => <option key={c.clave} value={c.clave}>{c.es} / {c.en}</option>)}
