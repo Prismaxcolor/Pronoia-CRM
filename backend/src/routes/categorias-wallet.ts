@@ -83,8 +83,8 @@ router.patch(
 router.get('/reportes/cuenta', requirePermiso('cochinito', 'ver'), async (req, res) => {
   const filtro = leerFiltro(filtroReporteCuentaSchema, req, res);
   if (!filtro) return;
-  const permitidas = await bancasPermitidas(req.user!.sub, req.user!.rol);
-  const r = await obtenerReporteCuenta(filtro, permitidas);
+  // Sin await: la consulta de accesos corre a la vez que las del reporte (el servicio la espera).
+  const r = await obtenerReporteCuenta(filtro, bancasPermitidas(req.user!.sub, req.user!.rol));
   if ('error' in r) return responderFallo(res, r);
   res.json(r.reporte);
 });
@@ -92,8 +92,7 @@ router.get('/reportes/cuenta', requirePermiso('cochinito', 'ver'), async (req, r
 router.get('/reportes/categorias', requirePermiso('cochinito', 'ver'), async (req, res) => {
   const filtro = leerFiltro(filtroReporteCategoriasSchema, req, res);
   if (!filtro) return;
-  const permitidas = await bancasPermitidas(req.user!.sub, req.user!.rol);
-  const r = await obtenerReporteCategorias(filtro, permitidas);
+  const r = await obtenerReporteCategorias(filtro, bancasPermitidas(req.user!.sub, req.user!.rol));
   if ('error' in r) return responderFallo(res, r);
   res.json(r.reporte);
 });

@@ -24,9 +24,14 @@ function Cifra({ etiqueta, children, className = '' }: { etiqueta: string; child
   );
 }
 
+function etiquetaDiferencia(parcial: boolean, conTotalReal: boolean): string {
+  if (!parcial) return 'Diferencia';
+  return conTotalReal ? 'Diferencia (solo lotes con estimado)' : 'Diferencia (solo lotes con ambos valores)';
+}
+
 function TarjetaExportacion({ e, puedeVerValores }: { e: ExportacionResumen; puedeVerValores: boolean }) {
-  const estado = estadoExportacion(e.kgPorLote, e.proyeccion);
-  const totales = totalesExportacion(e.kgPorLote, e.proyeccion);
+  const estado = estadoExportacion(e.kgPorLote, e.proyeccion, e.totalRealUsd);
+  const totales = totalesExportacion(e.kgPorLote, e.proyeccion, e.totalRealUsd);
   return (
     <li className="rounded-xl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -46,8 +51,8 @@ function TarjetaExportacion({ e, puedeVerValores }: { e: ExportacionResumen; pue
       {puedeVerValores && (
         <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Cifra etiqueta="Total estimado">{usd(totales.estimadoUsd)}</Cifra>
-          <Cifra etiqueta="Total real">{usd(totales.realUsd)}</Cifra>
-          <Cifra etiqueta={totales.parcial ? 'Diferencia (solo lotes con ambos valores)' : 'Diferencia'} className={colorDiferencia(totales.diferenciaUsd)}>
+          <Cifra etiqueta={e.totalRealUsd == null ? 'Total real' : 'Total real cobrado'}>{usd(totales.realUsd)}</Cifra>
+          <Cifra etiqueta={etiquetaDiferencia(totales.parcial, e.totalRealUsd != null)} className={colorDiferencia(totales.diferenciaUsd)}>
             {diferencia(totales.diferenciaUsd)}
           </Cifra>
         </dl>

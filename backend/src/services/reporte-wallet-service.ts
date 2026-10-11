@@ -19,6 +19,9 @@ export type ReporteCuentaResultado = {
 } & ReturnType<typeof construirReporteCuenta>;
 export type ReporteCategoriasResultado = ReturnType<typeof construirReporteCategorias>;
 
+/** Las bancas permitidas pueden venir ya resueltas o como promesa: así la consulta de accesos corre a la vez que las demás. */
+export type PermitidasOPromesa = BancasPermitidas | PromiseLike<BancasPermitidas>;
+
 const MENSAJE_FALLO_LECTURA = MENSAJE_ERROR_GENERICO;
 
 const COLUMNAS_REPORTE_CATEGORIAS = 'id, tipo, monto, moneda, fecha, banca_origen_id, categoria_id';
@@ -57,8 +60,11 @@ function falloDeLectura(e: unknown, contexto: string): FalloCategoria {
 
 async function nombresDeBancas(ids: readonly string[]): Promise<Map<string, string>> {
   const nombres = new Map<string, string>();
-  for (const trozo of trocear([...new Set(ids)], IDS_POR_CONSULTA)) {
-    const { data } = await supabaseAdmin.from('bancas').select('id, nombre').in('id', trozo);
+  // Los trozos son independientes: se piden a la vez.
+  const respuestas = await Promise.all(
+    trocear([...new Set(ids)], IDS_POR_CONSULTA).map(trozo => supabaseAdmin.from('bancas').select('id, nombre').in('id', trozo))
+  );
+  for (const { data } of respuestas) {
     for (const b of (data as Array<{ id: string; nombre: string }> | null) ?? []) nombres.set(b.id, b.nombre);
   }
   return nombres;
@@ -87,15 +93,24 @@ async function leerMovimientosDeCuenta(f: FiltroReporteCuenta): Promise<Movimien
 
 export async function obtenerReporteCuenta(
   f: FiltroReporteCuenta,
-  permitidas: BancasPermitidas
+  permitidasOPromesa: PermitidasOPromesa
 ): Promise<{ reporte: ReporteCuentaResultado } | FalloCategoria> {
-  const { data: banca } = await supabaseAdmin.from('bancas').select('id, nombre, moneda').eq('id', f.bancaId).maybeSingle();
+  // Cuenta, accesos, movimientos y categorías no dependen entre sí: una sola ida y vuelta a la BD en vez de cuatro en serie.
+  // La lectura de movimientos captura su error para que 404 / 403 sigan teniendo prioridad sobre un fallo de lectura.
+  const [bancaRes, permitidas, lecturaMovimientos, categorias] = await Promise.all([
+    supabaseAdmin.from('bancas').select('id, nombre, moneda').eq('id', f.bancaId).maybeSingle(),
+    permitidasOPromesa,
+    leerMovimientosDeCuenta(f).then(movimientos => ({ movimientos }), (e: unknown) => ({ e })),
+    categoriasOpcionales(),
+  ]);
+  const banca = bancaRes.data;
   if (!banca) return { error: 'Cuenta no encontrada.', codigo: 404 };
   if (!bancaPermitida(permitidas, f.bancaId)) return { error: MENSAJE_SIN_ACCESO_BANCA, codigo: 403 };
+  if ('e' in lecturaMovimientos) return falloDeLectura(lecturaMovimientos.e, 'cuenta');
   try {
-    const movimientos = await leerMovimientosDeCuenta(f);
+    const { movimientos } = lecturaMovimientos;
     const otras = movimientos.flatMap(m => [m.bancaOrigenId, m.bancaDestinoId]).filter((x): x is string => !!x);
-    const [categorias, nombresBancas] = await Promise.all([categoriasOpcionales(), nombresDeBancas(otras)]);
+    const nombresBancas = await nombresDeBancas(otras);
     const calculo = construirReporteCuenta({ bancaId: f.bancaId, movimientos, categorias, nombresBancas, permitidas });
     const b = banca as { id: string; nombre: string; moneda: string };
     return { reporte: { banca: { id: b.id, nombre: b.nombre, moneda: b.moneda }, desde: f.desde, hasta: f.hasta, ...calculo } };
@@ -125,9 +140,10 @@ async function leerMovimientosParaCategorias(f: FiltroReporteCategorias, selecci
 
 export async function obtenerReporteCategorias(
   f: FiltroReporteCategorias,
-  permitidas: BancasPermitidas
+  permitidasOPromesa: PermitidasOPromesa
 ): Promise<{ reporte: ReporteCategoriasResultado } | FalloCategoria> {
-  const lista = await listarCategorias();
+  // Las categorías y los accesos del usuario se piden a la vez; los movimientos dependen de la selección de categorías.
+  const [lista, permitidas] = await Promise.all([listarCategorias(), permitidasOPromesa]);
   if ('error' in lista) return lista;
   const seleccion = resolverSeleccion(f.categorias, lista.categorias);
   if (seleccion !== null && seleccion.size === 0) return { error: 'Las categorías elegidas no existen.', codigo: 400 };

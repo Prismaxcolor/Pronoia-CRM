@@ -17,6 +17,12 @@ export async function cargarPermisosSiFaltan(req: Request, res: Response, next: 
     next();
     return;
   }
+  if (req.permisosLeidosAhora) {
+    // requireAuth acaba de leer esta fila en esta misma petición: no se repite la consulta.
+    req.permisos = permisosEfectivos(req.user.rol as RolUsuario, req.permisosLeidosAhora.valor as Permiso[] | null);
+    next();
+    return;
+  }
   const { data, error } = await supabaseAdmin.from('users').select('rol, permisos, activo').eq('id', req.user.sub).maybeSingle();
   if (error) {
     res.status(503).json({ error: 'No se pudo verificar tus permisos. Intenta de nuevo.' });

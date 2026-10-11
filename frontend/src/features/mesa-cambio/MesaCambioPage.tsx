@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeftRight, Pencil, Plus } from 'lucide-react';
 import { obtenerCambistas } from '../../services/mesa-cambio-service';
 import { useAuth } from '../../hooks/use-auth-context';
-import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonBloque } from '../../components/ui';
+import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonConAviso } from '../../components/ui';
 import { describirSaldo, type Cambista, type CambistaConSaldo } from '@shared/types/mesa-cambio';
 import CambistaFormModal from './CambistaFormModal';
 import SaldoCambista from './SaldoCambista';
@@ -56,7 +56,7 @@ function MesaCambioPage() {
         )}
       />
 
-      {cargando ? <SkeletonBloque /> : error ? (
+      {cargando ? <SkeletonConAviso queCarga="la lista de cambistas" /> : error ? (
         <div role="alert" className="rounded-xl border border-border bg-surface p-4 text-sm text-red-500">
           {error}
           <button type="button" onClick={() => { setCargando(true); void cargar(); }} className="ml-3 underline">Reintentar</button>

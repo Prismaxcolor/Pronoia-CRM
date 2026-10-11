@@ -127,22 +127,24 @@ export async function actualizarCambista(id: string, input: ActualizarCambistaIn
 }
 
 export async function obtenerEstadoCuenta(id: string, rango: RangoFechas): Promise<{ estado: EstadoCuentaMesa } | Fallo> {
-  const encontrado = await obtenerCambista(id);
-  if ('error' in encontrado) return encontrado;
+  // El cambista y sus asientos no dependen entre sí: se piden a la vez (una ida y vuelta a la BD en vez de dos).
   // PostgREST corta cada respuesta en 1000 filas: sin paginar, un cambista con más asientos tendría un saldo falso.
-  let filas: Record<string, unknown>[];
-  try {
-    filas = await leerPaginado<Record<string, unknown>>((desde, hasta) =>
+  const [encontrado, lecturaAsientos] = await Promise.all([
+    obtenerCambista(id),
+    leerPaginado<Record<string, unknown>>((desde, hasta) =>
       supabaseAdmin
         .from('cambista_asientos')
         .select(COLUMNAS_ASIENTO)
         .eq('cambista_id', id)
         .order('numero', { ascending: true })
         .range(desde, hasta)
-    );
-  } catch (e) {
-    return fallo(e instanceof ErrorLecturaBd ? e : {}, 'No se pudo cargar el estado de cuenta.');
+    ).then(filas => ({ filas }), (e: unknown) => ({ e })),
+  ]);
+  if ('error' in encontrado) return encontrado;
+  if ('e' in lecturaAsientos) {
+    return fallo(lecturaAsientos.e instanceof ErrorLecturaBd ? lecturaAsientos.e : {}, 'No se pudo cargar el estado de cuenta.');
   }
+  const filas = lecturaAsientos.filas;
   const calculado = construirEstadoCuenta(filas.map(mapAsiento), rango);
   return {
     estado: { ...calculado, cambista: encontrado.cambista, desde: rango.desde ?? null, hasta: rango.hasta ?? null },

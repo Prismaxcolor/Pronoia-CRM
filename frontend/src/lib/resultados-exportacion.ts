@@ -78,3 +78,54 @@ export function textoComparacionTotal(comparados: number, incompletos: number): 
   const falta = incompletos === 1 ? '1 lote no tiene valor estimado o real y no se suma.' : `${incompletos} lotes no tienen valor estimado o real y no se suman.`;
   return `El total compara solo ${comp} con ambos valores. ${falta}`;
 }
+
+// ---- Total real cobrado de la exportación -----------------------------------------------------------------------
+// El beneficio real suele ser un TOTAL cobrado; repartirlo por lote sería inventar números (las líneas de venta no
+// llevan lote). Por eso se compara aparte: la proyección total frente a ese total.
+
+const TOPE_TOTAL_USD = 99_999_999_999.99;
+
+export interface ResultadoTotal {
+  /** Suma de kg × USD/kg de los lotes que tienen estimado; null si ninguno lo tiene. */
+  estimadoUsd: number | null;
+  /** Total realmente cobrado (USD) tal como se escribió; null = sin cargar. */
+  realUsd: number | null;
+  /** Total real − proyección total; null si falta alguno de los dos. */
+  diferenciaUsd: number | null;
+  /** Diferencia sobre la proyección total; null si falta un dato o la proyección es 0. */
+  diferenciaPct: number | null;
+  /** Lotes sin valor estimado: la proyección total no los incluye. */
+  lotesSinEstimar: number;
+}
+
+export function calcularResultadoTotal(
+  kgs: readonly KgLote[],
+  estimados: ValoresPorLote,
+  totalRealUsd: number | null
+): ResultadoTotal {
+  const conEstimado = kgs.filter(k => estimados[k.lote] != null);
+  const estimadoUsd = conEstimado.length === 0
+    ? null
+    : redondear2(conEstimado.reduce((s, k) => s + k.kg * (estimados[k.lote] ?? 0), 0));
+  const diferenciaUsd = estimadoUsd === null || totalRealUsd === null ? null : redondear2(totalRealUsd - estimadoUsd);
+  return {
+    estimadoUsd,
+    realUsd: totalRealUsd,
+    diferenciaUsd,
+    diferenciaPct: diferenciaUsd === null || estimadoUsd === null ? null : porcentaje(diferenciaUsd, estimadoUsd),
+    lotesSinEstimar: kgs.length - conEstimado.length,
+  };
+}
+
+/** Lee un monto USD escrito a mano ("13.193,46", "13193,46" o "13193.46"), hasta 2 decimales. Vacío o inválido = null. */
+export function parsearTotalUsd(texto: string): number | null {
+  const t = texto.trim();
+  if (t === '') return null;
+  const normalizado = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t;
+  if (!/^\d+(\.\d{1,2})?$/.test(normalizado)) return null;
+  const n = Number(normalizado);
+  return Number.isFinite(n) && n <= TOPE_TOTAL_USD ? n : null;
+}
+
+/** 13193.46 -> "13193,46" (el campo se edita como texto con coma decimal); sin valor = vacío. */
+export const textoTotalUsd = (n: number | null | undefined): string => (n == null ? '' : String(n).replace('.', ','));

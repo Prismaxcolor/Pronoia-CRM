@@ -23,6 +23,9 @@ import {
   CONFIG_DEFECTO,
   esquinaMasCercana,
   claveStorage,
+  pxTamano,
+  CONSULTA_MOVIL,
+  TAMANOS,
 } from '../../frontend/src/features/blob/config';
 import {
   semillaBlob,
@@ -251,5 +254,31 @@ describe('broma privada de BLOB', () => {
 
   it('sin bromas todo sigue igual', () => {
     expect(FRASES_BROMA_JESUS).not.toContain(elegirFrase({ pagina: 'otra', contexto: 'saludo' }));
+  });
+});
+
+describe('tamaño de BLOB en pantallas chicas', () => {
+  it('en móvil es más pequeño que en escritorio para cada tamaño elegido', () => {
+    for (const t of TAMANOS) {
+      expect(pxTamano(t, true)).toBeLessThan(pxTamano(t, false));
+    }
+  });
+  it('en escritorio conserva los píxeles de siempre', () => {
+    expect(pxTamano('pequeno', false)).toBe(64);
+    expect(pxTamano('mediano', false)).toBe(88);
+    expect(pxTamano('grande', false)).toBe(116);
+  });
+  it('en móvil el más grande no pasa de 60 px y el orden pequeño < mediano < grande se mantiene', () => {
+    expect(pxTamano('grande', true)).toBeLessThanOrEqual(60);
+    expect(pxTamano('pequeno', true)).toBeLessThan(pxTamano('mediano', true));
+    expect(pxTamano('mediano', true)).toBeLessThan(pxTamano('grande', true));
+  });
+  it('la consulta de móvil coincide con el breakpoint sm de Tailwind (menos de 640 px)', () => {
+    expect(CONSULTA_MOVIL).toBe('(max-width: 639px)');
+  });
+  it('la configuración guardada no cambia de forma (no se añaden campos por el modo móvil)', () => {
+    expect(Object.keys(CONFIG_DEFECTO).sort()).toEqual(
+      ['consultarDatos', 'esquina', 'frasesPropias', 'frecuencia', 'iaActiva', 'modo', 'nombre', 'personalidad', 'tamano'],
+    );
   });
 });

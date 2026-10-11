@@ -31,7 +31,8 @@ export interface EstadoAsistente {
 export interface AccionesAsistente {
   elegirPackingList: (id: string) => Promise<void>;
   cambiarCliente: (id: string) => void;
-  cambiarValoracion: (campo: keyof ValoracionForm, lote: string, texto: string) => void;
+  cambiarValoracion: (campo: 'estimado' | 'real', lote: string, texto: string) => void;
+  cambiarTotalReal: (texto: string) => void;
   /** Guarda lo pendiente; devuelve true si no queda nada sin guardar (listo para seguir). */
   guardar: () => Promise<boolean>;
 }
@@ -91,8 +92,10 @@ export function useExportacionAsistente(id: string): { estado: EstadoAsistente; 
     if ('error' in r) toast.errorMsg(r.error); else aplicar(r);
   };
 
-  const cambiarValoracion = (campo: keyof ValoracionForm, lote: string, texto: string) =>
+  const cambiarValoracion = (campo: 'estimado' | 'real', lote: string, texto: string) =>
     setValoracion(v => ({ ...v, [campo]: { ...v[campo], [lote]: texto } }));
+
+  const cambiarTotalReal = (texto: string) => setValoracion(v => ({ ...v, totalReal: texto }));
 
   const guardar = async (): Promise<boolean> => {
     if (!detalle) return false;
@@ -113,6 +116,6 @@ export function useExportacionAsistente(id: string): { estado: EstadoAsistente; 
       cargando, error, guardando, packingLists, detalle, clienteId, valoracion, kgs, opcionesClientes,
       hayClientesInternacionales: opcionesClientes.length > 0, sinGuardar, puedeEditar, puedeVerValores,
     },
-    acciones: { elegirPackingList, cambiarCliente: setClienteId, cambiarValoracion, guardar },
+    acciones: { elegirPackingList, cambiarCliente: setClienteId, cambiarValoracion, cambiarTotalReal, guardar },
   };
 }

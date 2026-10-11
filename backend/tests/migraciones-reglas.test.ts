@@ -8,7 +8,7 @@ import { normalizarCedula } from '../src/utils/nomina-cedula.js';
  * de seguridad y de negocio acordadas siguen escritas en el SQL.
  */
 const sql = (nombre: string): string =>
-  readFileSync(fileURLToPath(new URL(`../../docs/${nombre}`, import.meta.url)), 'utf-8');
+  readFileSync(fileURLToPath(new URL(`../../docs/${nombre}`, import.meta.url)), 'utf-8').replace(/\r\n/g, '\n');
 
 /** Cuerpo de una función SQL: desde su `create or replace function` hasta el siguiente `$function$;`. */
 function funcion(texto: string, nombre: string): string {
@@ -56,7 +56,7 @@ describe('migration_nomina.sql', () => {
 });
 
 describe('migraciones de packing list', () => {
-  it.each(['migration_packing_list_cliente_resultados.sql', 'migration_packing_list_lote_fotos.sql'])(
+  it.each(['migration_packing_list_cliente_resultados.sql', 'migration_packing_list_lote_fotos.sql', 'migration_packing_list_total_real.sql'])(
     '%s termina recargando el esquema de PostgREST y fija el search_path de guardar_packing_list',
     nombre => {
       const texto = sql(nombre);
@@ -65,6 +65,24 @@ describe('migraciones de packing list', () => {
       expect(texto).not.toMatch(/set search_path = public\s*$/m);
     }
   );
+
+  it('total_real: columna con check >= 0, función que conserva ausente/borra null y mantiene versión y fotos', () => {
+    const texto = sql('migration_packing_list_total_real.sql');
+    const f = funcion(texto, 'guardar_packing_list');
+    expect(texto).toContain('add column if not exists total_real_usd numeric(14,2)');
+    expect(texto).toContain('check (total_real_usd is null or total_real_usd >= 0)');
+    expect(f).toContain("total_real_usd   = case when p_cabecera ? 'total_real_usd' then v_total else total_real_usd end");
+    expect(f).toContain("errcode = 'PL409'");
+    expect(f).toContain("'almacen_id', almacen_id, 'fotos', to_jsonb(fotos)");
+    expect(f).toContain("(p.prev->>'numero_paleta') = (e.item->>'numero_paleta')");
+  });
+
+  it('el ROLLBACK de total_real restaura la función de lote_fotos y quita la columna', () => {
+    const rb = sql('migration_packing_list_total_real_ROLLBACK.sql');
+    expect(funcion(rb, 'guardar_packing_list')).toBe(funcion(sql('migration_packing_list_lote_fotos.sql'), 'guardar_packing_list'));
+    expect(rb).toContain('drop column if exists total_real_usd');
+    expect(rb.trimEnd().endsWith("notify pgrst, 'reload schema';")).toBe(true);
+  });
 
   it('la preservación de fotos/almacén empareja por numero_paleta + lote cuando hay número de paleta', () => {
     const f = funcion(sql('migration_packing_list_lote_fotos.sql'), 'guardar_packing_list');

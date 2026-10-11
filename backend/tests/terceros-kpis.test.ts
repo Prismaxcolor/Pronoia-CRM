@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   alertasAntiguedadEstadoCuenta, alertasTerceros, antiguedadMasVieja, facturasPendientesEstimadas, filtrarEntradasPorTipo,
-  filtrarTerceros, kpisEstadoCuenta, puntosSaldoCorrido, resumenTerceros, saldoCorrido, topPorSaldo, unirSaldos,
+  filtrarTerceros, kpisEstadoCuenta, puntosSaldoCorrido, resumenTerceros, saldoCorrido, textoSaldoPorSegmento, topPorSaldo, totalesDeFilas, unirSaldos,
   type TerceroBase,
 } from '../../frontend/src/lib/terceros-kpis';
 import type { SaldoEntidad } from '../../shared/types/saldos';
@@ -159,5 +159,34 @@ describe('estado de cuenta', () => {
       { referencia: 'C-3', fecha: '2026-03-01', pendiente: 30, dias: 10 },
     ]);
     expect(alertas.map(a => [a.id, a.severidad])).toEqual([['facturas-urgentes', 'roja'], ['facturas-atencion', 'amarilla']]);
+  });
+});
+
+describe('totalesDeFilas (KPI "Por cobrar" respeta el segmento de la lista)', () => {
+  const nacionales = unirSaldos([tercero('n1', 'Local 1'), tercero('n2', 'Local 2'), tercero('n3', 'Local 3')], [saldo('n1', 100.25), saldo('n2', 50.1), saldo('n3', -20)]);
+  const internacionales = unirSaldos([tercero('i1', 'Exterior')], [saldo('i1', 0)]);
+
+  it('suma solo los saldos positivos de las filas recibidas', () => {
+    expect(totalesDeFilas(nacionales)).toEqual({ porSaldar: 150.35, aFavor: 20, conAFavor: 1 });
+  });
+  it('un segmento con un solo cliente en cero da 0 aunque otros segmentos tengan deuda', () => {
+    expect(totalesDeFilas(internacionales)).toEqual({ porSaldar: 0, aFavor: 0, conAFavor: 0 });
+    expect(totalesDeFilas([...nacionales, ...internacionales]).porSaldar).toBe(150.35);
+  });
+  it('sin cifras (saldos no cargados) o sin filas todo es 0', () => {
+    expect(totalesDeFilas(unirSaldos([tercero('a', 'A')], null))).toEqual({ porSaldar: 0, aFavor: 0, conAFavor: 0 });
+    expect(totalesDeFilas([])).toEqual({ porSaldar: 0, aFavor: 0, conAFavor: 0 });
+  });
+  it('ignora saldos dentro del redondeo de céntimos y no arrastra error de coma flotante', () => {
+    const filas = unirSaldos([tercero('a', 'A'), tercero('b', 'B'), tercero('c', 'C')], [saldo('a', 0.1), saldo('b', 0.2), saldo('c', 0.004)]);
+    expect(totalesDeFilas(filas)).toEqual({ porSaldar: 0.3, aFavor: 0, conAFavor: 0 });
+  });
+});
+
+describe('textoSaldoPorSegmento', () => {
+  it('añade el segmento al rótulo', () => {
+    expect(textoSaldoPorSegmento('Por cobrar', 'clientes', 'nacionales')).toBe('Por cobrar a clientes nacionales');
+    expect(textoSaldoPorSegmento('Por cobrar', 'clientes', 'internacionales')).toBe('Por cobrar a clientes internacionales');
+    expect(textoSaldoPorSegmento('Por pagar', 'proveedores')).toBe('Por pagar a proveedores');
   });
 });

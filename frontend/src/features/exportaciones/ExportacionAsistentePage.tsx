@@ -36,9 +36,9 @@ function PasoResultados({ e, a }: PasoProps) {
   if (!e.puedeVerValores) return <AvisoSinPermisoValores />;
   return (
     <Bloque titulo="Resultados: proyección frente a lo real"
-      queEstasViendo="Uso interno: NO sale en los PDF. Cuando se conozca el resultado, escribe a mano el valor real obtenido por kg (USD) de cada lote para ver cuánto se desvió de la proyección.">
+      queEstasViendo="Uso interno: NO sale en los PDF. Cuando se conozca el resultado, escribe el total real cobrado de la exportación (USD) para ver cuánto se desvió de la proyección; si quieres, también el valor real por kg de cada lote.">
       <PackingListResultados kgs={e.kgs} valoracion={e.valoracion} puedeEditar={e.puedeEditar}
-        onCambiarReal={(lote, texto) => a.cambiarValoracion('real', lote, texto)} />
+        onCambiarReal={(lote, texto) => a.cambiarValoracion('real', lote, texto)} onCambiarTotalReal={a.cambiarTotalReal} />
     </Bloque>
   );
 }

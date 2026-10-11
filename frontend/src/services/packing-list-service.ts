@@ -43,6 +43,8 @@ export interface GuardarPackingListInput {
   items: ItemPackingListInput[];
   /** Proyección y resultados de la exportación (internos). Solo la envía quien tiene facturacion:ver; ausente = no tocar. */
   proyeccion?: ProyeccionLotePacking[];
+  /** Total real cobrado de la exportación (USD, interno). Solo con facturacion:ver; ausente = conservar, null = borrar. */
+  totalRealUsd?: number | null;
 }
 
 export type EmpresaInput = Omit<EmpresaPackingList, 'idioma'>;

@@ -287,9 +287,10 @@ function PackingListEditorPage() {
 
       {puedeVerValores && (
         <Bloque titulo="Resultados: proyección frente a lo real"
-          queEstasViendo="Uso interno: NO sale en los PDF. Cuando se conozca el resultado, escribe el valor real obtenido por kg (USD) de cada lote para ver cuánto se desvió de la proyección.">
+          queEstasViendo="Uso interno: NO sale en los PDF. Cuando se conozca el resultado, escribe el total real cobrado de la exportación (USD) para ver cuánto se desvió de la proyección; si quieres, también el valor real por kg de cada lote.">
           <PackingListResultados kgs={kgs} valoracion={valoracion} puedeEditar={puedeEditar}
-            onCambiarReal={(lote, texto) => setValoracion(v => ({ ...v, real: { ...v.real, [lote]: texto } }))} />
+            onCambiarReal={(lote, texto) => setValoracion(v => ({ ...v, real: { ...v.real, [lote]: texto } }))}
+            onCambiarTotalReal={texto => setValoracion(v => ({ ...v, totalReal: texto }))} />
         </Bloque>
       )}
     </div>

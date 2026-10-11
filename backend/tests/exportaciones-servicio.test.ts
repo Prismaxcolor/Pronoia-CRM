@@ -81,18 +81,42 @@ describe('listarExportaciones', () => {
     ]);
   });
 
-  it('si falta la columna proyeccion reintenta sin ella', async () => {
-    bd.errores = [{ code: '42703', message: 'column proyeccion does not exist' }];
-    bd.filas = [fila({ proyeccion: undefined })];
+  it('con facturacion:ver devuelve el total real cobrado (número o null)', async () => {
+    bd.filas = [fila({ total_real_usd: '13193.46' }), fila({ id: 'p2' })];
+    const r = await listarExportaciones({ puedeVerValores: true });
+    expect(bd.selects[0]).toContain('total_real_usd');
+    expect(r.exportaciones.map(e => e.totalRealUsd)).toEqual([13193.46, null]);
+  });
+
+  it('sin facturacion:ver no pide ni devuelve el total real', async () => {
+    bd.filas = [fila({ total_real_usd: 5 })];
+    const r = await listarExportaciones({ puedeVerValores: false });
+    expect(bd.selects[0]).not.toContain('total_real_usd');
+    expect(r.exportaciones[0]).not.toHaveProperty('totalRealUsd');
+  });
+
+  it('si falta solo la columna total_real_usd reintenta con la proyección', async () => {
+    bd.errores = [{ code: '42703', message: 'column total_real_usd does not exist' }];
     const r = await listarExportaciones({ puedeVerValores: true });
     expect(bd.selects).toHaveLength(2);
-    expect(bd.selects[1]).not.toContain('proyeccion');
+    expect(bd.selects[1]).toContain('proyeccion');
+    expect(bd.selects[1]).not.toContain('total_real_usd');
+    expect(r.exportaciones[0].totalRealUsd).toBeNull();
+  });
+
+  it('si falta la columna proyeccion reintenta sin ella', async () => {
+    const e = { code: '42703', message: 'column proyeccion does not exist' };
+    bd.errores = [e, e];
+    bd.filas = [fila({ proyeccion: undefined })];
+    const r = await listarExportaciones({ puedeVerValores: true });
+    expect(bd.selects).toHaveLength(3);
+    expect(bd.selects[2]).not.toContain('proyeccion');
     expect(r.exportaciones[0].proyeccion).toEqual([]);
   });
 
   it('si falta cliente_id responde vacío con migración pendiente', async () => {
     const e = { code: '42703', message: 'column cliente_id does not exist' };
-    bd.errores = [e, e];
+    bd.errores = [e, e, e];
     const r = await listarExportaciones({ puedeVerValores: true });
     expect(r).toEqual({ exportaciones: [], migracionPendiente: true });
   });

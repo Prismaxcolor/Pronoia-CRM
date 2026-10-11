@@ -20,7 +20,7 @@ function alternar(ids: readonly string[], id: string): string[] {
 }
 
 /** Reporte de ingresos, egresos y total por categoría y subcategoría, por rango de fechas y una moneda a la vez. */
-function ReporteCategoriasPanel({ categorias, indice, error: errorCategorias }: Pick<EstadoCategorias, 'categorias' | 'indice' | 'error'>) {
+function ReporteCategoriasPanel({ categorias, indice, error: errorCategorias, cargando: cargandoCategorias }: Pick<EstadoCategorias, 'categorias' | 'indice' | 'error' | 'cargando'>) {
   const [elegidas, setElegidas] = useState<string[]>([]);
   const [incluirSin, setIncluirSin] = useState(false);
   const [rango, setRango] = useState(() => rangoDeAtajo('mes', hoyLocal()));
@@ -55,7 +55,7 @@ function ReporteCategoriasPanel({ categorias, indice, error: errorCategorias }: 
         <p className="mb-2 text-xs text-text-muted">Marca una categoría para incluir todas sus subcategorías, o solo subcategorías sueltas. Sin marcar ninguna se incluyen todas.</p>
         {errorCategorias ? <p className="text-sm text-red-600">{errorCategorias}</p> : (
           <div className="mb-3 max-h-56 overflow-y-auto rounded-lg border border-border px-3 py-1">
-            {arbol.length === 0 && <p className="py-2 text-sm text-text-muted">Aún no hay categorías.</p>}
+            {arbol.length === 0 && <p className="py-2 text-sm text-text-muted">{cargandoCategorias ? 'Cargando categorías…' : 'Aún no hay categorías.'}</p>}
             {arbol.map(n => (
               <div key={n.categoria.id}>
                 {casilla(n.categoria.id, n.categoria.nombre, n.categoria.color, !n.categoria.activo, false)}

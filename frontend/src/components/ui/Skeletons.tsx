@@ -1,5 +1,6 @@
 /** CUÁNDO USARLOS: mientras llega un dato, para reservar el espacio y que la pantalla no salte. Un skeleton por forma
  *  (tarjeta de indicador, bloque genérico, tabla, gráfica). Todos llevan aria-busy y una etiqueta legible por lectores de pantalla. */
+import { useEffect, useState } from 'react';
 
 const BASE = 'animate-pulse rounded-xl border border-border bg-surface-alt';
 
@@ -49,4 +50,31 @@ export function SkeletonTabla({ filas = 6, columnas = 4 }: { filas?: number; col
 /** Una gráfica cargando. */
 export function SkeletonGrafica({ alto = 'h-56' }: { alto?: string }) {
   return <div className={`${alto} ${BASE}`} aria-busy="true" aria-label="Cargando gráfica" />;
+}
+
+/** Pasado este tiempo cargando, el skeleton explica por qué tarda (el servidor puede estar arrancando). */
+export const MS_AVISO_CARGA_LENTA = 3000;
+
+export interface SkeletonConAvisoProps extends SkeletonBloqueProps {
+  /** Qué se está cargando, en minúsculas y con artículo: 'la lista de cambistas'. */
+  queCarga: string;
+}
+
+/** SkeletonBloque que, si la carga pasa de unos segundos, avisa de que sigue en marcha y por qué puede tardar. */
+export function SkeletonConAviso({ queCarga, alto, conMargen, etiqueta }: SkeletonConAvisoProps) {
+  const [lento, setLento] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setLento(true), MS_AVISO_CARGA_LENTA);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div>
+      <SkeletonBloque alto={alto} conMargen={conMargen} etiqueta={etiqueta ?? `Cargando ${queCarga}`} />
+      <p role="status" className="mt-2 text-xs text-text-muted">
+        {lento
+          ? `Sigue cargando ${queCarga}. Si el sistema estuvo un rato sin uso, la primera carga puede tardar unos segundos más.`
+          : `Cargando ${queCarga}…`}
+      </p>
+    </div>
+  );
 }

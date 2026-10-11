@@ -6,7 +6,7 @@ import {
 } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth-context';
 import {
-  TEXTO_TERCERO, alertasTerceros, filtrarTerceros, unirSaldos, type TerceroBase, type TipoTercero,
+  TEXTO_TERCERO, alertasTerceros, filtrarTerceros, totalesDeFilas, unirSaldos, type TerceroBase, type TipoTercero,
 } from '../../lib/terceros-kpis';
 import type { EsquemaFiltros } from '../../lib/filtros-url';
 import TarjetaTercero, { type AccionesTercero } from './TarjetaTercero';
@@ -43,6 +43,8 @@ interface Props {
   puedeCrear: boolean;
   puedeEditar: boolean;
   puedeBorrar: boolean;
+  /** Segmento de la lista (p. ej. «nacionales»): los indicadores de saldo se calculan sobre estos terceros y lo muestran en el rótulo. */
+  segmento?: string;
   onNuevo: () => void;
   onEditar: (id: string) => void;
   onDesactivar: (id: string) => void;
@@ -54,7 +56,7 @@ interface Props {
 /** Pantalla de lista de Proveedores y Clientes (la misma para ambos; solo cambia el tipo). Las cifras vienen de
  *  GET /saldos; si fallan, la lista sigue funcionando sin importes. */
 function ListadoTerceros(props: Props) {
-  const { tipo, terceros, cargando, version, puedeCrear, puedeEditar, puedeBorrar } = props;
+  const { tipo, terceros, cargando, version, puedeCrear, puedeEditar, puedeBorrar, segmento } = props;
   const t = TEXTO_TERCERO[tipo];
   const { tienePermiso } = useAuth();
   const { filtros, cambiar } = useFiltrosUrl(ESQUEMA_FILTROS);
@@ -106,7 +108,8 @@ function ListadoTerceros(props: Props) {
       accion: { etiqueta: 'Quitar filtros', onClick: limpiarFiltros },
     };
   const accionTop = puedeVerFacturas ? { etiqueta: tipo === 'proveedor' ? 'Ver compras' : 'Ver ventas', to: tipo === 'proveedor' ? '/compras' : '/ventas' } : undefined;
-  const totalPorSaldar = saldos.datos ? (saldos.datos.totales.porPagar ?? saldos.datos.totales.porCobrar ?? 0) : 0;
+  // Del segmento visible (no del total global): así el % del top suma 100 % dentro de la pestaña.
+  const totalPorSaldar = useMemo(() => totalesDeFilas(filas).porSaldar, [filas]);
 
   const fallbackBloque = <SkeletonBloque alto="h-48" conMargen etiqueta="Cargando bloque" />;
 
@@ -151,7 +154,7 @@ function ListadoTerceros(props: Props) {
       )}
 
       <section aria-label="Indicadores principales">
-        {cargando ? <SkeletonKpis /> : <TercerosKpis tipo={tipo} filas={filas} estadoSaldos={saldos.estado} totales={saldos.datos?.totales ?? null} />}
+        {cargando ? <SkeletonKpis /> : <TercerosKpis tipo={tipo} filas={filas} estadoSaldos={saldos.estado} segmento={segmento} />}
       </section>
 
       <Bloque

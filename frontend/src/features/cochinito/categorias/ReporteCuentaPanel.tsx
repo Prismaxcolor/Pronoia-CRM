@@ -19,13 +19,14 @@ const TD = 'px-3 py-2 align-top text-sm';
 /** Reporte de los movimientos de una cuenta o caja en un rango de fechas. */
 function ReporteCuentaPanel() {
   const [bancas, setBancas] = useState<Banca[]>([]);
+  const [cargandoBancas, setCargandoBancas] = useState(true);
   const [bancaId, setBancaId] = useState('');
   const [rango, setRango] = useState(() => rangoDeAtajo('mes', hoyLocal()));
   const [reporte, setReporte] = useState<ReporteCuenta | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { obtenerBancas({ incluirArchivadas: true }).then(setBancas); }, []);
+  useEffect(() => { obtenerBancas({ incluirArchivadas: true }).then(setBancas).finally(() => setCargandoBancas(false)); }, []);
   const moneda = useMemo(() => etiquetaMoneda(reporte?.banca.moneda ?? ''), [reporte]);
 
   const generar = async () => {
@@ -43,8 +44,8 @@ function ReporteCuentaPanel() {
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-surface p-3 sm:p-4">
         <div className="min-w-[14rem] flex-1">
           <label htmlFor="reporte-cuenta" className="block text-xs font-medium text-text-secondary mb-1">Cuenta o caja</label>
-          <select id="reporte-cuenta" value={bancaId} onChange={e => setBancaId(e.target.value)} className={CAMPO}>
-            <option value="">— Elige una cuenta o caja —</option>
+          <select id="reporte-cuenta" value={bancaId} onChange={e => setBancaId(e.target.value)} disabled={cargandoBancas} aria-busy={cargandoBancas} className={`${CAMPO} disabled:opacity-60`}>
+            <option value="">{cargandoBancas ? 'Cargando cuentas…' : '— Elige una cuenta o caja —'}</option>
             {bancas.map(b => <option key={b.id} value={b.id}>{b.nombre} ({etiquetaMoneda(b.moneda)}){b.archivada ? ' · archivada' : ''}</option>)}
           </select>
         </div>

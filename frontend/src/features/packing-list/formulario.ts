@@ -4,17 +4,20 @@ import { parsearPeso, siguienteNumeroPaleta, type FilaPackingList } from '../../
 import type { FilaForm } from './PackingListFilas';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import { parsearValorKg, textoValorKg } from '../../lib/proyeccion-packing';
+import { parsearTotalUsd, textoTotalUsd } from '../../lib/resultados-exportacion';
 
 /** Valores USD/kg en edición, por lote (clave '' = sin lote), como texto mientras se escribe. */
 export type ValoresProyeccionForm = Record<string, string>;
 
-/** Valoración en edición: USD/kg estimado (proyección) y real (resultados) por lote. */
+/** Valoración en edición: USD/kg estimado (proyección) y real (resultados) por lote, y el total real cobrado (texto). */
 export interface ValoracionForm {
   estimado: ValoresProyeccionForm;
   real: ValoresProyeccionForm;
+  /** Total real cobrado de la exportación en USD, como texto mientras se escribe ('' = sin cargar). */
+  totalReal: string;
 }
 
-export const valoracionVacia = (): ValoracionForm => ({ estimado: {}, real: {} });
+export const valoracionVacia = (): ValoracionForm => ({ estimado: {}, real: {}, totalReal: '' });
 
 export interface CabeceraForm {
   contenedor: string;
@@ -126,7 +129,15 @@ export function valoracionDesde(p: PackingListDetalle): ValoracionForm {
   return {
     estimado: Object.fromEntries(lineas.map(l => [l.lote, textoDe(l.valorKgUsd)])),
     real: Object.fromEntries(lineas.map(l => [l.lote, textoDe(l.valorRealKgUsd)])),
+    totalReal: textoTotalUsd(p.totalRealUsd),
   };
+}
+
+/** Total real cobrado escrito a mano -> número. Vacío = null; inválido = error legible. */
+function leerTotalReal(texto: string): { total: number | null } | { error: string } {
+  if (texto.trim() === '') return { total: null };
+  const total = parsearTotalUsd(texto);
+  return total === null ? { error: 'Total real cobrado: el monto no es válido (máximo 2 decimales).' } : { total };
 }
 
 type LineaProyeccion = NonNullable<GuardarPackingListInput['proyeccion']>[number];
@@ -187,9 +198,12 @@ export function construirEntrada(
   const lotes = new Set(items.map(i => i.lote ?? ''));
   const proy = valoracion ? construirProyeccion(valoracion, lotes) : null;
   if (proy && 'error' in proy) return { error: proy.error };
+  const total = valoracion ? leerTotalReal(valoracion.totalReal) : null;
+  if (total && 'error' in total) return { error: total.error };
   return {
     entrada: {
       ...(proy ? { proyeccion: proy.proyeccion } : {}),
+      ...(total ? { totalRealUsd: total.total } : {}),
       contenedor: c.contenedor.trim(),
       fecha: c.fecha,
       tipoEmbalaje: c.tipoEmbalaje,

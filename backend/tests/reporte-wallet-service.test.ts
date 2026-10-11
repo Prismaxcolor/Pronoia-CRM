@@ -76,12 +76,29 @@ describe('obtenerReporteCuenta', () => {
     expect(bd.rangos).toEqual([[0, 999], [1000, 1999], [2000, 2999]]);
   });
 
-  it('cuenta inexistente => 404; cuenta sin acceso => 403 sin leer movimientos', async () => {
+  it('cuenta inexistente => 404; cuenta sin acceso => 403 sin devolver movimientos', async () => {
+    bd.banca = null;
+    expect(await obtenerReporteCuenta(filtro, null)).toMatchObject({ codigo: 404 });
+    bd.banca = { id: U1, nombre: 'Banesco', moneda: 'USD' };
+    bd.movimientos = [filaMov('m1')];
+    const r = await obtenerReporteCuenta(filtro, new Set([U2]));
+    expect(r).toMatchObject({ codigo: 403 });
+    expect('reporte' in r).toBe(false);
+  });
+
+  it('404 y 403 tienen prioridad sobre un fallo al leer movimientos (la lectura corre en paralelo)', async () => {
+    bd.errorMovimientos = { code: '08006', message: 'caída' };
     bd.banca = null;
     expect(await obtenerReporteCuenta(filtro, null)).toMatchObject({ codigo: 404 });
     bd.banca = { id: U1, nombre: 'Banesco', moneda: 'USD' };
     expect(await obtenerReporteCuenta(filtro, new Set([U2]))).toMatchObject({ codigo: 403 });
-    expect(bd.rangos).toHaveLength(0);
+  });
+
+  it('acepta las cuentas permitidas como promesa (la consulta de accesos corre a la vez)', async () => {
+    bd.movimientos = [filaMov('m1')];
+    const r = await obtenerReporteCuenta(filtro, Promise.resolve(new Set([U1])));
+    expect('reporte' in r).toBe(true);
+    expect(await obtenerReporteCuenta(filtro, Promise.resolve(new Set([U2])))).toMatchObject({ codigo: 403 });
   });
 
   it('sin la migración de categorías el reporte igual sale (sin categorías)', async () => {

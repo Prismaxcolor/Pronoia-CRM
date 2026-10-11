@@ -24,6 +24,7 @@ interface FilaExportacion {
   cliente_id: string;
   packing_list_items: ItemExportacionRow[] | null;
   proyeccion?: Parameters<typeof proyeccionToPublica>[0];
+  total_real_usd?: number | string | null;
 }
 
 export interface OpcionesListadoExportaciones {
@@ -54,6 +55,8 @@ async function leerFilas(conValores: boolean) {
       .order('created_at', { ascending: false })
       .limit(LIMITE_EXPORTACIONES);
   if (!conValores) return consulta(COLUMNAS_BASE);
+  const conTotal = await consulta(`${COLUMNAS_BASE}, proyeccion, total_real_usd`);
+  if (!conTotal.error || !esObjetoInexistente(conTotal.error)) return conTotal;
   const conProyeccion = await consulta(`${COLUMNAS_BASE}, proyeccion`);
   if (!conProyeccion.error || !esObjetoInexistente(conProyeccion.error)) return conProyeccion;
   return consulta(COLUMNAS_BASE);
@@ -76,7 +79,9 @@ function aExportacion(f: FilaExportacion, nombres: ReadonlyMap<string, string>, 
     totalNeto: totalNeto(items.map(pesos)),
     kgPorLote: kgPorLoteDeItems(items),
   };
-  return conValores ? { ...base, proyeccion: proyeccionToPublica(f.proyeccion) } : base;
+  if (!conValores) return base;
+  const total = f.total_real_usd == null ? null : Number(f.total_real_usd);
+  return { ...base, proyeccion: proyeccionToPublica(f.proyeccion), totalRealUsd: total };
 }
 
 /**

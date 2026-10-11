@@ -12,6 +12,12 @@ export type Esquina = (typeof ESQUINAS)[number];
 export type ModoBlob = (typeof MODOS)[number];
 
 export const PX_TAMANO: Record<Tamano, number> = { pequeno: 64, mediano: 88, grande: 116 };
+/** En pantallas chicas BLOB es más pequeño para no tapar el contenido (saldos, botones). */
+export const PX_TAMANO_MOVIL: Record<Tamano, number> = { pequeno: 40, mediano: 48, grande: 60 };
+/** Menos de 640 px (el breakpoint `sm` de Tailwind): teléfono. */
+export const CONSULTA_MOVIL = '(max-width: 639px)';
+
+export const pxTamano = (tamano: Tamano, esMovil: boolean): number => (esMovil ? PX_TAMANO_MOVIL : PX_TAMANO)[tamano];
 
 export interface BlobConfig {
   /** Nombre de la mascota (solo etiqueta/chat). */

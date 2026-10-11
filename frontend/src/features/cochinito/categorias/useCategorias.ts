@@ -12,14 +12,16 @@ export interface EstadoCategorias {
   recargar: () => void;
 }
 
-/** Carga las categorías una vez. Si falla, queda la lista vacía y el error: ninguna pantalla del Wallet depende de ellas. */
-export function useCategorias(): EstadoCategorias {
+/** Carga las categorías una vez. Si falla, queda la lista vacía y el error: ninguna pantalla del Wallet depende de ellas.
+ *  `habilitado = false` pospone la petición hasta que la pantalla de verdad las necesite (por defecto se piden al montar). */
+export function useCategorias(habilitado = true): EstadoCategorias {
   const [categorias, setCategorias] = useState<CategoriaWallet[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
+    if (!habilitado) return;
     let cancelado = false;
     obtenerCategorias().then(r => {
       if (cancelado) return;
@@ -27,7 +29,7 @@ export function useCategorias(): EstadoCategorias {
       setCargando(false);
     });
     return () => { cancelado = true; };
-  }, [version]);
+  }, [version, habilitado]);
 
   const recargar = useCallback(() => setVersion(v => v + 1), []);
   const indice = useMemo(() => indicePorId(categorias), [categorias]);

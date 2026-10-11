@@ -18,6 +18,8 @@ declare global {
       user?: JwtPayload;
       /** Permisos efectivos leídos de la BD por requirePermiso (no se llena para superadmin, que siempre pasa). */
       permisos?: Permiso[];
+      /** Columna `permisos` que requireAuth acaba de leer de la BD en ESTA petición (fallo de caché): evita repetir la consulta. */
+      permisosLeidosAhora?: { valor: unknown };
     }
   }
 }
@@ -47,6 +49,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     // El rol del JWT puede estar desactualizado (vive 7 días): manda el de la BD (caché de 30 s).
     if (estado.rol) payload = { ...payload, rol: estado.rol as JwtPayload['rol'] };
+    if (estado.permisosFrescos !== undefined) req.permisosLeidosAhora = { valor: estado.permisosFrescos };
   } catch (e) {
     logger.error({ evento: 'auth_verificar_activo_fallido', error: e instanceof Error ? e.message : String(e) });
     res.status(503).json({ error: 'No se pudo verificar tu sesión. Intenta de nuevo.' });
@@ -141,19 +144,29 @@ export function requireAlgunPermiso(...requisitos: Permiso[]) {
       return;
     }
 
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .select('rol, permisos, activo')
-      .eq('id', req.user.sub)
-      .maybeSingle();
+    // Si la lectura de estado de esta misma petición acaba de traer los permisos de la BD, se reutilizan
+    // (misma frescura que una consulta nueva); si el estado vino de la caché, se consultan como siempre.
+    const leidos = req.permisosLeidosAhora ?? (estado.permisosFrescos !== undefined ? { valor: estado.permisosFrescos } : null);
+    let rol: RolUsuario;
+    let personalizados: Permiso[] | null;
+    if (leidos) {
+      rol = estado.rol as RolUsuario;
+      personalizados = leidos.valor as Permiso[] | null;
+    } else {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('rol, permisos, activo')
+        .eq('id', req.user.sub)
+        .maybeSingle();
 
-    if (error || !data || !data.activo) {
-      res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
-      return;
+      if (error || !data || !data.activo) {
+        res.status(401).json({ error: 'Usuario no encontrado o inactivo.' });
+        return;
+      }
+      rol = data.rol as RolUsuario;
+      personalizados = data.permisos as Permiso[] | null;
     }
-
-    const rol = data.rol as RolUsuario;
-    const permisos = permisosEfectivos(rol, data.permisos as Permiso[] | null);
+    const permisos = permisosEfectivos(rol, personalizados);
     req.permisos = permisos;
 
     if (!requisitos.some(r => tienePermiso(permisos, r.recurso, r.accion))) {

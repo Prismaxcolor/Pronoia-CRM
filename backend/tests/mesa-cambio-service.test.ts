@@ -5,6 +5,9 @@ const bd = vi.hoisted(() => ({
   asientos: [] as Fila[],
   errorEnPagina: null as { code?: string; message: string } | null,
   rangos: [] as Array<[number, number]>,
+  sinCambista: false,
+  /** Si se define, el cambista no responde hasta que se haya pedido la primera página de asientos. */
+  esperarAsientos: null as null | { promesa: Promise<void>; liberar: () => void },
 }));
 
 vi.mock('../src/config/supabase.js', () => ({
@@ -15,10 +18,14 @@ vi.mock('../src/config/supabase.js', () => ({
       // PostgREST: como máximo 1000 filas por respuesta; range(desde, hasta) es inclusivo.
       c.range = (desde: number, hasta: number) => {
         bd.rangos.push([desde, hasta]);
+        bd.esperarAsientos?.liberar();
         const pagina = bd.asientos.slice(desde, Math.min(hasta, desde + 999) + 1);
         return Promise.resolve(bd.errorEnPagina ? { data: null, error: bd.errorEnPagina } : { data: pagina, error: null });
       };
-      c.maybeSingle = () => Promise.resolve({ data: tabla === 'cambistas' ? { id: 'c1', nombre: 'Cambista', activo: true, created_at: '2026-01-01' } : null, error: null });
+      c.maybeSingle = async () => {
+        if (bd.esperarAsientos) await bd.esperarAsientos.promesa;
+        return { data: tabla === 'cambistas' && !bd.sinCambista ? { id: 'c1', nombre: 'Cambista', activo: true, created_at: '2026-01-01' } : null, error: null };
+      };
       return c;
     },
   },
@@ -30,7 +37,7 @@ const asiento = (numero: number, tipo: 'CARGO' | 'COBRO', monto: number): Fila =
   id: `a${numero}`, numero, tipo, monto_usd: monto, fecha: '2026-10-01', anulado: false, tasa: null, nota: null, referencia: null, anulado_motivo: null,
 });
 
-beforeEach(() => { bd.asientos = []; bd.errorEnPagina = null; bd.rangos = []; });
+beforeEach(() => { bd.asientos = []; bd.errorEnPagina = null; bd.rangos = []; bd.sinCambista = false; bd.esperarAsientos = null; });
 
 describe('mesa-cambio obtenerEstadoCuenta (paginado)', () => {
   it('con más de 1000 asientos suma todos: el saldo no se trunca', async () => {
@@ -57,5 +64,24 @@ describe('mesa-cambio obtenerEstadoCuenta (paginado)', () => {
     bd.errorEnPagina = { code: '42P01', message: 'relation "cambista_asientos" does not exist' };
     const r = await obtenerEstadoCuenta('c1', {});
     expect(r).toMatchObject({ codigo: 503 });
+  });
+});
+
+describe('mesa-cambio obtenerEstadoCuenta (consultas en paralelo)', () => {
+  it('pide el cambista y los asientos a la vez: no espera al cambista para empezar a leer asientos', async () => {
+    let liberar!: () => void;
+    const promesa = new Promise<void>(res => { liberar = res; });
+    bd.esperarAsientos = { promesa, liberar };
+    bd.asientos = [asiento(1, 'CARGO', 10)];
+    // En serie esto nunca termina: el cambista espera a que se pida la página de asientos.
+    const r = await obtenerEstadoCuenta('c1', {});
+    if ('error' in r) throw new Error(r.error);
+    expect(r.estado.saldoFinal).toBe(10);
+  });
+
+  it('cambista inexistente => 404 aunque la lectura de asientos también falle', async () => {
+    bd.sinCambista = true;
+    bd.errorEnPagina = { code: '08006', message: 'caida' };
+    expect(await obtenerEstadoCuenta('c1', {})).toMatchObject({ codigo: 404 });
   });
 });

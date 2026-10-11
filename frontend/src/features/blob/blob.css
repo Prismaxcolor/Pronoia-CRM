@@ -16,7 +16,17 @@
 .blob-punto:nth-child(3) { animation-delay: 0.3s; }
 .blob-burbuja { animation: blob-burbuja-in 0.18s ease-out; }
 
+/* Teléfono: BLOB se asoma por el borde (queda sobre el margen de la página, no sobre saldos ni botones), se atenúa
+   mientras se hace scroll y sale por completo al abrir el chat. Mismo corte que CONSULTA_MOVIL (config.ts). */
+@media (max-width: 639px) {
+  [data-blob] .blob-boton { transition: transform 0.25s ease, opacity 0.25s ease; }
+  [data-blob][data-movil]:not([data-chat]) .blob-boton { transform: translateX(40%); }
+  [data-blob][data-movil][data-lado='l']:not([data-chat]) .blob-boton { transform: translateX(-40%); }
+  [data-blob][data-desplazando] .blob-boton { opacity: 0.3; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  [data-blob] .blob-boton { transition: none !important; }
   .blob-punto, .blob-burbuja { animation: none !important; }
   .blob-cuerpo { transition: none; }
 }

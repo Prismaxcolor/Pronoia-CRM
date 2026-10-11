@@ -96,6 +96,30 @@ export function resumenTerceros(filas: readonly TerceroBase[]): ResumenTerceros 
   };
 }
 
+export interface TotalesFilas {
+  /** Suma de los saldos positivos (lo que se debe pagar / cobrar). */
+  porSaldar: number;
+  /** Suma, en positivo, de los saldos negativos (pagado/cobrado de más). */
+  aFavor: number;
+  /** Cuántas entidades tienen saldo a favor. */
+  conAFavor: number;
+}
+
+/** Totales de SOLO las filas recibidas (p. ej. la pestaña de clientes nacionales o internacionales), con la misma
+ *  regla del servidor: los saldos a favor no restan de lo que se debe. Sin cifras (saldo null) cuenta 0. */
+export function totalesDeFilas(filas: readonly FilaTercero[]): TotalesFilas {
+  const saldos = filas.map(f => f.saldo?.saldo ?? 0);
+  return {
+    porSaldar: redondear(saldos.filter(s => s > SALDO_MINIMO_USD).reduce((a, s) => a + s, 0)),
+    aFavor: redondear(saldos.filter(s => s < -SALDO_MINIMO_USD).reduce((a, s) => a - s, 0)),
+    conAFavor: saldos.filter(s => s < -SALDO_MINIMO_USD).length,
+  };
+}
+
+/** Rótulo del indicador de saldo: «Por cobrar a clientes nacionales» (el segmento es opcional). */
+export const textoSaldoPorSegmento = (saldo: string, plural: string, segmento?: string): string =>
+  `${saldo} a ${plural}${segmento ? ` ${segmento}` : ''}`;
+
 /** Las entidades con más saldo por pagar/cobrar (> 0), de mayor a menor. */
 export function topPorSaldo<T extends FilaTercero>(filas: readonly T[], cantidad = TOP_ENTIDADES): T[] {
   return filas

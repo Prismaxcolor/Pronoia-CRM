@@ -64,6 +64,15 @@ export const lineaProyeccionSchema = z.object({
   valorRealKgUsd: valorKgUsd.nullable().optional(),
 });
 
+const TOPE_TOTAL_USD = 99_999_999_999.99;
+
+/** Total real cobrado (USD), hasta 2 decimales (columna numeric(14,2)). */
+const totalRealUsd = z
+  .number({ message: 'El total real cobrado debe ser un número.' })
+  .min(0, 'El total real cobrado no puede ser negativo.')
+  .max(TOPE_TOTAL_USD, 'El total real cobrado es demasiado grande.')
+  .refine(n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, 'Usa máximo 2 decimales.');
+
 const tieneValor = (l: { valorKgUsd?: number | null; valorRealKgUsd?: number | null }): boolean =>
   l.valorKgUsd != null || l.valorRealKgUsd != null;
 
@@ -92,6 +101,8 @@ export const guardarPackingListSchema = z
     items: z.array(itemPackingListSchema).max(MAX_ITEMS, `Máximo ${MAX_ITEMS} paletas por packing list.`),
     /** Ausente = no tocar lo guardado; lista (aun vacía) = reemplazar. Solo se persiste con facturacion:ver. */
     proyeccion: z.array(lineaProyeccionSchema).max(MAX_ITEMS).optional(),
+    /** Total real cobrado de la exportación. Ausente = conservar lo guardado; null = borrarlo. Solo se persiste con facturacion:ver. */
+    totalRealUsd: totalRealUsd.nullable().optional(),
   })
   .refine(d => new Set(d.proyeccion?.map(l => l.lote)).size === (d.proyeccion?.length ?? 0), {
     message: 'Hay lotes repetidos en la proyección.',

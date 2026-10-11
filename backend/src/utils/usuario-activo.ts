@@ -19,21 +19,30 @@ export class ErrorVerificarUsuario extends Error {
   }
 }
 
-export interface EstadoUsuario { activo: boolean; rol: string | null }
+export interface EstadoUsuario {
+  activo: boolean;
+  rol: string | null;
+  /**
+   * Columna `permisos` (jsonb) tal como la devolvió la BD, SOLO cuando esta llamada acaba de leerla (fallo de caché).
+   * `undefined` = vino de la caché: quien necesite permisos frescos debe consultarlos. Nunca se cachea, así los
+   * permisos no envejecen: se aprovecha la misma lectura para ahorrar una consulta en el primer request de cada instancia.
+   */
+  permisosFrescos?: unknown;
+}
 
 /** Estado real en la BD (activo + rol), con caché de 30 s. Lanza ErrorVerificarUsuario si la BD falla (no se cachea). */
 export async function estadoUsuario(id: string, ahora: number = Date.now()): Promise<EstadoUsuario> {
   const previa = cache.get(id);
   if (previa && previa.expiraEn > ahora) return { activo: previa.activo, rol: previa.rol };
 
-  const { data, error } = await supabaseAdmin.from('users').select('activo, rol').eq('id', id).maybeSingle();
+  const { data, error } = await supabaseAdmin.from('users').select('activo, rol, permisos').eq('id', id).maybeSingle();
   if (error) throw new ErrorVerificarUsuario(error.message);
 
   const activo = Boolean(data?.activo);
   const rol = data?.rol ? String(data.rol) : null;
   if (cache.size >= MAX_ENTRADAS) cache.clear();
   cache.set(id, { activo, rol, expiraEn: ahora + TTL_USUARIO_ACTIVO_MS });
-  return { activo, rol };
+  return { activo, rol, permisosFrescos: data?.permisos ?? null };
 }
 
 /** true = activo; false = inexistente o desactivado. Lanza ErrorVerificarUsuario si la BD falla (no se cachea). */

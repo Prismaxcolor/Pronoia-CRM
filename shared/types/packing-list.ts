@@ -94,6 +94,11 @@ export interface PackingListDetalle extends PackingList {
   items: PackingListItem[];
   /** Solo viaja a quien tiene facturacion:ver; ausente para el resto. Nunca va en los PDF. */
   proyeccion?: ProyeccionLotePacking[];
+  /**
+   * Total realmente cobrado de la exportación (USD), escrito a mano: es el beneficio real principal. Solo viaja a
+   * quien tiene facturacion:ver (null = sin cargar o columna aún no creada); ausente para el resto. Nunca va en los PDF.
+   */
+  totalRealUsd?: number | null;
 }
 
 /** Datos de la empresa que encabeza el documento en cada idioma (es = Venezuela, en = EE.UU.). */
@@ -125,6 +130,8 @@ export interface ExportacionResumen {
   kgPorLote: KgLoteExportacion[];
   /** Solo viaja a quien tiene facturacion:ver; ausente para el resto. */
   proyeccion?: ProyeccionLotePacking[];
+  /** Total real cobrado (USD) de la exportación; null = sin cargar. Solo con facturacion:ver. */
+  totalRealUsd?: number | null;
 }
 
 export interface ListadoExportaciones {

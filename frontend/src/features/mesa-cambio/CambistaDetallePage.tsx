@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { obtenerEstadoCuentaMesa } from '../../services/mesa-cambio-service';
 import { useAuth } from '../../hooks/use-auth-context';
-import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonBloque } from '../../components/ui';
+import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonConAviso } from '../../components/ui';
 import { formatearFecha } from '../../lib/formato';
 import { ETIQUETA_CORTA_TIPO_ASIENTO, describirSaldo, formatearNumeroDocumento, type EstadoCuentaMesa } from '@shared/types/mesa-cambio';
 import { rutaDetalleMovimiento } from '../cochinito/detalle-movimiento';
@@ -62,7 +62,7 @@ function CambistaDetallePage() {
         )}
       />
 
-      {cargando ? <SkeletonBloque /> : error || !estado ? (
+      {cargando ? <SkeletonConAviso queCarga="el estado de cuenta" /> : error || !estado ? (
         <div role="alert" className="rounded-xl border border-border bg-surface p-4 text-sm text-red-500">{error ?? 'No se pudo cargar el estado de cuenta.'}</div>
       ) : (
         <>

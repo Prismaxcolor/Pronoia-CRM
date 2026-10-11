@@ -111,6 +111,7 @@ function ClientesPage() {
       <ListadoTerceros
         tipo="cliente"
         terceros={delSegmento}
+        segmento={ETIQUETA_SEGMENTO[segmento].toLowerCase()}
         cargando={cargando}
         version={version}
         puedeCrear={puedeCrear}

@@ -8,7 +8,8 @@ import { INACTIVIDAD_DEFECTO_MS } from './animo';
 import { BlobChat } from './BlobChat';
 import { BlobCara } from './BlobCara';
 import { expresionPorAnimo, semillaBlob } from './cara';
-import { PX_TAMANO } from './config';
+import { CONSULTA_MOVIL, pxTamano } from './config';
+import { useMediaQuery } from '../../hooks/use-media-query';
 import { bromasPara, elegirFrase, fraseDeReaccion, intervaloFrases, paginaDesdeRuta, probabilidadCambioRuta } from './frases';
 import { aplicarEsquina, useBlobArrastre } from './use-blob-arrastre';
 import { animarBlob, useBlobAnimo, useBlobConfig } from './use-blob-hooks';
@@ -22,6 +23,8 @@ const RECORRIDO_OJOS = 6;
 const DURACION_GUINO_MS = 1300;
 const GUINO_MIN_MS = 9000;
 const GUINO_RANGO_MS = 11000;
+/** En móvil, mientras se desplaza la pantalla BLOB se atenúa; vuelve a verse cuando el scroll se detiene. */
+const REPOSO_SCROLL_MS = 900;
 
 /** BLOB: mascota-asistente en una esquina. Va en el Layout (no en el portal público). */
 export default function Blob() {
@@ -64,6 +67,26 @@ export default function Blob() {
     guinoTimer.current = window.setTimeout(() => setGuino(false), DURACION_GUINO_MS);
   }, []);
   useEffect(() => () => window.clearTimeout(guinoTimer.current), []);
+
+  const esMovil = useMediaQuery(CONSULTA_MOVIL);
+  // Atenuar a BLOB mientras se hace scroll en móvil (el scroll es de <main>, que no burbujea: se escucha en captura).
+  // Marca un atributo en el DOM (sin re-render); el CSS hace el resto.
+  useEffect(() => {
+    if (!visible || !esMovil) return;
+    const el = rootRef.current;
+    let reposo = 0;
+    const alDesplazar = () => {
+      el?.setAttribute('data-desplazando', '');
+      window.clearTimeout(reposo);
+      reposo = window.setTimeout(() => el?.removeAttribute('data-desplazando'), REPOSO_SCROLL_MS);
+    };
+    window.addEventListener('scroll', alDesplazar, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', alDesplazar, { capture: true });
+      window.clearTimeout(reposo);
+      el?.removeAttribute('data-desplazando');
+    };
+  }, [visible, esMovil]);
 
   const [chatAbierto, setChatAbierto] = useState(false);
   const [mensajes, setMensajes] = useState<MensajeChat[]>([]);
@@ -180,7 +203,7 @@ export default function Blob() {
     setMensajes(m => [...m, { role: 'assistant', content: r.respuesta, consultas: r.consultas }]);
   }, [mensajes, usuario?.nombre]);
 
-  const tam = PX_TAMANO[config.tamano];
+  const tam = pxTamano(config.tamano, esMovil);
   let expresion = expresionPorAnimo(animo, escribiendo);
   if (expresion === 'idle') expresion = guino ? 'wink' : encima ? 'love' : 'idle';
   const arriba = config.esquina.startsWith('t');
@@ -188,7 +211,16 @@ export default function Blob() {
   const claseEmergente = `absolute ${arriba ? 'top-full mt-2' : 'bottom-full mb-2'} ${izquierda ? 'left-0' : 'right-0'}`;
 
   return (
-    <div ref={rootRef} className="fixed z-[70] print:hidden" data-blob>
+    // z-20: por encima del contenido pero POR DEBAJO del menú lateral (z-30/40) y de los modales (z-50), para no tapar
+    // sus botones («Registrar», «Guardar»). En móvil se asoma por el borde (ver blob.css) para no tapar saldos ni textos.
+    <div
+      ref={rootRef}
+      className="fixed z-20 print:hidden"
+      data-blob
+      data-movil={esMovil ? '' : undefined}
+      data-lado={izquierda ? 'l' : 'r'}
+      data-chat={chatAbierto ? '' : undefined}
+    >
       {!visible ? (
         <button
           type="button"
@@ -236,7 +268,7 @@ export default function Blob() {
             aria-expanded={chatAbierto}
             onPointerEnter={e => { if (e.pointerType === 'mouse') setEncima(true); }}
             onPointerLeave={() => setEncima(false)}
-            className={`block cursor-grab touch-none select-none rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:cursor-grabbing ${dormido ? 'blob-dormido' : ''}`}
+            className={`blob-boton block cursor-grab touch-none select-none rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:cursor-grabbing ${dormido ? 'blob-dormido' : ''}`}
             style={{ width: tam, height: tam }}
           >
             <div ref={cuerpoRef} className="blob-cuerpo" style={{ transformOrigin: '50% 90%' }}>

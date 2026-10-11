@@ -3,6 +3,7 @@
  *  conecta con el navegador (IndexedDB, token, red) y con React. */
 import { useSyncExternalStore } from 'react';
 import { getToken } from '../../services/api-client';
+import { ejecutarConLimite } from '../concurrencia';
 import type { Recurso } from '@shared/types/index.js';
 import { almacenCatalogosDelNavegador } from './catalogos-idb';
 import { esErrorDeRed, estaOnline } from './conexion';
@@ -118,6 +119,9 @@ export function purgarCatalogosDeOtrosUsuarios(usuarioId: string): Promise<numbe
   return gestor.purgarDeOtrosUsuarios(usuarioId);
 }
 
+/** Peticiones de precarga en vuelo a la vez. */
+const PRECARGA_SIMULTANEAS = 3;
+
 /** Descarga en segundo plano los catálogos que el usuario puede ver. Nunca
  *  lanza ni bloquea: cada catálogo falla por separado y en silencio (la
  *  pantalla que lo necesite lo pedirá y mostrará su propio error). */
@@ -128,7 +132,9 @@ export async function precargarCatalogos(
   try {
     const { catalogosPrecargables } = await import('./precarga-lista');
     const permitidos = catalogosPrecargables.filter(c => !puedeVer || puedeVer(c.recurso));
-    await Promise.allSettled(permitidos.map(c => c.cargar()));
+    // De a pocos: 11 peticiones simultáneas con el servidor frío levantan una instancia por petición (~2-3 s cada una)
+    // y retrasan la pantalla que el usuario abrió mientras tanto.
+    await ejecutarConLimite(permitidos.map(c => c.cargar), PRECARGA_SIMULTANEAS);
   } catch {
     // Precarga es una mejora: cualquier falla deja la app como estaba.
   }

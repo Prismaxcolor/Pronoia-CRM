@@ -1,27 +1,28 @@
 import { Clock, HandCoins, Send, Users } from 'lucide-react';
 import { GrillaKpis, TarjetaKpi, formatearNumero, formatearUsdDecimales } from '../../components/ui';
 import {
-  DIAS_ANTIGUEDAD_URGENTE, TEXTO_TERCERO, antiguedadMasVieja, resumenTerceros, type FilaTercero, type TipoTercero,
+  DIAS_ANTIGUEDAD_URGENTE, TEXTO_TERCERO, antiguedadMasVieja, resumenTerceros, textoSaldoPorSegmento, totalesDeFilas,
+  type FilaTercero, type TipoTercero,
 } from '../../lib/terceros-kpis';
-import type { TotalesSaldos } from '@shared/types/saldos.js';
 import type { EstadoSaldos } from './useSaldosTerceros';
 
 interface Props {
   tipo: TipoTercero;
   filas: readonly FilaTercero[];
   estadoSaldos: EstadoSaldos;
-  totales: TotalesSaldos | null;
+  /** Segmento de la lista que se está viendo (p. ej. «nacionales»); va en el rótulo del saldo. */
+  segmento?: string;
 }
 
 /** Los 4 indicadores de la lista. Son una foto de HOY (no hay periodo anterior con el cual comparar). */
-function TercerosKpis({ tipo, filas, estadoSaldos, totales }: Props) {
+function TercerosKpis({ tipo, filas, estadoSaldos, segmento }: Props) {
   const t = TEXTO_TERCERO[tipo];
   const r = resumenTerceros(filas);
   const vieja = antiguedadMasVieja(filas);
   const estadoCifras = estadoSaldos === 'listo' ? 'listo' : estadoSaldos === 'cargando' ? 'cargando' : estadoSaldos === 'sinPermiso' ? 'sinPermiso' : 'vacio';
   const mensajeSinCifras = 'No se pudieron calcular los saldos. Usa "Reintentar" arriba.';
-  const porSaldar = totales?.porPagar ?? totales?.porCobrar ?? 0;
-  const conAFavor = filas.filter(f => (f.saldo?.saldo ?? 0) < -0.005).length;
+  // Los importes salen de las filas visibles de la pestaña (no del total global del servidor).
+  const { porSaldar, aFavor, conAFavor } = totalesDeFilas(filas);
 
   return (
     <GrillaKpis>
@@ -44,7 +45,7 @@ function TercerosKpis({ tipo, filas, estadoSaldos, totales }: Props) {
         comparacion={null}
       />
       <TarjetaKpi
-        titulo={`${t.saldo} a ${t.plural}`}
+        titulo={textoSaldoPorSegmento(t.saldo, t.plural, segmento)}
         icono={<HandCoins size={16} />}
         ayuda={tipo === 'proveedor'
           ? 'Lo que se les debe pagar en total a los proveedores, en USD. De cada proveedor se toma lo facturado (facturas y notas de débito) menos lo pagado (pagos, adelantos y notas de crédito), y se suman solo los que quedan debiendo. Incluye todo el historial. Lo pagado de más se muestra aparte, no se resta.'
@@ -56,7 +57,7 @@ function TercerosKpis({ tipo, filas, estadoSaldos, totales }: Props) {
         comparacion={null}
       >
         <p className="mt-1 text-xs text-text-secondary">
-          {t.saldoAFavor}: <span className="font-medium tabular-nums text-text-primary">{formatearUsdDecimales(totales?.aFavor ?? 0, 2)}</span>
+          {t.saldoAFavor}: <span className="font-medium tabular-nums text-text-primary">{formatearUsdDecimales(aFavor, 2)}</span>
           {conAFavor > 0 && <> en {conAFavor} {conAFavor === 1 ? t.singular : t.plural}</>}
         </p>
       </TarjetaKpi>

@@ -110,7 +110,7 @@ describe('entradaDeExportacion', () => {
     expect(r.entrada.contenedor).toBe('SEKU-1');
   });
   it('envía la valoración escrita solo con facturacion:ver', () => {
-    const valoracion = { estimado: { '1': '2,5' }, real: { '1': '3' } };
+    const valoracion = { estimado: { '1': '2,5' }, real: { '1': '3' }, totalReal: '' };
     const con = entradaDeExportacion(detalle(), { ...opc, clienteId: 'c', valoracion });
     if ('error' in con) throw new Error(con.error);
     expect(con.entrada.proyeccion).toEqual([{ lote: '1', valorKgUsd: 2.5, valorRealKgUsd: 3 }]);
@@ -119,7 +119,7 @@ describe('entradaDeExportacion', () => {
     expect(sin.entrada.proyeccion).toBeUndefined();
   });
   it('devuelve el error legible si un valor por kg es inválido', () => {
-    const r = entradaDeExportacion(detalle(), { ...opc, clienteId: 'c', valoracion: { estimado: { '1': 'abc' }, real: {} } });
+    const r = entradaDeExportacion(detalle(), { ...opc, clienteId: 'c', valoracion: { estimado: { '1': 'abc' }, real: {}, totalReal: '' } });
     expect('error' in r && r.error).toMatch(/no es válido/);
   });
   it('no modifica el detalle recibido', () => {

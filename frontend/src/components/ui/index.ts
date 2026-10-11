@@ -57,7 +57,7 @@ export type { InfoTooltipProps } from './InfoTooltip';
 // Estados
 export { default as EstadoVacio } from './EstadoVacio';
 export type { EstadoVacioProps, AccionVacio } from './EstadoVacio';
-export { SkeletonBloque, SkeletonTarjeta, SkeletonKpis, SkeletonTabla, SkeletonGrafica } from './Skeletons';
+export { SkeletonBloque, SkeletonConAviso, SkeletonTarjeta, SkeletonKpis, SkeletonTabla, SkeletonGrafica } from './Skeletons';
 export { default as Insignia, InsigniaEstado } from './Insignia';
 export type { InsigniaProps } from './Insignia';
 

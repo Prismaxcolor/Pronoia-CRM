@@ -212,7 +212,10 @@ describe('reportes', () => {
     s.obtenerReporteCuenta.mockResolvedValue({ reporte: { filas: [] } });
     const r = await llamar('GET', `/api/cochinito/reportes/cuenta?bancaId=${BANCA}&${RANGO}`, 'lector');
     expect(r.status).toBe(200);
-    expect(s.obtenerReporteCuenta).toHaveBeenCalledWith({ bancaId: BANCA, desde: '2026-10-01', hasta: '2026-10-31' }, new Set([BANCA]));
+    // El acceso se pasa sin esperar (promesa) para que corra a la vez que las consultas del reporte.
+    const [filtro, permitidas] = s.obtenerReporteCuenta.mock.calls[0];
+    expect(filtro).toEqual({ bancaId: BANCA, desde: '2026-10-01', hasta: '2026-10-31' });
+    expect(await permitidas).toEqual(new Set([BANCA]));
   });
 
   it('cuenta sin acceso: el 403 del servicio llega tal cual', async () => {
@@ -227,9 +230,9 @@ describe('reportes', () => {
     s.obtenerReporteCategorias.mockResolvedValue({ reporte: { grupos: [] } });
     const r = await llamar('GET', `/api/cochinito/reportes/categorias?categorias=${CAT},${ID}&sinCategoria=true&${RANGO}`, 'lector');
     expect(r.status).toBe(200);
-    expect(s.obtenerReporteCategorias).toHaveBeenCalledWith(
-      { categorias: [CAT, ID], desde: '2026-10-01', hasta: '2026-10-31', sinCategoria: true }, null,
-    );
+    const [filtro, permitidas] = s.obtenerReporteCategorias.mock.calls[0];
+    expect(filtro).toEqual({ categorias: [CAT, ID], desde: '2026-10-01', hasta: '2026-10-31', sinCategoria: true });
+    expect(await permitidas).toBeNull();
   });
 });
 

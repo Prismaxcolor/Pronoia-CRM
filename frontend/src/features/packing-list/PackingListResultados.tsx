@@ -3,12 +3,14 @@ import { formatearPeso } from '../../lib/packing-list';
 import { parsearValorKg, textoValorKg, type KgLote } from '../../lib/proyeccion-packing';
 import { calcularResultados, textoComparacionTotal } from '../../lib/resultados-exportacion';
 import type { ValoracionForm } from './formulario';
+import PackingListResultadoTotal from './PackingListResultadoTotal';
 
 interface Props {
   kgs: KgLote[];
   valoracion: ValoracionForm;
   puedeEditar: boolean;
   onCambiarReal: (lote: string, texto: string) => void;
+  onCambiarTotalReal: (texto: string) => void;
 }
 
 const TH = 'px-2 py-2 text-xs font-semibold text-text-secondary whitespace-nowrap';
@@ -24,8 +26,11 @@ const colorDiferencia = (n: number | null): string => (n === null || n === 0 ? '
 const numericos = (textos: Record<string, string>) =>
   Object.fromEntries(Object.entries(textos).map(([lote, t]) => [lote, parsearValorKg(t)]));
 
-/** Resultados de la exportación (interno, no sale en el PDF): proyección inicial frente a lo realmente obtenido, por lote. */
-function PackingListResultados({ kgs, valoracion, puedeEditar, onCambiarReal }: Props) {
+/**
+ * Resultados de la exportación (interno, no sale en el PDF): proyección inicial frente a lo realmente obtenido,
+ * en TOTAL (lo cobrado) y por lote (valor real por kg de cada lote).
+ */
+function PackingListResultados({ kgs, valoracion, puedeEditar, onCambiarReal, onCambiarTotalReal }: Props) {
   const resumen = useMemo(
     () => calcularResultados(kgs, numericos(valoracion.estimado), numericos(valoracion.real)),
     [kgs, valoracion]
@@ -36,7 +41,10 @@ function PackingListResultados({ kgs, valoracion, puedeEditar, onCambiarReal }: 
   }
 
   return (
-    <div>
+    <div className="space-y-6">
+      <PackingListResultadoTotal kgs={kgs} valoracion={valoracion} porLote={resumen} puedeEditar={puedeEditar} onCambiarTotalReal={onCambiarTotalReal} />
+      <section aria-label="Comparación por lote">
+      <h3 className="text-sm font-semibold text-text-primary mb-2">Por lote (valor real por kg de cada lote)</h3>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[46rem] text-sm tabular-nums">
           <thead>
@@ -94,6 +102,7 @@ function PackingListResultados({ kgs, valoracion, puedeEditar, onCambiarReal }: 
       <p className="mt-2 text-xs text-text-muted" role="status">
         {textoComparacionTotal(resumen.lotesComparados, resumen.lotesIncompletos)} Diferencia = real menos proyectado; «{SIN_DATO}» significa que falta el dato.
       </p>
+      </section>
     </div>
   );
 }

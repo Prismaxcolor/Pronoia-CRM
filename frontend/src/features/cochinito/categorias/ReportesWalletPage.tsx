@@ -16,7 +16,14 @@ const PESTANAS = [
 /** Sección "Reportes" del Wallet: reportes imprimibles (PDF) de una cuenta o caja y de gastos e ingresos por categoría. */
 function ReportesWalletPage() {
   const [reporte, setReporte] = useState<Reporte>('cuenta');
-  const categorias = useCategorias();
+  // Las categorías solo hacen falta en la pestaña "Por categorías": no se piden al abrir la pantalla (compiten con la
+  // carga de la cuenta y, con el servidor frío, retrasan la primera vista).
+  const [categoriasPedidas, setCategoriasPedidas] = useState(false);
+  const categorias = useCategorias(categoriasPedidas);
+  const cambiarReporte = (valor: Reporte) => {
+    setReporte(valor);
+    if (valor === 'categorias') setCategoriasPedidas(true);
+  };
 
   return (
     <div className="max-w-6xl">
@@ -26,14 +33,14 @@ function ReportesWalletPage() {
         subtitulo="Reportes para imprimir o guardar en PDF. Los montos se muestran en la moneda de cada cuenta; nunca se suman Bs con USD."
       />
       <NavegacionWallet />
-      <Pestanas pestanas={PESTANAS} valor={reporte} onCambiar={setReporte} etiquetaAria="Tipo de reporte">
+      <Pestanas pestanas={PESTANAS} valor={reporte} onCambiar={cambiarReporte} etiquetaAria="Tipo de reporte">
         {reporte === 'cuenta' ? (
           <Bloque titulo="Movimientos de una cuenta o caja" queEstasViendo="Todos los movimientos de la cuenta elegida entre las fechas indicadas, con su categoría, lo que entró, lo que salió y el neto.">
             <ReporteCuentaPanel />
           </Bloque>
         ) : (
           <Bloque titulo="Ingresos y egresos por categoría" queEstasViendo="Para las categorías elegidas y el periodo: ingresos, egresos y total por categoría, con el subtotal de cada subcategoría. Una tabla por moneda.">
-            <ReporteCategoriasPanel categorias={categorias.categorias} indice={categorias.indice} error={categorias.error} />
+            <ReporteCategoriasPanel categorias={categorias.categorias} indice={categorias.indice} error={categorias.error} cargando={categorias.cargando} />
           </Bloque>
         )}
       </Pestanas>

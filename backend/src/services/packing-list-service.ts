@@ -89,6 +89,8 @@ export const MENSAJE_CLIENTE_NO_HABILITADO =
   'Vincular un cliente aún no está habilitado en la base de datos (falta aplicar migration_packing_list_cliente_resultados.sql).';
 export const MENSAJE_LOTE_FOTOS_NO_HABILITADO =
   'Guardar el almacén o las fotos de las paletas aún no está habilitado en la base de datos (falta aplicar migration_packing_list_lote_fotos.sql).';
+export const MENSAJE_TOTAL_REAL_NO_HABILITADO =
+  'Guardar el total real cobrado aún no está habilitado en la base de datos (falta aplicar migration_packing_list_total_real.sql).';
 export const MENSAJE_PACKING_CONFLICTO = 'Otra persona modificó este packing list; recarga.';
 /** SQLSTATE que lanza guardar_packing_list cuando la versión esperada ya no es la vigente. */
 export const CODIGO_CONFLICTO_VERSION = 'PL409';
@@ -191,7 +193,9 @@ export const proyeccionToPublica = (filas: readonly LineaProyeccionRow[] | null 
  */
 async function leerCabecera(id: string, conValores: boolean) {
   const candidatos = [
-    ...(conValores ? [`${COLUMNAS_LISTA}, cliente_id, proyeccion`, `${COLUMNAS_LISTA}, proyeccion`] : []),
+    ...(conValores
+      ? [`${COLUMNAS_LISTA}, cliente_id, proyeccion, total_real_usd`, `${COLUMNAS_LISTA}, cliente_id, proyeccion`, `${COLUMNAS_LISTA}, proyeccion`]
+      : []),
     `${COLUMNAS_LISTA}, cliente_id`,
     COLUMNAS_LISTA,
   ];
@@ -256,7 +260,11 @@ export async function obtenerPackingList(id: string, opciones: OpcionesValores =
   }
   const filasItems = (items ?? []) as unknown as ItemRow[];
   const extras = conControl ? await extrasDeItems(filasItems) : null;
-  const fila = data as unknown as ListaRow & { proyeccion?: LineaProyeccionRow[] | null; cliente_id?: string | null };
+  const fila = data as unknown as ListaRow & {
+    proyeccion?: LineaProyeccionRow[] | null;
+    cliente_id?: string | null;
+    total_real_usd?: number | string | null;
+  };
   const nombres = await nombresDeUsuarios([fila.creado_por]);
   const detalle = {
     ...listaToPublico(fila, nombres),
@@ -264,7 +272,9 @@ export async function obtenerPackingList(id: string, opciones: OpcionesValores =
     clienteNombre: await nombreDeCliente(fila.cliente_id),
     items: filasItems.map(i => itemToPublico(i, extras)),
   };
-  return conValores ? { ...detalle, proyeccion: proyeccionToPublica(fila.proyeccion) } : detalle;
+  return conValores
+    ? { ...detalle, proyeccion: proyeccionToPublica(fila.proyeccion), totalRealUsd: numeroOnull(fila.total_real_usd) }
+    : detalle;
 }
 
 type LineaProyeccionInput = NonNullable<GuardarPackingListInput['proyeccion']>[number];
@@ -282,9 +292,12 @@ function cabeceraParaRpc(input: GuardarPackingListInput, puedeVerValores: boolea
     : {};
   // Ausente = la BD conserva el cliente; null = desvincula.
   const cliente = input.clienteId === undefined ? {} : { cliente_id: input.clienteId };
+  // Ausente = la BD conserva el total real; null = lo borra. Solo con facturacion:ver.
+  const total = puedeVerValores && input.totalRealUsd !== undefined ? { total_real_usd: input.totalRealUsd } : {};
   return {
     ...proyeccion,
     ...cliente,
+    ...total,
     contenedor: input.contenedor,
     fecha: input.fecha,
     tipo_embalaje: input.tipoEmbalaje,
@@ -338,6 +351,12 @@ const itemParaRpc = (i: ItemInput, conControl: boolean) => ({
   ...(!conControl || i.fotos === undefined ? {} : { fotos: i.fotos }),
 });
 
+/** True si packing_lists ya tiene total_real_usd (migration_packing_list_total_real.sql). */
+async function migracionTotalRealAplicada(): Promise<boolean> {
+  const sonda = await supabaseAdmin.from('packing_lists').select('total_real_usd').limit(1);
+  return !sonda.error;
+}
+
 /** True si packing_list_items ya tiene almacen_id y fotos (migration_packing_list_lote_fotos.sql). */
 async function migracionLoteFotosAplicada(): Promise<boolean> {
   const sonda = await supabaseAdmin.from('packing_list_items').select('almacen_id, fotos').limit(1);
@@ -363,6 +382,10 @@ export async function guardarPackingList(
   }
   if (puedeVerControl && input.items.some(usaControlInterno) && !(await migracionLoteFotosAplicada())) {
     return { ok: false, error: MENSAJE_LOTE_FOTOS_NO_HABILITADO, status: 409 };
+  }
+  // La función SQL anterior ignora en silencio claves desconocidas: guardar un total sin la migración perdería el dato.
+  if (puedeVerValores && input.totalRealUsd != null && !(await migracionTotalRealAplicada())) {
+    return { ok: false, error: MENSAJE_TOTAL_REAL_NO_HABILITADO, status: 409 };
   }
   const items = input.items.map(i => itemParaRpc(i, puedeVerControl));
   // Fotos guardadas antes: las que se quiten de las paletas se borran del bucket tras guardar (ver borrarFotosSinReferencia).

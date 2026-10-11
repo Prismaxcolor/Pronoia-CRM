@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const estado = { rol: 'superadmin', activo: true as boolean | null, error: null as { message: string } | null, consultas: 0 };
+const estado = { rol: 'superadmin', permisos: null as unknown, activo: true as boolean | null, error: null as { message: string } | null, consultas: 0 };
 const supabaseAdmin = {
   from: () => ({
     select: () => ({
@@ -8,7 +8,7 @@ const supabaseAdmin = {
         maybeSingle: async () => {
           estado.consultas += 1;
           if (estado.error) return { data: null, error: estado.error };
-          return { data: estado.activo === null ? null : { activo: estado.activo, rol: estado.rol, permisos: null }, error: null };
+          return { data: estado.activo === null ? null : { activo: estado.activo, rol: estado.rol, permisos: estado.permisos }, error: null };
         },
       }),
     }),
@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-10-07T12:00:00Z'));
   vaciarCacheUsuarioActivo();
-  estado.activo = true; estado.error = null; estado.consultas = 0; estado.rol = 'superadmin';
+  estado.activo = true; estado.error = null; estado.consultas = 0; estado.rol = 'superadmin'; estado.permisos = null;
   payload = { sub: 'u1', email: 'a@b.c', rol: 'superadmin' };
 });
 afterEach(() => vi.useRealTimers());
@@ -142,7 +142,7 @@ describe('rol real de la BD (N6)', () => {
     estado.rol = 'trabajador';
     const { req } = await llamar(requirePermiso('pesaje', 'crear'), 'bueno', { ...payload });
     expect((req.user as { rol: string }).rol).toBe('trabajador');
-    expect(estado.consultas).toBe(2); // 1 del estado cacheado + 1 de la lectura de permisos del no-superadmin
+    expect(estado.consultas).toBe(1); // la lectura de estado (fallo de caché) ya trae los permisos: no se repite la consulta
   });
 
   it('requirePermiso: si la BD falla responde 503 y no cachea', async () => {
@@ -153,5 +153,56 @@ describe('rol real de la BD (N6)', () => {
     estado.error = null;
     const ok = await llamar(requirePermiso('pesaje', 'crear'), 'bueno', payload);
     expect(ok.next).toHaveBeenCalledOnce();
+  });
+});
+
+describe('permisos: una sola consulta por petición en el primer request de la instancia', () => {
+  const usuario = { sub: 'u1', email: 'a@b.c', rol: 'trabajador' };
+
+  /** Una petición real: requireAuth y requirePermiso comparten el mismo req (como en Express). */
+  async function peticion(recurso: 'pesaje' | 'usuarios') {
+    payload = usuario;
+    const req = { headers: { authorization: 'Bearer bueno' } } as { headers: { authorization: string }; user?: unknown };
+    const res = { statusCode: 0, status(c: number) { this.statusCode = c; return this; }, json() { return this; } };
+    const next = vi.fn();
+    await requireAuth(req as never, res as never, next as never);
+    const next2 = vi.fn();
+    await requirePermiso(recurso, 'ver')(req as never, res as never, next2 as never);
+    return { res, next: next2 };
+  }
+
+  it('requireAuth + requirePermiso con la caché fría: 1 consulta (antes 2) y el permiso se aplica igual', async () => {
+    estado.rol = 'trabajador';
+    const ok = await peticion('pesaje');
+    expect(estado.consultas).toBe(1);
+    expect(ok.next).toHaveBeenCalledOnce();
+  });
+
+  it('con la caché caliente los permisos se siguen leyendo frescos de la BD (no se cachean)', async () => {
+    estado.rol = 'trabajador';
+    await peticion('pesaje');
+    estado.consultas = 0;
+    const ok = await peticion('pesaje');
+    expect(estado.consultas).toBe(1); // solo la lectura de permisos; el estado viene de la caché
+    expect(ok.next).toHaveBeenCalledOnce();
+  });
+
+  it('los permisos personalizados de la lectura compartida se respetan (403 si no incluyen el recurso)', async () => {
+    estado.rol = 'trabajador';
+    estado.permisos = [{ recurso: 'pesaje', accion: 'ver' }];
+    expect((await peticion('pesaje')).next).toHaveBeenCalledOnce();
+    vaciarCacheUsuarioActivo();
+    const denegado = await peticion('usuarios');
+    expect(denegado.res.statusCode).toBe(403);
+    expect(denegado.next).not.toHaveBeenCalled();
+  });
+
+  it('un cambio de permisos se nota en la siguiente petición con la caché caliente, sin esperar el TTL', async () => {
+    estado.rol = 'trabajador';
+    estado.permisos = [{ recurso: 'pesaje', accion: 'ver' }];
+    await peticion('pesaje');
+    estado.permisos = [{ recurso: 'usuarios', accion: 'ver' }];
+    const r = await peticion('pesaje');
+    expect(r.res.statusCode).toBe(403);
   });
 });
