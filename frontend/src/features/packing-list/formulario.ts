@@ -8,6 +8,14 @@ import { parsearValorKg, textoValorKg } from '../../lib/proyeccion-packing';
 /** Valores USD/kg en edición, por lote (clave '' = sin lote), como texto mientras se escribe. */
 export type ValoresProyeccionForm = Record<string, string>;
 
+/** Valoración en edición: USD/kg estimado (proyección) y real (resultados) por lote. */
+export interface ValoracionForm {
+  estimado: ValoresProyeccionForm;
+  real: ValoresProyeccionForm;
+}
+
+export const valoracionVacia = (): ValoracionForm => ({ estimado: {}, real: {} });
+
 export interface CabeceraForm {
   contenedor: string;
   fecha: string;
@@ -17,6 +25,8 @@ export interface CabeceraForm {
   descripcionEn: string;
   observacionesEs: string;
   observacionesEn: string;
+  /** Cliente internacional elegido; '' = sin cliente. */
+  clienteId: string;
 }
 
 // Descripciones iniciales de una lista nueva (editables). La traducción al español es del sistema, no del dueño.
@@ -46,6 +56,7 @@ export function cabeceraInicial(): CabeceraForm {
     descripcionEn: DESCRIPCION_INICIAL_EN,
     observacionesEs: '',
     observacionesEn: '',
+    clienteId: '',
   };
 }
 
@@ -59,6 +70,7 @@ export function cabeceraDesde(p: PackingListDetalle): CabeceraForm {
     descripcionEn: p.descripcionEn ?? '',
     observacionesEs: p.observacionesEs ?? '',
     observacionesEn: p.observacionesEn ?? '',
+    clienteId: p.clienteId ?? '',
   };
 }
 
@@ -70,6 +82,8 @@ export function filasDesde(p: PackingListDetalle): FilaForm[] {
     numeroPaleta: aTexto(i.numeroPaleta),
     lote: i.lote ?? '',
     color: i.color ?? '',
+    almacenId: i.almacenId ?? '',
+    fotos: [...(i.fotos ?? [])],
     pesoBruto: aTexto(i.pesoBruto),
     pesoPaleta: aTexto(i.pesoPaleta),
   }));
@@ -82,12 +96,13 @@ export function aFilaNumerica(f: FilaForm, indice: number): FilaPackingList {
     numeroPaleta: /^\d+$/.test(f.numeroPaleta.trim()) ? Number(f.numeroPaleta.trim()) : null,
     lote: f.lote.trim() || null,
     color: f.color || null,
+    almacenId: f.almacenId || null,
     pesoBruto: parsearPeso(f.pesoBruto),
     pesoPaleta: f.pesoPaleta.trim() === '' ? 0 : parsearPeso(f.pesoPaleta),
   };
 }
 
-/** Fila nueva: copia lote, color y tara de la anterior (las paletas de un lote pesan parecido) y numera la paleta. */
+/** Fila nueva: copia lote, almacén, color y tara de la anterior (las paletas de un lote pesan parecido) y numera la paleta. Las fotos no se copian. */
 export function filaSiguiente(filas: readonly FilaForm[]): FilaForm {
   const ultima = filas[filas.length - 1];
   const lote = ultima?.lote.trim() || null;
@@ -97,26 +112,48 @@ export function filaSiguiente(filas: readonly FilaForm[]): FilaForm {
     numeroPaleta: String(numeroPaleta),
     lote: ultima?.lote ?? '',
     color: ultima?.color ?? '',
+    almacenId: ultima?.almacenId ?? '',
+    fotos: [],
     pesoBruto: '',
     pesoPaleta: ultima?.pesoPaleta ?? '',
   };
 }
 
-export function valoresDesde(p: PackingListDetalle): ValoresProyeccionForm {
-  return Object.fromEntries((p.proyeccion ?? []).map(l => [l.lote, textoValorKg(l.valorKgUsd)]));
+const textoDe = (n: number | null | undefined): string => (n == null ? '' : textoValorKg(n));
+
+export function valoracionDesde(p: PackingListDetalle): ValoracionForm {
+  const lineas = p.proyeccion ?? [];
+  return {
+    estimado: Object.fromEntries(lineas.map(l => [l.lote, textoDe(l.valorKgUsd)])),
+    real: Object.fromEntries(lineas.map(l => [l.lote, textoDe(l.valorRealKgUsd)])),
+  };
 }
 
-/** Líneas de la proyección para enviar: solo lotes con valor. Un texto inválido devuelve el error. */
+type LineaProyeccion = NonNullable<GuardarPackingListInput['proyeccion']>[number];
+
+/** Texto escrito a mano -> valor. Vacío = null; inválido = error con el nombre del campo. */
+function leerValor(texto: string | undefined, lote: string, campo: string): { valor: number | null } | { error: string } {
+  if ((texto ?? '').trim() === '') return { valor: null };
+  const valor = parsearValorKg(texto ?? '');
+  if (valor === null) return { error: `${campo}${lote ? ` (lote ${lote})` : ''}: el valor por kg no es válido (máximo 4 decimales).` };
+  return { valor };
+}
+
+/** Líneas de la proyección/resultados para enviar: solo lotes con algún valor. Un texto inválido devuelve el error. */
 function construirProyeccion(
-  valores: ValoresProyeccionForm,
+  valoracion: ValoracionForm,
   lotesIncluidos: ReadonlySet<string>
-): { proyeccion: NonNullable<GuardarPackingListInput['proyeccion']> } | { error: string } {
-  const proyeccion: NonNullable<GuardarPackingListInput['proyeccion']> = [];
-  for (const [lote, texto] of Object.entries(valores)) {
-    if (!lotesIncluidos.has(lote) || texto.trim() === '') continue;
-    const valorKgUsd = parsearValorKg(texto);
-    if (valorKgUsd === null) return { error: `Proyección${lote ? ` (lote ${lote})` : ''}: el valor por kg no es válido (máximo 4 decimales).` };
-    proyeccion.push({ lote, valorKgUsd });
+): { proyeccion: LineaProyeccion[] } | { error: string } {
+  const lotes = new Set([...Object.keys(valoracion.estimado), ...Object.keys(valoracion.real)]);
+  const proyeccion: LineaProyeccion[] = [];
+  for (const lote of lotes) {
+    if (!lotesIncluidos.has(lote)) continue;
+    const estimado = leerValor(valoracion.estimado[lote], lote, 'Proyección');
+    if ('error' in estimado) return estimado;
+    const real = leerValor(valoracion.real[lote], lote, 'Valor real');
+    if ('error' in real) return real;
+    if (estimado.valor === null && real.valor === null) continue;
+    proyeccion.push({ lote, valorKgUsd: estimado.valor, valorRealKgUsd: real.valor });
   }
   return { proyeccion };
 }
@@ -129,7 +166,9 @@ export function construirEntrada(
   filas: readonly FilaForm[],
   referencia: Pick<GuardarPackingListInput, 'referenciaTipo' | 'referenciaId' | 'version'>,
   /** Solo si el usuario ve valores (facturacion:ver); undefined = no enviar proyección. */
-  valores?: ValoresProyeccionForm
+  valoracion?: ValoracionForm,
+  /** Con permiso de inventario o facturación (control interno). Sin él no se envían almacén ni fotos: el servidor conserva lo guardado. */
+  conControl = true
 ): { entrada: GuardarPackingListInput } | { error: string } {
   if (c.contenedor.trim() === '') return { error: 'Indica el número de contenedor.' };
   if (c.fecha === '') return { error: 'Indica la fecha.' };
@@ -139,10 +178,14 @@ export function construirEntrada(
     if (n.pesoBruto === null || n.pesoBruto <= 0) return { error: `Fila ${i + 1}: indica el peso bruto.` };
     if (n.pesoPaleta === null) return { error: `Fila ${i + 1}: el peso de la paleta no es un número válido.` };
     if (n.pesoPaleta > n.pesoBruto) return { error: `Fila ${i + 1}: la tara de la paleta no puede ser mayor al peso bruto.` };
-    items.push({ numero: i + 1, numeroPaleta: n.numeroPaleta, lote: c.esPcb ? n.lote : null, color: c.esPcb ? n.color : null, pesoBruto: n.pesoBruto, pesoPaleta: n.pesoPaleta });
+    items.push({
+      numero: i + 1, numeroPaleta: n.numeroPaleta, lote: c.esPcb ? n.lote : null, color: c.esPcb ? n.color : null,
+      ...(conControl ? { almacenId: c.esPcb ? n.almacenId ?? null : null, fotos: f.fotos.map(x => x.ruta) } : {}),
+      pesoBruto: n.pesoBruto, pesoPaleta: n.pesoPaleta,
+    });
   }
   const lotes = new Set(items.map(i => i.lote ?? ''));
-  const proy = valores ? construirProyeccion(valores, lotes) : null;
+  const proy = valoracion ? construirProyeccion(valoracion, lotes) : null;
   if (proy && 'error' in proy) return { error: proy.error };
   return {
     entrada: {
@@ -155,6 +198,7 @@ export function construirEntrada(
       descripcionEn: vacioANull(c.descripcionEn),
       observacionesEs: vacioANull(c.observacionesEs),
       observacionesEn: vacioANull(c.observacionesEn),
+      clienteId: vacioANull(c.clienteId),
       ...referencia,
       items,
     },

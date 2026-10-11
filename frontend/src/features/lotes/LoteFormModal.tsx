@@ -4,6 +4,7 @@ import { actualizarLote } from '../../services/lote-service';
 import { subirFotoLote } from '../../services/storage-service';
 import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import { COLORES_LOTE } from '../../lib/packing-list';
 import { useToast } from '../../hooks/use-toast-context';
 import type { Lote } from '@shared/types/index.js';
 
@@ -13,13 +14,14 @@ interface Props {
   onGuardado: () => void;
 }
 
-/** Editar un lote existente — nombre y fotos. El almacén y el estado
+/** Editar un lote existente — nombre, color en el packing list y fotos. El almacén y el estado
  *  activo/inactivo se editan inline desde LotesPanel, no acá, para no tener
  *  dos lugares distintos editando el mismo campo. */
 function LoteFormModal({ lote, onClose, onGuardado }: Props) {
   const toast = useToast();
 
   const [nombre, setNombre] = useState(lote.nombre);
+  const [color, setColor] = useState(lote.colorPackingList ?? '');
   const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(lote.fotos));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,11 @@ function LoteFormModal({ lote, onClose, onGuardado }: Props) {
     const urls = await subirFotosLocal(fotos, subirFotoLote);
     if (!urls) { setError('Error al subir una de las fotos.'); setGuardando(false); return; }
 
-    const result = await actualizarLote(lote.id, { nombre: limpio, fotos: urls });
+    // colorPackingList undefined = la BD aún no tiene la migración: no se manda el campo.
+    const colorCambiado = lote.colorPackingList !== undefined && color !== (lote.colorPackingList ?? '');
+    const result = await actualizarLote(lote.id, {
+      nombre: limpio, fotos: urls, ...(colorCambiado ? { colorPackingList: color === '' ? null : color } : {}),
+    });
     setGuardando(false);
 
     if ('error' in result) { setError(result.error); return; }
@@ -65,6 +71,24 @@ function LoteFormModal({ lote, onClose, onGuardado }: Props) {
             <label className={labelClass}>Nombre</label>
             <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} className={inputClass} placeholder="Ej. Lote 1" />
           </div>
+
+          {lote.colorPackingList !== undefined && (
+            <div>
+              <label htmlFor="lote-color-packing" className={labelClass}>Color en el packing list</label>
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="h-6 w-6 shrink-0 rounded-full border border-border"
+                  style={{ backgroundColor: COLORES_LOTE.find(c => c.clave === color)?.hex ?? 'transparent' }}
+                />
+                <select id="lote-color-packing" value={color} onChange={e => setColor(e.target.value)} className={inputClass}>
+                  <option value="">Sin color predeterminado</option>
+                  {COLORES_LOTE.map(c => <option key={c.clave} value={c.clave}>{c.es} / {c.en}</option>)}
+                </select>
+              </div>
+              <p className="mt-1 text-[11px] text-text-muted">Al elegir este lote en un packing list, el color se rellena solo (se puede cambiar en cada fila).</p>
+            </div>
+          )}
 
           <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos del lote" />
 

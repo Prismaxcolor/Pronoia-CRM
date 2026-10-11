@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Ban, FileDown, Pencil } from 'lucide-react';
+import { Ban, CheckCircle2, FileDown, Pencil } from 'lucide-react';
 import { BotonAccion, EncabezadoPagina, EstadoVacio, Insignia, SkeletonBloque, formatearNumero } from '../../components/ui';
 import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
@@ -10,6 +10,8 @@ import VisorFotos from '../../components/VisorFotos';
 import AnularConLlaveModal from '../../components/AnularConLlaveModal';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
+import { completarTransferenciaMesa } from '../../services/transferencia-mesa-service';
 import { obtenerBancas, obtenerDetalleMovimiento, type DetalleMovimiento } from '../../services/banca-service';
 import { anularMovimiento } from '../../services/transaccion-edicion-service';
 import { formatearFecha } from '../../lib/formato';
@@ -19,7 +21,8 @@ import type { Banca } from '@shared/types/index.js';
 import EditarMovimientoModal from './EditarMovimientoModal';
 import { descargarMovimientoPDF } from './movimiento-pdf';
 import {
-  ETIQUETA_SUBTIPO_MOVIMIENTO, ETIQUETA_TIPO_MOVIMIENTO, esManualVigente, etiquetaOperacion, numeroMovimiento,
+  ETIQUETA_SUBTIPO_MOVIMIENTO, ETIQUETA_TIPO_MOVIMIENTO, esCargoDeComision, esManualVigente, tieneComision, esTransferenciaEnProceso, etiquetaEstadoMesa, etiquetaOperacion,
+  montoQueRecibeElDestino, numeroMovimiento, textoComisionMesa,
   recursoComprobanteOperacion, rutaComprobanteOperacion, tasaDe, tituloCompartirMovimiento,
 } from './detalle-movimiento';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
@@ -60,7 +63,23 @@ function BannerAnulado({ detalle }: { detalle: DetalleMovimiento }) {
 }
 
 /** Filas etiqueta/valor del documento (las vacías no se muestran). */
-function Filas({ detalle }: { detalle: DetalleMovimiento }) {
+function FilasMesa({ detalle, simboloDestino }: { detalle: DetalleMovimiento; simboloDestino: string }) {
+  const m = detalle.movimiento;
+  const recibe = montoQueRecibeElDestino(m);
+  const enProceso = esTransferenciaEnProceso(m);
+  return (
+    <>
+      <FilaDocumento label="Mesa de cambio" valor={detalle.cambistaNombre ?? 'Cambista (sin permiso para ver el nombre)'} />
+      <FilaDocumento label="Estado de la transferencia" valor={m.anulado ? 'Anulada' : (etiquetaEstadoMesa(m) ?? '—')} />
+      {m.mesaMontoBruto != null && <FilaDocumento label="Entrega el cambista" valor={`${simboloDestino} ${formatearNumero(m.mesaMontoBruto, 2)}`} />}
+      <FilaDocumento label="Comisión del cambio" valor={textoComisionMesa(m, simboloDestino)} />
+      {recibe != null && <FilaDocumento label={enProceso ? 'Recibirá la banca destino al completar' : 'Recibe la banca destino'} valor={`${simboloDestino} ${formatearNumero(recibe, 2)}`} />}
+      {m.mesaCompletadaEn && <FilaDocumento label="Completada" valor={formatearFechaHora(m.mesaCompletadaEn)} />}
+    </>
+  );
+}
+
+function Filas({ detalle, simboloDestino }: { detalle: DetalleMovimiento; simboloDestino: string }) {
   const m = detalle.movimiento;
   const tasa = tasaDe(m);
   const usd = montoUsdDe(m);
@@ -78,7 +97,11 @@ function Filas({ detalle }: { detalle: DetalleMovimiento }) {
       {m.referencia && <FilaDocumento label="Referencia" valor={m.referencia} />}
       {tasa != null && <FilaDocumento label="Tasa" valor={`${formatearNumero(tasa, 2)} Bs por USD`} />}
       {usd != null && m.moneda !== 'USD' && <FilaDocumento label="Equivalente en USD" valor={`USD ${formatearNumero(usd, 2)}`} />}
-      {m.montoDestino != null && <FilaDocumento label="Recibe la banca destino" valor={formatearNumero(m.montoDestino, 2)} />}
+      {tieneComision(m) && <FilaDocumento label="Comisión bancaria" valor={`Bs ${formatearNumero(m.comisionBancaria as number, 2)} (cargada a la misma cuenta como un egreso aparte)`} />}
+      {esCargoDeComision(m) && <FilaDocumento label="Comisión bancaria de" valor="Otro movimiento de Wallet: se anula junto con él" />}
+      {m.mesaCambistaId != null
+        ? <FilasMesa detalle={detalle} simboloDestino={simboloDestino} />
+        : m.montoDestino != null && <FilaDocumento label="Recibe la banca destino" valor={formatearNumero(m.montoDestino, 2)} />}
     </>
   );
 }
@@ -88,6 +111,7 @@ function MovimientoDetallePage() {
   const { id = '' } = useParams();
   const { tienePermiso } = useAuth();
   const toast = useToast();
+  const confirmar = useConfirm();
   const [version, setVersion] = useState(0);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [modal, setModal] = useState<'editar' | 'anular' | null>(null);
@@ -126,10 +150,30 @@ function MovimientoDetallePage() {
   const terceroOBanca = detalle.proveedorNombre ?? detalle.clienteNombre ?? detalle.bancaOrigenNombre;
   const rutaOperacion = rutaComprobanteOperacion(m);
   const puedeAbrirOperacion = rutaOperacion != null && tienePermiso(recursoComprobanteOperacion(m), 'ver');
-  const manual = esManualVigente(m);
+  const manual = esManualVigente(m) && !esCargoDeComision(m);
+  const enProceso = esTransferenciaEnProceso(m);
+  const puedeCompletar = enProceso && tienePermiso('cochinito', 'editar') && tienePermiso('mesa_cambio', 'ver');
+  const monedaDestino = bancas.find(b => b.id === m.bancaDestinoId)?.moneda ?? m.moneda;
+  const simboloDestino = simbolo(monedaDestino);
+
+  const completar = async () => {
+    const recibe = montoQueRecibeElDestino(m);
+    const ok = await confirmar({
+      titulo: 'Completar transferencia',
+      mensaje: `Se acreditarán ${recibe == null ? '' : `${simboloDestino} ${formatearNumero(recibe, 2)} `}en ${detalle.bancaDestinoNombre ?? 'la cuenta destino'} (ya descontada la comisión) y se saldará la deuda del cambista. Hazlo solo cuando el cambista ya entregó el dinero.`,
+      confirmarLabel: 'Completar',
+      variante: 'warning',
+    });
+    if (!ok) return;
+    const r = await completarTransferenciaMesa(m.id);
+    if ('error' in r) { toast.errorMsg(r.error); return; }
+    toast.exito(r.yaCompletada ? 'La transferencia ya estaba completada.' : 'Transferencia completada: el saldo ya está en la cuenta destino.');
+    recargar();
+  };
 
   const acciones: ReactNode = (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
+      {puedeCompletar && <BotonAccion soloEnLinea icono={<CheckCircle2 size={16} />} onClick={() => void completar()}>Completar</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Pencil size={16} />} onClick={() => setModal('editar')}>Editar</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Ban size={16} />} onClick={() => setModal('anular')}>Anular</BotonAccion>}
       <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarMovimientoPDF(detalle)}>PDF</BotonAccion>
@@ -150,12 +194,19 @@ function MovimientoDetallePage() {
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <h2 className="text-lg font-semibold text-text-primary">Movimiento {numero}</h2>
           <Insignia tono={m.tipo === 'ingreso' ? 'marca' : m.tipo === 'transferencia' ? 'info' : 'neutral'}>{ETIQUETA_TIPO_MOVIMIENTO[m.tipo]}</Insignia>
+          {etiquetaEstadoMesa(m) && <Insignia tono={enProceso ? 'aviso' : 'exito'}>{etiquetaEstadoMesa(m)}</Insignia>}
           {m.anulado && <Insignia tono="peligro">Anulado</Insignia>}
         </div>
 
         {m.anulado && <BannerAnulado detalle={detalle} />}
+        {enProceso && (
+          <div role="status" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 print:border-black print:bg-transparent print:text-black">
+            <p className="font-bold">Transferencia en proceso</p>
+            <p>El dinero ya salió de {detalle.bancaOrigenNombre ?? 'la cuenta origen'}, pero {detalle.bancaDestinoNombre ?? 'la cuenta destino'} todavía no lo recibe. Se acredita cuando se complete.</p>
+          </div>
+        )}
 
-        <div className="mb-2"><Filas detalle={detalle} /></div>
+        <div className="mb-2"><Filas detalle={detalle} simboloDestino={simboloDestino} /></div>
 
         <div className={`mt-4 flex items-baseline justify-between gap-3 border-t-2 border-brand-700 pt-3 print:border-black ${m.anulado ? 'text-text-muted line-through' : ''}`}>
           <span className="text-lg font-semibold text-text-primary">Monto</span>
@@ -215,6 +266,7 @@ function MovimientoDetallePage() {
           </div>
           <p className="text-xs text-text-muted">
             El saldo de la banca se corrige y el movimiento queda marcado como anulado en el historial (no se borra). Se rechaza si alguna banca quedaría sin fondos.
+            {m.mesaCambistaId != null && ' También se anulan los asientos de esta transferencia en el estado de cuenta del cambista.'}
           </p>
         </AnularConLlaveModal>
       )}

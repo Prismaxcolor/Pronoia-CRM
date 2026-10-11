@@ -3,16 +3,20 @@ import { ArrowUpRight, Coins, Landmark, Scale } from 'lucide-react';
 import { BarraApilada, GrillaKpis, TarjetaKpi, colorDeSerie, formatearFecha, formatearNumero, formatearUsdDecimales } from '../../components/ui';
 import { compararConPeriodoAnterior } from '../../lib/comparacion';
 import type { KpisCochinito } from '../../lib/cochinito-kpis';
+import type { TasaUsd } from '../../../../shared/types/equivalente-usd.js';
+import { textoEquivalenteTotal } from './equivalente-usd';
 
 interface Props {
   kpis: KpisCochinito;
   periodo: { desde: string; hasta: string };
+  /** Tasa Binance para el equivalente en USD del saldo en Bs: undefined = aún cargando, null = no disponible. */
+  tasaBinance?: TasaUsd | null;
 }
 
 const SIN_COMPARABLE = 'Sin historial comparable: el periodo anterior empieza antes del primer movimiento registrado, así que estaría incompleto y la comparación engañaría.';
 
 /** Cuatro indicadores de /cochinito: saldos (USD y VES) y, del periodo elegido, egresos y adelantos frente a pagos. */
-function KpisCochinitoGrilla({ kpis, periodo }: Props) {
+function KpisCochinitoGrilla({ kpis, periodo, tasaBinance }: Props) {
   const cmpEgresos = useMemo(() => {
     if (!kpis.anterior) return undefined;
     const c = compararConPeriodoAnterior(kpis.periodo.totalUsd, kpis.anterior.totalUsd, 'baja');
@@ -39,10 +43,14 @@ function KpisCochinitoGrilla({ kpis, periodo }: Props) {
       <TarjetaKpi
         titulo="Saldo en bolívares"
         icono={<Landmark size={16} />}
-        ayuda="Bolívares (Bs) que hay hoy en las bancas activas en VES (las archivadas no cuentan); no depende del periodo elegido. Es la suma de sus saldos actuales y no se convierte a dólares."
+        ayuda="Bolívares (Bs) que hay hoy en las bancas activas en VES (las archivadas no cuentan); no depende del periodo elegido. Es la suma de sus saldos actuales. Debajo se muestra, solo como referencia, su equivalente en USD a la tasa Binance del momento; ese equivalente no se guarda ni se suma al saldo en USD."
         valor={`Bs ${formatearNumero(kpis.saldoVes, 2)}`}
         subtitulo={`${kpis.bancasVes} ${kpis.bancasVes === 1 ? 'banca activa' : 'bancas activas'} en VES`}
-      />
+      >
+        {tasaBinance !== undefined && (
+          <p className={`mt-2 text-xs tabular-nums ${tasaBinance ? 'text-text-secondary' : 'text-amber-800'}`}>{textoEquivalenteTotal(kpis.saldoVes, tasaBinance)}</p>
+        )}
+      </TarjetaKpi>
 
       <TarjetaKpi
         titulo="Egresos del periodo"

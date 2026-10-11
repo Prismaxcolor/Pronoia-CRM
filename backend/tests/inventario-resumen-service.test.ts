@@ -109,6 +109,58 @@ describe('obtenerResumenInventario', () => {
   });
 });
 
+describe('saldo a una fecha: avisos del resumen', () => {
+  const pedir = () => obtenerResumenInventario({ hoy: '2026-10-03', al: '2026-09-01' });
+
+  it('avisa que las salidas se fecharon sin completado_en cuando la lectura del almacén degradó', async () => {
+    inv.obtenerInventarioAlmacen.mockImplementation(async (_id: string, _f: unknown, op?: { alFecharSinCompletadoEn?: () => void }) => {
+      op?.alFecharSinCompletadoEn?.();
+      return [];
+    });
+    bdFalsa.tablas.tickets_pesaje = [{ fecha: '2026-08-01' }];
+    const r = await pedir();
+    expect(r.avisos.join(' ')).toMatch(/cuándo se completaron las transformaciones/);
+  });
+
+  it('sin degradar no lleva ese aviso', async () => {
+    bdFalsa.tablas.tickets_pesaje = [{ fecha: '2026-08-01' }];
+    const r = await pedir();
+    expect(r.avisos.join(' ')).not.toMatch(/cuándo se completaron/);
+  });
+
+  it('avisa que no hay datos antes de la fecha si el primer registro es posterior al corte (como la pantalla)', async () => {
+    bdFalsa.tablas.tickets_pesaje = [{ fecha: '2026-09-15T00:00:00Z' }];
+    bdFalsa.tablas.transformaciones = [{ fecha: '2026-09-20' }];
+    bdFalsa.tablas.ajustes_inventario = [{ created_at: '2026-09-30T10:00:00Z' }];
+    const r = await pedir();
+    expect(r.avisos.join(' ')).toMatch(/No hay movimientos registrados antes de 01\/09\/2026 \(el primer registro es del 15\/09\/2026\)/);
+  });
+
+  it('con registros anteriores al corte no avisa de falta de datos', async () => {
+    bdFalsa.tablas.tickets_pesaje = [{ fecha: '2026-08-01' }];
+    const r = await pedir();
+    expect(r.avisos.join(' ')).not.toMatch(/No hay movimientos registrados/);
+  });
+
+  it('sin ningún movimiento en el sistema también lo avisa', async () => {
+    const r = await pedir();
+    expect(r.avisos.join(' ')).toMatch(/No hay movimientos registrados antes de 01\/09\/2026:/);
+  });
+
+  it('si no se puede leer el primer registro avisa que puede faltar ese aviso (no lo inventa)', async () => {
+    bdFalsa.errores.tickets_pesaje = { message: 'timeout' };
+    const r = await pedir();
+    expect(r.avisos.join(' ')).toMatch(/desde cuándo hay registros/);
+    expect(r.avisos.join(' ')).not.toMatch(/No hay movimientos registrados/);
+  });
+
+  it('sin fecha no consulta el primer registro', async () => {
+    bdFalsa.tablas.tickets_pesaje = [{ fecha: '2026-09-15' }];
+    const r = await obtenerResumenInventario({ hoy: '2026-10-03' });
+    expect(r.avisos.join(' ')).not.toMatch(/No hay movimientos/);
+  });
+});
+
 describe('resolverRangoMerma', () => {
   it('ambos extremos o ninguno', () => {
     expect(resolverRangoMerma({ hoy: '2026-10-03' })).toEqual({ desde: '2026-09-04', hasta: '2026-10-03' });

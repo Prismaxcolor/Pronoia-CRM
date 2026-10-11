@@ -30,17 +30,24 @@ export interface AsientoCreado {
   id: string;
   numero: number;
   cambistaId: string;
-  tipo: 'CARGO' | 'COBRO';
+  tipo: AsientoMesa['tipo'];
   montoUsd: number;
   fecha: string;
+  /** Correlativo propio de N/C y N/D (NC-0001 / ND-0001); null en CARGO y COBRO. */
+  numeroNota: number | null;
 }
 
 type Fallo = { error: string; codigo: number };
 
 const MENSAJE_MIGRACION_PENDIENTE =
   'La mesa de cambio aún no está habilitada en la base de datos (falta aplicar migration_mesa_cambio.sql).';
-const COLUMNAS_ASIENTO =
-  'id, numero, cambista_id, tipo, monto_usd, tasa, fecha, nota, referencia, anulado, anulado_motivo';
+const MENSAJE_NOTAS_PENDIENTE =
+  'Las notas de crédito y de débito aún no están habilitadas en la base de datos (falta aplicar migration_mesa_cambio_transferencias.sql).';
+const MENSAJE_ASIENTO_DE_TRANSFERENCIA =
+  'Este asiento nace de una transferencia con mesa de cambio: anula o completa la transferencia desde Wallet.';
+// select('*'): las columnas de la migración de transferencias (numero_nota, movimiento_id) son opcionales.
+const COLUMNAS_ASIENTO = '*';
+const CODIGO_CHECK_VIOLADO = '23514';
 
 interface ErrorBd {
   code?: string;
@@ -78,6 +85,8 @@ function mapAsiento(row: Record<string, unknown>): AsientoMesa {
     nota: (row.nota as string) ?? null,
     referencia: (row.referencia as string) ?? null,
     anuladoMotivo: (row.anulado_motivo as string) ?? null,
+    numeroNota: row.numero_nota != null ? Number(row.numero_nota) : null,
+    movimientoId: (row.movimiento_id as string) ?? null,
   };
 }
 
@@ -158,13 +167,24 @@ export async function crearAsiento(input: CrearAsientoInput, userId: string): Pr
     })
     .select(COLUMNAS_ASIENTO)
     .single();
+  if (error?.code === CODIGO_CHECK_VIOLADO && (input.tipo === 'NC' || input.tipo === 'ND')) {
+    return { error: MENSAJE_NOTAS_PENDIENTE, codigo: 503 };
+  }
   if (error || !data) return fallo(error ?? {}, 'No se pudo registrar el asiento.');
   const a = mapAsiento(data);
-  return { asiento: { id: a.id, numero: a.numero, cambistaId: input.cambistaId, tipo: a.tipo, montoUsd: a.montoUsd, fecha: a.fecha } };
+  return { asiento: { id: a.id, numero: a.numero, cambistaId: input.cambistaId, tipo: a.tipo, montoUsd: a.montoUsd, fecha: a.fecha, numeroNota: a.numeroNota ?? null } };
 }
 
-/** Anula un asiento vigente (nunca se borra). Solo actualiza si sigue vigente, así dos anulaciones simultáneas no pisan el motivo. */
+/**
+ * Anula un asiento vigente (nunca se borra). Los ligados a una transferencia solo los anula la transferencia.
+ * El update exige que siga vigente, así dos anulaciones simultáneas no pisan el motivo.
+ */
 export async function anularAsiento(id: string, motivo: string, userId: string): Promise<{ ok: true } | Fallo> {
+  const { data: previo, error: errPrevio } = await supabaseAdmin.from('cambista_asientos').select('*').eq('id', id).maybeSingle();
+  if (errPrevio) return fallo(errPrevio, 'No se pudo anular el asiento.');
+  if (!previo) return { error: 'Asiento no encontrado.', codigo: 404 };
+  if (previo.movimiento_id) return { error: MENSAJE_ASIENTO_DE_TRANSFERENCIA, codigo: 409 };
+  if (previo.anulado) return { error: 'El asiento ya está anulado.', codigo: 409 };
   const { data, error } = await supabaseAdmin
     .from('cambista_asientos')
     .update({ anulado: true, anulado_motivo: motivo, anulado_at: new Date().toISOString(), anulado_por: userId })
@@ -173,7 +193,5 @@ export async function anularAsiento(id: string, motivo: string, userId: string):
     .select('id')
     .maybeSingle();
   if (error) return fallo(error, 'No se pudo anular el asiento.');
-  if (data) return { ok: true };
-  const { data: existe } = await supabaseAdmin.from('cambista_asientos').select('id').eq('id', id).maybeSingle();
-  return existe ? { error: 'El asiento ya está anulado.', codigo: 409 } : { error: 'Asiento no encontrado.', codigo: 404 };
+  return data ? { ok: true } : { error: 'El asiento ya está anulado.', codigo: 409 };
 }

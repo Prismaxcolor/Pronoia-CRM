@@ -8,6 +8,8 @@ interface Props {
   onAgregar: (files: File[]) => void;
   onQuitar: (idx: number) => void;
   label?: string;
+  /** Tope de fotos: al alcanzarlo se ocultan los botones de agregar (ej. 1 = imagen única). Sin tope por defecto. */
+  max?: number;
 }
 
 /** Selector de fotos múltiples reutilizable en todo el sistema — miniaturas
@@ -15,7 +17,8 @@ interface Props {
  *  carga: uno abre la galería/archivos (multi-selección), otro abre la
  *  cámara directo (una foto por toque, se puede repetir tantas veces como
  *  haga falta). */
-function FotoMultiplePicker({ fotos, onAgregar, onQuitar, label = 'Fotos' }: Props) {
+function FotoMultiplePicker({ fotos, onAgregar, onQuitar, label = 'Fotos', max }: Props) {
+  const lleno = max !== undefined && fotos.length >= max;
   const inputRef = useRef<HTMLInputElement>(null);
   const camaraRef = useRef<HTMLInputElement>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<number | null>(null);
@@ -53,7 +56,7 @@ function FotoMultiplePicker({ fotos, onAgregar, onQuitar, label = 'Fotos' }: Pro
             </button>
           </div>
         ))}
-        <button
+        {!lleno && <button
           type="button"
           onClick={() => inputRef.current?.click()}
           className="w-16 h-16 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-600 transition-colors"
@@ -61,8 +64,8 @@ function FotoMultiplePicker({ fotos, onAgregar, onQuitar, label = 'Fotos' }: Pro
         >
           <ImagePlus size={18} />
           <span className="text-[9px] mt-0.5">Elegir</span>
-        </button>
-        <button
+        </button>}
+        {!lleno && <button
           type="button"
           onClick={() => camaraRef.current?.click()}
           className="w-16 h-16 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center text-text-muted hover:border-brand-400 hover:text-brand-600 transition-colors"
@@ -70,9 +73,9 @@ function FotoMultiplePicker({ fotos, onAgregar, onQuitar, label = 'Fotos' }: Pro
         >
           <Camera size={18} />
           <span className="text-[9px] mt-0.5">Tomar</span>
-        </button>
+        </button>}
       </div>
-      <input ref={inputRef} type="file" accept="image/*" multiple onChange={handleChange} className="hidden" />
+      <input ref={inputRef} type="file" accept="image/*" multiple={max !== 1} onChange={handleChange} className="hidden" />
       <input ref={camaraRef} type="file" accept="image/*" capture="environment" onChange={handleChange} className="hidden" />
 
       {fotoAmpliada !== null && fotos[fotoAmpliada] && (

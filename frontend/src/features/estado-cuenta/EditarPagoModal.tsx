@@ -11,6 +11,8 @@ import {
 import type { PagoDetalle } from '../../services/pago-detalle-service';
 import type { Banca } from '@shared/types/index.js';
 import CampoLlaveEdicion from '../../components/CampoLlaveEdicion';
+import { puedeEditarBanca } from '../usuarios/acceso-bancas';
+import SelectorBanca from '../cochinito/SelectorBanca';
 
 interface Props {
   tipo: TipoPagoCobro;
@@ -171,10 +173,14 @@ function EditarPagoModal({ tipo, pago, onClose, onGuardado }: Props) {
                   return (
                     <div key={i} className="border border-border rounded-lg p-3 space-y-2">
                       <div className="flex gap-2">
-                        <select value={b.bancaId} onChange={e => actualizarBanca(i, { bancaId: e.target.value })} className={inputClass} aria-label="Banca">
-                          <option value="">Selecciona banca…</option>
-                          {bancasCatalogo.filter(c => !c.archivada || c.id === b.bancaId).map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.moneda})</option>)}
-                        </select>
+                        <SelectorBanca
+                          bancas={bancasCatalogo.filter(c => c.id === b.bancaId || (!c.archivada && puedeEditarBanca(c)))}
+                          valor={b.bancaId}
+                          conSaldo={false}
+                          placeholder="Selecciona banca…"
+                          ariaLabel="Banca"
+                          onChange={id => actualizarBanca(i, { bancaId: id })}
+                        />
                         {bancas.length > 1 && (
                           <button type="button" onClick={() => setBancas(prev => prev.filter((_, k) => k !== i))} aria-label="Quitar banca" className="text-red-600 p-2"><Trash2 size={16} /></button>
                         )}

@@ -1,4 +1,5 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
+import multer from 'multer';
 import {
   eliminarPackingList,
   guardarEmpresa,
@@ -8,7 +9,12 @@ import {
   obtenerPackingList,
   MENSAJE_PACKING_NO_LEIDO,
 } from '../services/packing-list-service.js';
-import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
+import { listarOpcionesLotePacking, MENSAJE_LOTES_PACKING_NO_LEIDOS } from '../services/packing-list-lotes-service.js';
+import { subirFotoPacking } from '../services/packing-list-fotos-service.js';
+import { TAMANO_MAXIMO_FOTO_PACKING } from '../utils/packing-list-fotos.js';
+import { requireAlgunPermiso, requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
+import { fotosPackingLimiter } from '../middlewares/rate-limit.js';
+import { limitesSubidaImagen, mimeCoincideConFirma } from '../utils/firma-imagen.js';
 import { validateBody, validateParams } from '../middlewares/validate.js';
 import {
   empresaParamsSchema,
@@ -31,12 +37,76 @@ router.use(requireAuth);
 
 // La proyección de exportación es un dato de valor (USD estimados): solo con facturacion:ver, igual que el
 // precio estimado de los lotes. Sin ese permiso no se lee, no se devuelve y no se modifica.
-const opcionesValores = (req: Request) => ({ puedeVerValores: reqTienePermiso(req, 'facturacion', 'ver') });
+// El almacén y las fotos de las paletas y los kg disponibles por almacén son control interno de inventario: solo con
+// permiso de inventario (productos:ver, el mismo de /api/inventario) o facturacion:ver, igual que la proyección.
+// Sin él se omiten (no se leen, no se devuelven y la BD conserva lo guardado).
+export const puedeVerControlInterno = (req: Request): boolean =>
+  reqTienePermiso(req, 'productos', 'ver') || reqTienePermiso(req, 'facturacion', 'ver');
+
+const opcionesValores = (req: Request) => ({
+  puedeVerValores: reqTienePermiso(req, 'facturacion', 'ver'),
+  puedeVerControl: puedeVerControlInterno(req),
+});
 
 function errorInterno(req: Request, res: Response, evento: string, err: unknown) {
   logger.error({ evento, ip: clienteIp(req), userId: req.user?.sub, motivo: err instanceof Error ? err.message : String(err) });
   res.status(500).json({ error: MENSAJE_PACKING_NO_LEIDO });
 }
+
+// Foto de control interno de una paleta: va a un bucket PRIVADO y devuelve solo la ruta. Mismo permiso que
+// armar el packing list (crear o editar). El tipo real se valida por la firma del contenido, no por el nombre.
+const subirMemoria = multer({ storage: multer.memoryStorage(), limits: limitesSubidaImagen(TAMANO_MAXIMO_FOTO_PACKING) });
+
+function recibirFoto(req: Request, res: Response, next: NextFunction) {
+  subirMemoria.single('file')(req, res, err => {
+    if (!err) return next();
+    const grande = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
+    res.status(400).json({ error: grande ? 'La foto pesa más de 6 MB. Toma otra o redúcela.' : 'Archivo inválido.' });
+  });
+}
+
+router.post(
+  '/fotos',
+  requireAlgunPermiso({ recurso: 'despachos', accion: 'crear' }, { recurso: 'despachos', accion: 'editar' }),
+  // Las fotos son control interno: sin permiso de inventario no se pueden ver después, así que tampoco se suben.
+  (req, res, next) => {
+    if (puedeVerControlInterno(req)) return next();
+    res.status(403).json({ error: 'No tienes permiso para agregar fotos de control interno.' });
+  },
+  fotosPackingLimiter,
+  recibirFoto,
+  async (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ error: 'Falta la foto (campo "file").' });
+      return;
+    }
+    if (!mimeCoincideConFirma(req.file.mimetype, req.file.buffer)) {
+      res.status(400).json({ error: 'El tipo del archivo no coincide con su contenido.' });
+      return;
+    }
+    try {
+      const r = await subirFotoPacking(req.file.buffer);
+      if (!r.ok) {
+        res.status(r.status).json({ error: r.error });
+        return;
+      }
+      logger.info({ evento: 'packing_foto_subida', ip: clienteIp(req), userId: req.user!.sub, ruta: r.ruta });
+      res.status(201).json({ ruta: r.ruta });
+    } catch (err) {
+      errorInterno(req, res, 'packing_foto_error', err);
+    }
+  }
+);
+
+// Lotes de exportación con kg disponibles por almacén (control interno; solo lectura). Antes de '/:id'.
+router.get('/lotes-exportacion', requirePermiso('despachos', 'ver'), async (req, res) => {
+  try {
+    res.json({ lotes: await listarOpcionesLotePacking({ puedeVerDisponible: puedeVerControlInterno(req) }) });
+  } catch (err) {
+    logger.error({ evento: 'packing_lotes_exportacion_error', ip: clienteIp(req), userId: req.user?.sub, motivo: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: MENSAJE_LOTES_PACKING_NO_LEIDOS });
+  }
+});
 
 router.get('/', requirePermiso('despachos', 'ver'), async (req, res) => {
   try {

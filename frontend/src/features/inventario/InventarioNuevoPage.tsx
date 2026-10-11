@@ -1,8 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Recycle, RefreshCw } from 'lucide-react';
+import { CalendarClock, Recycle, RefreshCw } from 'lucide-react';
 import { obtenerResumenInventario, type ResumenInventario } from '../../services/inventario-resumen-service';
-import { filtrosAUrl, filtrosDesdeUrl, parametrosResumen, type FiltrosPantalla } from '../../lib/inventario-nuevo';
+import { fechaCorteSaldo, filtrosAUrl, filtrosDesdeUrl, parametrosResumen, rotuloSaldo, type FiltrosPantalla } from '../../lib/inventario-nuevo';
 import { avisosSinDinero } from '../../lib/inventario-pantalla';
 import BarraFiltros from './nuevo/BarraFiltros';
 import GestionarMenu from './nuevo/GestionarMenu';
@@ -21,6 +21,23 @@ function BloqueSkeleton({ alto = 'h-48' }: { alto?: string }) {
   return <SkeletonBloque alto={alto} conMargen etiqueta="Cargando bloque" />;
 }
 
+/** Rótulo fijo de la pantalla con fecha: «Saldo al dd/mm/aaaa», solo lectura y qué tan exacto es. */
+function AvisoSaldoAFecha({ saldoAl }: { saldoAl: string }) {
+  return (
+    <div role="status" className="mb-6 flex gap-3 rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900">
+      <CalendarClock size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <div>
+        <p className="font-semibold">{rotuloSaldo(saldoAl)} · solo lectura</p>
+        <p className="mt-0.5 text-xs">
+          Son los kg que tenía cada producto y lote al cierre de ese día, armados con los movimientos registrados hasta esa fecha.
+          Si después se corrigieron pesos o fechas, el saldo usa el dato corregido. Aquí no se pueden registrar cambios.
+          Para volver al stock de hoy, quita el filtro de fechas.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function InventarioNuevoPage() {
   const [params, setParams] = useSearchParams();
   const filtros = useMemo(() => filtrosDesdeUrl(params), [params]);
@@ -31,6 +48,8 @@ function InventarioNuevoPage() {
 
   const desde = filtros.desde;
   const hasta = filtros.hasta;
+  // Un «hasta» anterior a hoy muestra el SALDO al cierre de ese día: pantalla de solo lectura.
+  const corte = fechaCorteSaldo(filtros);
   const claveActual = `${desde ?? ''}|${hasta ?? ''}|${versionCarga}`;
   const cargando = claveCargada !== claveActual;
   useEffect(() => {
@@ -59,14 +78,18 @@ function InventarioNuevoPage() {
         titulo="Inventario"
         subtitulo="Cuánto hay, dónde está, qué está listo para salir y qué se pierde en el proceso."
         acciones={
-          <>
-            <GestionarMenu />
-            <BotonAccion to="/transformaciones" icono={<Recycle size={16} />}>Registrar transformación</BotonAccion>
-          </>
+          corte ? undefined : (
+            <>
+              <GestionarMenu />
+              <BotonAccion to="/transformaciones" icono={<Recycle size={16} />}>Registrar transformación</BotonAccion>
+            </>
+          )
         }
       />
 
       <BarraFiltros filtros={filtros} onCambiar={cambiarFiltros} onLimpiar={limpiarFiltros} />
+
+      {corte && <AvisoSaldoAFecha saldoAl={corte} />}
 
       {error && (
         <div role="alert" className="mb-8 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
@@ -96,13 +119,13 @@ function InventarioNuevoPage() {
       {secundariosListos ? (
         <>
           <Suspense fallback={<BloqueSkeleton />}><VistasCategorias filtros={filtros} resumen={resumen} recarga={versionCarga} /></Suspense>
-          <Suspense fallback={<BloqueSkeleton alto="h-32" />}><AlertasInventario filtros={filtros} resumen={resumen} /></Suspense>
+          {!corte && <Suspense fallback={<BloqueSkeleton alto="h-32" />}><AlertasInventario filtros={filtros} resumen={resumen} /></Suspense>}
         </>
       ) : (
         !error && <BloqueSkeleton alto="h-64" />
       )}
 
-      {resumen ? <div id="proximo-contenedor"><ProximoContenedor resumen={resumen} onCambio={recargar} /></div> : !error && <BloqueSkeleton alto="h-56" />}
+      {!corte && (resumen ? <div id="proximo-contenedor"><ProximoContenedor resumen={resumen} onCambio={recargar} /></div> : !error && <BloqueSkeleton alto="h-56" />)}
 
     </div>
   );

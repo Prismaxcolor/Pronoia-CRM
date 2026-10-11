@@ -11,6 +11,7 @@
 //   ajustes de inventario -> su almacén, con signo
 // Un ticket 'bruto' (pesaje global por recepcionar) no trae renglones: no aporta nada.
 import type { MovimientoAlmacen } from '../services/inventario-almacen-desglose.js';
+import { diaNegocio } from './fecha-negocio.js';
 
 export interface RangoFechasAlmacen { desde?: string; hasta?: string }
 
@@ -41,7 +42,8 @@ export interface SalidaAlmacenFila {
   producto_id: string | null;
   lote_destino_id: string | null;
   peso_neto: number | null;
-  transformaciones: { estado: string | null; fecha: string | null } | null;
+  /** completado_en: instante en que se completó la transformación; la salida se fecha con él (el material existe desde entonces). */
+  transformaciones: { estado: string | null; fecha: string | null; completado_en?: string | null } | null;
 }
 
 export interface AjusteAlmacenFila {
@@ -61,10 +63,11 @@ export interface DatosMovimientosAlmacen {
 
 const ESTADOS_TRASLADO_QUE_DESCUENTAN = new Set(['pendiente', 'completo']);
 
-/** ¿La fecha (YYYY-MM-DD o ISO) cae dentro del rango? Sin fecha, no se filtra. */
+/** ¿La fecha (YYYY-MM-DD o instante) cae dentro del rango? Sin fecha, no se filtra.
+ *  Un instante (timestamptz) se pasa al día de negocio (Caracas), no al día UTC. */
 export function enRangoFechas(fecha: string | null | undefined, rango: RangoFechasAlmacen): boolean {
   if (!fecha) return true;
-  const dia = fecha.slice(0, 10);
+  const dia = diaNegocio(fecha) ?? fecha.slice(0, 10);
   if (rango.desde && dia < rango.desde) return false;
   if (rango.hasta && dia > rango.hasta) return false;
   return true;
@@ -118,7 +121,9 @@ function deTransformaciones(
     }
   }
   for (const s of salidas) {
-    if (s.transformaciones?.estado !== 'completa' || !enRangoFechas(s.transformaciones.fecha, rango)) continue;
+    if (s.transformaciones?.estado !== 'completa') continue;
+    // La salida existe desde que se completó la transformación (si se conoce), no desde su fecha de creación.
+    if (!enRangoFechas(s.transformaciones.completado_en ?? s.transformaciones.fecha, rango)) continue;
     out.push(movimiento('transf_salida', s.producto_id, s.lote_destino_id, s.peso_neto));
   }
   return out;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { X, User, Search, Check, Maximize2 } from 'lucide-react';
 import VisorFotos from './VisorFotos';
 
@@ -26,12 +26,14 @@ interface Props<T extends EntidadConFoto> {
   /** Si es true, las entidades con varias fotos muestran un botón para ampliarlas
    *  en el visor sin seleccionar; con una sola foto no hace falta. */
   ampliarFotos?: boolean;
+  /** Reemplaza el ícono genérico cuando la entidad no tiene foto (ej. inicial sobre el color de una cuenta). */
+  renderSinFoto?: (entidad: T) => ReactNode;
 }
 
 /** Selector visual con foto: mismo patrón que SeleccionarMaterialModal de
  *  Pesaje, generalizado a cualquier entidad con {id, nombre, fotos}
  *  (cliente, proveedor, lote). No reemplaza el <select>, conviven ambos. */
-function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos', mensajeVacio, seleccionadoId, ampliarFotos = false }: Props<T>) {
+function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, onClose, onSeleccionar, etiquetaDestacados = 'Sugeridos', mensajeVacio, seleccionadoId, ampliarFotos = false, renderSinFoto }: Props<T>) {
   const [busqueda, setBusqueda] = useState('');
   const [visor, setVisor] = useState<{ fotos: string[]; indice: number; nombre: string } | null>(null);
 
@@ -57,7 +59,7 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
             {e.fotos?.[0] ? (
               <img src={e.fotos[0]} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
             ) : (
-              <User size={28} />
+              renderSinFoto ? renderSinFoto(e) : <User size={28} />
             )}
           </div>
           <div className="p-2">

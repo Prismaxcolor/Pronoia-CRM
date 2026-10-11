@@ -114,9 +114,9 @@ describe('validación del comprobante en el formulario', () => {
 });
 
 describe('esUrlComprobanteValida (validación compartida de entrada)', () => {
-  it('acepta el bucket de Supabase y, sin SUPABASE_URL configurado, cualquier host con la ruta del bucket', () => {
+  it('acepta el bucket de Supabase y, sin SUPABASE_URL configurado, no acepta ningún host', () => {
     expect(esUrlComprobanteValida(url('a.jpg'), SUPABASE)).toBe(true);
-    expect(esUrlComprobanteValida('https://x.supabase.co/storage/v1/object/public/comprobantes/a.jpg', '')).toBe(true);
+    expect(esUrlComprobanteValida('https://x.supabase.co/storage/v1/object/public/comprobantes/a.jpg', '')).toBe(false);
     expect(esUrlComprobanteValida('https://evil.test/a.jpg', '')).toBe(false);
   });
   it('el esquema de movimientos rechaza comprobantes fuera del bucket', () => {

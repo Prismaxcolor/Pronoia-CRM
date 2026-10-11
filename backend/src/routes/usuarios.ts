@@ -104,9 +104,9 @@ router.post(
   requirePermiso('usuarios', 'crear'),
   validateBody(crearUsuarioSchema),
   async (req, res) => {
-    const result = await crearUsuarioAdmin(req.body);
+    const result = await crearUsuarioAdmin(req.body, req.user!.sub);
     if ('error' in result) {
-      res.status(400).json(result);
+      res.status(result.status ?? 400).json({ error: result.error });
       return;
     }
     logger.info({
@@ -135,11 +135,11 @@ router.get('/:id/bancas', validarUuidParam('id'), requirePermiso('usuarios', 've
     return;
   }
   const result = await listarBancasDeUsuario(String(req.params.id));
-  if (!Array.isArray(result)) {
+  if ('error' in result) {
     res.status(409).json(result);
     return;
   }
-  res.json({ bancaIds: result });
+  res.json(result);
 });
 
 router.put(
@@ -153,7 +153,7 @@ router.put(
       res.status(403).json({ error: MENSAJE_BANCAS_SOLO_SUPERADMIN });
       return;
     }
-    const result = await reemplazarBancasDeUsuario(id, req.body.bancaIds);
+    const result = await reemplazarBancasDeUsuario(id, req.body.bancaIds, req.body.bancaIdsEditar);
     if ('error' in result) {
       res.status(result.pendiente ? 409 : 500).json({ error: result.error });
       return;
@@ -164,6 +164,7 @@ router.put(
       adminId: req.user!.sub,
       targetUserId: id,
       cantidad: req.body.bancaIds.length,
+      cantidadEditar: (req.body.bancaIdsEditar ?? req.body.bancaIds).length,
     });
     res.json({ ok: true });
   }

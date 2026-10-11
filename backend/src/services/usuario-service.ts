@@ -1,9 +1,10 @@
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearUsuarioInput, ActualizarUsuarioInput } from '../schemas/usuarios.js';
-import { validarEdicionUsuario, validarPrivilegiosEdicion } from '../utils/usuario-reglas.js';
+import { validarEdicionUsuario, validarPrivilegiosCreacion, validarPrivilegiosEdicion } from '../utils/usuario-reglas.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { invalidarUsuarioActivo } from '../utils/usuario-activo.js';
+import type { Permiso } from '../utils/permisos.js';
 import { normalizarTemaMarca, type TemaMarca } from '../utils/tema-marca.js';
 
 const BCRYPT_ROUNDS = 10;
@@ -98,9 +99,29 @@ async function leerUsuarioPublico(id: string, opciones: OpcionesVisibilidad = {}
   return data ? toPublico(data as unknown as UsuarioRow, opciones) : null;
 }
 
+/** Columna `permisos` (jsonb) como lista; cualquier otra cosa = sin permisos personalizados. */
+function permisosPersonalizados(valor: unknown): Permiso[] | null {
+  return Array.isArray(valor) ? (valor as Permiso[]) : null;
+}
+
+/**
+ * Crea un usuario. Con `actorId` (siempre, desde la ruta) comprueba que quien lo crea no conceda más de lo que tiene:
+ * un no superadmin no crea superadmins ni roles con permisos que él no posee.
+ */
 export async function crearUsuarioAdmin(
-  input: CrearUsuarioInput
-): Promise<{ usuario: UsuarioPublico } | { error: string }> {
+  input: CrearUsuarioInput,
+  actorId?: string
+): Promise<{ usuario: UsuarioPublico } | { error: string; status?: number }> {
+  if (actorId) {
+    const { data: actor, error: errActor } = await supabaseAdmin.from('users').select('rol, activo, permisos').eq('id', actorId).maybeSingle();
+    if (errActor) return { error: 'No se pudo verificar al usuario que crea.', status: 500 };
+    const prohibido = validarPrivilegiosCreacion({
+      actor: actor ? { rol: actor.rol as UsuarioRow['rol'], activo: Boolean(actor.activo) } : null,
+      actorPermisos: permisosPersonalizados(actor?.permisos),
+      rol: input.rol,
+    });
+    if (prohibido) return prohibido;
+  }
   const { data: existente } = await supabaseAdmin
     .from('users')
     .select('id')
@@ -159,7 +180,7 @@ export async function actualizarUsuarioAdmin(
 ): Promise<ActualizarUsuarioResult> {
   const { data: target, error: errTarget } = await supabaseAdmin
     .from('users')
-    .select('id, rol, activo')
+    .select('id, rol, activo, permisos')
     .eq('id', id)
     .maybeSingle();
   if (errTarget) return { error: 'No se pudo consultar el usuario.', status: 500 };
@@ -167,7 +188,7 @@ export async function actualizarUsuarioAdmin(
 
   const { data: actor, error: errActor } = await supabaseAdmin
     .from('users')
-    .select('rol, activo')
+    .select('rol, activo, permisos')
     .eq('id', actorId)
     .maybeSingle();
   if (errActor) return { error: 'No se pudo verificar al usuario que edita.', status: 500 };
@@ -178,6 +199,8 @@ export async function actualizarUsuarioAdmin(
     targetId: id,
     targetRol: target.rol as UsuarioRow['rol'],
     cambios,
+    actorPermisos: permisosPersonalizados(actor?.permisos),
+    targetPermisos: permisosPersonalizados(target.permisos),
   });
   if (errorPrivilegios) return errorPrivilegios;
 

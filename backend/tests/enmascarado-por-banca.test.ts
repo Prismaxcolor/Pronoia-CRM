@@ -7,7 +7,10 @@ vi.mock('../src/config/supabase.js', async () => ({
 
 import { obtenerPagoDetalle } from '../src/services/pago-detalle-service.js';
 import { obtenerEstadoCuenta } from '../src/services/estado-cuenta-service.js';
-import { cuentaVisible, enmascararDetalleMovimiento, TEXTO_CUENTA_RESTRINGIDA } from '../src/utils/banca-acceso.js';
+import {
+  cuentaVisible, enmascararDetalleMovimiento, enmascararMovimientoPorBanca, enmascararMovimientosPorBanca,
+  tieneExtremoOculto, TEXTO_CUENTA_RESTRINGIDA,
+} from '../src/utils/banca-acceso.js';
 
 const PROV = '11111111-1111-4111-8111-111111111111';
 const GRUPO = '22222222-2222-4222-8222-222222222222';
@@ -43,6 +46,56 @@ describe('reglas puras de enmascarado', () => {
     expect(enmascararDetalleMovimiento(d, new Set(['o'])).bancaDestinoNombre).toBe(TEXTO_CUENTA_RESTRINGIDA);
     expect(d.bancaOrigenNombre).toBe('Origen');
     expect(enmascararDetalleMovimiento(d, null)).toBe(d);
+  });
+});
+
+describe('enmascarado de transferencias con un extremo sin acceso', () => {
+  const transferencia = {
+    id: 't1', tipo: 'transferencia', monto: 100, bancaOrigenId: 'o', bancaDestinoId: 'd',
+    referencia: 'REF-SECRETA', descripcion: 'Pago a Caja secreta', comprobantes: ['x.jpg'],
+  };
+
+  it('tieneExtremoOculto: solo las transferencias con un extremo fuera del acceso', () => {
+    expect(tieneExtremoOculto(null, transferencia)).toBe(false);
+    expect(tieneExtremoOculto(new Set(['o', 'd']), transferencia)).toBe(false);
+    expect(tieneExtremoOculto(new Set(['o']), transferencia)).toBe(true);
+    expect(tieneExtremoOculto(new Set(['d']), transferencia)).toBe(true);
+    expect(tieneExtremoOculto(new Set(['x']), { bancaOrigenId: 'x', bancaDestinoId: null })).toBe(false);
+  });
+
+  it('oculta referencia, descripcion y comprobantes pero conserva los montos, sin mutar el original', () => {
+    const r = enmascararMovimientoPorBanca(transferencia, new Set(['o']));
+    expect(r.referencia).toBe(TEXTO_CUENTA_RESTRINGIDA);
+    expect(r.descripcion).toBe(TEXTO_CUENTA_RESTRINGIDA);
+    expect(r.comprobantes).toEqual([]);
+    expect(r.monto).toBe(100);
+    expect(transferencia.referencia).toBe('REF-SECRETA');
+    expect(transferencia.comprobantes).toEqual(['x.jpg']);
+  });
+
+  it('con acceso a las dos puntas, o sin restriccion, devuelve el mismo objeto', () => {
+    expect(enmascararMovimientoPorBanca(transferencia, new Set(['o', 'd']))).toBe(transferencia);
+    expect(enmascararMovimientoPorBanca(transferencia, null)).toBe(transferencia);
+  });
+
+  it('un ingreso o egreso (sin destino) no se enmascara', () => {
+    const egreso = { ...transferencia, bancaDestinoId: null };
+    expect(enmascararMovimientoPorBanca(egreso, new Set(['o']))).toBe(egreso);
+  });
+
+  it('enmascararMovimientosPorBanca trata cada fila por separado', () => {
+    const propia = { ...transferencia, id: 't2', bancaDestinoId: 'o2', bancaOrigenId: 'o' };
+    const [a, b] = enmascararMovimientosPorBanca([transferencia, propia], new Set(['o', 'o2']));
+    expect(a.referencia).toBe(TEXTO_CUENTA_RESTRINGIDA);
+    expect(b.referencia).toBe('REF-SECRETA');
+  });
+
+  it('el detalle tambien enmascara el movimiento', () => {
+    const d = { movimiento: transferencia, bancaOrigenNombre: 'Origen', bancaDestinoNombre: 'Destino' };
+    const r = enmascararDetalleMovimiento(d, new Set(['d']));
+    expect(r.movimiento.referencia).toBe(TEXTO_CUENTA_RESTRINGIDA);
+    expect(r.movimiento.comprobantes).toEqual([]);
+    expect(r.bancaOrigenNombre).toBe(TEXTO_CUENTA_RESTRINGIDA);
   });
 });
 

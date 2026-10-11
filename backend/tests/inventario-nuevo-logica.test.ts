@@ -133,7 +133,8 @@ describe('filtros <-> URL', () => {
   });
   it('cuenta solo los filtros de "Más filtros" y arma parámetros del resumen solo con rango completo', () => {
     expect(contarFiltrosAvanzados({ almacen: 'a', etapa: 'listo', q: 'x', categoria: 'PCB' })).toBe(2);
-    expect(parametrosResumen({ desde: '2026-09-01', hasta: '2026-09-30', q: 'x' })).toEqual({ desde: '2026-09-01', hasta: '2026-09-30' });
+    // «hoy» fijo en el último día del rango: el rango no pide un saldo pasado (ver inventario-saldo-fecha-frontend.test.ts).
+    expect(parametrosResumen({ desde: '2026-09-01', hasta: '2026-09-30', q: 'x' }, '2026-09-30')).toEqual({ desde: '2026-09-01', hasta: '2026-09-30' });
     expect(parametrosResumen({ desde: '2026-09-01' })).toEqual({});
   });
 });

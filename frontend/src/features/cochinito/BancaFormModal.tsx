@@ -3,6 +3,11 @@ import { X, Building2, Globe, Coins, Wallet, Check, Ban } from 'lucide-react';
 import { crearBanca, actualizarBanca } from '../../services/banca-service';
 import { PALETA_BANCAS, hexDeColorGuardado } from '../../lib/color-banca';
 import { useAuth } from '../../hooks/use-auth-context';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import { subirImagenBanca } from '../../services/storage-service';
+import { puedeEditarBanca } from '../usuarios/acceso-bancas';
+import { errorImagenBanca, imagenParaGuardar } from './imagen-banca';
 import { esChatIdTelegramValido, gruposTelegramConocidos, normalizarChatIdTelegram } from './telegram-banca';
 import type { Banca, TipoBanca } from '@shared/types/index.js';
 
@@ -71,6 +76,13 @@ function SelectorColor({ valor, onCambiar }: { valor: string | null; onCambiar: 
   );
 }
 
+/** Sube la imagen elegida (comprimida) y devuelve su URL final; { url: null } si no hay imagen; null si la subida falla. */
+async function subirImagenElegida(fotos: FotoLocal[]): Promise<{ url: string | null } | null> {
+  if (fotos.length === 0) return { url: null };
+  const urls = await subirFotosLocal(fotos, subirImagenBanca);
+  return urls ? { url: urls[0] ?? null } : null;
+}
+
 const OPCION_GENERAL = '';
 const OPCION_OTRO = '__otro__';
 
@@ -121,12 +133,22 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
   const [moneda, setMoneda] = useState(banca?.moneda ?? 'USD');
   const [descripcion, setDescripcion] = useState(banca?.descripcion ?? '');
   const [color, setColor] = useState<string | null>(banca?.color ?? null);
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(banca?.imagenUrl ? [banca.imagenUrl] : []));
+  const puedeCambiarImagen = !banca || puedeEditarBanca(banca);
   const grupos = gruposTelegramConocidos(bancas);
   const chatInicial = banca?.telegramChatId ?? '';
   const [grupoSel, setGrupoSel] = useState(grupos.some(g => g.chatId === chatInicial) || chatInicial === '' ? chatInicial : OPCION_OTRO);
   const [grupoOtro, setGrupoOtro] = useState(grupos.some(g => g.chatId === chatInicial) ? '' : chatInicial);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /** Reemplaza la imagen por la recién elegida si es válida; si no, avisa y deja la actual. */
+  const elegirImagen = (files: File[]) => {
+    const archivo = files[0];
+    const problema = archivo ? errorImagenBanca(archivo) : null;
+    setError(problema);
+    if (archivo && !problema) setFotos([fotoLocalDeFile(archivo)]);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,6 +168,15 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
 
     setGuardando(true);
 
+    // Solo quien puede editar la cuenta cambia su imagen; el servidor lo vuelve a exigir.
+    const subida = puedeCambiarImagen ? await subirImagenElegida(fotos) : { url: banca?.imagenUrl ?? null };
+    if (!subida) {
+      setError('No se pudo subir la imagen. Revisa tu conexión e intenta de nuevo.');
+      setGuardando(false);
+      return;
+    }
+    const imagenUrl = imagenParaGuardar(banca?.imagenUrl, subida.url);
+
     let ok: boolean;
     if (editando && banca) {
       ok = await actualizarBanca(banca.id, {
@@ -153,6 +184,7 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
         tipo,
         descripcion: descripcion.trim(),
         color,
+        ...(imagenUrl !== undefined ? { imagenUrl } : {}),
         telegramChatId: chatId,
       });
     } else {
@@ -162,6 +194,7 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
         moneda,
         descripcion: descripcion.trim(),
         color,
+        ...(imagenUrl ? { imagenUrl } : {}),
         telegramChatId: chatId,
       });
       ok = !!result;
@@ -253,6 +286,19 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
               </p>
             )}
           </div>
+
+          {puedeCambiarImagen && (
+            <div>
+              <FotoMultiplePicker
+                fotos={fotos}
+                max={1}
+                label="Imagen (opcional)"
+                onAgregar={elegirImagen}
+                onQuitar={() => setFotos([])}
+              />
+              <p className="text-xs text-text-muted mt-1">Logo del banco o foto de la caja. Aparece al elegir la cuenta. JPG, PNG o WEBP.</p>
+            </div>
+          )}
 
           <SelectorColor valor={color} onCambiar={setColor} />
 

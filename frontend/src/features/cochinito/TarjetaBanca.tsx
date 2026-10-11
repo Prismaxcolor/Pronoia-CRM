@@ -1,6 +1,8 @@
 import { Archive, ArchiveRestore, Building2, Coins, Globe, Pencil, Wallet } from 'lucide-react';
 import { Insignia, formatearNumero } from '../../components/ui';
 import { colorDeBanca, nombreDeColor } from '../../lib/color-banca';
+import { textoEquivalenteTotal } from './equivalente-usd';
+import type { TasaUsd } from '../../../../shared/types/equivalente-usd.js';
 import type { Banca, TipoBanca } from '@shared/types/index.js';
 
 const ICONO_TIPO: Record<TipoBanca, React.ReactNode> = {
@@ -25,6 +27,8 @@ interface Props {
   indice?: number;
   /** La banca está usada como filtro de la tabla de movimientos. */
   seleccionada: boolean;
+  /** Tasa Binance para el equivalente en USD de una cuenta en Bs: undefined = aún cargando, null = no disponible. */
+  tasaBinance?: TasaUsd | null;
   onAlternarFiltro: () => void;
   /** Cada acción solo se pasa si el usuario tiene el permiso (la misma condición que antes). */
   onEditar?: () => void;
@@ -33,7 +37,7 @@ interface Props {
 }
 
 /** Tarjeta de una banca: saldo con su unidad, tipo, filtro por clic y acciones de editar/archivar/restaurar. */
-function TarjetaBanca({ banca, indice = 0, seleccionada, onAlternarFiltro, onEditar, onArchivar, onDesarchivar }: Props) {
+function TarjetaBanca({ banca, indice = 0, seleccionada, tasaBinance, onAlternarFiltro, onEditar, onArchivar, onDesarchivar }: Props) {
   const negativo = banca.saldo < 0;
   const simbolo = banca.moneda === 'USD' ? 'USD' : banca.moneda === 'VES' ? 'Bs' : banca.moneda;
   const color = colorDeBanca(banca, indice);
@@ -49,7 +53,9 @@ function TarjetaBanca({ banca, indice = 0, seleccionada, onAlternarFiltro, onEdi
         className="w-full rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
       >
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700" aria-hidden="true">{ICONO_TIPO[banca.tipo]}</span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-brand-50 text-brand-700" aria-hidden="true">
+            {banca.imagenUrl ? <img src={banca.imagenUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : ICONO_TIPO[banca.tipo]}
+          </span>
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-sm font-semibold text-text-primary">
               <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-baseline" style={{ backgroundColor: color }} aria-hidden="true" />
@@ -64,6 +70,9 @@ function TarjetaBanca({ banca, indice = 0, seleccionada, onAlternarFiltro, onEdi
         <p className={`mt-3 text-2xl font-bold tabular-nums ${negativo ? 'text-amber-800' : 'text-text-primary'}`}>
           {simbolo} {formatearNumero(banca.saldo, 2)}
         </p>
+        {banca.moneda === 'VES' && tasaBinance !== undefined && (
+          <p className={`mt-0.5 text-xs tabular-nums ${tasaBinance ? 'text-text-secondary' : 'text-amber-800'}`}>{textoEquivalenteTotal(banca.saldo, tasaBinance)}</p>
+        )}
         <p className="mt-0.5 text-xs text-text-secondary">
           {negativo ? 'Saldo en negativo: ha salido más dinero del que se registró como entrada.' : 'Saldo actual: lo que ha entrado menos lo que ha salido'}
         </p>

@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Download, RefreshCw, Save } from 'lucide-react';
-import type { EmpresaPackingList, IdiomaPackingList, PackingListDetalle } from '@shared/types/index.js';
+import type { Cliente, EmpresaPackingList, FotoPaletaPacking, IdiomaPackingList, OpcionLotePacking, PackingListDetalle } from '@shared/types/index.js';
 import { Bloque, BotonAccion, EncabezadoPagina, SkeletonBloque } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { guardarPackingList, obtenerEmpresasPackingList, obtenerPackingList } from '../../services/packing-list-service';
 import { calcularTotales, resumirPorLote } from '../../lib/packing-list';
-import PackingListFilas, { type FilaForm } from './PackingListFilas';
+import PackingListFilas, { type CampoTextoFila, type FilaForm } from './PackingListFilas';
+import PackingListControlLotes from './PackingListControlLotes';
+import type { EleccionLote } from './PackingListLoteSelect';
+import { MAX_FOTOS_POR_PALETA } from './PackingListFotosPaleta';
+import { obtenerOpcionesLotePacking } from '../../services/packing-list-fotos-service';
+import { controlarDisponible } from '../../lib/lotes-packing';
 import PackingListTotales from './PackingListTotales';
 import PackingListProyeccion from './PackingListProyeccion';
+import PackingListResultados from './PackingListResultados';
+import { obtenerClientes } from '../../services/cliente-service';
 import { kgPorLote } from '../../lib/proyeccion-packing';
 import {
-  OPCIONES_EMBALAJE, aFilaNumerica, cabeceraDesde, cabeceraInicial, construirEntrada, filaSiguiente, filasDesde, valoresDesde,
-  type CabeceraForm, type ValoresProyeccionForm,
+  OPCIONES_EMBALAJE, aFilaNumerica, cabeceraDesde, cabeceraInicial, construirEntrada, filaSiguiente, filasDesde, valoracionDesde, valoracionVacia,
+  type CabeceraForm, type ValoracionForm,
 } from './formulario';
 import LeyendaRegistro from '../../components/LeyendaRegistro';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
@@ -22,7 +29,20 @@ const INPUT = 'w-full px-3 py-2 bg-surface-alt border border-border rounded-lg t
 const LABEL = 'block text-xs font-medium text-text-secondary mb-1';
 
 /** Datos de la fila sin su clave interna de React: sirve para detectar cambios sin guardar. */
-const datosFila = (f: FilaForm) => [f.numeroPaleta, f.lote, f.color, f.pesoBruto, f.pesoPaleta];
+const datosFila = (f: FilaForm) => [f.numeroPaleta, f.lote, f.color, f.almacenId, f.fotos.map(x => x.ruta), f.pesoBruto, f.pesoPaleta];
+
+interface OpcionCliente {
+  id: string;
+  nombre: string;
+}
+
+/** Solo clientes internacionales activos; si el packing list ya apunta a otro (o a uno desactivado), se conserva visible. */
+function opcionesCliente(clientes: readonly Cliente[], actualId: string, actualNombre: string | null): OpcionCliente[] {
+  const validos = clientes.filter(c => c.tipoVenta === 'internacional' && c.activo).map(c => ({ id: c.id, nombre: c.nombre }));
+  if (actualId === '' || validos.some(c => c.id === actualId)) return validos;
+  const conocido = clientes.find(c => c.id === actualId)?.nombre ?? actualNombre ?? 'Cliente vinculado';
+  return [{ id: actualId, nombre: conocido }, ...validos];
+}
 
 const IDIOMAS: ReadonlyArray<{ idioma: IdiomaPackingList; etiqueta: string }> = [
   { idioma: 'es', etiqueta: 'Español' },
@@ -45,11 +65,16 @@ function PackingListEditorPage() {
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [hayConflicto, setHayConflicto] = useState(false);
   const [recargando, setRecargando] = useState(false);
-  const [valores, setValores] = useState<ValoresProyeccionForm>({});
-  const [instantanea, setInstantanea] = useState(() => JSON.stringify([cabeceraInicial(), [], {}]));
+  const [valoracion, setValoracion] = useState<ValoracionForm>(valoracionVacia);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  // null = no se pudo cargar la lista de lotes de exportación (entonces el lote se escribe a mano).
+  const [opcionesLote, setOpcionesLote] = useState<OpcionLotePacking[] | null>(null);
+  const [instantanea, setInstantanea] = useState(() => JSON.stringify([cabeceraInicial(), [], valoracionVacia()]));
 
   // La proyección es un dato de valor (USD estimados): solo con facturacion:ver.
   const puedeVerValores = tienePermiso('facturacion', 'ver');
+  // El almacén, las fotos de las paletas y los kg disponibles son control interno: productos:ver (inventario) o facturacion:ver.
+  const puedeVerControl = tienePermiso('productos', 'ver') || tienePermiso('facturacion', 'ver');
   const puedeEditar = esNuevo ? tienePermiso('despachos', 'crear') : tienePermiso('despachos', 'editar');
 
   const aplicar = useCallback((p: PackingListDetalle) => {
@@ -59,13 +84,15 @@ function PackingListEditorPage() {
     setHayConflicto(false);
     setCabecera(c);
     setFilas(f);
-    const v = valoresDesde(p);
-    setValores(v);
+    const v = valoracionDesde(p);
+    setValoracion(v);
     setInstantanea(JSON.stringify([c, f.map(datosFila), v]));
   }, []);
 
   useEffect(() => {
     obtenerEmpresasPackingList().then(r => { if (Array.isArray(r)) setEmpresas(r); });
+    obtenerClientes().then(setClientes);
+    obtenerOpcionesLotePacking().then(r => setOpcionesLote(Array.isArray(r) ? r : null));
     if (esNuevo) return;
     obtenerPackingList(id).then(r => {
       if ('error' in r) setErrorCarga(r.error); else aplicar(r);
@@ -78,18 +105,35 @@ function PackingListEditorPage() {
   const grupos = useMemo(() => resumirPorLote(filasNumericas, cabecera.esPcb), [filasNumericas, cabecera.esPcb]);
   const nombreBulto = OPCIONES_EMBALAJE.find(o => o.valor === cabecera.tipoEmbalaje)?.bulto ?? 'Bulto';
   const kgs = useMemo(() => kgPorLote(filasNumericas), [filasNumericas]);
-  const sinGuardar = JSON.stringify([cabecera, filas.map(datosFila), valores]) !== instantanea;
+  const control = useMemo(
+    () => (cabecera.esPcb && opcionesLote ? controlarDisponible(filasNumericas, opcionesLote) : []),
+    [filasNumericas, opcionesLote, cabecera.esPcb]
+  );
+  const sinGuardar = JSON.stringify([cabecera, filas.map(datosFila), valoracion]) !== instantanea;
+  const clientesInternacionales = useMemo(
+    () => opcionesCliente(clientes, cabecera.clienteId, guardado?.clienteNombre ?? null),
+    [clientes, cabecera.clienteId, guardado?.clienteNombre]
+  );
 
   const cambiarCabecera = <K extends keyof CabeceraForm>(k: K, v: CabeceraForm[K]) => setCabecera(c => ({ ...c, [k]: v }));
-  const cambiarFila = (clave: string, campo: keyof Omit<FilaForm, 'clave'>, valor: string) =>
-    setFilas(fs => fs.map(f => (f.clave === clave ? { ...f, [campo]: valor } : f)));
+  const actualizarFila = (clave: string, cambio: (f: FilaForm) => FilaForm) =>
+    setFilas(fs => fs.map(f => (f.clave === clave ? cambio(f) : f)));
+  const cambiarFila = (clave: string, campo: CampoTextoFila, valor: string) =>
+    actualizarFila(clave, f => ({ ...f, [campo]: valor }));
+  // Al elegir el lote el color se rellena con el predeterminado del lote (sigue editable en la fila).
+  const elegirLote = (clave: string, e: EleccionLote) =>
+    actualizarFila(clave, f => ({ ...f, lote: e.lote, almacenId: e.almacenId, color: e.color ?? f.color }));
+  const agregarFoto = (clave: string, foto: FotoPaletaPacking) =>
+    actualizarFila(clave, f => (f.fotos.length >= MAX_FOTOS_POR_PALETA ? f : { ...f, fotos: [...f.fotos, foto] }));
+  const quitarFoto = (clave: string, ruta: string) =>
+    actualizarFila(clave, f => ({ ...f, fotos: f.fotos.filter(x => x.ruta !== ruta) }));
 
   const handleGuardar = async () => {
     const r = construirEntrada(cabecera, filas, {
       referenciaTipo: guardado?.referenciaTipo ?? null,
       referenciaId: guardado?.referenciaId ?? null,
       version: esNuevo ? undefined : guardado?.version,
-    }, puedeVerValores ? valores : undefined);
+    }, puedeVerValores ? valoracion : undefined, puedeVerControl);
     if ('error' in r) { toast.errorMsg(r.error); return; }
     setGuardando(true);
     const res = await guardarPackingList(esNuevo ? null : id, r.entrada);
@@ -183,6 +227,15 @@ function PackingListEditorPage() {
               onChange={e => cambiarCabecera('esPcb', e.target.checked)} className="rounded border-border text-brand-600 focus:ring-brand-400" />
             Tarjetas electrónicas (PCB): indicar lote y color
           </label>
+          <div>
+            <label htmlFor="pl-cliente" className={LABEL}>Cliente internacional</label>
+            <select id="pl-cliente" className={INPUT} value={cabecera.clienteId} disabled={!puedeEditar}
+              onChange={e => cambiarCabecera('clienteId', e.target.value)}>
+              <option value="">Sin cliente</option>
+              {clientesInternacionales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+            <p className="mt-1 text-[11px] text-text-muted">Solo uso interno: no sale en los PDF. Se listan los clientes de venta internacional.</p>
+          </div>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           {IDIOMAS.map(({ idioma, etiqueta }) => {
@@ -213,9 +266,15 @@ function PackingListEditorPage() {
         </div>
       </Bloque>
 
-      <Bloque titulo={`Detalle de ${nombreBulto.toLowerCase()}s`} queEstasViendo="Una fila por cada bulto. Al agregar una fila nueva se copian el lote, el color y el peso de la paleta de la anterior.">
+      <Bloque titulo={`Detalle de ${nombreBulto.toLowerCase()}s`} queEstasViendo="Una fila por cada bulto. Al agregar una fila nueva se copian el lote, el color y el peso de la paleta de la anterior. El disponible, el almacén y las fotos son de control interno: no salen en los PDF.">
+        {cabecera.esPcb && opcionesLote === null && (
+          <p role="status" className="mb-3 text-xs text-amber-800">
+            No se pudo cargar la lista de lotes de exportación (¿sin conexión?). Mientras tanto el lote se escribe a mano; no se compara con el inventario.
+          </p>
+        )}
         <PackingListFilas filas={filas} esPcb={cabecera.esPcb} nombreBulto={nombreBulto} puedeEditar={puedeEditar}
-          onCambiar={cambiarFila} onQuitar={k => setFilas(fs => fs.filter(f => f.clave !== k))}
+          opcionesLote={opcionesLote} puedeVerControl={puedeVerControl} onCambiar={cambiarFila} onElegirLote={elegirLote}
+          onAgregarFoto={agregarFoto} onQuitarFoto={quitarFoto} onQuitar={k => setFilas(fs => fs.filter(f => f.clave !== k))}
           onAgregar={() => setFilas(fs => [...fs, filaSiguiente(fs)])} />
       </Bloque>
 
@@ -223,11 +282,26 @@ function PackingListEditorPage() {
         <PackingListTotales grupos={grupos} totales={totales} esPcb={cabecera.esPcb} nombreBulto={`${nombreBulto}s`} />
       </Bloque>
 
+      {puedeVerControl && cabecera.esPcb && opcionesLote !== null && (
+        <Bloque titulo="Control interno de lotes"
+          queEstasViendo="Uso interno: NO sale en los PDF. Compara los kg netos de este packing con lo que hay disponible del lote en cada almacén. Solo avisa; no descuenta ni mueve inventario.">
+          <PackingListControlLotes control={control} />
+        </Bloque>
+      )}
+
       {puedeVerValores && (
         <Bloque titulo="Proyección de exportación"
           queEstasViendo="Uso interno: NO sale en los PDF. Escribe el valor estimado por kg (USD) de cada lote; el total es kg netos × valor.">
-          <PackingListProyeccion kgs={kgs} valores={valores} puedeEditar={puedeEditar}
-            onCambiar={(lote, texto) => setValores(v => ({ ...v, [lote]: texto }))} />
+          <PackingListProyeccion kgs={kgs} valores={valoracion.estimado} puedeEditar={puedeEditar}
+            onCambiar={(lote, texto) => setValoracion(v => ({ ...v, estimado: { ...v.estimado, [lote]: texto } }))} />
+        </Bloque>
+      )}
+
+      {puedeVerValores && (
+        <Bloque titulo="Resultados: proyección frente a lo real"
+          queEstasViendo="Uso interno: NO sale en los PDF. Cuando se conozca el resultado, escribe el valor real obtenido por kg (USD) de cada lote para ver cuánto se desvió de la proyección.">
+          <PackingListResultados kgs={kgs} valoracion={valoracion} puedeEditar={puedeEditar}
+            onCambiarReal={(lote, texto) => setValoracion(v => ({ ...v, real: { ...v.real, [lote]: texto } }))} />
         </Bloque>
       )}
     </div>

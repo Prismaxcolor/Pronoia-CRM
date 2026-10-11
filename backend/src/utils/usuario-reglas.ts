@@ -1,4 +1,4 @@
-import type { RolUsuario } from './permisos.js';
+import { permisosEfectivos, tienePermiso, type Permiso, type RolUsuario } from './permisos.js';
 import type { TemaMarca } from './tema-marca.js';
 
 export interface EdicionUsuarioContexto {
@@ -16,8 +16,15 @@ export interface PrivilegiosEdicionContexto {
   actorId: string;
   targetId: string;
   targetRol: RolUsuario;
-  cambios: { rol?: RolUsuario; email?: string; password?: string; temaMarca?: TemaMarca | null };
+  cambios: { rol?: RolUsuario; email?: string; password?: string; temaMarca?: TemaMarca | null; permisos?: Permiso[] };
+  /** Permisos personalizados del actor (columna `permisos`); null/ausente = los de su rol. */
+  actorPermisos?: Permiso[] | null;
+  /** Permisos personalizados actuales del usuario editado (columna `permisos`); null/ausente = los de su rol. */
+  targetPermisos?: Permiso[] | null;
 }
+
+/** Recursos tan sensibles que solo un superadmin puede conceder permisos sobre ellos (datos personales y cuentas). */
+export const RECURSOS_SOLO_SUPERADMIN: readonly string[] = ['nomina', 'usuarios'];
 
 export interface ErrorPrivilegios {
   error: string;
@@ -26,10 +33,33 @@ export interface ErrorPrivilegios {
 
 const prohibido = (error: string): ErrorPrivilegios => ({ error, status: 403 });
 
+/** Permisos que quedarían concedidos y que el usuario no tenía (en efectivo) antes del cambio. */
+function permisosConcedidos(ctx: PrivilegiosEdicionContexto): Permiso[] {
+  const { cambios, targetRol, targetPermisos } = ctx;
+  if (cambios.permisos === undefined && (cambios.rol === undefined || cambios.rol === targetRol)) return [];
+  const actuales = permisosEfectivos(targetRol, targetPermisos);
+  // Misma regla que requirePermiso: los personalizados (si hay alguno) reemplazan a los del rol; una lista vacía = los del rol.
+  const resultantes = permisosEfectivos(cambios.rol ?? targetRol, cambios.permisos ?? targetPermisos);
+  return resultantes.filter(p => !tienePermiso(actuales, p.recurso, p.accion));
+}
+
+/** Error si un no superadmin intenta conceder permisos de nómina/usuarios o que él mismo no posee; null si puede. */
+function validarConcesion(concedidos: readonly Permiso[], permisosActor: readonly Permiso[]): ErrorPrivilegios | null {
+  if (concedidos.some(p => RECURSOS_SOLO_SUPERADMIN.includes(p.recurso))) {
+    return prohibido('Solo un superadmin puede conceder permisos de nómina o de usuarios.');
+  }
+  if (concedidos.some(p => !tienePermiso([...permisosActor], p.recurso, p.accion))) {
+    return prohibido('No puedes conceder permisos que tú no tienes.');
+  }
+  return null;
+}
+
 /**
  * Evita la escalada de privilegios: quien tiene usuarios:editar pero no es
  * superadmin no puede tocar a un superadmin, ascender a nadie (ni a sí mismo)
- * a superadmin, ni cambiar correo o contraseña (credenciales de acceso).
+ * a superadmin, ni cambiar correo o contraseña (credenciales de acceso). Tampoco
+ * puede conceder (a sí mismo ni a otros, por permisos o por cambio de rol) permisos
+ * que él no posee, y los de nómina y usuarios solo los concede un superadmin.
  * Función pura: devuelve el error 403 o null si el cambio está permitido.
  */
 export function validarPrivilegiosEdicion(ctx: PrivilegiosEdicionContexto): ErrorPrivilegios | null {
@@ -49,7 +79,23 @@ export function validarPrivilegiosEdicion(ctx: PrivilegiosEdicionContexto): Erro
   if (cambios.temaMarca !== undefined) {
     return prohibido('Solo un superadmin puede cambiar el color del sistema de un usuario.');
   }
-  return null;
+  return validarConcesion(permisosConcedidos(ctx), permisosEfectivos(actor.rol, ctx.actorPermisos));
+}
+
+export interface PrivilegiosCreacionContexto {
+  actor: { rol: RolUsuario; activo: boolean } | null;
+  actorPermisos?: Permiso[] | null;
+  /** Rol con el que se crea el usuario nuevo (sin permisos personalizados: tendrá los del rol). */
+  rol: RolUsuario;
+}
+
+/** Crear un usuario también concede permisos (los de su rol): un no superadmin no puede crear superadmins ni dar más de lo que tiene. */
+export function validarPrivilegiosCreacion(ctx: PrivilegiosCreacionContexto): ErrorPrivilegios | null {
+  const { actor, rol } = ctx;
+  if (!actor || !actor.activo) return prohibido('Usuario no encontrado o inactivo.');
+  if (actor.rol === 'superadmin') return null;
+  if (rol === 'superadmin') return prohibido('Solo un superadmin puede asignar el rol de superadmin.');
+  return validarConcesion(permisosEfectivos(rol, null), permisosEfectivos(actor.rol, ctx.actorPermisos));
 }
 
 /**

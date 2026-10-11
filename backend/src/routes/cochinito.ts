@@ -6,21 +6,25 @@ import {
   actualizarBanca,
   archivarBanca,
   desarchivarBanca,
-  crearMovimiento,
   obtenerDetalleMovimiento,
   leerTelegramChatIdBanca,
 } from '../services/banca-service.js';
+import { comisionBancariaDisponible, registrarMovimiento } from '../services/movimiento-comision-service.js';
+import { MINIMO_COMISION_BANCARIA_BS, TASA_COMISION_BANCARIA } from '../utils/comision-bancaria.js';
 import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
+import { cargarPermisosSiFaltan } from '../middlewares/cargar-permisos.js';
+import { cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 import { anularMovimientoBanca, editarMovimientoBanca } from '../services/movimiento-edicion-service.js';
 import { anularTransaccionSchema, editarMovimientoSchema, type EditarMovimientoInput } from '../schemas/transacciones-editar.js';
 import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearBancaSchema, actualizarBancaSchema, crearMovimientoSchema } from '../schemas/cochinito.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { aplicarCategoriaSiFalta, validarCategoriaDeMovimiento } from '../services/categoria-service.js';
 import { exigirAccesoBancas } from '../middlewares/exigir-acceso-bancas.js';
-import { bancasPermitidas, concederBancaAUsuario, idsBancasDeMovimiento } from '../services/banca-acceso-service.js';
-import { bancaPermitida, filtrarBancas, enmascararDetalleMovimiento, filtrarMovimientos, puedeCambiarTelegramBanca, MENSAJE_SIN_ACCESO_BANCA, MENSAJE_SOLO_ADMIN_TELEGRAM } from '../utils/banca-acceso.js';
+import { accesoBancas, bancasPermitidas, concederBancaAUsuario, idsBancasDeMovimiento } from '../services/banca-acceso-service.js';
+import { anotarPuedeEditar, bancaPermitida, filtrarBancas, enmascararDetalleMovimiento, filtrarMovimientos, enmascararMovimientosPorBanca, puedeCambiarTelegramBanca, MENSAJE_SIN_ACCESO_BANCA, MENSAJE_SOLO_ADMIN_TELEGRAM } from '../utils/banca-acceso.js';
 
 const router = Router();
 
@@ -28,8 +32,8 @@ router.use(requireAuth);
 
 router.get('/bancas', requirePermiso('cochinito', 'ver'), async (req, res) => {
   const incluirArchivadas = req.query.incluirArchivadas === 'true';
-  const permitidas = await bancasPermitidas(req.user!.sub, req.user!.rol);
-  const bancas = filtrarBancas(await listarBancas({ incluirArchivadas }), permitidas);
+  const acceso = await accesoBancas(req.user!.sub, req.user!.rol);
+  const bancas = anotarPuedeEditar(filtrarBancas(await listarBancas({ incluirArchivadas }), acceso.ver), acceso.editar);
   res.json({ bancas });
 });
 
@@ -135,8 +139,14 @@ router.post('/bancas/:id/desarchivar', requirePermiso('cochinito', 'editar'), ex
 
 router.get('/movimientos', requirePermiso('cochinito', 'ver'), async (req, res) => {
   const permitidas = await bancasPermitidas(req.user!.sub, req.user!.rol);
-  const movimientos = filtrarMovimientos(await listarMovimientos(), permitidas);
+  // Quien ve solo una punta de una transferencia no ve referencia, comprobantes ni descripción (podrían nombrar la otra cuenta).
+  const movimientos = enmascararMovimientosPorBanca(filtrarMovimientos(await listarMovimientos(), permitidas), permitidas);
   res.json({ movimientos });
+});
+
+// ¿Se ofrece la comisión bancaria? Solo si la migración está aplicada. Incluye la regla para el formulario.
+router.get('/comision-bancaria', requirePermiso('cochinito', 'ver'), async (_req, res) => {
+  res.json({ disponible: await comisionBancariaDisponible(), tasa: TASA_COMISION_BANCARIA, minimoBs: MINIMO_COMISION_BANCARIA_BS });
 });
 
 // Detalle de un movimiento con los nombres resueltos. Los nombres de proveedor y cliente solo se
@@ -145,6 +155,7 @@ router.get('/movimientos/:id', validarUuidParam('id'), requirePermiso('cochinito
   const detalle = await obtenerDetalleMovimiento(String(req.params.id), {
     verProveedores: reqTienePermiso(req, 'proveedores', 'ver'),
     verClientes: reqTienePermiso(req, 'clientes', 'ver'),
+    verCambistas: reqTienePermiso(req, 'mesa_cambio', 'ver'),
   });
   if (!detalle) {
     res.status(404).json({ error: 'Movimiento no encontrado.' });
@@ -166,9 +177,22 @@ router.post(
   validateBody(crearMovimientoSchema),
   exigirAccesoBancas(),
   async (req, res) => {
-    const result = await crearMovimiento(req.body, req.user!.sub);
+    const categoriaInvalida = await validarCategoriaDeMovimiento(req.body.categoriaId, req.body.tipo);
+    if (categoriaInvalida) {
+      res.status(categoriaInvalida.codigo).json({ error: categoriaInvalida.error });
+      return;
+    }
+    // Con clientRequestId un doble clic o reintento no registra el movimiento (ni su comisión) dos veces.
+    const envio = await ejecutarOperacion(res, TIPO_OPERACION.walletMovimientoCrear, req.body, req.user!.sub, async () => {
+      const registrado = await registrarMovimiento(req.body, req.user!.sub);
+      if ('error' in registrado) return registrado;
+      // La ruta con comisión crea el movimiento por una RPC que no lleva la categoría: se la aplica aquí.
+      return aplicarCategoriaSiFalta(registrado, req.body.categoriaId);
+    });
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
-      res.status(400).json(result);
+      res.status(result.codigo).json({ error: result.error });
       return;
     }
     logger.info({
@@ -177,8 +201,9 @@ router.post(
       userId: req.user!.sub,
       movimientoId: result.movimiento.id,
       tipo: result.movimiento.tipo,
+      repetida,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 
@@ -209,13 +234,15 @@ router.post(
   '/movimientos/:id/anular',
   validarUuidParam('id'),
   requirePermisoOLlave('cochinito', 'editar'),
+  cargarPermisosSiFaltan,
   validateBody(anularTransaccionSchema),
   exigirAccesoBancas(req => idsBancasDeMovimiento(String(req.params.id))),
   async (req, res) => {
     const id = String(req.params.id);
+    // Una transferencia con cambista además exige mesa_cambio:ver, igual que completarla (ver transferencia-mesa.ts).
     const result = await anularMovimientoBanca(id, req.body.motivo, {
       userId: req.user!.sub, email: req.user!.email, rol: req.user!.rol, llave: req.body.llaveEdicion,
-    });
+    }, { puedeMesaCambio: reqTienePermiso(req, 'mesa_cambio', 'ver') });
     if ('error' in result) {
       res.status(result.codigo).json({ error: result.error });
       return;

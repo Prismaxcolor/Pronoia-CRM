@@ -84,6 +84,16 @@ if (!ENV.JWT_SECRET || ENV.JWT_SECRET.length < 32) {
   );
 }
 
+/** En producción SUPABASE_URL es obligatoria: además del cliente de Storage, es el único host contra el cual
+ *  se validan las URLs de comprobantes/imágenes (sin ella no se aceptaría ninguna). Exportada para probarla. */
+export function validarEnvProduccion(env: { NODE_ENV: string; SUPABASE_URL: string }): void {
+  if (env.NODE_ENV === 'production' && !env.SUPABASE_URL) {
+    throw new Error('SUPABASE_URL es obligatoria en producción (valida el origen de comprobantes e imágenes).');
+  }
+}
+
+validarEnvProduccion(ENV);
+
 if (ENV.NODE_ENV === 'production' && ENV.CORS_ORIGINS.length === 0) {
   throw new Error(
     'CORS_ORIGINS es obligatorio en producción. Define los orígenes permitidos separados por coma. Ej: CORS_ORIGINS=https://app.pronoia.com,https://admin.pronoia.com'

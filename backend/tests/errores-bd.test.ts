@@ -1,5 +1,27 @@
 import { describe, it, expect } from 'vitest';
-import { mensajeDeErrorBd, esMensajeDeNegocio } from '../src/utils/errores-bd.js';
+import { mensajeDeErrorBd, esMensajeDeNegocio, esGuardianDeNegocio } from '../src/utils/errores-bd.js';
+
+describe('guardianes con errcode 42501', () => {
+  const guardian = { code: '42501', message: 'No se puede cambiar el importe, tipo, fecha ni cambista de un asiento: anúlalo y registra otro.' };
+
+  it('un guardián de negocio en español se trata como mensaje de negocio (409 con su texto)', () => {
+    expect(esGuardianDeNegocio(guardian)).toBe(true);
+    expect(esMensajeDeNegocio(guardian)).toBe(true);
+    expect(mensajeDeErrorBd(guardian)).toBe(guardian.message);
+  });
+
+  it('los errores nativos de privilegios de Postgres NO se muestran', () => {
+    for (const message of ['permission denied for table cambista_asientos', 'new row violates row-level security policy for table "x"', 'must be owner of function y']) {
+      const e = { code: '42501', message };
+      expect(esMensajeDeNegocio(e), message).toBe(false);
+      expect(mensajeDeErrorBd(e), message).not.toContain('cambista_asientos');
+    }
+  });
+
+  it('42501 sin mensaje no cuenta', () => {
+    expect(esMensajeDeNegocio({ code: '42501' })).toBe(false);
+  });
+});
 
 describe('mensajeDeErrorBd', () => {
   it('un raise exception de negocio (P0001) se muestra tal cual', () => {

@@ -62,3 +62,51 @@ export function tituloCompartirMovimiento(m: Pick<Movimiento, 'subtipo' | 'numer
   const numero = numeroMovimiento(m);
   return ['Movimiento', numero === SIN_NUMERO ? null : numero, terceroOBanca].filter(Boolean).join(' ');
 }
+
+// ---------------------------------------------------------------------------
+// Transferencias con mesa de cambio
+// ---------------------------------------------------------------------------
+
+type CamposMesa = Pick<Movimiento, 'anulado' | 'mesaCambistaId' | 'mesaEstado'>;
+
+/** Transferencia vigente con mesa de cambio cuyo destino aún NO recibió el saldo. */
+export const esTransferenciaEnProceso = (m: CamposMesa): boolean =>
+  !m.anulado && m.mesaCambistaId != null && m.mesaEstado === 'en_proceso';
+
+/** "En proceso" / "Completada" para una transferencia con mesa; null si no aplica o está anulada (manda "Anulado"). */
+export function etiquetaEstadoMesa(m: CamposMesa): 'En proceso' | 'Completada' | null {
+  if (m.anulado || m.mesaCambistaId == null) return null;
+  if (m.mesaEstado === 'en_proceso') return 'En proceso';
+  return m.mesaEstado === 'completada' ? 'Completada' : null;
+}
+
+const redondear2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const fmt2 = (n: number): string => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Lo que recibe (o recibirá) la cuenta destino: bruto menos comisión en proceso; lo acreditado si ya se completó. */
+export function montoQueRecibeElDestino(
+  m: Pick<Movimiento, 'mesaCambistaId' | 'mesaEstado' | 'mesaMontoBruto' | 'mesaComision' | 'montoDestino' | 'monto'>
+): number | null {
+  if (m.mesaCambistaId == null) return null;
+  if (m.mesaEstado === 'completada') return m.montoDestino ?? m.monto;
+  const bruto = m.mesaMontoBruto;
+  return bruto == null ? null : redondear2(bruto - (m.mesaComision ?? 0));
+}
+
+/** "USD 20,00 (2%)", "USD 20,00 (monto manual)" o "Sin comisión". `simbolo` es el de la moneda de la cuenta destino. */
+export function textoComisionMesa(
+  m: Pick<Movimiento, 'mesaComision' | 'mesaComisionModo' | 'mesaComisionPct'>,
+  simbolo: string
+): string {
+  if (!m.mesaComision || m.mesaComision <= 0) return 'Sin comisión';
+  const detalle = m.mesaComisionModo === 'porcentaje' && m.mesaComisionPct != null
+    ? `${m.mesaComisionPct.toLocaleString('es-VE', { maximumFractionDigits: 4 })}%`
+    : 'monto manual';
+  return `${simbolo} ${fmt2(m.mesaComision)} (${detalle})`;
+}
+
+/** ¿Es el movimiento principal de una comisión bancaria (lleva un cargo aparte en la misma cuenta)? */
+export const tieneComision = (m: Pick<Movimiento, 'comisionBancaria'>): boolean => m.comisionBancaria != null;
+
+/** ¿Es el cargo de la comisión bancaria de otro movimiento? Se anula junto con su movimiento, no por separado. */
+export const esCargoDeComision = (m: Pick<Movimiento, 'comisionDeId'>): boolean => m.comisionDeId != null;

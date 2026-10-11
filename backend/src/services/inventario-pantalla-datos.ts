@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { leerPaginado } from '../utils/paginacion.js';
 import { logger } from '../utils/logger.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { diaNegocio } from '../utils/fecha-negocio.js';
 import { esLimpiezaMaterial } from '../utils/inventario-vistas.js';
 import { tipoMermaParaDetalle, type DetalleMerma } from '../utils/merma-tipificada.js';
 import type {
@@ -170,4 +171,53 @@ export async function leerEmbalajesConContenedor(): Promise<EmbalajeContenedor[]
     if (esObjetoInexistente(err as { code?: string; message?: string })) return [];
     throw err;
   }
+}
+
+export interface LecturaCompletadoEn {
+  /** id de la transformación completa -> día de negocio (YYYY-MM-DD) en que se completó. */
+  porId: Map<string, string>;
+  /** false = la columna completado_en no existe aún: las salidas se fechan con la fecha de la transformación. */
+  disponible: boolean;
+}
+
+/** Día en que se completó cada transformación (solo para el saldo a una fecha). Columna inexistente = disponible: false. */
+export async function leerCompletadoEnTransformaciones(): Promise<LecturaCompletadoEn> {
+  try {
+    const filas = await leerPaginado<{ id: string; completado_en: string | null }>((d, h) =>
+      supabaseAdmin.from('transformaciones').select('id, completado_en').eq('estado', 'completa').order('id').range(d, h)
+    );
+    const porId = new Map<string, string>();
+    for (const f of filas) {
+      const dia = diaNegocio(f.completado_en);
+      if (dia) porId.set(f.id, dia);
+    }
+    return { porId, disponible: true };
+  } catch (err) {
+    if (!esObjetoInexistente(err as { code?: string; message?: string })) throw err;
+    logger.warn({ evento: 'saldo_fecha_sin_completado_en', motivo: (err as Error).message });
+    return { porId: new Map(), disponible: false };
+  }
+}
+
+/** Fecha más temprana de una columna de una tabla (null si no hay filas con valor). Una sola fila: orden ascendente con nulos al final. */
+async function fechaMasAntigua(tabla: string, columna: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin.from(tabla).select(columna).order(columna, { ascending: true }).limit(1);
+  if (error) throw error;
+  const fila = ((data ?? []) as unknown as Array<Record<string, unknown>>)[0];
+  return fila ? dia(fila[columna]) : null;
+}
+
+/**
+ * Fecha (YYYY-MM-DD) del movimiento más antiguo registrado (tickets, transformaciones o ajustes); null = no hay ninguno.
+ * Misma definición que primerRegistro() de la pantalla, pero con 3 consultas de una fila en vez de leer todos los movimientos:
+ * sirve al resumen para avisar «sin datos antes de esta fecha» cuando el saldo pedido es anterior al primer registro.
+ */
+export async function leerPrimerRegistro(): Promise<string | null> {
+  const [ticket, transformacion, ajuste] = await Promise.all([
+    fechaMasAntigua('tickets_pesaje', 'fecha'),
+    fechaMasAntigua('transformaciones', 'fecha'),
+    fechaMasAntigua('ajustes_inventario', 'created_at'),
+  ]);
+  const fechas = [ticket, transformacion, ajuste].filter((f): f is string => f !== null);
+  return fechas.length === 0 ? null : fechas.reduce((a, b) => (b < a ? b : a));
 }

@@ -6,6 +6,7 @@ import type { ResumenInventario } from '../services/inventario-resumen-service';
 // ---------------------------------------------------------------- formateo
 // La implementación vive en lib/formato.ts (formato es-VE unificado); se re-exporta aquí para no romper importadores.
 import { esFechaIso } from './formato';
+import { formatearFechaNegocio, hoyNegocio } from './fecha-negocio';
 export { formatearNumero, formatearKg, formatearCantidadKg, formatearUsd, formatearPct, esFechaIso } from './formato';
 
 // ---------------------------------------------------------------- contenedor
@@ -157,9 +158,24 @@ export function contarFiltrosAvanzados(f: FiltrosPantalla): number {
   return CLAVES_FILTRO_AVANZADO.filter(k => Boolean(f[k])).length;
 }
 
-/** Parámetros para /api/inventario/resumen: el endpoint exige desde y hasta juntos. */
-export function parametrosResumen(f: FiltrosPantalla): { desde?: string; hasta?: string } {
-  return f.desde && f.hasta ? { desde: f.desde, hasta: f.hasta } : {};
+/**
+ * Fecha del SALDO que hay que mostrar: el «hasta» del filtro cuando es anterior a hoy (kg al cierre de ese día).
+ * Sin filtro de fechas, o con hasta de hoy o futuro, es el stock actual (undefined). Pantalla de solo lectura.
+ */
+export function fechaCorteSaldo(f: Pick<FiltrosPantalla, 'desde' | 'hasta'>, hoy: string = hoyNegocio()): string | undefined {
+  return f.desde && f.hasta && f.hasta < hoy ? f.hasta : undefined;
+}
+
+/** «Saldo al 05/10/2026»; null cuando se muestra el stock actual. */
+export function rotuloSaldo(saldoAl: string | null | undefined): string | null {
+  return saldoAl ? `Saldo al ${formatearFechaNegocio(saldoAl)}` : null;
+}
+
+/** Parámetros para /api/inventario/resumen: el endpoint exige desde y hasta juntos; `al` pide el saldo a esa fecha. */
+export function parametrosResumen(f: FiltrosPantalla, hoy?: string): { desde?: string; hasta?: string; al?: string } {
+  if (!f.desde || !f.hasta) return {};
+  const al = fechaCorteSaldo(f, hoy);
+  return { desde: f.desde, hasta: f.hasta, ...(al ? { al } : {}) };
 }
 
 // ---------------------------------------------------------------- atajos de fechas

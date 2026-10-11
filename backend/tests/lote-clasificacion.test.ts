@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { mensajeMigracionLote, MENSAJE_COLOR_NO_HABILITADO, MENSAJE_CLASIFICACION_NO_HABILITADA, MENSAJE_LOTE_MIGRACION_PENDIENTE } from '../src/services/lote-service.js';
 import { CLASES_LOTE, construirUpdateClasificacion, leerClasificacion } from '../src/utils/lote-clasificacion.js';
 import { actualizarLoteSchema } from '../src/schemas/lotes.js';
 import { ENTIDADES_AUDITABLES, RECURSO_POR_ENTIDAD } from '../src/utils/auditoria.js';
@@ -73,5 +74,30 @@ describe('auditoria de lotes', () => {
   it('lote es una entidad auditable y su historial se lee con productos:ver', () => {
     expect(ENTIDADES_AUDITABLES).toContain('lote');
     expect(RECURSO_POR_ENTIDAD.lote).toBe('productos');
+  });
+});
+
+describe('mensajeMigracionLote (409 por migración pendiente)', () => {
+  const falta = (columna: string) => ({ code: '42703', message: `column lotes.${columna} does not exist` });
+  const faltaPostgrest = (columna: string) => ({ code: 'PGRST204', message: `Could not find the '${columna}' column of 'lotes' in the schema cache` });
+
+  it('si falta color_packing_list acusa al color aunque también se cambie la clase', () => {
+    expect(mensajeMigracionLote(falta('color_packing_list'), { colorPackingList: 'green', clase: 'exportacion' })).toBe(MENSAJE_COLOR_NO_HABILITADO);
+    expect(mensajeMigracionLote(faltaPostgrest('color_packing_list'), { colorPackingList: 'green' })).toBe(MENSAJE_COLOR_NO_HABILITADO);
+  });
+  it('si falta una columna de clasificación NO acusa al color aunque se cambie el color', () => {
+    expect(mensajeMigracionLote(falta('clase'), { colorPackingList: 'green', clase: 'exportacion' })).toBe(MENSAJE_CLASIFICACION_NO_HABILITADA);
+    expect(mensajeMigracionLote(faltaPostgrest('precio_estimado_kg'), { colorPackingList: 'green', precioEstimadoKg: 2 })).toBe(MENSAJE_CLASIFICACION_NO_HABILITADA);
+  });
+  it('sin pista en el error se decide por lo que se intentaba cambiar', () => {
+    const sinPista = { code: '42703', message: 'column does not exist' };
+    expect(mensajeMigracionLote(sinPista, { colorPackingList: 'green' })).toBe(MENSAJE_COLOR_NO_HABILITADO);
+    expect(mensajeMigracionLote(sinPista, { clase: 'otro' })).toBe(MENSAJE_CLASIFICACION_NO_HABILITADA);
+  });
+  it('con ambos tipos de cambio y sin pista usa un mensaje genérico que no acusa a una sola migración', () => {
+    const m = mensajeMigracionLote({ code: '42703', message: 'column does not exist' }, { colorPackingList: 'green', clase: 'otro' });
+    expect(m).toBe(MENSAJE_LOTE_MIGRACION_PENDIENTE);
+    expect(m).toMatch(/migration_inventario_rediseno_fase1/);
+    expect(m).toMatch(/migration_packing_list_lote_fotos/);
   });
 });

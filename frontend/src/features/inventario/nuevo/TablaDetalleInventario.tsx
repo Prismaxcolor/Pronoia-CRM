@@ -6,7 +6,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import type { DetallePantalla, FilaDetalleInventario } from '@shared/types/inventario-pantalla.js';
-import { formatearKg, formatearNumero, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
+import { fechaCorteSaldo, formatearKg, formatearNumero, rotuloSaldo, type FiltrosPantalla } from '../../../lib/inventario-nuevo';
 import { estiloCategoria } from '../../../lib/colores-categoria';
 import {
   ETIQUETA_ETAPA, EXPLICACION_ETAPAS_PCB, LIMITE_FILAS_INICIAL, ORDEN_TABLA_POR_DEFECTO, PASOS_LIMITE, agruparFilas, agruparPorVista, alternarOrden, ariaSort,
@@ -124,7 +124,12 @@ interface FilaProps {
   version?: number;
   /** Recarga la tabla (la usa «Vaciar desechos» tras dejar el producto en 0 kg). */
   onVaciado?: () => void;
+  /** Saldo a una fecha pasada: sin composición de lote (es la de hoy) ni acciones que cambien datos. */
+  soloLectura?: boolean;
 }
+
+/** Los lotes se despliegan con su composición ACTUAL: con saldo a una fecha no aplica. */
+const esExpandible = (f: FilaDetalleInventario, soloLectura?: boolean): boolean => !soloLectura && esFilaExpandible(f);
 
 function BotonExpandir({ f, expandida, onExpandir }: { f: FilaDetalleInventario; expandida: boolean; onExpandir: (id: string) => void }) {
   return (
@@ -142,8 +147,8 @@ function BotonExpandir({ f, expandida, onExpandir }: { f: FilaDetalleInventario;
   );
 }
 
-function CeldaMaterial({ f, expandida, onExpandir, onVaciado }: Pick<FilaProps, 'f' | 'expandida' | 'onExpandir' | 'onVaciado'>) {
-  const expandible = esFilaExpandible(f);
+function CeldaMaterial({ f, expandida, onExpandir, onVaciado, soloLectura }: Pick<FilaProps, 'f' | 'expandida' | 'onExpandir' | 'onVaciado' | 'soloLectura'>) {
+  const expandible = esExpandible(f, soloLectura);
   return (
     <>
       {expandible && <BotonExpandir f={f} expandida={expandida} onExpandir={onExpandir} />}
@@ -158,7 +163,7 @@ function celda(c: DefColumna['clave'], p: FilaProps) {
   const { f } = p;
   switch (c) {
     case 'material':
-      return <td key={c} className={`px-3 py-2 font-medium text-text-primary ${esFilaExpandible(f) ? 'pl-5' : 'pl-9'}`}><CeldaMaterial f={f} expandida={p.expandida} onExpandir={p.onExpandir} onVaciado={p.onVaciado} /></td>;
+      return <td key={c} className={`px-3 py-2 font-medium text-text-primary ${esExpandible(f, p.soloLectura) ? 'pl-5' : 'pl-9'}`}><CeldaMaterial f={f} expandida={p.expandida} onExpandir={p.onExpandir} onVaciado={p.onVaciado} soloLectura={p.soloLectura} /></td>;
     case 'kg':
       return <td key={c} className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">{formatearKg(f.kg)}</td>;
     case 'etapa':
@@ -178,11 +183,11 @@ function celda(c: DefColumna['clave'], p: FilaProps) {
 }
 
 function FilaMaterial(p: FilaProps) {
-  const { f, columnas, expandida, filtrosComp, version } = p;
+  const { f, columnas, expandida, filtrosComp, version, soloLectura } = p;
   return (
     <>
       <tr className="border-t border-border hover:bg-surface-alt">{columnas.map(c => celda(c.clave, p))}</tr>
-      {expandida && esFilaExpandible(f) && (
+      {expandida && esExpandible(f, soloLectura) && (
         <tr className="bg-surface-alt/60">
           <td colSpan={columnas.length} className="px-3 py-3 pl-9">
             <div id={`composicion-${f.id}`}><ComposicionLote loteId={f.loteId!} filtros={filtrosComp} kgLote={f.kg} version={version} /></div>
@@ -193,11 +198,11 @@ function FilaMaterial(p: FilaProps) {
   );
 }
 
-function TarjetaMovil({ f, expandida, onExpandir, filtrosComp, version, onVaciado }: FilaProps) {
+function TarjetaMovil({ f, expandida, onExpandir, filtrosComp, version, onVaciado, soloLectura }: FilaProps) {
   return (
     <li className="rounded-lg border border-border bg-surface p-3">
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-sm font-medium text-text-primary"><CeldaMaterial f={f} expandida={expandida} onExpandir={onExpandir} onVaciado={onVaciado} /></p>
+        <p className="min-w-0 text-sm font-medium text-text-primary"><CeldaMaterial f={f} expandida={expandida} onExpandir={onExpandir} onVaciado={onVaciado} soloLectura={soloLectura} /></p>
         <p className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-text-primary">{formatearKg(f.kg)}</p>
       </div>
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
@@ -205,7 +210,7 @@ function TarjetaMovil({ f, expandida, onExpandir, filtrosComp, version, onVaciad
         <div><dt className="text-text-secondary">Días (estimado)</dt><dd className="font-medium tabular-nums"><CeldaDias f={f} /></dd></div>
         <div><dt className="text-text-secondary">Ubicación</dt><dd className="font-medium" title={textoUbicacion(f)}>{textoUbicacionCorta(f) || '—'}</dd></div>
       </dl>
-      {expandida && esFilaExpandible(f) && <div id={`composicion-${f.id}`} className="mt-3"><ComposicionLote loteId={f.loteId!} filtros={filtrosComp} kgLote={f.kg} version={version} /></div>}
+      {expandida && esExpandible(f, soloLectura) && <div id={`composicion-${f.id}`} className="mt-3"><ComposicionLote loteId={f.loteId!} filtros={filtrosComp} kgLote={f.kg} version={version} /></div>}
     </li>
   );
 }
@@ -247,6 +252,7 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
   const [forzados, setForzados] = useState<Record<string, boolean>>({});
   const [expandidas, setExpandidas] = useState<Record<string, boolean>>({});
   const verClasificaciones = filtros.clasificaciones === '1';
+  const soloLectura = fechaCorteSaldo(filtros) !== undefined;
   // Una sola vista montada (tabla en escritorio, tarjetas en móvil): así cada lote expandido pide su composición una vez y los ids no se duplican.
   const esEscritorio = useMediaQuery(CONSULTA_ESCRITORIO);
 
@@ -278,6 +284,8 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
   const fijarTodos = (abierto: boolean) => setForzados(Object.fromEntries(grupos.map(g => [g.clave, abierto])));
   const alternarExpandida = (id: string) => setExpandidas(prev => ({ ...prev, [id]: !prev[id] }));
 
+  // El rótulo sale de la respuesta del servidor: nunca se muestra un saldo sin la fecha con que se calculó.
+  const rotulo = rotuloSaldo(dato?.saldoAl);
   const columnas = COLUMNAS_TABLA;
   const filtrosComp = useMemo(() => filtrosComposicion(filtros), [filtros.desde, filtros.hasta, filtros.almacen]); // eslint-disable-line react-hooks/exhaustive-deps
   const siguienteLimite = PASOS_LIMITE.find(p => p > limite);
@@ -310,7 +318,13 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
 
   return (
     <div id="detalle-inventario">
-      <Bloque titulo="Detalle del inventario" queEstasViendo="cada producto y lote con stock hoy: kg, etapa, días en inventario y ubicación, agrupado por vista y categoría. Es una sola fila por producto; el último despacho y lo que está en transformación se ven en gris bajo el nombre. Haz clic en un encabezado para ordenar." acciones={acciones}>
+      <Bloque
+        titulo={rotulo ? `Detalle del inventario · ${rotulo}` : 'Detalle del inventario'}
+        queEstasViendo={rotulo
+          ? `cada producto y lote con los kg que tenía al cierre de esa fecha (${rotulo.toLowerCase()}), agrupado por vista y categoría. Es de solo lectura: los días en inventario, el último despacho y lo que estaba en transformación se calculan con los movimientos hasta esa fecha.`
+          : 'cada producto y lote con stock hoy: kg, etapa, días en inventario y ubicación, agrupado por vista y categoría. Es una sola fila por producto; el último despacho y lo que está en transformación se ven en gris bajo el nombre. Haz clic en un encabezado para ordenar.'}
+        acciones={acciones}
+      >
         {!dato && !error && <SkeletonBloque alto="h-64" />}
         {error && !dato && <ErrorBloque mensaje={error} onReintentar={recargar} />}
         {dato && (
@@ -372,7 +386,7 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
                                 clase="border-t border-border-strong bg-surface-alt"
                               />
                               {abierto && g.filas.map(f => (
-                                <FilaMaterial key={f.id} f={f} columnas={columnas} expandida={Boolean(expandidas[f.id])} onExpandir={alternarExpandida} filtrosComp={filtrosComp} version={recarga} onVaciado={recargar} />
+                                <FilaMaterial key={f.id} f={f} columnas={columnas} expandida={Boolean(expandidas[f.id])} onExpandir={alternarExpandida} filtrosComp={filtrosComp} version={recarga} onVaciado={soloLectura ? undefined : recargar} soloLectura={soloLectura} />
                               ))}
                             </tbody>
                           );
@@ -409,7 +423,7 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
                           {estaAbierto(g.clave) && (
                             <ul className="space-y-2">
                               {g.filas.map(f => (
-                                <TarjetaMovil key={f.id} f={f} columnas={columnas} expandida={Boolean(expandidas[f.id])} onExpandir={alternarExpandida} filtrosComp={filtrosComp} version={recarga} onVaciado={recargar} />
+                                <TarjetaMovil key={f.id} f={f} columnas={columnas} expandida={Boolean(expandidas[f.id])} onExpandir={alternarExpandida} filtrosComp={filtrosComp} version={recarga} onVaciado={soloLectura ? undefined : recargar} soloLectura={soloLectura} />
                               ))}
                             </ul>
                           )}
@@ -418,7 +432,7 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
                     </div>
                   ))}
                   <div className="rounded-lg bg-surface-alt p-3 text-sm font-semibold">
-                    Total en galpón: <span className="tabular-nums">{formatearKg(totales.kg)}</span>
+                    {rotulo ? `${rotulo}: ` : 'Total en galpón: '}<span className="tabular-nums">{formatearKg(totales.kg)}</span>
                   </div>
                 </div>
                 )}

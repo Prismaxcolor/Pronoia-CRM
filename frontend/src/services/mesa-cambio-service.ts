@@ -56,7 +56,7 @@ export function obtenerEstadoCuentaMesa(id: string, rango: { desde?: string; has
 }
 
 export const registrarAsiento = (input: AsientoInput) =>
-  ejecutar(() => apiFetch<{ asiento: { id: string; numero: number } }>('/api/mesa-cambio/asientos', { method: 'POST', body: input }), 'No se pudo registrar el asiento.');
+  ejecutar(() => apiFetch<{ asiento: { id: string; numero: number; tipo: TipoAsiento; numeroNota: number | null } }>('/api/mesa-cambio/asientos', { method: 'POST', body: input }), 'No se pudo registrar el asiento.');
 
 export const anularAsientoMesa = (id: string, motivo: string) =>
   ejecutar(() => apiFetch<{ ok: true }>(`/api/mesa-cambio/asientos/${id}/anular`, { method: 'POST', body: { motivo } }), 'No se pudo anular el asiento.');

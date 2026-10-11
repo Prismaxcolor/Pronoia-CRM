@@ -5,7 +5,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { logger, clienteIp } from '../utils/logger.js';
 import type { Accion, Recurso } from '../utils/permisos.js';
-import { detectarFormatoImagen, infoFormatoImagen } from '../utils/firma-imagen.js';
+import { detectarFormatoImagen, infoFormatoImagen, limitesSubidaImagen, mimeCoincideConFirma } from '../utils/firma-imagen.js';
 
 const MIME_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'image/webp']);
 /** Igual que MAX_BYTES_IMAGEN del cliente (frontend/src/lib/borrador-imagenes.ts): el teléfono sube hasta 6 MB. */
@@ -13,7 +13,7 @@ export const TAMANO_MAXIMO = 6 * 1024 * 1024; // 6 MB
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: TAMANO_MAXIMO },
+  limits: limitesSubidaImagen(TAMANO_MAXIMO),
   fileFilter: (_req, file, cb) => {
     if (!MIME_PERMITIDOS.has(file.mimetype)) {
       cb(new Error('Formato no permitido. Usa JPG, PNG o WEBP.'));
@@ -36,6 +36,8 @@ const TIPOS: Record<string, { bucket: string; recurso: Recurso; accion: Accion }
   proveedores: { bucket: 'proveedores', recurso: 'proveedores', accion: 'crear' },
   almacenes: { bucket: 'almacenes', recurso: 'almacenes', accion: 'crear' },
   lotes: { bucket: 'lotes', recurso: 'productos', accion: 'crear' },
+  // Imagen de una cuenta/caja de Wallet. Quién la asigna a una cuenta lo controla PATCH /cochinito/bancas/:id.
+  bancas: { bucket: 'bancas', recurso: 'cochinito', accion: 'crear' },
 };
 
 declare global {
@@ -82,6 +84,12 @@ router.post('/:tipo', resolverTipo, subirArchivoMiddleware, async (req, res) => 
   const info = formato ? infoFormatoImagen(formato) : null;
   if (!info) {
     res.status(400).json({ error: 'El archivo no es una imagen válida (JPG, PNG o WEBP).' });
+    return;
+  }
+
+  // Además de la firma, el tipo que declara el cliente debe coincidir: un PNG declarado como JPEG es una subida mal hecha o hostil.
+  if (!mimeCoincideConFirma(req.file.mimetype, req.file.buffer)) {
+    res.status(400).json({ error: 'El tipo del archivo no coincide con su contenido.' });
     return;
   }
 

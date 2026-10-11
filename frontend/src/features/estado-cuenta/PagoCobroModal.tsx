@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
+import SelectorBanca from '../cochinito/SelectorBanca';
 import { obtenerBancas } from '../../services/banca-service';
 import { obtenerTasaOficial } from '../../services/tasa-service';
 import { obtenerFacturas } from '../../services/factura-cv-service';
@@ -19,6 +20,7 @@ import type { Banca } from '@shared/types/index.js';
 import type { FacturaCV } from '../../services/factura-cv-service';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
 import { hoyNegocio } from '../../lib/fecha-negocio';
+import { bancasEditables } from '../usuarios/acceso-bancas';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -153,7 +155,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
 
   useEffect(() => {
     obtenerBancas().then(lista => {
-      setBancas(lista);
+      setBancas(bancasEditables(lista));
       // Si ya hay líneas (borrador restaurado) se conservan; solo se crea la inicial cuando no hay ninguna.
       setLineasBanca(prev => (prev.length > 0 ? prev : [{ id: nextLineaId.current++, bancaId: '', montoUsd: '', referencia: '' }]));
     });
@@ -672,21 +674,14 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
                 return (
                   <div key={linea.id} className="border border-border rounded-lg p-2 space-y-2">
                     <div className="flex flex-col sm:flex-row items-start gap-2">
-                      <select
-                        required
-                        value={linea.bancaId}
-                        onChange={e => setLineaBancaId(linea.id, e.target.value)}
-                        className={`${inputClass} w-full sm:flex-1`}
-                      >
-                        <option value="">— Selecciona la cuenta o caja —</option>
-                        {bancas
-                          .filter(b => b.id === linea.bancaId || !bancasUsadas.has(b.id))
-                          .map(b => (
-                            <option key={b.id} value={b.id}>
-                              {b.nombre} — {b.moneda === 'USD' ? '$' : 'Bs '}{b.saldo.toLocaleString()}
-                            </option>
-                          ))}
-                      </select>
+                      <SelectorBanca
+                        bancas={bancas.filter(b => b.id === linea.bancaId || !bancasUsadas.has(b.id))}
+                        valor={linea.bancaId}
+                        placeholder="— Selecciona la cuenta o caja —"
+                        ariaLabel="Cuenta o caja"
+                        className="w-full sm:flex-1"
+                        onChange={id => setLineaBancaId(linea.id, id)}
+                      />
                       <div className="flex items-start gap-2 w-full sm:w-auto">
                         <div className="shrink-0">
                           <div className="relative">

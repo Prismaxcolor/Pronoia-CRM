@@ -7,7 +7,7 @@ import { mensajeDeErrorBd } from '../utils/errores-bd.js';
 import { logger } from '../utils/logger.js';
 import { construirUpdateClasificacion, leerClasificacion } from '../utils/lote-clasificacion.js';
 import { resumirEmbalado, resumirEmbaladoPorAlmacen, type EmbalajeParaResumen } from '../utils/embalaje-lote.js';
-import { esObjetoInexistente, MENSAJE_INVENTARIO_NO_HABILITADO } from '../utils/migracion-pendiente.js';
+import { esColumnaInexistente, esObjetoInexistente, MENSAJE_INVENTARIO_NO_HABILITADO } from '../utils/migracion-pendiente.js';
 
 interface LoteRow {
   id: string;
@@ -20,6 +20,8 @@ interface LoteRow {
   precio_estimado_kg?: number | string | null;
   precio_estimado_actualizado_en?: string | null;
   precio_estimado_actualizado_por?: string | null;
+  /** Columna de migration_packing_list_lote_fotos.sql: ausente hasta aplicarla. */
+  color_packing_list?: string | null;
 }
 
 export interface StockLoteAlmacen {
@@ -53,6 +55,8 @@ export interface LotePublico {
   composicion: ComposicionPCBItem[];
   createdAt: string;
   stockKg: number;
+  /** Color predeterminado del lote en el packing list. Ausente si la migración no está aplicada. */
+  colorPackingList?: string | null;
 }
 
 interface ExtrasLote {
@@ -95,6 +99,7 @@ function toPublico(
     composicion,
     createdAt: row.created_at,
     stockKg,
+    ...(row.color_packing_list === undefined ? {} : { colorPackingList: row.color_packing_list }),
   };
 }
 
@@ -239,6 +244,26 @@ export interface ActorLote {
 
 /** Lo que el backend responde cuando la BD aún no tiene las columnas de clase/precio. */
 export const MENSAJE_CLASIFICACION_NO_HABILITADA = MENSAJE_INVENTARIO_NO_HABILITADO;
+export const MENSAJE_COLOR_NO_HABILITADO =
+  'El color del lote aún no está habilitado en la base de datos (falta aplicar migration_packing_list_lote_fotos.sql).';
+
+export const MENSAJE_LOTE_MIGRACION_PENDIENTE =
+  'Falta aplicar una migración de la base de datos para guardar este cambio del lote (migration_inventario_rediseno_fase1.sql o migration_packing_list_lote_fotos.sql).';
+
+/**
+ * Mensaje correcto cuando falta una columna al actualizar un lote: se decide por la columna que cita el error de la BD
+ * y, si no la cita, por lo que se intentaba cambiar; con cambios de ambos tipos y sin pista, un mensaje genérico (nunca
+ * acusa a una migración que quizá sí está aplicada).
+ */
+export function mensajeMigracionLote(error: { code?: string; message?: string }, cambios: ActualizarLoteInput): string {
+  if (esColumnaInexistente(error, 'color_packing_list')) return MENSAJE_COLOR_NO_HABILITADO;
+  if (esColumnaInexistente(error, 'clase') || esColumnaInexistente(error, 'precio_estimado')) return MENSAJE_CLASIFICACION_NO_HABILITADA;
+  const tocaColor = cambios.colorPackingList !== undefined;
+  const tocaClasificacion = cambios.clase !== undefined || cambios.precioEstimadoKg !== undefined;
+  if (tocaColor && !tocaClasificacion) return MENSAJE_COLOR_NO_HABILITADO;
+  if (tocaClasificacion && !tocaColor) return MENSAJE_CLASIFICACION_NO_HABILITADA;
+  return MENSAJE_LOTE_MIGRACION_PENDIENTE;
+}
 
 export async function actualizarLote(
   id: string,
@@ -250,6 +275,7 @@ export async function actualizarLote(
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
   if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
+  if (cambios.colorPackingList !== undefined) update.color_packing_list = cambios.colorPackingList;
 
   let cambiosClasificacion: ReturnType<typeof construirUpdateClasificacion>['cambios'] = {};
   if (cambios.clase !== undefined || cambios.precioEstimadoKg !== undefined) {
@@ -280,7 +306,7 @@ export async function actualizarLote(
 
   if (error) {
     if (esNombreDuplicado(error)) return { error: 'Ya existe un lote con ese nombre.' };
-    if (esObjetoInexistente(error)) return { error: MENSAJE_CLASIFICACION_NO_HABILITADA };
+    if (esObjetoInexistente(error)) return { error: mensajeMigracionLote(error, cambios) };
     return { error: mensajeDeErrorBd(error, 'No se pudo actualizar el lote.') };
   }
   if (!data) return { error: 'Lote no encontrado.' };

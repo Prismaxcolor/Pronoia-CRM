@@ -74,6 +74,8 @@ export interface Lote {
   precioEstimadoActualizadoPorNombre?: string | null;
   /** Resumen de embalado por kilos (ausente si la migración no está aplicada). */
   embalado?: EmbaladoLote;
+  /** Color predeterminado del lote en el packing list (clave de COLORES_LOTE). Ausente si la migración no está aplicada. */
+  colorPackingList?: string | null;
 }
 
 /** Destino de inventario de una línea de pesaje: MPP o un lote concreto. */

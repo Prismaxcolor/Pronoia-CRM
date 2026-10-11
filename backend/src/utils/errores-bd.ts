@@ -23,9 +23,24 @@ const TEXTO_POR_CODIGO: Record<string, string> = {
   '57014': 'La operación tardó demasiado y se canceló. Intenta de nuevo.',
 };
 
-/** True si el error es un `raise exception` de negocio de una función SQL (mensaje apto para el usuario). */
+/** Mensajes nativos de Postgres para 42501 (insufficient_privilege): son técnicos y NO se muestran. */
+const MENSAJE_NATIVO_PRIVILEGIOS = /permission denied|must be (owner|superuser)|row-level security|insufficient privilege|violates/i;
+
+/**
+ * True si es un guardián de negocio de un trigger/función SQL que usa `errcode = '42501'` (p. ej. "los asientos de
+ * la mesa de cambio no se borran: se anulan"). Su mensaje está en español y es apto para el usuario; los errores
+ * nativos de privilegios de Postgres (en inglés, con nombres de tablas) quedan fuera.
+ */
+export function esGuardianDeNegocio(error: ErrorBd | null | undefined): boolean {
+  return error?.code === '42501' && !!error.message && !MENSAJE_NATIVO_PRIVILEGIOS.test(error.message);
+}
+
+/**
+ * True si el error es un `raise exception` de negocio de una función SQL (mensaje apto para el usuario):
+ * SQLSTATE P0001 o un guardián de negocio con errcode 42501. Los servicios lo responden como 409.
+ */
 export function esMensajeDeNegocio(error: ErrorBd | null | undefined): boolean {
-  return error?.code === 'P0001' && !!error.message;
+  return (error?.code === 'P0001' && !!error.message) || esGuardianDeNegocio(error);
 }
 
 export function mensajeDeErrorBd(error: ErrorBd | null | undefined, respaldo: string = MENSAJE_ERROR_GENERICO): string {

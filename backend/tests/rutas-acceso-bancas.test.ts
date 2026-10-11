@@ -33,6 +33,9 @@ vi.mock('../src/services/auth-service.js', () => ({
   },
 }));
 
+/** undefined = lo editable es igual a lo visible; si no, el conjunto (o null) que edita el usuario. */
+const editables = vi.hoisted(() => ({ valor: undefined as ReadonlySet<string> | null | undefined }));
+
 const s = vi.hoisted(() => ({
   listarBancasDeUsuario: vi.fn(),
   reemplazarBancasDeUsuario: vi.fn(),
@@ -44,12 +47,18 @@ const s = vi.hoisted(() => ({
   archivarBanca: vi.fn(),
   leerTelegramChatIdBanca: vi.fn(),
   obtenerPackingList: vi.fn(),
+  listarBancas: vi.fn(),
+  crearMovimiento: vi.fn(),
 }));
 
 vi.mock('../src/services/banca-acceso-service.js', () => ({
   listarBancasDeUsuario: s.listarBancasDeUsuario,
   reemplazarBancasDeUsuario: s.reemplazarBancasDeUsuario,
   bancasPermitidas: s.bancasPermitidas,
+  accesoBancas: async (...args: unknown[]) => {
+    const ver = await s.bancasPermitidas(...args);
+    return { ver, editar: editables.valor === undefined ? ver : editables.valor };
+  },
   concederBancaAUsuario: s.concederBancaAUsuario,
   idsBancasDeMovimiento: vi.fn(async () => []),
   idsBancasDeGrupo: vi.fn(async () => []),
@@ -59,13 +68,13 @@ vi.mock('../src/services/edicion-autorizada-service.js', () => ({
   obtenerUsuarioVigente: async (id: string) => (usuarios[id] ? { rol: usuarios[id].rol, activo: usuarios[id].activo } : null),
 }));
 vi.mock('../src/services/banca-service.js', () => ({
-  listarBancas: vi.fn(async () => []),
+  listarBancas: s.listarBancas,
   listarMovimientos: vi.fn(async () => []),
   crearBanca: s.crearBanca,
   actualizarBanca: s.actualizarBanca,
   archivarBanca: s.archivarBanca,
   desarchivarBanca: vi.fn(),
-  crearMovimiento: vi.fn(),
+  crearMovimiento: s.crearMovimiento,
   obtenerDetalleMovimiento: s.obtenerDetalleMovimiento,
   leerTelegramChatIdBanca: s.leerTelegramChatIdBanca,
 }));
@@ -90,6 +99,8 @@ const { default: usuariosRouter } = await import('../src/routes/usuarios.js');
 const { default: cochinitoRouter } = await import('../src/routes/cochinito.js');
 const { default: packingRouter } = await import('../src/routes/packing-lists.js');
 const { logger } = await import('../src/utils/logger.js');
+const { anularMovimientoBanca } = await import('../src/services/movimiento-edicion-service.js');
+const { listarMovimientos } = await import('../src/services/banca-service.js');
 
 const ID_A = '11111111-1111-4111-8111-111111111111';
 const ID_B = '22222222-2222-4222-8222-222222222222';
@@ -120,7 +131,9 @@ beforeEach(() => {
   usuarios.cajero = { rol: 'trabajador', permisos: gestionBancas, activo: true };
   usuarios.sinFactura = { rol: 'trabajador', permisos: permisos(['despachos', 'ver']), activo: true };
   usuarios.conFactura = { rol: 'trabajador', permisos: permisos(['despachos', 'ver'], ['facturacion', 'ver']), activo: true };
+  editables.valor = undefined;
   for (const f of Object.values(s)) f.mockReset();
+  s.listarBancas.mockResolvedValue([]);
   vi.mocked(logger.info).mockClear();
   s.bancasPermitidas.mockResolvedValue(null);
   s.concederBancaAUsuario.mockResolvedValue({ ok: true });
@@ -142,10 +155,10 @@ describe('GET/PUT /api/usuarios/:id/bancas', () => {
   });
 
   it('GET: superadmin lee las cuentas de un trabajador', async () => {
-    s.listarBancasDeUsuario.mockResolvedValue([BANCA]);
+    s.listarBancasDeUsuario.mockResolvedValue({ bancaIds: [BANCA], bancaIdsEditar: [BANCA] });
     const r = await llamar('GET', `/api/usuarios/${ID_A}/bancas`, 'root');
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ bancaIds: [BANCA] });
+    expect(r.json).toEqual({ bancaIds: [BANCA], bancaIdsEditar: [BANCA] });
   });
 
   it('GET: administracion (aun con usuarios:ver) recibe 403', async () => {
@@ -169,7 +182,32 @@ describe('GET/PUT /api/usuarios/:id/bancas', () => {
     s.reemplazarBancasDeUsuario.mockResolvedValue({ ok: true });
     const r = await llamar('PUT', `/api/usuarios/${ID_A}/bancas`, 'root', { bancaIds: [BANCA] });
     expect(r.status).toBe(200);
-    expect(s.reemplazarBancasDeUsuario).toHaveBeenCalledWith(ID_A, [BANCA]);
+    expect(s.reemplazarBancasDeUsuario).toHaveBeenCalledWith(ID_A, [BANCA], undefined);
+  });
+
+  it('GET: devuelve lo que ve y lo que además edita', async () => {
+    s.listarBancasDeUsuario.mockResolvedValue({ bancaIds: [BANCA, MOV], bancaIdsEditar: [BANCA] });
+    const r = await llamar('GET', `/api/usuarios/${ID_A}/bancas`, 'root');
+    expect(r.json).toEqual({ bancaIds: [BANCA, MOV], bancaIdsEditar: [BANCA] });
+  });
+
+  it('PUT: pasa la lista de editar al servicio', async () => {
+    s.reemplazarBancasDeUsuario.mockResolvedValue({ ok: true });
+    const r = await llamar('PUT', `/api/usuarios/${ID_A}/bancas`, 'root', { bancaIds: [BANCA, MOV], bancaIdsEditar: [BANCA] });
+    expect(r.status).toBe(200);
+    expect(s.reemplazarBancasDeUsuario).toHaveBeenCalledWith(ID_A, [BANCA, MOV], [BANCA]);
+  });
+
+  it('PUT: editar en una cuenta sin acceso => 400', async () => {
+    const r = await llamar('PUT', `/api/usuarios/${ID_A}/bancas`, 'root', { bancaIds: [BANCA], bancaIdsEditar: [MOV] });
+    expect(r.status).toBe(400);
+    expect(s.reemplazarBancasDeUsuario).not.toHaveBeenCalled();
+  });
+
+  it('PUT: solo un superadmin cambia ver/editar (gestor con permiso usuarios.editar => 403)', async () => {
+    const r = await llamar('PUT', `/api/usuarios/${ID_A}/bancas`, 'gestor', { bancaIds: [BANCA], bancaIdsEditar: [] });
+    expect(r.status).toBe(403);
+    expect(s.reemplazarBancasDeUsuario).not.toHaveBeenCalled();
   });
 
   it('PUT: id inválido en el body => 400', async () => {
@@ -295,8 +333,77 @@ describe('GET /api/packing-lists/:id: proyección solo con facturacion:ver', () 
   it('sin facturacion:ver se pide sin valores; con ella, con valores', async () => {
     s.obtenerPackingList.mockResolvedValue({ id: ID_A });
     await llamar('GET', `/api/packing-lists/${ID_A}`, 'sinFactura');
-    expect(s.obtenerPackingList).toHaveBeenLastCalledWith(ID_A, { puedeVerValores: false });
+    expect(s.obtenerPackingList).toHaveBeenLastCalledWith(ID_A, { puedeVerValores: false, puedeVerControl: false });
     await llamar('GET', `/api/packing-lists/${ID_A}`, 'conFactura');
-    expect(s.obtenerPackingList).toHaveBeenLastCalledWith(ID_A, { puedeVerValores: true });
+    expect(s.obtenerPackingList).toHaveBeenLastCalledWith(ID_A, { puedeVerValores: true, puedeVerControl: true });
+  });
+});
+
+describe('ver vs editar en cochinito', () => {
+  const mov = (bancaId: string, extra: object = {}) => ({
+    tipo: 'egreso', bancaId, monto: 10, moneda: 'USD', fecha: '2026-10-01', ...extra,
+  });
+
+  it('GET /bancas marca puedeEditar según el acceso de edición', async () => {
+    s.listarBancas.mockResolvedValue([{ id: BANCA }, { id: MOV }]);
+    s.bancasPermitidas.mockResolvedValue(new Set([BANCA, MOV]));
+    editables.valor = new Set([BANCA]);
+    const r = await llamar('GET', '/api/cochinito/bancas', 'cajero');
+    expect(r.json).toEqual({ bancas: [{ id: BANCA, puedeEditar: true }, { id: MOV, puedeEditar: false }] });
+  });
+
+  it('POST /movimientos sobre una cuenta solo-consulta => 403 con mensaje claro y sin crear', async () => {
+    s.bancasPermitidas.mockResolvedValue(new Set([BANCA]));
+    editables.valor = new Set();
+    const r = await llamar('POST', '/api/cochinito/movimientos', 'cajero', mov(BANCA));
+    expect(r.status).toBe(403);
+    expect(String(r.json?.error)).toMatch(/solo consulta/i);
+    expect(s.crearMovimiento).not.toHaveBeenCalled();
+  });
+
+  it('POST /movimientos sobre una cuenta editable sigue funcionando', async () => {
+    s.bancasPermitidas.mockResolvedValue(new Set([BANCA]));
+    s.crearMovimiento.mockResolvedValue({ movimiento: { id: MOV, tipo: 'egreso' } });
+    expect((await llamar('POST', '/api/cochinito/movimientos', 'cajero', mov(BANCA))).status).toBe(201);
+  });
+});
+
+describe('POST /api/cochinito/movimientos/:id/anular: permiso de mesa de cambio', () => {
+  const MOTIVO = { motivo: 'Cambista no entregó' };
+  const resultadoOk = { movimiento: { id: MOV }, autorizadoPor: null, cambios: [] };
+
+  it('manda al servicio si el usuario tiene mesa_cambio:ver (puedeMesaCambio=true)', async () => {
+    usuarios.conMesa = { rol: 'trabajador', permisos: permisos(['cochinito', 'editar'], ['mesa_cambio', 'ver']), activo: true };
+    vi.mocked(anularMovimientoBanca).mockResolvedValue(resultadoOk as never);
+    const r = await llamar('POST', `/api/cochinito/movimientos/${MOV}/anular`, 'conMesa', MOTIVO);
+    expect(r.status).toBe(200);
+    expect(vi.mocked(anularMovimientoBanca).mock.calls.at(-1)?.[3]).toEqual({ puedeMesaCambio: true });
+  });
+
+  it('sin mesa_cambio avisa al servicio (puedeMesaCambio=false), que rechaza las transferencias con cambista', async () => {
+    vi.mocked(anularMovimientoBanca).mockResolvedValue({ error: 'Esta transferencia usa una mesa de cambio', codigo: 403 } as never);
+    const r = await llamar('POST', `/api/cochinito/movimientos/${MOV}/anular`, 'cajero', MOTIVO);
+    expect(r.status).toBe(403);
+    expect(vi.mocked(anularMovimientoBanca).mock.calls.at(-1)?.[3]).toEqual({ puedeMesaCambio: false });
+  });
+
+  it('el superadmin siempre cuenta con el permiso', async () => {
+    vi.mocked(anularMovimientoBanca).mockResolvedValue(resultadoOk as never);
+    await llamar('POST', `/api/cochinito/movimientos/${MOV}/anular`, 'root', MOTIVO);
+    expect(vi.mocked(anularMovimientoBanca).mock.calls.at(-1)?.[3]).toEqual({ puedeMesaCambio: true });
+  });
+});
+
+describe('GET /api/cochinito/movimientos: enmascarado de transferencias con un extremo sin acceso', () => {
+  it('oculta referencia, descripcion y comprobantes, pero deja los montos', async () => {
+    s.bancasPermitidas.mockResolvedValue(new Set([BANCA]));
+    vi.mocked(listarMovimientos).mockResolvedValue([
+      { id: 'a', tipo: 'transferencia', monto: 5, bancaOrigenId: BANCA, bancaDestinoId: MOV, referencia: 'R', descripcion: 'A Secreta', comprobantes: ['x.jpg'] },
+      { id: 'b', tipo: 'egreso', monto: 7, bancaOrigenId: BANCA, bancaDestinoId: null, referencia: 'R2', descripcion: 'Luz', comprobantes: ['y.jpg'] },
+    ] as never);
+    const r = await llamar('GET', '/api/cochinito/movimientos', 'cajero');
+    const [t, e] = (r.json as { movimientos: Array<Record<string, unknown>> }).movimientos;
+    expect(t).toMatchObject({ monto: 5, referencia: 'Cuenta restringida', descripcion: 'Cuenta restringida', comprobantes: [] });
+    expect(e).toMatchObject({ referencia: 'R2', descripcion: 'Luz', comprobantes: ['y.jpg'] });
   });
 });

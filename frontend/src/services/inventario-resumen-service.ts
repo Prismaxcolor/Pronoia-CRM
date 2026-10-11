@@ -53,6 +53,8 @@ export interface MermaPeriodoResumen extends ResumenMermaPorTipo {
 
 export interface ResumenInventario {
   generadoEn: string;
+  /** Fecha (YYYY-MM-DD) del saldo mostrado; null o ausente = stock actual. */
+  saldoAl?: string | null;
   /** Los almacenes inactivos con stock se incluyen (activo: false) para que el total cuadre con /api/lotes. */
   almacenes: Array<{ almacenId: string; nombre: string; activo: boolean; totalKg: number }>;
   totalKg: number;
@@ -118,6 +120,8 @@ export interface ObtenerResumenOpts {
   /** Rango de la merma (YYYY-MM-DD), ambos o ninguno. Por defecto, los últimos 30 días. */
   desde?: string;
   hasta?: string;
+  /** Saldo al cierre de este día (YYYY-MM-DD, anterior a hoy) en vez del stock de hoy. */
+  al?: string;
 }
 
 export async function obtenerResumenInventario(
@@ -128,6 +132,7 @@ export async function obtenerResumenInventario(
     params.set('desde', opts.desde);
     params.set('hasta', opts.hasta);
   }
+  if (opts.al) params.set('al', opts.al);
   if (opts.sinValor) params.set('sinValor', '1');
   const qs = params.toString();
   try {

@@ -3,7 +3,7 @@ import { leerPaginado } from '../utils/paginacion.js';
 import { lotesElegiblesParaToma, type LoteParaToma } from '../utils/lotes-categoria-toma.js';
 
 /** Lotes activos con las categorías de los productos anclados (producto_lotes). */
-async function cargarLotesParaToma(): Promise<LoteParaToma[]> {
+export async function cargarLotesParaToma(): Promise<LoteParaToma[]> {
   const [{ data: lotes, error }, anclas] = await Promise.all([
     supabaseAdmin.from('lotes').select('id, nombre').eq('activo', true),
     leerPaginado<{ lote_id: string; productos: { tipo_material_id: string | null } | null }>((desde, hasta) =>

@@ -160,19 +160,20 @@ export async function leerTelegramMe(): Promise<{ vinculado: boolean; linkedAt: 
   }
 }
 
-/** Ids de las cuentas/cajas a las que el usuario tiene acceso asignado (solo el superadmin ve todas sin asignar). */
-export async function obtenerBancasDeUsuario(id: string): Promise<{ bancaIds: string[] } | { error: string }> {
+/** Cuentas/cajas con acceso asignado: las que ve y, de ellas, las que además edita (solo el superadmin ve y edita todas sin asignar). */
+export async function obtenerBancasDeUsuario(id: string): Promise<{ bancaIds: string[]; bancaIdsEditar: string[] } | { error: string }> {
   try {
-    return await apiFetch<{ bancaIds: string[] }>(`/api/usuarios/${id}/bancas`);
+    const r = await apiFetch<{ bancaIds: string[]; bancaIdsEditar?: string[] }>(`/api/usuarios/${id}/bancas`);
+    return { bancaIds: r.bancaIds, bancaIdsEditar: r.bancaIdsEditar ?? r.bancaIds };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo leer el acceso a cuentas.' };
   }
 }
 
-/** Reemplaza las cuentas/cajas a las que el usuario tiene acceso. */
-export async function guardarBancasDeUsuario(id: string, bancaIds: string[]): Promise<{ ok: true } | { error: string }> {
+/** Reemplaza las cuentas/cajas que el usuario ve y, de ellas, las que puede editar. */
+export async function guardarBancasDeUsuario(id: string, bancaIds: string[], bancaIdsEditar: string[]): Promise<{ ok: true } | { error: string }> {
   try {
-    await apiFetch(`/api/usuarios/${id}/bancas`, { method: 'PUT', body: { bancaIds } });
+    await apiFetch(`/api/usuarios/${id}/bancas`, { method: 'PUT', body: { bancaIds, bancaIdsEditar } });
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo guardar el acceso a cuentas.' };

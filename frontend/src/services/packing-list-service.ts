@@ -17,6 +17,10 @@ export interface ItemPackingListInput {
   numeroPaleta: number | null;
   lote: string | null;
   color: string | null;
+  /** Almacén del lote (control interno). Ausente = conservar lo guardado. */
+  almacenId?: string | null;
+  /** Rutas de las fotos de control interno (bucket privado). Ausente = conservar lo guardado. */
+  fotos?: string[];
   pesoBruto: number;
   pesoPaleta: number;
 }
@@ -32,10 +36,12 @@ export interface GuardarPackingListInput {
   observacionesEn: string | null;
   referenciaTipo: ReferenciaPackingList | null;
   referenciaId: string | null;
+  /** Cliente internacional; null = sin cliente. */
+  clienteId?: string | null;
   /** Versión del packing list que se cargó; el backend la exige al editar. */
   version?: number;
   items: ItemPackingListInput[];
-  /** Proyección de exportación (interna). Solo la envía quien tiene facturacion:ver; ausente = no tocar. */
+  /** Proyección y resultados de la exportación (internos). Solo la envía quien tiene facturacion:ver; ausente = no tocar. */
   proyeccion?: ProyeccionLotePacking[];
 }
 

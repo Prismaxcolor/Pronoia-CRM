@@ -3,6 +3,9 @@ import { X } from 'lucide-react';
 import { editarMovimiento, type EditarMovimientoInput } from '../../services/transaccion-edicion-service';
 import type { Banca, Movimiento } from '@shared/types/index.js';
 import CampoLlaveEdicion from '../../components/CampoLlaveEdicion';
+import { puedeEditarBanca } from '../usuarios/acceso-bancas';
+import SelectorBanca from './SelectorBanca';
+import { tieneComision } from './detalle-movimiento';
 
 interface Props {
   movimiento: Movimiento;
@@ -21,6 +24,10 @@ const ETIQUETA_TIPO = { ingreso: 'Ingreso', egreso: 'Egreso', transferencia: 'Tr
  */
 function EditarMovimientoModal({ movimiento, bancas, onClose, onGuardado }: Props) {
   const esTransferencia = movimiento.tipo === 'transferencia';
+  // Una transferencia con mesa de cambio no admite cambios de cuentas ni de montos (se anula y se registra de nuevo).
+  // Igual si lleva comisión bancaria: la comisión depende del monto y vive en un cargo aparte.
+  const conMesa = movimiento.mesaCambistaId != null;
+  const contableBloqueado = conMesa || tieneComision(movimiento);
   const [bancaId, setBancaId] = useState(movimiento.bancaOrigenId);
   const [bancaDestinoId, setBancaDestinoId] = useState(movimiento.bancaDestinoId ?? '');
   const [monto, setMonto] = useState(String(movimiento.monto));
@@ -87,20 +94,37 @@ function EditarMovimientoModal({ movimiento, bancas, onClose, onGuardado }: Prop
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {contableBloqueado ? (
+            <p className="rounded-lg border border-border bg-surface-alt p-3 text-xs text-text-secondary">
+              {conMesa
+                ? 'Esta transferencia usa una mesa de cambio: sus cuentas y montos no se pueden cambiar. Si hay un error, anúlala y regístrala de nuevo. Aquí puedes editar la fecha, la referencia y el concepto.'
+                : 'Este movimiento lleva comisión bancaria: sus cuentas y montos no se pueden cambiar. Si hay un error, anúlalo (se anula también su comisión) y regístralo de nuevo. Aquí puedes editar la referencia y el concepto.'}
+            </p>
+          ) : (
+            <>
           <div>
             <label className={labelClass}>{esTransferencia ? 'Banca origen' : movimiento.tipo === 'ingreso' ? 'Banca que recibe' : 'Banca de la que sale'}</label>
-            <select value={bancaId} onChange={e => setBancaId(e.target.value)} className={inputClass}>
-              {bancas.filter(b => !b.archivada || b.id === movimiento.bancaOrigenId).map(b => <option key={b.id} value={b.id}>{b.nombre} ({b.moneda})</option>)}
-            </select>
+            <SelectorBanca
+              bancas={bancas.filter(b => b.id === movimiento.bancaOrigenId || (!b.archivada && puedeEditarBanca(b)))}
+              valor={bancaId}
+              conSaldo={false}
+              ariaLabel="Cuenta o caja de origen"
+              onChange={setBancaId}
+            />
           </div>
 
           {esTransferencia && (
             <div>
               <label className={labelClass}>Banca destino</label>
-              <select value={bancaDestinoId} onChange={e => setBancaDestinoId(e.target.value)} className={inputClass}>
-                <option value="">Selecciona banca…</option>
-                {bancas.filter(b => b.id !== bancaId && (!b.archivada || b.id === movimiento.bancaDestinoId)).map(b => <option key={b.id} value={b.id}>{b.nombre} ({b.moneda})</option>)}
-              </select>
+              <SelectorBanca
+                bancas={bancas.filter(b => b.id !== bancaId && (b.id === movimiento.bancaDestinoId || (!b.archivada && puedeEditarBanca(b))))}
+                valor={bancaDestinoId}
+                conSaldo={false}
+                titulo="Elegir cuenta o caja de destino"
+                placeholder="Selecciona banca…"
+                ariaLabel="Cuenta o caja de destino"
+                onChange={setBancaDestinoId}
+              />
             </div>
           )}
 
@@ -116,6 +140,8 @@ function EditarMovimientoModal({ movimiento, bancas, onClose, onGuardado }: Prop
               </div>
             )}
           </div>
+            </>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

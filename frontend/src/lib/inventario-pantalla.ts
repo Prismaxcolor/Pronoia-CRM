@@ -10,7 +10,7 @@ import type {
   TarjetaInventario,
   VistaInventario,
 } from '@shared/types/inventario-pantalla.js';
-import { VISTA_POR_DEFECTO, formatearNumero, type EtapaFiltro, type FiltrosPantalla, type VistaUrl } from './inventario-nuevo';
+import { VISTA_POR_DEFECTO, fechaCorteSaldo, formatearNumero, type EtapaFiltro, type FiltrosPantalla, type VistaUrl } from './inventario-nuevo';
 import { hoyNegocio } from './fecha-negocio';
 
 // ---------------------------------------------------------------- vistas
@@ -61,6 +61,8 @@ export interface OpcionesParametros {
   incluirClasificaciones?: boolean;
   /** Pide la respuesta sin costos ni precios (`sinValor=1`) aunque el usuario tenga facturacion:ver. /inventario lo envía siempre; Métricas no. */
   sinValor?: boolean;
+  /** Solo para pruebas: «hoy» (YYYY-MM-DD) con el que se decide si el filtro pide un saldo pasado. */
+  hoy?: string;
 }
 
 /** Query de /api/inventario/pantalla/*. desde/hasta solo viajan juntos. `etapa`, `proveedor` y `lote` no existen en el
@@ -71,6 +73,9 @@ export function parametrosPantalla(f: FiltrosPantalla, op: OpcionesParametros = 
     p.set('desde', f.desde);
     p.set('hasta', f.hasta);
   }
+  // Un «hasta» anterior a hoy pide el saldo (kg al cierre de ese día), no el stock de hoy.
+  const al = fechaCorteSaldo(f, op.hoy);
+  if (al) p.set('al', al);
   if (f.categoria && !op.sinCategoria) p.set('categoria', f.categoria);
   if (f.almacen) p.set('almacen', f.almacen);
   if (f.q) p.set('q', f.q);

@@ -6,7 +6,8 @@
  * Todo devuelve valores nuevos; nunca se muta la entrada.
  */
 
-export type TipoAsiento = 'CARGO' | 'COBRO';
+/** CARGO y ND (nota de débito) aumentan lo que les debemos; COBRO y NC (nota de crédito) lo reducen. */
+export type TipoAsiento = 'CARGO' | 'COBRO' | 'NC' | 'ND';
 
 export interface AsientoMesa {
   id: string;
@@ -19,6 +20,10 @@ export interface AsientoMesa {
   nota?: string | null;
   referencia?: string | null;
   anuladoMotivo?: string | null;
+  /** Correlativo propio de las notas (NC-0001 / ND-0001); null en CARGO/COBRO. */
+  numeroNota?: number | null;
+  /** Transferencia de Wallet a la que pertenece el asiento (null si es manual). */
+  movimientoId?: string | null;
 }
 
 export interface FilaEstado {
@@ -32,6 +37,8 @@ export interface FilaEstado {
   referencia: string | null;
   anulado: boolean;
   anuladoMotivo: string | null;
+  numeroNota: number | null;
+  movimientoId: string | null;
   cargo: number;
   cobro: number;
   saldoCorrido: number;
@@ -54,11 +61,13 @@ type ConImporte = Pick<AsientoMesa, 'tipo' | 'montoUsd' | 'anulado'>;
 
 const aCentavos = (n: number): number => Math.round((Number(n) || 0) * 100);
 
-/** Efecto del asiento en el saldo, en centavos: CARGO suma, COBRO resta, anulado 0. */
+const TIPOS_QUE_SUMAN: ReadonlySet<TipoAsiento> = new Set<TipoAsiento>(['CARGO', 'ND']);
+
+/** Efecto del asiento en el saldo, en centavos: CARGO y ND suman, COBRO y NC restan, anulado 0. */
 function centavosFirmados(a: ConImporte): number {
   if (a.anulado) return 0;
   const c = aCentavos(a.montoUsd);
-  return a.tipo === 'CARGO' ? c : -c;
+  return TIPOS_QUE_SUMAN.has(a.tipo) ? c : -c;
 }
 
 export function importeFirmado(a: ConImporte): number {
@@ -71,6 +80,15 @@ export function saldoDeAsientos(asientos: readonly ConImporte[]): number {
 
 export function formatearNumeroAsiento(numero: number): string {
   return `MC-${String(numero).padStart(4, '0')}`;
+}
+
+const PREFIJO_NOTA: Partial<Record<TipoAsiento, string>> = { NC: 'NC', ND: 'ND' };
+
+/** Número visible del asiento: NC-0001 / ND-0001 para las notas; MC-0001 para el resto (o una nota sin correlativo propio). */
+export function formatearNumeroDocumento(a: Pick<AsientoMesa, 'tipo' | 'numero' | 'numeroNota'>): string {
+  const prefijo = PREFIJO_NOTA[a.tipo];
+  if (prefijo && a.numeroNota != null) return `${prefijo}-${String(a.numeroNota).padStart(4, '0')}`;
+  return formatearNumeroAsiento(a.numero);
 }
 
 const porFechaYNumero = (a: AsientoMesa, b: AsientoMesa): number =>
@@ -101,6 +119,7 @@ export function construirEstadoCuenta(asientos: readonly AsientoMesa[], rango: R
       id: a.id, numero: a.numero, tipo: a.tipo, fecha: a.fecha, montoUsd: a.montoUsd,
       tasa: a.tasa ?? null, nota: a.nota ?? null, referencia: a.referencia ?? null,
       anulado: a.anulado, anuladoMotivo: a.anuladoMotivo ?? null,
+      numeroNota: a.numeroNota ?? null, movimientoId: a.movimientoId ?? null,
       cargo: efecto > 0 ? efecto / 100 : 0,
       cobro: efecto < 0 ? -efecto / 100 : 0,
       saldoCorrido: corrido / 100,

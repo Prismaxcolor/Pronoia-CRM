@@ -437,6 +437,9 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('banca.editada', 'PATCH', '/api/cochinito/bancas/:id', 'tesoreria', 'normal', '✏️', 'Se editó una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
   ev('banca.archivada', 'POST', '/api/cochinito/bancas/:id/archivar', 'tesoreria', 'critica', '📦', 'Se ARCHIVÓ una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
   ev('banca.desarchivada', 'POST', '/api/cochinito/bancas/:id/desarchivar', 'tesoreria', 'normal', '📤', 'Se desarchivó una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
+  ev('categoria_wallet.creada', 'POST', '/api/cochinito/categorias', 'tesoreria', 'normal', '🏷️', 'Se creó una categoría del Wallet', { entidad: { rotulo: 'Categoría', resp: 'categoria' } }),
+  ev('categoria_wallet.editada', 'PATCH', '/api/cochinito/categorias/:id', 'tesoreria', 'normal', '✏️', 'Se editó o archivó una categoría del Wallet', { entidad: { rotulo: 'Categoría', resp: 'categoria' } }),
+  ev('banca.movimiento_categoria', 'PATCH', '/api/cochinito/movimientos/:id/categoria', 'tesoreria', 'ruidosa', '🏷️', 'Se cambió la categoría de un movimiento de banca'),
   ev('banca.movimiento', 'POST', '/api/cochinito/movimientos', 'tesoreria', 'critica', '🔁', 'Se registró un movimiento de banca', {
     contexto: ctx => contextoDeEntidadTipo(ctx.reqBody.proveedorId ? 'proveedor' : 'cliente', ctx.reqBody.proveedorId ?? ctx.reqBody.clienteId),
     detalles: ctx => {
@@ -448,6 +451,17 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
         ...detallesExtraDinero(ctx.reqBody),
       ];
     },
+  }),
+
+  ev('banca.transferencia_mesa', 'POST', '/api/cochinito/movimientos/mesa-cambio', 'tesoreria', 'critica', '💱', 'Se registró una transferencia con mesa de cambio (en proceso)', {
+    detalles: ctx => {
+      const movimiento = rec(rec(ctx.resBody.transferencia).movimiento);
+      const monto = num(movimiento.monto);
+      return monto !== null ? [`Monto: ${formatMontoBanca(monto, txt(movimiento.moneda))}`] : [];
+    },
+  }),
+  ev('banca.transferencia_mesa_completada', 'POST', '/api/cochinito/movimientos/:id/completar', 'tesoreria', 'critica', '✅', 'Se COMPLETÓ una transferencia con mesa de cambio', {
+    etiqueta: etiquetaDinero('Movimiento de banca', 'movimiento'),
   }),
 
   ...eventosModificacionDinero('pago', '/api/pagos', 'grupoId', 'Pago', 'pago', 'el'),
@@ -465,6 +479,17 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('mesa_cambio.asiento_anulado', 'POST', '/api/mesa-cambio/asientos/:id/anular', 'tesoreria', 'critica', '🗑️', 'Se ANULÓ un asiento de mesa de cambio', {
     detalles: ctx => linea('Motivo', txt(ctx.reqBody.motivo)),
   }),
+
+  // Nómina: datos personales sensibles. Quedan catalogadas pero ignorables: NUNCA se avisan al grupo.
+  ev('nomina.trabajador_creado', 'POST', '/api/nomina/trabajadores', 'maestros', 'ignorable', '👤', 'Se registró un trabajador de nómina'),
+  ev('nomina.trabajador_editado', 'PATCH', '/api/nomina/trabajadores/:id', 'maestros', 'ignorable', '✏️', 'Se editó un trabajador de nómina'),
+  ev('nomina.trabajador_desactivado', 'POST', '/api/nomina/trabajadores/:id/desactivar', 'maestros', 'ignorable', '🗑️', 'Se desactivó un trabajador de nómina'),
+  ev('nomina.prestamo_creado', 'POST', '/api/nomina/prestamos', 'tesoreria', 'ignorable', '💵', 'Se registró un préstamo de nómina'),
+  ev('nomina.prestamo_editado', 'PATCH', '/api/nomina/prestamos/:id', 'tesoreria', 'ignorable', '✏️', 'Se editó un préstamo de nómina'),
+  ev('nomina.prestamo_anulado', 'POST', '/api/nomina/prestamos/:id/anular', 'tesoreria', 'ignorable', '🗑️', 'Se anuló un préstamo de nómina'),
+  ev('nomina.guardada', 'POST', '/api/nomina/nominas', 'tesoreria', 'ignorable', '🧾', 'Se guardó una nómina'),
+  ev('nomina.cerrada', 'POST', '/api/nomina/nominas/:id/cerrar', 'tesoreria', 'ignorable', '🔒', 'Se cerró una nómina'),
+  ev('nomina.anulada', 'POST', '/api/nomina/nominas/:id/anular', 'tesoreria', 'ignorable', '🗑️', 'Se anuló una nómina'),
 
   // --- Inventario: maestros y precios --------------------------------------
   ...maestro('/api/productos', 'producto', 'inventario', 'Producto', 'productos', 'el', 'producto', true, 'producto'),
@@ -576,6 +601,7 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   }),
   ev('packing_list.eliminado', 'DELETE', '/api/packing-lists/:id', 'citas', 'critica', '🗑️', 'Se ELIMINÓ un packing list de exportación'),
   ev('packing_list.empresa_editada', 'PUT', '/api/packing-lists/empresas/:idioma', 'citas', 'normal', '🏢', 'Se editaron los datos de la empresa del packing list'),
+  ev('packing_list.foto_subida', 'POST', '/api/packing-lists/fotos', 'acceso', 'ignorable', '📎', 'Subida de foto de control interno de una paleta'),
 ];
 
 function detallesFactura(ctx: ContextoEvento): string[] {

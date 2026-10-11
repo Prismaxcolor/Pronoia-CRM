@@ -34,12 +34,14 @@ export async function actualizarLote(
     activo?: boolean;
     fotos?: string[];
     clase?: ClaseLote;
+    /** Color predeterminado del lote en el packing list (clave de COLORES_LOTE); null lo quita. */
+    colorPackingList?: string | null;
     /** USD/kg aproximado de VENTA; null borra el precio. */
     precioEstimadoKg?: number | null;
   }
 ): Promise<{ lote: Lote; advertencia?: string } | { error: string }> {
   try {
-    // clase y precioEstimadoKg: solo superadmin (el resto recibe 403).
+    // clase y precioEstimadoKg: solo superadmin (el resto recibe 403). El color lo puede cambiar quien edita lotes.
     const { lote, advertencia } = await apiFetch<{ lote: Lote; advertencia?: string }>(`/api/lotes/${id}`, {
       method: 'PATCH',
       body: cambios,

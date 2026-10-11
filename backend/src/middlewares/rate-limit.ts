@@ -86,3 +86,15 @@ export const operacionesClienteLimiter = rateLimit({
   message: { error: 'Demasiadas operaciones en poco tiempo. Reintenta en un minuto.', reintentar: true },
   keyGenerator: claveOperacionCliente,
 });
+
+/** Subidas de fotos de paletas del packing list: 30 por minuto por usuario (cada una escribe en un bucket privado). */
+export const LIMITE_FOTOS_PACKING_POR_MINUTO = 30;
+
+export const fotosPackingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: LIMITE_FOTOS_PACKING_POR_MINUTO,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiadas fotos en poco tiempo. Espera un minuto y reintenta.', reintentar: true },
+  keyGenerator: claveOperacionCliente,
+});

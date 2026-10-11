@@ -8,7 +8,7 @@ import {
   type ArchivoPdf, type ModoPdf,
 } from '../../services/pdf-documento';
 import {
-  ETIQUETA_SUBTIPO_MOVIMIENTO, ETIQUETA_TIPO_MOVIMIENTO, numeroMovimiento, tasaDe,
+  ETIQUETA_SUBTIPO_MOVIMIENTO, ETIQUETA_TIPO_MOVIMIENTO, esTransferenciaEnProceso, etiquetaEstadoMesa, montoQueRecibeElDestino, numeroMovimiento, tasaDe,
 } from './detalle-movimiento';
 
 const COLOR_ANULADO: [number, number, number] = [185, 28, 28];
@@ -19,6 +19,19 @@ const MARGEN_DERECHO = 539;
 function textoTipo(d: DetalleMovimiento): string {
   const { tipo, subtipo } = d.movimiento;
   return subtipo ? `${ETIQUETA_TIPO_MOVIMIENTO[tipo]} · ${ETIQUETA_SUBTIPO_MOVIMIENTO[subtipo]}` : ETIQUETA_TIPO_MOVIMIENTO[tipo];
+}
+
+/** Transferencia con mesa de cambio: cambista, estado, comisión y lo que recibe el destino. Un movimiento normal usa montoDestino. */
+function filasMesa(d: DetalleMovimiento): Array<[string, string | null]> {
+  const m = d.movimiento;
+  if (m.mesaCambistaId == null) return [['Recibe la banca destino', m.montoDestino == null ? null : fmt(m.montoDestino)]];
+  const recibe = montoQueRecibeElDestino(m);
+  return [
+    ['Mesa de cambio', d.cambistaNombre],
+    ['Estado de la transferencia', m.anulado ? 'Anulada' : etiquetaEstadoMesa(m)],
+    ['Comisión del cambio', m.mesaComision == null ? null : fmt(m.mesaComision)],
+    [esTransferenciaEnProceso(m) ? 'Recibirá la banca destino al completar' : 'Recibe la banca destino', recibe == null ? null : fmt(recibe)],
+  ];
 }
 
 /** Filas etiqueta/valor del encabezado; las vacías se omiten. */
@@ -37,7 +50,7 @@ function filasDelMovimiento(d: DetalleMovimiento): Array<[string, string]> {
     ['Referencia', m.referencia || null],
     ['Tasa', tasa == null ? null : `${fmt(tasa)} Bs por USD`],
     ['Equivalente en USD', usd == null || m.moneda === 'USD' ? null : `USD ${fmt(usd)}`],
-    ['Recibe la banca destino', m.montoDestino == null ? null : fmt(m.montoDestino)],
+    ...filasMesa(d),
   ];
   return filas.filter((f): f is [string, string] => f[1] != null);
 }

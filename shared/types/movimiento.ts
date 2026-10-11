@@ -49,4 +49,29 @@ export interface Movimiento {
   anuladoEn: string | null;
   /** Id de quien anuló. */
   anuladoPor: string | null;
+  /** Categoría o subcategoría del Wallet (null = sin categoría; las transferencias y los pagos/cobros no llevan). */
+  categoriaId?: string | null;
+  // Campos de mesa de cambio: opcionales porque la API los omite (o los manda null) en movimientos normales y
+  // mientras la migración de transferencias con mesa de cambio no esté aplicada.
+  /** Transferencia con mesa de cambio: cambista elegido; null en un movimiento normal. */
+  mesaCambistaId?: string | null;
+  /**
+   * 'en_proceso': el origen ya se descontó pero el destino NO ha recibido el saldo. 'completada': ya se acreditó
+   * (neto de comisión). Si `anulado` es true, la anulación manda.
+   */
+  mesaEstado?: 'en_proceso' | 'completada' | null;
+  /** Lo que el cambista debía entregar en la cuenta destino (moneda destino), antes de la comisión. */
+  mesaMontoBruto?: number | null;
+  mesaComisionModo?: 'porcentaje' | 'monto' | null;
+  mesaComisionPct?: number | null;
+  /** Comisión del cambio en la moneda destino. Reduce lo acreditado: neto = bruto - comisión. */
+  mesaComision?: number | null;
+  mesaCompletadaEn?: string | null;
+  mesaCompletadaPor?: string | null;
+  // Comisión bancaria (0.3%, mínimo 14 Bs) de un movimiento que debita una cuenta en Bs; opcionales porque la API los
+  // omite (o los manda null) en movimientos normales y mientras la migración no esté aplicada.
+  /** En el movimiento principal: comisión (Bs) cargada a la misma cuenta como un egreso aparte. */
+  comisionBancaria?: number | null;
+  /** En el cargo de la comisión: id del movimiento principal al que pertenece. */
+  comisionDeId?: string | null;
 }

@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { registrarAsiento } from '../../services/mesa-cambio-service';
 import { useToast } from '../../hooks/use-toast-context';
 import { hoyNegocio } from '../../lib/fecha-negocio';
-import { ETIQUETA_TIPO_ASIENTO, TIPOS_ASIENTO, formatearNumeroAsiento, type TipoAsiento } from '@shared/types/mesa-cambio';
+import { ETIQUETA_TIPO_ASIENTO, TIPOS_ASIENTO, formatearNumeroDocumento, type TipoAsiento } from '@shared/types/mesa-cambio';
 
 interface Props {
   cambistaId: string;
@@ -34,13 +34,15 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
   const [referencia, setReferencia] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const notaObligatoria = tipo === 'NC' || tipo === 'ND';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     const montoUsd = leerNumero(monto);
     const tasaNum = leerNumero(tasa);
-    if (!tipo) { setError('Elige el tipo de asiento (cargo o cobro).'); return; }
+    if (!tipo) { setError('Elige el tipo de asiento (cargo, cobro, nota de crédito o nota de débito).'); return; }
+    if ((tipo === 'NC' || tipo === 'ND') && !nota.trim()) { setError('La nota es obligatoria en una nota de crédito o de débito.'); return; }
     if (montoUsd === null || montoUsd <= 0) { setError('El monto debe ser mayor a 0.'); return; }
     if (tasa.trim() && (tasaNum === null || tasaNum <= 0)) { setError('La tasa debe ser un número mayor a 0.'); return; }
     setGuardando(true);
@@ -49,7 +51,7 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
     });
     setGuardando(false);
     if ('error' in r) { setError(r.error); return; }
-    toast.exito(`Asiento ${formatearNumeroAsiento(r.asiento.numero)} registrado.`);
+    toast.exito(`Asiento ${formatearNumeroDocumento(r.asiento)} registrado.`);
     onRegistrado();
   };
 
@@ -92,8 +94,8 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
             <input id="asiento-referencia" type="text" maxLength={60} value={referencia} onChange={e => setReferencia(e.target.value)} className={inputClass} />
           </div>
           <div>
-            <label htmlFor="asiento-nota" className={labelClass}>Nota (opcional)</label>
-            <textarea id="asiento-nota" rows={2} maxLength={300} value={nota} onChange={e => setNota(e.target.value)} className={inputClass} />
+            <label htmlFor="asiento-nota" className={labelClass}>{notaObligatoria ? 'Nota * (motivo de la nota)' : 'Nota (opcional)'}</label>
+            <textarea id="asiento-nota" rows={2} maxLength={300} required={notaObligatoria} value={nota} onChange={e => setNota(e.target.value)} className={inputClass} />
           </div>
           {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-3 pt-2">

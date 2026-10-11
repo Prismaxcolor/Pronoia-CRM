@@ -13,6 +13,8 @@ export interface FilaPackingList {
   numeroPaleta: number | null;
   lote: string | null;
   color: string | null;
+  /** Almacén del lote (control interno: no entra en los totales ni en los PDF). */
+  almacenId?: string | null;
   pesoBruto: number | null;
   pesoPaleta: number | null;
 }

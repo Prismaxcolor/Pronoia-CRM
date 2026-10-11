@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const acceso = vi.hoisted(() => ({ permitidas: null as ReadonlySet<string> | null }));
+const acceso = vi.hoisted(() => ({
+  permitidas: null as ReadonlySet<string> | null,
+  /** undefined = igual que permitidas (todo lo visible es editable). */
+  editables: undefined as ReadonlySet<string> | null | undefined,
+}));
 vi.mock('../src/services/banca-acceso-service.js', () => ({
-  bancasPermitidas: async () => acceso.permitidas,
+  accesoBancas: async () => ({
+    ver: acceso.permitidas,
+    editar: acceso.editables === undefined ? acceso.permitidas : acceso.editables,
+  }),
 }));
 
 import { exigirAccesoBancas } from '../src/middlewares/exigir-acceso-bancas.js';
+import { MENSAJE_SIN_ACCESO_BANCA, MENSAJE_SOLO_CONSULTA_BANCA } from '../src/utils/banca-acceso.js';
 
 function ejecutar(body: unknown, extra: (() => Promise<string[]>) | undefined = undefined) {
   const res = { statusCode: 200, cuerpo: undefined as unknown,
@@ -16,7 +24,7 @@ function ejecutar(body: unknown, extra: (() => Promise<string[]>) | undefined = 
   return exigirAccesoBancas(extra)(req as never, res as never, next).then(() => ({ res, next }));
 }
 
-beforeEach(() => { acceso.permitidas = null; });
+beforeEach(() => { acceso.permitidas = null; acceso.editables = undefined; });
 
 describe('exigirAccesoBancas', () => {
   it('sin restricción deja pasar', async () => {
@@ -67,6 +75,46 @@ describe('exigirAccesoBancas: falla cerrado', () => {
   it('registro inexistente (sin bancas) deja pasar al 404 del handler', async () => {
     acceso.permitidas = new Set(['a']);
     const { next } = await ejecutar({ monto: 5 }, async () => []);
+    expect(next).toHaveBeenCalled();
+  });
+});
+
+describe('exigirAccesoBancas: ver vs editar', () => {
+  it('cuenta solo-ver en el body responde 403 con mensaje de solo consulta', async () => {
+    acceso.permitidas = new Set(['a', 'b']);
+    acceso.editables = new Set(['a']);
+    const { res, next } = await ejecutar({ bancaId: 'b' });
+    expect(res.statusCode).toBe(403);
+    expect((res.cuerpo as { error: string }).error).toBe(MENSAJE_SOLO_CONSULTA_BANCA);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('transferencia con destino solo-ver se rechaza', async () => {
+    acceso.permitidas = new Set(['a', 'b']);
+    acceso.editables = new Set(['a']);
+    const { res } = await ejecutar({ bancaId: 'a', bancaDestinoId: 'b' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('editar/anular un registro cuya cuenta actual es solo-ver se rechaza', async () => {
+    acceso.permitidas = new Set(['a', 'b']);
+    acceso.editables = new Set(['a']);
+    const { res } = await ejecutar({ monto: 5 }, async () => ['b']);
+    expect(res.statusCode).toBe(403);
+    expect((res.cuerpo as { error: string }).error).toBe(MENSAJE_SOLO_CONSULTA_BANCA);
+  });
+
+  it('cuenta sin acceso mantiene el mensaje de sin acceso', async () => {
+    acceso.permitidas = new Set(['a']);
+    acceso.editables = new Set(['a']);
+    const { res } = await ejecutar({ bancaId: 'zzz' });
+    expect((res.cuerpo as { error: string }).error).toBe(MENSAJE_SIN_ACCESO_BANCA);
+  });
+
+  it('cuenta editable pasa', async () => {
+    acceso.permitidas = new Set(['a', 'b']);
+    acceso.editables = new Set(['a']);
+    const { next } = await ejecutar({ bancaId: 'a' });
     expect(next).toHaveBeenCalled();
   });
 });

@@ -29,3 +29,17 @@ export function detectarFormatoImagen(buffer: Uint8Array): FormatoImagen | null 
 export function infoFormatoImagen(formato: FormatoImagen): InfoFormato {
   return INFO[formato];
 }
+
+/** ¿El tipo MIME que declara el cliente coincide con el formato real según la firma del contenido? */
+export function mimeCoincideConFirma(mimeDeclarado: string | undefined, buffer: Uint8Array): boolean {
+  const formato = detectarFormatoImagen(buffer);
+  return formato !== null && mimeDeclarado === infoFormatoImagen(formato).mime;
+}
+
+/**
+ * Límites de multer para subir UNA imagen: un solo archivo, ningún campo de texto y como mucho dos partes del cuerpo
+ * (evita multipartes con miles de partes o campos que gastan memoria antes de llegar a las validaciones).
+ */
+export function limitesSubidaImagen(tamanoMaximo: number) {
+  return { fileSize: tamanoMaximo, files: 1, fields: 0, parts: 2 } as const;
+}

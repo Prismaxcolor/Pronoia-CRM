@@ -31,6 +31,8 @@ export const TIPO_OPERACION = {
   transformacionMixtaCompletar: 'transformacion_mixta_completar',
   packingListCrear: 'packing_list_crear',
   packingListEditar: 'packing_list_editar',
+  walletMovimientoCrear: 'wallet_movimiento_crear',
+  walletMesaCambioCrear: 'wallet_mesa_cambio_crear',
 } as const;
 
 export type TipoOperacion = (typeof TIPO_OPERACION)[keyof typeof TIPO_OPERACION];

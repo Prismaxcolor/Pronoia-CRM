@@ -21,7 +21,7 @@ import type { CostoProducto, EmbalajeEntrada, InventarioAlmacenEntrada, LoteEntr
 import type { ConfiguracionInventario } from '../schemas/configuracion-inventario.js';
 import { FILAS_DETALLE_POR_DEFECTO, MAX_FILAS_DETALLE } from '../schemas/inventario-pantalla.js';
 import { leerConfiguracionInventario } from './configuracion-inventario-service.js';
-import { cargarEmbalajesVigentes } from './lote-embalaje-service.js';
+import { cargarEmbalajesAFecha, cargarEmbalajesVigentes } from './lote-embalaje-service.js';
 import {
   cargarAlmacenes,
   cargarCostos,
@@ -34,6 +34,7 @@ import {
 } from './inventario-resumen-service.js';
 import {
   leerAjustes,
+  leerCompletadoEnTransformaciones,
   leerEmbalajesConContenedor,
   leerProductos,
   leerTickets,
@@ -41,6 +42,7 @@ import {
 } from './inventario-pantalla-datos.js';
 import { registrarInvalidacionCacheResumen } from './resumen-cache.js';
 import { hoyNegocio } from '../utils/fecha-negocio.js';
+import { AVISO_SOLO_KILOS, avisosSaldo, filtrarMovimientosAl, primerRegistro, resolverCorte } from '../utils/saldo-fecha.js';
 
 /** Mismo presupuesto que el resumen: deja margen bajo el límite de la función serverless. */
 export const PRESUPUESTO_PANTALLA_MS = 8_000;
@@ -57,6 +59,11 @@ export interface OpcionesPantalla {
   /** Solo el detalle. */
   limite?: number;
   vista?: VistaInventario;
+  /**
+   * Saldo en kg al cierre de este día (YYYY-MM-DD, inclusive) en vez del stock de hoy. Hoy o una fecha futura
+   * es el stock actual. Con fecha: solo lectura, solo kilos (sin costos) y sin alertas.
+   */
+  al?: string;
   incluirClasificaciones?: boolean;
   /** Solo true para usuarios con facturacion:ver; por defecto false (ni se consultan los costos). */
   incluirValor?: boolean;
@@ -76,24 +83,25 @@ export interface BasePantalla {
   movimientos: MovimientosInventario;
   avisos: string[];
   parcial: boolean;
+  /** Fecha (YYYY-MM-DD) del saldo; null = stock actual. */
+  corte: string | null;
 }
 
 const hoyISO = () => hoyNegocio();
 
-async function calcularBase(incluirValor: boolean, presupuestoMs: number): Promise<BasePantalla> {
-  const inicio = Date.now();
-  const seg: Seguimiento = { avisos: [], parcial: false, restanteMs: () => presupuestoMs - (Date.now() - inicio) };
-  const avisosLecturas: string[] = [];
-  const vacio = <T>(): T[] => [];
+const SIN_COMPLETADO_EN = { porId: new Map<string, string>(), disponible: false };
 
+/** Todas las lecturas de la base; con `corte`, los embalajes y el inventario son los de esa fecha. */
+function leerFuentes(incluirValor: boolean, corte: string | null, seg: Seguimiento, avisosLecturas: string[]) {
+  const vacio = <T>(): T[] => [];
   // El inventario de cada almacén (lo más lento) arranca en cuanto se conocen los almacenes.
-  const inventariosPromesa = esencial(cargarAlmacenes(), 'los almacenes', seg).then(almacenes =>
-    Promise.all(almacenes.map(a => inventarioDeAlmacen(a, seg)))
+  const inventarios = esencial(cargarAlmacenes(), 'los almacenes', seg).then(almacenes =>
+    Promise.all(almacenes.map(a => inventarioDeAlmacen(a, seg, corte)))
   );
-  const [almacenes, lotes, embalajes, config, costos, productos, tickets, transformaciones, ajustes, embContenedor] = await Promise.all([
-    inventariosPromesa,
+  return Promise.all([
+    inventarios,
     esencial(cargarLotes(), 'los lotes', seg),
-    leerConRespaldo(cargarEmbalajesVigentes(), [] as EmbalajeEntrada[], 'No se pudieron leer los embalajes: los kilos embalados aparecen en 0 y no son confiables.', seg),
+    leerConRespaldo(corte ? cargarEmbalajesAFecha(corte) : cargarEmbalajesVigentes(), [] as EmbalajeEntrada[], 'No se pudieron leer los embalajes: los kilos embalados aparecen en 0 y no son confiables.', seg),
     esencial(leerConfiguracionInventario(), 'la configuración', seg),
     incluirValor
       ? leerConRespaldo(cargarCostos(avisosLecturas), new Map<string, CostoProducto>(), 'No se pudieron leer los costos de compra: el valor a costo de los materiales no es confiable.', seg)
@@ -102,8 +110,22 @@ async function calcularBase(incluirValor: boolean, presupuestoMs: number): Promi
     leerConRespaldo(leerTickets(), vacio<MovimientosInventario['tickets'][number]>(), 'No se pudieron leer los tickets de compra y venta: despachos y antigüedad no son completos.', seg),
     leerConRespaldo(leerTransformaciones(), { transformaciones: vacio<MovimientosInventario['transformaciones'][number]>(), sinMermaTipificada: false }, 'No se pudieron leer las transformaciones: rendimiento y merma no son completos.', seg),
     leerConRespaldo(leerAjustes(), vacio<MovimientosInventario['ajustes'][number]>(), 'No se pudieron leer los ajustes de toma física: la antigüedad estimada no es completa.', seg),
-    leerConRespaldo(leerEmbalajesConContenedor(), vacio<MovimientosInventario['embalajes'][number]>(), 'No se pudo leer el contenedor de los embalajes: la alerta de embalado sin contenedor no es completa.', seg),
+    // Con fecha, los embalajes con contenedor de hoy no describen ese día: la alerta no aplica.
+    corte
+      ? Promise.resolve(vacio<MovimientosInventario['embalajes'][number]>())
+      : leerConRespaldo(leerEmbalajesConContenedor(), vacio<MovimientosInventario['embalajes'][number]>(), 'No se pudo leer el contenedor de los embalajes: la alerta de embalado sin contenedor no es completa.', seg),
+    corte
+      ? leerConRespaldo(leerCompletadoEnTransformaciones(), SIN_COMPLETADO_EN, 'No se pudo leer cuándo se completaron las transformaciones.', seg)
+      : Promise.resolve(null),
   ]);
+}
+
+async function calcularBase(incluirValor: boolean, presupuestoMs: number, corte: string | null = null): Promise<BasePantalla> {
+  const inicio = Date.now();
+  const seg: Seguimiento = { avisos: [], parcial: false, restanteMs: () => presupuestoMs - (Date.now() - inicio) };
+  const avisosLecturas: string[] = [];
+  const [almacenes, lotes, embalajes, config, costos, productos, tickets, transformaciones, ajustes, embContenedor, completado] =
+    await leerFuentes(incluirValor, corte, seg, avisosLecturas);
   if (avisosLecturas.length > 0) {
     seg.parcial = true;
     seg.avisos.push(...avisosLecturas);
@@ -113,13 +135,12 @@ async function calcularBase(incluirValor: boolean, presupuestoMs: number): Promi
     // `parcial` y la base se cachea con el TTL normal. Solo los avisos de lecturas fallidas o lentas son parciales.
     seg.avisos.push('Aún no está habilitada la merma por tipo en la base de datos: la merma aparece sin clasificar.');
   }
-  return {
-    generadoEn: new Date().toISOString(),
-    almacenes, lotes, embalajes, costos, config,
-    movimientos: { productos, tickets, transformaciones: transformaciones.transformaciones, ajustes, embalajes: embContenedor },
-    avisos: seg.avisos,
-    parcial: seg.parcial,
-  };
+  const completo: MovimientosInventario = { productos, tickets, transformaciones: transformaciones.transformaciones, ajustes, embalajes: embContenedor };
+  const movimientos = corte && completado ? filtrarMovimientosAl(completo, corte, completado.porId) : completo;
+  if (corte && completado) {
+    seg.avisos.push(...avisosSaldo({ corte, primerRegistro: primerRegistro(completo), almacenes, completadoEnDisponible: completado.disponible, valorSolicitado: false }));
+  }
+  return { generadoEn: new Date().toISOString(), almacenes, lotes, embalajes, costos, config, movimientos, avisos: seg.avisos, parcial: seg.parcial, corte };
 }
 
 /**
@@ -146,14 +167,19 @@ interface Contexto {
 }
 
 async function prepararContexto(opts: OpcionesPantalla): Promise<Contexto> {
-  const rango = resolverRangoMerma(opts);
+  const hoy = opts.hoy ?? hoyISO();
+  const corte = resolverCorte(opts.al, hoy);
+  // Sin rango pedido, el período por defecto (últimos 30 días) termina en la fecha del saldo.
+  const rango = resolverRangoMerma(corte && !opts.desde && !opts.hasta ? { ...opts, hoy: corte } : opts);
   if (!rango) throw new Error('Rango de fechas inválido: usa desde y hasta (YYYY-MM-DD) con desde <= hasta.');
-  const incluirValor = opts.incluirValor === true;
-  const base = await cacheBase.obtener(`valor:${incluirValor ? 1 : 0}`, () =>
-    calcularBase(incluirValor, opts.presupuestoMs ?? PRESUPUESTO_PANTALLA_MS)
+  // Con fecha solo hay kilos: los costos y precios son de hoy y no valen para un saldo pasado.
+  const incluirValor = opts.incluirValor === true && !corte;
+  const base = await cacheBase.obtener(`valor:${incluirValor ? 1 : 0}|al:${corte ?? ''}`, () =>
+    calcularBase(incluirValor, opts.presupuestoMs ?? PRESUPUESTO_PANTALLA_MS, corte)
   );
+  const avisos = corte && opts.incluirValor === true ? [...base.avisos, AVISO_SOLO_KILOS] : [...base.avisos];
   return {
-    base, rango, hoy: opts.hoy ?? hoyISO(), valorOculto: !incluirValor, avisos: [...base.avisos],
+    base, rango, hoy: corte ?? hoy, valorOculto: !incluirValor, avisos,
     filtros: { desde: rango.desde, hasta: rango.hasta, categoria: opts.categoria ?? null, almacen: opts.almacen ?? null, q: opts.q ?? null },
   };
 }
@@ -165,6 +191,7 @@ export async function obtenerBasePantalla(incluirValor: boolean, presupuestoMs =
 
 const meta = (c: Contexto): MetaPantalla => ({
   generadoEn: c.base.generadoEn, valorOculto: c.valorOculto, parcial: c.base.parcial, avisos: c.avisos, filtros: c.filtros,
+  saldoAl: c.base.corte,
 });
 
 /** Filas del contexto; los avisos del cálculo (antigüedad con filtro de almacén) se suman a los de la respuesta. */
@@ -211,6 +238,11 @@ export async function obtenerCategoriasPantalla(opts: OpcionesPantalla = {}): Pr
 /** Alertas: antigüedad (según configuracion_inventario), merma sobre el umbral y embalado sin contenedor. */
 export async function obtenerAlertasPantalla(opts: OpcionesPantalla = {}): Promise<AlertasPantalla> {
   const c = await prepararContexto(opts);
+  if (c.base.corte) {
+    // Las alertas piden acción sobre lo que hay HOY: no se calculan para un saldo pasado.
+    c.avisos.push('Las alertas se calculan con el estado de hoy y no aplican a un saldo en una fecha pasada.');
+    return { ...meta(c), ...construirAlertas({ filas: [], config: c.base.config, transformaciones: [], rango: c.rango, embalajes: [] }) };
+  }
   const filas = filtrarFilas(filasDelContexto(c).filas, { categoria: opts.categoria, q: opts.q });
   const transformaciones = c.base.movimientos.transformaciones.filter(t => !c.filtros.almacen || t.almacenId === c.filtros.almacen);
   const r = construirAlertas({ filas, config: c.base.config, transformaciones, rango: c.rango, embalajes: c.base.movimientos.embalajes });

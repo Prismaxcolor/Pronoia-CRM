@@ -15,6 +15,10 @@ export interface FiltrosCochinito {
   desde?: string;
   hasta?: string;
   subtipo?: string;
+  /** Ids de categoría/subcategoría incluidos (ya resueltos); un conjunto vacío no deja pasar nada. */
+  categoriaIds?: ReadonlySet<string>;
+  /** Solo ingresos y egresos sin categoría (las transferencias no llevan categoría y no cuentan). */
+  sinCategoria?: boolean;
 }
 
 const DIA_MS = 86400000;
@@ -58,6 +62,8 @@ export function filtrarMovimientos(
     if (f.tipo && m.tipo !== f.tipo) return false;
     if (f.subtipo && m.subtipo !== f.subtipo) return false;
     if (f.banca && m.bancaOrigenId !== f.banca && m.bancaDestinoId !== f.banca) return false;
+    if (f.sinCategoria && (m.tipo === 'transferencia' || m.categoriaId)) return false;
+    if (f.categoriaIds && !(m.categoriaId && f.categoriaIds.has(m.categoriaId))) return false;
     const dia = diaDe(m);
     if (f.desde && dia < f.desde) return false;
     if (f.hasta && dia > f.hasta) return false;

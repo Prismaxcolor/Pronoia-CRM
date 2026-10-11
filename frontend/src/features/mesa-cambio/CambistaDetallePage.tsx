@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { obtenerEstadoCuentaMesa } from '../../services/mesa-cambio-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonBloque } from '../../components/ui';
 import { formatearFecha } from '../../lib/formato';
-import { describirSaldo, formatearNumeroAsiento, type EstadoCuentaMesa } from '@shared/types/mesa-cambio';
+import { ETIQUETA_CORTA_TIPO_ASIENTO, describirSaldo, formatearNumeroDocumento, type EstadoCuentaMesa } from '@shared/types/mesa-cambio';
+import { rutaDetalleMovimiento } from '../cochinito/detalle-movimiento';
 import AsientoModal from './AsientoModal';
 import AnularAsientoModal from './AnularAsientoModal';
 import SaldoCambista from './SaldoCambista';
@@ -53,7 +54,7 @@ function CambistaDetallePage() {
     <div>
       <EncabezadoPagina
         titulo={estado?.cambista.nombre ?? 'Estado de cuenta'}
-        subtitulo="Estado de cuenta en USD. Cargo = aumenta lo que les debemos; cobro = lo reduce."
+        subtitulo="Estado de cuenta en USD. Cargo y nota de débito aumentan lo que les debemos; cobro y nota de crédito lo reducen."
         migas={[{ etiqueta: 'Mesa de cambio', to: '/mesa-cambio' }, { etiqueta: estado?.cambista.nombre ?? 'Estado de cuenta' }]}
        
         acciones={puedeCrear && estado?.cambista.activo && (
@@ -122,12 +123,15 @@ function CambistaDetallePage() {
                   )}
                   {estado.filas.map(f => (
                     <tr key={f.id} className={`border-b border-border last:border-0 ${f.anulado ? 'text-text-muted' : ''}`}>
-                      <td className="p-3 whitespace-nowrap">{formatearNumeroAsiento(f.numero)}</td>
+                      <td className="p-3 whitespace-nowrap">{formatearNumeroDocumento(f)}</td>
                       <td className="p-3 whitespace-nowrap">{formatearFecha(f.fecha)}</td>
                       <td className="p-3">
                         <span className={f.anulado ? 'line-through' : ''}>
-                          {f.tipo === 'CARGO' ? 'Cargo' : 'Cobro'}{f.referencia ? ` · ${f.referencia}` : ''}{f.nota ? ` · ${f.nota}` : ''}
+                          {ETIQUETA_CORTA_TIPO_ASIENTO[f.tipo]}{f.referencia ? ` · ${f.referencia}` : ''}{f.nota ? ` · ${f.nota}` : ''}
                         </span>
+                        {f.movimientoId && (
+                          <Link to={rutaDetalleMovimiento(f.movimientoId)} className="block text-xs text-brand-600 hover:underline">Ver la transferencia de Wallet</Link>
+                        )}
                         {f.tasa != null && <span className="block text-xs text-text-muted">Tasa informativa: {fmt(f.tasa)}</span>}
                         {f.anulado && <span className="block text-xs">Anulado: {f.anuladoMotivo} (era USD {fmt(f.montoUsd)})</span>}
                       </td>
@@ -136,7 +140,8 @@ function CambistaDetallePage() {
                       <td className="p-3 text-right tabular-nums font-medium">{fmt(f.saldoCorrido)}</td>
                       {puedeEditar && (
                         <td className="p-3 text-right">
-                          {!f.anulado && (
+                          {!f.anulado && f.movimientoId && <span className="text-xs text-text-muted" title="Este asiento se anula anulando la transferencia en Wallet.">Desde la transferencia</span>}
+                          {!f.anulado && !f.movimientoId && (
                             <button type="button" onClick={() => setAnulando({ id: f.id, numero: f.numero })} className="text-xs text-red-600 hover:underline">Anular</button>
                           )}
                         </td>

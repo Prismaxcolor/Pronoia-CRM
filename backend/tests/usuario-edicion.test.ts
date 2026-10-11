@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { actualizarUsuarioSchema } from '../src/schemas/usuarios.js';
-import { validarEdicionUsuario, validarPrivilegiosEdicion } from '../src/utils/usuario-reglas.js';
+import { PERMISOS_POR_ROL } from '../src/utils/permisos.js';
+import { validarEdicionUsuario, validarPrivilegiosCreacion, validarPrivilegiosEdicion } from '../src/utils/usuario-reglas.js';
 
 describe('validarPrivilegiosEdicion (escalada de privilegios)', () => {
   const base = {
@@ -111,5 +112,114 @@ describe('validarEdicionUsuario', () => {
     expect(validarEdicionUsuario({
       ...base, superadminsActivos: 1, target: { rol: 'superadmin', activo: false }, cambios: { rol: 'trabajador' },
     })).toBeNull();
+  });
+});
+
+describe('validarPrivilegiosEdicion: conceder permisos', () => {
+  const p = (recurso: string, accion = 'ver') => ({ recurso, accion }) as never;
+  const admin = { rol: 'administracion' as const, activo: true };
+  const base = {
+    actor: admin,
+    actorId: 'a',
+    targetId: 'b',
+    targetRol: 'trabajador' as const,
+    targetPermisos: null,
+  };
+
+  it('un no superadmin no puede conceder un permiso que él no tiene', () => {
+    // administracion no tiene despachos:eliminar
+    const r = validarPrivilegiosEdicion({ ...base, cambios: { permisos: [p('despachos', 'eliminar')] } });
+    expect(r?.status).toBe(403);
+    expect(r?.error).toMatch(/no tienes/i);
+  });
+
+  it('puede conceder permisos que sí tiene', () => {
+    expect(validarPrivilegiosEdicion({ ...base, cambios: { permisos: [p('despachos', 'ver'), p('facturacion', 'editar')] } })).toBeNull();
+  });
+
+  it('tampoco puede concederse a sí mismo permisos que no tiene', () => {
+    const r = validarPrivilegiosEdicion({ ...base, targetId: 'a', targetRol: 'administracion', cambios: { permisos: [p('despachos', 'eliminar')] } });
+    expect(r?.status).toBe(403);
+  });
+
+  it('usa los permisos personalizados del actor, no solo los del rol', () => {
+    const actorPermisos = [p('usuarios', 'editar'), p('dashboard')];
+    expect(validarPrivilegiosEdicion({ ...base, actorPermisos, cambios: { permisos: [p('dashboard')] } })).toBeNull();
+    expect(validarPrivilegiosEdicion({ ...base, actorPermisos, cambios: { permisos: [p('facturacion')] } })?.status).toBe(403);
+  });
+
+  it.each(['nomina', 'usuarios'])('nadie salvo superadmin concede el recurso %s, aunque lo tenga', recurso => {
+    const actorPermisos = [p(recurso, 'ver'), p(recurso, 'editar')];
+    const r = validarPrivilegiosEdicion({ ...base, actorPermisos, cambios: { permisos: [p(recurso, 'ver')] } });
+    expect(r?.status).toBe(403);
+    expect(r?.error).toMatch(/superadmin/i);
+  });
+
+  it('reenviar un permiso de nómina que el usuario ya tenía no es conceder (se puede editar el resto)', () => {
+    const actual = [p('nomina', 'ver'), p('dashboard')];
+    const r = validarPrivilegiosEdicion({
+      ...base, actorPermisos: [p('dashboard'), p('despachos')], targetPermisos: actual,
+      cambios: { permisos: [p('nomina', 'ver'), p('dashboard')] },
+    });
+    expect(r).toBeNull();
+  });
+
+  it('quitar permisos nunca es conceder', () => {
+    const actual = [p('nomina', 'ver'), p('dashboard')];
+    expect(validarPrivilegiosEdicion({ ...base, targetPermisos: actual, cambios: { permisos: [p('dashboard')] } })).toBeNull();
+  });
+
+  it('subir de rol concede los permisos del rol nuevo: se comprueba igual', () => {
+    // trabajador -> administracion concede permisos que el actor administracion sí tiene
+    expect(validarPrivilegiosEdicion({ ...base, cambios: { rol: 'administracion' } })).toBeNull();
+    // un actor con permisos personalizados reducidos no puede ascender a otro a administracion
+    const r = validarPrivilegiosEdicion({ ...base, actorPermisos: [p('usuarios', 'editar')], cambios: { rol: 'administracion' } });
+    expect(r?.status).toBe(403);
+  });
+
+  it('una lista de permisos vacía devuelve al usuario a los permisos de su rol', () => {
+    const r = validarPrivilegiosEdicion({
+      ...base, actorPermisos: [p('usuarios', 'editar')], targetPermisos: [p('dashboard')], cambios: { permisos: [] },
+    });
+    expect(r?.status).toBe(403); // el rol trabajador tiene permisos que este actor no posee
+  });
+
+  it('el superadmin concede lo que quiera, incluidos nómina y usuarios', () => {
+    expect(validarPrivilegiosEdicion({
+      ...base, actor: { rol: 'superadmin', activo: true }, cambios: { permisos: [p('nomina', 'eliminar'), p('usuarios', 'eliminar')] },
+    })).toBeNull();
+  });
+});
+
+describe('validarPrivilegiosCreacion', () => {
+  const admin = { rol: 'administracion' as const, activo: true };
+  it('un no superadmin no puede crear superadmins', () => {
+    expect(validarPrivilegiosCreacion({ actor: admin, rol: 'superadmin' })?.status).toBe(403);
+  });
+  it('puede crear usuarios con un rol cuyos permisos él tiene (todos)', () => {
+    expect(validarPrivilegiosCreacion({ actor: admin, rol: 'administracion' })).toBeNull();
+    expect(validarPrivilegiosCreacion({ actor: admin, actorPermisos: PERMISOS_POR_ROL.trabajador, rol: 'trabajador' })).toBeNull();
+  });
+  it('si el rol nuevo trae permisos que él no tiene, no puede crearlo (regla estricta: nada de conceder más de lo que se tiene)', () => {
+    // trabajador tiene productos:crear, que administracion no tiene
+    expect(validarPrivilegiosCreacion({ actor: admin, rol: 'trabajador' })?.status).toBe(403);
+  });
+  it('un actor con permisos reducidos no puede crear un rol que concede más', () => {
+    const reducidos = [{ recurso: 'usuarios', accion: 'crear' }] as never;
+    expect(validarPrivilegiosCreacion({ actor: admin, actorPermisos: reducidos, rol: 'trabajador' })?.status).toBe(403);
+  });
+  it('el superadmin crea cualquier rol; un actor inactivo o inexistente nada', () => {
+    expect(validarPrivilegiosCreacion({ actor: { rol: 'superadmin', activo: true }, rol: 'superadmin' })).toBeNull();
+    expect(validarPrivilegiosCreacion({ actor: null, rol: 'trabajador' })?.status).toBe(403);
+  });
+});
+
+describe('actualizarUsuarioSchema: permisos', () => {
+  it('rechaza permisos repetidos y listas desmesuradas', () => {
+    const uno = { recurso: 'dashboard', accion: 'ver' };
+    expect(actualizarUsuarioSchema.safeParse({ permisos: [uno, uno] }).success).toBe(false);
+    const muchos = Array.from({ length: 200 }, () => uno);
+    expect(actualizarUsuarioSchema.safeParse({ permisos: muchos }).success).toBe(false);
+    expect(actualizarUsuarioSchema.safeParse({ permisos: [uno] }).success).toBe(true);
   });
 });

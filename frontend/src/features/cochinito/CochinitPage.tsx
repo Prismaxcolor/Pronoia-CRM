@@ -20,10 +20,17 @@ import BancaFormModal from './BancaFormModal';
 import EditarMovimientoModal from './EditarMovimientoModal';
 import AnularConLlaveModal from '../../components/AnularConLlaveModal';
 import { anularMovimiento } from '../../services/transaccion-edicion-service';
+import { completarTransferenciaMesa } from '../../services/transferencia-mesa-service';
+import { montoQueRecibeElDestino } from './detalle-movimiento';
 import KpisCochinito from './KpisCochinito';
+import { useTasasUsd } from './useTasasUsd';
 import SaldosBancas from './SaldosBancas';
 import TarjetaBanca from './TarjetaBanca';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import NavegacionWallet from './categorias/NavegacionWallet';
+import CambiarCategoriaModal from './categorias/CambiarCategoriaModal';
+import { useCategorias } from './categorias/useCategorias';
+import { armarArbol, resolverFiltroCategoria, VALOR_SIN_CATEGORIA } from './categorias/categorias-logica';
 
 // Lo pesado se carga aparte y después de los indicadores.
 const BloquesGraficas = lazy(() => import('./BloquesGraficas'));
@@ -35,6 +42,8 @@ const ESQUEMA_FILTROS = {
     tipo: { tipo: 'opcion', opciones: TIPOS_MOVIMIENTO },
     subtipo: { tipo: 'opcion', opciones: SUBTIPOS_EGRESO },
     banca: { tipo: 'texto' },
+    categoria: { tipo: 'texto' },
+    subcategoria: { tipo: 'texto' },
     q: { tipo: 'texto' },
     desde: { tipo: 'fecha' },
     hasta: { tipo: 'fecha' },
@@ -60,6 +69,10 @@ function CochinitPage() {
   const toast = useToast();
   const confirmar = useConfirm();
   const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
+  const catWallet = useCategorias();
+  const [movCategoria, setMovCategoria] = useState<Movimiento | null>(null);
+  // Tasas Binance y BCV: una sola carga por pantalla para los equivalentes en USD (tarjetas, total en Bs y formulario).
+  const tasasUsd = useTasasUsd();
   const [bancas, setBancas] = useState<Banca[]>([]);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -72,6 +85,7 @@ function CochinitPage() {
   const puedeCrear = tienePermiso('cochinito', 'crear');
   const puedeEditar = tienePermiso('cochinito', 'editar');
   const puedeArchivar = tienePermiso('cochinito', 'eliminar');
+  const puedeCompletar = puedeEditar && tienePermiso('mesa_cambio', 'ver');
   const puedeVerProveedores = tienePermiso('proveedores', 'ver');
   const puedeVerClientes = tienePermiso('clientes', 'ver');
 
@@ -132,14 +146,30 @@ function CochinitPage() {
   const saldos = useMemo(() => saldosPorBanca(bancas), [bancas]);
   const hayIngresos = useMemo(() => vigentes.some(m => m.tipo === 'ingreso'), [vigentes]);
   const bancaFiltro = str(filtros.banca);
+  const categoriaFiltro = str(filtros.categoria);
+  const subcategoriaFiltro = str(filtros.subcategoria);
 
   const movFiltrados = useMemo(
     () => filtrarMovimientos(
       movimientos,
-      { tipo: str(filtros.tipo), subtipo: str(filtros.subtipo), banca: bancaFiltro, q: str(filtros.q), desde: periodo.desde, hasta: periodo.hasta },
+      {
+        tipo: str(filtros.tipo), subtipo: str(filtros.subtipo), banca: bancaFiltro, q: str(filtros.q), desde: periodo.desde, hasta: periodo.hasta,
+        ...resolverFiltroCategoria({ categoria: categoriaFiltro, subcategoria: subcategoriaFiltro }, catWallet.categorias),
+      },
       nombreContraparte,
     ),
-    [movimientos, filtros.tipo, filtros.subtipo, filtros.q, bancaFiltro, periodo, nombreContraparte],
+    [movimientos, filtros.tipo, filtros.subtipo, filtros.q, bancaFiltro, categoriaFiltro, subcategoriaFiltro, catWallet.categorias, periodo, nombreContraparte],
+  );
+
+  // Filtros por categoría: la categoría (o "Sin categoría") y, si tiene, su subcategoría.
+  const arbolCategorias = useMemo(() => armarArbol(catWallet.categorias, true), [catWallet.categorias]);
+  const opcionesCategoria = useMemo(() => [
+    { valor: VALOR_SIN_CATEGORIA, etiqueta: 'Sin categoría' },
+    ...arbolCategorias.map(n => ({ valor: n.categoria.id, etiqueta: n.categoria.nombre })),
+  ], [arbolCategorias]);
+  const opcionesSubcategoria = useMemo(
+    () => (arbolCategorias.find(n => n.categoria.id === categoriaFiltro)?.hijas ?? []).map(h => ({ valor: h.id, etiqueta: h.nombre })),
+    [arbolCategorias, categoriaFiltro],
   );
 
   const recargarTras = async () => {
@@ -157,6 +187,24 @@ function CochinitPage() {
   const onMovimientoEditado = async (advertencia?: string) => {
     setEdicion(null);
     if (advertencia) toast.errorMsg(advertencia); else toast.exito('Movimiento actualizado.');
+    await recargarTras();
+  };
+
+  const handleCompletar = async (m: Movimiento) => {
+    const destino = bancas.find(b => b.id === m.bancaDestinoId);
+    const recibe = montoQueRecibeElDestino(m);
+    const simbolo = destino?.moneda === 'USD' ? 'USD' : destino?.moneda === 'VES' ? 'Bs' : destino?.moneda ?? '';
+    const monto = recibe == null ? '' : `${simbolo} ${recibe.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} `;
+    const ok = await confirmar({
+      titulo: 'Completar transferencia',
+      mensaje: `Se acreditarán ${monto}en ${destino?.nombre ?? 'la cuenta destino'} (ya descontada la comisión) y se saldará la deuda del cambista. Hazlo solo cuando el cambista ya entregó el dinero.`,
+      confirmarLabel: 'Completar',
+      variante: 'warning',
+    });
+    if (!ok) return;
+    const r = await completarTransferenciaMesa(m.id);
+    if ('error' in r) { toast.errorMsg(r.error); return; }
+    toast.exito(r.yaCompletada ? 'La transferencia ya estaba completada.' : 'Transferencia completada: el saldo ya está en la cuenta destino.');
     await recargarTras();
   };
 
@@ -226,20 +274,29 @@ function CochinitPage() {
         subtitulo={`Tesorería de Pronoia: cuánto hay en cada banca, qué se ha pagado y a cuánto está la tasa de cambio. ${bancas.filter(b => !b.archivada).length} bancas activas.`}
         acciones={puedeCrear ? <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setModalAbierto(true)}>Nuevo movimiento</BotonAccion> : undefined}
       />
+      <NavegacionWallet />
 
       <FiltrosBarra
         rango={{ desde: str(filtros.desde), hasta: str(filtros.hasta), onCambiar: r => cambiar({ desde: r.desde, hasta: r.hasta }) }}
-        selectores={[{ id: 'cochinito-tipo', etiqueta: 'Tipo de movimiento', valor: str(filtros.tipo), opciones: OPCIONES_TIPO, onCambiar: v => cambiar({ tipo: v }) }]}
+        selectores={[
+          { id: 'cochinito-tipo', etiqueta: 'Tipo de movimiento', valor: str(filtros.tipo), opciones: OPCIONES_TIPO, onCambiar: v => cambiar({ tipo: v }) },
+          ...(catWallet.categorias.length > 0
+            ? [{ id: 'cochinito-categoria', etiqueta: 'Categoría', valor: categoriaFiltro, opciones: opcionesCategoria, cargando: false, onCambiar: (v: string | undefined) => cambiar({ categoria: v, subcategoria: undefined }) }]
+            : []),
+        ]}
         buscador={{ id: 'cochinito-q', valor: str(filtros.q), onCambiar: v => cambiar({ q: v }), placeholder: 'Descripción, referencia, N° o proveedor…' }}
         avanzados={[
           { id: 'cochinito-banca', etiqueta: 'Banca', valor: bancaFiltro, opciones: bancas.map(b => ({ valor: b.id, etiqueta: b.nombre })), cargando: false, onCambiar: v => cambiar({ banca: v }) },
+          ...(opcionesSubcategoria.length > 0
+            ? [{ id: 'cochinito-subcategoria', etiqueta: 'Subcategoría', valor: subcategoriaFiltro, opciones: opcionesSubcategoria, cargando: false, onCambiar: (v: string | undefined) => cambiar({ subcategoria: v }) }]
+            : []),
           { id: 'cochinito-subtipo', etiqueta: 'Pago o adelanto', valor: str(filtros.subtipo), opciones: OPCIONES_SUBTIPO, onCambiar: v => cambiar({ subtipo: v }) },
         ]}
         onLimpiar={limpiar}
       />
 
       <section aria-label="Indicadores principales">
-        <KpisCochinito kpis={kpis} periodo={periodo} />
+        <KpisCochinito kpis={kpis} periodo={periodo} tasaBinance={tasasUsd.cargando ? undefined : tasasUsd.tasas.binance} />
       </section>
 
       {kpis.bancasNegativas > 0 && (
@@ -285,6 +342,7 @@ function CochinitPage() {
                   banca={banca}
                   indice={i}
                   seleccionada={bancaFiltro === banca.id}
+                  tasaBinance={tasasUsd.cargando ? undefined : tasasUsd.tasas.binance}
                   onAlternarFiltro={() => cambiar({ banca: bancaFiltro === banca.id ? undefined : banca.id })}
                   onEditar={puedeEditar ? () => setModalBanca({ abierto: true, banca }) : undefined}
                   onArchivar={puedeArchivar ? () => handleArchivarBanca(banca) : undefined}
@@ -331,16 +389,29 @@ function CochinitPage() {
             vacio={vacioTabla}
             onEditar={m => setEdicion({ modo: 'editar', movimiento: m })}
             onAnular={m => setEdicion({ modo: 'anular', movimiento: m })}
+            onCompletar={puedeCompletar ? handleCompletar : undefined}
+            categorias={catWallet.indice}
+            onCambiarCategoria={puedeEditar && catWallet.categorias.length > 0 ? setMovCategoria : undefined}
           />
         </Suspense>
       </Bloque>
 
       {/* Modales */}
+      {movCategoria && (
+        <CambiarCategoriaModal
+          movimiento={movCategoria}
+          categorias={catWallet.categorias}
+          indice={catWallet.indice}
+          onClose={() => setMovCategoria(null)}
+          onGuardado={async () => { setMovCategoria(null); toast.exito('Categoría actualizada.'); await recargarTras(); }}
+        />
+      )}
       {modalAbierto && (
         <CrearMovimientoModal
           bancas={bancas}
           onClose={() => setModalAbierto(false)}
           onCreado={onMovimientoCreado}
+          tasasUsd={tasasUsd}
         />
       )}
       {edicion?.modo === 'editar' && (

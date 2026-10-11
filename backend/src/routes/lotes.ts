@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { listarLotes, crearLote, actualizarLote, MENSAJE_CLASIFICACION_NO_HABILITADA } from '../services/lote-service.js';
+import { listarLotes, crearLote, actualizarLote, MENSAJE_CLASIFICACION_NO_HABILITADA, MENSAJE_COLOR_NO_HABILITADO, MENSAJE_LOTE_MIGRACION_PENDIENTE } from '../services/lote-service.js';
 import { listarEmbalajes, marcarEmbalado, anularEmbalaje } from '../services/lote-embalaje-service.js';
 import { marcarEmbalajeSchema, anularEmbalajeSchema } from '../schemas/lote-embalajes.js';
 import { invalidarCacheResumen } from '../services/resumen-cache.js';
@@ -17,6 +17,9 @@ router.use(requireAuth);
 // de planta: productos:editar. En cambio la CLASE del lote y su PRECIO ESTIMADO de venta alimentan las cifras
 // de valor y de exportación que ve todo el equipo: solo superadmin (el nivel más alto que existe).
 const MENSAJE_SOLO_SUPERADMIN = 'Solo un superadmin puede cambiar la clase o el precio estimado de un lote.';
+
+const sinMigracion = (mensaje: string): boolean =>
+  mensaje === MENSAJE_CLASIFICACION_NO_HABILITADA || mensaje === MENSAJE_COLOR_NO_HABILITADO || mensaje === MENSAJE_LOTE_MIGRACION_PENDIENTE;
 
 function errorInterno(req: Request, res: Response, evento: string, err: unknown, mensaje: string) {
   logger.error({ evento, ip: clienteIp(req), userId: req.user?.sub, motivo: err instanceof Error ? err.message : String(err) });
@@ -66,7 +69,7 @@ router.patch(
       const result = await actualizarLote(id, req.body, { userId: req.user!.sub, email: req.user!.email });
       if ('error' in result) {
         const status =
-          result.error.includes('no encontrado') ? 404 : result.error === MENSAJE_CLASIFICACION_NO_HABILITADA ? 409 : 400;
+          result.error.includes('no encontrado') ? 404 : sinMigracion(result.error) ? 409 : 400;
         res.status(status).json(result);
         return;
       }

@@ -42,6 +42,8 @@ export interface CrearBancaInput {
   descripcion: string;
   /** Clave de la paleta; null/omitido = sin color. */
   color?: string | null;
+  /** URL de la imagen subida con subirImagenBanca; null/omitido = sin imagen. */
+  imagenUrl?: string | null;
   /** Chat de Telegram de los avisos de la banca; null/omitido = grupo general de cajas. */
   telegramChatId?: string | null;
 }
@@ -66,6 +68,8 @@ export interface ActualizarBancaInput {
   descripcion?: string;
   /** null quita el color. */
   color?: string | null;
+  /** null quita la imagen; omitido la deja como está. */
+  imagenUrl?: string | null;
   /** null vuelve al grupo general de cajas. */
   telegramChatId?: string | null;
 }
@@ -126,6 +130,12 @@ export interface CrearMovimientoInput {
   clienteId?: string | null;
   /** URLs de la imagen del comprobante (opcional), subidas con subirComprobantePago. */
   comprobantes?: string[];
+  /** Categoría o subcategoría del Wallet (solo ingreso y egreso). null/omitido = sin categoría. */
+  categoriaId?: string | null;
+  /** Egreso o transferencia desde una cuenta en Bs: si lleva la comisión bancaria del 0.3% (mínimo 14 Bs). */
+  llevaComision?: boolean;
+  /** UUID del intento: un doble clic o reintento con el mismo id no registra el movimiento (ni su comisión) dos veces. */
+  clientRequestId?: string;
 }
 
 /** Crea un movimiento de ingreso, egreso o transferencia. El trigger SQL ajusta el saldo. */
@@ -150,6 +160,8 @@ export interface DetalleMovimiento {
   /** Solo viene con nombre si el usuario puede ver proveedores / clientes. */
   proveedorNombre: string | null;
   clienteNombre: string | null;
+  /** Cambista de una transferencia con mesa de cambio; null si no aplica o no hay permiso de ver la mesa. */
+  cambistaNombre: string | null;
   registradoPorNombre: string | null;
   anuladoPorNombre: string | null;
 }

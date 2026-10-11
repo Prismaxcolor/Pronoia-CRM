@@ -26,6 +26,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MSG_NO_ENCONTRADO = 'Movimiento no encontrado.';
 const MSG_SIN_REGISTRO_HISTORIAL =
   'El cambio se guardó, pero no se pudo registrar en el historial de ediciones. Avisa al administrador.';
+const MSG_MESA_SIN_CAMBIOS_CONTABLES =
+  'Esta transferencia usa una mesa de cambio: no se pueden cambiar sus montos ni sus cuentas. Anúlala y regístrala de nuevo.';
+const MSG_COMISION_SIN_CAMBIOS_CONTABLES =
+  'Este movimiento lleva comisión bancaria: no se pueden cambiar sus montos ni sus cuentas. Anúlalo (se anula también su comisión) y regístralo de nuevo.';
+const MSG_ANULAR_MESA_SIN_PERMISO =
+  'Esta transferencia usa una mesa de cambio: para anularla necesitas además acceso a la mesa de cambio.';
+const MSG_ES_COMISION =
+  'Este movimiento es la comisión bancaria de otro: no se edita ni se anula por separado, se anula junto con su movimiento.';
 const MSG_DE_UN_PAGO =
   'Este movimiento forma parte de un pago o cobro: edítalo o anúlalo desde el pago/cobro completo (estado de cuenta).';
 
@@ -45,6 +53,7 @@ async function cargarMovimientoManual(id: string): Promise<Movimiento | ErrorTra
   if (!mov) return { error: MSG_NO_ENCONTRADO, codigo: 404 };
   if (mov.grupoId !== null || mov.subtipo !== null) return { error: MSG_DE_UN_PAGO, codigo: 409 };
   if (mov.anulado) return { error: 'Este movimiento ya fue anulado.', codigo: 409 };
+  if (mov.comisionDeId) return { error: MSG_ES_COMISION, codigo: 409 };
   return mov;
 }
 
@@ -83,23 +92,39 @@ async function cerrarOperacion(
   };
 }
 
+/** Elige la RPC de anulación: la mesa de cambio revierte al cambista; la comisión bancaria se anula junto al movimiento. */
+function anularPorRpc(id: string, motivo: string, userId: string, mov: Movimiento) {
+  if (mov.mesaCambistaId) {
+    return supabaseAdmin.rpc('anular_transferencia_mesa_cambio', { p_movimiento_id: id, p_motivo: motivo, p_usuario: userId });
+  }
+  if (mov.comisionBancaria != null) {
+    return supabaseAdmin.rpc('anular_movimiento_con_comision_bancaria', { p_id: id, p_motivo: motivo, p_usuario: userId });
+  }
+  return supabaseAdmin.rpc('anular_movimiento_banca', { p_id: id, p_motivo: motivo, p_usuario: userId });
+}
+
 /**
  * Anula un movimiento de banca manual (ingreso, egreso o transferencia) con llave de edición:
  * revierte el saldo de la(s) banca(s) y marca la fila (nunca se borra). Los movimientos que
  * pertenecen a un pago/cobro se anulan por el pago.
+ *
+ * Anular una transferencia con cambista revierte además sus asientos en la mesa de cambio, así que exige
+ * `opciones.puedeMesaCambio` (permiso mesa_cambio:ver, el mismo que pide completarla). Por defecto es false: falla cerrado.
  */
 export async function anularMovimientoBanca(
   id: string,
   motivo: string,
-  actor: ActorEdicion
+  actor: ActorEdicion,
+  opciones: { puedeMesaCambio?: boolean } = {}
 ): Promise<ResultadoMovimientoEdicion | ErrorTransaccion> {
   const antes = await cargarMovimientoManual(id);
   if ('error' in antes) return antes;
+  if (antes.mesaCambistaId && !opciones.puedeMesaCambio) return { error: MSG_ANULAR_MESA_SIN_PERMISO, codigo: 403 };
 
   const auth = await autorizarEdicion(actor, 'movimiento_banca', id);
   if (!auth.ok) return { error: auth.error, codigo: auth.codigo };
 
-  const { error } = await supabaseAdmin.rpc('anular_movimiento_banca', { p_id: id, p_motivo: motivo, p_usuario: actor.userId });
+  const { error } = await anularPorRpc(id, motivo, actor.userId, antes);
   if (error) {
     await auth.liberar();
     return errorDeRpcTransaccion(error);
@@ -119,6 +144,8 @@ export async function editarMovimientoBanca(
 ): Promise<ResultadoMovimientoEdicion | ErrorTransaccion> {
   const antes = await cargarMovimientoManual(id);
   if ('error' in antes) return antes;
+  if (antes.mesaCambistaId && esEdicionContableMovimiento(input)) return { error: MSG_MESA_SIN_CAMBIOS_CONTABLES, codigo: 409 };
+  if (antes.comisionBancaria != null && esEdicionContableMovimiento(input)) return { error: MSG_COMISION_SIN_CAMBIOS_CONTABLES, codigo: 409 };
 
   const auth = await autorizarEdicion(actor, 'movimiento_banca', id);
   if (!auth.ok) return { error: auth.error, codigo: auth.codigo };

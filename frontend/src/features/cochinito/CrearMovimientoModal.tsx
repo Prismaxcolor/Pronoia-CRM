@@ -1,7 +1,20 @@
 import { useEffect, useState } from 'react';
 import { X, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, ChevronDown } from 'lucide-react';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
-import { crearMovimiento } from '../../services/banca-service';
+import SelectorBanca from './SelectorBanca';
+import { registrarMovimiento } from '../../services/comision-bancaria-service';
+import { crearTransferenciaMesa } from '../../services/transferencia-mesa-service';
+import MesaCambioCampos from './MesaCambioCampos';
+import { useTransferenciaMesa } from './useTransferenciaMesa';
+import ComisionBancariaCampo, { AvisoComisionNoVerificada, AvisoMesaSinComisionBancaria } from './ComisionBancariaCampo';
+import { validarMovimiento } from './validar-movimiento';
+import EquivalenteUsd from './EquivalenteUsd';
+import { useComisionDisponible } from './useComisionDisponible';
+import {
+  bloqueoPorComision, llevaDeOpcion, mostrarAvisoMesaSinComision, ofrecerComision, planDeComision, type OpcionComision,
+} from './comision-formulario';
+import type { EstadoTasasUsd } from './equivalente-usd';
+import { cuerpoTransferenciaMesa } from './transferencia-mesa';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
 import { obtenerTasa, type FuenteTasaKey } from '../../services/tasa-service';
@@ -12,11 +25,17 @@ import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import { useAuth } from '../../hooks/use-auth-context';
 import type { Banca } from '@shared/types/index.js';
 import { hoyNegocio } from '../../lib/fecha-negocio';
+import { bancasEditables } from '../usuarios/acceso-bancas';
+import SelectorCategoria from './categorias/SelectorCategoria';
+import { useCategorias } from './categorias/useCategorias';
+import { ELECCION_VACIA, categoriaIdDeEleccion, mensajeEleccion, opcionesParaTipo } from './categorias/categorias-logica';
 
 interface Props {
   bancas: Banca[];
   onClose: () => void;
   onCreado: () => void;
+  /** Tasas Binance y BCV ya cargadas por la pantalla (para el equivalente en USD de los montos en Bs). */
+  tasasUsd: EstadoTasasUsd;
 }
 
 type Tipo = 'ingreso' | 'egreso' | 'transferencia';
@@ -29,7 +48,9 @@ const FUENTES_TASA: { key: FuenteTasaKey; label: string }[] = [
   { key: 'binance', label: 'Binance' },
 ];
 
-function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
+function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasasUsd }: Props) {
+  // Solo se ofrecen cuentas donde se puede registrar; las de solo consulta se ven en la tabla pero no aquí.
+  const bancas = bancasEditables(todasLasBancas);
   const { usuario } = useAuth();
   // Sin valores predeterminados: tipo y cuenta/caja los elige la persona (obligatorios al guardar).
   const [tipo, setTipo] = useState<Tipo | ''>('');
@@ -46,6 +67,16 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [comprobantes, setComprobantes] = useState<FotoLocal[]>([]);
+  const mesa = useTransferenciaMesa();
+  // Categoría (solo ingreso/egreso): sin valor por defecto; si no hay categorías configuradas el selector no aparece.
+  const { categorias } = useCategorias();
+  const [eleccionCategoria, setEleccionCategoria] = useState(ELECCION_VACIA);
+  const [errorCategoria, setErrorCategoria] = useState<string | null>(null);
+  const comision = useComisionDisponible();
+  // Un id por apertura del formulario: un doble clic o reintento con el mismo id no registra dos veces (el servidor lo deduplica).
+  const [idIntento] = useState(() => crypto.randomUUID());
+  // Sin valor por defecto: en una salida desde una cuenta en Bs hay que elegir Sí o No.
+  const [opcionComision, setOpcionComision] = useState<OpcionComision>('');
 
   const agregarComprobantes = (files: File[]) => {
     const { validos, errores } = filtrarComprobantes(files, comprobantes.length);
@@ -72,13 +103,26 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
     setEntidadId('');
     setBancaDestinoId('');
     setMontoDestinoTocado(false);
+    setOpcionComision('');
+    setEleccionCategoria(ELECCION_VACIA);
+    setErrorCategoria(null);
+    mesa.reiniciar();
   };
 
   const bancaActual = bancas.find(b => b.id === bancaId);
   const bancaDestino = bancas.find(b => b.id === bancaDestinoId);
   const bancasDestinoDisponibles = bancas.filter(b => b.id !== bancaId);
   const montoNum = parseFloat(monto) || 0;
+  const mostrarCategoria = (tipo === 'ingreso' || tipo === 'egreso') && opcionesParaTipo(categorias, tipo).length > 0;
   const monedasDistintas = tipo === 'transferencia' && !!bancaActual && !!bancaDestino && bancaActual.moneda !== bancaDestino.moneda;
+  const ofertaComision = { disponible: comision.disponible, tipo, moneda: bancaActual?.moneda ?? '', mesaActiva: mesa.activa };
+  const comisionOfrecida = ofrecerComision(ofertaComision);
+  const avisoMesaSinComision = mostrarAvisoMesaSinComision(ofertaComision);
+  // Mientras no se sepa si la comisión aplica (cargando o error) no se puede registrar una salida desde Bs.
+  const bloqueoComision = bloqueoPorComision({ estado: comision.estado, tipo, moneda: ofertaComision.moneda, mesaActiva: mesa.activa });
+  const planComision = planDeComision({
+    ofrecida: comisionOfrecida, tipo: tipo || 'egreso', moneda: bancaActual?.moneda ?? '', monto: montoNum, opcion: opcionComision, saldo: bancaActual?.saldo ?? 0,
+  });
 
   // Tasas para sugerir el monto destino, solo cuando hacen falta.
   useEffect(() => {
@@ -107,29 +151,18 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
     e.preventDefault();
     setError(null);
 
-    if (!tipo) {
-      setError('Selecciona el tipo de movimiento: ingreso, egreso o transferencia.');
+    const problema = validarMovimiento({
+      tipo, banca: bancaActual, monto: montoNum, bloqueoComision, planComision,
+      categoriaFalta: mostrarCategoria ? mensajeEleccion(eleccionCategoria) : null,
+      destino: bancaDestino, monedasDistintas, montoDestino: montoDestinoNum, mesa: { activa: mesa.activa, form: mesa.form },
+    });
+    if (problema) {
+      if (problema.campo === 'categoria') setErrorCategoria(problema.mensaje);
+      else setError(problema.mensaje);
       return;
     }
-    if (!bancaActual) {
-      setError('Selecciona la cuenta o caja del movimiento.');
-      return;
-    }
-    if (!montoNum || montoNum <= 0) {
-      setError('El monto debe ser mayor a 0.');
-      return;
-    }
-    if ((tipo === 'egreso' || tipo === 'transferencia') && montoNum > bancaActual.saldo) {
-      setError(`Saldo insuficiente. Disponible: ${bancaActual.moneda === 'USD' ? '$' : 'Bs '}${bancaActual.saldo.toLocaleString()}`);
-      return;
-    }
-    if (tipo === 'transferencia') {
-      if (!bancaDestino) { setError('Selecciona la banca destino.'); return; }
-      if (monedasDistintas && montoDestinoNum <= 0) {
-        setError('Ingresa el monto que llega a la banca destino.');
-        return;
-      }
-    }
+    // validarMovimiento garantiza tipo y cuenta de origen elegidos.
+    if (!tipo || !bancaActual) return;
 
     setGuardando(true);
     const comprobantesUrls = await subirFotosLocal(comprobantes, subirComprobantePago);
@@ -138,7 +171,18 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
       setError('No se pudo subir el comprobante. Prueba de nuevo o registra el movimiento sin él.');
       return;
     }
-    const result = await crearMovimiento({
+    if (tipo === 'transferencia' && mesa.activa) {
+      const r = await crearTransferenciaMesa(cuerpoTransferenciaMesa(mesa.form, {
+        bancaId, bancaDestinoId, monto: montoNum, montoDestino: monedasDistintas ? montoDestinoNum : null,
+        descripcion, referencia, fecha, comprobantes: comprobantesUrls,
+        monedaOrigen: bancaActual.moneda, monedaDestino: bancaDestino?.moneda ?? bancaActual.moneda, clientRequestId: idIntento,
+      }));
+      setGuardando(false);
+      if ('error' in r) setError(r.error);
+      else onCreado();
+      return;
+    }
+    const result = await registrarMovimiento({
       tipo,
       bancaId,
       bancaDestinoId: tipo === 'transferencia' ? bancaDestinoId : null,
@@ -152,13 +196,16 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
       proveedorId: tipo === 'egreso' ? entidadId || null : null,
       clienteId: tipo === 'ingreso' ? entidadId || null : null,
       comprobantes: comprobantesUrls,
+      categoriaId: mostrarCategoria ? categoriaIdDeEleccion(eleccionCategoria) : null,
+      ...(comisionOfrecida ? { llevaComision: llevaDeOpcion(opcionComision) === true } : {}),
+      clientRequestId: idIntento,
     });
     setGuardando(false);
 
-    if (result) {
-      onCreado();
+    if ('error' in result) {
+      setError(result.error);
     } else {
-      setError('No se pudo crear el movimiento. Verifica los datos e intenta de nuevo.');
+      onCreado();
     }
   };
 
@@ -223,41 +270,29 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
             <label className="block text-xs font-medium text-text-secondary mb-1">
               {tipo === '' ? 'Cuenta o caja' : `Banca ${tipo === 'ingreso' ? 'destino' : tipo === 'egreso' ? 'origen' : 'de origen'}`}
             </label>
-            <select
-              required
-              value={bancaId}
-              onChange={e => {
-                setBancaId(e.target.value);
-                if (bancaDestinoId === e.target.value) setBancaDestinoId('');
+            <SelectorBanca
+              bancas={bancas}
+              valor={bancaId}
+              ariaLabel="Cuenta o caja de origen"
+              onChange={id => {
+                setBancaId(id);
+                if (bancaDestinoId === id) setBancaDestinoId('');
+                setOpcionComision('');
               }}
-              className={inputClass}
-            >
-              <option value="">— Selecciona —</option>
-              {bancas.map(b => (
-                <option key={b.id} value={b.id}>
-                  {b.nombre} — {b.moneda === 'USD' ? '$' : 'Bs '}{b.saldo.toLocaleString()}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {/* Banca destino — solo transferencia */}
           {tipo === 'transferencia' && (
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1">Banca de destino</label>
-              <select
-                required
-                value={bancaDestinoId}
-                onChange={e => { setBancaDestinoId(e.target.value); setMontoDestinoTocado(false); }}
-                className={inputClass}
-              >
-                <option value="">— Selecciona —</option>
-                {bancasDestinoDisponibles.map(b => (
-                  <option key={b.id} value={b.id}>
-                    {b.nombre} — {b.moneda === 'USD' ? '$' : 'Bs '}{b.saldo.toLocaleString()}
-                  </option>
-                ))}
-              </select>
+              <SelectorBanca
+                bancas={bancasDestinoDisponibles}
+                valor={bancaDestinoId}
+                titulo="Elegir cuenta o caja de destino"
+                ariaLabel="Cuenta o caja de destino"
+                onChange={id => { setBancaDestinoId(id); setMontoDestinoTocado(false); }}
+              />
             </div>
           )}
 
@@ -285,7 +320,17 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
             {(tipo === 'egreso' || tipo === 'transferencia') && bancaActual && montoNum > bancaActual.saldo && (
               <p className="text-xs text-red-500 mt-1">Excede el saldo disponible</p>
             )}
+            {bancaActual?.moneda === 'VES' && <EquivalenteUsd montoBs={montoNum} estado={tasasUsd} />}
           </div>
+
+          {/* Comisión bancaria — salidas desde una cuenta en Bs (obligatorio elegir Sí o No) */}
+          {comisionOfrecida && (
+            <ComisionBancariaCampo opcion={opcionComision} onCambiar={setOpcionComision} plan={planComision} monto={montoNum} />
+          )}
+          {bloqueoComision && (
+            <AvisoComisionNoVerificada mensaje={bloqueoComision} enError={comision.estado === 'error'} onReintentar={comision.reintentar} />
+          )}
+          {avisoMesaSinComision && <AvisoMesaSinComisionBancaria />}
 
           {/* Monto destino + tasa — solo transferencia entre monedas distintas */}
           {monedasDistintas && (
@@ -325,11 +370,23 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
                     placeholder="0.00"
                   />
                 </div>
+                {bancaDestino?.moneda === 'VES' && <EquivalenteUsd montoBs={montoDestinoNum} estado={tasasUsd} />}
                 <p className="text-xs text-text-muted mt-1">
                   Editable — ajústalo si negociaste una tasa distinta a la sugerida.
                 </p>
               </div>
             </div>
+          )}
+
+          {/* Mesa de cambio — solo transferencia y solo si se tiene permiso en la mesa */}
+          {tipo === 'transferencia' && mesa.disponible && (
+            <MesaCambioCampos
+              mesa={mesa}
+              bancaOrigen={bancaActual}
+              bancaDestino={bancaDestino}
+              monto={montoNum}
+              montoDestino={monedasDistintas ? montoDestinoNum : null}
+            />
           )}
 
           {/* Fecha */}
@@ -400,6 +457,17 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
             </div>
           )}
 
+          {/* Categoría y subcategoría — solo ingreso y egreso */}
+          {mostrarCategoria && (tipo === 'ingreso' || tipo === 'egreso') && (
+            <SelectorCategoria
+              tipo={tipo}
+              categorias={categorias}
+              valor={eleccionCategoria}
+              onChange={e => { setEleccionCategoria(e); setErrorCategoria(null); }}
+              error={errorCategoria}
+            />
+          )}
+
           <FotoMultiplePicker
             fotos={comprobantes}
             onAgregar={agregarComprobantes}
@@ -419,10 +487,10 @@ function CrearMovimientoModal({ bancas, onClose, onCreado }: Props) {
             </button>
             <button
               type="submit"
-              disabled={guardando}
+              disabled={guardando || bloqueoComision !== null}
               className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
             >
-              {guardando ? 'Registrando...' : `Registrar ${tipo || 'movimiento'}`}
+              {guardando ? 'Registrando...' : mesa.activa ? 'Registrar transferencia en proceso' : `Registrar ${tipo || 'movimiento'}`}
             </button>
           </div>
         </form>

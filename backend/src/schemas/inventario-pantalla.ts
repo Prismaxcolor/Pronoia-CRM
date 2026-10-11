@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { almacenIdSchema } from './inventario.js';
-import { fecha, MAX_DIAS_RANGO, sinValorParam } from './inventario-resumen.js';
+import { fecha, MAX_DIAS_RANGO, saldoAlParam, sinValorParam } from './inventario-resumen.js';
 
 /** Máximo de filas de la tabla de detalle por respuesta (el resto se avisa, no se pierde en silencio). */
 export const MAX_FILAS_DETALLE = 2000;
@@ -11,12 +11,13 @@ const booleano = z.enum(['true', 'false']).transform(v => v === 'true');
 
 /**
  * Filtros de GET /api/inventario/pantalla/{detalle,categorias,alertas}: desde/hasta (ambos o ninguno),
- * categoria, almacen (uuid), q. Solo el detalle usa limite, vista e incluirClasificaciones (los demás los ignoran).
+ * categoria, almacen (uuid), q, al (saldo al cierre de ese día). Solo el detalle usa limite, vista e incluirClasificaciones (los demás los ignoran).
  */
 export const pantallaQuerySchema = z
   .object({
     desde: fecha.optional(),
     hasta: fecha.optional(),
+    al: saldoAlParam.optional(),
     categoria: textoCorto.optional(),
     almacen: almacenIdSchema.optional(),
     q: textoCorto.optional(),

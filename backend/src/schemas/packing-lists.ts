@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { clienteOperacionCampos } from './cliente-operacion.js';
+import { MAX_FOTOS_POR_PALETA, esRutaFotoPacking } from '../utils/packing-list-fotos.js';
 
 const TOPE_PESO = 9_999_999;
 const MAX_ITEMS = 500;
@@ -20,12 +21,25 @@ const peso = z
   .max(TOPE_PESO, 'El peso es demasiado grande.')
   .refine(n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, 'Usa máximo 2 decimales.');
 
+/**
+ * Rutas de fotos de control interno (bucket privado). Solo rutas generadas por el sistema, sin repetir.
+ * Ausente (undefined) = el cliente no conoce las fotos (versión anterior de la app): la BD conserva las de esa paleta.
+ */
+const fotosPaleta = z
+  .array(z.string().refine(esRutaFotoPacking, 'La ruta de la foto no es válida.'))
+  .max(MAX_FOTOS_POR_PALETA, `Máximo ${MAX_FOTOS_POR_PALETA} fotos por paleta.`)
+  .refine(rutas => new Set(rutas).size === rutas.length, 'Hay fotos repetidas en la paleta.')
+  .optional();
+
 export const itemPackingListSchema = z
   .object({
     numero: z.number().int().min(1, 'El número debe ser 1 o mayor.').max(100_000),
     numeroPaleta: z.number().int().min(1).max(100_000).nullable().optional().transform(v => v ?? null),
     lote: textoOpcional(40),
     color: textoOpcional(40),
+    /** Almacén del que se trabaja el lote (control interno, solo PCB). Ausente = conservar; null = sin almacén. */
+    almacenId: z.string().uuid('El almacén no es válido.').nullable().optional(),
+    fotos: fotosPaleta,
     pesoBruto: peso.refine(n => n > 0, 'El peso bruto debe ser mayor a 0.'),
     pesoPaleta: peso.default(0),
   })
@@ -43,11 +57,15 @@ const valorKgUsd = z
   .max(TOPE_VALOR_KG, 'El valor por kg es demasiado grande.')
   .refine(n => Math.abs(n * 10_000 - Math.round(n * 10_000)) < 1e-6, 'Usa máximo 4 decimales.');
 
-/** Proyección de exportación (interna): un valor por lote. `lote` '' = ítems sin lote. */
+/** Proyección y resultados de la exportación (internos): valor estimado y real por lote. `lote` '' = ítems sin lote. */
 export const lineaProyeccionSchema = z.object({
   lote: z.string().trim().max(40),
-  valorKgUsd,
+  valorKgUsd: valorKgUsd.nullable().optional(),
+  valorRealKgUsd: valorKgUsd.nullable().optional(),
 });
+
+const tieneValor = (l: { valorKgUsd?: number | null; valorRealKgUsd?: number | null }): boolean =>
+  l.valorKgUsd != null || l.valorRealKgUsd != null;
 
 const fechaIso = z
   .string()
@@ -67,6 +85,8 @@ export const guardarPackingListSchema = z
     observacionesEn: textoOpcional(1000),
     referenciaTipo: z.enum(['ticket_pesaje', 'factura_venta']).nullable().optional().transform(v => v ?? null),
     referenciaId: z.string().uuid('La referencia no es válida.').nullable().optional().transform(v => v ?? null),
+    /** Cliente internacional. Ausente = conservar el guardado; null = desvincular. El tipo se valida en el servicio. */
+    clienteId: z.string().uuid('El cliente no es válido.').nullable().optional(),
     /** Versión que el cliente cargó; obligatoria al editar (PUT), se ignora al crear. */
     version: z.number().int().min(1).optional(),
     items: z.array(itemPackingListSchema).max(MAX_ITEMS, `Máximo ${MAX_ITEMS} paletas por packing list.`),
@@ -82,11 +102,11 @@ export const guardarPackingListSchema = z
     path: ['referenciaId'],
   })
   .transform(d => {
-    // Lote y color solo existen en PCB: se descartan por si el cliente los envía de más.
-    const items = d.items.map(i => (d.esPcb ? i : { ...i, lote: null, color: null }));
-    // La proyección solo valora lotes que siguen incluidos en los ítems.
+    // Lote, color y almacén solo existen en PCB: se descartan por si el cliente los envía de más. Las fotos son de cada paleta.
+    const items = d.items.map(i => (d.esPcb ? i : { ...i, lote: null, color: null, almacenId: null }));
+    // La proyección solo valora lotes que siguen incluidos en los ítems y descarta líneas sin ningún valor.
     const lotes = new Set(items.map(i => i.lote ?? ''));
-    return { ...d, items, proyeccion: d.proyeccion?.filter(l => lotes.has(l.lote)) };
+    return { ...d, items, proyeccion: d.proyeccion?.filter(l => lotes.has(l.lote) && tieneValor(l)) };
   });
 
 export const packingListParamsSchema = z.object({

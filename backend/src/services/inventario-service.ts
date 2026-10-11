@@ -12,6 +12,7 @@ import {
   type TransformacionAlmacenFila,
 } from '../utils/movimientos-almacen.js';
 import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
+import { leerSalidasAlmacen } from './inventario-salidas-lectura.js';
 
 export interface ArticuloInventario {
   productoId: string;
@@ -794,11 +795,14 @@ type RangoFechas = RangoFechasAlmacen;
  *  completo) y entrante solo al completarse, por lo recibido; transformación
  *  por el almacén de la salida (o el de la transformación si la salida no lo
  *  indica) y solo si está completa; ajustes por su almacén. */
-async function cargarMovimientosAlmacen(almacenId: string, rango: RangoFechas): Promise<MovimientoAlmacen[]> {
+async function cargarMovimientosAlmacen(
+  almacenId: string,
+  rango: RangoFechas,
+  alFecharSinCompletadoEn?: () => void
+): Promise<MovimientoAlmacen[]> {
   // Defensa en profundidad: almacenId se interpola en un filtro .or() de PostgREST.
   almacenIdSchema.parse(almacenId);
-  const columnasSalida = 'producto_id, lote_destino_id, peso_neto';
-  const [tickets, traslados, transformaciones, salidasPropias, salidasHeredadas, ajustes] = await Promise.all([
+  const [tickets, traslados, transformaciones, lecturaSalidas, ajustes] = await Promise.all([
     leerPaginado<TicketAlmacenFila>((d, h) =>
       supabaseAdmin
         .from('tickets_pesaje')
@@ -823,24 +827,9 @@ async function cargarMovimientosAlmacen(almacenId: string, rango: RangoFechas): 
         .order('id')
         .range(d, h)
     ),
-    // Salidas con almacén propio, y salidas sin almacén cuya transformación es de este almacén.
-    leerPaginado<SalidaAlmacenFila>((d, h) =>
-      supabaseAdmin
-        .from('transformacion_salida_detalle')
-        .select(`${columnasSalida}, transformaciones(estado, fecha)`)
-        .eq('almacen_id', almacenId)
-        .order('id')
-        .range(d, h)
-    ),
-    leerPaginado<SalidaAlmacenFila>((d, h) =>
-      supabaseAdmin
-        .from('transformacion_salida_detalle')
-        .select(`${columnasSalida}, transformaciones!inner(estado, fecha, almacen_id)`)
-        .is('almacen_id', null)
-        .eq('transformaciones.almacen_id', almacenId)
-        .order('id')
-        .range(d, h)
-    ),
+    // Salidas con almacén propio, y salidas sin almacén cuya transformación es de este almacén. Con fecha
+    // (saldo a un día) se trae también completado_en para fechar la salida cuando se completó.
+    leerSalidasAlmacen(almacenId, Boolean(rango.desde || rango.hasta)),
     leerPaginado<AjusteAlmacenFila>((d, h) =>
       supabaseAdmin
         .from('ajustes_inventario')
@@ -850,9 +839,10 @@ async function cargarMovimientosAlmacen(almacenId: string, rango: RangoFechas): 
         .range(d, h)
     ),
   ]);
+  if (lecturaSalidas.sinCompletadoEn) alFecharSinCompletadoEn?.();
   return construirMovimientosAlmacen(
     almacenId,
-    { tickets, traslados, transformaciones, salidas: [...salidasPropias, ...salidasHeredadas], ajustes },
+    { tickets, traslados, transformaciones, salidas: lecturaSalidas.salidas, ajustes },
     rango
   );
 }
@@ -909,14 +899,22 @@ function articuloDeLinea(l: LineaDesgloseAlmacen, nombre: string, esLote: boolea
  * Filtros: categoría/producto limitan las filas de producto; un lote solo se
  * muestra si alguno de sus movimientos fue de un producto permitido. desde/
  * hasta acotan los movimientos (el stock pasa a ser el neto de la ventana).
+ * Con SOLO `hasta` el resultado es el SALDO al cierre de ese día (inclusive, día de
+ * negocio): es lo que usa la pantalla de inventario para "saldo al <fecha>".
  */
+export interface OpcionesLecturaAlmacen {
+  /** Se llama si, al fechar las salidas de transformación, faltó la columna completado_en y se usó la fecha de la transformación. */
+  alFecharSinCompletadoEn?: () => void;
+}
+
 export async function obtenerInventarioAlmacen(
   almacenId: string,
-  filtros: Pick<FiltrosInventario, 'tipoMaterialId' | 'productoId' | 'desde' | 'hasta'> = {}
+  filtros: Pick<FiltrosInventario, 'tipoMaterialId' | 'productoId' | 'desde' | 'hasta'> = {},
+  opciones: OpcionesLecturaAlmacen = {}
 ): Promise<GrupoInventario[]> {
   const [productos, movimientos, lotesData] = await Promise.all([
     cargarProductos(filtros),
-    cargarMovimientosAlmacen(almacenId, { desde: filtros.desde, hasta: filtros.hasta }),
+    cargarMovimientosAlmacen(almacenId, { desde: filtros.desde, hasta: filtros.hasta }, opciones.alFecharSinCompletadoEn),
     supabaseAdmin.from('lotes').select('id, nombre'),
   ]);
   if (lotesData.error) throw lotesData.error;

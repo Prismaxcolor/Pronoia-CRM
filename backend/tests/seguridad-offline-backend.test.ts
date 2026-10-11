@@ -141,9 +141,34 @@ describe('POST /uploads/:tipo', () => {
     expect(storageUpload).not.toHaveBeenCalled();
   });
 
-  it('un JPEG declarado como PNG se sube con el tipo real (image/jpeg, .jpg)', async () => {
+  it('un JPEG declarado como PNG se rechaza (400): el tipo declarado debe coincidir con la firma real', async () => {
     const r = await subir(Uint8Array.from([0xff, 0xd8, 0xff, 0xe1, 0, 0]), 'x.png', 'image/png');
+    expect(r.status).toBe(400);
+    expect(r.cuerpo.error).toMatch(/no coincide/i);
+    expect(storageUpload).not.toHaveBeenCalled();
+  });
+
+  it('un JPEG declarado como JPEG se sube con su tipo real', async () => {
+    const r = await subir(Uint8Array.from([0xff, 0xd8, 0xff, 0xe1, 0, 0]), 'x.jpg', 'image/jpeg');
     expect(r.status).toBe(201);
     expect(storageUpload).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), expect.anything(), { contentType: 'image/jpeg' });
+  });
+
+  it('rechaza campos de texto extra en el multipart (límites de multer)', async () => {
+    const fd = new FormData();
+    fd.append('file', new Blob([Uint8Array.from([0xff, 0xd8, 0xff, 0xe1, 0, 0])], { type: 'image/jpeg' }), 'x.jpg');
+    fd.append('extra', 'x');
+    const r = await fetch(`${base}/productos`, { method: 'POST', body: fd });
+    expect(r.status).toBe(400);
+    expect(storageUpload).not.toHaveBeenCalled();
+  });
+
+  it('rechaza más de un archivo en el multipart', async () => {
+    const fd = new FormData();
+    fd.append('file', new Blob([Uint8Array.from([0xff, 0xd8, 0xff, 0xe1, 0, 0])], { type: 'image/jpeg' }), 'x.jpg');
+    fd.append('file', new Blob([Uint8Array.from([0xff, 0xd8, 0xff, 0xe1, 0, 0])], { type: 'image/jpeg' }), 'y.jpg');
+    const r = await fetch(`${base}/productos`, { method: 'POST', body: fd });
+    expect(r.status).toBe(400);
+    expect(storageUpload).not.toHaveBeenCalled();
   });
 });

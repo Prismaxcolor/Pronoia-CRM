@@ -24,5 +24,11 @@ export function esTablaInexistente(error: ErrorBd | null | undefined, tabla: str
   return (error.message ?? '').includes(tabla);
 }
 
+/** True solo si falta esa columna concreta (42703 / PGRST204 citando su nombre). */
+export function esColumnaInexistente(error: ErrorBd | null | undefined, columna: string): boolean {
+  if (!error || !['42703', 'PGRST204'].includes(error.code ?? '')) return false;
+  return (error.message ?? '').includes(columna);
+}
+
 export const MENSAJE_INVENTARIO_NO_HABILITADO =
   'Esta función aún no está habilitada en la base de datos (falta aplicar migration_inventario_rediseno_fase1.sql).';

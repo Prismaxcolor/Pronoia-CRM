@@ -1,5 +1,9 @@
-import { Plus, Trash2 } from 'lucide-react';
+import { Fragment, useState } from 'react';
+import { Camera, Plus, Trash2 } from 'lucide-react';
+import type { FotoPaletaPacking, OpcionLotePacking } from '@shared/types/index.js';
 import { COLORES_LOTE, calcularNeto, errorFila, formatearPeso, parsearPeso } from '../../lib/packing-list';
+import PackingListLoteSelect, { type EleccionLote } from './PackingListLoteSelect';
+import PackingListFotosPaleta from './PackingListFotosPaleta';
 
 /** Fila en edición: todo es texto mientras se escribe; se interpreta con parsearPeso al guardar. */
 export interface FilaForm {
@@ -7,16 +11,30 @@ export interface FilaForm {
   numeroPaleta: string;
   lote: string;
   color: string;
+  /** Almacén del lote ('' = ninguno). Control interno: no sale en los PDF. */
+  almacenId: string;
+  /** Fotos de control interno de la paleta: no salen en los PDF. */
+  fotos: FotoPaletaPacking[];
   pesoBruto: string;
   pesoPaleta: string;
 }
+
+/** Campos de la fila que se escriben como texto. */
+export type CampoTextoFila = 'numeroPaleta' | 'lote' | 'color' | 'pesoBruto' | 'pesoPaleta';
 
 interface Props {
   filas: FilaForm[];
   esPcb: boolean;
   nombreBulto: string;
   puedeEditar: boolean;
-  onCambiar: (clave: string, campo: keyof Omit<FilaForm, 'clave'>, valor: string) => void;
+  /** Lotes de exportación con kg disponibles; null = no se pudieron cargar (el lote se escribe a mano). */
+  opcionesLote: readonly OpcionLotePacking[] | null;
+  /** Productos:ver o facturacion:ver. Sin él no hay columna de fotos ni se menciona el disponible/almacén. */
+  puedeVerControl: boolean;
+  onCambiar: (clave: string, campo: CampoTextoFila, valor: string) => void;
+  onElegirLote: (clave: string, eleccion: EleccionLote) => void;
+  onAgregarFoto: (clave: string, foto: FotoPaletaPacking) => void;
+  onQuitarFoto: (clave: string, ruta: string) => void;
   onQuitar: (clave: string) => void;
   onAgregar: () => void;
 }
@@ -35,8 +53,12 @@ function mensajeFila(f: FilaForm): string | null {
   });
 }
 
-function PackingListFilas({ filas, esPcb, nombreBulto, puedeEditar, onCambiar, onQuitar, onAgregar }: Props) {
-  const campo = (f: FilaForm, k: keyof Omit<FilaForm, 'clave'>, etiqueta: string, extra = '') => (
+function PackingListFilas({
+  filas, esPcb, nombreBulto, puedeEditar, opcionesLote, puedeVerControl, onCambiar, onElegirLote, onAgregarFoto, onQuitarFoto, onQuitar, onAgregar,
+}: Props) {
+  const [conFotosAbiertas, setConFotosAbiertas] = useState<string | null>(null);
+  const columnas = (esPcb ? 9 : 7) - (puedeVerControl ? 0 : 1);
+  const campo = (f: FilaForm, k: CampoTextoFila, etiqueta: string, extra = '') => (
     <input
       aria-label={`${etiqueta} (fila ${filas.indexOf(f) + 1})`}
       value={f[k]}
@@ -54,12 +76,13 @@ function PackingListFilas({ filas, esPcb, nombreBulto, puedeEditar, onCambiar, o
           <thead>
             <tr className="border-b border-border">
               <th className={TH}>{nombreBulto}</th>
-              {esPcb && <th className={TH}>Lote</th>}
+              {esPcb && <th className={TH}>{puedeVerControl ? 'Lote (disponible y almacén: solo control interno)' : 'Lote'}</th>}
               {esPcb && <th className={TH}>Color</th>}
               <th className={TH}>N.º de paleta</th>
               <th className={`${TH} text-right`}>Peso bruto (kg)</th>
               <th className={`${TH} text-right`}>Peso de la paleta (kg)</th>
               <th className={`${TH} text-right`}>Peso neto (kg)</th>
+              {puedeVerControl && <th className={TH}>Fotos (interno)</th>}
               <th className={TH}><span className="sr-only">Acciones</span></th>
             </tr>
           </thead>
@@ -67,9 +90,17 @@ function PackingListFilas({ filas, esPcb, nombreBulto, puedeEditar, onCambiar, o
             {filas.map((f, i) => {
               const error = mensajeFila(f);
               return (
-                <tr key={f.clave} className="border-b border-border/60 align-top">
+                <Fragment key={f.clave}>
+                <tr className="border-b border-border/60 align-top">
                   <td className="px-2 py-1.5 tabular-nums text-text-secondary">{i + 1}</td>
-                  {esPcb && <td className="px-2 py-1.5 w-24">{campo(f, 'lote', 'Lote')}</td>}
+                  {esPcb && (
+                    <td className={`px-2 py-1.5 ${opcionesLote ? 'w-72' : 'w-24'}`}>
+                      {opcionesLote
+                        ? <PackingListLoteSelect lote={f.lote} almacenId={f.almacenId} opciones={opcionesLote} disabled={!puedeEditar}
+                          etiqueta={`Lote (fila ${i + 1})`} className={INPUT} onElegir={e => onElegirLote(f.clave, e)} />
+                        : campo(f, 'lote', 'Lote')}
+                    </td>
+                  )}
                   {esPcb && (
                     <td className="px-2 py-1.5 w-32">
                       <select
@@ -93,6 +124,14 @@ function PackingListFilas({ filas, esPcb, nombreBulto, puedeEditar, onCambiar, o
                   <td className="px-2 py-1.5 w-32 text-right tabular-nums font-medium">
                     {formatearPeso(calcularNeto(parsearPeso(f.pesoBruto), parsearPeso(f.pesoPaleta)))}
                   </td>
+                  {puedeVerControl && <td className="px-2 py-1.5">
+                    <button type="button" aria-expanded={conFotosAbiertas === f.clave}
+                      aria-label={`Fotos de la fila ${i + 1} (${f.fotos.length})`}
+                      onClick={() => setConFotosAbiertas(a => (a === f.clave ? null : f.clave))}
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-text-secondary hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+                      <Camera size={14} aria-hidden="true" /> {f.fotos.length}
+                    </button>
+                  </td>}
                   <td className="px-2 py-1.5">
                     {puedeEditar && (
                       <button type="button" onClick={() => onQuitar(f.clave)} aria-label={`Quitar fila ${i + 1}`} title="Quitar"
@@ -102,6 +141,15 @@ function PackingListFilas({ filas, esPcb, nombreBulto, puedeEditar, onCambiar, o
                     )}
                   </td>
                 </tr>
+                {puedeVerControl && conFotosAbiertas === f.clave && (
+                  <tr className="border-b border-border/60 bg-surface-alt/40">
+                    <td colSpan={columnas} className="px-3 py-2">
+                      <PackingListFotosPaleta fotos={f.fotos} puedeEditar={puedeEditar}
+                        onAgregar={foto => onAgregarFoto(f.clave, foto)} onQuitar={ruta => onQuitarFoto(f.clave, ruta)} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

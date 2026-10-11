@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { actualizarUsuario, guardarBancasDeUsuario } from '../../services/usuario-service';
 import AccesoBancas from './AccesoBancas';
-import { ROLES_CON_TODAS_LAS_BANCAS } from './acceso-bancas';
+import { ROLES_CON_TODAS_LAS_BANCAS, type AccesoBancasUsuario } from './acceso-bancas';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import Switch from '../../components/Switch';
@@ -42,6 +42,7 @@ const RECURSOS: { recurso: Recurso; label: string }[] = [
   { recurso: 'facturacion', label: 'Facturacion' },
   { recurso: 'cochinito', label: 'Wallet (Tesoreria)' },
   { recurso: 'mesa_cambio', label: 'Mesa de cambio (Tesoreria)' },
+  { recurso: 'nomina', label: 'Nómina (datos personales del personal)' },
   { recurso: 'clientes', label: 'Clientes' },
   { recurso: 'proveedores', label: 'Proveedores' },
   { recurso: 'despachos', label: 'Despachos' },
@@ -61,7 +62,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
     !mismosPermisos(usuario.permisos, PERMISOS_POR_ROL[usuario.rol])
   );
   // Cuentas/cajas con acceso: null = aún no cargadas (no se guarda); solo se envía si la persona las tocó.
-  const [accesoBancas, setAccesoBancas] = useState<{ ids: string[] | null; modificado: boolean }>({ ids: null, modificado: false });
+  const [accesoBancas, setAccesoBancas] = useState<{ acceso: AccesoBancasUsuario | null; modificado: boolean }>({ acceso: null, modificado: false });
   const toast = useToast();
 
   const tienePermiso = (recurso: Recurso, accion: Accion): boolean => {
@@ -106,8 +107,9 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
     // corrupto) — así este guardado lo limpia en vez de reescribirlo.
     const permisosGuardar = rol === 'superadmin' ? [] : (useCustom ? permisos : []);
     const result = await actualizarUsuario(usuario.id, { rol, permisos: permisosGuardar });
-    if ('usuario' in result && accesoBancas.modificado && accesoBancas.ids !== null && !ROLES_CON_TODAS_LAS_BANCAS.includes(rol)) {
-      const bancasGuardadas = await guardarBancasDeUsuario(usuario.id, accesoBancas.ids);
+    if ('usuario' in result && accesoBancas.modificado && accesoBancas.acceso !== null && !ROLES_CON_TODAS_LAS_BANCAS.includes(rol)) {
+      const { ver, editar } = accesoBancas.acceso;
+      const bancasGuardadas = await guardarBancasDeUsuario(usuario.id, [...ver], [...editar]);
       if ('error' in bancasGuardadas) toast.errorMsg(`Los permisos se guardaron, pero no el acceso a cuentas: ${bancasGuardadas.error}`);
     }
     setGuardando(false);
@@ -225,7 +227,7 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
             <AccesoBancas
               usuarioId={usuario.id}
               rol={rol}
-              onCambio={(ids, modificado) => setAccesoBancas({ ids, modificado })}
+              onCambio={(acceso, modificado) => setAccesoBancas({ acceso, modificado })}
             />
           )}
 

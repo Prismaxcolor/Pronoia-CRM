@@ -11,6 +11,9 @@
  * Composición de un lote (productos:ver, mismos filtros desde/hasta/almacenId):
  *   GET /api/inventario/pantalla/lotes/:loteId/composicion -> { composicion: ComposicionLote }
  * Filtros (query, todos opcionales): desde, hasta (YYYY-MM-DD, ambos o ninguno), categoria, almacen, q.
+ * Saldo a una fecha: `al=YYYY-MM-DD` (anterior a hoy) devuelve los kg que había al cierre de ese día (inclusive,
+ * día de negocio) en vez del stock de hoy; la respuesta trae `saldoAl` y los avisos de lo que no es exacto
+ * (ver docs/DISENO_inventario_a_fecha.md). Con fecha: solo kilos (valorOculto), alertas vacías y composición no aplica.
  * El detalle admite además `limite` (máx. filas), `vista` e `incluirClasificaciones` (true = mostrar también las clasificaciones de compra PCB sin lote).
  *
  * REGLAS QUE EL FRONTEND DEBE RESPETAR
@@ -20,7 +23,8 @@
  *  - Todo lo que dice "estimado" (días en inventario) se debe rotular "estimado" en la pantalla.
  *  - `parcial: true` = alguna lectura falló o venció: mostrar `avisos`; la cifra afectada no es completa.
  *  - Los filtros desde/hasta acotan lo que ocurre en el período (despachos, merma). El stock en galpón
- *    y su antigüedad estimada son siempre los de AHORA: una foto, no un período.
+ *    y su antigüedad estimada son los de AHORA (una foto) salvo que venga `al`: entonces son el SALDO al
+ *    cierre de ese día y `saldoAl` trae la fecha.
  *
  * DEFINICIONES (vista y etapa se derivan; nada de esto se guarda en la BD)
  *  Vista:
@@ -92,6 +96,11 @@ export interface MetaPantalla {
   parcial: boolean;
   avisos: string[];
   filtros: FiltrosPantalla;
+  /**
+   * Fecha (YYYY-MM-DD) del SALDO mostrado: los kg son los del cierre de ese día (solo lectura, sin costos ni
+   * alertas). null = stock actual. Rotular siempre "Saldo al <fecha>".
+   */
+  saldoAl: string | null;
 }
 
 export interface KgAlmacen {

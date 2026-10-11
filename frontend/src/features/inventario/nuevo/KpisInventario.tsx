@@ -7,6 +7,7 @@ import {
   formatearKg,
   formatearNumero,
   formatearPct,
+  rotuloSaldo,
   type FiltrosPantalla,
 } from '../../../lib/inventario-nuevo';
 import type { DetallePantalla } from '@shared/types/inventario-pantalla.js';
@@ -15,6 +16,7 @@ import { AYUDA_ITEMS_CON_STOCK, ORDEN_VISTAS, claveParametros, contarItemsPorVis
 import type { ResumenInventario } from '../../../services/inventario-resumen-service';
 import { obtenerDetallePantalla } from '../../../services/inventario-pantalla-service';
 import { useAuth } from '../../../hooks/use-auth-context';
+import { formatearFechaNegocio } from '../../../lib/fecha-negocio';
 import { useDatosPantalla } from './useDatosPantalla';
 import { GrillaKpis, SkeletonKpis, TarjetaKpi } from '../../../components/ui';
 
@@ -49,7 +51,7 @@ function TarjetaItemsConStock({ filtros, recarga }: { filtros: FiltrosPantalla; 
       estado={estado}
       mensajeVacio="No se pudo contar"
       valor={conteo ? `${formatearNumero(conteo.total, 0)} ítems` : '—'}
-      subtitulo="con kg en el galpón hoy"
+      subtitulo={dato?.saldoAl ? `con kg en el galpón al cierre del ${formatearFechaNegocio(dato.saldoAl)}` : 'con kg en el galpón hoy'}
       comparacion={null}
     >
       {error && !dato && (
@@ -72,14 +74,17 @@ function TarjetaItemsConStock({ filtros, recarga }: { filtros: FiltrosPantalla; 
 function KpisInventario({ resumen, filtros, recarga = 0 }: Props) {
   const k = derivarKpis(resumen);
   const mermaCmp = compararConPeriodoAnterior(k.merma.pct, k.merma.pctAnterior, 'baja');
+  const rotuloKg = rotuloSaldo(resumen.saldoAl);
   const tiposMerma = k.merma.porTipo.filter(t => t.kg > 0);
 
   return (
     <GrillaKpis>
       <TarjetaKpi
-        titulo="Kg en galpón"
+        titulo={rotuloKg ? `Kg en galpón · ${rotuloKg}` : 'Kg en galpón'}
         icono={<Warehouse size={16} />}
-        ayuda="Todos los kg que hay hoy en los almacenes: material suelto más lotes. Es el stock de hoy. Debajo se ve cuántos kg hay en cada galpón."
+        ayuda={rotuloKg
+          ? 'Todos los kg que había en los almacenes al cierre de esa fecha: material suelto más lotes, armados con los movimientos registrados hasta ese día. Debajo se ve cuántos kg había en cada galpón.'
+          : 'Todos los kg que hay hoy en los almacenes: material suelto más lotes. Es el stock de hoy. Debajo se ve cuántos kg hay en cada galpón.'}
         valor={formatearKg(k.galpon.totalKg)}
         comparacion={null}
       >

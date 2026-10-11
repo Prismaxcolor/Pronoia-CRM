@@ -24,6 +24,9 @@ import pagosRouter from './routes/pagos.js';
 import cobrosRouter from './routes/cobros.js';
 import cochinitoRouter from './routes/cochinito.js';
 import mesaCambioRouter from './routes/mesa-cambio.js';
+import nominaRouter from './routes/nomina.js';
+import transferenciaMesaRouter from './routes/transferencia-mesa.js';
+import categoriasWalletRouter from './routes/categorias-wallet.js';
 import uploadsRouter from './routes/uploads.js';
 import portalRouter from './routes/portal.js';
 import citasRouter from './routes/citas.js';
@@ -35,6 +38,7 @@ import tomasFisicasRouter from './routes/toma-fisica.js';
 import auditoriaRouter from './routes/auditoria.js';
 import llavesEdicionRouter from './routes/llaves-edicion.js';
 import llavesSolicitudesRouter from './routes/llaves-solicitudes.js';
+import { jsonGlobalSaltando, RUTA_NOMINA } from './middlewares/json-por-ruta.js';
 import { notificarGrupoMiddleware } from './middlewares/notificar-grupo.js';
 import { invalidarSaldosMiddleware } from './middlewares/invalidar-saldos.js';
 import { operacionesClienteLimiter } from './middlewares/rate-limit.js';
@@ -68,7 +72,8 @@ const corsOptions: cors.CorsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '100kb' }));
+// 100 kb para todo menos la nómina (que sube su propio límite en su router, tras autenticar): ver json-por-ruta.ts.
+app.use(jsonGlobalSaltando([RUTA_NOMINA]));
 // Solo para la cookie httpOnly de sesión del portal — el staff sigue usando
 // Bearer token, no depende de esto.
 app.use(cookieParser());
@@ -82,6 +87,7 @@ app.use(
   [
     '/api/tickets-pesaje', '/api/traslados', '/api/tomas-fisicas', '/api/proveedores', '/api/clientes',
     '/api/productos', '/api/taras', '/api/almacenes', '/api/vehiculos', '/api/transformaciones', '/api/packing-lists',
+    '/api/cochinito',
   ],
   operacionesClienteLimiter,
 );
@@ -104,8 +110,11 @@ app.use('/api/taras', tarasRouter);
 app.use('/api/vehiculos', vehiculosRouter);
 app.use('/api/pagos', pagosRouter);
 app.use('/api/cobros', cobrosRouter);
+app.use('/api/cochinito', transferenciaMesaRouter);
+app.use('/api/cochinito', categoriasWalletRouter);
 app.use('/api/cochinito', cochinitoRouter);
 app.use('/api/mesa-cambio', mesaCambioRouter);
+app.use('/api/nomina', nominaRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/tasas', tasasRouter);
 app.use('/api/portal', portalRouter);

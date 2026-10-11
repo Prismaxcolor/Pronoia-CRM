@@ -1,20 +1,29 @@
 /**
  * Mesa de cambio: cambistas (proveedores de cambio de divisas) y su estado de cuenta en USD.
  *
- * Son anotaciones de deuda: NO mueven saldos de Wallet ni de bancas.
- * Convención: CARGO aumenta lo que les debemos; COBRO lo reduce (o lo vuelve a nuestro favor).
- * saldo = suma de cargos - suma de cobros (anulados no cuentan). Positivo = "Les debemos"; negativo = "Nos deben".
+ * Los asientos manuales son anotaciones de deuda: NO mueven saldos de Wallet ni de bancas. Los asientos
+ * ligados a una transferencia con mesa de cambio (movimientoId) los crean y anulan las RPC de esa transferencia.
+ * Convención: CARGO y N/D (nota de débito) aumentan lo que les debemos; COBRO y N/C (nota de crédito) lo reducen
+ * (o lo vuelven a nuestro favor).
+ * saldo = suma de (cargos + N/D) - suma de (cobros + N/C), sin anulados. Positivo = "Les debemos"; negativo = "Nos deben".
  *
  * El cálculo del estado de cuenta vive en el servidor (backend/src/utils/mesa-cambio.ts); aquí solo van los
  * tipos del contrato y la descripción legible del saldo, que usa la pantalla.
  */
 
-export const TIPOS_ASIENTO = ['CARGO', 'COBRO'] as const;
+export const TIPOS_ASIENTO = ['CARGO', 'COBRO', 'NC', 'ND'] as const;
 export type TipoAsiento = (typeof TIPOS_ASIENTO)[number];
 
 export const ETIQUETA_TIPO_ASIENTO: Record<TipoAsiento, string> = {
   CARGO: 'Cargo (aumenta lo que les debemos)',
   COBRO: 'Cobro / abono (reduce lo que les debemos)',
+  NC: 'Nota de crédito (reduce lo que les debemos)',
+  ND: 'Nota de débito (aumenta lo que les debemos)',
+};
+
+/** Etiqueta corta del tipo, para la columna "Detalle" del estado de cuenta. */
+export const ETIQUETA_CORTA_TIPO_ASIENTO: Record<TipoAsiento, string> = {
+  CARGO: 'Cargo', COBRO: 'Cobro', NC: 'Nota de crédito', ND: 'Nota de débito',
 };
 
 export interface Cambista {
@@ -44,6 +53,10 @@ export interface FilaEstadoCuentaMesa {
   referencia: string | null;
   anulado: boolean;
   anuladoMotivo: string | null;
+  /** Correlativo propio de las notas (NC-0001 / ND-0001); null en CARGO y COBRO. */
+  numeroNota: number | null;
+  /** Transferencia de Wallet de la que nace el asiento; null si es un asiento manual. */
+  movimientoId: string | null;
   /** Efecto en el saldo: 0 si está anulado. */
   cargo: number;
   cobro: number;
@@ -64,6 +77,15 @@ export interface EstadoCuentaMesa {
 /** Correlativo propio por asiento: MC-0001. Espejo de backend/src/utils/mesa-cambio.ts. */
 export function formatearNumeroAsiento(numero: number): string {
   return `MC-${String(numero).padStart(4, '0')}`;
+}
+
+const PREFIJO_NOTA: Partial<Record<TipoAsiento, string>> = { NC: 'NC', ND: 'ND' };
+
+/** Número visible: NC-0001 / ND-0001 para las notas; MC-0001 para el resto. Espejo de backend/src/utils/mesa-cambio.ts. */
+export function formatearNumeroDocumento(a: { tipo: TipoAsiento; numero: number; numeroNota?: number | null }): string {
+  const prefijo = PREFIJO_NOTA[a.tipo];
+  if (prefijo && a.numeroNota != null) return `${prefijo}-${String(a.numeroNota).padStart(4, '0')}`;
+  return formatearNumeroAsiento(a.numero);
 }
 
 /** Por debajo de medio centavo el saldo se considera en cero. */

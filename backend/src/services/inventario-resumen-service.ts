@@ -4,7 +4,8 @@ import { logger } from '../utils/logger.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { obtenerInventarioAlmacen } from './inventario-service.js';
 import { leerConfiguracionInventario } from './configuracion-inventario-service.js';
-import { cargarEmbalajesVigentes } from './lote-embalaje-service.js';
+import { cargarEmbalajesAFecha, cargarEmbalajesVigentes } from './lote-embalaje-service.js';
+import { leerPrimerRegistro } from './inventario-pantalla-datos.js';
 import { reportesMermaDosPeriodos } from './transformacion-service.js';
 import { cacheResumen } from './resumen-cache.js';
 import { conLimiteDeTiempo } from '../utils/tiempo-limite.js';
@@ -28,6 +29,7 @@ import {
 } from '../utils/resumen-inventario.js';
 import type { ConfiguracionInventario } from '../schemas/configuracion-inventario.js';
 import { hoyNegocio } from '../utils/fecha-negocio.js';
+import { avisosSaldo, resolverCorte } from '../utils/saldo-fecha.js';
 
 /** Por defecto 8 s: deja margen bajo el límite de la función serverless. */
 export const PRESUPUESTO_RESUMEN_MS = 8_000;
@@ -39,6 +41,11 @@ export interface OpcionesResumenInventario {
   /** Solo para pruebas: fecha de "hoy" (YYYY-MM-DD). */
   hoy?: string;
   /**
+   * Saldo en kg al cierre de este día (YYYY-MM-DD, inclusive) en vez del stock de hoy. Una fecha de hoy o
+   * posterior es el stock actual. Con fecha solo hay kilos: no se calculan costos ni valores.
+   */
+  al?: string;
+  /**
    * Incluir costos de compra y precios de venta. Solo true para usuarios con facturacion:ver; por
    * defecto false: sin permiso ni se consultan los costos.
    */
@@ -49,6 +56,8 @@ export interface OpcionesResumenInventario {
 
 export interface ResumenInventario extends ResumenInventarioBase {
   generadoEn: string;
+  /** Fecha (YYYY-MM-DD) del saldo mostrado; null = stock actual. */
+  saldoAl: string | null;
   configuracion: ConfiguracionInventario;
   merma: ResumenMermaInventario;
   /** Avisos de lecturas que fallaron o no terminaron a tiempo (la cifra afectada no es completa). */
@@ -214,10 +223,17 @@ export async function esencial<T>(promesa: Promise<T>, nombre: string, seg: Segu
   throw new Error(`El resumen del inventario tardó demasiado al leer ${nombre}.`);
 }
 
-/** Inventario de un almacén con el presupuesto restante; si falla o vence, se omite con aviso. */
-export async function inventarioDeAlmacen(a: AlmacenRow, seg: Seguimiento) {
+/** Inventario de un almacén con el presupuesto restante; si falla o vence, se omite con aviso.
+ *  Con `corte` es el saldo al cierre de ese día; sin él, el stock actual (misma llamada de siempre). */
+export async function inventarioDeAlmacen(
+  a: AlmacenRow, seg: Seguimiento, corte?: string | null, alFecharSinCompletadoEn?: () => void
+) {
   const grupos = await leerConRespaldo(
-    obtenerInventarioAlmacen(a.id),
+    corte
+      ? (alFecharSinCompletadoEn
+        ? obtenerInventarioAlmacen(a.id, { hasta: corte }, { alFecharSinCompletadoEn })
+        : obtenerInventarioAlmacen(a.id, { hasta: corte }))
+      : obtenerInventarioAlmacen(a.id),
     [] as Awaited<ReturnType<typeof obtenerInventarioAlmacen>>,
     `No se pudo calcular el inventario del almacén "${a.nombre}": sus kilos no están en el resumen.`,
     seg
@@ -225,24 +241,27 @@ export async function inventarioDeAlmacen(a: AlmacenRow, seg: Seguimiento) {
   return { almacenId: a.id, nombre: a.nombre, activo: a.activo, grupos };
 }
 
-async function calcularResumen(opts: OpcionesResumenInventario, rango: RangoFechas): Promise<ResumenInventario> {
+async function calcularResumen(opts: OpcionesResumenInventario, rango: RangoFechas, corte: string | null): Promise<ResumenInventario> {
   const previo = rangoAnterior(rango);
   const inicio = Date.now();
   const presupuesto = opts.presupuestoMs ?? PRESUPUESTO_RESUMEN_MS;
   const seg: Seguimiento = { avisos: [], parcial: false, restanteMs: () => presupuesto - (Date.now() - inicio) };
-  const incluirValor = opts.incluirValor === true;
+  // Con fecha solo kilos: los costos y precios son de hoy y no valen para un saldo pasado.
+  const incluirValor = opts.incluirValor === true && !corte;
 
   // Todo lo independiente en paralelo. Los costos solo se consultan si el usuario puede verlos.
   const avisosLecturas: string[] = [];
   // El inventario de cada almacén (lo más lento) arranca en cuanto se conocen los almacenes, sin esperar al resto.
+  // Con fecha, si alguna lectura de salidas tuvo que fecharse sin completado_en, el saldo lo avisa.
+  let sinCompletadoEn = false;
   const inventariosPromesa = esencial(cargarAlmacenes(), 'los almacenes', seg).then(almacenes =>
-    Promise.all(almacenes.map(a => inventarioDeAlmacen(a, seg)))
+    Promise.all(almacenes.map(a => inventarioDeAlmacen(a, seg, corte, () => { sinCompletadoEn = true; })))
   );
-  const [inventarios, lotes, embalajes, config, noVendibles, costos, mermas] = await Promise.all([
+  const [inventarios, lotes, embalajes, config, noVendibles, costos, mermas, primero] = await Promise.all([
     inventariosPromesa,
     esencial(cargarLotes(), 'los lotes', seg),
     leerConRespaldo(
-      cargarEmbalajesVigentes(),
+      corte ? cargarEmbalajesAFecha(corte) : cargarEmbalajesVigentes(),
       [] as Awaited<ReturnType<typeof cargarEmbalajesVigentes>>,
       'No se pudieron leer los embalajes: los kilos embalados aparecen en 0 y no son confiables.',
       seg
@@ -258,6 +277,11 @@ async function calcularResumen(opts: OpcionesResumenInventario, rango: RangoFech
         )
       : Promise.resolve(new Map<string, CostoProducto>()),
     leerConRespaldo(reportesMermaDosPeriodos(rango, previo), null, 'No se pudo calcular la merma del período.', seg),
+    // undefined = no se conoce (no se avisa); solo se lee para un saldo a una fecha.
+    corte
+      ? leerConRespaldo<string | null | undefined>(
+          leerPrimerRegistro(), undefined, 'No se pudo comprobar desde cuándo hay registros: puede faltar el aviso de datos anteriores.', seg)
+      : Promise.resolve<string | null | undefined>(undefined),
   ]);
   if (avisosLecturas.length > 0) {
     seg.parcial = true;
@@ -278,12 +302,18 @@ async function calcularResumen(opts: OpcionesResumenInventario, rango: RangoFech
       seg.avisos.push(`El almacén "${a.nombre}" está inactivo y aún tiene ${a.totalKg} kg: se incluyen en los totales.`);
     }
   }
+  if (corte) {
+    seg.avisos.push(...avisosSaldo({
+      corte, primerRegistro: primero, almacenes: inventarios, completadoEnDisponible: !sinCompletadoEn, valorSolicitado: opts.incluirValor === true,
+    }));
+  }
   if (mermas && mermas.avisos.length > 0) {
     seg.parcial = true;
     seg.avisos.push(...mermas.avisos);
   }
   return {
     generadoEn: new Date().toISOString(),
+    saldoAl: corte,
     ...base,
     configuracion: config,
     merma: armarResumenMerma(rango, mermas?.actual ?? MERMA_VACIA, previo, mermas?.previo ?? MERMA_VACIA, config.umbralMermaPct),
@@ -303,8 +333,10 @@ async function calcularResumen(opts: OpcionesResumenInventario, rango: RangoFech
  * presupuesto de tiempo devuelve lo calculado con `parcial: true` y un aviso por cada cifra afectada.
  */
 export async function obtenerResumenInventario(opts: OpcionesResumenInventario = {}): Promise<ResumenInventario> {
-  const rango = resolverRangoMerma(opts);
+  const corte = resolverCorte(opts.al, opts.hoy ?? hoyISO());
+  // Sin rango pedido, la merma por defecto (últimos 30 días) se cuenta hasta la fecha del saldo.
+  const rango = resolverRangoMerma(corte && !opts.desde && !opts.hasta ? { ...opts, hoy: corte } : opts);
   if (!rango) throw new Error('Rango de fechas inválido: usa desde y hasta (YYYY-MM-DD) con desde <= hasta.');
-  const clave = `valor:${opts.incluirValor === true ? 1 : 0}|${rango.desde}|${rango.hasta}`;
-  return cacheResumen.obtener(clave, () => calcularResumen(opts, rango));
+  const clave = `valor:${opts.incluirValor === true && !corte ? 1 : 0}|${rango.desde}|${rango.hasta}|al:${corte ?? ''}`;
+  return cacheResumen.obtener(clave, () => calcularResumen(opts, rango, corte));
 }

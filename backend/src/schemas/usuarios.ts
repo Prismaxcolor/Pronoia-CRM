@@ -7,6 +7,11 @@ const permisoSchema = z.object({
   accion: z.enum(ACCIONES),
 });
 
+/** Como mucho una vez cada combinación recurso/acción. */
+const MAX_PERMISOS = RECURSOS.length * ACCIONES.length;
+const permisosSchema = z.array(permisoSchema).max(MAX_PERMISOS, 'Demasiados permisos.')
+  .refine(l => new Set(l.map(p => `${p.recurso}:${p.accion}`)).size === l.length, 'Hay permisos repetidos.');
+
 export const crearUsuarioSchema = z.object({
   email: z.string().trim().toLowerCase().email('Email inválido.'),
   password: z
@@ -27,7 +32,7 @@ export const actualizarUsuarioSchema = z.object({
     .max(200, 'La contraseña es demasiado larga.')
     .optional(),
   rol: z.enum(ROLES).optional(),
-  permisos: z.array(permisoSchema).optional(),
+  permisos: permisosSchema.optional(),
   activo: z.boolean().optional(),
   /** Color del sistema: 'azul' o null (verde por defecto). Solo un superadmin lo cambia. */
   temaMarca: z.enum(TEMAS_MARCA).nullable().optional(),
@@ -40,7 +45,14 @@ export type CrearUsuarioInput = z.infer<typeof crearUsuarioSchema>;
 export type ActualizarUsuarioInput = z.infer<typeof actualizarUsuarioSchema>;
 
 /** PUT /api/usuarios/:id/bancas: cuentas/cajas a las que el usuario tiene acceso (reemplaza la lista). */
-export const asignarBancasSchema = z.object({
-  bancaIds: z.array(z.string().uuid('Banca inválida.')).max(200, 'Demasiadas cuentas.'),
-});
+export const asignarBancasSchema = z
+  .object({
+    bancaIds: z.array(z.string().uuid('Banca inválida.')).max(200, 'Demasiadas cuentas.'),
+    /** Subconjunto de bancaIds donde además puede registrar/modificar. Omitido = todas (compatibilidad). */
+    bancaIdsEditar: z.array(z.string().uuid('Banca inválida.')).max(200, 'Demasiadas cuentas.').optional(),
+  })
+  .refine(d => (d.bancaIdsEditar ?? []).every(id => d.bancaIds.includes(id)), {
+    message: 'Solo se puede dar edición en cuentas a las que también se da acceso.',
+    path: ['bancaIdsEditar'],
+  });
 export type AsignarBancasInput = z.infer<typeof asignarBancasSchema>;

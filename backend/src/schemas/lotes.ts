@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CLASES_LOTE } from '../utils/lote-clasificacion.js';
+import { CLAVES_COLOR_LOTE } from '../utils/packing-list-lotes.js';
 
 /** Tope defensivo del precio estimado (USD/kg); coincide con el CHECK de lotes (< 1.000.000). */
 const MAX_PRECIO_ESTIMADO_KG = 999_999;
@@ -15,6 +16,8 @@ export const actualizarLoteSchema = crearLoteSchema
     fotos: z.array(z.string().url()).optional(),
     activo: z.boolean().optional(),
     clase: z.enum(CLASES_LOTE, { message: 'Clase de lote inválida.' }).optional(),
+    /** Color predeterminado del lote en el packing list (clave del catálogo). null lo quita. */
+    colorPackingList: z.enum(CLAVES_COLOR_LOTE, { message: 'Color de lote inválido.' }).nullable().optional(),
     /** USD/kg aproximado de VENTA. null borra el precio; nunca se inventa uno. */
     precioEstimadoKg: z
       .number({ message: 'El precio debe ser un número.' })

@@ -5,6 +5,7 @@ import { esObjetoInexistente, MENSAJE_INVENTARIO_NO_HABILITADO } from '../utils/
 import { mensajeDeErrorBd } from '../utils/errores-bd.js';
 import { logger } from '../utils/logger.js';
 import type { EmbalajeParaResumen } from '../utils/embalaje-lote.js';
+import { embalajesVigentesAl, type EmbalajeConFechas } from '../utils/saldo-fecha.js';
 import type { MarcarEmbalajeInput } from '../schemas/lote-embalajes.js';
 
 interface EmbalajeRow {
@@ -90,6 +91,30 @@ export async function cargarEmbalajesVigentes(): Promise<Array<EmbalajeParaResum
   } catch (err) {
     if (esObjetoInexistente(err as { code?: string; message?: string })) return [];
     logger.error({ evento: 'embalajes_no_leidos', motivo: err instanceof Error ? err.message : String(err) });
+    throw new Error(MENSAJE_EMBALAJES_NO_LEIDOS);
+  }
+}
+
+/** Embalajes que estaban vigentes al cierre de `corte` (marcados hasta ese día y no anulados a esa fecha). Misma
+ *  política de errores que cargarEmbalajesVigentes: tabla inexistente = [], cualquier otro fallo se propaga. */
+export async function cargarEmbalajesAFecha(corte: string): Promise<Array<EmbalajeParaResumen & { loteId: string }>> {
+  try {
+    const filas = await leerPaginado<Pick<EmbalajeRow, 'lote_id' | 'almacen_id' | 'peso_kg' | 'marcado_en' | 'anulado' | 'anulado_en'>>((desde, hasta) =>
+      supabaseAdmin
+        .from('lote_embalajes')
+        .select('lote_id, almacen_id, peso_kg, marcado_en, anulado, anulado_en')
+        .order('marcado_en')
+        .order('id')
+        .range(desde, hasta)
+    );
+    const conFechas: EmbalajeConFechas[] = filas.map(f => ({
+      loteId: f.lote_id, almacenId: f.almacen_id, pesoKg: Number(f.peso_kg),
+      marcadoEn: f.marcado_en, anulado: f.anulado, anuladoEn: f.anulado_en,
+    }));
+    return embalajesVigentesAl(conFechas, corte);
+  } catch (err) {
+    if (esObjetoInexistente(err as { code?: string; message?: string })) return [];
+    logger.error({ evento: 'embalajes_a_fecha_no_leidos', motivo: err instanceof Error ? err.message : String(err) });
     throw new Error(MENSAJE_EMBALAJES_NO_LEIDOS);
   }
 }

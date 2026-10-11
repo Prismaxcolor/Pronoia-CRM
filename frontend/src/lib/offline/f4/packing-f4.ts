@@ -8,6 +8,9 @@ interface ItemEntrada {
   numeroPaleta?: number | null;
   lote?: string | null;
   color?: string | null;
+  almacenId?: string | null;
+  /** Rutas de fotos (ya subidas: las fotos de paleta no se guardan en el teléfono, ver docs/DISENO_packing_list_lote_fotos_color.md). */
+  fotos?: string[];
   pesoBruto: number;
   pesoPaleta: number;
 }
@@ -23,6 +26,8 @@ export function itemsConNeto(items: readonly ItemEntrada[]): PackingListItem[] {
     numeroPaleta: i.numeroPaleta ?? null,
     lote: i.lote ?? null,
     color: i.color ?? null,
+    almacenId: i.almacenId ?? null,
+    fotos: (i.fotos ?? []).map(ruta => ({ ruta, url: null })),
     pesoBruto: i.pesoBruto,
     pesoPaleta: i.pesoPaleta,
     pesoNeto: redondear2(i.pesoBruto - i.pesoPaleta),
