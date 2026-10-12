@@ -1,5 +1,6 @@
 import { apiFetch, ApiError } from './api-client';
 import { leerGet } from './lectura-service';
+import type { CategoriaDeNota } from '@shared/types/index.js';
 
 export type TipoEntidad = 'proveedor' | 'cliente';
 
@@ -37,6 +38,8 @@ export interface EntradaEstadoCuenta {
   facturaAsociadaId?: string | null;
   /** Solo notas: código de esa factura (C-0007). */
   facturaAsociadaCodigo?: string | null;
+  /** Solo notas: categoría del Wallet (nombre, color, imagen); ausente si no tiene. */
+  categoria?: CategoriaDeNota | null;
 }
 
 export interface EstadoCuenta {

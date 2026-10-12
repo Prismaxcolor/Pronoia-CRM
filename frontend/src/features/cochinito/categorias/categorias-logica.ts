@@ -62,12 +62,12 @@ export function indicePorId(categorias: readonly CategoriaWallet[]): ReadonlyMap
   return new Map(categorias.map(c => [c.id, c]));
 }
 
-/** "Servicios › Luz" y su color, listos para mostrar; null si no hay categoría o no se conoce. */
-export function etiquetaCategoria(id: string | null | undefined, indice: ReadonlyMap<string, CategoriaWallet>): { nombre: string; color: string } | null {
+/** "Servicios › Luz", su color y su imagen (null si no tiene), listos para mostrar; null si no hay categoría o no se conoce. */
+export function etiquetaCategoria(id: string | null | undefined, indice: ReadonlyMap<string, CategoriaWallet>): { nombre: string; color: string; imagenUrl: string | null } | null {
   const c = id ? indice.get(id) : undefined;
   if (!c) return null;
   const padre = c.padreId ? indice.get(c.padreId) : undefined;
-  return { nombre: padre ? `${padre.nombre} › ${c.nombre}` : c.nombre, color: c.color };
+  return { nombre: padre ? `${padre.nombre} › ${c.nombre}` : c.nombre, color: c.color, imagenUrl: c.imagenUrl ?? null };
 }
 
 const aceptaMovimiento = (tipo: TipoCategoria, movimiento: 'ingreso' | 'egreso'): boolean =>

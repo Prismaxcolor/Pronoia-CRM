@@ -3,6 +3,7 @@ import { falloNomina, type FalloNomina } from '../utils/nomina-errores.js';
 import { monedaPagoSugerida, nombreCompleto } from '../utils/nomina-armado.js';
 import { IDS_POR_CONSULTA, trocear } from '../utils/paginacion.js';
 import { cuotaSugerida } from '../utils/nomina-calculo.js';
+import { pagosDeNomina } from './nomina-pago-lectura.js';
 import type {
   CandidatoNomina, EstadoNomina, LineaNomina, Nomina, NominaResumen, NominaSemana, TipoPrestamo, TipoTrabajador, TotalesNomina,
 } from '../../../shared/types/nomina.js';
@@ -69,6 +70,7 @@ export function mapNomina(row: Fila): Nomina {
     cerradaEn: (row.cerrada_at as string | null) ?? null,
     anuladaMotivo: (row.anulada_motivo as string | null) ?? null,
     anuladaEn: (row.anulada_at as string | null) ?? null,
+    pagos: [],
   };
 }
 
@@ -103,7 +105,12 @@ export async function obtenerNomina(id: string): Promise<{ nomina: Nomina } | Fa
   const { data, error } = await supabaseAdmin.from('nominas').select(COLUMNAS_DETALLE).eq('id', id).maybeSingle();
   if (error) return falloNomina(error, 'nomina_obtener', 'No se pudo cargar la nómina.');
   if (!data) return { error: 'Nómina no encontrada.', codigo: 404 };
-  return { nomina: mapNomina(data) };
+  const nomina = mapNomina(data);
+  // Los pagos solo existen en una nómina cerrada (o anulada tras pagarse); las demás se ahorran la consulta.
+  if (nomina.estado === 'BORRADOR') return { nomina };
+  const pagos = await pagosDeNomina(id);
+  if ('error' in pagos) return pagos;
+  return { nomina: { ...nomina, pagos: pagos.pagos } };
 }
 
 function mapCandidato(t: Fila, prestamos: Fila[]): CandidatoNomina {

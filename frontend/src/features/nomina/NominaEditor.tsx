@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Ban, FileDown, Lock, Plus, Save, UserPlus } from 'lucide-react';
+import { Ban, FileDown, Lock, Plus, Save, UserPlus, Wallet } from 'lucide-react';
 import { anularNomina, cerrarNomina, guardarNomina } from '../../services/nomina-service';
 import { obtenerTasaOficial } from '../../services/tasa-service';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -11,6 +11,9 @@ import { lineasNegativas, sumarTotales, type TotalesNomina } from '@shared/types
 import MotivoModal from './MotivoModal';
 import NominaTabla from './NominaTabla';
 import NominaTotales from './NominaTotales';
+import PagarNominaModal from './PagarNominaModal';
+import PagoNominaEstado from './PagoNominaEstado';
+import { estadoPagoNomina, sePuedePagar } from './nomina-pago';
 import { descargarNominaPDF } from './nomina-pdf';
 import {
   construirPayload, leerNumero, renglonDeCandidato, renglonDeLinea, renglonesConTotales, totalesDeRenglones, validarRenglones,
@@ -56,6 +59,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
   const [sucio, setSucio] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [anulando, setAnulando] = useState(false);
+  const [pagando, setPagando] = useState(false);
   const [elegido, setElegido] = useState('');
 
   const estado = nomina?.estado ?? null;
@@ -118,6 +122,13 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
     await onRecargar();
   };
 
+  const alPagar = async (yaPagada: boolean, advertencia?: string) => {
+    setPagando(false);
+    toast.exito(yaPagada ? 'La nómina ya estaba pagada.' : 'Nómina pagada desde el Wallet.');
+    if (advertencia) toast.errorMsg(advertencia);
+    await onRecargar();
+  };
+
   const anular = async (motivo: string): Promise<string | undefined> => {
     if (!nomina) return undefined;
     const r = await anularNomina(nomina.id, motivo);
@@ -158,10 +169,12 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
       {soloLectura && nomina && (
         <p role="status" className="mb-4 rounded-lg bg-surface-alt p-3 text-sm text-text-secondary">
           {estado === 'CERRADA'
-            ? `Nómina cerrada${nomina.cerradaEn ? ` el ${formatearFechaHora(nomina.cerradaEn)}` : ''}: ya no se puede editar. Si hay un error, anúlala con un motivo y carga otra.`
+            ? `Nómina cerrada${nomina.cerradaEn ? ` el ${formatearFechaHora(nomina.cerradaEn)}` : ''}: ya no se puede editar. Si hay un error, anúlala con un motivo y carga otra.${nomina.pagos.length > 0 ? ' Al anularla también se anula su pago en el Wallet.' : ''}`
             : `Nómina anulada${nomina.anuladaMotivo ? `: ${nomina.anuladaMotivo}` : ''}.`}
         </p>
       )}
+
+      {nomina && <PagoNominaEstado nomina={nomina} />}
 
       <RotuloFormulas />
 
@@ -200,6 +213,9 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
         {nomina && estado === 'BORRADOR' && tienePermiso('nomina', 'editar') && (
           <BotonAccion variante="secundario" icono={<Lock size={16} />} onClick={() => void cerrar()} disabled={ocupado || sucio || hayNegativosAhora}>Cerrar nómina</BotonAccion>
         )}
+        {nomina && sePuedePagar(nomina) && tienePermiso('nomina', 'editar') && tienePermiso('cochinito', 'crear') && (
+          <BotonAccion icono={<Wallet size={16} />} onClick={() => setPagando(true)} disabled={ocupado || sucio}>Pagar desde Wallet</BotonAccion>
+        )}
         {nomina && estado !== 'ANULADA' && tienePermiso('nomina', 'eliminar') && (
           <BotonAccion variante="secundario" icono={<Ban size={16} />} onClick={() => setAnulando(true)} disabled={ocupado}>Anular nómina</BotonAccion>
         )}
@@ -209,16 +225,17 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
         {sucio && nomina && estado === 'BORRADOR' && <p className="self-center text-xs text-text-secondary">Hay cambios sin guardar: guarda antes de cerrar o imprimir.</p>}
       </div>
 
+      {pagando && nomina && <PagarNominaModal nomina={nomina} onClose={() => setPagando(false)} onPagada={alPagar} />}
       {anulando && nomina && (
         <MotivoModal
           titulo={`Anular ${formatearNumeroNomina(nomina.numero)}`}
           descripcion={estado === 'CERRADA'
-            ? 'Se devuelven a los préstamos las cuotas que esta nómina descontó. Queda en el historial como anulada y podrás cargar otra para esa semana.'
+            ? `Se devuelven a los préstamos las cuotas que esta nómina descontó${estadoPagoNomina(nomina.pagos) === 'pagada' ? ' y se anulan sus egresos en el Wallet (el dinero vuelve a las cuentas)' : ''}. Queda en el historial como anulada y podrás cargar otra para esa semana.`
             : 'El borrador queda como anulado y podrás cargar otro para esa semana.'}
           etiquetaConfirmar="Anular nómina" onConfirmar={anular} onClose={() => setAnulando(false)}
         />
       )}
-      <p className="mt-6 text-xs text-text-muted">Esta fase solo registra y calcula: no mueve dinero ni toca Wallet. Los pagos se siguen haciendo por fuera.</p>
+      <p className="mt-6 text-xs text-text-muted">El cálculo no mueve dinero: una nómina cerrada se paga con «Pagar desde Wallet», que registra el egreso en la cuenta que elijas.</p>
     </div>
   );
 }

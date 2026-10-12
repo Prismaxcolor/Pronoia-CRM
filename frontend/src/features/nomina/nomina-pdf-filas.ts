@@ -1,5 +1,6 @@
 /** Textos de la tabla y de los totales del PDF de la nómina (lógica pura, sin jsPDF). */
 import type { LineaNomina, Nomina, TotalesNomina } from '../../../../shared/types/nomina.js';
+import { lineaDePago } from './nomina-pago';
 
 const numero = (n: number): string => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -38,4 +39,9 @@ export function filasTotales(t: TotalesNomina): Array<[string, string]> {
     ['Total combinado en USD', fmtUsdPdf(t.totalCombinadoUsd)],
     ['Total combinado en Bs', fmtBsPdf(t.totalCombinadoBs)],
   ];
+}
+
+/** Pares etiqueta / valor del pago desde el Wallet (vacío si la nómina no se ha pagado). Solo cuenta, monto y fecha. */
+export function filasPagos(nomina: Pick<Nomina, 'pagos'>): Array<[string, string]> {
+  return nomina.pagos.map(p => [p.anulado ? 'Pago anulado' : 'Pagada', lineaDePago(p)]);
 }

@@ -9,12 +9,16 @@ export interface CategoriaInput {
   color: string;
   /** Con valor se crea una subcategoría de esa categoría. */
   padreId?: string | null;
+  /** URL de la imagen subida con subirImagenCategoria; omitida o null = sin imagen. */
+  imagenUrl?: string | null;
 }
 
 export interface CategoriaCambios {
   nombre?: string;
   tipo?: TipoCategoria;
   color?: string;
+  /** null quita la imagen; omitida no la toca. */
+  imagenUrl?: string | null;
   /** false archiva (y archiva sus subcategorías); true restaura. */
   activo?: boolean;
 }

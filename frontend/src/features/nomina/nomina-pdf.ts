@@ -9,7 +9,7 @@ import {
   ETIQUETA_ESTADO_NOMINA, ETIQUETA_TIPO_TRABAJADOR, formatearNumeroNomina, type Nomina,
 } from '../../../../shared/types/nomina.js';
 import { domingoDe } from '../../../../shared/types/nomina-calculo.js';
-import { ENCABEZADO_TABLA_PDF, filasTabla, filasTotales } from './nomina-pdf-filas';
+import { ENCABEZADO_TABLA_PDF, filasPagos, filasTabla, filasTotales } from './nomina-pdf-filas';
 
 const GRIS_GRID: [number, number, number] = [70, 70, 70];
 
@@ -41,7 +41,7 @@ export async function descargarNominaPDF(n: Nomina, modo: ModoPdf = 'descargar')
   });
 
   let yTotales = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 24;
-  for (const [etiqueta, valor] of filasTotales(n.totales)) {
+  for (const [etiqueta, valor] of [...filasTotales(n.totales), ...filasPagos(n)]) {
     if (yTotales > 760) { doc.addPage(); yTotales = 56; }
     yTotales = filaEncabezado(doc, yTotales, etiqueta, valor);
   }

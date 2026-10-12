@@ -103,7 +103,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, o
       valorCsv: m => etiquetaCategoria(m.categoriaId, categorias ?? SIN_CATEGORIAS)?.nombre ?? '',
       celda: m => {
         const e = etiquetaCategoria(m.categoriaId, categorias ?? SIN_CATEGORIAS);
-        return e ? <EtiquetaCategoria nombre={e.nombre} color={e.color} /> : <span className="text-text-muted">—</span>;
+        return e ? <EtiquetaCategoria nombre={e.nombre} color={e.color} imagenUrl={e.imagenUrl} /> : <span className="text-text-muted">—</span>;
       },
       ayuda: 'Categoría o subcategoría del movimiento. "—" es un movimiento sin categoría (los pagos y cobros de proveedores y clientes, las transferencias y los movimientos anteriores no la llevan).',
     },

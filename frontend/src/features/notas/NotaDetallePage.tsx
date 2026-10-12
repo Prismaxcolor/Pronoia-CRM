@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, FileDown } from 'lucide-react';
+import { Printer, FileDown, Tag } from 'lucide-react';
 import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonBloque } from '../../components/ui';
 import { obtenerNotaAjuste, type NotaAjusteDetalle } from '../../services/nota-ajuste-service';
 import { obtenerNotaAjusteCliente, type NotaAjusteClienteDetalle } from '../../services/nota-ajuste-cliente-service';
@@ -9,6 +9,9 @@ import { descargarNotaPDF } from '../../services/nota-export';
 import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
 import { formatearFecha } from '../../lib/formato';
+import { useAuth } from '../../hooks/use-auth-context';
+import EtiquetaCategoria from '../cochinito/categorias/EtiquetaCategoria';
+import CambiarCategoriaNotaModal from '../estado-cuenta/CambiarCategoriaNotaModal';
 import { formatearFechaHora, nombreYMomento } from '../../lib/fecha-negocio';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
@@ -38,6 +41,10 @@ function NotaDetallePage({ tipoEntidad }: Props) {
   const { entidadId = '', notaId = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { tienePermiso } = useAuth();
+  const [cambiandoCategoria, setCambiandoCategoria] = useState(false);
+  // Al guardar la categoría se vuelve a leer la nota: el contador forma parte de la clave.
+  const [recarga, setRecarga] = useState(0);
 
   // Mismo patrón que FacturaDetallePage: si se llegó desde Estado de Cuenta,
   // "volver" regresa ahí directo en vez del listado de proveedores/clientes.
@@ -47,7 +54,7 @@ function NotaDetallePage({ tipoEntidad }: Props) {
 
   // El resultado guarda la clave con la que se pidió: mientras no coincida con
   // la clave actual se muestra el spinner (sin setState síncrono en el efecto).
-  const clave = `${esProveedor}|${entidadId}|${notaId}`;
+  const clave = `${esProveedor}|${entidadId}|${notaId}|${recarga}`;
   const [resultado, setResultado] = useState<{ clave: string; nota: NotaAjusteDetalle | NotaAjusteClienteDetalle | null } | null>(null);
   const cargando = resultado?.clave !== clave;
   const nota = resultado?.clave === clave ? resultado.nota : null;
@@ -82,6 +89,7 @@ function NotaDetallePage({ tipoEntidad }: Props) {
     );
   }
 
+  const puedeEditar = tienePermiso(esProveedor ? 'proveedores' : 'clientes', 'editar');
   const titulo = TITULO_POR_TIPO[nota.tipo];
   const nombreEntidad = 'nombreProveedor' in nota ? nota.nombreProveedor : nota.nombreCliente;
   const leyendaSaldo = nota.tipo === 'credito'
@@ -143,6 +151,21 @@ function NotaDetallePage({ tipoEntidad }: Props) {
           />
         )}
         <FilaDocumento label="Motivo" valor={nota.motivo} />
+        {(nota.categoria || puedeEditar) && (
+          <div className="flex items-center justify-between gap-3 py-2.5 border-b border-border print:border-black">
+            <span className="text-text-secondary text-sm">Categoría</span>
+            <span className="flex flex-wrap items-center justify-end gap-2">
+              {nota.categoria
+                ? <EtiquetaCategoria nombre={nota.categoria.nombre} color={nota.categoria.color} imagenUrl={nota.categoria.imagenUrl} />
+                : <span className="text-text-muted text-sm print:hidden">Sin categoría</span>}
+              {puedeEditar && !nota.anulada && (
+                <button type="button" onClick={() => setCambiandoCategoria(true)} className="print:hidden inline-flex items-center gap-1 rounded text-xs font-medium text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+                  <Tag size={12} aria-hidden="true" />{nota.categoria ? 'Cambiar' : 'Asignar'}
+                </button>
+              )}
+            </span>
+          </div>
+        )}
         <FilaDocumento label="Registrado por" valor={nombreYMomento(nota.registradoPor, nota.registradoEn)} />
         {nota.anulada && (
           <>
@@ -161,6 +184,17 @@ function NotaDetallePage({ tipoEntidad }: Props) {
 
         <p className="text-xs text-text-muted mt-3">{leyendaSaldo}</p>
       </div>
+
+      {cambiandoCategoria && (
+        <CambiarCategoriaNotaModal
+          esProveedor={esProveedor}
+          entidadId={entidadId}
+          notaId={nota.id}
+          categoriaActualId={nota.categoria?.id ?? null}
+          onClose={() => setCambiandoCategoria(false)}
+          onGuardado={() => { setCambiandoCategoria(false); setRecarga(n => n + 1); }}
+        />
+      )}
     </div>
   );
 }

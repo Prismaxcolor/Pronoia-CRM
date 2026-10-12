@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import type { CategoriaWallet } from '@shared/types/index.js';
 import type { ItemPagoMultiple, BancaPago } from './pago-service';
 
 /** Espejo de pago-service.ts (registrarPagoMultiple) para cobros a cliente —
@@ -15,6 +16,8 @@ export interface RegistrarCobroMultipleInput {
   fecha: string;
   items: ItemPagoMultiple[];
   comprobantes?: string[];
+  /** Categoría del Wallet (venta de chatarra NF / PCB): obligatoria si el cobro mueve dinero y hay categorías configuradas. */
+  categoriaId?: string | null;
 }
 
 export interface ResultadoCobroMultiple {
@@ -26,6 +29,10 @@ export interface ResultadoCobroMultiple {
   numeroAnticipo: number | null;
   /** Correlativo CRV- si la operación fue un cruce puro. */
   numeroCruce: number | null;
+  /** Categoría aplicada a los movimientos de dinero; null si no hay categorías configuradas o fue un cruce puro. */
+  categoriaId?: string | null;
+  /** Presente si el cobro quedó registrado pero no se pudo asignar la categoría. */
+  advertencia?: string;
 }
 
 /** "Registrar cobro": una o varias bancas de destino, liquida varias
@@ -42,5 +49,14 @@ export async function registrarCobroMultiple(
     return result;
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo registrar el cobro.' };
+  }
+}
+
+/** Categorías entre las que se elige al cobrar a un cliente. Lista vacía = el cobro no pide categoría. */
+export async function obtenerCategoriasCobro(): Promise<{ categorias: CategoriaWallet[] } | { error: string }> {
+  try {
+    return await apiFetch<{ categorias: CategoriaWallet[] }>('/api/cobros/categorias');
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudieron cargar las categorías del cobro.' };
   }
 }

@@ -7,6 +7,7 @@ import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cue
 import { totalesEstadoCuenta } from '@shared/types/estado-cuenta-totales.js';
 import { AYUDA_POR_TIPO, LABEL_POR_TIPO, TONO_POR_TIPO, fmt, rutaDetalle } from './estado-cuenta-comun';
 import { fechaConHora } from '../../lib/fecha-negocio';
+import EtiquetaCategoria from '../cochinito/categorias/EtiquetaCategoria';
 import { useSoloEnLinea } from '../../lib/offline/solo-en-linea';
 
 interface Props {
@@ -37,6 +38,7 @@ function Concepto({ e }: { e: EntradaEstadoCuenta }) {
       {e.anulada && <span className="ml-2 text-xs font-medium text-text-secondary">Anulada</span>}
       {e.pagada && !e.anulada && <span className="ml-2 text-xs text-text-secondary">(pagada)</span>}
       {e.facturaAsociadaCodigo && <span className="mt-0.5 block text-xs text-text-secondary">→ {e.facturaAsociadaCodigo}</span>}
+      {e.categoria && <span className="mt-1 block"><EtiquetaCategoria nombre={e.categoria.nombre} color={e.categoria.color} imagenUrl={e.categoria.imagenUrl} /></span>}
       {e.tipo === 'cruce' && (
         <span className="mt-0.5 block text-xs text-text-secondary">Saldó ${fmt(e.montoCruzado ?? 0)} en facturas sin mover dinero (el saldo no cambia)</span>
       )}

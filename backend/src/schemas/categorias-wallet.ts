@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { esColorCategoriaValido, normalizarColorCategoria } from '../utils/categoria-wallet.js';
+import { ENV } from '../config/env.js';
+import { esUrlDeBucketValida } from '../utils/comprobante-url.js';
 
 /** Color por omisión de una categoría nueva (gris de la paleta de bancas). */
 export const COLOR_CATEGORIA_POR_DEFECTO = '#475569';
@@ -14,6 +16,17 @@ const colorSchema = z
   .transform(normalizarColorCategoria)
   .refine(esColorCategoriaValido, 'Color inválido: usa el formato #RRGGBB.');
 
+/** Extensiones que el endpoint de subida asigna según la firma real del archivo (nunca SVG). */
+const EXTENSION_IMAGEN_CATEGORIA = /\.(jpe?g|png|webp)$/i;
+
+/** URL de una imagen subida vía POST /api/uploads/categorias (bucket "categorias"). Opcional; null = sin imagen. */
+const imagenCategoriaSchema = z
+  .string()
+  .url('Imagen inválida.')
+  .refine(u => esUrlDeBucketValida(u, ENV.SUPABASE_URL, 'categorias') && EXTENSION_IMAGEN_CATEGORIA.test(u), 'Imagen inválida.')
+  .nullable()
+  .optional();
+
 const nombreSchema = z.string().trim().min(1, 'El nombre es obligatorio.').max(80, 'El nombre es demasiado largo (máximo 80).');
 const tipoSchema = z.enum(['INGRESO', 'EGRESO', 'AMBOS'], { message: 'Elige si la categoría es de ingresos, egresos o ambos.' });
 const fechaSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).');
@@ -22,6 +35,7 @@ export const crearCategoriaSchema = z.object({
   nombre: nombreSchema,
   tipo: tipoSchema,
   color: colorSchema.default(COLOR_CATEGORIA_POR_DEFECTO),
+  imagenUrl: imagenCategoriaSchema,
   /** Con valor, la nueva categoría es una subcategoría de esa categoría. */
   padreId: z.string().uuid('Categoría padre inválida.').nullable().optional().transform(v => v ?? null),
 });
@@ -32,6 +46,8 @@ export const actualizarCategoriaSchema = z
     nombre: nombreSchema.optional(),
     tipo: tipoSchema.optional(),
     color: colorSchema.optional(),
+    /** null = quitar la imagen; omitida = no tocarla. */
+    imagenUrl: imagenCategoriaSchema,
     activo: z.boolean().optional(),
   })
   .refine(d => Object.values(d).some(v => v !== undefined), 'No hay nada que cambiar.');

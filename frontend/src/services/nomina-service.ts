@@ -3,6 +3,7 @@ import type {
   EstadoPrestamo, Nomina, NominaResumen, NominaSemana, Prestamo, TipoPrestamo, TipoTrabajador, Trabajador,
 } from '@shared/types/nomina';
 import type { PayloadNomina } from '../features/nomina/nomina-editor';
+import type { PayloadPago } from '../features/nomina/nomina-pago';
 
 /** Datos personales sensibles: solo en línea y sin caché local (no pasan por la lectura sin conexión). */
 export interface TrabajadorInput {
@@ -87,3 +88,21 @@ export const cerrarNomina = (id: string) =>
 
 export const anularNomina = (id: string, motivo: string) =>
   ejecutar(() => apiFetch<{ nomina: Nomina }>(`${BASE}/nominas/${id}/anular`, { method: 'POST', body: { motivo } }), 'No se pudo anular la nómina.');
+
+export interface ResultadoPagoNomina {
+  nomina: Nomina;
+  /** true si la nómina ya estaba pagada: no se creó ningún movimiento nuevo. */
+  yaPagada: boolean;
+  advertencia?: string;
+}
+
+/** Categoría del Wallet que llevará el egreso del pago de este tipo de personal; null = sin categoría asignada. */
+export const obtenerCategoriaPagoNomina = (tipo: TipoTrabajador) =>
+  ejecutar(
+    () => apiFetch<{ categoria: { id: string; nombre: string } | null }>(`${BASE}/categoria-pago${consulta({ tipo })}`),
+    'No se pudo consultar la categoría del pago.',
+  );
+
+/** Paga la nómina cerrada desde el Wallet: crea los egresos (uno por moneda) y los enlaza a la nómina. */
+export const pagarNomina = (id: string, payload: PayloadPago) =>
+  ejecutar(() => apiFetch<ResultadoPagoNomina>(`${BASE}/nominas/${id}/pagar`, { method: 'POST', body: payload }), 'No se pudo pagar la nómina.');

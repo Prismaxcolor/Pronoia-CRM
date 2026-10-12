@@ -1,6 +1,11 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearNotaAjusteInput } from '../schemas/notas-ajuste.js';
 import { formatCodigoNotaCredito, formatCodigoNotaDebito } from '../utils/codigos.js';
+import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import type { CategoriaDeNota } from '../utils/categoria-nota.js';
+import {
+  categoriasParaNotas, leerConCategoria, validarCategoriaDeNota, MENSAJE_NOTAS_CATEGORIA_PENDIENTE,
+} from './categoria-nota-service.js';
 import { notificarNota } from './telegram-eventos-service.js';
 import { anularNotaAutorizada, type ResultadoAnulacionNota } from './nota-anulacion-autorizada.js';
 import type { ActorEdicion } from './edicion-autorizada-service.js';
@@ -68,6 +73,9 @@ export async function crearNotaAjuste(
     }
   }
 
+  const categoriaInvalida = await validarCategoriaDeNota(input.categoriaId);
+  if (categoriaInvalida) return { error: categoriaInvalida.error };
+
   const insertRow: Record<string, unknown> = {
     proveedor_id: proveedorId,
     tipo: input.tipo,
@@ -79,6 +87,8 @@ export async function crearNotaAjuste(
   // Si no se elige fecha, la BD usa su default (current_date) — no mandar
   // null explícito, la columna es not null.
   if (input.fecha) insertRow.fecha = input.fecha;
+  // Solo se manda la columna si hay categoría: sin ella la nota se crea aunque la migración no esté aplicada.
+  if (input.categoriaId) insertRow.categoria_id = input.categoriaId;
 
   const { data, error } = await supabaseAdmin
     .from('notas_ajuste_proveedor')
@@ -86,6 +96,7 @@ export async function crearNotaAjuste(
     .select('id, tipo, numero')
     .single();
 
+  if (error && input.categoriaId && esObjetoInexistente(error)) return { error: MENSAJE_NOTAS_CATEGORIA_PENDIENTE };
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la nota.' };
   const row = data as { id: string; tipo: 'credito' | 'debito'; numero: number | null };
   const codigo = row.numero != null
@@ -123,6 +134,8 @@ export interface NotaAjusteDetalle {
   /** Factura de compra a la que se asocia la nota (opcional), ya resuelta. Null si es
    *  un ajuste general sin factura de por medio. */
   facturaAsociada: { id: string; codigo: string | null; total: number } | null;
+  /** Categoría del Wallet (opcional), ya resuelta con nombre, color e imagen. Null si la nota no tiene. */
+  categoria: CategoriaDeNota | null;
 }
 
 interface NotaDetalleRow {
@@ -142,6 +155,7 @@ interface NotaDetalleRow {
   anulada_at?: string | null;
   anulada_por?: string | null;
   anulada_motivo?: string | null;
+  categoria_id?: string | null;
 }
 
 /** Duplicado intencional de estado-cuenta-service.ts (mismo patrón que
@@ -158,7 +172,8 @@ export function construirNotaAjusteDetalle(
   nombreProveedor: string,
   nombreRegistradoPor: string | null,
   facturaAsociada: NotaAjusteDetalle['facturaAsociada'] = null,
-  nombreAnuladaPor: string | null = null
+  nombreAnuladaPor: string | null = null,
+  categoria: CategoriaDeNota | null = null
 ): NotaAjusteDetalle {
   return {
     id: row.id,
@@ -181,6 +196,7 @@ export function construirNotaAjusteDetalle(
     anuladaPor: row.anulada ? nombreAnuladaPor : null,
     anuladaMotivo: row.anulada ? (row.anulada_motivo ?? null) : null,
     facturaAsociada,
+    categoria,
   };
 }
 
@@ -194,12 +210,15 @@ export async function obtenerNotaAjuste(
   proveedorId: string,
   notaId: string
 ): Promise<NotaAjusteDetalle | { error: string }> {
-  const { data: nota, error: errNota } = await supabaseAdmin
-    .from('notas_ajuste_proveedor')
-    .select('id, proveedor_id, tipo, monto, motivo, anulada, pagada, numero, fecha, created_at, registrado_por, anula_nota_id, factura_id, anulada_at, anulada_por, anulada_motivo')
-    .eq('id', notaId)
-    .eq('proveedor_id', proveedorId)
-    .maybeSingle();
+  const { data: nota, error: errNota } = await leerConCategoria(
+    columnas => supabaseAdmin
+      .from('notas_ajuste_proveedor')
+      .select(columnas)
+      .eq('id', notaId)
+      .eq('proveedor_id', proveedorId)
+      .maybeSingle(),
+    'id, proveedor_id, tipo, monto, motivo, anulada, pagada, numero, fecha, created_at, registrado_por, anula_nota_id, factura_id, anulada_at, anulada_por, anulada_motivo'
+  );
 
   if (errNota || !nota) return { error: 'Nota no encontrada para este proveedor.' };
 
@@ -252,7 +271,8 @@ export async function obtenerNotaAjuste(
     }
   }
 
-  return construirNotaAjusteDetalle(row, nombreProveedor, nombreRegistradoPor, facturaAsociada, nombreAnuladaPor);
+  const categoria = row.categoria_id ? ((await categoriasParaNotas([row.categoria_id])).get(row.categoria_id) ?? null) : null;
+  return construirNotaAjusteDetalle(row, nombreProveedor, nombreRegistradoPor, facturaAsociada, nombreAnuladaPor, categoria);
 }
 
 /** Anula una nota: la RPC solo la marca anulada (con fecha, usuario y motivo). No crea

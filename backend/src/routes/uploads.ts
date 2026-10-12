@@ -38,6 +38,8 @@ const TIPOS: Record<string, { bucket: string; recurso: Recurso; accion: Accion }
   lotes: { bucket: 'lotes', recurso: 'productos', accion: 'crear' },
   // Imagen de una cuenta/caja de Wallet. Quién la asigna a una cuenta lo controla PATCH /cochinito/bancas/:id.
   bancas: { bucket: 'bancas', recurso: 'cochinito', accion: 'crear' },
+  // Imagen de una categoría del Wallet. Quién la asigna lo controla POST/PATCH /cochinito/categorias.
+  categorias: { bucket: 'categorias', recurso: 'cochinito', accion: 'crear' },
 };
 
 declare global {

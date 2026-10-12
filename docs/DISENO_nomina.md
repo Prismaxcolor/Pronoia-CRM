@@ -1,7 +1,7 @@
 # Diseño: módulo de Nómina (fase 1: registro y cálculo)
 
-Alcance: personal administrativo y operativo, nómina semanal por tipo, préstamos/adelantos. Solo REGISTRO Y CÁLCULO:
-no se integra con Wallet ni mueve dinero (siguiente fase, ver el final).
+Alcance: personal administrativo y operativo, nómina semanal por tipo, préstamos/adelantos. La fase 1 es REGISTRO Y CÁLCULO
+(no mueve dinero); la fase 2 paga una nómina cerrada desde el Wallet (sección «Fase 2» al final).
 
 ## Permiso
 
@@ -89,6 +89,8 @@ confía en los totales que manda el navegador. Se rotulan en pantalla y se cambi
 | POST `/nominas` | crear | crea o edita el borrador de (tipo, semana) |
 | POST `/nominas/:id/cerrar` | editar | cierra y descuenta cuotas |
 | POST `/nominas/:id/anular` | eliminar | anula con motivo |
+| GET `/categoria-pago?tipo` | ver | categoría del Wallet que llevará el egreso del pago (fase 2) |
+| POST `/nominas/:id/pagar` | editar + cochinito.crear + acceso a la cuenta | paga la nómina cerrada desde el Wallet (fase 2) |
 
 Mientras las tablas no existan, todas responden 503 con el mensaje de migración pendiente
 (`utils/migracion-pendiente.ts`).
@@ -114,7 +116,61 @@ con `services/pdf-documento`), Préstamos y adelantos (crear, ver saldo, anular)
 - **Tamaño del cuerpo**: `/api/nomina` acepta hasta 1 mb (el resto del API, 100 kb); el parser grande se monta dentro del
   router, después de autenticar.
 
-## Siguiente fase (NO incluida)
+## Fase 2: pagar la nómina desde el Wallet
 
-Integrar con Wallet: al cerrar la nómina, generar los egresos por banca y moneda (pago móvil en Bs, Binance en USD) y
-conciliar el pago de cada renglón. Hoy el módulo no crea movimientos ni toca saldos de bancas.
+Pedido: «configurar el apartado de nómina con las categorías de gastos financieros (nómina personal administrativo y
+personal operativo)». Decisión de Julio: «etiquetar y pagar desde Wallet». Desde una nómina CERRADA se crea el egreso en
+el Wallet desde la cuenta que se elija, con la categoría del tipo de personal. Migración: `docs/migration_nomina_pago_wallet.sql`
+(rollback `_ROLLBACK.sql`; sin aplicar). Requiere `migration_categorias_uso.sql` solo para que el egreso lleve categoría
+(sin ella, o sin categoría asignada, el egreso se crea sin categoría y la pantalla lo avisa antes de pagar).
+
+**Acción separada, no bloquea el cierre.** Cerrar sigue siendo solo cálculo y descuento de cuotas. «Pagar desde Wallet» es un
+botón de la nómina cerrada (y sin pagar) que abre un modal: por cada moneda con montos (divisas y/o bolívares) se elige una
+cuenta de esa moneda (selector con imagen/color y saldo), más fecha y referencia opcional; en cuentas Bs se responde Sí/No a la
+comisión bancaria. El resumen muestra los montos (Bs con su equivalente en USD) y pide confirmación.
+
+**Qué se crea.** Un egreso por moneda: divisas = suma del total USD de los renglones en USD, en una cuenta USD; bolívares = suma
+del total Bs de los renglones en BS, en una cuenta VES. Los montos los calcula la BD de los renglones; el navegador nunca los
+manda. Descripción: «Nómina NOM-000X · Personal operativo · semana del 05/10/2026 · divisas» (ningún dato personal; el aviso a
+Telegram de `/api/nomina` sigue siendo «ignorable» y el egreso no pasa por `POST /cochinito/movimientos`, así que no genera aviso
+propio). La categoría sale de `categorias_uso` (usos `nomina_administrativo` / `nomina_operativo`) vía `categoriasDeUso` en el
+backend, que solo ofrece una que acepte egresos; la BD la valida con el trigger `movimientos_validar_categoria`.
+
+**Una sola función SQL atómica: `nomina_pagar(nomina, datos, usuario)`** (search_path vacío, execute solo service_role, patrón
+de `nomina_cerrar`). Bloquea la fila de la nómina, exige CERRADA, y si ya hay pago devuelve `yaPagada: true` sin tocar nada
+(idempotente; el segundo pago o el reintento no mueve saldos). Exige exactamente una cuenta por moneda con montos, cuenta
+vigente y de la moneda correcta, fecha no anterior a la semana, y saldo suficiente. Reutiliza lo que ya hay, sin duplicar reglas:
+- Cuenta VES con comisión «Sí»: llama a la RPC existente `crear_movimiento_con_comision_bancaria` (0.3 %, mínimo 14 Bs; el cargo
+  nace en la misma transacción y valida saldo para monto + comisión). Sí/No es obligatorio si la migración de comisión está
+  aplicada, igual que en un egreso manual; «No» queda auditado (`sin_comision_bancaria`, constancia por el mismo mecanismo que el
+  Wallet manual; si no se puede auditar el pago ya existe y se devuelve una advertencia).
+- Sin comisión: inserta el egreso como el Wallet manual (`subtipo` y `grupo_id` nulos); los triggers existentes ajustan el saldo
+  de la cuenta y le dan su correlativo MV-.
+- El vínculo queda en `nomina_pagos` (nómina, moneda, cuenta, movimiento, monto, equivalente USD, cantidad de trabajadores,
+  fecha, referencia, quién). `unique (nomina_id, moneda_pago)` y `unique (movimiento_id)`: nunca dos pagos de la misma moneda. La
+  tabla es inmutable (trigger) y con RLS deny-all.
+
+**Permisos.** `POST /api/nomina/nominas/:id/pagar` exige `nomina.editar` + `cochinito.crear` + acceso de edición a cada cuenta
+(`exigirAccesoBancas`, que lee `bancas[].bancaId` del cuerpo). `GET /api/nomina/categoria-pago?tipo=` (nomina.ver) informa la
+categoría que llevará el egreso. En pantalla el botón solo aparece con ambos permisos y el selector solo ofrece cuentas editables.
+
+**Anular una nómina pagada: se anula también el pago (decisión).** `nomina_anular` se reemplaza (misma firma) y, dentro de la misma
+transacción que devuelve las cuotas de préstamo, anula los egresos del pago con las funciones del Wallet
+(`anular_movimiento_banca`, o `anular_movimiento_con_comision_bancaria` si lleva comisión, que anula el cargo junto al principal).
+Los saldos de las cuentas vuelven exactamente a lo que eran; cualquier fallo revierte todo. Se prefirió esto a «exigir anular el
+pago primero» porque son dos pasos que dejarían una nómina anulada con dinero fuera, y porque anular ya exige el permiso
+`nomina.eliminar` y un motivo (que viaja al motivo de los movimientos). A cambio, un guardián sobre `movimientos`
+(`movimientos_nomina_proteger`, mismo patrón que la comisión y la mesa de cambio) impide anular o cambiar monto, moneda o cuentas de
+un egreso de nómina (o de su cargo de comisión) desde el Wallet: solo se anula anulando la nómina. Concepto, referencia, fecha y
+comprobantes siguen editables, y la categoría también se puede cambiar. Para corregir un pago hecho desde la cuenta equivocada hay
+que anular la nómina y cargar otra (no hay «anular solo el pago»; queda como mejora si Julio lo pide).
+
+**Pantalla y PDF.** La nómina muestra «Pagada desde X el fecha» con una línea por moneda (monto, cuenta, MV- y enlace al
+movimiento); si la nómina se anuló, «el pago se anuló junto con la nómina». El PDF añade una fila «Pagada» por moneda (cuenta, monto
+y fecha, sin datos personales). `GET /nominas/:id` incluye `pagos`; si la migración no está aplicada la lista viene vacía y todo
+funciona como en la fase 1 (el pago responde 503 con el nombre de la migración).
+
+**Ensayo.** El SQL se probó de punta a punta en una transacción con rollback (nómina de prueba, cierre, pago en USD y Bs con
+comisión, categoría aplicada, segundo pago devuelto como `yaPagada`, intentos de anular/cambiar desde el Wallet rechazados,
+anulación de la nómina y saldos idénticos al inicio), más los rechazos (moneda equivocada, moneda de sobra, fecha anterior, saldo
+insuficiente, borrador, comisión sin responder, categoría de ingreso).

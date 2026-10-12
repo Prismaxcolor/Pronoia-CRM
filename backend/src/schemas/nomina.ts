@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DIAS_MAX_SEMANA, esLunes, prestamoExcedeGanado, sumarCuotas } from '../utils/nomina-calculo.js';
 import { normalizarCedula } from '../utils/nomina-cedula.js';
+import { hoyNegocio } from '../utils/fecha-negocio.js';
 
 /** Todo lo que entra a /api/nomina se valida aquí: son datos personales sensibles. */
 
@@ -39,6 +40,12 @@ const montoPositivo = (mensaje: string) =>
 
 const fechaNegocio = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).')
   .refine(v => !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().startsWith(v), 'Fecha inválida.');
+/** Último día admitido para un pago: mañana en la zona de negocio (holgura por desfase de reloj). */
+function diaSiguienteNegocio(): string {
+  const d = new Date(`${hoyNegocio()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 const semanaLunes = fechaNegocio.refine(esLunes, 'La semana se identifica por su lunes.');
 
 const camposTrabajador = {
@@ -154,4 +161,28 @@ export const filtroNominasSchema = z.object({
   tipo: z.enum(TIPOS_TRABAJADOR).optional(),
   desde: fechaNegocio.optional(),
   hasta: fechaNegocio.optional(),
+});
+
+const pagoCuentaSchema = z.object({
+  moneda: z.enum(MONEDAS_PAGO, { message: 'Indica la moneda del pago.' }),
+  bancaId: z.string().uuid('Selecciona una cuenta.'),
+  /** Solo cuentas en Bs: si el pago lleva la comisión bancaria del 0.3 %. Sin valor por defecto. */
+  llevaComision: z.boolean().optional(),
+});
+
+/**
+ * Pagar una nómina cerrada desde el Wallet. La lista se llama `bancas` a propósito: exigirAccesoBancas lee de ahí las
+ * cuentas sobre las que se escribe. Una cuenta por moneda de pago, como máximo dos.
+ */
+export const pagarNominaSchema = z.object({
+  fecha: fechaNegocio.refine(v => v <= diaSiguienteNegocio(), 'La fecha del pago no puede ser posterior a mañana.'),
+  referencia: textoOpcional(50),
+  bancas: z.array(pagoCuentaSchema).min(1, 'Elige la cuenta desde la que se paga.').max(MONEDAS_PAGO.length)
+    .refine(b => new Set(b.map(x => x.moneda)).size === b.length, 'Hay dos cuentas para la misma moneda.')
+    .refine(b => new Set(b.map(x => x.bancaId)).size === b.length, 'La misma cuenta no puede pagar dos monedas.'),
+});
+export type PagarNominaInput = z.infer<typeof pagarNominaSchema>;
+
+export const filtroCategoriaPagoSchema = z.object({
+  tipo: z.enum(TIPOS_TRABAJADOR, { message: 'Elige el tipo de personal.' }),
 });

@@ -27,6 +27,8 @@ export const registrarCobroMultipleSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   items: z.array(itemPagoMultipleSchema).default([]),
   comprobantes: z.array(comprobanteUrlSchema).default([]),
+  /** Categoría del Wallet (venta de chatarra NF / PCB). El servicio la exige si hay categorías configuradas y el cobro mueve dinero. */
+  categoriaId: z.string().uuid('Categoría inválida.').optional().nullable(),
 }).superRefine((data, ctx) => validarPagoCombinado(data, ctx, 'cobro'));
 
 export type RegistrarCobroMultipleInput = z.infer<typeof registrarCobroMultipleSchema>;

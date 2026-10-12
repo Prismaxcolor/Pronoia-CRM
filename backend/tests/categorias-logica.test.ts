@@ -8,7 +8,7 @@ import { filtrarMovimientos } from '../../frontend/src/lib/cochinito-kpis';
 
 type Cat = Parameters<typeof armarArbol>[0][number];
 const cat = (id: string, nombre: string, tipo: Cat['tipo'], padreId: string | null = null, activo = true): Cat =>
-  ({ id, nombre, tipo, padreId, activo, color: '#15803D', creadoEn: '2026-10-01' });
+  ({ id, nombre, tipo, padreId, activo, color: '#15803D', imagenUrl: null, creadoEn: '2026-10-01' });
 
 const todas: Cat[] = [
   cat('serv', 'Servicios', 'EGRESO'), cat('luz', 'Luz', 'EGRESO', 'serv'), cat('agua', 'Agua', 'EGRESO', 'serv', false),
@@ -75,7 +75,7 @@ describe('elección en el formulario (sin predeterminado)', () => {
 describe('etiquetaCategoria', () => {
   it('nombre completo y color; null si no hay o no existe', () => {
     const i = indicePorId(todas);
-    expect(etiquetaCategoria('luz', i)).toEqual({ nombre: 'Servicios › Luz', color: '#15803D' });
+    expect(etiquetaCategoria('luz', i)).toEqual({ nombre: 'Servicios › Luz', color: '#15803D', imagenUrl: null });
     expect(etiquetaCategoria('serv', i)?.nombre).toBe('Servicios');
     expect(etiquetaCategoria(null, i)).toBeNull();
     expect(etiquetaCategoria('zz', i)).toBeNull();

@@ -21,6 +21,10 @@ import type { FacturaCV } from '../../services/factura-cv-service';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import { bancasEditables } from '../usuarios/acceso-bancas';
+import CategoriaCobroBotones from './CategoriaCobroBotones';
+import { useCategoriasCobro } from './useCategoriasCobro';
+import AvisoCategoriasCobro from './AvisoCategoriasCobro';
+import { categoriaParaEnviar, categoriasBloqueanCobro, cobroPideCategoria, errorCategoriaCobro } from './categoria-cobro';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -91,6 +95,8 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   const [comprobantes, setComprobantes] = useState<FotoLocal[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const categorias = useCategoriasCobro(!esProveedor);
+  const [categoriaCobroId, setCategoriaCobroId] = useState<string | null>(null);
   const agregarComprobantes = (files: File[]) => {
     const { validos, errores } = filtrarComprobantes(files, comprobantes.length);
     setError(errores.length > 0 ? errores.join(' ') : null);
@@ -335,6 +341,10 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       if (mensaje) { setError(mensaje); return; }
     }
 
+    const hayDinero = !esProveedor && !esCrucePuro; // la categoría solo la elige el cobro que mueve dinero
+    const errorCategoria = categoriasBloqueanCobro(categorias, hayDinero)
+      ? 'Las categorías del cobro no han cargado: usa Reintentar.' : errorCategoriaCobro(categorias.opciones, categoriaCobroId, hayDinero);
+    if (errorCategoria) { setError(errorCategoria); return; }
     // Cruce puro: no se mueve dinero, no hace falta banca ni método de pago.
     const bancasPayload: BancaPago[] = [];
     if (!esCrucePuro) {
@@ -413,11 +423,16 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
         numeroCobro: result.numeroPago,
         numeroAnticipo: result.numeroAdelanto,
         numeroCruce: result.numeroCruce,
+        advertencia: result.advertencia,
       });
       return;
     }
 
-    const result = await registrarCobroMultiple({ clienteId: entidadId, ...datosComunes });
+    const result = await registrarCobroMultiple({
+      clienteId: entidadId,
+      ...datosComunes,
+      categoriaId: categoriaParaEnviar(categorias.opciones, categoriaCobroId, hayDinero),
+    });
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
     borrador.limpiar();
@@ -738,6 +753,10 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
             <input type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
           </div>
 
+          {!esProveedor && !esCrucePuro && <AvisoCategoriasCobro cargando={categorias.cargando} fallo={categorias.fallo} onReintentar={categorias.reintentar} />}
+          {!esProveedor && cobroPideCategoria(categorias.opciones, !esCrucePuro) &&
+            <CategoriaCobroBotones opciones={categorias.opciones} valor={categoriaCobroId} onChange={setCategoriaCobroId} disabled={guardando} />}
+
           <div>
             <label className={labelClass}>Descripción <span className="text-text-muted">(opcional)</span></label>
             <input
@@ -768,7 +787,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
             <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
               Cancelar
             </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            <button type="submit" disabled={guardando || categoriasBloqueanCobro(categorias, !esProveedor && !esCrucePuro)} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
               {guardando ? 'Registrando...' : esCrucePuro ? 'Registrar cruce' : etiquetaAccion}
             </button>
           </div>

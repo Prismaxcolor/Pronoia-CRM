@@ -11,6 +11,8 @@ export interface CategoriaWallet {
   padreId: string | null;
   /** false = archivada: no se ofrece al registrar, pero los movimientos que ya la usan la conservan. */
   activo: boolean;
+  /** URL pública de la imagen (logo); null = sin imagen. Complementa al nombre y al color, no los reemplaza. */
+  imagenUrl: string | null;
   creadoEn: string;
 }
 
@@ -73,4 +75,13 @@ export interface ReporteCuenta {
   hasta: string;
   filas: FilaReporteCuenta[];
   totales: { entradas: number; salidas: number; neto: number };
+}
+
+/** Categoría de una nota de crédito/débito ya resuelta para mostrar. Espejo de backend/src/utils/categoria-nota.ts. */
+export interface CategoriaDeNota {
+  id: string;
+  /** "Categoría › Subcategoría" o solo "Categoría". */
+  nombre: string;
+  color: string;
+  imagenUrl: string | null;
 }

@@ -1,5 +1,6 @@
 import { apiFetch } from './api-client';
 import { leerGet } from './lectura-service';
+import type { CategoriaDeNota } from '@shared/types/index.js';
 
 /** Espejo de nota-ajuste-service.ts para clientes (Bloque 45) — mismo shape,
  *  apunta a /api/clientes/.../notas-ajuste en vez de /api/proveedores/. */
@@ -10,6 +11,7 @@ export interface CrearNotaAjusteClienteInput {
   motivo: string;
   facturaId?: string | null;
   fecha?: string;
+  categoriaId?: string | null;
 }
 
 export interface NotaAjusteClienteDetalle {
@@ -34,6 +36,7 @@ export interface NotaAjusteClienteDetalle {
   anuladaPor: string | null;
   anuladaMotivo: string | null;
   facturaAsociada: { id: string; codigo: string | null; total: number } | null;
+  categoria?: CategoriaDeNota | null;
 }
 
 export async function obtenerNotaAjusteCliente(clienteId: string, notaId: string): Promise<NotaAjusteClienteDetalle | null> {

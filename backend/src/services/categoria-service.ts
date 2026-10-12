@@ -10,6 +10,8 @@ import type { ActualizarCategoriaInput, CrearCategoriaInput } from '../schemas/c
 
 /** Espejo de shared/types/categoria-wallet.ts (se duplica por la misma razón que utils/permisos.ts). */
 export interface Categoria extends CategoriaFila {
+  /** URL pública de la imagen (logo); null si no tiene (o la migración aún no se aplicó). */
+  imagenUrl: string | null;
   creadoEn: string;
 }
 
@@ -17,6 +19,8 @@ export type FalloCategoria = { error: string; codigo: number };
 
 export const MENSAJE_CATEGORIAS_PENDIENTE =
   'Las categorías del Wallet aún no están habilitadas en la base de datos (falta aplicar migration_wallet_categorias.sql).';
+export const MENSAJE_IMAGEN_CATEGORIA_PENDIENTE =
+  'La imagen por categoría aún no está habilitada en la base de datos (falta aplicar migration_categorias_imagen.sql). Guarda sin imagen o aplica la migración.';
 const MENSAJE_NOMBRE_REPETIDO = 'Ya existe una categoría con ese nombre en ese nivel.';
 /** Tope de filas al leer categorías (son pocas; el tope solo acota la consulta). */
 const LIMITE_CATEGORIAS = 2000;
@@ -40,8 +44,26 @@ function mapCategoria(row: Record<string, unknown>): Categoria {
     color: row.color as string,
     padreId: (row.padre_id as string) ?? null,
     activo: Boolean(row.activo),
+    imagenUrl: typeof row.imagen_url === 'string' && row.imagen_url ? row.imagen_url : null,
     creadoEn: row.created_at as string,
   };
+}
+
+type RespEscritura = { data: Record<string, unknown> | null; error: ErrorBd | null };
+
+/**
+ * Ejecuta la escritura tolerando que la columna imagen_url aún no exista. Si se intentaba guardar una imagen
+ * no se descarta en silencio (409 con el nombre de la migración); guardar null sí se descarta y se reintenta sin la columna.
+ */
+async function escribirConImagen(
+  columnas: Record<string, unknown>,
+  ejecutar: (c: Record<string, unknown>) => PromiseLike<RespEscritura>
+): Promise<RespEscritura | FalloCategoria> {
+  const resp = await ejecutar(columnas);
+  if (!resp.error || !esObjetoInexistente(resp.error) || !('imagen_url' in columnas)) return resp;
+  if (columnas.imagen_url != null) return { error: MENSAJE_IMAGEN_CATEGORIA_PENDIENTE, codigo: 409 };
+  const { imagen_url: _descartada, ...sinImagen } = columnas;
+  return ejecutar(sinImagen);
 }
 
 export async function listarCategorias(): Promise<{ categorias: Categoria[] } | FalloCategoria> {
@@ -55,13 +77,14 @@ export async function crearCategoria(input: CrearCategoriaInput, userId: string)
   if ('error' in lista) return lista;
   const rechazo = validarPadreDeCategoria(input.padreId, input.tipo, lista.categorias);
   if (rechazo) return { error: rechazo, codigo: 400 };
-  const { data, error } = await supabaseAdmin
-    .from('categorias_wallet')
-    .insert({ nombre: input.nombre, tipo: input.tipo, color: input.color, padre_id: input.padreId, created_by: userId })
-    .select()
-    .single();
-  if (error || !data) return fallo(error ?? {}, 'crear');
-  return { categoria: mapCategoria(data) };
+  const columnas = {
+    nombre: input.nombre, tipo: input.tipo, color: input.color, padre_id: input.padreId, created_by: userId,
+    ...(input.imagenUrl ? { imagen_url: input.imagenUrl } : {}),
+  };
+  const r = await escribirConImagen(columnas, c => supabaseAdmin.from('categorias_wallet').insert(c).select().single());
+  if ('codigo' in r) return r;
+  if (r.error || !r.data) return fallo(r.error ?? {}, 'crear');
+  return { categoria: mapCategoria(r.data) };
 }
 
 /** Mensaje si el cambio de tipo o de estado rompe la relación con el padre o con las subcategorías; null si es válido. */
@@ -85,8 +108,12 @@ export async function actualizarCategoria(id: string, input: ActualizarCategoria
   if (!actual) return { error: 'Categoría no encontrada.', codigo: 404 };
   const conflicto = conflictoDeCambio(actual, input, lista.categorias);
   if (conflicto) return { error: conflicto, codigo: 409 };
-  const { data, error } = await supabaseAdmin.from('categorias_wallet').update(input).eq('id', id).select().maybeSingle();
-  if (error || !data) return fallo(error ?? {}, 'actualizar');
+  const { imagenUrl, ...resto } = input;
+  const columnas = { ...resto, ...(imagenUrl === undefined ? {} : { imagen_url: imagenUrl }) };
+  const r = await escribirConImagen(columnas, c => supabaseAdmin.from('categorias_wallet').update(c).eq('id', id).select().maybeSingle());
+  if ('codigo' in r) return r;
+  if (r.error || !r.data) return fallo(r.error ?? {}, 'actualizar');
+  const data = r.data;
   // Archivar una categoría archiva sus subcategorías: ya no se ofrecen al registrar (los movimientos las conservan).
   if (input.activo === false && actual.padreId === null) {
     const { error: errorHijas } = await supabaseAdmin.from('categorias_wallet').update({ activo: false }).eq('padre_id', id);
@@ -117,7 +144,8 @@ function rechazoDeMovimiento(m: FilaMovimientoCategoria): FalloCategoria | null 
   if (m.anulado) return { error: 'Este movimiento está anulado.', codigo: 409 };
   if (m.tipo === 'transferencia') return { error: 'Las transferencias no llevan categoría.', codigo: 409 };
   if (m.subtipo !== null || m.grupo_id !== null) {
-    return { error: 'Este movimiento forma parte de un pago o cobro y no lleva categoría.', codigo: 409 };
+    // La categoría de un pago a proveedor es fija y la de un cobro se elige al cobrarlo: no se cambia suelta.
+    return { error: 'La categoría de un pago o cobro se define al registrarlo; no se cambia desde el movimiento.', codigo: 409 };
   }
   return null;
 }

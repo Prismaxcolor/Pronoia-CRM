@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { registrarCobroMultiple } from '../services/cobro-service.js';
+import { opcionesCategoriaCobro } from '../services/pago-categoria-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import { anularPagoCobro, editarPagoCobro } from '../services/pago-edicion-service.js';
@@ -14,6 +15,16 @@ import { idsBancasDeGrupo } from '../services/banca-acceso-service.js';
 const router = Router();
 
 router.use(requireAuth);
+
+// Categorías entre las que se elige al cobrar (uso 'cobro_cliente'). Lista vacía = el cobro no pide categoría.
+router.get('/categorias', requirePermiso('cochinito', 'crear'), async (_req, res) => {
+  const result = await opcionesCategoriaCobro();
+  if ('error' in result) {
+    res.status(500).json({ error: result.error });
+    return;
+  }
+  res.json({ categorias: result.categorias });
+});
 
 // Espejo de POST /api/pagos/multiple — un cobro mueve dinero hacia una banca
 // (Cochinito) → mismo permiso 'cochinito' que un pago.

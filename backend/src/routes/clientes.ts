@@ -17,10 +17,12 @@ import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { generarLinkTelegram } from '../services/telegram-link-service.js';
 import { enviarEstadoCuentaTelegram } from '../services/telegram-estado-cuenta-service.js';
 import { crearNotaAjusteCliente, anularNotaAjusteClienteConLlave, obtenerNotaAjusteCliente } from '../services/nota-ajuste-cliente-service.js';
-import { crearNotaAjusteSchema, anularNotaAjusteSchema } from '../schemas/notas-ajuste.js';
+import { crearNotaAjusteSchema, anularNotaAjusteSchema, actualizarCategoriaNotaSchema } from '../schemas/notas-ajuste.js';
+import { asignarCategoriaNota } from '../services/categoria-nota-service.js';
 import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
 import { listarAdelantosDisponibles } from '../services/cruce-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { registrarAuditoria } from '../services/auditoria-service.js';
 import { bancasPermitidas } from '../services/banca-acceso-service.js';
 import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 import { responderSaldos } from './saldos-handler.js';
@@ -159,6 +161,41 @@ router.post(
       notaId,
     });
     res.status(201).json(result);
+  }
+);
+
+// Cambia solo la categoría de una nota (no toca montos ni saldos, por eso no pide llave de edición).
+router.patch(
+  '/:id/notas-ajuste/:notaId/categoria',
+  requirePermiso('clientes', 'editar'),
+  validarUuidParam('id'),
+  validarUuidParam('notaId'),
+  validateBody(actualizarCategoriaNotaSchema),
+  async (req, res) => {
+    const clienteId = String(req.params.id);
+    const notaId = String(req.params.notaId);
+    const result = await asignarCategoriaNota('notas_ajuste_cliente', 'cliente_id', clienteId, notaId, req.body.categoriaId);
+    if ('error' in result) {
+      res.status(result.codigo).json({ error: result.error });
+      return;
+    }
+    await registrarAuditoria({
+      entidadTipo: 'nota_ajuste_cliente',
+      entidadId: notaId,
+      accion: 'cambiar_categoria',
+      usuarioId: req.user!.sub,
+      usuarioEmail: req.user!.email,
+      cambios: { categoria_id: { antes: result.anterior, despues: req.body.categoriaId } },
+    });
+    logger.info({
+      evento: 'nota_ajuste_cliente_categoria_cambiada',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      clienteId,
+      notaId,
+      categoriaId: req.body.categoriaId,
+    });
+    res.json({ ok: true });
   }
 );
 

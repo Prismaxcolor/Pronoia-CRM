@@ -1,11 +1,12 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { jsonNomina } from '../middlewares/json-por-ruta.js';
 import { validateBody } from '../middlewares/validate.js';
 import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
 import {
   actualizarPrestamoSchema, actualizarTrabajadorSchema, anularSchema, crearPrestamoSchema, crearTrabajadorSchema,
-  filtroNominasSchema, filtroPrestamosSchema, filtroSemanaSchema, filtroTrabajadoresSchema, guardarNominaSchema,
+  filtroCategoriaPagoSchema, filtroNominasSchema, filtroPrestamosSchema, filtroSemanaSchema, filtroTrabajadoresSchema,
+  guardarNominaSchema, pagarNominaSchema,
 } from '../schemas/nomina.js';
 import {
   actualizarTrabajador, crearTrabajador, desactivarTrabajador, listarTrabajadores, obtenerTrabajador,
@@ -13,6 +14,9 @@ import {
 import { actualizarPrestamo, anularPrestamo, crearPrestamo, listarPrestamos } from '../services/nomina-prestamo-service.js';
 import { listarNominas, obtenerNomina, obtenerNominaSemana } from '../services/nomina-service.js';
 import { anularNomina, cerrarNomina, guardarNomina } from '../services/nomina-escritura-service.js';
+import { categoriaDePagoNomina, pagarNomina } from '../services/nomina-pago-service.js';
+import { exigirAccesoBancas, MENSAJE_ACCESO_NO_VERIFICABLE } from '../middlewares/exigir-acceso-bancas.js';
+import { bancasDePagoNomina } from '../services/nomina-pago-lectura.js';
 import type { FalloNomina } from '../utils/nomina-errores.js';
 import { logger, clienteIp } from '../utils/logger.js';
 import type { ZodType } from 'zod';
@@ -165,7 +169,53 @@ router.post('/nominas/:id/cerrar', validarUuidParam('id'), requirePermiso('nomin
   res.json(r);
 });
 
-router.post('/nominas/:id/anular', validarUuidParam('id'), requirePermiso('nomina', 'eliminar'), validateBody(anularSchema), async (req, res) => {
+// Categoría del Wallet que llevará el egreso del pago de este tipo de personal (null = sin categoría asignada).
+router.get('/categoria-pago', requirePermiso('nomina', 'ver'), async (req, res) => {
+  const filtro = leerConsulta(req, res, filtroCategoriaPagoSchema);
+  if (!filtro) return;
+  const r = await categoriaDePagoNomina(filtro.tipo);
+  if ('error' in r) return responderFallo(res, r);
+  res.json(r);
+});
+
+// Mueve dinero: además de editar la nómina exige poder crear movimientos y tener acceso de edición a cada cuenta.
+router.post(
+  '/nominas/:id/pagar',
+  validarUuidParam('id'),
+  requirePermiso('nomina', 'editar'),
+  requirePermiso('cochinito', 'crear'),
+  validateBody(pagarNominaSchema),
+  exigirAccesoBancas(),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const r = await pagarNomina(id, req.body, req.user!.sub);
+    if ('error' in r) return responderFallo(res, r);
+    if (!r.yaPagada) auditar(req, 'nomina_pagada', { nominaId: id });
+    res.json(r);
+  },
+);
+
+/**
+ * Anular una nómina pagada desde el Wallet revierte egresos de cuentas: además de nomina.eliminar exige
+ * cochinito.editar y acceso de edición a las cuentas del pago. Sin pago no cambia nada. Si no se pueden leer
+ * los pagos responde 503 (falla cerrado).
+ */
+async function exigirWalletSiPagada(req: Request, res: Response, next: NextFunction): Promise<void> {
+  let bancas: string[];
+  try {
+    bancas = await bancasDePagoNomina(String(req.params.id));
+  } catch (e) {
+    logger.error({ evento: 'nomina_anular_pagos_no_verificables', userId: req.user!.sub, mensaje: e instanceof Error ? e.message : String(e) });
+    res.status(503).json({ error: MENSAJE_ACCESO_NO_VERIFICABLE });
+    return;
+  }
+  if (bancas.length === 0) return next();
+  await requirePermiso('cochinito', 'editar')(req, res, async () => {
+    await exigirAccesoBancas(async () => bancas)(req, res, next);
+  });
+}
+
+router.post('/nominas/:id/anular', validarUuidParam('id'), requirePermiso('nomina', 'eliminar'), validateBody(anularSchema), exigirWalletSiPagada, async (req, res) => {
   const id = String(req.params.id);
   const r = await anularNomina(id, req.body.motivo, req.user!.sub);
   if ('error' in r) return responderFallo(res, r);

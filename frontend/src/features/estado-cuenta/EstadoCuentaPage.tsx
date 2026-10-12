@@ -153,6 +153,7 @@ function EstadoCuentaPage({ tipo }: Props) {
       resultado.numeroAnticipo != null ? `${etiquetaAdel} ${formatCodigoAdelanto(tipo, resultado.numeroAnticipo)}` : null,
     ].filter(Boolean);
     toast.exito(partes.length > 0 ? `${partes.join(' y ')} registrados.` : `${etiquetaDoc} registrado.`);
+    if (resultado.advertencia) toast.advertencia(resultado.advertencia);
     cargar();
   };
 

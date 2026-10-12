@@ -9,6 +9,9 @@ import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import { fechaRestaurable, idVigenteOVacio } from '../../lib/borrador-vigentes';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import { formatearFecha } from '../../lib/formato';
+import { useCategorias } from '../cochinito/categorias/useCategorias';
+import SelectorCategoriaTarjetas from '../cochinito/categorias/SelectorCategoriaTarjetas';
+import { categoriaElegibleParaNota } from './nota-categoria-logica';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -37,6 +40,10 @@ function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
   const [monto, setMonto] = useState('');
   const [motivo, setMotivo] = useState('');
   const [fecha, setFecha] = useState(hoyISO());
+  const [categoriaId, setCategoriaId] = useState<string | null>(null);
+  // Si las categorías no cargan (p. ej. migración pendiente) la nota se crea igual, sin categoría.
+  const { categorias, error: errorCategorias } = useCategorias();
+  const categoriaElegida = categoriaElegibleParaNota(categoriaId, categorias);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,13 +53,13 @@ function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
   const [avisoFactura, setAvisoFactura] = useState<string | null>(null);
 
   // Borrador de la nota (por entidad): sobrevive a F5.
-  const estadoBorrador = { tipo, facturaId, monto, motivo, fecha };
+  const estadoBorrador = { tipo, facturaId, monto, motivo, fecha, categoriaId };
   const borrador = useBorradorPersistente<typeof estadoBorrador>({
     formulario: `nota-ajuste-${tipoEntidad}`,
     docId: entidadId,
     version: 1,
     estado: estadoBorrador,
-    hayCambios: facturaId !== '' || monto !== '' || motivo !== '' || tipo !== 'credito',
+    hayCambios: facturaId !== '' || monto !== '' || motivo !== '' || tipo !== 'credito' || categoriaId !== null,
     aplicar: d => {
       setTipo(d.tipo === 'debito' ? 'debito' : 'credito');
       setFacturaId(d.facturaId ?? '');
@@ -61,6 +68,7 @@ function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
       setMotivo(d.motivo ?? '');
       // Una fecha vieja no se restaura en silencio: la nota nueva lleva la fecha de hoy.
       setFecha(fechaRestaurable(d.fecha, hoyISO()));
+      setCategoriaId(d.categoriaId ?? null);
     },
     restablecer: () => {
       setTipo('credito');
@@ -68,6 +76,7 @@ function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
       setMonto('');
       setMotivo('');
       setFecha(hoyISO());
+      setCategoriaId(null);
       setFacturaPendienteDeValidar(false);
       setAvisoFactura(null);
     },
@@ -108,7 +117,7 @@ function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
     if (!motivo.trim()) { setError('El motivo es obligatorio.'); return; }
 
     setGuardando(true);
-    const input = { tipo, monto: montoNum, motivo: motivo.trim(), facturaId: facturaId || null, fecha };
+    const input = { tipo, monto: montoNum, motivo: motivo.trim(), facturaId: facturaId || null, fecha, categoriaId: categoriaElegida };
     const result = esProveedor
       ? await crearNotaAjuste(entidadId, input)
       : await crearNotaAjusteCliente(entidadId, input);
@@ -196,6 +205,16 @@ function NotaAjusteModal({ tipoEntidad, entidadId, onClose, onCreada }: Props) {
               placeholder={esProveedor ? 'Ej: Descuento por flete no realizado por el proveedor' : 'Ej: Descuento comercial por pronto pago'}
             />
           </div>
+
+          {categorias.length > 0 && !errorCategorias && (
+            <div>
+              <label className={labelClass}>Categoría <span className="text-text-muted">(opcional)</span></label>
+              <div className="max-h-64 overflow-y-auto rounded-lg border border-border p-2">
+                <SelectorCategoriaTarjetas categorias={categorias} valor={categoriaElegida} onChange={setCategoriaId} permitirSinCategoria etiqueta="Categoría de la nota" />
+              </div>
+              <p className="text-xs text-text-muted mt-1">Solo clasifica la nota: no mueve dinero ni aparece en los reportes del Wallet.</p>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">

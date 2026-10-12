@@ -27,6 +27,8 @@ export interface NotaParaPdf {
   anuladaAt: string | null;
   anuladaMotivo: string | null;
   facturaAsociada: { id: string; codigo: string | null } | null;
+  /** Categoría de la nota (opcional): solo se imprime si la tiene. */
+  categoria?: { nombre: string } | null;
 }
 
 function slug(texto: string): string {
@@ -69,6 +71,7 @@ export function generarNotaPdf(nota: NotaParaPdf, nombreEntidad: string, esProve
   if (nota.facturaAsociada) {
     filas.push(['Factura asociada', nota.facturaAsociada.codigo ?? `N.º ${nota.facturaAsociada.id.slice(0, 8)}`]);
   }
+  if (nota.categoria) filas.push(['Categoría', nota.categoria.nombre]);
     if (nota.anulada) {
     if (nota.anuladaAt) filas.push(['Anulada el', formatearFechaHora(nota.anuladaAt)]);
   }

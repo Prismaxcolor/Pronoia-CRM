@@ -360,6 +360,9 @@ function entidadComercial(
       entidad: { rotulo: 'Nota', tabla: tablaNota, param: 'notaId' }, contexto: ctx => ({ rotulo, tabla, id: ctx.params.id ?? '' }),
       detalles: ctx => linea('Motivo', txt(ctx.reqBody.motivo)),
     }),
+    ev(`nota.categoria_cambiada_${prefijo}`, 'PATCH', `${base}/:id/notas-ajuste/:notaId/categoria`, 'facturacion', 'ignorable', '🏷️', 'Se cambió la categoría de una nota de ajuste', {
+      entidad: { rotulo: 'Nota', tabla: tablaNota, param: 'notaId' }, contexto: ctx => ({ rotulo, tabla, id: ctx.params.id ?? '' }),
+    }),
     ev(`${prefijo}.estado_cuenta_enviado`, 'POST', `${base}/:id/estado-cuenta/enviar-telegram`, 'facturacion', 'normal', '📤', 'Se envió un estado de cuenta por Telegram', {
       entidad: { rotulo, tabla },
     }),
@@ -489,6 +492,7 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('nomina.prestamo_anulado', 'POST', '/api/nomina/prestamos/:id/anular', 'tesoreria', 'ignorable', '🗑️', 'Se anuló un préstamo de nómina'),
   ev('nomina.guardada', 'POST', '/api/nomina/nominas', 'tesoreria', 'ignorable', '🧾', 'Se guardó una nómina'),
   ev('nomina.cerrada', 'POST', '/api/nomina/nominas/:id/cerrar', 'tesoreria', 'ignorable', '🔒', 'Se cerró una nómina'),
+  ev('nomina.pagada', 'POST', '/api/nomina/nominas/:id/pagar', 'tesoreria', 'ignorable', '💸', 'Se pagó una nómina desde el Wallet'),
   ev('nomina.anulada', 'POST', '/api/nomina/nominas/:id/anular', 'tesoreria', 'ignorable', '🗑️', 'Se anuló una nómina'),
 
   // --- Inventario: maestros y precios --------------------------------------

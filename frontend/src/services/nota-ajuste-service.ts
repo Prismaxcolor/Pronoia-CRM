@@ -1,5 +1,6 @@
 import { apiFetch } from './api-client';
 import { leerGet } from './lectura-service';
+import type { CategoriaDeNota } from '@shared/types/index.js';
 
 export interface CrearNotaAjusteInput {
   tipo: 'credito' | 'debito';
@@ -10,6 +11,8 @@ export interface CrearNotaAjusteInput {
   facturaId?: string | null;
   /** Fecha de negocio de la nota (YYYY-MM-DD). Si se omite, la BD usa hoy. */
   fecha?: string;
+  /** Categoría del Wallet (opcional): solo se guarda y se muestra en la nota. */
+  categoriaId?: string | null;
 }
 
 export interface NotaAjusteDetalle {
@@ -35,6 +38,8 @@ export interface NotaAjusteDetalle {
   anuladaMotivo: string | null;
   /** Factura de compra asociada (opcional). Null si es un ajuste general sin factura. */
   facturaAsociada: { id: string; codigo: string | null; total: number } | null;
+  /** Categoría de la nota (opcional); ausente o null si no tiene. */
+  categoria?: CategoriaDeNota | null;
 }
 
 /** Detalle completo de una nota para su vista tipo "ticket" (previsualización
@@ -79,5 +84,23 @@ export async function anularNotaAjuste(
     });
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo anular la nota.' };
+  }
+}
+
+/** Cambia (o quita, con null) solo la categoría de una nota de proveedor o cliente. No toca montos ni saldos. */
+export async function cambiarCategoriaNota(
+  esProveedor: boolean,
+  entidadId: string,
+  notaId: string,
+  categoriaId: string | null
+): Promise<{ ok: true } | { error: string }> {
+  const base = esProveedor ? 'proveedores' : 'clientes';
+  try {
+    return await apiFetch<{ ok: true }>(`/api/${base}/${entidadId}/notas-ajuste/${notaId}/categoria`, {
+      method: 'PATCH',
+      body: { categoriaId },
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo cambiar la categoría de la nota.' };
   }
 }

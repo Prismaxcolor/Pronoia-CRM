@@ -73,6 +73,10 @@ export interface ResultadoPagoMultiple {
   numeroAdelanto: number | null;
   /** Correlativo CR- si la operación fue un cruce puro. */
   numeroCruce: number | null;
+  /** Categoría fija de los pagos (COMPRA DE MATERIA PRIMA); null si no hay configurada. */
+  categoriaId?: string | null;
+  /** Presente si el pago quedó registrado pero no se pudo asignar la categoría. */
+  advertencia?: string;
 }
 
 /** "Registrar pago": una o varias bancas de origen, liquida varias facturas

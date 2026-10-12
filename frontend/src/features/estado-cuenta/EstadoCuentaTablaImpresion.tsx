@@ -37,6 +37,7 @@ function EstadoCuentaTablaImpresion({ entradas, saldoFinal, filtradoPorTipo }: P
                   {e.anulada && <span className="ml-2 text-xs font-medium">Anulada</span>}
                   {e.pagada && !e.anulada && <span className="ml-2 text-xs text-text-muted">(pagada)</span>}
                   {e.facturaAsociadaCodigo && <span className="mt-0.5 block text-xs text-text-muted">→ {e.facturaAsociadaCodigo}</span>}
+                  {e.categoria && <span className="mt-0.5 block text-xs text-text-muted">Categoría: {e.categoria.nombre}</span>}
                   {e.tipo === 'cruce' && (
                     <span className="mt-0.5 block text-xs text-text-muted">Saldó ${fmt(e.montoCruzado ?? 0)} en facturas sin mover dinero (el saldo no cambia)</span>
                   )}

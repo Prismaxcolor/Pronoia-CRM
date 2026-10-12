@@ -15,6 +15,8 @@ import {
   formatCodigoCruce,
   formatCodigoCruceCliente,
 } from '../utils/codigos.js';
+import type { CategoriaDeNota } from '../utils/categoria-nota.js';
+import { categoriasParaNotas, leerConCategoria } from './categoria-nota-service.js';
 import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
 
 export type TipoEntidad = 'proveedor' | 'cliente';
@@ -66,6 +68,8 @@ export interface EntradaEstadoCuenta {
   facturaAsociadaId?: string | null;
   /** Solo notas: código de esa factura (C-0007), ya resuelto. */
   facturaAsociadaCodigo?: string | null;
+  /** Solo notas: categoría del Wallet (nombre, color, imagen); ausente si la nota no tiene. */
+  categoria?: CategoriaDeNota | null;
 }
 
 export interface EstadoCuenta {
@@ -107,6 +111,8 @@ export interface NotaCruda {
    *  vuelven a resolver acá — mismo patrón que FacturaCruda.codigo. */
   facturaAsociadaId?: string | null;
   facturaAsociadaCodigo?: string | null;
+  /** Categoría de la nota (opcional), ya resuelta por obtenerEstadoCuenta. */
+  categoria?: CategoriaDeNota | null;
 }
 
 /** Cruce sin movimiento de dinero (tabla `cruces`): compensa facturas con adelantos y/o notas. */
@@ -256,6 +262,7 @@ export function construirEstadoCuenta(
       pagada: n.pagada,
       facturaAsociadaId: n.facturaAsociadaId ?? null,
       facturaAsociadaCodigo: n.facturaAsociadaCodigo ?? null,
+      ...(n.categoria ? { categoria: n.categoria } : {}),
     });
   }
 
@@ -352,16 +359,16 @@ export async function obtenerEstadoCuenta(
   // leen con la misma forma acá — solo cambia tabla/columna/tabla-de-facturas.
   const tablaNotas = esProveedor ? 'notas_ajuste_proveedor' : 'notas_ajuste_cliente';
 
-  let qNotas = supabaseAdmin
-    .from(tablaNotas)
-    .select('id, tipo, monto, motivo, anulada, pagada, fecha, numero, factura_id, created_at')
-    .eq(columnaEntidad, id);
-  if (desde) qNotas = qNotas.gte('fecha', desde);
-  if (hasta) qNotas = qNotas.lte('fecha', hasta);
-  const { data: notasData } = await qNotas;
+  const { data: notasData } = await leerConCategoria(columnas => {
+    let qNotas = supabaseAdmin.from(tablaNotas).select(columnas).eq(columnaEntidad, id);
+    if (desde) qNotas = qNotas.gte('fecha', desde);
+    if (hasta) qNotas = qNotas.lte('fecha', hasta);
+    return qNotas;
+  }, 'id, tipo, monto, motivo, anulada, pagada, fecha, numero, factura_id, created_at');
   const notasCrudas = (notasData as Array<{
     id: string; tipo: 'credito' | 'debito'; monto: number; motivo: string; anulada: boolean;
     pagada: boolean; fecha: string; numero: number | null; factura_id: string | null; created_at?: string | null;
+    categoria_id?: string | null;
   }> | null) ?? [];
 
   // Selects planos, no embedding anidado de PostgREST — mismo estilo que
@@ -379,6 +386,7 @@ export async function obtenerEstadoCuenta(
     }
   }
 
+  const categoriaPorId = await categoriasParaNotas(notasCrudas.map(n => n.categoria_id));
   const notas: NotaCruda[] = notasCrudas.map(n => ({
     id: n.id,
     tipo: n.tipo,
@@ -391,6 +399,7 @@ export async function obtenerEstadoCuenta(
     numero: n.numero,
     facturaAsociadaId: n.factura_id,
     facturaAsociadaCodigo: n.factura_id ? (codigoPorFacturaId.get(n.factura_id) ?? null) : null,
+    categoria: n.categoria_id ? (categoriaPorId.get(n.categoria_id) ?? null) : null,
   }));
 
   return construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos, notas, datosCruce);

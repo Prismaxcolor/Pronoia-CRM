@@ -3,6 +3,7 @@ import type { RegistrarPagoInput, RegistrarPagoMultipleInput } from '../schemas/
 import { notificarPago } from './telegram-eventos-service.js';
 import { logger } from '../utils/logger.js';
 import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
+import { aplicarCategoriaAMovimientos, categoriaFijaDePago } from './pago-categoria-service.js';
 
 /** Guarda las fotos del comprobante en el movimiento. El pago ya quedó registrado antes
  *  de llamar esto — si guardarlas falla, no se deshace el pago, solo se loguea. La plata
@@ -25,7 +26,8 @@ async function grupoDeMovimiento(movimientoId: string): Promise<string> {
 export async function registrarPago(
   input: RegistrarPagoInput,
   registradoPor: string
-): Promise<{ movimientoId: string } | { error: string }> {
+): Promise<{ movimientoId: string; advertencia?: string } | { error: string }> {
+  const categoriaId = await categoriaFijaDePago();
   const { data, error } = await supabaseAdmin.rpc('registrar_pago_proveedor', {
     p_proveedor_id: input.proveedorId,
     p_banca_id: input.bancaId,
@@ -43,6 +45,7 @@ export async function registrarPago(
   const movimientoId = data as string;
 
   if (input.comprobantes.length > 0) await adjuntarComprobante(movimientoId, input.comprobantes);
+  const { advertencia } = await aplicarCategoriaAMovimientos([movimientoId], categoriaId);
   // Telegram (fire-and-forget): comprobante PDF del pago + fotos del comprobante bancario.
   ejecutarEnSegundoPlano(
     grupoDeMovimiento(movimientoId)
@@ -51,7 +54,7 @@ export async function registrarPago(
     'pago_telegram'
   );
 
-  return { movimientoId };
+  return { movimientoId, ...(advertencia ? { advertencia } : {}) };
 }
 
 interface ResultadoPagoMulti {
@@ -63,6 +66,10 @@ interface ResultadoPagoMulti {
   numeroAdelanto: number | null;
   /** Correlativo CR- cuando la operación fue un cruce puro, sin movimiento de dinero. */
   numeroCruce: number | null;
+  /** Categoría del Wallet aplicada a los movimientos de dinero (fija para pagos); null si no hay. */
+  categoriaId: string | null;
+  /** Se informa si el pago quedó registrado pero no se pudo asignar la categoría. */
+  advertencia?: string;
 }
 
 /** Pago combinado ("Registrar pago"): repartido entre una o varias bancas de
@@ -75,6 +82,8 @@ export async function registrarPagoMultiple(
   input: RegistrarPagoMultipleInput,
   registradoPor: string
 ): Promise<ResultadoPagoMulti | { error: string }> {
+  // La categoría fija solo aplica si hay movimiento de dinero (un cruce puro no lo tiene).
+  const categoriaId = input.bancas.length > 0 ? await categoriaFijaDePago() : null;
   const { data, error } = await supabaseAdmin.rpc('registrar_pago_proveedor_multi_banca', {
     p_proveedor_id: input.proveedorId,
     p_bancas: input.bancas.map(b => ({ bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, referencia: b.referencia ?? null })),
@@ -87,11 +96,13 @@ export async function registrarPagoMultiple(
   });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
-  const resultado = data as ResultadoPagoMulti;
+  const creado = data as Omit<ResultadoPagoMulti, 'categoriaId' | 'advertencia'>;
 
-  if (input.comprobantes.length > 0 && resultado.movimientoPrincipalId) {
-    await adjuntarComprobante(resultado.movimientoPrincipalId, input.comprobantes);
+  if (input.comprobantes.length > 0 && creado.movimientoPrincipalId) {
+    await adjuntarComprobante(creado.movimientoPrincipalId, input.comprobantes);
   }
+  const { advertencia } = await aplicarCategoriaAMovimientos(creado.movimientoIds ?? [], categoriaId);
+  const resultado: ResultadoPagoMulti = { ...creado, categoriaId, ...(advertencia ? { advertencia } : {}) };
   // Telegram (fire-and-forget): comprobante del pago/adelanto o del cruce puro (sin dinero).
   notificarPago('proveedor', input.proveedorId, resultado.grupoId, {
     comprobantes: resultado.movimientoPrincipalId ? input.comprobantes : [],

@@ -47,7 +47,7 @@ function CambiarCategoriaModal({ movimiento, categorias, indice, onClose, onGuar
         <div className="p-5 space-y-4">
           <p className="text-sm text-text-secondary">{movimiento.descripcion || 'Movimiento sin concepto'}</p>
           <p className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-            Categoría actual: {actual ? <EtiquetaCategoria nombre={actual.nombre} color={actual.color} /> : 'Sin categoría'}
+            Categoría actual: {actual ? <EtiquetaCategoria nombre={actual.nombre} color={actual.color} imagenUrl={actual.imagenUrl} /> : 'Sin categoría'}
           </p>
           <SelectorCategoria tipo={tipo} categorias={categorias} valor={eleccion} onChange={e => { setEleccion(e); setError(null); }} error={error} />
           <p className="text-xs text-text-muted">Cambiar la categoría no modifica el monto ni el saldo de la cuenta.</p>

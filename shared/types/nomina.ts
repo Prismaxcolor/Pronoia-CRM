@@ -92,6 +92,30 @@ export interface LineaNomina {
   cuotas: CuotaLinea[];
 }
 
+/**
+ * Pago (fase 2) de una nómina cerrada desde el Wallet: un egreso por moneda de pago. No lleva datos personales:
+ * solo la cuenta, los montos y el movimiento del Wallet.
+ */
+export interface PagoNomina {
+  id: string;
+  monedaPago: MonedaPago;
+  bancaId: string;
+  bancaNombre: string;
+  /** Egreso del Wallet que pagó este grupo (enlace al detalle del movimiento). */
+  movimientoId: string;
+  /** Correlativo MV del egreso; null si la migración del correlativo no estaba aplicada. */
+  movimientoNumero: number | null;
+  /** true si el egreso fue anulado (se anula junto con la nómina). */
+  anulado: boolean;
+  /** Monto en la moneda de la cuenta (USD o Bs). */
+  monto: number;
+  montoUsd: number;
+  cantidad: number;
+  fecha: string;
+  referencia: string | null;
+  pagadoEn: string;
+}
+
 export interface Nomina {
   id: string;
   numero: number;
@@ -107,6 +131,8 @@ export interface Nomina {
   cerradaEn: string | null;
   anuladaMotivo: string | null;
   anuladaEn: string | null;
+  /** Pagos desde el Wallet (vacío mientras no se haya pagado). */
+  pagos: PagoNomina[];
 }
 
 export interface NominaResumen {

@@ -46,6 +46,7 @@ export async function descargarNotaPDF(nota: Nota, esProveedor: boolean, modo: M
     y = filaEncabezado(doc, y, 'Factura asociada', nota.facturaAsociada.codigo ?? `N.º ${nota.facturaAsociada.id.slice(0, 8)}`);
   }
   y = filaEncabezado(doc, y, 'Motivo', nota.motivo);
+  if (nota.categoria) y = filaEncabezado(doc, y, 'Categoría', nota.categoria.nombre);
   y = filaEncabezado(doc, y, 'Registrado por', nombreYMomento(nota.registradoPor, nota.registradoEn));
 
   y += 20;
