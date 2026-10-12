@@ -64,6 +64,7 @@ function TrabajadorFormModal({ tipo, trabajador, onClose, onGuardado }: Props) {
     pagoMovilCedula: trabajador?.pagoMovilCedula ?? '',
     binanceCorreoId: trabajador?.binanceCorreoId ?? '',
     pagoDiarioUsd: trabajador ? String(trabajador.pagoDiarioUsd) : '',
+    pagoDiarioBs: trabajador ? String(trabajador.pagoDiarioBs) : '',
   });
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,13 +75,15 @@ function TrabajadorFormModal({ tipo, trabajador, onClose, onGuardado }: Props) {
     e.preventDefault();
     setError(null);
     const pagoDiarioUsd = f.pagoDiarioUsd.trim() ? leerNumero(f.pagoDiarioUsd) : 0;
-    if (pagoDiarioUsd === null || pagoDiarioUsd < 0) { setError('El pago por día debe ser un número igual o mayor a 0.'); return; }
+    if (pagoDiarioUsd === null || pagoDiarioUsd < 0) { setError('El sueldo por día en divisas debe ser un número igual o mayor a 0.'); return; }
+    const pagoDiarioBs = f.pagoDiarioBs.trim() ? leerNumero(f.pagoDiarioBs) : 0;
+    if (pagoDiarioBs === null || pagoDiarioBs < 0) { setError('El sueldo por día en bolívares debe ser un número igual o mayor a 0.'); return; }
     const datos: TrabajadorInput = {
       tipo: f.tipo, nombres: f.nombres.trim(), apellidos: f.apellidos.trim(), cedula: f.cedula.trim(),
       rif: vacioANull(f.rif), telefono: vacioANull(f.telefono), direccion: vacioANull(f.direccion),
       contactoEmergenciaNombre: vacioANull(f.contactoEmergenciaNombre), contactoEmergenciaTelefono: vacioANull(f.contactoEmergenciaTelefono),
       pagoMovilBanco: vacioANull(f.pagoMovilBanco), pagoMovilTelefono: vacioANull(f.pagoMovilTelefono),
-      pagoMovilCedula: vacioANull(f.pagoMovilCedula), binanceCorreoId: vacioANull(f.binanceCorreoId), pagoDiarioUsd,
+      pagoMovilCedula: vacioANull(f.pagoMovilCedula), binanceCorreoId: vacioANull(f.binanceCorreoId), pagoDiarioUsd, pagoDiarioBs,
     };
     setGuardando(true);
     const r = trabajador ? await actualizarTrabajador(trabajador.id, datos) : await crearTrabajador(datos);
@@ -118,7 +121,10 @@ function TrabajadorFormModal({ tipo, trabajador, onClose, onGuardado }: Props) {
               <Campo id="trab-cedula" etiqueta="Cédula" requerido max={20} valor={f.cedula} onCambio={poner('cedula')} ayuda="Ej. V-12345678" />
               <Campo id="trab-rif" etiqueta="RIF" max={20} valor={f.rif} onCambio={poner('rif')} ayuda="Ej. V-12345678-9" />
               <Campo id="trab-telefono" etiqueta="Teléfono" tipo="tel" inputMode="tel" max={30} valor={f.telefono} onCambio={poner('telefono')} />
-              <Campo id="trab-pago" etiqueta="Pago por día (USD)" inputMode="decimal" max={12} valor={f.pagoDiarioUsd} onCambio={poner('pagoDiarioUsd')} ayuda="Es el monto base de la nómina; se puede cambiar en cada semana." />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Campo id="trab-pago" etiqueta="Sueldo por día en divisas (USD)" inputMode="decimal" max={12} valor={f.pagoDiarioUsd} onCambio={poner('pagoDiarioUsd')} ayuda="La parte que se paga en efectivo o por Binance. Se puede cambiar en cada semana." />
+              <Campo id="trab-pago-bs" etiqueta="Sueldo por día en bolívares (Bs)" inputMode="decimal" max={16} valor={f.pagoDiarioBs} onCambio={poner('pagoDiarioBs')} ayuda="La otra parte del sueldo, pagada en Bs (pago móvil). Déjalo en 0 si todo se paga en divisas." />
             </div>
             <div>
               <label htmlFor="trab-direccion" className={labelClass}>Dirección</label>
@@ -139,7 +145,7 @@ function TrabajadorFormModal({ tipo, trabajador, onClose, onGuardado }: Props) {
               <Campo id="trab-pm-tel" etiqueta="Pago móvil · teléfono" tipo="tel" inputMode="tel" max={30} valor={f.pagoMovilTelefono} onCambio={poner('pagoMovilTelefono')} />
               <Campo id="trab-pm-cedula" etiqueta="Pago móvil · cédula" max={20} valor={f.pagoMovilCedula} onCambio={poner('pagoMovilCedula')} />
             </div>
-            <Campo id="trab-binance" etiqueta="Binance · correo o ID" valor={f.binanceCorreoId} onCambio={poner('binanceCorreoId')} ayuda="Si lo llenas, en la nómina se propone pagarle en divisas; si no, en bolívares por pago móvil." />
+            <Campo id="trab-binance" etiqueta="Binance · correo o ID" valor={f.binanceCorreoId} onCambio={poner('binanceCorreoId')} ayuda="Para pagar la parte en divisas. La parte en bolívares se paga por pago móvil." />
           </fieldset>
           {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-3 pt-2">

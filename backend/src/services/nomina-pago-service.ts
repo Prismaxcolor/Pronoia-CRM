@@ -22,6 +22,9 @@ export const MENSAJE_PAGO_SIN_RECARGA = 'El pago se registró; recarga la nómin
 export const MENSAJE_SIN_AUDITORIA_COMISION =
   'El pago se registró sin comisión bancaria, pero no se pudo dejar constancia en el historial de auditoría. Avisa al administrador.';
 
+export const MENSAJE_SIN_AUDITORIA_FECHA =
+  'El pago se registró con una fecha distinta a la de hoy, pero no se pudo dejar constancia en el historial de auditoría. Avisa al administrador.';
+
 export interface CategoriaPago {
   id: string;
   nombre: string;
@@ -36,6 +39,9 @@ export interface ResultadoPagoNomina {
 
 interface RespuestaPagar {
   yaPagada?: boolean;
+  /** Fecha que eligió quien paga y fecha real del registro (Caracas): la tasa Binance congelada sale de la real. */
+  fechaElegida?: string;
+  fechaReal?: string;
   pagos?: Array<{ movimientoId: string; sinComision: boolean }>;
 }
 
@@ -67,6 +73,22 @@ async function auditarSinComision(movimientoIds: readonly string[], userId: stri
   if (resultados.every(Boolean)) return undefined;
   logger.warn({ evento: 'nomina_pago_sin_comision_sin_auditoria', userId });
   return MENSAJE_SIN_AUDITORIA_COMISION;
+}
+
+/**
+ * La fecha elegida solo fecha el egreso; la tasa Binance congelada sale de la hora real del registro. Si difieren, queda
+ * constancia en la auditoría de cada egreso del pago.
+ */
+async function auditarFechaDistinta(creados: RespuestaPagar, movimientoIds: readonly string[], userId: string): Promise<string | undefined> {
+  const { fechaElegida, fechaReal } = creados;
+  if (!fechaElegida || !fechaReal || fechaElegida === fechaReal || movimientoIds.length === 0) return undefined;
+  const resultados = await Promise.all(movimientoIds.map(id => registrarAuditoria({
+    entidadTipo: 'movimiento_banca', entidadId: id, accion: 'fecha_pago_distinta', usuarioId: userId,
+    cambios: { fecha_pago: { antes: fechaReal, despues: fechaElegida } },
+  })));
+  if (resultados.every(Boolean)) return undefined;
+  logger.warn({ evento: 'nomina_pago_fecha_distinta_sin_auditoria', userId });
+  return MENSAJE_SIN_AUDITORIA_FECHA;
 }
 
 function datosSql(input: PagarNominaInput, categoriaId: string | null, pagos: readonly PagoPlanificado[]) {
@@ -103,12 +125,16 @@ function estadoNoPagable(nomina: Nomina): FalloNomina | null {
 async function resultadoDe(previa: Nomina, data: unknown, userId: string): Promise<ResultadoPagoNomina> {
   const creados = (data as RespuestaPagar | null) ?? {};
   const sinComision = (creados.pagos ?? []).filter(p => p.sinComision).map(p => p.movimientoId);
-  const aviso = sinComision.length > 0 ? await auditarSinComision(sinComision, userId) : undefined;
+  const movimientos = (creados.pagos ?? []).map(p => p.movimientoId);
+  const [aviso, avisoFecha] = await Promise.all([
+    sinComision.length > 0 ? auditarSinComision(sinComision, userId) : undefined,
+    auditarFechaDistinta(creados, movimientos, userId),
+  ]);
   const actual = await obtenerNomina(previa.id);
   // El pago ya está hecho: si no se puede releer la nómina no se responde error (invitaría a reintentar).
   const recargada = 'nomina' in actual;
   if (!recargada) logger.warn({ evento: 'nomina_pago_sin_recarga', nominaId: previa.id });
-  const advertencias = [aviso, recargada ? undefined : MENSAJE_PAGO_SIN_RECARGA].filter(Boolean).join(' ');
+  const advertencias = [aviso, avisoFecha, recargada ? undefined : MENSAJE_PAGO_SIN_RECARGA].filter(Boolean).join(' ');
   return {
     nomina: recargada ? actual.nomina : previa,
     yaPagada: Boolean(creados.yaPagada),

@@ -22,7 +22,7 @@ frontend la sección exige conexión (no se guarda en la caché sin conexión).
 
 | Tabla | Contenido |
 |---|---|
-| `nomina_trabajadores` | tipo (ADMINISTRATIVO/OPERATIVO), nombres, apellidos, cédula (única), RIF, teléfono, dirección, contacto de emergencia (nombre, teléfono), pago móvil (banco, teléfono, cédula), Binance (correo/ID), `pago_diario_usd`, `activo` (soft-delete). |
+| `nomina_trabajadores` | tipo (ADMINISTRATIVO/OPERATIVO), nombres, apellidos, cédula (única), RIF, teléfono, dirección, contacto de emergencia (nombre, teléfono), pago móvil (banco, teléfono, cédula), Binance (correo/ID), `pago_diario_usd` (sueldo diario en divisas), `pago_diario_bs` (sueldo diario en Bs, fase 3), `activo` (soft-delete). |
 | `nomina_prestamos` | numero PRE-0001, trabajador, tipo PRESTAMO/ADELANTO, monto, `saldo_usd`, cuota semanal opcional, fecha, nota, estado ACTIVO/PAGADO/ANULADO, motivo de anulación. |
 | `nomina_prestamo_movimientos` | Libro inmutable de cuotas: CUOTA (al cerrar) y REVERSA (al anular una nómina cerrada). Único por (préstamo, nómina, tipo): no hay doble descuento. |
 | `nominas` | numero NOM-0001, tipo, `semana_inicio` (lunes), tasa Bs, estado BORRADOR/CERRADA/ANULADA, `version`, totales, quién cerró/anuló y motivo. Única por (tipo, semana) entre las no anuladas. |
@@ -53,18 +53,8 @@ Copia espejo para la vista previa en pantalla: `shared/types/nomina-calculo.ts` 
 del backend; `backend/tests/nomina-calculo.test.ts` exige que ambas den lo mismo). El servidor siempre recalcula; nunca
 confía en los totales que manda el navegador. Se rotulan en pantalla y se cambian solo en ese módulo.
 
-- Monto base en divisas = pago por día en USD (ficha del trabajador, editable en la nómina de la semana).
-- Total bruto USD = días trabajados x monto base.
-- Tasa Bs = se escribe en la nómina (sugerencia: tasa BCV vigente; no obligatoria para guardar). Monto ref. en Bs =
-  bruto USD x tasa.
-- Descuentos = descuento por trabajo + cuotas de préstamo. Total trabajador (USD) = bruto + bonificación extra -
-  descuentos. Total en Bs = total USD x tasa. Un total negativo se rechaza salvo confirmación explícita
-  (`confirmarNegativos`) tras el aviso en pantalla.
-- Cada renglón lleva una `moneda de pago` (USD o BS; sugerida: Binance = USD, pago móvil = BS, editable). Con eso:
-  - Total a pagar en divisas = suma del total USD de los renglones en USD.
-  - Total a pagar en Bs = suma del total Bs de los renglones en BS; su equivalente en USD = suma del total USD de esos
-    mismos renglones (sin dividir de vuelta, para no arrastrar redondeo).
-  - Total combinado en USD = divisas + equivalente de los Bs. Total combinado en Bs = Bs + (divisas x tasa).
+- **Vigente desde la fase 3 (dos sueldos): ver «Fase 3» al final.** Lo que sigue describe la fase 1 (un solo sueldo y una moneda
+  de pago por renglón) y se conserva solo como historia: bruto = días x sueldo; total = bruto + bonificación - descuentos; Bs = USD x tasa.
 - Totales por tipo (cada nómina) y general de la semana (suma de las nóminas de ambos tipos de esa semana).
 - Dinero en centavos enteros (sin error de coma flotante). Días: 0 a 7, hasta 2 decimales.
 - Cuota de préstamo sugerida = la cuota semanal del préstamo limitada a su saldo; el usuario puede cambiarla, nunca
@@ -91,6 +81,7 @@ confía en los totales que manda el navegador. Se rotulan en pantalla y se cambi
 | POST `/nominas/:id/anular` | eliminar | anula con motivo |
 | GET `/categoria-pago?tipo` | ver | categoría del Wallet que llevará el egreso del pago (fase 2) |
 | POST `/nominas/:id/pagar` | editar + cochinito.crear + acceso a la cuenta | paga la nómina cerrada desde el Wallet (fase 2) |
+| GET `/trabajadores/:id/cargo` | ver | últimos movimientos del trabajador, los de Bs con su equivalente en USD a la tasa Binance congelada (fase 3) |
 
 Mientras las tablas no existan, todas responden 503 con el mensaje de migración pendiente
 (`utils/migracion-pendiente.ts`).
@@ -174,3 +165,92 @@ funciona como en la fase 1 (el pago responde 503 con el nombre de la migración)
 comisión, categoría aplicada, segundo pago devuelto como `yaPagada`, intentos de anular/cambiar desde el Wallet rechazados,
 anulación de la nómina y saldos idénticos al inicio), más los rechazos (moneda equivocada, moneda de sobra, fecha anterior, saldo
 insuficiente, borrador, comisión sin responder, categoría de ingreso).
+
+## Fase 3: dos sueldos por trabajador y cargo del trabajador
+
+Pedido de Julio: en los datos del trabajador, «2 espacios de sueldo»: 1 sueldo en DIVISAS (se paga en efectivo o Binance) y 2 sueldo
+en BS (la otra parte del sueldo, pagada en bolívares); y un apartado «cargo del trabajador» con sus movimientos, donde todo
+movimiento en Bs muestre su equivalente en $ a la tasa Binance del mediodía del día del pago. Migración:
+`docs/migration_nomina_dos_sueldos_cargo.sql` (rollback `_ROLLBACK.sql`; sin aplicar, ensayada en transacción con rollback).
+
+### Dos sueldos
+
+- **Unidad**: por día, como antes. El sueldo en divisas es USD (`nomina_trabajadores.pago_diario_usd`, la columna no se renombra) y
+  el sueldo en Bs se guarda EN Bs (`pago_diario_bs`): así la parte en bolívares no cambia aunque cambie la tasa; su equivalente en USD
+  sale de la tasa de la nómina.
+- **El renglón** lleva `monto_base_usd` y `monto_base_bs` (editables cada semana, se proponen de la ficha) y dos partes a pagar:
+  `pagar_usd` (divisas) y `pagar_bs` (Bs). `moneda_pago` pasa a ser un dato deducido: `USD`, `BS` o `MIXTO` (las dos partes). Ya no se
+  elige moneda por renglón.
+- **Fórmulas** (siguen en UN solo módulo, `backend/src/utils/nomina-calculo.ts`, y su espejo; la explicación completa está en su cabecera):
+  - bruto divisas = días x sueldo en divisas; bruto Bs = días x sueldo en Bs; total bruto USD = bruto divisas + bruto Bs / tasa.
+  - **Bonificación extra**: siempre en divisas.
+  - **Descuentos y cuotas de préstamo**: se cargan PRIMERO a la parte en divisas. Si el trabajador tiene sueldo en Bs y las divisas no
+    alcanzan, el sobrante (en USD) se descuenta de los Bs a la tasa de la nómina; así quien cobra solo en Bs también puede tener
+    cuotas (que son en USD). Sin sueldo en Bs no hay a dónde cargar el sobrante: el total sale negativo, con el mismo aviso de antes
+    y sin poder cerrar.
+  - a pagar en divisas = bruto divisas + bonificación - descuentos cargados a divisas; a pagar en Bs = bruto Bs - sobrante x tasa;
+    total del trabajador USD = a pagar en divisas + a pagar en Bs / tasa.
+  - Tope del préstamo: las cuotas no pueden superar lo ganado, que ahora incluye los Bs a la tasa (zod, servidor, `nomina_guardar` y el CHECK).
+  - **Tasa**: obligatoria cuando algún trabajador tiene sueldo en Bs (el servidor responde 400, `nomina_guardar` y `nomina_cerrar` lo
+    vuelven a exigir). Sin sueldo en Bs sigue siendo opcional.
+  - Totales: divisas = suma de `pagar_usd`; Bs = suma de `pagar_bs`; equivalente = suma de los equivalentes de cada renglón;
+    combinado USD = divisas + equivalente; combinado Bs = Bs + divisas x tasa. `cantidadDivisas` y `cantidadBs` cuentan trabajadores
+    con algo que cobrar en cada moneda (uno con las dos partes cuenta en ambos); `nominas.cantidad_trabajadores` guarda las personas.
+- **Pagar desde el Wallet** (`nomina_pagar` reemplazada, misma firma): toma lo que se paga en cada moneda de `pagar_usd` / `pagar_bs`,
+  así que un renglón con las dos partes alimenta tanto el egreso en USD como el egreso en Bs. El equivalente en USD de los Bs
+  (`nomina_pagos.monto_usd`) es la suma de `total_usd - pagar_usd` de los renglones. Todo lo demás (cuentas, saldo, comisión, idempotencia,
+  anulación junto con la nómina) no cambia.
+- **Datos existentes**: `pago_diario_usd` queda como sueldo en divisas, salvo un trabajador cuyo último renglón en una nómina CERRADA
+  (los borradores no cuentan) se pagó en Bs con tasa: su sueldo pasa a Bs (`pago_diario_usd x tasa` de esa nómina) y el de divisas queda
+  en 0. Antes de convertir se guarda el original en `nomina_trabajadores_bak_dos_sueldos` (RLS deny-all; el ROLLBACK lo restaura exacto).
+  Los renglones anteriores conservan sus montos: `pagar_usd`/`pagar_bs` se rellenan según su moneda de pago (se desactiva un instante el
+  trigger que protege renglones cerrados, solo para rellenar columnas nuevas). Los renglones en Bs de una nómina en BORRADOR (con tasa)
+  se convierten además a la parte en Bs (`monto_base_bs = sueldo USD x tasa`, `monto_base_usd = 0`, `bruto_bs`), con respaldo en
+  `nomina_lineas_bak_dos_sueldos`: al reabrirlos y guardarlos siguen pagándose en bolívares (una bonificación del renglón pasa a pagarse
+  en divisas, como en todo el módulo). Producción hoy: 0 nóminas, 6 trabajadores (3 en cada tipo): todos quedan con su sueldo en divisas
+  y 0 en Bs.
+- **Orden de despliegue: la migración PRIMERO, luego el código.** Las lecturas del backend piden columnas explícitas (`pago_diario_bs`,
+  `pagar_usd`, `pagar_bs`, `tasa_binance`...) y no usan `select *`: con el código nuevo y sin la migración fallan con «columna
+  inexistente». Un frontend viejo todavía abierto envía `monedaPago` en cada renglón: el servidor lo rechaza (400, «Recarga la página:
+  la nómina cambió») en vez de guardarlo en silencio. `nomina_guardar` en SQL sí sigue aceptando el cuerpo anterior (una moneda por
+  renglón), pero el backend nuevo ya no lo manda.
+- **Pantallas**: ficha del trabajador con los dos campos; editor con columnas de sueldo en divisas y en Bs, «a pagar en divisas», «a pagar
+  en Bs» (con su equivalente) y total del trabajador; totales y PDF con las dos partes.
+
+### Cargo del trabajador
+
+- **Dónde**: botón «Ver cargo» en la ficha del trabajador (Personal administrativo / operativo). `GET /api/nomina/trabajadores/:id/cargo`
+  (permiso `nomina.ver`). Lista los últimos 100 movimientos, del más reciente al más antiguo: pagos de nómina en divisas y en Bs
+  (de nóminas cerradas; pendientes de pago, pagadas o anuladas), préstamos y adelantos, cuotas y reversas, más el saldo pendiente de
+  préstamos. Solo lectura; sin datos personales en los textos.
+- **Qué tasas guarda el sistema hoy**: `tasas_cambio` (moneda_origen, moneda_destino, tasa, fuente BCV / Binance, fecha de captura). La
+  llena el backend de forma perezosa cuando alguien consulta `/api/tasas/{oficial,euro,binance}` y su caché venció (Binance: 15 min); no hay
+  cron, ni n8n, ni función SQL que la llene (la instancia n8n evo-n8n-pronoia no tiene ningún workflow de tasas). Binance tiene entonces
+  capturas irregulares (96 desde el 14/08; dependen de que alguien abra Wallet). `cambista_asientos.tasa` es la tasa de cada operación de la
+  Mesa de cambio (no se usa aquí). No se tocó el mecanismo que llena `tasas_cambio`.
+- **Almacenamiento mínimo**: se reutiliza `tasas_cambio`; no hay tabla nueva. La función `tasa_binance_del_dia(fecha)` devuelve la captura
+  Binance más reciente que no pase de las 12:00 de Caracas de esa fecha (máximo 3 días de antigüedad). Si ese día hubo captura antes del
+  mediodía es la del día; si no, la anterior más cercana, y la hora de captura queda guardada para decir cuál se usó. Sin captura en esa
+  ventana, el pago se registra sin equivalente y el cargo lo dice («Sin tasa Binance registrada para ese día»); nunca se inventa.
+- **Qué día cuenta**: `nomina_pagar` calcula el equivalente con el día REAL del registro (hoy en Caracas, `now()`), NO con la fecha que
+  elige quien paga: así nadie puede escoger una fecha para fijar una tasa conveniente. La fecha elegida solo fecha el egreso
+  (`nomina_pagos.fecha`); `nomina_pagos.registrado_en` guarda el instante real. Si ambas difieren, el backend deja una entrada de
+  auditoría (`fecha_pago_distinta`, entidad `movimiento_banca`) por cada egreso del pago.
+- **Parte en Bs diminuta**: si el equivalente en USD de la parte en Bs redondea a 0.00 (`nomina_pagos.monto_usd` exige > 0), `nomina_pagar`
+  responde «La parte en Bs es demasiado pequeña para pagarla.» (409) en vez de fallar por el constraint.
+- **Congelado**: dentro de `nomina_pagar`, al crear el pago en Bs se guardan en `nomina_pagos` la tasa (`tasa_binance`), su captura
+  (`tasa_binance_capturada`) y el equivalente del pago (`equivalente_binance_usd = monto en Bs / tasa`). La tabla es inmutable (trigger) y un
+  CHECK exige que los tres vayan juntos y solo en pagos en Bs. El cargo de cada trabajador calcula `Bs de su renglón / tasa congelada` al
+  centavo (la suma de varios trabajadores puede diferir en centavos del equivalente del pago completo). Anular la nómina conserva la tasa
+  congelada del pago, pero el cargo marca el movimiento como anulado y sin equivalente.
+- **Los movimientos en Bs** son los pagos de nómina en Bs (préstamos, adelantos y cuotas son en USD). También se ve el equivalente en la línea
+  de pago de la nómina y en su PDF.
+
+### Supuestos a confirmar con Julio
+
+1. El sueldo en Bs es un monto fijo en Bs por día (no un monto en USD que se convierte).
+2. «Cargo del trabajador» = historial de movimientos de nómina del trabajador, no una cuenta corriente con saldo en Bs.
+3. «12 del día» = mediodía hora de Caracas del día en que se REGISTRA el pago (hoy), no de la fecha que elige quien paga.
+4. La bonificación extra es siempre en divisas; los descuentos van primero a divisas y el sobrante a Bs.
+5. Máximo 3 días de antigüedad para la tasa Binance del día; más allá, el pago queda sin equivalente.
+6. Un trabajador migrado por «último renglón en Bs» se convierte a la tasa de esa nómina (hoy no aplica a nadie).

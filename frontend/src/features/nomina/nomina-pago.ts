@@ -8,6 +8,7 @@ import type { MonedaPago, TotalesNomina } from '../../../../shared/types/nomina-
 import type { Nomina, PagoNomina } from '../../../../shared/types/nomina.js';
 import { formatearFecha, formatearNumero } from '../../lib/formato';
 import { bancasEditables } from '../usuarios/acceso-bancas';
+import { textoEquivalenteUsd } from './nomina-cargo';
 import {
   bloqueoPorComision, llevaDeOpcion, ofrecerComision, planDeComision, type EstadoComision, type OpcionComision,
 } from '../cochinito/comision-formulario';
@@ -128,7 +129,9 @@ export function sePuedePagar(nomina: Pick<Nomina, 'estado' | 'pagos' | 'totales'
 /** Una línea por pago: "USD 100,00 desde CAJA CHICA · MV-0012 · 09/10/2026". Sin datos personales. */
 export function lineaDePago(p: PagoNomina): string {
   const mv = p.movimientoNumero === null ? '' : ` · MV-${String(p.movimientoNumero).padStart(4, '0')}`;
-  return `${formatearMontoPago(p.monedaPago, p.monto)} desde ${p.bancaNombre || 'la cuenta elegida'}${mv} · ${formatearFecha(p.fecha)}`;
+  const eq = p.monedaPago === 'BS' ? textoEquivalenteUsd(p.equivalenteBinanceUsd) : null;
+  const tasa = eq ? ` (${eq} a tasa Binance ${formatearNumero(p.tasaBinance ?? 0, 2)})` : '';
+  return `${formatearMontoPago(p.monedaPago, p.monto)}${tasa} desde ${p.bancaNombre || 'la cuenta elegida'}${mv} · ${formatearFecha(p.fecha)}`;
 }
 
 /** Texto del estado "Pagada desde X el fecha" (varias cuentas se unen con "y"). */

@@ -5,15 +5,15 @@
 import type { GuardarNominaInput } from '../schemas/nomina.js';
 import {
   calcularLinea, calcularTotales, lineasNegativas, sumarCuotas,
-  type LineaCalculada, type MonedaPago, type TotalesNomina,
+  type LineaCalculada, type TotalesNomina,
 } from './nomina-calculo.js';
 
 export interface LineaArmada extends LineaCalculada {
   trabajadorId: string;
   trabajadorNombre: string;
-  monedaPago: MonedaPago;
   diasTrabajados: number;
   montoBaseUsd: number;
+  montoBaseBs: number;
   nota: string | null;
   cuotas: Array<{ prestamoId: string; montoUsd: number }>;
 }
@@ -23,6 +23,8 @@ export interface NominaArmada {
   totales: TotalesNomina;
   /** Posiciones de los renglones con total negativo. */
   negativas: number[];
+  /** Hay renglones con sueldo en Bs y la nómina no tiene tasa: no se puede guardar. */
+  faltaTasa: boolean;
 }
 
 /** Lo que recibe la función SQL nomina_guardar: solo ids, nombre y montos (ningún dato personal de la ficha). */
@@ -41,23 +43,28 @@ export function armarNomina(input: GuardarNominaInput, nombres: ReadonlyMap<stri
     const calculada = calcularLinea({
       diasTrabajados: l.diasTrabajados,
       montoBaseUsd: l.montoBaseUsd,
+      montoBaseBs: l.montoBaseBs,
       bonificacionUsd: l.bonificacionUsd,
       descuentoTrabajoUsd: l.descuentoTrabajoUsd,
       descuentoPrestamoUsd,
-      monedaPago: l.monedaPago,
     }, input.tasaBs);
     return {
       ...calculada,
       trabajadorId: l.trabajadorId,
       trabajadorNombre: nombres.get(l.trabajadorId) ?? '',
-      monedaPago: l.monedaPago,
       diasTrabajados: l.diasTrabajados,
       montoBaseUsd: l.montoBaseUsd,
+      montoBaseBs: l.montoBaseBs,
       nota: l.nota,
       cuotas: l.cuotas.map(c => ({ prestamoId: c.prestamoId, montoUsd: c.montoUsd })),
     };
   });
-  return { lineas, totales: calcularTotales(lineas, input.tasaBs), negativas: lineasNegativas(lineas) };
+  return {
+    lineas,
+    totales: calcularTotales(lineas, input.tasaBs),
+    negativas: lineasNegativas(lineas),
+    faltaTasa: lineas.some(l => l.faltaTasa),
+  };
 }
 
 export function payloadGuardado(input: GuardarNominaInput, armada: NominaArmada): PayloadGuardado {
@@ -71,11 +78,6 @@ export function payloadGuardado(input: GuardarNominaInput, armada: NominaArmada)
   };
 }
 
-/** Moneda de pago propuesta para un trabajador (editable en la nómina): con Binance se paga en divisas; si no, en Bs. */
-export function monedaPagoSugerida(t: { binanceCorreoId: string | null; pagoMovilTelefono: string | null }): MonedaPago {
-  return t.binanceCorreoId ? 'USD' : 'BS';
-}
-
 export function nombreCompleto(t: { nombres: string; apellidos: string }): string {
   return `${t.nombres} ${t.apellidos}`.trim();
 }
@@ -84,3 +86,6 @@ export function mensajeNegativos(cantidad: number): string {
   const quien = cantidad === 1 ? '1 trabajador tiene' : `${cantidad} trabajadores tienen`;
   return `${quien} un total a pagar negativo (los descuentos superan lo ganado). Revisa los montos; si lo confirmas se guarda solo como borrador, porque una nómina con totales negativos no se puede cerrar.`;
 }
+
+export const MENSAJE_FALTA_TASA =
+  'Indica la tasa de la nómina: hay trabajadores con sueldo en bolívares y sin ella no se puede calcular lo que se les paga en Bs.';

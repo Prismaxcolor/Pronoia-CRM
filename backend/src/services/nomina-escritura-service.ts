@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { falloNomina, type FalloNomina } from '../utils/nomina-errores.js';
-import { armarNomina, mensajeNegativos, nombreCompleto, payloadGuardado } from '../utils/nomina-armado.js';
+import { armarNomina, MENSAJE_FALTA_TASA, mensajeNegativos, nombreCompleto, payloadGuardado } from '../utils/nomina-armado.js';
 import { validarCuotas, type PrestamoVigente } from '../utils/nomina-calculo.js';
 import { trocear } from '../utils/paginacion.js';
 import type { Nomina } from '../../../shared/types/nomina.js';
@@ -58,6 +58,7 @@ export async function guardarNomina(input: GuardarNominaInput, userId: string): 
   if (prestamos) return prestamos;
 
   const armada = armarNomina(input, trabajadores.nombres);
+  if (armada.faltaTasa) return { error: MENSAJE_FALTA_TASA, codigo: 400 };
   if (armada.negativas.length > 0 && !input.confirmarNegativos) {
     return { error: mensajeNegativos(armada.negativas.length), codigo: 422, extra: { lineasNegativas: armada.negativas } };
   }

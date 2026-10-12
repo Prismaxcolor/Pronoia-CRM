@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { BotonAccion, EstadoVacio, Insignia, SkeletonBloque, useConfirm } from '../../components/ui';
 import { ETIQUETA_TIPO_TRABAJADOR, nombreCompleto, type TipoTrabajador, type Trabajador } from '@shared/types/nomina';
+import CargoTrabajadorModal from './CargoTrabajadorModal';
 import TrabajadorFormModal from './TrabajadorFormModal';
 
 interface Props {
@@ -14,6 +15,14 @@ interface Props {
 type Modal = { abierto: false } | { abierto: true; trabajador: Trabajador | null };
 
 const fmtUsd = (n: number) => `USD ${n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const fmtBs = (n: number) => `Bs ${n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Los dos sueldos diarios: el de divisas y el de bolívares (solo se nombra el que tenga monto). */
+function sueldoPorDia(t: Trabajador): string {
+  const partes = [t.pagoDiarioUsd > 0 || t.pagoDiarioBs === 0 ? fmtUsd(t.pagoDiarioUsd) : null, t.pagoDiarioBs > 0 ? fmtBs(t.pagoDiarioBs) : null];
+  return `${partes.filter(Boolean).join(' + ')} por día`;
+}
 
 function medioDePago(t: Trabajador): string {
   const partes = [t.pagoMovilTelefono ? `Pago móvil${t.pagoMovilBanco ? ` (${t.pagoMovilBanco})` : ''}` : null, t.binanceCorreoId ? 'Binance' : null];
@@ -52,6 +61,7 @@ function PersonalPanel({ tipo }: Props) {
   const [busqueda, setBusqueda] = useState('');
   const [verInactivos, setVerInactivos] = useState(false);
   const [modal, setModal] = useState<Modal>({ abierto: false });
+  const [cargoDe, setCargoDe] = useState<Trabajador | null>(null);
 
   const cargar = useCallback(async () => {
     const r = await obtenerTrabajadores(tipo, verInactivos);
@@ -123,9 +133,10 @@ function PersonalPanel({ tipo }: Props) {
                     {nombreCompleto(t)} {!t.activo && <Insignia tono="neutral">Inactivo</Insignia>}
                   </p>
                   <p className="mt-0.5 text-xs text-text-secondary">Cédula {t.cedula} · {t.telefono ?? 'sin teléfono'}</p>
-                  <p className="mt-0.5 text-xs text-text-secondary">{fmtUsd(t.pagoDiarioUsd)} por día · {medioDePago(t)}</p>
+                  <p className="mt-0.5 text-xs text-text-secondary">{sueldoPorDia(t)} · {medioDePago(t)}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
+                  <button type="button" aria-label={`Ver el cargo de ${nombreCompleto(t)}`} onClick={() => setCargoDe(t)} className="text-xs text-brand-700 underline">Ver cargo</button>
                   {puedeEditar && (
                     <button type="button" aria-label={`Editar ${nombreCompleto(t)}`} onClick={() => setModal({ abierto: true, trabajador: t })} className="text-text-muted hover:text-text-primary">
                       <Pencil size={16} />
@@ -148,6 +159,7 @@ function PersonalPanel({ tipo }: Props) {
         </ul>
       )}
 
+      {cargoDe && <CargoTrabajadorModal trabajador={cargoDe} onClose={() => setCargoDe(null)} />}
       {modal.abierto && <TrabajadorFormModal tipo={tipo} trabajador={modal.trabajador} onClose={() => setModal({ abierto: false })} onGuardado={alGuardar} />}
     </div>
   );

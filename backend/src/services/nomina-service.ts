@@ -1,8 +1,9 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { falloNomina, type FalloNomina } from '../utils/nomina-errores.js';
-import { monedaPagoSugerida, nombreCompleto } from '../utils/nomina-armado.js';
+import { nombreCompleto } from '../utils/nomina-armado.js';
 import { IDS_POR_CONSULTA, trocear } from '../utils/paginacion.js';
 import { cuotaSugerida } from '../utils/nomina-calculo.js';
+import { partesDePago } from '../utils/nomina-partes-pago.js';
 import { pagosDeNomina } from './nomina-pago-lectura.js';
 import type {
   CandidatoNomina, EstadoNomina, LineaNomina, Nomina, NominaResumen, NominaSemana, TipoPrestamo, TipoTrabajador, TotalesNomina,
@@ -37,11 +38,14 @@ function mapLinea(row: Fila): LineaNomina {
     monedaPago: row.moneda_pago as LineaNomina['monedaPago'],
     diasTrabajados: Number(row.dias_trabajados),
     montoBaseUsd: Number(row.monto_base_usd),
+    montoBaseBs: Number(row.monto_base_bs ?? 0),
     totalBrutoUsd: Number(row.total_bruto_usd),
+    brutoBs: Number(row.bruto_bs ?? 0),
     montoRefBs: numeroONull(row.monto_ref_bs),
     bonificacionUsd: Number(row.bonificacion_usd),
     descuentoTrabajoUsd: Number(row.descuento_trabajo_usd),
     descuentoPrestamoUsd: Number(row.descuento_prestamo_usd),
+    ...partesDePago(row),
     totalUsd: Number(row.total_usd),
     totalBs: numeroONull(row.total_bs),
     nota: (row.nota as string | null) ?? null,
@@ -75,7 +79,11 @@ export function mapNomina(row: Fila): Nomina {
 }
 
 function mapResumen(row: Fila): NominaResumen {
-  const cantidad = Number(row.cantidad_divisas ?? 0) + Number(row.cantidad_bs ?? 0);
+  // Un trabajador con las dos partes cuenta en los dos grupos: la cantidad de personas se guarda aparte. Las nóminas
+  // anteriores a los dos sueldos no la tienen y sus grupos no se cruzan, así que la suma sigue valiendo.
+  const cantidad = row.cantidad_trabajadores == null
+    ? Number(row.cantidad_divisas ?? 0) + Number(row.cantidad_bs ?? 0)
+    : Number(row.cantidad_trabajadores);
   return {
     id: row.id as string,
     numero: Number(row.numero),
@@ -118,10 +126,7 @@ function mapCandidato(t: Fila, prestamos: Fila[]): CandidatoNomina {
     trabajadorId: t.id as string,
     nombre: nombreCompleto({ nombres: t.nombres as string, apellidos: t.apellidos as string }),
     pagoDiarioUsd: Number(t.pago_diario_usd),
-    monedaPagoSugerida: monedaPagoSugerida({
-      binanceCorreoId: (t.binance_correo_id as string | null) ?? null,
-      pagoMovilTelefono: (t.pago_movil_telefono as string | null) ?? null,
-    }),
+    pagoDiarioBs: Number(t.pago_diario_bs ?? 0),
     prestamos: prestamos.filter(p => p.trabajador_id === t.id).map(p => {
       const saldoUsd = Number(p.saldo_usd);
       const cuotaSemanalUsd = numeroONull(p.cuota_semanal_usd);
@@ -135,7 +140,8 @@ function mapCandidato(t: Fila, prestamos: Fila[]): CandidatoNomina {
 
 async function candidatosDe(tipo: TipoTrabajador): Promise<{ candidatos: CandidatoNomina[] } | FalloNomina> {
   const { data: trabajadores, error } = await supabaseAdmin
-    .from('nomina_trabajadores').select('id, nombres, apellidos, pago_diario_usd, binance_correo_id, pago_movil_telefono')
+    // Solo lo que arma el candidato: sin cédula ni datos personales. Requiere la migración de los dos sueldos (pago_diario_bs).
+    .from('nomina_trabajadores').select('id, nombres, apellidos, pago_diario_usd, pago_diario_bs')
     .eq('tipo', tipo).eq('activo', true).order('apellidos').order('nombres').limit(1000);
   if (error) return falloNomina(error, 'candidatos_trabajadores', 'No se pudo cargar el personal.');
   const ids = (trabajadores ?? []).map(t => t.id as string);

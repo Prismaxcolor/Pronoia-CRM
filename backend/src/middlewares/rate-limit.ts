@@ -98,3 +98,12 @@ export const fotosPackingLimiter = rateLimit({
   message: { error: 'Demasiadas fotos en poco tiempo. Espera un minuto y reintenta.', reintentar: true },
   keyGenerator: claveOperacionCliente,
 });
+
+/** Llamadas de cron/automatización (sin sesión): 10 por minuto por IP. */
+export const cronLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes. Espera un minuto y reintenta.' },
+});

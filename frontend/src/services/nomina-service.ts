@@ -1,6 +1,6 @@
 import { apiFetch } from './api-client';
 import type {
-  EstadoPrestamo, Nomina, NominaResumen, NominaSemana, Prestamo, TipoPrestamo, TipoTrabajador, Trabajador,
+  CargoTrabajador, EstadoPrestamo, Nomina, NominaResumen, NominaSemana, Prestamo, TipoPrestamo, TipoTrabajador, Trabajador,
 } from '@shared/types/nomina';
 import type { PayloadNomina } from '../features/nomina/nomina-editor';
 import type { PayloadPago } from '../features/nomina/nomina-pago';
@@ -20,7 +20,9 @@ export interface TrabajadorInput {
   pagoMovilTelefono: string | null;
   pagoMovilCedula: string | null;
   binanceCorreoId: string | null;
+  /** Sueldo diario en divisas (USD) y en bolívares (Bs): las dos partes del sueldo. */
   pagoDiarioUsd: number;
+  pagoDiarioBs: number;
 }
 
 export interface PrestamoInput {
@@ -52,6 +54,10 @@ const BASE = '/api/nomina';
 
 export const obtenerTrabajadores = (tipo?: TipoTrabajador, incluirInactivos = false) =>
   ejecutar(() => apiFetch<{ trabajadores: Trabajador[] }>(`${BASE}/trabajadores${consulta({ tipo, incluirInactivos })}`), 'No se pudo cargar el personal.');
+
+/** Últimos movimientos del trabajador (pagos de nómina, préstamos, cuotas y reversas); los de Bs con su equivalente en USD. */
+export const obtenerCargoTrabajador = (id: string) =>
+  ejecutar(() => apiFetch<{ cargo: CargoTrabajador }>(`${BASE}/trabajadores/${id}/cargo`), 'No se pudo cargar el cargo del trabajador.');
 
 export const crearTrabajador = (input: TrabajadorInput) =>
   ejecutar(() => apiFetch<{ trabajador: Trabajador }>(`${BASE}/trabajadores`, { method: 'POST', body: input }), 'No se pudo crear el trabajador.');

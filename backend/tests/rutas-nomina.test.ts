@@ -35,7 +35,7 @@ const s = vi.hoisted(() => ({
   listarTrabajadores: vi.fn(), obtenerTrabajador: vi.fn(), crearTrabajador: vi.fn(), actualizarTrabajador: vi.fn(),
   desactivarTrabajador: vi.fn(), listarPrestamos: vi.fn(), crearPrestamo: vi.fn(), actualizarPrestamo: vi.fn(),
   anularPrestamo: vi.fn(), listarNominas: vi.fn(), obtenerNomina: vi.fn(), obtenerNominaSemana: vi.fn(),
-  guardarNomina: vi.fn(), cerrarNomina: vi.fn(), anularNomina: vi.fn(),
+  guardarNomina: vi.fn(), cerrarNomina: vi.fn(), anularNomina: vi.fn(), obtenerCargoTrabajador: vi.fn(),
 }));
 vi.mock('../src/services/nomina-trabajador-service.js', () => ({
   listarTrabajadores: s.listarTrabajadores, obtenerTrabajador: s.obtenerTrabajador, crearTrabajador: s.crearTrabajador,
@@ -50,6 +50,7 @@ vi.mock('../src/services/nomina-service.js', () => ({
 vi.mock('../src/services/nomina-escritura-service.js', () => ({
   guardarNomina: s.guardarNomina, cerrarNomina: s.cerrarNomina, anularNomina: s.anularNomina,
 }));
+vi.mock('../src/services/nomina-cargo-service.js', () => ({ obtenerCargoTrabajador: s.obtenerCargoTrabajador }));
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   clienteIp: () => '127.0.0.1',
@@ -102,10 +103,10 @@ async function llamar(metodo: string, ruta: string, usuario: string | null, body
 }
 
 const trabajadorValido = { tipo: 'OPERATIVO', nombres: 'Ana', apellidos: 'Pérez', cedula: 'V-12345678', pagoMovilTelefono: '0414-1234567' };
-const nominaValida = { tipo: 'OPERATIVO', semanaInicio: '2026-10-05', tasaBs: 40, version: null, lineas: [{ trabajadorId: ID, monedaPago: 'USD', diasTrabajados: 5, montoBaseUsd: 20 }] };
+const nominaValida = { tipo: 'OPERATIVO', semanaInicio: '2026-10-05', tasaBs: 40, version: null, lineas: [{ trabajadorId: ID, diasTrabajados: 5, montoBaseUsd: 20 }] };
 
 describe('acceso: solo con el permiso de módulo nomina', () => {
-  const lecturas = ['/trabajadores', '/prestamos', '/nominas', '/nominas/semana?tipo=OPERATIVO&semana=2026-10-05', `/nominas/${ID}`, `/trabajadores/${ID}`];
+  const lecturas = ['/trabajadores', '/prestamos', '/nominas', '/nominas/semana?tipo=OPERATIVO&semana=2026-10-05', `/nominas/${ID}`, `/trabajadores/${ID}`, `/trabajadores/${ID}/cargo`];
 
   it('sin sesión: 401 en todas las lecturas', async () => {
     for (const ruta of lecturas) expect((await llamar('GET', `/api/nomina${ruta}`, null)).status).toBe(401);
@@ -148,6 +149,24 @@ describe('acceso: solo con el permiso de módulo nomina', () => {
     expect((await llamar('POST', `/api/nomina/prestamos/${ID}/anular`, 'editor', { motivo: 'error' })).status).toBe(200);
     expect((await llamar('POST', `/api/nomina/nominas/${ID}/anular`, 'root', { motivo: 'semana equivocada' })).status).toBe(200);
     expect((await llamar('POST', `/api/nomina/trabajadores/${ID}/desactivar`, 'root')).status).toBe(200);
+  });
+});
+
+describe('cargo del trabajador', () => {
+  it('con permiso ver devuelve el cargo del trabajador pedido', async () => {
+    s.obtenerCargoTrabajador.mockResolvedValue({ cargo: { trabajadorId: ID, nombre: 'Ana Pérez', saldoPrestamosUsd: 0, movimientos: [] } });
+    const r = await llamar('GET', `/api/nomina/trabajadores/${ID}/cargo`, 'lector');
+    expect(r.status).toBe(200);
+    expect(r.cache).toBe('no-store');
+    expect(s.obtenerCargoTrabajador).toHaveBeenCalledWith(ID);
+  });
+
+  it('id inválido: 400; trabajador inexistente: 404; migración pendiente: 503', async () => {
+    expect((await llamar('GET', '/api/nomina/trabajadores/abc/cargo', 'root')).status).toBe(400);
+    s.obtenerCargoTrabajador.mockResolvedValue({ error: 'Trabajador no encontrado.', codigo: 404 });
+    expect((await llamar('GET', `/api/nomina/trabajadores/${ID}/cargo`, 'root')).status).toBe(404);
+    s.obtenerCargoTrabajador.mockResolvedValue({ error: 'falta aplicar migration_nomina.sql', codigo: 503 });
+    expect((await llamar('GET', `/api/nomina/trabajadores/${ID}/cargo`, 'root')).status).toBe(503);
   });
 });
 

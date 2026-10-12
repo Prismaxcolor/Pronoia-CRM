@@ -41,11 +41,14 @@ export interface FalloPlan {
   codigo: number;
 }
 
-/** Monedas con algo que pagar: las que tienen renglones con total mayor a cero (USD: totalUsd; Bs: totalBs). */
-export function monedasPorPagar(lineas: ReadonlyArray<{ monedaPago: MonedaPago; totalUsd: number; totalBs: number | null }>): MonedaPago[] {
+/**
+ * Monedas con algo que pagar: divisas si la suma de lo que se paga en USD es mayor a cero, bolívares si la de Bs lo es.
+ * Un trabajador con las dos partes aporta a las dos monedas.
+ */
+export function monedasPorPagar(lineas: ReadonlyArray<{ pagarUsd: number; pagarBs: number | null }>): MonedaPago[] {
   const centavos = (n: number): number => Math.round(n * 100);
-  const totalUsd = lineas.filter(l => l.monedaPago === 'USD').reduce((s, l) => s + centavos(l.totalUsd), 0);
-  const totalBs = lineas.filter(l => l.monedaPago === 'BS').reduce((s, l) => s + centavos(l.totalBs ?? 0), 0);
+  const totalUsd = lineas.reduce((s, l) => s + centavos(l.pagarUsd), 0);
+  const totalBs = lineas.reduce((s, l) => s + centavos(l.pagarBs ?? 0), 0);
   return [...(totalUsd > 0 ? ['USD' as const] : []), ...(totalBs > 0 ? ['BS' as const] : [])];
 }
 

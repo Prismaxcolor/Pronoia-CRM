@@ -8,21 +8,24 @@ export const fmtUsdPdf = (n: number): string => `USD ${numero(n)}`;
 export const fmtBsPdf = (n: number | null): string => (n === null ? '-' : `Bs ${numero(n)}`);
 
 export const ENCABEZADO_TABLA_PDF = [
-  'Trabajador', 'Pago en', 'Días', 'Base USD', 'Bruto USD', 'Ref. Bs', 'Bonif. USD', 'Desc. USD', 'Total USD', 'Total Bs',
+  'Trabajador', 'Días', 'Sueldo USD/día', 'Sueldo Bs/día', 'Bruto USD', 'Bonif. USD', 'Desc. USD', 'A pagar USD', 'A pagar Bs', 'Total USD',
 ];
+
+/** Posiciones (desde 0) de las columnas numéricas del PDF: se alinean a la derecha. */
+export const COLUMNAS_NUMERICAS_PDF = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 export function filaDeLinea(l: LineaNomina): string[] {
   return [
     l.trabajadorNombre,
-    l.monedaPago === 'USD' ? 'Divisas' : 'Bs',
     String(l.diasTrabajados).replace('.', ','),
     numero(l.montoBaseUsd),
+    numero(l.montoBaseBs),
     numero(l.totalBrutoUsd),
-    l.montoRefBs === null ? '-' : numero(l.montoRefBs),
     numero(l.bonificacionUsd),
     numero(l.descuentoTrabajoUsd + l.descuentoPrestamoUsd),
+    numero(l.pagarUsd),
+    l.pagarBs === null ? '-' : numero(l.pagarBs),
     numero(l.totalUsd),
-    l.totalBs === null ? '-' : numero(l.totalBs),
   ];
 }
 
@@ -33,8 +36,8 @@ export function filasTabla(nomina: Nomina): string[][] {
 /** Pares etiqueta / valor del resumen de totales, en el orden pedido por el cliente. */
 export function filasTotales(t: TotalesNomina): Array<[string, string]> {
   return [
-    [`Total a pagar en divisas (${t.cantidadDivisas} trabajador${t.cantidadDivisas === 1 ? '' : 'es'})`, fmtUsdPdf(t.totalDivisasUsd)],
-    [`Total a pagar en Bs (${t.cantidadBs} trabajador${t.cantidadBs === 1 ? '' : 'es'})`, fmtBsPdf(t.totalBs)],
+    [`Total a pagar en divisas (${t.cantidadDivisas} trabajador${t.cantidadDivisas === 1 ? '' : 'es'} con sueldo en USD)`, fmtUsdPdf(t.totalDivisasUsd)],
+    [`Total a pagar en Bs (${t.cantidadBs} trabajador${t.cantidadBs === 1 ? '' : 'es'} con sueldo en Bs)`, fmtBsPdf(t.totalBs)],
     ['Equivalente en USD de los Bs', fmtUsdPdf(t.equivalenteUsdDeBs)],
     ['Total combinado en USD', fmtUsdPdf(t.totalCombinadoUsd)],
     ['Total combinado en Bs', fmtBsPdf(t.totalCombinadoBs)],

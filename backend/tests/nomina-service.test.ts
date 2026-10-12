@@ -8,6 +8,7 @@ const bd = vi.hoisted(() => ({
   errorTabla: null as { tabla: string; error: { code?: string; message: string } } | null,
   rpcResultado: { data: null as unknown, error: null as null | { code?: string; message: string } },
   rpc: vi.fn(),
+  selects: [] as Array<{ tabla: string; columnas: string }>,
   logs: [] as unknown[],
 }));
 
@@ -25,7 +26,8 @@ vi.mock('../src/config/supabase.js', () => ({
         return { data: ids ? filas.filter(f => ids!.includes(f.id as string)) : filas, error: null };
       };
       const c: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'neq', 'order', 'limit']) c[m] = () => c;
+      for (const m of ['eq', 'neq', 'order', 'limit']) c[m] = () => c;
+      c.select = (columnas: string) => { bd.selects.push({ tabla, columnas }); return c; };
       c.in = (_col: string, valores: string[]) => { ids = valores; return c; };
       c.maybeSingle = () => Promise.resolve(tabla === 'nominas' ? { data: bd.nomina, error: null } : { data: null, error: null });
       c.then = (ok: (v: unknown) => unknown) => Promise.resolve(resultado()).then(ok);
@@ -40,6 +42,7 @@ vi.mock('../src/config/supabase.js', () => ({
 
 import { MENSAJE_CIERRE_CON_NEGATIVOS, anularNomina, cerrarNomina, guardarNomina } from '../src/services/nomina-escritura-service';
 import { guardarNominaSchema } from '../src/schemas/nomina';
+import { obtenerNominaSemana } from '../src/services/nomina-service';
 
 const T1 = '11111111-1111-4111-8111-111111111111';
 const T2 = '22222222-2222-4222-8222-222222222222';
@@ -51,7 +54,7 @@ const entrada = (lineas: unknown[], extra: Record<string, unknown> = {}) =>
   guardarNominaSchema.parse({ tipo: 'OPERATIVO', semanaInicio: '2026-10-05', tasaBs: 40, version: null, lineas, ...extra });
 
 const renglon = (extra: Record<string, unknown> = {}) =>
-  ({ trabajadorId: T1, monedaPago: 'USD', diasTrabajados: 5, montoBaseUsd: 20, ...extra });
+  ({ trabajadorId: T1, diasTrabajados: 5, montoBaseUsd: 20, ...extra });
 
 const nominaGuardada = {
   id: NOMINA, numero: 7, tipo: 'OPERATIVO', semana_inicio: '2026-10-05', tasa_bs: 40, estado: 'BORRADOR', version: 2,
@@ -83,6 +86,27 @@ describe('guardarNomina', () => {
     expect(args.p_usuario).toBe(USUARIO);
     expect(args.p_datos.totales.totalDivisasUsd).toBe(100);
     expect(args.p_datos.lineas[0]).toMatchObject({ trabajadorNombre: 'Ana Pérez', totalUsd: 100, totalBs: 4000 });
+  });
+
+  it('los dos sueldos viajan a la función SQL con lo que se paga en cada moneda, calculado en el servidor', async () => {
+    const r = await guardarNomina(entrada([renglon({ montoBaseBs: 400, descuentoTrabajoUsd: 10 })]), USUARIO);
+    expect('error' in r).toBe(false);
+    const p = bd.rpc.mock.calls[0][1].p_datos;
+    expect(p.lineas[0]).toMatchObject({ montoBaseUsd: 20, montoBaseBs: 400, pagarUsd: 90, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 140, monedaPago: 'MIXTO' });
+    expect(p.totales).toMatchObject({ totalDivisasUsd: 90, totalBs: 2000, equivalenteUsdDeBs: 50 });
+  });
+
+  it('con sueldo en Bs y sin tasa no se guarda: 400 pidiendo la tasa', async () => {
+    const r = await guardarNomina(entrada([renglon({ montoBaseBs: 400 })], { tasaBs: null }), USUARIO);
+    expect(r).toMatchObject({ codigo: 400 });
+    expect('error' in r && r.error).toMatch(/tasa/i);
+    expect(bd.rpc).not.toHaveBeenCalled();
+  });
+
+  it('sin sueldo en Bs la tasa sigue siendo opcional', async () => {
+    const r = await guardarNomina(entrada([renglon()], { tasaBs: null }), USUARIO);
+    expect('error' in r).toBe(false);
+    expect(bd.rpc).toHaveBeenCalledTimes(1);
   });
 
   it('rechaza un trabajador inexistente sin llamar a la BD de escritura', async () => {
@@ -214,5 +238,21 @@ describe('anularNomina', () => {
     const r = await anularNomina(NOMINA, 'Se cargó la semana equivocada', USUARIO);
     expect('error' in r).toBe(false);
     expect(bd.rpc).toHaveBeenCalledWith('nomina_anular', { p_nomina_id: NOMINA, p_motivo: 'Se cargó la semana equivocada', p_usuario: USUARIO });
+  });
+});
+
+describe('candidatos de la nómina (lectura mínima)', () => {
+  it('pide solo las columnas que necesita: sin select(*) ni cédula ni datos personales', async () => {
+    bd.selects = [];
+    bd.nomina = null;
+    bd.trabajadores = [{ id: T1, nombres: 'Ana', apellidos: 'Pérez', pago_diario_usd: 20, pago_diario_bs: 0 }];
+    bd.prestamos = [];
+    const r = await obtenerNominaSemana('OPERATIVO', '2026-10-05');
+    if ('error' in r) throw new Error(r.error);
+    expect(r.candidatos).toHaveLength(1);
+    const columnas = bd.selects.find(s => s.tabla === 'nomina_trabajadores')!.columnas;
+    expect(columnas).not.toContain('*');
+    expect(columnas).not.toMatch(/cedula|rif|telefono|direccion|pago_movil|binance|contacto/);
+    expect(columnas.split(',').map(c => c.trim()).sort()).toEqual(['apellidos', 'id', 'nombres', 'pago_diario_bs', 'pago_diario_usd']);
   });
 });

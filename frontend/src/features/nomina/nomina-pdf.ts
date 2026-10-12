@@ -9,7 +9,7 @@ import {
   ETIQUETA_ESTADO_NOMINA, ETIQUETA_TIPO_TRABAJADOR, formatearNumeroNomina, type Nomina,
 } from '../../../../shared/types/nomina.js';
 import { domingoDe } from '../../../../shared/types/nomina-calculo.js';
-import { ENCABEZADO_TABLA_PDF, filasPagos, filasTabla, filasTotales } from './nomina-pdf-filas';
+import { COLUMNAS_NUMERICAS_PDF, ENCABEZADO_TABLA_PDF, filasPagos, filasTabla, filasTotales } from './nomina-pdf-filas';
 
 const GRIS_GRID: [number, number, number] = [70, 70, 70];
 
@@ -36,7 +36,7 @@ export async function descargarNominaPDF(n: Nomina, modo: ModoPdf = 'descargar')
     margin: { left: BOX_LEFT, right: 595.28 - BOX_RIGHT },
     styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 4, lineWidth: 0.5, lineColor: GRIS_GRID },
     headStyles: { fillColor: [245, 245, 245], textColor: 0, fontStyle: 'bold' },
-    columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9].map(i => [i, { halign: 'right' }])),
+    columnStyles: Object.fromEntries(COLUMNAS_NUMERICAS_PDF.map(i => [i, { halign: 'right' }])),
     theme: 'grid',
   });
 

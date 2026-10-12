@@ -38,6 +38,10 @@ beforeEach(() => {
 });
 
 describe('aColumnas', () => {
+  it('los dos sueldos van a sus columnas', () => {
+    expect(aColumnas({ pagoDiarioUsd: 12.5, pagoDiarioBs: 350 })).toEqual({ pago_diario_usd: 12.5, pago_diario_bs: 350 });
+  });
+
   it('traduce a columnas, omite undefined y descarta claves ajenas', () => {
     const c = aColumnas({ nombres: 'Ana', direccion: undefined, rif: null, pagoMovilBanco: 'X', id: 'otro', created_at: 'hack' });
     expect(c).toEqual({ nombres: 'Ana', rif: null, pago_movil_banco: 'X' });

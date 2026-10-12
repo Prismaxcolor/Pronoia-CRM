@@ -235,6 +235,48 @@ describe('pagarNomina', () => {
     expect(bd.auditoria.mock.calls[0][0]).toMatchObject({ entidadId: MOV_BS, accion: 'sin_comision_bancaria', usuarioId: USUARIO });
   });
 
+  it('si la fecha elegida difiere de la fecha real del registro, queda auditada por movimiento', async () => {
+    bd.rpcResultado = {
+      data: {
+        yaPagada: false, fechaElegida: '2026-10-09', fechaReal: '2026-10-12',
+        pagos: [{ movimientoId: MOV_USD, sinComision: false }, { movimientoId: MOV_BS, sinComision: false }],
+      },
+      error: null,
+    };
+    const r = await pagarNomina(NOMINA, ambas(), USUARIO);
+    expect(r).toMatchObject({ yaPagada: false });
+    expect(bd.auditoria).toHaveBeenCalledTimes(2);
+    expect(bd.auditoria.mock.calls[0][0]).toMatchObject({
+      entidadTipo: 'movimiento_banca', entidadId: MOV_USD, accion: 'fecha_pago_distinta', usuarioId: USUARIO,
+      cambios: { fecha_pago: { antes: '2026-10-12', despues: '2026-10-09' } },
+    });
+    expect(bd.auditoria.mock.calls[1][0]).toMatchObject({ entidadId: MOV_BS, accion: 'fecha_pago_distinta' });
+  });
+
+  it('si la fecha elegida es la real, no se audita nada', async () => {
+    bd.rpcResultado = {
+      data: { yaPagada: false, fechaElegida: '2026-10-09', fechaReal: '2026-10-09', pagos: [{ movimientoId: MOV_USD, sinComision: false }] },
+      error: null,
+    };
+    await pagarNomina(NOMINA, ambas(), USUARIO);
+    expect(bd.auditoria).not.toHaveBeenCalled();
+  });
+
+  it('si la fecha difiere y no se puede auditar: el pago ya existe, devuelve advertencia', async () => {
+    bd.rpcResultado = {
+      data: { yaPagada: false, fechaElegida: '2026-10-09', fechaReal: '2026-10-12', pagos: [{ movimientoId: MOV_USD, sinComision: false }] },
+      error: null,
+    };
+    bd.auditoria.mockResolvedValue(false);
+    const r = await pagarNomina(NOMINA, ambas(), USUARIO);
+    expect(r).toMatchObject({ yaPagada: false, advertencia: expect.stringMatching(/auditor/i) });
+  });
+
+  it('un monto en Bs demasiado pequeño (error de negocio de la BD) se responde 409 con su mensaje', async () => {
+    bd.rpcResultado = { data: null, error: { code: 'P0001', message: 'La parte en Bs es demasiado pequeña para pagarla.' } };
+    expect(await pagarNomina(NOMINA, ambas(), USUARIO)).toEqual({ error: 'La parte en Bs es demasiado pequeña para pagarla.', codigo: 409 });
+  });
+
   it('si no se puede auditar, el pago ya existe: devuelve una advertencia y no falla', async () => {
     bd.rpcResultado = { data: { yaPagada: false, pagos: [{ movimientoId: MOV_BS, sinComision: true }] }, error: null };
     bd.auditoria.mockResolvedValue(false);

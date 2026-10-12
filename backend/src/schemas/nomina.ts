@@ -35,6 +35,8 @@ const cedula = z.string().trim().regex(RE_DOCUMENTO, 'Cédula inválida (letras,
 const centavosExactos = (n: number): boolean => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
 const monto = (mensaje: string) =>
   z.number({ message: mensaje }).finite().min(0, 'No puede ser negativo.').max(MAX_MONTO).refine(centavosExactos, 'Máximo 2 decimales.');
+/** La tasa de cambio admite hasta 6 decimales (así se guarda tasa_bs). */
+const seisDecimales = (n: number): boolean => Math.abs(n * 1e6 - Math.round(n * 1e6)) < 1e-3;
 const montoPositivo = (mensaje: string) =>
   z.number({ message: mensaje }).finite().positive('Debe ser mayor a 0.').max(MAX_MONTO).refine(centavosExactos, 'Máximo 2 decimales.');
 
@@ -66,7 +68,8 @@ export const crearTrabajadorSchema = z.object({
   apellidos: nombrePersona('Los apellidos'),
   cedula,
   ...camposTrabajador,
-  pagoDiarioUsd: monto('El pago diario debe ser un número.').default(0),
+  pagoDiarioUsd: monto('El sueldo diario en divisas debe ser un número.').default(0),
+  pagoDiarioBs: monto('El sueldo diario en bolívares debe ser un número.').default(0),
 });
 export type CrearTrabajadorInput = z.infer<typeof crearTrabajadorSchema>;
 
@@ -76,7 +79,8 @@ export const actualizarTrabajadorSchema = z.object({
   apellidos: nombrePersona('Los apellidos').optional(),
   cedula: cedula.optional(),
   ...camposTrabajador,
-  pagoDiarioUsd: monto('El pago diario debe ser un número.').optional(),
+  pagoDiarioUsd: monto('El sueldo diario en divisas debe ser un número.').optional(),
+  pagoDiarioBs: monto('El sueldo diario en bolívares debe ser un número.').optional(),
   activo: z.boolean().optional(),
 });
 export type ActualizarTrabajadorInput = z.infer<typeof actualizarTrabajadorSchema>;
@@ -108,35 +112,48 @@ const cuotaSchema = z.object({
   montoUsd: montoPositivo('La cuota debe ser un número.'),
 });
 
+/** Mensaje al recibir `monedaPago`: lo manda un frontend anterior a los dos sueldos (pestaña abierta antes del despliegue). */
+export const MENSAJE_FRONTEND_VIEJO = 'Recarga la página: la nómina cambió';
+
 const renglonSchema = z.object({
+  /**
+   * La moneda de pago ya no se envía (se deduce de los dos sueldos). Si llega, el navegador tiene la versión anterior y
+   * guardaría el renglón con otra lógica (p. ej. uno en Bs como divisas): se rechaza en vez de ignorarlo en silencio.
+   */
+  monedaPago: z.undefined({ error: MENSAJE_FRONTEND_VIEJO }).optional(),
   trabajadorId: z.string().uuid('Trabajador inválido.'),
-  monedaPago: z.enum(MONEDAS_PAGO, { message: 'Elige si se paga en divisas o en bolívares.' }),
   diasTrabajados: z.number({ message: 'Los días son obligatorios.' }).finite().min(0).max(DIAS_MAX_SEMANA, `Máximo ${DIAS_MAX_SEMANA} días.`)
     .refine(centavosExactos, 'Máximo 2 decimales.'),
-  montoBaseUsd: monto('El monto base debe ser un número.'),
+  /** Sueldo diario en divisas (USD) y en bolívares (Bs); un trabajador puede cobrar las dos partes. */
+  montoBaseUsd: monto('El sueldo en divisas debe ser un número.'),
+  montoBaseBs: monto('El sueldo en bolívares debe ser un número.').default(0),
   bonificacionUsd: monto('La bonificación debe ser un número.').default(0),
   descuentoTrabajoUsd: monto('El descuento debe ser un número.').default(0),
   cuotas: z.array(cuotaSchema).max(20).default([])
     .refine(c => new Set(c.map(x => x.prestamoId)).size === c.length, 'Un préstamo solo puede descontarse una vez por renglón.'),
   nota: textoOpcional(200).transform(v => v ?? null),
-}).refine(l => !prestamoExcedeGanado({
-  diasTrabajados: l.diasTrabajados, montoBaseUsd: l.montoBaseUsd, bonificacionUsd: l.bonificacionUsd,
-  descuentoPrestamoUsd: sumarCuotas(l.cuotas),
-}), {
-  path: ['cuotas'],
-  message: 'Las cuotas de préstamo no pueden superar lo que el trabajador ganó en la semana (días x monto base + bonificación).',
 });
+
+const MENSAJE_PRESTAMO_EXCEDE =
+  'Las cuotas de préstamo no pueden superar lo que el trabajador ganó en la semana (días x sueldo en divisas y en Bs + bonificación).';
 
 export const guardarNominaSchema = z.object({
   tipo: z.enum(TIPOS_TRABAJADOR, { message: 'Elige el tipo de personal.' }),
   semanaInicio: semanaLunes,
-  tasaBs: z.number().finite().positive('La tasa debe ser mayor a 0.').max(MAX_MONTO).nullable(),
+  tasaBs: z.number().finite().positive('La tasa debe ser mayor a 0.').max(MAX_MONTO).refine(seisDecimales, 'La tasa admite hasta 6 decimales.').nullable(),
   /** null = nómina nueva; si ya existe, la versión que el usuario tenía abierta. */
   version: z.number().int().min(1).nullable(),
   /** El usuario vio el aviso de totales negativos y acepta guardarlos SOLO como borrador: una nómina con totales negativos no se puede cerrar. */
   confirmarNegativos: z.boolean().default(false),
   lineas: z.array(renglonSchema).min(1, 'Agrega al menos un trabajador.').max(MAX_LINEAS)
     .refine(l => new Set(l.map(x => x.trabajadorId)).size === l.length, 'Un trabajador aparece más de una vez.'),
+}).superRefine((v, ctx) => {
+  // Con sueldo en Bs el tope depende de la tasa de la nómina, por eso se evalúa aquí y no en cada renglón.
+  v.lineas.forEach((l, i) => {
+    if (prestamoExcedeGanado({ ...l, descuentoPrestamoUsd: sumarCuotas(l.cuotas) }, v.tasaBs)) {
+      ctx.addIssue({ code: 'custom', path: ['lineas', i, 'cuotas'], message: MENSAJE_PRESTAMO_EXCEDE });
+    }
+  });
 });
 export type GuardarNominaInput = z.infer<typeof guardarNominaSchema>;
 

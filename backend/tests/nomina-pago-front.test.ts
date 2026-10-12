@@ -25,7 +25,7 @@ const bancas = [USD1, USD_POCO, VES1, VES_JUSTO, banca('usd-vieja', 'USD', 900, 
 const pago = (moneda: 'USD' | 'BS', extra: Partial<PagoNomina> = {}): PagoNomina => ({
   id: moneda, monedaPago: moneda, bancaId: 'b', bancaNombre: moneda === 'USD' ? 'CAJA CHICA' : 'CAJA BS', movimientoId: 'm', movimientoNumero: 12,
   anulado: false, monto: moneda === 'USD' ? 100 : 2000, montoUsd: moneda === 'USD' ? 100 : 50, cantidad: 1, fecha: '2026-10-09', referencia: null,
-  pagadoEn: '2026-10-09T15:00:00Z', ...extra,
+  pagadoEn: '2026-10-09T15:00:00Z', tasaBinance: null, tasaBinanceCapturada: null, equivalenteBinanceUsd: null, ...extra,
 });
 
 describe('gruposDePago', () => {

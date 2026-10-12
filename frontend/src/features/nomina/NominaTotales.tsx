@@ -18,16 +18,16 @@ function NominaTotales({ titulo, queEstasViendo, totales: t }: Props) {
     <Bloque titulo={titulo} queEstasViendo={queEstasViendo}>
       <GrillaKpis>
         <TarjetaKpi
-          titulo="Total a pagar en divisas" valor={usd(t.totalDivisasUsd)} subtitulo={`${personas(t.cantidadDivisas)} que se pagan en USD`}
-          ayuda="Suma del total a pagar de los trabajadores marcados como pago en divisas."
+          titulo="Total a pagar en divisas" valor={usd(t.totalDivisasUsd)} subtitulo={`${personas(t.cantidadDivisas)} con sueldo en USD`}
+          ayuda="Suma de la parte en divisas (efectivo o Binance) de cada trabajador, ya con la bonificación y los descuentos."
         />
         <TarjetaKpi
-          titulo="Total a pagar en bolívares" valor={bs(t.totalBs)} subtitulo={`${personas(t.cantidadBs)} que se pagan en Bs`}
-          ayuda="Suma del total en Bs (total en USD x tasa) de los trabajadores marcados como pago en bolívares."
+          titulo="Total a pagar en bolívares" valor={bs(t.totalBs)} subtitulo={`${personas(t.cantidadBs)} con sueldo en Bs`}
+          ayuda="Suma de la parte en bolívares de cada trabajador. Un trabajador puede cobrar las dos partes y cuenta en ambos totales."
         />
         <TarjetaKpi
           titulo="Equivalente en divisas de los Bs" valor={usd(t.equivalenteUsdDeBs)} subtitulo="Lo que valen en USD los pagos en Bs"
-          ayuda="Suma del total en USD de los trabajadores que se pagan en Bs (es el mismo dinero visto en dólares)."
+          ayuda="Los bolívares a pagar convertidos a dólares con la tasa de la nómina (es el mismo dinero visto en dólares)."
         />
         <TarjetaKpi
           titulo="Total combinado" valor={usd(t.totalCombinadoUsd)} subtitulo={`En bolívares: ${bs(t.totalCombinadoBs)}`}

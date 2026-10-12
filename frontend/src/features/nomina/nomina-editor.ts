@@ -4,7 +4,7 @@
  * La vista previa es solo informativa: el servidor recalcula todo al guardar.
  */
 import {
-  calcularLinea, calcularTotales, domingoDe, lunesDe, prestamoExcedeGanado, type LineaCalculada, type MonedaPago, type TotalesNomina,
+  calcularLinea, calcularTotales, domingoDe, lunesDe, prestamoExcedeGanado, type LineaCalculada, type TotalesNomina,
 } from '../../../../shared/types/nomina-calculo.js';
 import type { CandidatoNomina, LineaNomina, TipoTrabajador } from '../../../../shared/types/nomina.js';
 
@@ -22,9 +22,10 @@ export interface CuotaEditor {
 export interface RenglonEditor {
   trabajadorId: string;
   nombre: string;
-  monedaPago: MonedaPago;
   dias: string;
+  /** Sueldo diario en divisas (USD) y en bolívares (Bs); un trabajador puede cobrar las dos partes. */
   montoBase: string;
+  montoBaseBs: string;
   bonificacion: string;
   descuentoTrabajo: string;
   cuotas: CuotaEditor[];
@@ -50,9 +51,9 @@ export function renglonDeCandidato(c: CandidatoNomina): RenglonEditor {
   return {
     trabajadorId: c.trabajadorId,
     nombre: c.nombre,
-    monedaPago: c.monedaPagoSugerida,
     dias: '',
     montoBase: aTexto(c.pagoDiarioUsd),
+    montoBaseBs: aTexto(c.pagoDiarioBs),
     bonificacion: '',
     descuentoTrabajo: '',
     // Todos los préstamos con saldo quedan a la vista; solo se propone descontar los que tienen cuota semanal.
@@ -82,9 +83,9 @@ export function renglonDeLinea(l: LineaNomina, candidatos: readonly CandidatoNom
   return {
     trabajadorId: l.trabajadorId,
     nombre: l.trabajadorNombre,
-    monedaPago: l.monedaPago,
     dias: aTexto(l.diasTrabajados),
     montoBase: aTexto(l.montoBaseUsd),
+    montoBaseBs: aTexto(l.montoBaseBs),
     bonificacion: l.bonificacionUsd > 0 ? aTexto(l.bonificacionUsd) : '',
     descuentoTrabajo: l.descuentoTrabajoUsd > 0 ? aTexto(l.descuentoTrabajoUsd) : '',
     cuotas: cuotasDeLinea(l, prestamos),
@@ -98,35 +99,36 @@ export function renglonesConTotales(renglones: readonly RenglonEditor[], tasa: n
     calculo: calcularLinea({
       diasTrabajados: numeroOCero(r.dias),
       montoBaseUsd: numeroOCero(r.montoBase),
+      montoBaseBs: numeroOCero(r.montoBaseBs),
       bonificacionUsd: numeroOCero(r.bonificacion),
       descuentoTrabajoUsd: numeroOCero(r.descuentoTrabajo),
       descuentoPrestamoUsd: r.cuotas.reduce((a, c) => a + numeroOCero(c.monto), 0),
-      monedaPago: r.monedaPago,
     }, tasa),
   }));
 }
 
 export function totalesDeRenglones(renglones: readonly RenglonCalculado[], tasa: number | null): TotalesNomina {
-  return calcularTotales(renglones.map(r => ({ monedaPago: r.monedaPago, totalUsd: r.calculo.totalUsd, totalBs: r.calculo.totalBs })), tasa);
+  return calcularTotales(renglones.map(r => r.calculo), tasa);
 }
 
-/** Primer problema que impide guardar (mensaje en español) o null. */
-export function validarRenglones(renglones: readonly RenglonEditor[]): string | null {
+/** Primer problema que impide guardar (mensaje en español) o null. `tasa` es la de la nómina (null si no se escribió). */
+export function validarRenglones(renglones: readonly RenglonEditor[], tasa: number | null): string | null {
   if (renglones.length === 0) return 'Agrega al menos un trabajador a la nómina.';
   for (const r of renglones) {
     const dias = leerNumero(r.dias);
     if (dias === null || dias < 0 || dias > DIAS_MAX) return `${r.nombre}: los días trabajados deben estar entre 0 y ${DIAS_MAX}.`;
-    if (leerNumero(r.montoBase) === null) return `${r.nombre}: falta el monto base en divisas.`;
+    if (leerNumero(r.montoBase) === null && numeroOCero(r.montoBaseBs) === 0) return `${r.nombre}: falta el sueldo en divisas (o en bolívares).`;
+    if (numeroOCero(r.montoBaseBs) > 0 && tasa === null) return `${r.nombre} tiene sueldo en bolívares: escribe la tasa de la nómina.`;
     for (const c of r.cuotas) {
       if (numeroOCero(c.monto) > c.saldoUsd) {
         return `${r.nombre}: la cuota del préstamo PRE-${String(c.numero).padStart(4, '0')} supera su saldo (USD ${c.saldoUsd}).`;
       }
     }
     if (prestamoExcedeGanado({
-      diasTrabajados: dias, montoBaseUsd: numeroOCero(r.montoBase), bonificacionUsd: numeroOCero(r.bonificacion),
-      descuentoPrestamoUsd: r.cuotas.reduce((a, c) => a + numeroOCero(c.monto), 0),
-    })) {
-      return `${r.nombre}: las cuotas de préstamo superan lo que ganó en la semana (días x monto base + bonificación). Baja la cuota.`;
+      diasTrabajados: dias, montoBaseUsd: numeroOCero(r.montoBase), montoBaseBs: numeroOCero(r.montoBaseBs),
+      bonificacionUsd: numeroOCero(r.bonificacion), descuentoPrestamoUsd: r.cuotas.reduce((a, c) => a + numeroOCero(c.monto), 0),
+    }, tasa)) {
+      return `${r.nombre}: las cuotas de préstamo superan lo que ganó en la semana (días x sueldo + bonificación). Baja la cuota.`;
     }
   }
   return null;
@@ -149,9 +151,9 @@ export interface PayloadNomina {
   confirmarNegativos: boolean;
   lineas: Array<{
     trabajadorId: string;
-    monedaPago: MonedaPago;
     diasTrabajados: number;
     montoBaseUsd: number;
+    montoBaseBs: number;
     bonificacionUsd: number;
     descuentoTrabajoUsd: number;
     cuotas: Array<{ prestamoId: string; montoUsd: number }>;
@@ -169,9 +171,9 @@ export function construirPayload(e: EstadoParaGuardar): PayloadNomina {
     confirmarNegativos: e.confirmarNegativos,
     lineas: e.renglones.map(r => ({
       trabajadorId: r.trabajadorId,
-      monedaPago: r.monedaPago,
       diasTrabajados: numeroOCero(r.dias),
       montoBaseUsd: numeroOCero(r.montoBase),
+      montoBaseBs: numeroOCero(r.montoBaseBs),
       bonificacionUsd: numeroOCero(r.bonificacion),
       descuentoTrabajoUsd: numeroOCero(r.descuentoTrabajo),
       cuotas: r.cuotas.filter(c => numeroOCero(c.monto) > 0).map(c => ({ prestamoId: c.prestamoId, montoUsd: numeroOCero(c.monto) })),

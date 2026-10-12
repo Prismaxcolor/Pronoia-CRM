@@ -13,6 +13,7 @@ import {
 } from '../services/nomina-trabajador-service.js';
 import { actualizarPrestamo, anularPrestamo, crearPrestamo, listarPrestamos } from '../services/nomina-prestamo-service.js';
 import { listarNominas, obtenerNomina, obtenerNominaSemana } from '../services/nomina-service.js';
+import { obtenerCargoTrabajador } from '../services/nomina-cargo-service.js';
 import { anularNomina, cerrarNomina, guardarNomina } from '../services/nomina-escritura-service.js';
 import { categoriaDePagoNomina, pagarNomina } from '../services/nomina-pago-service.js';
 import { exigirAccesoBancas, MENSAJE_ACCESO_NO_VERIFICABLE } from '../middlewares/exigir-acceso-bancas.js';
@@ -71,6 +72,13 @@ router.post('/trabajadores', requirePermiso('nomina', 'crear'), validateBody(cre
 
 router.get('/trabajadores/:id', validarUuidParam('id'), requirePermiso('nomina', 'ver'), async (req, res) => {
   const r = await obtenerTrabajador(String(req.params.id));
+  if ('error' in r) return responderFallo(res, r);
+  res.json(r);
+});
+
+// Últimos movimientos del trabajador; los de Bs con su equivalente en USD a la tasa Binance congelada al pagar.
+router.get('/trabajadores/:id/cargo', validarUuidParam('id'), requirePermiso('nomina', 'ver'), async (req, res) => {
+  const r = await obtenerCargoTrabajador(String(req.params.id));
   if ('error' in r) return responderFallo(res, r);
   res.json(r);
 });

@@ -24,6 +24,9 @@ function mapPago(row: Fila): PagoNomina {
     fecha: row.fecha as string,
     referencia: (row.referencia as string | null) ?? null,
     pagadoEn: row.created_at as string,
+    tasaBinance: row.tasa_binance == null ? null : Number(row.tasa_binance),
+    tasaBinanceCapturada: (row.tasa_binance_capturada as string | null) ?? null,
+    equivalenteBinanceUsd: row.equivalente_binance_usd == null ? null : Number(row.equivalente_binance_usd),
   };
 }
 

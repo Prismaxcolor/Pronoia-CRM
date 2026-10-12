@@ -27,17 +27,21 @@ export function mapTrabajador(row: Fila): Trabajador {
     pagoMovilCedula: texto(row.pago_movil_cedula),
     binanceCorreoId: texto(row.binance_correo_id),
     pagoDiarioUsd: Number(row.pago_diario_usd ?? 0),
+    pagoDiarioBs: Number(row.pago_diario_bs ?? 0),
     activo: Boolean(row.activo),
     creadoEn: row.created_at as string,
   };
 }
+
+/** La ficha completa (lo que lee mapTrabajador), con columnas explícitas: una columna nueva no se expone sin querer. */
+const COLUMNAS_FICHA = 'id, tipo, nombres, apellidos, cedula, rif, telefono, direccion, contacto_emergencia_nombre, contacto_emergencia_telefono, pago_movil_banco, pago_movil_telefono, pago_movil_cedula, binance_correo_id, pago_diario_usd, pago_diario_bs, activo, created_at';
 
 const COLUMNAS: Record<string, string> = {
   tipo: 'tipo', nombres: 'nombres', apellidos: 'apellidos', cedula: 'cedula', rif: 'rif', telefono: 'telefono',
   direccion: 'direccion', contactoEmergenciaNombre: 'contacto_emergencia_nombre',
   contactoEmergenciaTelefono: 'contacto_emergencia_telefono', pagoMovilBanco: 'pago_movil_banco',
   pagoMovilTelefono: 'pago_movil_telefono', pagoMovilCedula: 'pago_movil_cedula', binanceCorreoId: 'binance_correo_id',
-  pagoDiarioUsd: 'pago_diario_usd', activo: 'activo',
+  pagoDiarioUsd: 'pago_diario_usd', pagoDiarioBs: 'pago_diario_bs', activo: 'activo',
 };
 
 /** Pasa el cuerpo validado a columnas de la tabla, omitiendo lo no enviado (undefined) y descartando cualquier otra clave. */
@@ -50,7 +54,7 @@ export function aColumnas(input: Record<string, unknown>): Fila {
 export async function listarTrabajadores(
   filtro: { tipo?: TipoTrabajador; incluirInactivos: boolean },
 ): Promise<{ trabajadores: Trabajador[] } | FalloNomina> {
-  let q = supabaseAdmin.from('nomina_trabajadores').select('*').order('apellidos').order('nombres').limit(LIMITE_TRABAJADORES);
+  let q = supabaseAdmin.from('nomina_trabajadores').select(COLUMNAS_FICHA).order('apellidos').order('nombres').limit(LIMITE_TRABAJADORES);
   if (filtro.tipo) q = q.eq('tipo', filtro.tipo);
   if (!filtro.incluirInactivos) q = q.eq('activo', true);
   const { data, error } = await q;
@@ -59,21 +63,21 @@ export async function listarTrabajadores(
 }
 
 export async function obtenerTrabajador(id: string): Promise<{ trabajador: Trabajador } | FalloNomina> {
-  const { data, error } = await supabaseAdmin.from('nomina_trabajadores').select('*').eq('id', id).maybeSingle();
+  const { data, error } = await supabaseAdmin.from('nomina_trabajadores').select(COLUMNAS_FICHA).eq('id', id).maybeSingle();
   if (error) return falloNomina(error, 'trabajador_obtener', 'No se pudo cargar el trabajador.');
   if (!data) return { error: 'Trabajador no encontrado.', codigo: 404 };
   return { trabajador: mapTrabajador(data) };
 }
 
 export async function crearTrabajador(input: CrearTrabajadorInput): Promise<{ trabajador: Trabajador } | FalloNomina> {
-  const { data, error } = await supabaseAdmin.from('nomina_trabajadores').insert(aColumnas(input)).select().single();
+  const { data, error } = await supabaseAdmin.from('nomina_trabajadores').insert(aColumnas(input)).select(COLUMNAS_FICHA).single();
   if (error || !data) return falloNomina(error, 'trabajador_crear', 'No se pudo crear el trabajador.', MENSAJE_CEDULA_REPETIDA);
   return { trabajador: mapTrabajador(data) };
 }
 
 export async function actualizarTrabajador(id: string, input: ActualizarTrabajadorInput): Promise<{ trabajador: Trabajador } | FalloNomina> {
   const campos = { ...aColumnas(input), updated_at: new Date().toISOString() };
-  const { data, error } = await supabaseAdmin.from('nomina_trabajadores').update(campos).eq('id', id).select().maybeSingle();
+  const { data, error } = await supabaseAdmin.from('nomina_trabajadores').update(campos).eq('id', id).select(COLUMNAS_FICHA).maybeSingle();
   if (error) return falloNomina(error, 'trabajador_actualizar', 'No se pudo actualizar el trabajador.', MENSAJE_CEDULA_REPETIDA);
   if (!data) return { error: 'Trabajador no encontrado.', codigo: 404 };
   return { trabajador: mapTrabajador(data) };

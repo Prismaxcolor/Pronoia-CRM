@@ -65,18 +65,22 @@ describe('filtroCategoriaPagoSchema', () => {
 
 describe('monedasPorPagar', () => {
   it('devuelve USD y/o BS según haya montos por pagar', () => {
-    expect(monedasPorPagar([{ monedaPago: 'USD', totalUsd: 100, totalBs: 4000 }, { monedaPago: 'BS', totalUsd: 50, totalBs: 2000 }])).toEqual(['USD', 'BS']);
-    expect(monedasPorPagar([{ monedaPago: 'USD', totalUsd: 100, totalBs: 4000 }])).toEqual(['USD']);
-    expect(monedasPorPagar([{ monedaPago: 'BS', totalUsd: 50, totalBs: 2000 }])).toEqual(['BS']);
+    expect(monedasPorPagar([{ pagarUsd: 100, pagarBs: 0 }, { pagarUsd: 0, pagarBs: 2000 }])).toEqual(['USD', 'BS']);
+    expect(monedasPorPagar([{ pagarUsd: 100, pagarBs: 0 }])).toEqual(['USD']);
+    expect(monedasPorPagar([{ pagarUsd: 0, pagarBs: 2000 }])).toEqual(['BS']);
+  });
+
+  it('un trabajador con las dos partes alimenta las dos monedas', () => {
+    expect(monedasPorPagar([{ pagarUsd: 60, pagarBs: 1500 }])).toEqual(['USD', 'BS']);
   });
 
   it('un grupo con total cero no se paga; sin nada por pagar devuelve vacío', () => {
-    expect(monedasPorPagar([{ monedaPago: 'USD', totalUsd: 0, totalBs: 0 }, { monedaPago: 'BS', totalUsd: 10, totalBs: null }])).toEqual([]);
+    expect(monedasPorPagar([{ pagarUsd: 0, pagarBs: 0 }, { pagarUsd: 0, pagarBs: null }])).toEqual([]);
     expect(monedasPorPagar([])).toEqual([]);
   });
 
   it('suma en centavos (sin error de coma flotante)', () => {
-    expect(monedasPorPagar([{ monedaPago: 'USD', totalUsd: 0.1, totalBs: 4 }, { monedaPago: 'USD', totalUsd: 0.2, totalBs: 8 }])).toEqual(['USD']);
+    expect(monedasPorPagar([{ pagarUsd: 0.1, pagarBs: 0 }, { pagarUsd: 0.2, pagarBs: 0 }])).toEqual(['USD']);
   });
 });
 

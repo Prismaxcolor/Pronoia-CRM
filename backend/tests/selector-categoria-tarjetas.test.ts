@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  inicialDeCategoria, tarjetasDeCategorias, SIN_CATEGORIA_ID,
+  inicialDeCategoria, tarjetasDeCategorias, SIN_CATEGORIA_ID, valorTarjetaDeEleccion, eleccionDeTarjeta,
 } from '../../frontend/src/features/cochinito/categorias/selector-categoria-tarjetas';
 
 type Cat = Parameters<typeof tarjetasDeCategorias>[0][number];
@@ -55,5 +55,22 @@ describe('tarjetasDeCategorias', () => {
   });
   it('SIN_CATEGORIA_ID no choca con un uuid', () => {
     expect(SIN_CATEGORIA_ID).toBe('sin');
+  });
+});
+
+describe('valorTarjetaDeEleccion', () => {
+  it("'' sin elegir, null para Sin categoría, la subcategoría si hay y si no la categoría", () => {
+    expect(valorTarjetaDeEleccion({ categoria: '', subcategoria: '' })).toBe('');
+    expect(valorTarjetaDeEleccion({ categoria: 'sin', subcategoria: '' })).toBeNull();
+    expect(valorTarjetaDeEleccion({ categoria: 'serv', subcategoria: '' })).toBe('serv');
+    expect(valorTarjetaDeEleccion({ categoria: 'serv', subcategoria: 'luz' })).toBe('luz');
+  });
+});
+
+describe('eleccionDeTarjeta', () => {
+  it('null es Sin categoría; una subcategoría arrastra a su categoría; una categoría queda sola', () => {
+    expect(eleccionDeTarjeta(null, todas)).toEqual({ categoria: 'sin', subcategoria: '' });
+    expect(eleccionDeTarjeta('luz', todas)).toEqual({ categoria: 'serv', subcategoria: 'luz' });
+    expect(eleccionDeTarjeta('serv', todas)).toEqual({ categoria: 'serv', subcategoria: '' });
   });
 });

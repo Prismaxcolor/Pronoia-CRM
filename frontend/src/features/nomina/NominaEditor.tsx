@@ -39,11 +39,12 @@ function RotuloFormulas() {
     <details className="mb-4 rounded-xl border border-border bg-surface p-3 text-sm">
       <summary className="cursor-pointer font-medium text-text-primary">Cómo se calcula cada trabajador</summary>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-text-secondary">
-        <li><strong>Total bruto (USD)</strong> = días trabajados x monto base (el pago por día del trabajador).</li>
-        <li><strong>Monto ref. (Bs)</strong> = total bruto x tasa.</li>
-        <li><strong>Total a pagar (USD)</strong> = total bruto + bonificación extra - descuentos (por trabajo + cuotas de préstamo).</li>
-        <li><strong>Total a pagar (Bs)</strong> = total a pagar en USD x tasa.</li>
-        <li>Cada trabajador se paga en divisas o en bolívares; los totales de abajo separan una cosa de la otra.</li>
+        <li>Cada trabajador tiene <strong>dos sueldos por día</strong>: el de <strong>divisas</strong> (USD, efectivo o Binance) y el de <strong>bolívares</strong> (Bs, pago móvil). Puede cobrar las dos partes.</li>
+        <li><strong>Total bruto (USD)</strong> = días x sueldo en divisas + (días x sueldo en Bs) / tasa.</li>
+        <li><strong>A pagar en divisas</strong> = días x sueldo en divisas + bonificación extra - descuentos (por trabajo + cuotas de préstamo).</li>
+        <li><strong>A pagar en Bs</strong> = días x sueldo en Bs. Los descuentos se cargan primero a divisas; si no alcanzan, el sobrante se descuenta de los Bs a la tasa.</li>
+        <li><strong>Total del trabajador (USD)</strong> = a pagar en divisas + (a pagar en Bs) / tasa.</li>
+        <li>La tasa es obligatoria cuando algún trabajador tiene sueldo en Bs.</li>
       </ul>
     </details>
   );
@@ -90,7 +91,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
   };
 
   const guardar = async () => {
-    const problema = validarRenglones(renglones);
+    const problema = validarRenglones(renglones, tasaNum);
     if (problema) { toast.errorMsg(problema); return; }
     const hayNegativos = lineasNegativas(calculados.map(r => r.calculo)).length > 0;
     if (hayNegativos && !(await confirmar({
@@ -150,7 +151,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
     <div>
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div>
-          <label htmlFor="nomina-tasa" className="block text-xs font-medium text-text-secondary mb-1">Tasa a pagar los Bs (Bs por USD)</label>
+          <label htmlFor="nomina-tasa" className="block text-xs font-medium text-text-secondary mb-1">Tasa de la nómina (Bs por USD)</label>
           <input
             id="nomina-tasa" inputMode="decimal" value={tasa} disabled={soloLectura} className={`${inputClass} w-44 tabular-nums`}
             onChange={e => { setTasa(e.target.value); setSucio(true); }}
@@ -199,7 +200,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
         <div className="mb-6"><NominaTabla renglones={calculados} soloLectura={soloLectura} onCambiar={cambiar} onQuitar={quitar} /></div>
       )}
 
-      <NominaTotales titulo="Totales de esta nómina" queEstasViendo="Lo que se debe pagar al personal de este tipo esta semana, separando divisas y bolívares." totales={totales} />
+      <NominaTotales titulo="Totales de esta nómina" queEstasViendo="Lo que se debe pagar al personal de este tipo esta semana, separando la parte en divisas y la parte en bolívares." totales={totales} />
       {totalesOtroTipo && (
         <NominaTotales
           titulo="Total general de la semana"

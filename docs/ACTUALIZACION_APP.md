@@ -55,3 +55,13 @@ Editar `frontend/novedades.json` antes del deploy:
 ## Volver atrás
 
 Quitar `plugVersionJson()` y `define` de `frontend/vite.config.ts`, la regla `/version.json` de `vercel.json`, `iniciarVersionRemota()` de `main.tsx`, `BuscarActualizacionPerfil` del Sidebar y restaurar `AvisoNuevaVersion.tsx` anterior (el aviso basado solo en `pwa-update.ts` sigue funcionando).
+
+## Captura automática de tasas BCV y Euro (7:00 AM Caracas)
+
+`backend/vercel.json` tiene un cron (`0 11 * * *` = 11:00 UTC = 7:00 AM Caracas) que llama a `GET /api/tasas/refrescar-oficiales` y guarda BCV y Euro aunque nadie abra el sistema. La Binance no se guarda de forma programada.
+
+Qué debe hacer Julio (una sola vez): en Vercel, proyecto `pronoia-api`, Settings > Environment Variables, crear `CRON_SECRET` con un valor aleatorio largo (32+ caracteres) en Production y Preview, y volver a desplegar. Vercel lo envía solo como `Authorization: Bearer <CRON_SECRET>`.
+
+- Sin `CRON_SECRET` la ruta responde 503 y no hace nada; con secreto incorrecto responde 401. El sistema sigue actualizando las tasas por demanda como antes.
+- Es idempotente: si ya hay una captura posterior a las 7:00 de hoy no inserta otra. Si dolarapi falla responde 502 (el detalle queda solo en el log del servidor) y la siguiente consulta de un usuario reintenta por demanda.
+- Limitación de Vercel: en plan Hobby el cron puede dispararse en cualquier minuto de la hora 7 UTC-programada (hasta 59 min después de las 11:00 UTC, es decir entre 7:00 y 7:59 Caracas); en plan Pro es puntual. Los crons solo corren en el deploy de Production.

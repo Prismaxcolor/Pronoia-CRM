@@ -1,7 +1,24 @@
 /** Lógica pura del selector de categorías en tarjetas (sin React). Se prueba en backend/tests/selector-categoria-tarjetas.test.ts. */
 
 import type { CategoriaWallet } from '@shared/types/index.js';
-import { armarArbol, opcionesParaTipo } from './categorias-logica';
+import {
+  VALOR_SIN_CATEGORIA, armarArbol, eleccionDeCategoriaId, indicePorId, opcionesParaTipo, type EleccionCategoria,
+} from './categorias-logica';
+
+/**
+ * Valor que marca el selector de tarjetas para una elección del formulario:
+ * '' = aún no eligió (ninguna tarjeta marcada), null = "Sin categoría", si no el id de la subcategoría o categoría.
+ */
+export function valorTarjetaDeEleccion(e: EleccionCategoria): string | null {
+  if (e.categoria === '') return '';
+  if (e.categoria === VALOR_SIN_CATEGORIA) return null;
+  return e.subcategoria || e.categoria;
+}
+
+/** Elección del formulario para la tarjeta tocada (null = "Sin categoría"); una subcategoría arrastra a su categoría. */
+export function eleccionDeTarjeta(id: string | null, categorias: readonly CategoriaWallet[]): EleccionCategoria {
+  return eleccionDeCategoriaId(id, indicePorId(categorias));
+}
 
 /** Id de la tarjeta "Sin categoría" (no es un uuid, así que no choca con una categoría real). */
 export const SIN_CATEGORIA_ID = 'sin';

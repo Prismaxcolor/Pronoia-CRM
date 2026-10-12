@@ -41,6 +41,10 @@ describe('trabajador', () => {
     expect(crearTrabajadorSchema.safeParse({ ...trabajador, pagoDiarioUsd: -1 }).success).toBe(false);
     expect(crearTrabajadorSchema.safeParse({ ...trabajador, pagoDiarioUsd: 10.123 }).success).toBe(false);
     expect(crearTrabajadorSchema.safeParse({ ...trabajador, pagoDiarioUsd: 12.5 }).success).toBe(true);
+    expect(crearTrabajadorSchema.safeParse({ ...trabajador, pagoDiarioBs: -1 }).success).toBe(false);
+    expect(crearTrabajadorSchema.safeParse({ ...trabajador, pagoDiarioBs: 10.123 }).success).toBe(false);
+    expect(crearTrabajadorSchema.parse({ ...trabajador, pagoDiarioBs: 3500.5 }).pagoDiarioBs).toBe(3500.5);
+    expect(crearTrabajadorSchema.parse(trabajador).pagoDiarioBs).toBe(0);
   });
   it('largos máximos', () => {
     expect(crearTrabajadorSchema.safeParse({ ...trabajador, direccion: 'x'.repeat(301) }).success).toBe(false);
@@ -95,7 +99,7 @@ describe('préstamo', () => {
 });
 
 describe('guardar nómina', () => {
-  const renglon = { trabajadorId: T1, monedaPago: 'USD', diasTrabajados: 5, montoBaseUsd: 20 };
+  const renglon = { trabajadorId: T1, diasTrabajados: 5, montoBaseUsd: 20 };
   const base = { tipo: 'OPERATIVO', semanaInicio: '2026-10-05', tasaBs: 40, version: null, lineas: [renglon] };
   it('válida; bonificación, descuentos, cuotas y nota por defecto', () => {
     const r = guardarNominaSchema.safeParse(base);
@@ -117,8 +121,23 @@ describe('guardar nómina', () => {
     expect(guardarNominaSchema.safeParse({ ...base, lineas: [{ ...renglon, diasTrabajados: -1 }] }).success).toBe(false);
     expect(guardarNominaSchema.safeParse({ ...base, lineas: [{ ...renglon, diasTrabajados: 4.5 }] }).success).toBe(true);
   });
-  it('moneda de pago solo USD o BS', () => {
-    expect(guardarNominaSchema.safeParse({ ...base, lineas: [{ ...renglon, monedaPago: 'EUR' }] }).success).toBe(false);
+  it('el sueldo en Bs es opcional (0 por defecto), no negativo y con 2 decimales como máximo', () => {
+    const r = guardarNominaSchema.parse({ ...base, lineas: [renglon] });
+    expect(r.lineas[0].montoBaseBs).toBe(0);
+    expect(guardarNominaSchema.safeParse({ ...base, lineas: [{ ...renglon, montoBaseBs: 350.5 }] }).success).toBe(true);
+    expect(guardarNominaSchema.safeParse({ ...base, lineas: [{ ...renglon, montoBaseBs: -1 }] }).success).toBe(false);
+    expect(guardarNominaSchema.safeParse({ ...base, lineas: [{ ...renglon, montoBaseBs: 1.234 }] }).success).toBe(false);
+  });
+  it('un renglón con monedaPago (pestaña con el frontend viejo) se rechaza con un mensaje claro, sin guardarlo como divisas', () => {
+    for (const valor of ['EUR', 'BS', 'USD', null]) {
+      const r = guardarNominaSchema.safeParse({ ...base, lineas: [{ ...renglon, monedaPago: valor }] });
+      expect(r.success).toBe(false);
+      if (!r.success) expect(r.error.issues[0].message).toBe('Recarga la página: la nómina cambió');
+    }
+  });
+  it('la tasa admite hasta 6 decimales', () => {
+    expect(guardarNominaSchema.safeParse({ ...base, tasaBs: 36.123456 }).success).toBe(true);
+    expect(guardarNominaSchema.safeParse({ ...base, tasaBs: 36.1234567 }).success).toBe(false);
   });
   it('al menos un renglón, sin trabajadores repetidos', () => {
     expect(guardarNominaSchema.safeParse({ ...base, lineas: [] }).success).toBe(false);
@@ -183,7 +202,7 @@ describe('cédula normalizada', () => {
 });
 
 describe('descuento de préstamo vs lo ganado', () => {
-  const renglon = { trabajadorId: T1, monedaPago: 'USD', diasTrabajados: 1, montoBaseUsd: 20 };
+  const renglon = { trabajadorId: T1, diasTrabajados: 1, montoBaseUsd: 20 };
   const nomina = (r: Record<string, unknown>) =>
     guardarNominaSchema.safeParse({ tipo: 'OPERATIVO', semanaInicio: '2026-10-05', tasaBs: 40, version: null, lineas: [{ ...renglon, ...r }] });
   it('las cuotas pueden llegar hasta lo ganado (bruto + bonificación)', () => {
@@ -194,6 +213,14 @@ describe('descuento de préstamo vs lo ganado', () => {
     const r = nomina({ cuotas: [{ prestamoId: P1, montoUsd: 20.01 }] });
     expect(r.success).toBe(false);
     expect(!r.success && r.error.issues[0].message).toMatch(/ganó/i);
+  });
+  it('el sueldo en Bs suma a lo ganado a la tasa de la nómina (400 Bs a 40 = 10 USD)', () => {
+    expect(nomina({ montoBaseBs: 400, cuotas: [{ prestamoId: P1, montoUsd: 30 }] }).success).toBe(true);
+    expect(nomina({ montoBaseBs: 400, cuotas: [{ prestamoId: P1, montoUsd: 30.01 }] }).success).toBe(false);
+  });
+  it('un trabajador con sueldo solo en Bs puede tener cuotas hasta su equivalente en USD', () => {
+    expect(nomina({ montoBaseUsd: 0, montoBaseBs: 400, cuotas: [{ prestamoId: P1, montoUsd: 10 }] }).success).toBe(true);
+    expect(nomina({ montoBaseUsd: 0, montoBaseBs: 400, cuotas: [{ prestamoId: P1, montoUsd: 10.01 }] }).success).toBe(false);
   });
   it('la suma de varias cuotas también cuenta', () => {
     const P2 = '44444444-4444-4444-8444-444444444444';
