@@ -93,7 +93,7 @@ describe('migration_nomina_pago_por_trabajador.sql', () => {
     expect(pagar).toContain('public.crear_movimiento_con_comision_bancaria(');
     expect(pagar).toMatch(/Indica si el pago en bolívares lleva comisión bancaria/);
     expect(pagar).toMatch(/update public\.movimientos set categoria_id = v_cat/);
-    expect(pagar).toMatch(/update public\.movimientos set comprobantes = to_jsonb(v_comp) where id = v_mov_id/);
+    expect(pagar).toMatch(/update public\.movimientos set comprobantes = to_jsonb\(v_comp\) where id = v_mov_id/);
     expect(pagar).toMatch(/cardinality\(v_comp\) > 10/);
   });
 
@@ -150,7 +150,7 @@ describe('migration_nomina_prestamo_desembolso.sql', () => {
   });
 
   it('guarda los comprobantes en movimientos.comprobantes y el egreso no lleva datos personales', () => {
-    expect(pagar).toMatch(/update public\.movimientos set comprobantes = to_jsonb(v_comp) where id = v_mov_id/);
+    expect(pagar).toMatch(/update public\.movimientos set comprobantes = to_jsonb\(v_comp\) where id = v_mov_id/);
     expect(pagar).toMatch(/desembolso/);
     expect(pagar).not.toMatch(/trabajador|cedula/);
   });
