@@ -39,6 +39,16 @@ export function cuentasDeBody(body: Cuerpo): CuentaRef[] {
     const id = texto(fila.bancaId);
     if (id) refs.push({ rol: 'Cuenta', id, monto: numero(fila.monto), moneda: texto(fila.moneda) });
   }
+  // Pagos de nómina: `pagos: [{ bancaId, moneda }]` (una cuenta por moneda) y `desembolso` del préstamo.
+  const pagosNomina = Array.isArray(body.pagos) ? body.pagos : [];
+  for (const p of pagosNomina) {
+    const fila = registro(p);
+    const id = texto(fila.bancaId);
+    if (id) refs.push({ rol: 'Cuenta', id, monto: numero(fila.monto), moneda: texto(fila.moneda) });
+  }
+  const desembolso = registro(body.desembolso);
+  const idDesembolso = texto(desembolso.bancaId);
+  if (idDesembolso) refs.push({ rol: 'Cuenta', id: idDesembolso, monto: numero(desembolso.monto), moneda: null });
   const origen = texto(body.bancaId);
   if (origen) {
     refs.push({
