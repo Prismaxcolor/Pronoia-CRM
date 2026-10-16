@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DIAS_MAX_SEMANA, esLunes, prestamoExcedeGanado, sumarCuotas } from '../utils/nomina-calculo.js';
 import { normalizarCedula } from '../utils/nomina-cedula.js';
+import { MAX_CUENTAS_POR_MONEDA, tieneDosDecimales } from '../utils/nomina-reparto.js';
 import { hoyNegocio } from '../utils/fecha-negocio.js';
 import { comprobanteUrlSchema } from './comprobantes.js';
 
@@ -210,18 +211,37 @@ const pagoCuentaSchema = z.object({
   bancaId: z.string().uuid('Selecciona una cuenta.'),
   /** Solo cuentas en Bs: si el pago lleva la comisión bancaria del 0.3 %. Sin valor por defecto. */
   llevaComision: z.boolean().optional(),
+  /**
+   * Reparto entre varias cuentas de la misma moneda: lo que paga ESTA cuenta, en la moneda del pago (2 decimales). Opcional si es
+   * la única cuenta de su moneda (paga todo). La suma por moneda la valida el servicio contra lo que se debe y la BD otra vez.
+   */
+  monto: z.number({ message: 'El monto de la cuenta debe ser un número.' })
+    .positive('El monto de cada cuenta debe ser mayor a cero.')
+    .refine(tieneDosDecimales, 'El monto de cada cuenta debe tener como máximo 2 decimales.')
+    .optional(),
 });
+
+type PagoCuenta = z.infer<typeof pagoCuentaSchema>;
+
+function cuentasPorMoneda(b: readonly PagoCuenta[], moneda: PagoCuenta['moneda']): PagoCuenta[] {
+  return b.filter(x => x.moneda === moneda);
+}
+
+/** Con varias cuentas en una moneda todas llevan monto; con una sola puede omitirse (paga todo). */
+const repartoCompleto = (b: readonly PagoCuenta[]): boolean =>
+  MONEDAS_PAGO.every(m => { const c = cuentasPorMoneda(b, m); return c.length <= 1 || c.every(x => x.monto !== undefined); });
 
 /**
  * Pagar una nómina cerrada desde el Wallet. La lista se llama `bancas` a propósito: exigirAccesoBancas lee de ahí las
- * cuentas sobre las que se escribe. Una cuenta por moneda de pago, como máximo dos.
+ * cuentas sobre las que se escribe. Una o varias cuentas por moneda (reparto con `monto`), sin repetir cuenta.
  */
 export const pagarNominaSchema = z.object({
   fecha: fechaNegocio.refine(v => v <= diaSiguienteNegocio(), 'La fecha del pago no puede ser posterior a mañana.'),
   referencia: textoOpcional(50),
-  bancas: z.array(pagoCuentaSchema).min(1, 'Elige la cuenta desde la que se paga.').max(MONEDAS_PAGO.length)
-    .refine(b => new Set(b.map(x => x.moneda)).size === b.length, 'Hay dos cuentas para la misma moneda.')
-    .refine(b => new Set(b.map(x => x.bancaId)).size === b.length, 'La misma cuenta no puede pagar dos monedas.'),
+  bancas: z.array(pagoCuentaSchema).min(1, 'Elige la cuenta desde la que se paga.').max(MONEDAS_PAGO.length * MAX_CUENTAS_POR_MONEDA)
+    .refine(b => MONEDAS_PAGO.every(m => cuentasPorMoneda(b, m).length <= MAX_CUENTAS_POR_MONEDA), `Máximo ${MAX_CUENTAS_POR_MONEDA} cuentas por moneda.`)
+    .refine(b => new Set(b.map(x => x.bancaId)).size === b.length, 'La misma cuenta no puede repetirse en el pago.')
+    .refine(repartoCompleto, 'Indica el monto de cada cuenta cuando repartes el pago de una moneda entre varias.'),
 });
 export type PagarNominaInput = z.infer<typeof pagarNominaSchema>;
 

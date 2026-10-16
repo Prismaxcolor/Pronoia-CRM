@@ -195,3 +195,13 @@ describe('línea de pago con equivalente', () => {
     expect(lineaDePago(p({ monedaPago: 'USD', monto: 100, tasaBinance: null, equivalenteBinanceUsd: null }))).toBe('USD 100,00 desde CAJA BS · MV-0012 · 09/10/2026');
   });
 });
+
+describe('armarCargo: pago repartido entre varias cuentas', () => {
+  it('varias filas de pago de la misma moneda siguen siendo UN movimiento del trabajador, con el monto total', () => {
+    const usd = { lineaId: 'l1', monedaPago: 'USD' as const, tasaBinance: null, tasaBinanceCapturada: null };
+    const c = armarCargo({ ...vacio, lineas: [linea()], pagos: [pago({ lineaId: 'l1' }), pago({ lineaId: 'l1' }), pago(usd), pago(usd)] });
+    expect(c.movimientos.filter(m => m.tipo === 'PAGO_BS')).toHaveLength(1);
+    expect(c.movimientos.filter(m => m.tipo === 'PAGO_DIVISAS')).toHaveLength(1);
+    expect(c.movimientos.find(m => m.tipo === 'PAGO_BS')).toMatchObject({ montoBs: 8750, equivalenteUsd: 10, estado: 'PAGADO' });
+  });
+});

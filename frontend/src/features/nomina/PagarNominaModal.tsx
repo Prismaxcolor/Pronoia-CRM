@@ -8,8 +8,9 @@ import { hoyNegocio } from '../../lib/fecha-negocio';
 import { ETIQUETA_TIPO_TRABAJADOR, formatearNumeroNomina, type Nomina } from '../../../../shared/types/nomina.js';
 import type { Banca } from '../../../../shared/types/banca.js';
 import PagarNominaGrupo from './PagarNominaGrupo';
+import type { EleccionPago } from './nomina-reparto';
 import {
-  bloqueoComisionPago, construirPayloadPago, formatearMontoPago, gruposDePago, validarPago, type EleccionPago, type Elecciones,
+  bloqueoComisionPago, construirPayloadPago, gruposDePago, resumenDebitos, validarPago, type Elecciones,
 } from './nomina-pago';
 
 interface Props {
@@ -20,7 +21,7 @@ interface Props {
 }
 
 type Categoria = { id: string; nombre: string } | null;
-const inputClass = 'w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400';
+const inputClass = 'w-full min-h-[44px] px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400';
 
 /** Aviso de la categoría con la que quedará el egreso en el Wallet (o de que no hay una asignada). */
 function AvisoCategoria({ categoria, tipo, cargando }: { categoria: Categoria; tipo: Nomina['tipo']; cargando: boolean }) {
@@ -32,14 +33,6 @@ function AvisoCategoria({ categoria, tipo, cargando }: { categoria: Categoria; t
       Puedes pagar igual y clasificarlo después desde Wallet.
     </p>
   );
-}
-
-/** Resumen de lo que se va a debitar de cada cuenta, para la confirmación final. */
-function resumenDebitos(nomina: Nomina, elecciones: Elecciones, bancas: readonly Banca[]): string {
-  return gruposDePago(nomina.totales).map(g => {
-    const banca = bancas.find(b => b.id === elecciones[g.moneda]?.bancaId);
-    return `• ${formatearMontoPago(g.moneda, g.monto)} de ${banca?.nombre ?? 'la cuenta elegida'}`;
-  }).join('\n');
 }
 
 /** Elegir la cuenta de cada moneda y pagar la nómina cerrada desde el Wallet. */
@@ -73,7 +66,7 @@ function PagarNominaModal({ nomina, onClose, onPagada }: Props) {
     if (problema) { setError(problema); return; }
     const ok = await confirmar({
       titulo: `Pagar ${formatearNumeroNomina(nomina.numero)} desde el Wallet`,
-      mensaje: `Se registrarán estos egresos en el Wallet:\n${resumenDebitos(nomina, elecciones, lista)}\n\nSi hay un error, se corrige anulando la nómina (se devuelve el dinero a las cuentas).`,
+      mensaje: `Se registrarán estos egresos en el Wallet:\n${resumenDebitos(grupos, elecciones, lista)}\n\nSi hay un error, se corrige anulando la nómina (se devuelve el dinero a las cuentas).`,
       confirmarLabel: 'Pagar nómina', variante: 'warning',
     });
     if (!ok) return;
@@ -84,7 +77,7 @@ function PagarNominaModal({ nomina, onClose, onPagada }: Props) {
     await onPagada(r.yaPagada, r.advertencia);
   };
 
-  const cambiar = (moneda: 'USD' | 'BS', eleccion: EleccionPago) => setElecciones(prev => ({ ...prev, [moneda]: eleccion }));
+  const cambiar = (moneda: 'USD' | 'BS', filas: EleccionPago[]) => setElecciones(prev => ({ ...prev, [moneda]: filas }));
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -95,14 +88,14 @@ function PagarNominaModal({ nomina, onClose, onPagada }: Props) {
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-text-secondary">
-            Elige la cuenta de la que sale cada pago. Se crea un egreso por moneda en el Wallet y queda enlazado a esta nómina.
+            Elige la cuenta de la que sale cada pago (o divídelo entre varias cuentas de la misma moneda). Se crea un egreso por cuenta en el Wallet y queda enlazado a esta nómina.
           </p>
           <AvisoCategoria categoria={categoria.valor} tipo={nomina.tipo} cargando={categoria.cargando} />
           {bancas === null && <p role="status" className="text-sm text-text-muted">Cargando cuentas…</p>}
           {bancas !== null && grupos.map(g => (
             <PagarNominaGrupo
-              key={g.moneda} grupo={g} bancas={lista} eleccion={elecciones[g.moneda]} comisionDisponible={comision.disponible}
-              estadoComision={comision.estado} onReintentarComision={comision.reintentar} onCambiar={e => cambiar(g.moneda, e)}
+              key={g.moneda} grupo={g} bancas={lista} elecciones={elecciones[g.moneda]} comisionDisponible={comision.disponible}
+              estadoComision={comision.estado} onReintentarComision={comision.reintentar} onCambiar={filas => cambiar(g.moneda, filas)}
             />
           ))}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -117,10 +110,10 @@ function PagarNominaModal({ nomina, onClose, onPagada }: Props) {
           </div>
           {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
+            <button type="button" onClick={onClose} className="flex-1 min-h-[44px] py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
             <button
               type="button" onClick={() => void pagar()} disabled={ocupado || bancas === null || categoria.cargando || problema !== null}
-              className="flex flex-1 items-center justify-center gap-1.5 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-1.5 min-h-[44px] py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
             >
               <Wallet size={16} aria-hidden="true" />{ocupado ? 'Pagando…' : 'Pagar nómina'}
             </button>

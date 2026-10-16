@@ -9,9 +9,10 @@ import { hoyNegocio } from '../../lib/fecha-negocio';
 import { formatearNumeroNomina, type LineaNomina, type Nomina } from '../../../../shared/types/nomina.js';
 import type { Banca } from '../../../../shared/types/banca.js';
 import PagarNominaGrupo from './PagarNominaGrupo';
+import type { EleccionPago } from './nomina-reparto';
 import { MENSAJE_COMPROBANTE_NO_SUBIDO, useComprobantesPago } from './useComprobantesPago';
 import {
-  bloqueoComisionPago, construirPayloadPago, formatearMontoPago, gruposDePagoLinea, validarPago, type EleccionPago, type Elecciones,
+  bloqueoComisionPago, construirPayloadPago, gruposDePagoLinea, resumenDebitos, validarPago, type Elecciones,
 } from './nomina-pago';
 
 interface Props {
@@ -22,14 +23,7 @@ interface Props {
   onPagado: (yaPagado: boolean, advertencia?: string) => Promise<void>;
 }
 
-const inputClass = 'w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400';
-
-function resumenDebitos(grupos: ReturnType<typeof gruposDePagoLinea>, elecciones: Elecciones, bancas: readonly Banca[]): string {
-  return grupos.map(g => {
-    const banca = bancas.find(b => b.id === elecciones[g.moneda]?.bancaId);
-    return `• ${formatearMontoPago(g.moneda, g.monto)} de ${banca?.nombre ?? 'la cuenta elegida'}`;
-  }).join('\n');
-}
+const inputClass = 'w-full min-h-[44px] px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400';
 
 /** Pago de UN trabajador de la nómina cerrada desde el Wallet: cuenta de cada moneda, fecha, referencia y comprobante opcional. */
 function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
@@ -77,7 +71,7 @@ function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
     await onPagado(r.yaPagada, r.advertencia);
   };
 
-  const cambiar = (moneda: 'USD' | 'BS', eleccion: EleccionPago) => setElecciones(prev => ({ ...prev, [moneda]: eleccion }));
+  const cambiar = (moneda: 'USD' | 'BS', filas: EleccionPago[]) => setElecciones(prev => ({ ...prev, [moneda]: filas }));
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -88,7 +82,7 @@ function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-text-secondary">
-            {formatearNumeroNomina(nomina.numero)}: elige la cuenta de la que sale el pago. Se crea un egreso por moneda en el Wallet y queda enlazado a este trabajador.
+            {formatearNumeroNomina(nomina.numero)}: elige la cuenta de la que sale el pago (o divídelo entre varias cuentas de la misma moneda). Se crea un egreso por cuenta en el Wallet y queda enlazado a este trabajador.
           </p>
           {!categoria.cargando && (
             <p className="text-xs text-text-secondary">
@@ -98,8 +92,8 @@ function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
           {bancas === null && <p role="status" className="text-sm text-text-muted">Cargando cuentas…</p>}
           {bancas !== null && grupos.map(g => (
             <PagarNominaGrupo
-              key={g.moneda} grupo={g} bancas={lista} eleccion={elecciones[g.moneda]} comisionDisponible={comision.disponible}
-              estadoComision={comision.estado} onReintentarComision={comision.reintentar} onCambiar={e => cambiar(g.moneda, e)}
+              key={g.moneda} grupo={g} bancas={lista} elecciones={elecciones[g.moneda]} comisionDisponible={comision.disponible}
+              estadoComision={comision.estado} onReintentarComision={comision.reintentar} onCambiar={filas => cambiar(g.moneda, filas)}
             />
           ))}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -116,10 +110,10 @@ function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
           {comprobantes.aviso && <p role="status" className="text-xs text-amber-700">{comprobantes.aviso}</p>}
           {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
+            <button type="button" onClick={onClose} className="flex-1 min-h-[44px] py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
             <button
               type="button" onClick={() => void pagar()} disabled={ocupado || bancas === null || categoria.cargando || problema !== null}
-              className="flex flex-1 items-center justify-center gap-1.5 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-1.5 min-h-[44px] py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
             >
               <Wallet size={16} aria-hidden="true" />{ocupado ? 'Pagando…' : 'Pagar'}
             </button>

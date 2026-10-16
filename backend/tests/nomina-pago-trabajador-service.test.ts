@@ -224,3 +224,59 @@ describe('pagarTrabajadorSchema', () => {
     expect(pagarTrabajadorSchema.safeParse({ fecha: '2026-10-09', bancas: [{ moneda: 'USD', bancaId: B_USD }], comprobantes: once }).success).toBe(false);
   });
 });
+
+describe('pagarTrabajadorNomina con reparto entre varias cuentas', () => {
+  const B_BINANCE = '99999999-9999-4999-8999-999999999999';
+  const B_VES2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  beforeEach(() => {
+    bd.bancas = [
+      ...bd.bancas,
+      { id: B_BINANCE, nombre: 'CAJA BINANCE PS', moneda: 'USD', archivada: false },
+      { id: B_VES2, nombre: 'BANCO BS 2', moneda: 'VES', archivada: false },
+    ];
+  });
+
+  it('60 USD = 40 de CAJA BINANCE PS + 20 de CAJA CHICA, y los Bs en dos cuentas: una sola llamada a la RPC', async () => {
+    const input = entrada([
+      { moneda: 'USD', bancaId: B_BINANCE, monto: 40 }, { moneda: 'USD', bancaId: B_USD, monto: 20 },
+      { moneda: 'BS', bancaId: B_VES, monto: 1200, llevaComision: true }, { moneda: 'BS', bancaId: B_VES2, monto: 800, llevaComision: false },
+    ]);
+    const r = await pagarTrabajadorNomina(NOMINA, T_LUIS, input, USUARIO);
+    expect('error' in r).toBe(false);
+    expect(bd.rpc).toHaveBeenCalledTimes(1);
+    const [nombre, args] = bd.rpc.mock.calls[0];
+    expect(nombre).toBe('nomina_pagar_trabajador');
+    expect(args.p_datos.pagos).toEqual([
+      { moneda: 'USD', bancaId: B_BINANCE, llevaComision: null, monto: 40 },
+      { moneda: 'USD', bancaId: B_USD, llevaComision: null, monto: 20 },
+      { moneda: 'BS', bancaId: B_VES, llevaComision: true, monto: 1200 },
+      { moneda: 'BS', bancaId: B_VES2, llevaComision: false, monto: 800 },
+    ]);
+  });
+
+  it('el total es el del renglón del trabajador, no el de la nómina: 100 no sirve para Luis (60)', async () => {
+    const input = entrada([
+      { moneda: 'USD', bancaId: B_BINANCE, monto: 70 }, { moneda: 'USD', bancaId: B_USD, monto: 30 }, { moneda: 'BS', bancaId: B_VES, llevaComision: false },
+    ]);
+    expect(await pagarTrabajadorNomina(NOMINA, T_LUIS, input, USUARIO)).toMatchObject({ codigo: 400, error: expect.stringMatching(/sumar exactamente 60\.00/) });
+    expect(bd.rpc).not.toHaveBeenCalled();
+  });
+
+  it('el saldo insuficiente de una de las cuentas lo responde la RPC (409) y no se mueve nada', async () => {
+    bd.rpcResultado = { data: null, error: { code: 'P0001', message: 'Saldo insuficiente en CAJA CHICA: disponible 5, se necesita 20.' } };
+    const input = entrada([
+      { moneda: 'USD', bancaId: B_BINANCE, monto: 40 }, { moneda: 'USD', bancaId: B_USD, monto: 20 }, { moneda: 'BS', bancaId: B_VES, llevaComision: false },
+    ]);
+    expect(await pagarTrabajadorNomina(NOMINA, T_LUIS, input, USUARIO)).toMatchObject({ codigo: 409, error: expect.stringContaining('Saldo insuficiente') });
+  });
+
+  it('el estado del trabajador muestra todas las cuentas usadas', async () => {
+    bd.pagosTabla = { data: [
+      filaPago(L_LUIS, 'USD', MOV_USD, { id: 'a', monto: 40, banca: { nombre: 'CAJA BINANCE PS' } }),
+      filaPago(L_LUIS, 'USD', MOV_BS, { id: 'b', monto: 20, banca: { nombre: 'CAJA CHICA' } }),
+    ], error: null };
+    const r = await obtenerNomina(NOMINA);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.nomina.pagos.map(p => [p.trabajadorId, p.bancaNombre, p.monto])).toEqual([[T_LUIS, 'CAJA BINANCE PS', 40], [T_LUIS, 'CAJA CHICA', 20]]);
+  });
+});

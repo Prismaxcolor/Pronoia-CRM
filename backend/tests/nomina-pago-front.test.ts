@@ -53,7 +53,7 @@ describe('cuentasDeGrupo', () => {
 
 describe('validarPago', () => {
   const grupos = gruposDePago(totales());
-  const ok: Elecciones = { USD: { bancaId: 'usd1', comision: '' }, BS: { bancaId: 'ves1', comision: 'no' } };
+  const ok: Elecciones = { USD: [{ bancaId: 'usd1', comision: '', monto: '' }], BS: [{ bancaId: 'ves1', comision: 'no', monto: '' }] };
 
   it('todo elegido: sin problemas', () => {
     expect(validarPago(grupos, ok, bancas, true, '2026-10-09')).toBeNull();
@@ -65,16 +65,16 @@ describe('validarPago', () => {
   });
 
   it('en Bs hay que responder la comisión cuando está disponible; sin la migración no se pregunta', () => {
-    const sinResponder: Elecciones = { ...ok, BS: { bancaId: 'ves1', comision: '' } };
+    const sinResponder: Elecciones = { ...ok, BS: [{ bancaId: 'ves1', comision: '', monto: '' }] };
     expect(validarPago(grupos, sinResponder, bancas, true, '2026-10-09')).toMatch(/comisi[oó]n/i);
     expect(validarPago(grupos, sinResponder, bancas, false, '2026-10-09')).toBeNull();
   });
 
   it('saldo insuficiente: en USD, y en Bs contando la comisión', () => {
-    expect(validarPago(grupos, { ...ok, USD: { bancaId: 'usd-poco', comision: '' } }, bancas, true, '2026-10-09')).toMatch(/saldo insuficiente/i);
+    expect(validarPago(grupos, { ...ok, USD: [{ bancaId: 'usd-poco', comision: '', monto: '' }] }, bancas, true, '2026-10-09')).toMatch(/saldo insuficiente/i);
     // 2000 Bs en una cuenta con 2000: sin comisión alcanza; con comisión (14) no.
-    expect(validarPago(grupos, { ...ok, BS: { bancaId: 'ves-justo', comision: 'no' } }, bancas, true, '2026-10-09')).toBeNull();
-    expect(validarPago(grupos, { ...ok, BS: { bancaId: 'ves-justo', comision: 'si' } }, bancas, true, '2026-10-09')).toMatch(/saldo insuficiente/i);
+    expect(validarPago(grupos, { ...ok, BS: [{ bancaId: 'ves-justo', comision: 'no', monto: '' }] }, bancas, true, '2026-10-09')).toBeNull();
+    expect(validarPago(grupos, { ...ok, BS: [{ bancaId: 'ves-justo', comision: 'si', monto: '' }] }, bancas, true, '2026-10-09')).toMatch(/saldo insuficiente/i);
   });
 
   it('exige fecha válida y algo por pagar', () => {
@@ -87,7 +87,7 @@ describe('construirPayloadPago', () => {
   const grupos = gruposDePago(totales());
 
   it('arma una cuenta por moneda; la comisión solo viaja en Bs donde se preguntó', () => {
-    const p = construirPayloadPago(grupos, { USD: { bancaId: 'usd1', comision: '' }, BS: { bancaId: 'ves1', comision: 'si' } }, bancas, true, '2026-10-09', '  REF-1 ');
+    const p = construirPayloadPago(grupos, { USD: [{ bancaId: 'usd1', comision: '', monto: '' }], BS: [{ bancaId: 'ves1', comision: 'si', monto: '' }] }, bancas, true, '2026-10-09', '  REF-1 ');
     expect(p).toEqual({
       fecha: '2026-10-09', referencia: 'REF-1',
       bancas: [{ moneda: 'USD', bancaId: 'usd1' }, { moneda: 'BS', bancaId: 'ves1', llevaComision: true }],
@@ -95,15 +95,15 @@ describe('construirPayloadPago', () => {
   });
 
   it('"No" viaja como false; sin la migración no viaja nada; referencia vacía = null', () => {
-    const conNo = construirPayloadPago(grupos, { USD: { bancaId: 'usd1', comision: '' }, BS: { bancaId: 'ves1', comision: 'no' } }, bancas, true, '2026-10-09', '');
+    const conNo = construirPayloadPago(grupos, { USD: [{ bancaId: 'usd1', comision: '', monto: '' }], BS: [{ bancaId: 'ves1', comision: 'no', monto: '' }] }, bancas, true, '2026-10-09', '');
     expect(conNo.bancas[1]).toEqual({ moneda: 'BS', bancaId: 'ves1', llevaComision: false });
     expect(conNo.referencia).toBeNull();
-    const sinMigracion = construirPayloadPago(grupos, { USD: { bancaId: 'usd1', comision: '' }, BS: { bancaId: 'ves1', comision: 'si' } }, bancas, false, '2026-10-09', '');
+    const sinMigracion = construirPayloadPago(grupos, { USD: [{ bancaId: 'usd1', comision: '', monto: '' }], BS: [{ bancaId: 'ves1', comision: 'si', monto: '' }] }, bancas, false, '2026-10-09', '');
     expect(sinMigracion.bancas[1]).toEqual({ moneda: 'BS', bancaId: 'ves1' });
   });
 
-  it('nunca incluye montos ni categoría (los decide el servidor)', () => {
-    const p = construirPayloadPago(grupos, { USD: { bancaId: 'usd1', comision: '' }, BS: { bancaId: 'ves1', comision: 'no' } }, bancas, true, '2026-10-09', '');
+  it('con una cuenta por moneda nunca incluye montos ni categoría (los decide el servidor)', () => {
+    const p = construirPayloadPago(grupos, { USD: [{ bancaId: 'usd1', comision: '', monto: '' }], BS: [{ bancaId: 'ves1', comision: 'no', monto: '' }] }, bancas, true, '2026-10-09', '');
     expect(JSON.stringify(p)).not.toMatch(/monto|categoria/i);
   });
 });
@@ -145,7 +145,7 @@ describe('estado del pago', () => {
 
 describe('bloqueoComisionPago', () => {
   const grupos = gruposDePago(totales());
-  const elecciones: Elecciones = { USD: { bancaId: 'usd1', comision: '' }, BS: { bancaId: 'ves1', comision: '' } };
+  const elecciones: Elecciones = { USD: [{ bancaId: 'usd1', comision: '', monto: '' }], BS: [{ bancaId: 'ves1', comision: '', monto: '' }] };
 
   it('mientras se verifica la comisión (o si falló) un pago en Bs no se puede enviar', () => {
     expect(bloqueoComisionPago(grupos, elecciones, bancas, 'cargando')).toMatch(/verificando/i);

@@ -45,7 +45,8 @@ function mapPago(row: Fila, trabajadorPorLinea: TrabajadorPorLinea): PagoNomina 
 export async function pagosDeNomina(
   nominaId: string, trabajadorPorLinea: TrabajadorPorLinea = new Map(),
 ): Promise<{ pagos: PagoNomina[] } | FalloNomina> {
-  const { data, error } = await supabaseAdmin.from('nomina_pagos').select(COLUMNAS_PAGO).eq('nomina_id', nominaId).order('moneda_pago');
+  const { data, error } = await supabaseAdmin.from('nomina_pagos').select(COLUMNAS_PAGO).eq('nomina_id', nominaId)
+    .order('moneda_pago').order('created_at').order('id');
   if (error) {
     if (esObjetoInexistente(error)) return { pagos: [] };
     return falloNomina(error, 'nomina_pagos_leer', 'No se pudo cargar el pago de la nómina.');

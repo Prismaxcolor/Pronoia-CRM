@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { falloNomina, type FalloNomina } from '../utils/nomina-errores.js';
 import {
-  MENSAJE_PAGO_NO_HABILITADO, monedasPorPagar, planificarPagos, type CuentaWallet, type PagoPlanificado,
+  MENSAJE_PAGO_NO_HABILITADO, montosPorPagar, planificarPagos, type CuentaWallet, type PagoPlanificado,
 } from '../utils/nomina-pago.js';
 import { esFuncionInexistente } from '../utils/transaccion-edicion.js';
 import { logger } from '../utils/logger.js';
@@ -105,7 +105,9 @@ export function datosSql(
     referencia: input.referencia ?? null,
     categoriaId,
     ...(input.comprobantes ? { comprobantes: input.comprobantes } : {}),
-    pagos: pagos.map(p => ({ moneda: p.moneda, bancaId: p.bancaId, llevaComision: p.llevaComision })),
+    pagos: pagos.map(p => ({
+      moneda: p.moneda, bancaId: p.bancaId, llevaComision: p.llevaComision, ...(p.monto === undefined ? {} : { monto: p.monto }),
+    })),
   };
 }
 
@@ -118,12 +120,13 @@ export function fallaRpc(
 
 /** Valida cuentas y comisión contra la BD y devuelve lo que se manda a la función SQL (que vuelve a validar todo). */
 export async function planDePago(nomina: Pick<Nomina, 'lineas'>, input: PagarNominaInput): Promise<{ pagos: PagoPlanificado[] } | FalloNomina> {
-  const requeridas = monedasPorPagar(nomina.lineas);
+  const montos = montosPorPagar(nomina.lineas);
+  const requeridas = (['USD', 'BS'] as const).filter(m => montos[m] > 0);
   if (requeridas.length === 0) return { error: 'La nómina no tiene montos por pagar.', codigo: 409 };
   const cuentas = await leerCuentas(input.bancas.map(b => b.bancaId));
   if ('error' in cuentas) return cuentas;
   const comisionDisponible = cuentas.cuentas.some(c => c.moneda === 'VES') ? await comisionBancariaDisponible() : false;
-  return planificarPagos(requeridas, input.bancas, cuentas.cuentas, comisionDisponible);
+  return planificarPagos(requeridas, input.bancas, cuentas.cuentas, comisionDisponible, montos);
 }
 
 export function estadoNoPagable(nomina: Nomina): FalloNomina | null {

@@ -345,3 +345,36 @@ Migraciones (sin aplicar, cada una con su `_ROLLBACK.sql`): `migration_nomina_su
 3. Un trabajador con las dos partes se paga de una vez (una cuenta por moneda); no se admite pagar solo una de las dos partes por separado.
 4. Primer pago individual => ya no se puede pagar la nómina completa (y al revés).
 5. «Por defecto marcado» el pago al crear un préstamo (si no se quiere, se desmarca).
+
+## Fase 5: pago repartido entre varias cuentas de la misma moneda
+
+Pedido del dueño: «pagar la nómina combinando CAJA BINANCE PS y CAJA CHICA PS». La parte a pagar de UNA moneda (divisas o Bs) se reparte entre
+varias cuentas de esa moneda, cada una con su monto. Aplica al pago por trabajador y al pago de toda la nómina, en USD y en Bs, con CUALQUIER
+cuenta vigente de la moneda a la que la persona tenga acceso de edición (no se filtra por nombre ni por tipo de cuenta). Migración (sin aplicar):
+`docs/migration_nomina_pago_repartido.sql` (+ `_ROLLBACK.sql`). Orden de despliegue: migración PRIMERO, código después. NO volver a ejecutar
+`migration_nomina_pago_por_trabajador.sql` después (recrearía los índices únicos antiguos).
+
+- **Contrato (compatible hacia atrás).** Cada elemento de `bancas` (HTTP) / `pagos` (RPC) puede traer `monto` (en la moneda del elemento, 2 decimales).
+  Un único elemento por moneda sin `monto` = pago completo, como antes. Con varios en la misma moneda: todos con `monto` > 0, cuentas distintas, máximo 5
+  por moneda y suma EXACTA (en centavos enteros) de la parte a pagar, que calcula el servidor/BD de los renglones. Se valida en tres capas con las mismas
+  reglas: zod (`pagarNominaSchema`), `planificarPagos` + `normalizarReparto` (`utils/nomina-reparto.ts`) y la RPC (`nomina_reparto_normalizar`).
+- **Un egreso por cuenta, una sola transacción.** `nomina_pagar` / `nomina_pagar_trabajador` crean un egreso por cuenta (cada uno con SU saldo comprobado,
+  SU comisión Bs Sí/No, su categoría y, en el pago individual, los comprobantes en cada egreso) y una fila de `nomina_pagos` por egreso. Si una cuenta no
+  tiene saldo, nada se mueve. Descripción del movimiento: `... · reparto 1/2`.
+- **Bs.** Cada fila en Bs congela su equivalente a la tasa Binance del día real del registro (`equivalente_binance_usd = round(monto / tasa, 2)`). El
+  `monto_usd` (equivalente del renglón) se reparte proporcional al monto de cada cuenta y la última toma el resto, así suma exacto. Una parte tan pequeña
+  que su equivalente sea 0 se rechaza.
+- **Índices.** `(nomina_id, moneda_pago, banca_id) where linea_id is null` y `(linea_id, moneda_pago, banca_id) where linea_id is not null`. El rollback se
+  niega si ya hay repartos.
+- **Anulación.** Sin cambios: `nomina_anular` ya anulaba TODAS las filas de `nomina_pagos`; el guardián de movimientos busca por `movimiento_id`.
+  El cargo del trabajador (`armarCargo`) toma la primera fila de la moneda: todas comparten anulación y tasa del día, y el monto sale del renglón.
+- **Pantalla.** Por moneda: selector de cuenta (todas las de la moneda menos las ya elegidas en otra fila), «Dividir en otra cuenta», monto por cuenta,
+  «Falta por asignar: X» / «Excede en X» en vivo, «Asignar el resto» y «Pagar» habilitado solo si la suma cuadra. La comisión Bs es por cuenta Bs.
+  Filas apiladas y controles de al menos 44 px. El estado de pago lista cada cuenta y monto. El aviso a Telegram (`cuentasDeBody`) ya leía `monto` de cada
+  elemento de `bancas[]`/`pagos[]`: sin cambios.
+
+### Supuestos a confirmar con Julio (fase 5)
+
+1. Máximo 5 cuentas por moneda.
+2. Los comprobantes/foto del pago del trabajador se adjuntan al egreso de CADA cuenta del reparto.
+3. En un reparto en Bs el equivalente en USD de cada cuenta es proporcional a su monto (diferencias de centavos entre filas se absorben en la última).

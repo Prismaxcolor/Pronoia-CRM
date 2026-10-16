@@ -303,3 +303,56 @@ describe('pagarNomina', () => {
     expect(JSON.stringify(r)).not.toContain('V12345678');
   });
 });
+
+describe('pagarNomina con reparto entre varias cuentas', () => {
+  const B_BINANCE = '99999999-9999-4999-8999-999999999999';
+  const B_VES2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  beforeEach(() => {
+    bd.bancas = [
+      ...bd.bancas,
+      { id: B_BINANCE, nombre: 'CAJA BINANCE PS', moneda: 'USD', archivada: false },
+      { id: B_VES2, nombre: 'BANCO BS 2', moneda: 'VES', archivada: false },
+    ];
+  });
+
+  it('manda a la RPC cada cuenta con su monto y su comisión; el total sale de la nómina, no del navegador', async () => {
+    const input = entrada([
+      { moneda: 'USD', bancaId: B_BINANCE, monto: 70 }, { moneda: 'USD', bancaId: B_USD, monto: 30 },
+      { moneda: 'BS', bancaId: B_VES, monto: 1500, llevaComision: true }, { moneda: 'BS', bancaId: B_VES2, monto: 500, llevaComision: false },
+    ]);
+    const r = await pagarNomina(NOMINA, input, USUARIO);
+    expect('error' in r).toBe(false);
+    expect(bd.rpc).toHaveBeenCalledTimes(1);
+    expect(bd.rpc.mock.calls[0][1].p_datos.pagos).toEqual([
+      { moneda: 'USD', bancaId: B_BINANCE, llevaComision: null, monto: 70 },
+      { moneda: 'USD', bancaId: B_USD, llevaComision: null, monto: 30 },
+      { moneda: 'BS', bancaId: B_VES, llevaComision: true, monto: 1500 },
+      { moneda: 'BS', bancaId: B_VES2, llevaComision: false, monto: 500 },
+    ]);
+  });
+
+  it('un reparto que no suma lo que se debe se rechaza (400) sin llamar a la BD', async () => {
+    const mal = entrada([{ moneda: 'USD', bancaId: B_BINANCE, monto: 70 }, { moneda: 'USD', bancaId: B_USD, monto: 20 }, { moneda: 'BS', bancaId: B_VES, llevaComision: false }]);
+    expect(await pagarNomina(NOMINA, mal, USUARIO)).toMatchObject({ codigo: 400, error: expect.stringMatching(/sumar exactamente 100\.00/) });
+    expect(bd.rpc).not.toHaveBeenCalled();
+  });
+
+  it('audita cada cuenta Bs sin comisión del reparto', async () => {
+    bd.rpcResultado = { data: { yaPagada: false, pagos: [
+      { movimientoId: MOV_BS, sinComision: true }, { movimientoId: MOV_USD, sinComision: true }, { movimientoId: MOV_USD, sinComision: false },
+    ] }, error: null };
+    const input = entrada([{ moneda: 'USD', bancaId: B_USD }, { moneda: 'BS', bancaId: B_VES, monto: 1500, llevaComision: false }, { moneda: 'BS', bancaId: B_VES2, monto: 500, llevaComision: false }]);
+    await pagarNomina(NOMINA, input, USUARIO);
+    expect(bd.auditoria).toHaveBeenCalledTimes(2);
+  });
+
+  it('el estado de pago lista cada cuenta del reparto con su monto', async () => {
+    bd.pagosTabla = { data: [
+      filaPago('USD', MOV_USD, { id: 'p1', monto: 70, monto_usd: 70, banca: { nombre: 'CAJA BINANCE PS' } }),
+      filaPago('USD', MOV_BS, { id: 'p2', monto: 30, monto_usd: 30, banca: { nombre: 'CAJA CHICA' } }),
+    ], error: null };
+    const r = await obtenerNomina(NOMINA);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.nomina.pagos.map(p => [p.bancaNombre, p.monto])).toEqual([['CAJA BINANCE PS', 70], ['CAJA CHICA', 30]]);
+  });
+});

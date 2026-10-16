@@ -10,8 +10,14 @@ import { formatearFecha, formatearNumero } from '../../lib/formato';
 import { bancasEditables } from '../usuarios/acceso-bancas';
 import { textoEquivalenteUsd } from './nomina-cargo';
 import {
-  bloqueoPorComision, llevaDeOpcion, ofrecerComision, planDeComision, type EstadoComision, type OpcionComision,
+  bloqueoPorComision, llevaDeOpcion, ofrecerComision, planDeComision, type EstadoComision,
 } from '../cochinito/comision-formulario';
+import {
+  ELECCION_VACIA, MAX_CUENTAS_POR_MONEDA, centavosDe, esReparto, filasDe, montoDeFila, resumenReparto, textoDiferencia,
+  type EleccionPago,
+} from './nomina-reparto';
+
+export { ELECCION_VACIA, type EleccionPago };
 
 /** Moneda de la cuenta del Wallet que corresponde a cada moneda de pago de la nómina. */
 export const MONEDA_CUENTA: Record<MonedaPago, string> = { USD: 'USD', BS: 'VES' };
@@ -26,20 +32,17 @@ export interface GrupoPago {
   cantidad: number;
 }
 
-/** Elección de la persona para un grupo: cuenta y, en cuentas Bs, si lleva comisión bancaria. */
-export interface EleccionPago {
-  bancaId: string;
-  comision: OpcionComision;
-}
-
-export type Elecciones = Readonly<Partial<Record<MonedaPago, EleccionPago>>>;
-
-export const ELECCION_VACIA: EleccionPago = { bancaId: '', comision: '' };
+/**
+ * Elección de la persona por moneda: una o varias cuentas (reparto). Cada cuenta lleva su monto cuando hay más de una y, en
+ * cuentas Bs, su propia comisión bancaria Sí/No.
+ */
+export type Elecciones = Readonly<Partial<Record<MonedaPago, readonly EleccionPago[]>>>;
 
 export interface PayloadPago {
   fecha: string;
   referencia: string | null;
-  bancas: Array<{ moneda: MonedaPago; bancaId: string; llevaComision?: boolean }>;
+  /** Una entrada por cuenta; `monto` solo viaja cuando la moneda se reparte entre varias cuentas. */
+  bancas: Array<{ moneda: MonedaPago; bancaId: string; llevaComision?: boolean; monto?: number }>;
 }
 
 /** Grupos con algo que pagar, a partir de los totales de la nómina (divisas primero). */
@@ -64,19 +67,47 @@ export function preguntaComision(banca: Pick<Banca, 'moneda'> | undefined, comis
   return banca !== undefined && ofrecerComision({ disponible: comisionDisponible, tipo: 'egreso', moneda: banca.moneda, mesaActiva: false });
 }
 
-function problemaDeGrupo(grupo: GrupoPago, eleccion: EleccionPago | undefined, bancas: readonly Banca[], comisionDisponible: boolean): string | null {
-  const banca = eleccion ? bancas.find(b => b.id === eleccion.bancaId) : undefined;
-  if (!eleccion || !banca) return `Elige la cuenta del pago en ${ETIQUETA_GRUPO[grupo.moneda].toLowerCase()}.`;
+function problemaDeFila(
+  fila: EleccionPago, centavos: number, bancas: readonly Banca[], comisionDisponible: boolean, moneda: MonedaPago,
+): string | null {
+  const banca = bancas.find(b => b.id === fila.bancaId);
+  if (!banca) return `Elige la cuenta del pago en ${ETIQUETA_GRUPO[moneda].toLowerCase()}.`;
   const plan = planDeComision({
-    ofrecida: preguntaComision(banca, comisionDisponible), tipo: 'egreso', moneda: banca.moneda, monto: grupo.monto,
-    opcion: eleccion.comision, saldo: banca.saldo,
+    ofrecida: preguntaComision(banca, comisionDisponible), tipo: 'egreso', moneda: banca.moneda, monto: centavos / 100,
+    opcion: fila.comision, saldo: banca.saldo,
   });
   if (!plan.ok) return plan.error;
   if (plan.totalDebitado > banca.saldo) return `Saldo insuficiente en ${banca.nombre}.`;
   return null;
 }
 
-/** Primer problema que impide enviar (cuenta sin elegir, comisión sin responder, saldo insuficiente); null si todo está listo. */
+/** Montos del reparto: cada cuenta con un monto válido mayor a cero y la suma exacta de lo que se debe. */
+function problemaDeMontos(grupo: GrupoPago, filas: readonly EleccionPago[]): string | null {
+  if (!esReparto(filas)) return null;
+  const total = centavosDe(grupo.monto);
+  for (const [i] of filas.entries()) {
+    const c = montoDeFila(filas, i, total);
+    if (c === null || c <= 0) return `Indica un monto mayor a cero para la cuenta ${i + 1} (${ETIQUETA_GRUPO[grupo.moneda]}).`;
+  }
+  const diferencia = textoDiferencia(grupo.moneda, resumenReparto(filas, total));
+  return diferencia ? `${ETIQUETA_GRUPO[grupo.moneda]}: ${diferencia.charAt(0).toLowerCase()}${diferencia.slice(1)}.` : null;
+}
+
+function problemaDeGrupo(
+  grupo: GrupoPago, elegidas: readonly EleccionPago[] | undefined, bancas: readonly Banca[], comisionDisponible: boolean,
+): string | null {
+  const filas = filasDe(elegidas);
+  if (filas.length > MAX_CUENTAS_POR_MONEDA) return `Máximo ${MAX_CUENTAS_POR_MONEDA} cuentas por moneda.`;
+  const total = centavosDe(grupo.monto);
+  for (const [i, fila] of filas.entries()) {
+    const problema = problemaDeFila(fila, montoDeFila(filas, i, total) ?? 0, bancas, comisionDisponible, grupo.moneda);
+    if (problema) return problema;
+  }
+  if (new Set(filas.map(f => f.bancaId)).size !== filas.length) return 'La misma cuenta no puede repetirse dentro del reparto.';
+  return problemaDeMontos(grupo, filas);
+}
+
+/** Primer problema que impide enviar (cuenta sin elegir, monto que no cuadra, comisión sin responder, saldo insuficiente); null si todo está listo. */
 export function validarPago(
   grupos: readonly GrupoPago[],
   elecciones: Elecciones,
@@ -93,7 +124,10 @@ export function validarPago(
   return null;
 }
 
-/** Cuerpo del POST /nominas/:id/pagar. La comisión solo viaja en cuentas Bs donde se preguntó. */
+/**
+ * Cuerpo del POST /nominas/:id/pagar. La comisión solo viaja en cuentas Bs donde se preguntó; el monto solo en un reparto
+ * (con una cuenta el servidor calcula el total).
+ */
 export function construirPayloadPago(
   grupos: readonly GrupoPago[],
   elecciones: Elecciones,
@@ -105,13 +139,32 @@ export function construirPayloadPago(
   return {
     fecha,
     referencia: referencia.trim() === '' ? null : referencia.trim(),
-    bancas: grupos.map(g => {
-      const eleccion = elecciones[g.moneda] ?? ELECCION_VACIA;
-      const banca = bancas.find(b => b.id === eleccion.bancaId);
-      const lleva = preguntaComision(banca, comisionDisponible) ? llevaDeOpcion(eleccion.comision) : null;
-      return { moneda: g.moneda, bancaId: eleccion.bancaId, ...(lleva === null ? {} : { llevaComision: lleva }) };
+    bancas: grupos.flatMap(g => {
+      const filas = filasDe(elecciones[g.moneda]);
+      return filas.map((fila, i) => {
+        const banca = bancas.find(b => b.id === fila.bancaId);
+        const lleva = preguntaComision(banca, comisionDisponible) ? llevaDeOpcion(fila.comision) : null;
+        const centavos = montoDeFila(filas, i, centavosDe(g.monto));
+        return {
+          moneda: g.moneda, bancaId: fila.bancaId,
+          ...(esReparto(filas) && centavos !== null ? { monto: centavos / 100 } : {}),
+          ...(lleva === null ? {} : { llevaComision: lleva }),
+        };
+      });
     }),
   };
+}
+
+/** Una línea por cuenta con lo que sale de ella ("• USD 20,00 de CAJA BINANCE PS"), para la confirmación final. */
+export function resumenDebitos(grupos: readonly GrupoPago[], elecciones: Elecciones, bancas: readonly Banca[]): string {
+  return grupos.flatMap(g => {
+    const filas = filasDe(elecciones[g.moneda]);
+    return filas.map((fila, i) => {
+      const banca = bancas.find(b => b.id === fila.bancaId);
+      const centavos = montoDeFila(filas, i, centavosDe(g.monto)) ?? 0;
+      return `• ${formatearMontoPago(g.moneda, centavos / 100)} de ${banca?.nombre ?? 'la cuenta elegida'}`;
+    });
+  }).join('\n');
 }
 
 /** Cuerpo del POST /nominas/:id/trabajadores/:trabajadorId/pagar: lo mismo que el pago de la nómina más los comprobantes. */
@@ -155,9 +208,11 @@ export function bloqueoComisionPago(
   estado: EstadoComision,
 ): string | null {
   for (const grupo of grupos) {
-    const banca = bancas.find(b => b.id === elecciones[grupo.moneda]?.bancaId);
-    const bloqueo = banca ? bloqueoPorComision({ estado, tipo: 'egreso', moneda: banca.moneda, mesaActiva: false }) : null;
-    if (bloqueo) return bloqueo;
+    for (const fila of filasDe(elecciones[grupo.moneda])) {
+      const banca = bancas.find(b => b.id === fila.bancaId);
+      const bloqueo = banca ? bloqueoPorComision({ estado, tipo: 'egreso', moneda: banca.moneda, mesaActiva: false }) : null;
+      if (bloqueo) return bloqueo;
+    }
   }
   return null;
 }

@@ -4,6 +4,7 @@
  */
 import { aplicaComisionBancaria } from './comision-bancaria.js';
 import type { MonedaPago } from './nomina-calculo.js';
+import { aCentavos, normalizarReparto, type EntradaReparto } from './nomina-reparto.js';
 
 export const MENSAJE_COMISION_PENDIENTE =
   'La comisión bancaria aún no está habilitada en la base de datos (falta aplicar migration_wallet_comision_bancaria.sql).';
@@ -33,13 +34,20 @@ export interface PagoSolicitado {
   moneda: MonedaPago;
   bancaId: string;
   llevaComision?: boolean;
+  /** Monto de esta cuenta en la moneda del pago (reparto entre varias cuentas); sin él, la cuenta paga todo. */
+  monto?: number;
 }
+
+/** Lo que se paga en cada moneda, en centavos; 0 = nada que pagar en esa moneda. */
+export type MontosPorMoneda = Readonly<Record<MonedaPago, number>>;
 
 /** Lo que recibe la función SQL por cada moneda: `llevaComision` es null cuando no aplica o no se ofrece. */
 export interface PagoPlanificado {
   moneda: MonedaPago;
   bancaId: string;
   llevaComision: boolean | null;
+  /** Monto de la cuenta en su moneda, ya validado; solo cuando el pago trae reparto (con una cuenta lo calcula la BD). */
+  monto?: number;
 }
 
 export interface FalloPlan {
@@ -47,15 +55,18 @@ export interface FalloPlan {
   codigo: number;
 }
 
-/**
- * Monedas con algo que pagar: divisas si la suma de lo que se paga en USD es mayor a cero, bolívares si la de Bs lo es.
- * Un trabajador con las dos partes aporta a las dos monedas.
- */
+/** Lo que se paga en cada moneda, en centavos. Un trabajador con las dos partes aporta a las dos monedas. */
+export function montosPorPagar(lineas: ReadonlyArray<{ pagarUsd: number; pagarBs: number | null }>): MontosPorMoneda {
+  return {
+    USD: lineas.reduce((s, l) => s + aCentavos(l.pagarUsd), 0),
+    BS: lineas.reduce((s, l) => s + aCentavos(l.pagarBs ?? 0), 0),
+  };
+}
+
+/** Monedas con algo que pagar: divisas si la suma de lo que se paga en USD es mayor a cero, bolívares si la de Bs lo es. */
 export function monedasPorPagar(lineas: ReadonlyArray<{ pagarUsd: number; pagarBs: number | null }>): MonedaPago[] {
-  const centavos = (n: number): number => Math.round(n * 100);
-  const totalUsd = lineas.reduce((s, l) => s + centavos(l.pagarUsd), 0);
-  const totalBs = lineas.reduce((s, l) => s + centavos(l.pagarBs ?? 0), 0);
-  return [...(totalUsd > 0 ? ['USD' as const] : []), ...(totalBs > 0 ? ['BS' as const] : [])];
+  const montos = montosPorPagar(lineas);
+  return [...(montos.USD > 0 ? ['USD' as const] : []), ...(montos.BS > 0 ? ['BS' as const] : [])];
 }
 
 function validarCuenta(pago: PagoSolicitado, cuenta: CuentaWallet | undefined): FalloPlan | null {
@@ -85,25 +96,50 @@ export function comisionDe(
   return { llevaComision: pago.llevaComision };
 }
 
-/** Valida que haya una cuenta (de la moneda correcta, vigente) por cada moneda a pagar y resuelve la comisión de cada una. */
+function planDeCuenta(pago: PagoSolicitado, cuentas: readonly CuentaWallet[], comisionDisponible: boolean): PagoPlanificado | FalloPlan {
+  const cuenta = cuentas.find(c => c.id === pago.bancaId);
+  const invalida = validarCuenta(pago, cuenta);
+  if (invalida) return invalida;
+  const comision = comisionDe(pago, cuenta!, comisionDisponible);
+  if ('error' in comision) return comision;
+  return {
+    moneda: pago.moneda, bancaId: pago.bancaId, llevaComision: comision.llevaComision,
+    ...(pago.monto === undefined ? {} : { monto: pago.monto }),
+  };
+}
+
+/** Cuentas de una moneda (en el orden recibido) con el reparto ya validado contra lo que se debe pagar en esa moneda. */
+function repartoDeMoneda(moneda: MonedaPago, pagos: readonly PagoSolicitado[], totalCentavos: number): FalloPlan | null {
+  const entradas: EntradaReparto[] = pagos.filter(p => p.moneda === moneda).map(p => ({ bancaId: p.bancaId, monto: p.monto }));
+  const r = normalizarReparto(entradas, totalCentavos);
+  return 'error' in r ? { error: `${ETIQUETA_MONEDA[moneda]}: ${r.error}`, codigo: r.codigo } : null;
+}
+
+/**
+ * Valida que cada moneda a pagar tenga una o varias cuentas (de la moneda correcta, vigentes, sin repetirse) cuyo reparto sume
+ * exactamente lo que se debe pagar, y resuelve la comisión de cada cuenta. Cualquier cuenta de la moneda sirve: no se
+ * filtra por nombre ni por tipo de cuenta.
+ */
 export function planificarPagos(
   requeridas: readonly MonedaPago[],
   pagos: readonly PagoSolicitado[],
   cuentas: readonly CuentaWallet[],
   comisionDisponible: boolean,
+  montos: MontosPorMoneda,
 ): { pagos: PagoPlanificado[] } | FalloPlan {
-  const enviadas = pagos.map(p => p.moneda).sort().join(',');
+  const enviadas = [...new Set(pagos.map(p => p.moneda))].sort().join(',');
   if (enviadas !== [...requeridas].sort().join(',')) {
     return { error: `Elige una cuenta para cada moneda a pagar (${requeridas.map(m => ETIQUETA_MONEDA[m]).join(' y ')}).`, codigo: 400 };
   }
+  for (const moneda of requeridas) {
+    const problema = repartoDeMoneda(moneda, pagos, montos[moneda]);
+    if (problema) return problema;
+  }
   const resultado: PagoPlanificado[] = [];
   for (const pago of pagos) {
-    const cuenta = cuentas.find(c => c.id === pago.bancaId);
-    const invalida = validarCuenta(pago, cuenta);
-    if (invalida) return invalida;
-    const comision = comisionDe(pago, cuenta!, comisionDisponible);
-    if ('error' in comision) return comision;
-    resultado.push({ moneda: pago.moneda, bancaId: pago.bancaId, llevaComision: comision.llevaComision });
+    const plan = planDeCuenta(pago, cuentas, comisionDisponible);
+    if ('error' in plan) return plan;
+    resultado.push(plan);
   }
   return { pagos: resultado };
 }
