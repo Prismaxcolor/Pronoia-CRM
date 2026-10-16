@@ -248,7 +248,7 @@ begin
     end if;
     -- Comprobante opcional: va en el egreso principal (no en el cargo de comisión).
     if cardinality(v_comp) > 0 then
-      update public.movimientos set comprobantes = v_comp where id = v_mov_id;
+      update public.movimientos set comprobantes = to_jsonb(v_comp) where id = v_mov_id;
     end if;
 
     insert into public.nomina_pagos (nomina_id, linea_id, moneda_pago, banca_id, movimiento_id, monto, monto_usd, cantidad, fecha, referencia,

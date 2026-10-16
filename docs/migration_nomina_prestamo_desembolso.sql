@@ -194,7 +194,7 @@ begin
     end if;
   end if;
   if cardinality(v_comp) > 0 then
-    update public.movimientos set comprobantes = v_comp where id = v_mov_id;
+    update public.movimientos set comprobantes = to_jsonb(v_comp) where id = v_mov_id;
   end if;
 
   insert into public.nomina_prestamo_pagos (prestamo_id, banca_id, movimiento_id, moneda, monto, monto_usd, tasa_bs, fecha, referencia, pagado_por)
