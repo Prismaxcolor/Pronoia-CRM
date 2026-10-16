@@ -1,5 +1,9 @@
 import { apiFetch } from './api-client';
-import type { Cliente } from '@shared/types/index.js';
+import { altaMaestroF4, fotosYaSubidas, provisionalesDeMaestro } from './maestros-cola';
+import { offlineHabilitado } from '../lib/offline/sesion';
+import type { FotoLocal } from '../lib/foto-picker';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
+import type { Cliente, TipoVentaCliente } from '@shared/types/index.js';
 
 interface ClienteApi {
   id: string;
@@ -12,35 +16,49 @@ interface ClienteApi {
   activo: boolean;
   creadoPor: string;
   creadoEn: string;
+  fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
+  tipoVenta?: TipoVentaCliente | null;
 }
 
 function mapApi(api: ClienteApi): Cliente {
-  return { ...api };
+  return { ...api, tipoVenta: api.tipoVenta ?? 'nacional' };
 }
 
 export interface ClienteInput {
   nombre: string;
+  tipoVenta: TipoVentaCliente;
   identificacion?: string | null;
   email?: string | null;
   telefono?: string | null;
   direccion?: string | null;
   notas?: string | null;
+  fotos?: string[];
 }
 
 export async function obtenerClientes(): Promise<Cliente[]> {
   try {
-    const { clientes } = await apiFetch<{ clientes: ClienteApi[] }>('/api/clientes');
-    return clientes.map(mapApi);
+    const { datos } = await obtenerCatalogo('clientes', async () => {
+      const { clientes } = await apiFetch<{ clientes: ClienteApi[] }>('/api/clientes');
+      return clientes.map(mapApi);
+    });
+    return [...datos, ...(await provisionalesDeMaestro<Cliente>('cliente'))];
   } catch {
-    return [];
+    return provisionalesDeMaestro<Cliente>('cliente');
   }
 }
 
 export async function crearCliente(
-  cliente: ClienteInput
-): Promise<{ cliente: Cliente } | { error: string }> {
+  cliente: ClienteInput,
+  fotosLocales?: FotoLocal[]
+): Promise<{ cliente: Cliente; enCola?: true } | { error: string }> {
+  if (offlineHabilitado()) {
+    const { fotos, ...datos } = cliente;
+    const r = await altaMaestroF4<ClienteApi>('cliente', datos, fotosLocales ?? fotosYaSubidas(fotos));
+    if ('error' in r) return r;
+    return { cliente: mapApi(r.entidad), ...(r.enCola ? { enCola: true as const } : {}) };
+  }
   try {
     const { cliente: creado } = await apiFetch<{ cliente: ClienteApi }>('/api/clientes', {
       method: 'POST',

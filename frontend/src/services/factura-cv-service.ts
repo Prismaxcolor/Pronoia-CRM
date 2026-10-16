@@ -1,6 +1,12 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
+import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
+import type { EstadoFacturaDerivado } from '../lib/estado-factura';
 
 export type TipoFactura = 'compra' | 'venta';
+/** 'emitida' = sin pagos; 'pendiente' = con pagos y saldo; 'pagada' = sin saldo (ver lib/estado-factura.ts).
+ *  'anulada': se conserva para historial, pero no es deuda ni se puede pagar. */
+export type EstadoFacturaCV = EstadoFacturaDerivado;
 
 export interface FacturaItemCV {
   id: string;
@@ -9,13 +15,15 @@ export interface FacturaItemCV {
   peso: number;
   precioUnitario: number;
   subtotal: number;
+  /** Kg descontados al facturar (0 salvo en compra). `peso` ya viene neto de esto. */
+  descuentoKg: number;
 }
 
 export interface FacturaCV {
   id: string;
-  /** Correlativo automático. Solo en compras (null en ventas). */
+  /** Correlativo automático, en ambos tipos de factura. */
   numero: number | null;
-  /** Código de control formateado ("Compra 0001"). Solo en compras. */
+  /** Código de control formateado ("C-0001" / "V-0001"). */
   codigo: string | null;
   tipo: TipoFactura;
   entidadId: string | null;
@@ -27,8 +35,11 @@ export interface FacturaCV {
   montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFacturaCV;
   createdAt: string;
+  /** Solo en el detalle: quién la creó y la última edición según auditoría. */
+  registradoPorNombre?: string | null;
+  ultimaEdicion?: { nombre: string; en: string } | null;
 }
 
 /**
@@ -48,6 +59,7 @@ export function consolidarItems(items: FacturaItemCV[]): FacturaItemCV[] {
     if (ex) {
       ex.peso += it.peso;
       ex.subtotal += it.subtotal;
+      ex.descuentoKg += it.descuentoKg;
       ex.precioUnitario = ex.peso > 0 ? ex.subtotal / ex.peso : ex.precioUnitario;
     } else {
       mapa.set(clave, { ...it });
@@ -60,6 +72,8 @@ export interface CrearFacturaItemInput {
   productoId: string;
   peso: number;
   precioUnitario: number;
+  /** Solo tiene efecto en factura de compra. */
+  descuentoKg?: number;
 }
 
 export interface CrearFacturaInput {
@@ -93,7 +107,9 @@ export async function obtenerFacturas(
   if (filtros.productoId) params.set('productoId', filtros.productoId);
   const qs = params.toString();
   try {
-    const { facturas } = await apiFetch<{ facturas: FacturaCV[] }>(`${base(tipo)}${qs ? `?${qs}` : ''}`);
+    const { facturas } = await leerGet<{ facturas: FacturaCV[] }>(`${base(tipo)}${qs ? `?${qs}` : ''}`, {
+      recortar: d => recortarCampo(d, 'facturas', f => ultimasFilas(f as FacturaCV[], LIMITES_CACHE.maxFacturas, x => x.createdAt)),
+    });
     return facturas;
   } catch {
     return [];
@@ -102,7 +118,7 @@ export async function obtenerFacturas(
 
 export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<FacturaCV | null> {
   try {
-    const { factura } = await apiFetch<{ factura: FacturaCV }>(`${base(tipo)}/${id}`);
+    const { factura } = await leerGet<{ factura: FacturaCV }>(`${base(tipo)}/${id}`);
     return factura;
   } catch {
     return null;

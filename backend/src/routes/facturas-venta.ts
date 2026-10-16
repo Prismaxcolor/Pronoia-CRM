@@ -33,7 +33,7 @@ router.post(
   requirePermiso('facturacion', 'crear'),
   validateBody(crearFacturaSchema),
   async (req, res) => {
-    const result = await crearFactura('venta', req.body);
+    const result = await crearFactura('venta', req.body, req.user!.sub);
     if ('error' in result) {
       res.status(400).json(result);
       return;

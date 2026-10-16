@@ -1,4 +1,7 @@
 import { apiFetch } from './api-client';
+import { leerGet } from './lectura-service';
+import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import type { Banca, Movimiento, TipoBanca } from '@shared/types/index.js';
 
 export interface ObtenerBancasOpts {
@@ -8,8 +11,14 @@ export interface ObtenerBancasOpts {
 export async function obtenerBancas(opts: ObtenerBancasOpts = {}): Promise<Banca[]> {
   try {
     const query = opts.incluirArchivadas ? '?incluirArchivadas=true' : '';
-    const { bancas } = await apiFetch<{ bancas: Banca[] }>(`/api/cochinito/bancas${query}`);
-    return bancas;
+    const { datos } = await obtenerCatalogo(
+      opts.incluirArchivadas ? 'bancas:todas' : 'bancas:activas',
+      async () => {
+        const { bancas } = await apiFetch<{ bancas: Banca[] }>(`/api/cochinito/bancas${query}`);
+        return bancas;
+      },
+    );
+    return datos;
   } catch {
     return [];
   }
@@ -17,7 +26,9 @@ export async function obtenerBancas(opts: ObtenerBancasOpts = {}): Promise<Banca
 
 export async function obtenerMovimientos(): Promise<Movimiento[]> {
   try {
-    const { movimientos } = await apiFetch<{ movimientos: Movimiento[] }>('/api/cochinito/movimientos');
+    const { movimientos } = await leerGet<{ movimientos: Movimiento[] }>('/api/cochinito/movimientos', {
+      recortar: d => recortarCampo(d, 'movimientos', f => ultimasFilas(f as Movimiento[], LIMITES_CACHE.maxMovimientos, m => m.fecha)),
+    });
     return movimientos;
   } catch {
     return [];
@@ -29,6 +40,12 @@ export interface CrearBancaInput {
   tipo: TipoBanca;
   moneda: string;
   descripcion: string;
+  /** Clave de la paleta; null/omitido = sin color. */
+  color?: string | null;
+  /** URL de la imagen subida con subirImagenBanca; null/omitido = sin imagen. */
+  imagenUrl?: string | null;
+  /** Chat de Telegram de los avisos de la banca; null/omitido = grupo general de cajas. */
+  telegramChatId?: string | null;
 }
 
 /** Crea una banca con saldo 0. Para establecer saldo inicial se debe registrar un ingreso. */
@@ -49,6 +66,12 @@ export interface ActualizarBancaInput {
   nombre?: string;
   tipo?: TipoBanca;
   descripcion?: string;
+  /** null quita el color. */
+  color?: string | null;
+  /** null quita la imagen; omitido la deja como está. */
+  imagenUrl?: string | null;
+  /** null vuelve al grupo general de cajas. */
+  telegramChatId?: string | null;
 }
 
 export async function actualizarBanca(id: string, campos: ActualizarBancaInput): Promise<boolean> {
@@ -89,9 +112,13 @@ export async function desarchivarBanca(id: string): Promise<boolean> {
 }
 
 export interface CrearMovimientoInput {
-  tipo: 'ingreso' | 'egreso';
+  tipo: 'ingreso' | 'egreso' | 'transferencia';
   bancaId: string;
+  /** Solo transferencia: banca que recibe los fondos. */
+  bancaDestinoId?: string | null;
   monto: number;
+  /** Solo transferencia entre monedas distintas: lo que entra a la banca destino. */
+  montoDestino?: number | null;
   moneda: string;
   descripcion: string;
   referencia: string;
@@ -101,9 +128,17 @@ export interface CrearMovimientoInput {
   proveedorId?: string | null;
   /** Cliente del que se cobra (ingreso). Alimenta su estado de cuenta. */
   clienteId?: string | null;
+  /** URLs de la imagen del comprobante (opcional), subidas con subirComprobantePago. */
+  comprobantes?: string[];
+  /** Categoría o subcategoría del Wallet (solo ingreso y egreso). null/omitido = sin categoría. */
+  categoriaId?: string | null;
+  /** Egreso o transferencia desde una cuenta en Bs: si lleva la comisión bancaria del 0.3% (mínimo 14 Bs). */
+  llevaComision?: boolean;
+  /** UUID del intento: un doble clic o reintento con el mismo id no registra el movimiento (ni su comisión) dos veces. */
+  clientRequestId?: string;
 }
 
-/** Crea un movimiento de ingreso o egreso. El trigger SQL ajusta el saldo. */
+/** Crea un movimiento de ingreso, egreso o transferencia. El trigger SQL ajusta el saldo. */
 export async function crearMovimiento(input: CrearMovimientoInput): Promise<Movimiento | null> {
   try {
     const { movimiento } = await apiFetch<{ movimiento: Movimiento }>('/api/cochinito/movimientos', {
@@ -113,6 +148,29 @@ export async function crearMovimiento(input: CrearMovimientoInput): Promise<Movi
     return movimiento;
   } catch (err) {
     console.error('Error al crear movimiento:', err);
+    return null;
+  }
+}
+
+/** Movimiento con los nombres ya resueltos (bancas, tercero, quién lo registró y quién lo anuló). */
+export interface DetalleMovimiento {
+  movimiento: Movimiento;
+  bancaOrigenNombre: string | null;
+  bancaDestinoNombre: string | null;
+  /** Solo viene con nombre si el usuario puede ver proveedores / clientes. */
+  proveedorNombre: string | null;
+  clienteNombre: string | null;
+  /** Cambista de una transferencia con mesa de cambio; null si no aplica o no hay permiso de ver la mesa. */
+  cambistaNombre: string | null;
+  registradoPorNombre: string | null;
+  anuladoPorNombre: string | null;
+}
+
+/** Detalle de un movimiento; null si no existe, no hay permiso o falla la red. */
+export async function obtenerDetalleMovimiento(id: string): Promise<DetalleMovimiento | null> {
+  try {
+    return await apiFetch<DetalleMovimiento>(`/api/cochinito/movimientos/${id}`);
+  } catch {
     return null;
   }
 }

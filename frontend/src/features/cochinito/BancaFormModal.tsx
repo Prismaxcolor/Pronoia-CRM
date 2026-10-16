@@ -1,6 +1,14 @@
 import { useState } from 'react';
-import { X, Building2, Globe, Coins, Wallet } from 'lucide-react';
+import { X, Building2, Globe, Coins, Wallet, Check, Ban } from 'lucide-react';
 import { crearBanca, actualizarBanca } from '../../services/banca-service';
+import { PALETA_BANCAS, hexDeColorGuardado } from '../../lib/color-banca';
+import { useAuth } from '../../hooks/use-auth-context';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import { subirImagenBanca } from '../../services/storage-service';
+import { puedeEditarBanca } from '../usuarios/acceso-bancas';
+import { errorImagenBanca, imagenParaGuardar } from './imagen-banca';
+import { esChatIdTelegramValido, gruposTelegramConocidos, normalizarChatIdTelegram } from './telegram-banca';
 import type { Banca, TipoBanca } from '@shared/types/index.js';
 
 interface TipoOption {
@@ -19,18 +27,128 @@ const TIPOS: TipoOption[] = [
 
 interface Props {
   banca?: Banca | null;
+  /** Bancas existentes: de ahí salen los grupos de Telegram ya usados, para reutilizarlos. */
+  bancas?: Banca[];
   onClose: () => void;
   onGuardado: (modo: 'crear' | 'editar') => void;
 }
 
-function BancaFormModal({ banca, onClose, onGuardado }: Props) {
+const BOTON_COLOR = 'relative flex h-10 w-10 items-center justify-center rounded-full border-2 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2';
+
+/** Selector de color de la banca: 12 colores de la paleta + "Sin color". Botones de 40 px (táctiles); el elegido lleva una marca. */
+function SelectorColor({ valor, onCambiar }: { valor: string | null; onCambiar: (c: string | null) => void }) {
+  const hexActual = hexDeColorGuardado(valor);
+  return (
+    <div role="radiogroup" aria-label="Color de la banca">
+      <p className="mb-2 text-xs font-medium text-text-secondary">Color <span className="text-text-muted">(opcional)</span></p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!hexActual}
+          aria-label="Sin color"
+          title="Sin color"
+          onClick={() => onCambiar(null)}
+          className={`${BOTON_COLOR} bg-surface text-text-secondary ${!hexActual ? 'border-text-primary' : 'border-border'}`}
+        >
+          <Ban size={16} aria-hidden="true" />
+        </button>
+        {PALETA_BANCAS.map(c => {
+          const activo = valor === c.clave;
+          return (
+            <button
+              key={c.clave}
+              type="button"
+              role="radio"
+              aria-checked={activo}
+              aria-label={c.nombre}
+              title={c.nombre}
+              onClick={() => onCambiar(c.clave)}
+              style={{ backgroundColor: c.hex }}
+              className={`${BOTON_COLOR} text-white ${activo ? 'border-text-primary scale-110' : 'border-transparent'}`}
+            >
+              {activo && <Check size={18} strokeWidth={3} aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Sube la imagen elegida (comprimida) y devuelve su URL final; { url: null } si no hay imagen; null si la subida falla. */
+async function subirImagenElegida(fotos: FotoLocal[]): Promise<{ url: string | null } | null> {
+  if (fotos.length === 0) return { url: null };
+  const urls = await subirFotosLocal(fotos, subirImagenBanca);
+  return urls ? { url: urls[0] ?? null } : null;
+}
+
+const OPCION_GENERAL = '';
+const OPCION_OTRO = '__otro__';
+
+/** Grupo de Telegram al que se envía el comprobante/aviso de la banca: el general de cajas, uno ya usado u otro por id. */
+function SelectorGrupoTelegram(
+  { valor, otroTexto, grupos, onValor, onOtroTexto, claseInput, editable }:
+  { editable: boolean; valor: string; otroTexto: string; grupos: ReturnType<typeof gruposTelegramConocidos>;
+    onValor: (v: string) => void; onOtroTexto: (v: string) => void; claseInput: string }
+) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-text-secondary mb-1">
+        Grupo de Telegram del comprobante <span className="text-text-muted">(opcional)</span>
+      </label>
+      <select value={valor} onChange={e => onValor(e.target.value)} className={claseInput} disabled={!editable}>
+        <option value={OPCION_GENERAL}>Grupo general de cajas (predeterminado)</option>
+        {grupos.map(g => (
+          <option key={g.chatId} value={g.chatId}>{g.chatId} — {g.bancas.join(', ')}</option>
+        ))}
+        <option value={OPCION_OTRO}>Otro grupo (escribir el id)…</option>
+      </select>
+      {valor === OPCION_OTRO && (
+        <input
+          type="text"
+          inputMode="numeric"
+          value={otroTexto}
+          onChange={e => onOtroTexto(e.target.value)}
+          className={`${claseInput} mt-2`}
+          placeholder="Ej: -1001234567890"
+          aria-label="Id del grupo de Telegram"
+          disabled={!editable}
+        />
+      )}
+      <p className="text-xs text-text-muted mt-1">
+        Los avisos de esta banca llegan a ese grupo; sin elegir uno van al grupo general de cajas.
+        {!editable && ' Solo un superadmin puede cambiar este grupo.'}
+      </p>
+    </div>
+  );
+}
+
+function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
+  const { usuario: currentUser } = useAuth();
+  const puedeCambiarTelegram = currentUser?.rol === 'superadmin';
   const editando = !!banca;
   const [nombre, setNombre] = useState(banca?.nombre ?? '');
   const [tipo, setTipo] = useState<TipoBanca>(banca?.tipo ?? 'banco_nacional');
   const [moneda, setMoneda] = useState(banca?.moneda ?? 'USD');
   const [descripcion, setDescripcion] = useState(banca?.descripcion ?? '');
+  const [color, setColor] = useState<string | null>(banca?.color ?? null);
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(banca?.imagenUrl ? [banca.imagenUrl] : []));
+  const puedeCambiarImagen = !banca || puedeEditarBanca(banca);
+  const grupos = gruposTelegramConocidos(bancas);
+  const chatInicial = banca?.telegramChatId ?? '';
+  const [grupoSel, setGrupoSel] = useState(grupos.some(g => g.chatId === chatInicial) || chatInicial === '' ? chatInicial : OPCION_OTRO);
+  const [grupoOtro, setGrupoOtro] = useState(grupos.some(g => g.chatId === chatInicial) ? '' : chatInicial);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /** Reemplaza la imagen por la recién elegida si es válida; si no, avisa y deja la actual. */
+  const elegirImagen = (files: File[]) => {
+    const archivo = files[0];
+    const problema = archivo ? errorImagenBanca(archivo) : null;
+    setError(problema);
+    if (archivo && !problema) setFotos([fotoLocalDeFile(archivo)]);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,14 +160,32 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
       return;
     }
 
+    const chatId = normalizarChatIdTelegram(grupoSel === OPCION_OTRO ? grupoOtro : grupoSel);
+    if (chatId !== null && !esChatIdTelegramValido(chatId)) {
+      setError('El id del grupo de Telegram debe ser numérico (ej. -1001234567890).');
+      return;
+    }
+
     setGuardando(true);
 
-    let ok = false;
+    // Solo quien puede editar la cuenta cambia su imagen; el servidor lo vuelve a exigir.
+    const subida = puedeCambiarImagen ? await subirImagenElegida(fotos) : { url: banca?.imagenUrl ?? null };
+    if (!subida) {
+      setError('No se pudo subir la imagen. Revisa tu conexión e intenta de nuevo.');
+      setGuardando(false);
+      return;
+    }
+    const imagenUrl = imagenParaGuardar(banca?.imagenUrl, subida.url);
+
+    let ok: boolean;
     if (editando && banca) {
       ok = await actualizarBanca(banca.id, {
         nombre: nombreTrim,
         tipo,
         descripcion: descripcion.trim(),
+        color,
+        ...(imagenUrl !== undefined ? { imagenUrl } : {}),
+        telegramChatId: chatId,
       });
     } else {
       const result = await crearBanca({
@@ -57,6 +193,9 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
         tipo,
         moneda,
         descripcion: descripcion.trim(),
+        color,
+        ...(imagenUrl ? { imagenUrl } : {}),
+        telegramChatId: chatId,
       });
       ok = !!result;
     }
@@ -73,13 +212,13 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
   const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label={editando ? 'Editar banca' : 'Nueva banca'}>
       <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
           <h2 className="text-lg font-bold text-text-primary">
             {editando ? 'Editar banca' : 'Nueva banca'}
           </h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded text-text-muted hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
             <X size={20} />
           </button>
         </div>
@@ -147,6 +286,31 @@ function BancaFormModal({ banca, onClose, onGuardado }: Props) {
               </p>
             )}
           </div>
+
+          {puedeCambiarImagen && (
+            <div>
+              <FotoMultiplePicker
+                fotos={fotos}
+                max={1}
+                label="Imagen (opcional)"
+                onAgregar={elegirImagen}
+                onQuitar={() => setFotos([])}
+              />
+              <p className="text-xs text-text-muted mt-1">Logo del banco o foto de la caja. Aparece al elegir la cuenta. JPG, PNG o WEBP.</p>
+            </div>
+          )}
+
+          <SelectorColor valor={color} onCambiar={setColor} />
+
+          <SelectorGrupoTelegram
+            editable={puedeCambiarTelegram}
+            valor={grupoSel}
+            otroTexto={grupoOtro}
+            grupos={grupos}
+            onValor={setGrupoSel}
+            onOtroTexto={setGrupoOtro}
+            claseInput={inputClass}
+          />
 
           {/* Descripción */}
           <div>

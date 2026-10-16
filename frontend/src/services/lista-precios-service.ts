@@ -1,5 +1,7 @@
 import { apiFetch } from './api-client';
-import type { ListaPrecios, PrecioLista } from '@shared/types/index.js';
+import { leerGet } from './lectura-service';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
+import type { ListaPrecios, PrecioLista, TipoListaPrecios } from '@shared/types/index.js';
 
 /** Lista activa con el precio de un material concreto (para el selector). */
 export interface ListaParaProducto {
@@ -11,6 +13,7 @@ export interface ListaParaProducto {
 
 export interface CrearListaInput {
   nombre: string;
+  tipo: TipoListaPrecios;
   vigenteDesde?: string | null;
 }
 
@@ -20,10 +23,16 @@ export interface ActualizarListaInput {
   activo?: boolean;
 }
 
-export async function obtenerListas(): Promise<ListaPrecios[]> {
+/** Sin `tipo`, trae todas (pantalla de Configuración). Con `tipo`, filtra —
+ *  usar al armar el selector de una factura. */
+export async function obtenerListas(tipo?: TipoListaPrecios): Promise<ListaPrecios[]> {
   try {
-    const { listas } = await apiFetch<{ listas: ListaPrecios[] }>('/api/listas-precios');
-    return listas;
+    const qs = tipo ? `?tipo=${tipo}` : '';
+    const { datos } = await obtenerCatalogo(`listas-precios:${tipo ?? 'todas'}`, async () => {
+      const { listas } = await apiFetch<{ listas: ListaPrecios[] }>(`/api/listas-precios${qs}`);
+      return listas;
+    });
+    return datos;
   } catch {
     return [];
   }
@@ -107,11 +116,30 @@ export async function eliminarPrecio(
   }
 }
 
-/** Listas activas que tienen un precio definido para el material dado. */
-export async function obtenerListasParaProducto(productoId: string): Promise<ListaParaProducto[]> {
+/** Guarda el orden manual: productoIds de todos los materiales, de arriba a abajo. */
+export async function reordenarPrecios(
+  listaId: string,
+  productoIds: string[]
+): Promise<{ ok: true } | { error: string }> {
   try {
-    const { listas } = await apiFetch<{ listas: ListaParaProducto[] }>(
-      `/api/listas-precios/para-producto/${productoId}`
+    await apiFetch(`/api/listas-precios/${listaId}/precios/reordenar`, {
+      method: 'PATCH',
+      body: { productoIds },
+    });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo reordenar la lista.' };
+  }
+}
+
+/** Listas activas (del tipo dado) que tienen un precio definido para el material. */
+export async function obtenerListasParaProducto(
+  productoId: string,
+  tipo: TipoListaPrecios
+): Promise<ListaParaProducto[]> {
+  try {
+    const { listas } = await leerGet<{ listas: ListaParaProducto[] }>(
+      `/api/listas-precios/para-producto/${productoId}?tipo=${tipo}`
     );
     return listas;
   } catch {

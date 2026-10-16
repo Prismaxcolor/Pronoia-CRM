@@ -1,3 +1,6 @@
+/** Subdivisión de clientes: venta dentro del país o venta internacional. */
+export type TipoVentaCliente = 'nacional' | 'internacional';
+
 /**
  * Cliente frecuente. La empresa es principalmente compradora, pero también
  * factura a algunos clientes recurrentes (ver módulo de facturación).
@@ -15,8 +18,12 @@ export interface Cliente {
   activo: boolean;
   creadoPor: string;
   creadoEn: string;
+  /** URLs públicas de las fotos del cliente (bucket "clientes" en Storage). */
+  fotos: string[];
   /** chat_id de Telegram una vez vinculado (ver integración Telegram). */
   telegramChatId: string | null;
   /** ISO timestamp de cuándo se vinculó, null si nunca se vinculó. */
   telegramLinkedAt: string | null;
+  /** Los clientes anteriores a la subdivisión quedan como 'nacional'. */
+  tipoVenta: TipoVentaCliente;
 }

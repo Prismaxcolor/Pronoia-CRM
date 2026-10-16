@@ -1,22 +1,35 @@
 import { apiFetch } from './api-client';
+import { altaMaestroF4, fotosYaSubidas, provisionalesDeMaestro } from './maestros-cola';
+import { offlineHabilitado } from '../lib/offline/sesion';
+import type { FotoLocal } from '../lib/foto-picker';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import type { Tara } from '@shared/types/index.js';
 
 export interface TaraInput {
   nombre: string;
   peso: number;
-  foto?: string | null;
+  fotos?: string[];
 }
 
 export async function obtenerTaras(): Promise<Tara[]> {
   try {
-    const { taras } = await apiFetch<{ taras: Tara[] }>('/api/taras');
-    return taras;
+    const { datos } = await obtenerCatalogo('taras', async () => {
+      const { taras } = await apiFetch<{ taras: Tara[] }>('/api/taras');
+      return taras;
+    });
+    return [...datos, ...(await provisionalesDeMaestro<Tara>('tara'))];
   } catch {
-    return [];
+    return provisionalesDeMaestro<Tara>('tara');
   }
 }
 
-export async function crearTara(input: TaraInput): Promise<{ tara: Tara } | { error: string }> {
+export async function crearTara(input: TaraInput, fotosLocales?: FotoLocal[]): Promise<{ tara: Tara; enCola?: true } | { error: string }> {
+  if (offlineHabilitado()) {
+    const { fotos, ...datos } = input;
+    const r = await altaMaestroF4<Tara>('tara', datos, fotosLocales ?? fotosYaSubidas(fotos));
+    if ('error' in r) return r;
+    return { tara: r.entidad, ...(r.enCola ? { enCola: true as const } : {}) };
+  }
   try {
     const { tara } = await apiFetch<{ tara: Tara }>('/api/taras', {
       method: 'POST',

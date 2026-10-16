@@ -1,5 +1,6 @@
+import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
-import type { CrearClienteInput, ActualizarClienteInput } from '../schemas/clientes.js';
+import type { TipoVentaCliente, CrearClienteInput, ActualizarClienteInput } from '../schemas/clientes.js';
 
 interface ClienteRow {
   id: string;
@@ -12,8 +13,10 @@ interface ClienteRow {
   activo: boolean;
   creado_por: string | null;
   creado_en: string;
+  fotos: string[] | null;
   telegram_chat_id: string | null;
   telegram_linked_at: string | null;
+  tipo_venta: TipoVentaCliente | null;
 }
 
 export interface ClientePublico {
@@ -27,8 +30,10 @@ export interface ClientePublico {
   activo: boolean;
   creadoPor: string;
   creadoEn: string;
+  fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
+  tipoVenta: TipoVentaCliente;
 }
 
 function toPublico(row: ClienteRow): ClientePublico {
@@ -43,8 +48,10 @@ function toPublico(row: ClienteRow): ClientePublico {
     activo: row.activo,
     creadoPor: row.creado_por ?? '',
     creadoEn: row.creado_en,
+    fotos: row.fotos ?? [],
     telegramChatId: row.telegram_chat_id,
     telegramLinkedAt: row.telegram_linked_at,
+    tipoVenta: row.tipo_venta ?? 'nacional',
   };
 }
 
@@ -59,22 +66,20 @@ export async function listarClientes(): Promise<ClientePublico[]> {
 }
 
 export async function crearCliente(
-  input: CrearClienteInput,
+  input: CrearClienteInput & MetaOperacion,
   creadoPor: string
 ): Promise<{ cliente: ClientePublico } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('clientes')
-    .insert({
-      nombre: input.nombre,
-      identificacion: input.identificacion,
-      email: input.email,
-      telefono: input.telefono,
-      direccion: input.direccion,
-      notas: input.notas,
-      creado_por: creadoPor,
-    })
-    .select('*')
-    .single();
+  const { data, error } = await insertarMaestroIdempotente<ClienteRow>('clientes', {
+    nombre: input.nombre,
+    identificacion: input.identificacion,
+    email: input.email,
+    telefono: input.telefono,
+    direccion: input.direccion,
+    notas: input.notas,
+    fotos: input.fotos ?? [],
+    tipo_venta: input.tipoVenta,
+    creado_por: creadoPor,
+  }, { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el cliente.' };
   return { cliente: toPublico(data as ClienteRow) };
@@ -84,9 +89,20 @@ export async function actualizarCliente(
   id: string,
   cambios: ActualizarClienteInput
 ): Promise<{ cliente: ClientePublico } | { error: string }> {
+  const update: Record<string, unknown> = {};
+  if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
+  if (cambios.identificacion !== undefined) update.identificacion = cambios.identificacion;
+  if (cambios.email !== undefined) update.email = cambios.email;
+  if (cambios.telefono !== undefined) update.telefono = cambios.telefono;
+  if (cambios.direccion !== undefined) update.direccion = cambios.direccion;
+  if (cambios.notas !== undefined) update.notas = cambios.notas;
+  if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
+  if (cambios.tipoVenta !== undefined) update.tipo_venta = cambios.tipoVenta;
+  if (cambios.activo !== undefined) update.activo = cambios.activo;
+
   const { data, error } = await supabaseAdmin
     .from('clientes')
-    .update(cambios)
+    .update(update)
     .eq('id', id)
     .select('*')
     .maybeSingle();

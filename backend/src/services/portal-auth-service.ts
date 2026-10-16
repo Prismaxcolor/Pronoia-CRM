@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
+import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
 import { logger } from '../utils/logger.js';
 import { generarToken, type EntidadTelegram } from './telegram-link-service.js';
 
@@ -104,7 +105,7 @@ export async function solicitarLogin(identificador: string): Promise<void> {
 
     const respuesta = await fetch(ENV.N8N_WEBHOOK_PORTAL_LOGIN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await cabecerasWebhookN8n(),
       body: JSON.stringify({ chatId: entidad.chatId, deepLink }),
       signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
     });
