@@ -11,7 +11,7 @@ let n = 0;
 const mov = (o: Partial<MovimientoReporte>): MovimientoReporte => ({
   id: `m${++n}`, tipo: 'egreso', subtipo: null, numero: null, numeroSistema: null, monto: 10, moneda: 'USD', montoDestino: null,
   fecha: '2026-10-05', descripcion: '', referencia: '', bancaOrigenId: 'b1', bancaDestinoId: null, categoriaId: null,
-  anulado: false, mesaCambistaId: null, mesaEstado: null, ...o,
+  anulado: false, mesaCambistaId: null, mesaEstado: null, mesaMontoCobrado: null, ...o,
 });
 
 describe('construirReporteCategorias', () => {
@@ -129,6 +129,13 @@ describe('construirReporteCuenta', () => {
     const destino = construirReporteCuenta({ ...base, bancaId: 'b2', movimientos: [t] });
     expect(destino.filas[0]).toMatchObject({ entrada: 0, enProceso: true });
     expect(destino.totales.entradas).toBe(0);
+  });
+
+  it('transferencia con mesa en cobro parcial: la destino solo recibe lo cobrado y sigue marcada en proceso', () => {
+    const t = mov({ tipo: 'transferencia', monto: 50, bancaOrigenId: 'b1', bancaDestinoId: 'b2', mesaCambistaId: 'c1', mesaEstado: 'parcial', mesaMontoCobrado: 20 });
+    const destino = construirReporteCuenta({ ...base, bancaId: 'b2', movimientos: [t] });
+    expect(destino.filas[0]).toMatchObject({ entrada: 20, enProceso: true });
+    expect(destino.totales.entradas).toBe(20);
   });
 
   it('los anulados se listan pero no suman', () => {

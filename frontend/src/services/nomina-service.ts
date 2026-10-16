@@ -3,7 +3,8 @@ import type {
   CargoTrabajador, EstadoPrestamo, Nomina, NominaResumen, NominaSemana, Prestamo, TipoPrestamo, TipoTrabajador, Trabajador,
 } from '@shared/types/nomina';
 import type { PayloadNomina } from '../features/nomina/nomina-editor';
-import type { PayloadPago } from '../features/nomina/nomina-pago';
+import type { PayloadPago, PayloadPagoTrabajador } from '../features/nomina/nomina-pago';
+import type { PayloadDesembolso } from '../features/nomina/nomina-desembolso';
 
 /** Datos personales sensibles: solo en línea y sin caché local (no pasan por la lectura sin conexión). */
 export interface TrabajadorInput {
@@ -20,7 +21,7 @@ export interface TrabajadorInput {
   pagoMovilTelefono: string | null;
   pagoMovilCedula: string | null;
   binanceCorreoId: string | null;
-  /** Sueldo diario en divisas (USD) y en bolívares (Bs): las dos partes del sueldo. */
+  /** Sueldo diario en divisas (USD) y "en Bs" (valor en USD de referencia que se paga en bolívares a la tasa del día). */
   pagoDiarioUsd: number;
   pagoDiarioBs: number;
 }
@@ -32,6 +33,8 @@ export interface PrestamoInput {
   cuotaSemanalUsd: number | null;
   fecha: string;
   nota: string | null;
+  /** Si viene, además de registrar el préstamo se registra su pago desde el Wallet. */
+  desembolso?: PayloadDesembolso;
 }
 
 export type Resultado<T> = T | { error: string };
@@ -71,8 +74,20 @@ export const desactivarTrabajador = (id: string) =>
 export const obtenerPrestamos = (filtro: { trabajadorId?: string; estado?: EstadoPrestamo } = {}) =>
   ejecutar(() => apiFetch<{ prestamos: Prestamo[] }>(`${BASE}/prestamos${consulta(filtro)}`), 'No se pudieron cargar los préstamos.');
 
+/** `advertencia`: el préstamo se registró pero su pago no pudo registrarse (se reintenta con «Registrar pago»). */
 export const crearPrestamo = (input: PrestamoInput) =>
-  ejecutar(() => apiFetch<{ prestamo: Prestamo }>(`${BASE}/prestamos`, { method: 'POST', body: input }), 'No se pudo registrar el préstamo.');
+  ejecutar(() => apiFetch<{ prestamo: Prestamo; advertencia?: string }>(`${BASE}/prestamos`, { method: 'POST', body: input }), 'No se pudo registrar el préstamo.');
+
+export interface ResultadoPagoPrestamo {
+  prestamo: Prestamo;
+  /** true si el préstamo ya estaba pagado: no se creó ningún movimiento nuevo. */
+  yaPagado: boolean;
+  advertencia?: string;
+}
+
+/** Registra el pago (desembolso) de un préstamo ya creado desde el Wallet. */
+export const pagarPrestamo = (id: string, payload: PayloadDesembolso) =>
+  ejecutar(() => apiFetch<ResultadoPagoPrestamo>(`${BASE}/prestamos/${id}/pagar`, { method: 'POST', body: payload }), 'No se pudo registrar el pago del préstamo.');
 
 export const actualizarPrestamo = (id: string, input: { cuotaSemanalUsd?: number | null; nota?: string | null }) =>
   ejecutar(() => apiFetch<{ prestamo: Prestamo }>(`${BASE}/prestamos/${id}`, { method: 'PATCH', body: input }), 'No se pudo actualizar el préstamo.');
@@ -112,3 +127,10 @@ export const obtenerCategoriaPagoNomina = (tipo: TipoTrabajador) =>
 /** Paga la nómina cerrada desde el Wallet: crea los egresos (uno por moneda) y los enlaza a la nómina. */
 export const pagarNomina = (id: string, payload: PayloadPago) =>
   ejecutar(() => apiFetch<ResultadoPagoNomina>(`${BASE}/nominas/${id}/pagar`, { method: 'POST', body: payload }), 'No se pudo pagar la nómina.');
+
+/** Paga a UN trabajador de la nómina cerrada desde el Wallet (botón «Pagar» del renglón), con comprobantes opcionales. */
+export const pagarTrabajadorNomina = (id: string, trabajadorId: string, payload: PayloadPagoTrabajador) =>
+  ejecutar(
+    () => apiFetch<ResultadoPagoNomina>(`${BASE}/nominas/${id}/trabajadores/${trabajadorId}/pagar`, { method: 'POST', body: payload }),
+    'No se pudo pagar al trabajador.',
+  );

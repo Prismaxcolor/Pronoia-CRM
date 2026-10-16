@@ -3,7 +3,7 @@ import { falloNomina, type FalloNomina } from '../utils/nomina-errores.js';
 import { nombreCompleto } from '../utils/nomina-armado.js';
 import { IDS_POR_CONSULTA, trocear } from '../utils/paginacion.js';
 import { cuotaSugerida } from '../utils/nomina-calculo.js';
-import { partesDePago } from '../utils/nomina-partes-pago.js';
+import { partesDePago, sueldoBsComoUsd } from '../utils/nomina-partes-pago.js';
 import { pagosDeNomina } from './nomina-pago-lectura.js';
 import type {
   CandidatoNomina, EstadoNomina, LineaNomina, Nomina, NominaResumen, NominaSemana, TipoPrestamo, TipoTrabajador, TotalesNomina,
@@ -30,7 +30,7 @@ function totalesDe(row: Fila, cantidad: number): TotalesNomina {
   };
 }
 
-function mapLinea(row: Fila): LineaNomina {
+function mapLinea(row: Fila, tasaBs: number | null): LineaNomina {
   const cuotas = (row.cuotas as Fila[] | null) ?? [];
   return {
     trabajadorId: row.trabajador_id as string,
@@ -38,7 +38,7 @@ function mapLinea(row: Fila): LineaNomina {
     monedaPago: row.moneda_pago as LineaNomina['monedaPago'],
     diasTrabajados: Number(row.dias_trabajados),
     montoBaseUsd: Number(row.monto_base_usd),
-    montoBaseBs: Number(row.monto_base_bs ?? 0),
+    montoBaseBs: sueldoBsComoUsd(row, tasaBs),
     totalBrutoUsd: Number(row.total_bruto_usd),
     brutoBs: Number(row.bruto_bs ?? 0),
     montoRefBs: numeroONull(row.monto_ref_bs),
@@ -58,15 +58,16 @@ function mapLinea(row: Fila): LineaNomina {
 }
 
 export function mapNomina(row: Fila): Nomina {
+  const tasaBs = numeroONull(row.tasa_bs);
   const lineas = ((row.lineas as Fila[] | null) ?? [])
-    .map(mapLinea)
+    .map(l => mapLinea(l, tasaBs))
     .sort((a, b) => a.trabajadorNombre.localeCompare(b.trabajadorNombre, 'es'));
   return {
     id: row.id as string,
     numero: Number(row.numero),
     tipo: row.tipo as TipoTrabajador,
     semanaInicio: row.semana_inicio as string,
-    tasaBs: numeroONull(row.tasa_bs),
+    tasaBs,
     estado: row.estado as EstadoNomina,
     version: Number(row.version),
     totales: totalesDe(row, lineas.length),
@@ -109,6 +110,12 @@ export async function listarNominas(
   return { nominas: (data ?? []).map(mapResumen) };
 }
 
+/** Renglón (id) -> trabajador de la nómina leída, para ubicar a quién se pagó cada pago individual. */
+function trabajadorPorLinea(row: Fila): Map<string, string> {
+  const lineas = (row.lineas as Fila[] | null) ?? [];
+  return new Map(lineas.map(l => [l.id as string, l.trabajador_id as string]));
+}
+
 export async function obtenerNomina(id: string): Promise<{ nomina: Nomina } | FalloNomina> {
   const { data, error } = await supabaseAdmin.from('nominas').select(COLUMNAS_DETALLE).eq('id', id).maybeSingle();
   if (error) return falloNomina(error, 'nomina_obtener', 'No se pudo cargar la nómina.');
@@ -116,7 +123,7 @@ export async function obtenerNomina(id: string): Promise<{ nomina: Nomina } | Fa
   const nomina = mapNomina(data);
   // Los pagos solo existen en una nómina cerrada (o anulada tras pagarse); las demás se ahorran la consulta.
   if (nomina.estado === 'BORRADOR') return { nomina };
-  const pagos = await pagosDeNomina(id);
+  const pagos = await pagosDeNomina(id, trabajadorPorLinea(data));
   if ('error' in pagos) return pagos;
   return { nomina: { ...nomina, pagos: pagos.pagos } };
 }

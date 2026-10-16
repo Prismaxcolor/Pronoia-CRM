@@ -56,16 +56,18 @@ export interface Movimiento {
   /** Transferencia con mesa de cambio: cambista elegido; null en un movimiento normal. */
   mesaCambistaId?: string | null;
   /**
-   * 'en_proceso': el origen ya se descontó pero el destino NO ha recibido el saldo. 'completada': ya se acreditó
-   * (neto de comisión). Si `anulado` es true, la anulación manda.
+   * 'en_proceso': el origen ya se descontó pero el destino NO ha recibido el saldo. 'parcial': el cambista cobró
+   * solo una parte (mesaMontoCobrado) y falta el resto. 'completada': ya se acreditó todo (neto de comisión). Si `anulado` es true, la anulación manda.
    */
-  mesaEstado?: 'en_proceso' | 'completada' | null;
+  mesaEstado?: 'en_proceso' | 'parcial' | 'completada' | null;
   /** Lo que el cambista debía entregar en la cuenta destino (moneda destino), antes de la comisión. */
   mesaMontoBruto?: number | null;
   mesaComisionModo?: 'porcentaje' | 'monto' | null;
   mesaComisionPct?: number | null;
   /** Comisión del cambio en la moneda destino. Reduce lo acreditado: neto = bruto - comisión. */
   mesaComision?: number | null;
+  /** Neto ya acreditado al destino (moneda destino); en 'completada' iguala bruto - comisión. null si no hay mesa. */
+  mesaMontoCobrado?: number | null;
   mesaCompletadaEn?: string | null;
   mesaCompletadaPor?: string | null;
   // Comisión bancaria (0.3%, mínimo 14 Bs) de un movimiento que debita una cuenta en Bs; opcionales porque la API los

@@ -55,7 +55,7 @@ function NominaTabla({ renglones, soloLectura, onCambiar, onQuitar }: Props) {
             <th scope="col" className="px-3 py-2 text-left font-medium">Trabajador</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Días trabajados</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Sueldo en divisas (USD por día)</th>
-            <th scope="col" className="px-2 py-2 text-right font-medium">Sueldo en Bs (por día)</th>
+            <th scope="col" className="px-2 py-2 text-right font-medium">Sueldo en Bs (USD de referencia por día)</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Total bruto (USD)</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Bonificación extra (USD)</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Descuento por trabajo (USD)</th>
@@ -74,8 +74,8 @@ function NominaTabla({ renglones, soloLectura, onCambiar, onQuitar }: Props) {
                 <th scope="row" className="px-3 py-2 text-left font-medium text-text-primary">{r.nombre}</th>
                 <td className="px-2 py-2"><CeldaNumero etiqueta={`Días trabajados de ${r.nombre}`} valor={r.dias} soloLectura={soloLectura} onCambio={v => onCambiar(i, { dias: v })} /></td>
                 <td className="px-2 py-2"><CeldaNumero etiqueta={`Sueldo en divisas de ${r.nombre}`} valor={r.montoBase} soloLectura={soloLectura} onCambio={v => onCambiar(i, { montoBase: v })} /></td>
-                <td className="px-2 py-2"><CeldaNumero etiqueta={`Sueldo en bolívares de ${r.nombre}`} valor={r.montoBaseBs} soloLectura={soloLectura} onCambio={v => onCambiar(i, { montoBaseBs: v })} /></td>
-                <td className="px-2 py-2 text-right tabular-nums">{c.faltaTasa ? '—' : num(c.totalBrutoUsd)}</td>
+                <td className="px-2 py-2"><CeldaNumero etiqueta={`Sueldo en Bs (USD de referencia por día) de ${r.nombre}`} valor={r.montoBaseBs} soloLectura={soloLectura} onCambio={v => onCambiar(i, { montoBaseBs: v })} /></td>
+                <td className="px-2 py-2 text-right tabular-nums">{num(c.totalBrutoUsd)}</td>
                 <td className="px-2 py-2"><CeldaNumero etiqueta={`Bonificación de ${r.nombre}`} valor={r.bonificacion} soloLectura={soloLectura} onCambio={v => onCambiar(i, { bonificacion: v })} /></td>
                 <td className="px-2 py-2"><CeldaNumero etiqueta={`Descuento por trabajo de ${r.nombre}`} valor={r.descuentoTrabajo} soloLectura={soloLectura} onCambio={v => onCambiar(i, { descuentoTrabajo: v })} /></td>
                 <td className="px-2 py-2 text-right tabular-nums">{num(c.descuentoPrestamoUsd)}</td>
@@ -86,7 +86,7 @@ function NominaTabla({ renglones, soloLectura, onCambiar, onQuitar }: Props) {
                   {!c.faltaTasa && c.pagarBs !== 0 && <p className="text-xs text-text-secondary">≈ USD {num(c.equivalenteBsUsd ?? 0)}</p>}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums">
-                  <p className={`font-semibold ${c.negativo ? 'text-red-700' : 'text-text-primary'}`}>USD {c.faltaTasa ? '—' : num(c.totalUsd)}</p>
+                  <p className={`font-semibold ${c.negativo ? 'text-red-700' : 'text-text-primary'}`}>USD {num(c.totalUsd)}</p>
                   {c.negativo && <p className="text-xs font-medium text-red-700">Total negativo: los descuentos superan lo ganado</p>}
                 </td>
                 <td className="px-2 py-2 text-right">

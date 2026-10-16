@@ -24,7 +24,9 @@ export interface MovimientoReporte {
   categoriaId: string | null;
   anulado: boolean;
   mesaCambistaId: string | null;
-  mesaEstado: 'en_proceso' | 'completada' | null;
+  mesaEstado: 'en_proceso' | 'parcial' | 'completada' | null;
+  /** Lo ya cobrado al cambista (moneda destino); solo cuenta en cobro parcial. */
+  mesaMontoCobrado?: number | null;
 }
 
 export interface TotalesMonedaCalculo { moneda: string; ingresos: number; egresos: number; total: number }
@@ -169,6 +171,7 @@ function montosEnCuenta(m: MovimientoReporte, bancaId: string): { entrada: numbe
   if (m.tipo === 'ingreso') return { entrada: m.monto, salida: 0, enProceso: false };
   if (m.tipo === 'egreso') return { entrada: 0, salida: m.monto, enProceso: false };
   if (m.bancaOrigenId === bancaId) return { entrada: 0, salida: m.monto, enProceso: false };
+  if (m.mesaCambistaId !== null && m.mesaEstado === 'parcial') return { entrada: m.mesaMontoCobrado ?? 0, salida: 0, enProceso: true };
   const enProceso = m.mesaCambistaId !== null && m.mesaEstado === 'en_proceso';
   return { entrada: enProceso ? 0 : (m.montoDestino ?? m.monto), salida: 0, enProceso };
 }

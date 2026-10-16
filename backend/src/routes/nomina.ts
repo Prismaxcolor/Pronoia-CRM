@@ -6,12 +6,15 @@ import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
 import {
   actualizarPrestamoSchema, actualizarTrabajadorSchema, anularSchema, crearPrestamoSchema, crearTrabajadorSchema,
   filtroCategoriaPagoSchema, filtroNominasSchema, filtroPrestamosSchema, filtroSemanaSchema, filtroTrabajadoresSchema,
-  guardarNominaSchema, pagarNominaSchema,
+  desembolsoSchema, guardarNominaSchema, pagarNominaSchema, pagarTrabajadorSchema,
 } from '../schemas/nomina.js';
 import {
   actualizarTrabajador, crearTrabajador, desactivarTrabajador, listarTrabajadores, obtenerTrabajador,
 } from '../services/nomina-trabajador-service.js';
-import { actualizarPrestamo, anularPrestamo, crearPrestamo, listarPrestamos } from '../services/nomina-prestamo-service.js';
+import { actualizarPrestamo, anularPrestamo, listarPrestamos } from '../services/nomina-prestamo-service.js';
+import { desembolsarPrestamo, registrarPrestamo } from '../services/nomina-prestamo-pago-service.js';
+import { bancaDePagoPrestamo } from '../services/nomina-prestamo-pago-lectura.js';
+import { pagarTrabajadorNomina } from '../services/nomina-pago-trabajador-service.js';
 import { listarNominas, obtenerNomina, obtenerNominaSemana } from '../services/nomina-service.js';
 import { obtenerCargoTrabajador } from '../services/nomina-cargo-service.js';
 import { anularNomina, cerrarNomina, guardarNomina } from '../services/nomina-escritura-service.js';
@@ -109,12 +112,41 @@ router.get('/prestamos', requirePermiso('nomina', 'ver'), async (req, res) => {
   res.json(r);
 });
 
-router.post('/prestamos', requirePermiso('nomina', 'crear'), validateBody(crearPrestamoSchema), async (req, res) => {
-  const r = await crearPrestamo(req.body, req.user!.sub);
+/**
+ * Registrar el pago de un préstamo mueve dinero: además de nomina.crear/editar exige poder crear movimientos y acceso de
+ * edición a la cuenta elegida. Solo se aplica cuando el cuerpo trae `desembolso` (un préstamo sin pago no toca el Wallet).
+ */
+async function exigirWalletSiHayDesembolso(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const bancaId = (req.body as { desembolso?: { bancaId?: string } }).desembolso?.bancaId;
+  if (!bancaId) return next();
+  await requirePermiso('cochinito', 'crear')(req, res, async () => {
+    await exigirAccesoBancas(async () => [bancaId])(req, res, next);
+  });
+}
+
+router.post('/prestamos', requirePermiso('nomina', 'crear'), validateBody(crearPrestamoSchema), exigirWalletSiHayDesembolso, async (req, res) => {
+  const r = await registrarPrestamo(req.body, req.user!.sub);
   if ('error' in r) return responderFallo(res, r);
   auditar(req, 'nomina_prestamo_creado', { prestamoId: r.prestamo.id });
   res.status(201).json(r);
 });
+
+// Registrar el pago de un préstamo ya creado (o que quedó sin pago): mueve dinero, igual que pagar una nómina.
+router.post(
+  '/prestamos/:id/pagar',
+  validarUuidParam('id'),
+  requirePermiso('nomina', 'editar'),
+  requirePermiso('cochinito', 'crear'),
+  validateBody(desembolsoSchema),
+  exigirAccesoBancas(),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const r = await desembolsarPrestamo(id, req.body, req.user!.sub);
+    if ('error' in r) return responderFallo(res, r);
+    if (!r.yaPagado) auditar(req, 'nomina_prestamo_pagado', { prestamoId: id });
+    res.json(r);
+  },
+);
 
 router.patch('/prestamos/:id', validarUuidParam('id'), requirePermiso('nomina', 'editar'), validateBody(actualizarPrestamoSchema), async (req, res) => {
   const id = String(req.params.id);
@@ -124,7 +156,26 @@ router.patch('/prestamos/:id', validarUuidParam('id'), requirePermiso('nomina', 
   res.json(r);
 });
 
-router.post('/prestamos/:id/anular', validarUuidParam('id'), requirePermiso('nomina', 'editar'), validateBody(anularSchema), async (req, res) => {
+/**
+ * Anular un préstamo pagado desde el Wallet revierte un egreso: además de nomina.editar exige cochinito.editar y acceso de
+ * edición a la cuenta del pago. Sin pago no cambia nada. Si no se puede leer el pago responde 503 (falla cerrado).
+ */
+async function exigirWalletSiPrestamoPagado(req: Request, res: Response, next: NextFunction): Promise<void> {
+  let banca: string | null;
+  try {
+    banca = await bancaDePagoPrestamo(String(req.params.id));
+  } catch (e) {
+    logger.error({ evento: 'nomina_prestamo_anular_pago_no_verificable', userId: req.user!.sub, mensaje: e instanceof Error ? e.message : String(e) });
+    res.status(503).json({ error: MENSAJE_ACCESO_NO_VERIFICABLE });
+    return;
+  }
+  if (banca === null) return next();
+  await requirePermiso('cochinito', 'editar')(req, res, async () => {
+    await exigirAccesoBancas(async () => [banca])(req, res, next);
+  });
+}
+
+router.post('/prestamos/:id/anular', validarUuidParam('id'), requirePermiso('nomina', 'editar'), validateBody(anularSchema), exigirWalletSiPrestamoPagado, async (req, res) => {
   const id = String(req.params.id);
   const r = await anularPrestamo(id, req.body.motivo, req.user!.sub);
   if ('error' in r) return responderFallo(res, r);
@@ -199,6 +250,25 @@ router.post(
     const r = await pagarNomina(id, req.body, req.user!.sub);
     if ('error' in r) return responderFallo(res, r);
     if (!r.yaPagada) auditar(req, 'nomina_pagada', { nominaId: id });
+    res.json(r);
+  },
+);
+
+// Pagar a UN trabajador de la nómina cerrada (botón «Pagar» del renglón): mismos permisos que pagar la nómina completa.
+router.post(
+  '/nominas/:id/trabajadores/:trabajadorId/pagar',
+  validarUuidParam('id'),
+  validarUuidParam('trabajadorId'),
+  requirePermiso('nomina', 'editar'),
+  requirePermiso('cochinito', 'crear'),
+  validateBody(pagarTrabajadorSchema),
+  exigirAccesoBancas(),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const trabajadorId = String(req.params.trabajadorId);
+    const r = await pagarTrabajadorNomina(id, trabajadorId, req.body, req.user!.sub);
+    if ('error' in r) return responderFallo(res, r);
+    if (!r.yaPagada) auditar(req, 'nomina_trabajador_pagado', { nominaId: id, trabajadorId });
     res.json(r);
   },
 );

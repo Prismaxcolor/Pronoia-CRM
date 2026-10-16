@@ -240,7 +240,7 @@ function EstadoCuentaPage({ tipo }: Props) {
 
       <div className={`print:hidden ${cargando ? 'opacity-60 transition-opacity' : ''}`}>
         <section aria-label="Indicadores principales">
-          <EstadoCuentaKpis tipo={tipo} kpis={kpis} conFiltroFechas={Boolean(desde || hasta)} />
+          <EstadoCuentaKpis tipo={tipo} kpis={kpis} conFiltroFechas={Boolean(desde || hasta)} saldoActual={estado.saldoActual ?? estado.totales.saldo} />
         </section>
       </div>
 
@@ -297,7 +297,7 @@ function EstadoCuentaPage({ tipo }: Props) {
       </div>
 
       {/* Versión impresa: la tabla clásica y los totales, igual que antes del rediseño. */}
-      <EstadoCuentaTablaImpresion entradas={visibles} saldoFinal={conSaldo.length > 0 ? conSaldo[conSaldo.length - 1].saldoCorrido : 0} filtradoPorTipo={Boolean(tipoEntrada)} />
+      <EstadoCuentaTablaImpresion entradas={visibles} saldoFinal={conSaldo.length > 0 ? conSaldo[conSaldo.length - 1].saldoCorrido : 0} filtradoPorTipo={Boolean(tipoEntrada)} saldoActual={estado.periodo ? (estado.saldoActual ?? estado.totales.saldo) : null} />
 
       {pagoAbierto && (
         <PagoCobroModal

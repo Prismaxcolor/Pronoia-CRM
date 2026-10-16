@@ -3,8 +3,9 @@
  * (la fuente de las fórmulas, con su explicación completa; el servidor siempre recalcula). backend/tests/nomina-calculo.test.ts
  * exige que ambas den lo mismo: si cambias una, cambia la otra.
  *
- * Resumen: dos sueldos diarios (divisas en USD y Bs); los descuentos van primero a divisas y el sobrante a los Bs a la
- * tasa; total = divisas + Bs / tasa. Dinero en centavos enteros; todo devuelve valores nuevos.
+ * Resumen: dos sueldos diarios. El de divisas es en USD; el "sueldo en Bs" es un valor en USD DE REFERENCIA que se paga en
+ * bolívares a la tasa de la nómina. Los descuentos van primero a divisas y el sobrante a la parte en Bs; total = divisas +
+ * valor de la parte Bs. Dinero en centavos enteros; todo devuelve valores nuevos.
  */
 
 export const DIAS_MAX_SEMANA = 7;
@@ -26,8 +27,10 @@ export interface EntradaLinea {
 export interface LineaCalculada {
   /** Bruto total en USD: divisas + (bruto Bs / tasa). Sin sueldo en Bs es solo el bruto de divisas. */
   totalBrutoUsd: number;
-  /** Bruto de la parte en Bs. */
+  /** Bruto de la parte en Bs expresado en bolívares (referencia en USD x tasa); 0 si falta la tasa. */
   brutoBs: number;
+  /** Referencia en USD de la parte en Bs (días x "sueldo en Bs"): el valor que se paga en bolívares. */
+  brutoBsRefUsd: number;
   /** Bruto total expresado en Bs (divisas x tasa + bruto Bs); null si no hay tasa. */
   montoRefBs: number | null;
   bonificacionUsd: number;
@@ -38,8 +41,8 @@ export interface LineaCalculada {
   pagarUsd: number;
   /** Lo que se paga en Bs; null si hay parte en Bs y falta la tasa. */
   pagarBs: number | null;
-  /** Lo que valen en USD los Bs a pagar; null si falta la tasa. */
-  equivalenteBsUsd: number | null;
+  /** Lo que valen en USD los Bs a pagar (referencia menos el sobrante de descuentos): exacto, no depende de la tasa. */
+  equivalenteBsUsd: number;
   /** Total del trabajador en USD (divisas + equivalente de los Bs). */
   totalUsd: number;
   /** Total del trabajador en Bs de referencia (totalUsd x tasa); null si no hay tasa. */
@@ -95,27 +98,19 @@ function brutoCentavos(dias: number, sueldoDiario: number): number {
 
 type EntradaGanado = Pick<EntradaLinea, 'diasTrabajados' | 'montoBaseUsd' | 'montoBaseBs' | 'bonificacionUsd'>;
 
-/** Ganado total en centavos de USD (divisas + bonificación + Bs/tasa); null si hay Bs y falta la tasa. */
-function ganadoCentavos(e: EntradaGanado, tasaBs: number | null): number | null {
-  const divisas = brutoCentavos(e.diasTrabajados, e.montoBaseUsd) + aCentavos(e.bonificacionUsd);
-  const bs = brutoCentavos(e.diasTrabajados, e.montoBaseBs);
-  if (bs === 0) return divisas;
-  return tasaBs === null ? null : divisas + usdCentavos(bs, tasaBs);
+/** Ganado total en centavos de USD: divisas + bonificación + referencia en USD de la parte en Bs (no depende de la tasa). */
+function ganadoCentavos(e: EntradaGanado): number {
+  return brutoCentavos(e.diasTrabajados, e.montoBaseUsd) + aCentavos(e.bonificacionUsd) + brutoCentavos(e.diasTrabajados, e.montoBaseBs);
 }
 
-/** Lo ganado del renglón (USD) = bruto de divisas + bonificación + bruto Bs / tasa; null si hay Bs y falta la tasa. */
-export function gananciaDeLinea(e: EntradaGanado, tasaBs: number | null): number | null {
-  const c = ganadoCentavos(e, tasaBs);
-  return c === null ? null : deCentavos(c);
+/** Lo ganado del renglón (USD) = bruto de divisas + bonificación + referencia en USD de la parte en Bs. */
+export function gananciaDeLinea(e: EntradaGanado): number {
+  return deCentavos(ganadoCentavos(e));
 }
 
-/**
- * True si el descuento de préstamo supera lo ganado del renglón. Con sueldo en Bs y sin tasa no se puede saber: da false
- * (el servidor exige la tasa y vuelve a evaluarlo).
- */
-export function prestamoExcedeGanado(e: EntradaGanado & Pick<EntradaLinea, 'descuentoPrestamoUsd'>, tasaBs: number | null): boolean {
-  const ganado = ganadoCentavos(e, tasaBs);
-  return ganado !== null && aCentavos(e.descuentoPrestamoUsd) > ganado;
+/** True si el descuento de préstamo supera lo ganado del renglón. */
+export function prestamoExcedeGanado(e: EntradaGanado & Pick<EntradaLinea, 'descuentoPrestamoUsd'>): boolean {
+  return aCentavos(e.descuentoPrestamoUsd) > ganadoCentavos(e);
 }
 
 function monedaDeLinea(pagarUsd: number, pagarBs: number | null): MonedaLinea {
@@ -126,34 +121,37 @@ function monedaDeLinea(pagarUsd: number, pagarBs: number | null): MonedaLinea {
 
 export function calcularLinea(e: EntradaLinea, tasaBs: number | null): LineaCalculada {
   const brutoDiv = brutoCentavos(e.diasTrabajados, e.montoBaseUsd);
-  const brutoBs = brutoCentavos(e.diasTrabajados, e.montoBaseBs);
+  // Referencia en USD de la parte en Bs (centavos de USD): se paga en Bs a la tasa de la nómina.
+  const refBsUsd = brutoCentavos(e.diasTrabajados, e.montoBaseBs);
   const ganadoDiv = brutoDiv + aCentavos(e.bonificacionUsd);
   const descuentos = aCentavos(e.descuentoTrabajoUsd) + aCentavos(e.descuentoPrestamoUsd);
-  // Con parte en Bs, lo que las divisas no cubren se descuenta de los Bs; sin ella, todo va a divisas (puede quedar negativo).
-  const contraDivisas = brutoBs > 0 ? Math.min(descuentos, ganadoDiv) : descuentos;
+  // Con parte en Bs, lo que las divisas no cubren se descuenta de la referencia en USD; sin ella, todo va a divisas (puede quedar negativo).
+  const contraDivisas = refBsUsd > 0 ? Math.min(descuentos, ganadoDiv) : descuentos;
   const sobrante = descuentos - contraDivisas;
   const pagarUsd = ganadoDiv - contraDivisas;
-  const faltaTasa = tasaBs === null && brutoBs > 0;
-  const pagarBs = tasaBs === null ? (faltaTasa ? null : 0) : brutoBs - bsCentavos(sobrante, tasaBs);
-  const equivalente = pagarBs === null ? null : tasaBs === null ? 0 : usdCentavos(pagarBs, tasaBs);
-  const total = pagarUsd + (equivalente ?? 0);
-  const brutoTotal = brutoDiv + (tasaBs !== null && brutoBs > 0 ? usdCentavos(brutoBs, tasaBs) : 0);
+  // Valor en USD de lo que se paga en Bs: es exacto (no depende de la tasa); los Bs sí.
+  const valorBsUsd = refBsUsd - sobrante;
+  const faltaTasa = tasaBs === null && refBsUsd > 0;
+  const pagarBs = tasaBs === null ? (faltaTasa ? null : 0) : bsCentavos(valorBsUsd, tasaBs);
+  const total = pagarUsd + valorBsUsd;
+  const brutoTotal = brutoDiv + refBsUsd;
   return {
     totalBrutoUsd: deCentavos(brutoTotal),
-    brutoBs: deCentavos(brutoBs),
-    montoRefBs: tasaBs === null ? null : deCentavos(bsCentavos(brutoDiv, tasaBs) + brutoBs),
+    brutoBs: tasaBs === null ? 0 : deCentavos(bsCentavos(refBsUsd, tasaBs)),
+    brutoBsRefUsd: deCentavos(refBsUsd),
+    montoRefBs: tasaBs === null ? null : deCentavos(bsCentavos(brutoTotal, tasaBs)),
     bonificacionUsd: e.bonificacionUsd,
     descuentoTrabajoUsd: e.descuentoTrabajoUsd,
     descuentoPrestamoUsd: e.descuentoPrestamoUsd,
     descuentosUsd: deCentavos(descuentos),
     pagarUsd: deCentavos(pagarUsd),
     pagarBs: pagarBs === null ? null : deCentavos(pagarBs),
-    equivalenteBsUsd: equivalente === null ? null : deCentavos(equivalente),
+    equivalenteBsUsd: deCentavos(valorBsUsd),
     totalUsd: deCentavos(total),
     totalBs: tasaBs === null ? null : deCentavos(bsCentavos(total, tasaBs)),
     monedaPago: monedaDeLinea(deCentavos(pagarUsd), pagarBs === null ? null : deCentavos(pagarBs)),
-    negativo: pagarUsd < 0 || (pagarBs !== null && pagarBs < 0),
-    prestamoExcedeGanado: prestamoExcedeGanado(e, tasaBs),
+    negativo: pagarUsd < 0 || valorBsUsd < 0,
+    prestamoExcedeGanado: prestamoExcedeGanado(e),
     faltaTasa,
   };
 }

@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../src/utils/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('../src/config/supabase.js', () => ({ supabaseAdmin: {} }));
 
-import { partesDePago } from '../src/utils/nomina-partes-pago';
+import { partesDePago, sueldoBsComoUsd } from '../src/utils/nomina-partes-pago';
 import { mapNomina } from '../src/services/nomina-service';
 import { mapTrabajador } from '../src/services/nomina-trabajador-service';
 
@@ -70,5 +70,46 @@ describe('mapTrabajador', () => {
   it('sin la columna nueva el sueldo en Bs es 0', () => {
     const { pago_diario_bs: _x, ...vieja } = fila;
     expect(mapTrabajador(vieja).pagoDiarioBs).toBe(0);
+  });
+});
+
+describe('sueldoBsComoUsd: el «sueldo en Bs» se lee como USD de referencia', () => {
+  it('formato vigente (columna true o inexistente): el número guardado ya son USD', () => {
+    expect(sueldoBsComoUsd({ monto_base_bs: '8.00', sueldo_bs_en_usd: true }, 40)).toBe(8);
+    expect(sueldoBsComoUsd({ monto_base_bs: '8.00' }, 40)).toBe(8);
+    expect(sueldoBsComoUsd({ monto_base_bs: '8.00' }, null)).toBe(8);
+  });
+
+  it('renglón cerrado antes del cambio (formato anterior, en Bs): se convierte a USD con la tasa de su nómina solo para mostrarlo', () => {
+    expect(sueldoBsComoUsd({ monto_base_bs: '400.00', sueldo_bs_en_usd: false }, 40)).toBe(10);
+    expect(sueldoBsComoUsd({ monto_base_bs: '100.00', sueldo_bs_en_usd: false }, 36.4567)).toBe(2.74);
+  });
+
+  it('formato anterior sin tasa utilizable: no inventa una conversión', () => {
+    expect(sueldoBsComoUsd({ monto_base_bs: '400.00', sueldo_bs_en_usd: false }, null)).toBe(400);
+    expect(sueldoBsComoUsd({ monto_base_bs: '400.00', sueldo_bs_en_usd: false }, 0)).toBe(400);
+  });
+
+  it('sin sueldo en Bs es 0', () => {
+    expect(sueldoBsComoUsd({}, 40)).toBe(0);
+    expect(sueldoBsComoUsd({ monto_base_bs: '0', sueldo_bs_en_usd: false }, 40)).toBe(0);
+  });
+});
+
+describe('mapNomina: renglones del formato anterior', () => {
+  const nomina = {
+    id: 'n1', numero: 7, tipo: 'OPERATIVO', semana_inicio: '2026-10-05', tasa_bs: '40', estado: 'CERRADA', version: 2,
+    cantidad_divisas: 1, cantidad_bs: 1, total_divisas_usd: 90, total_bs: 2000, total_equivalente_usd: 50, total_combinado_usd: 140,
+    total_combinado_bs: 5600,
+  };
+
+  it('un renglón cerrado con el sueldo en Bs guardado en bolívares se muestra en USD de referencia; sus totales guardados no cambian', () => {
+    const l = mapNomina({ ...nomina, lineas: [{ ...lineaNueva, sueldo_bs_en_usd: false }] }).lineas[0];
+    expect(l).toMatchObject({ montoBaseBs: 10, brutoBs: 2000, pagarBs: 2000, pagarUsd: 90, totalUsd: 140 });
+  });
+
+  it('un renglón del formato vigente se muestra tal cual', () => {
+    const l = mapNomina({ ...nomina, lineas: [{ ...lineaNueva, monto_base_bs: '10.00', sueldo_bs_en_usd: true }] }).lineas[0];
+    expect(l.montoBaseBs).toBe(10);
   });
 });

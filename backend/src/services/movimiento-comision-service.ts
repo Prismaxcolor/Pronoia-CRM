@@ -6,6 +6,7 @@ import { aplicaComisionBancaria, planificarComisionBancaria } from '../utils/com
 import { logger } from '../utils/logger.js';
 import { crearMovimiento, obtenerMovimiento, type Movimiento } from './banca-service.js';
 import { registrarAuditoria } from './auditoria-service.js';
+import { aplicarCategoriaAComisiones } from './comision-categoria-service.js';
 import type { CrearMovimientoInput } from '../schemas/cochinito.js';
 
 /**
@@ -80,7 +81,10 @@ async function conComision(input: CrearMovimientoInput, userId: string): Promise
 
   const r = (data ?? {}) as Record<string, unknown>;
   const movimientoId = String(r.movimientoId ?? '');
-  const advertencia = await adjuntarComprobantes(movimientoId, input.comprobantes);
+  const avisoComprobante = await adjuntarComprobantes(movimientoId, input.comprobantes);
+  // El cargo de la comisión lleva siempre la categoría COMISIONES BANCARIAS (la BD también lo impone).
+  const categoria = await aplicarCategoriaAComisiones(r.comisionId ? [String(r.comisionId)] : []);
+  const advertencia = avisoComprobante ?? categoria.advertencia;
   const movimiento = await obtenerMovimiento(movimientoId);
   if (!movimiento) return fallo(500, MENSAJE_SIN_LECTURA);
   return {

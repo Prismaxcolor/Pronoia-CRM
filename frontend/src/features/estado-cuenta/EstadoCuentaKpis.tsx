@@ -8,11 +8,13 @@ interface Props {
   kpis: KpisEstadoCuenta;
   /** true si hay filtro de fechas: las cifras son solo de ese periodo. */
   conFiltroFechas: boolean;
+  /** Saldo real de hoy de toda la cuenta; con filtro de fechas se muestra aparte del saldo del periodo. */
+  saldoActual: number;
 }
 
 /** Los 4 indicadores del estado de cuenta. Facturado, pagado y saldo son los `totales` del servidor (misma cifra de la
  *  lista de proveedores/clientes); el adelanto disponible se suma de las entradas de tipo adelanto. */
-function EstadoCuentaKpis({ tipo, kpis, conFiltroFechas }: Props) {
+function EstadoCuentaKpis({ tipo, kpis, conFiltroFechas, saldoActual }: Props) {
   const esProveedor = tipo === 'proveedor';
   const periodo = conFiltroFechas ? 'del periodo filtrado' : 'de todo el historial';
   const saldoSubtitulo = kpis.saldo > 0.005
@@ -20,6 +22,8 @@ function EstadoCuentaKpis({ tipo, kpis, conFiltroFechas }: Props) {
     : kpis.saldo < -0.005 ? 'Saldo a favor (se pagó de más)' : 'Cuenta al día';
 
   return (
+    <>
+    {conFiltroFechas && <SaldoActualAviso tipo={tipo} saldoActual={saldoActual} saldoPeriodo={kpis.saldo} />}
     <GrillaKpis>
       <TarjetaKpi
         titulo="Facturado"
@@ -38,7 +42,7 @@ function EstadoCuentaKpis({ tipo, kpis, conFiltroFechas }: Props) {
         comparacion={null}
       />
       <TarjetaKpi
-        titulo="Saldo"
+        titulo={conFiltroFechas ? 'Saldo del periodo' : 'Saldo'}
         icono={<Scale size={16} />}
         ayuda={`Lo que falta ${esProveedor ? 'pagar' : 'cobrar'}, en USD: Facturado menos ${esProveedor ? 'Pagado' : 'Cobrado'}. Positivo: ${esProveedor ? 'se le debe pagar al proveedor' : 'el cliente nos debe'}. Negativo: saldo a favor (${esProveedor ? 'se le pagó de más' : 'el cliente pagó de más'}). Es el total de la cuenta: no indica qué facturas están pagadas.`}
         valor={formatearUsdDecimales(kpis.saldo, 2)}
@@ -56,6 +60,24 @@ function EstadoCuentaKpis({ tipo, kpis, conFiltroFechas }: Props) {
         comparacion={null}
       />
     </GrillaKpis>
+    </>
+  );
+}
+
+/** Con filtro de fechas las cifras de abajo son solo del periodo: aquí se deja siempre a la vista el saldo real de hoy. */
+function SaldoActualAviso({ tipo, saldoActual, saldoPeriodo }: { tipo: TipoEntidad; saldoActual: number; saldoPeriodo: number }) {
+  const esProveedor = tipo === 'proveedor';
+  const detalle = saldoActual > 0.005
+    ? (esProveedor ? 'Por pagar al proveedor' : 'Por cobrar al cliente')
+    : saldoActual < -0.005 ? 'Saldo a favor' : 'Cuenta al día';
+  return (
+    <div role="status" className="mb-3 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 rounded-xl border border-border bg-surface-alt px-4 py-3">
+      <div>
+        <p className="text-xs font-medium text-text-secondary">Saldo actual de la cuenta (hoy, todo el historial)</p>
+        <p className="text-xl font-bold tabular-nums text-text-primary">{formatearUsdDecimales(saldoActual, 2)} <span className="text-sm font-normal text-text-secondary">{detalle}</span></p>
+      </div>
+      <p className="text-xs text-text-secondary">Saldo del periodo filtrado: <span className="font-semibold tabular-nums text-text-primary">{formatearUsdDecimales(saldoPeriodo, 2)}</span></p>
+    </div>
   );
 }
 

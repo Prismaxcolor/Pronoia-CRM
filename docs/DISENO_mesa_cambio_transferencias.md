@@ -55,6 +55,18 @@ Un trigger sobre `movimientos` impide anular o cambiar importes/cuentas de una t
 - Mesa de cambio: N/C y N/D se registran como cualquier asiento (nota obligatoria). Los asientos ligados a una transferencia no se anulan a mano (se anulan con la transferencia).
 - Compatibilidad: sin la migración, el estado de cuenta y Wallet siguen funcionando (`select *`, campos `mesa_*` null); crear/completar responden 503 y N/C y N/D responden 503 al registrarse.
 
+## Cobro parcial y foto del cobro
+
+Estado: implementado en la rama Julio (migración `migration_mesa_cambio_cobro_parcial.sql`, rollback `_ROLLBACK.sql`, sin aplicar).
+
+- Al completar, el usuario elige **cobrar todo lo pendiente** o un **cobro parcial** (el cambista solo abonó una parte) y puede adjuntar una **foto** (opcional). Lo pendiente se cobra después con "Cobrar el resto".
+- Estados de `mesa_estado`: `en_proceso` (nada cobrado) -> `parcial` (cobrado < neto) -> `completada` (cobrado = neto). `mesa_monto_cobrado` guarda el neto ya acreditado (moneda destino); pendiente = (bruto - comisión) - cobrado.
+- Saldos (se calculan desde los movimientos): destino en proceso = 0, parcial = `mesa_monto_cobrado`, completada = `coalesce(monto_destino, monto)`. Cada cobro suma al destino lo cobrado; anular una parcial revierte el origen y lo ya acreditado (mismo principio: no se borra, se reversa).
+- Asientos del cambista: un COBRO por cobro, con el USD proporcional al neto cobrado (`cargo * cobro / neto`); el cobro que completa toma el resto exacto del CARGO. La suma de los COBRO iguala siempre al CARGO y el saldo del cambista vuelve a 0 sin deriva de redondeo. El índice único (movimiento, tipo) ya no aplica a COBRO.
+- RPC `cobrar_transferencia_mesa_cambio(movimiento, monto|null, pendiente_esperado|null, usuario)`. `pendiente_esperado` es lo que el usuario vio: si cambió (doble clic u otro cobro) la RPC rechaza (409) en vez de cobrar de más. `completar_transferencia_mesa_cambio` queda como envoltorio (cobra todo).
+- Ruta: `POST /api/cochinito/movimientos/:id/completar` acepta `{ montoCobrado?, pendienteEsperado?, comprobantes? }`; cuerpo vacío = comportamiento anterior. La foto se sube con el mecanismo de siempre (`POST /api/uploads/comprobantes`, requiere `cochinito:crear`) y sus URLs se **agregan** a `movimientos.comprobantes` (sin duplicar); si falla el adjunto, el cobro ya quedó y la respuesta trae `advertencia`.
+- Compatibilidad: sin la migración, el cobro total sigue funcionando con la RPC anterior y el cobro parcial responde 503.
+
 ## Riesgos
 
 - Interpretación del signo: el CARGO ("les debemos") queda abierto mientras la operación está en proceso y se salda al completar. Confirmar con el cliente si prefiere leerlo al revés.

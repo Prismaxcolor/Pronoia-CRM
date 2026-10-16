@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { filasPagos } from '../../frontend/src/features/nomina/nomina-pdf-filas';
 import {
-  bloqueoComisionPago, construirPayloadPago, cuentasDeGrupo, estadoPagoNomina, formatearMontoPago, gruposDePago, lineaDePago, preguntaComision,
-  sePuedePagar, textoPagada, validarPago, type Elecciones,
+  bloqueoComisionPago, construirPayloadPago, cuentasDeGrupo, estadoPagoNomina, estadoPagoTrabajador, formatearMontoPago, gruposDePago,
+  gruposDePagoLinea, lineaDePago, modoPagoNomina, pagosDeTrabajador, preguntaComision, resumenPagoTrabajadores, sePuedePagar,
+  sePuedePagarTrabajador, textoPagada, validarPago, type Elecciones,
 } from '../../frontend/src/features/nomina/nomina-pago';
 import type { Banca } from '../../shared/types/banca';
-import type { Nomina, PagoNomina } from '../../shared/types/nomina';
+import type { LineaNomina, Nomina, PagoNomina } from '../../shared/types/nomina';
 import type { TotalesNomina } from '../../shared/types/nomina-calculo';
 
 const totales = (extra: Partial<TotalesNomina> = {}): TotalesNomina => ({
@@ -23,7 +24,7 @@ const VES_JUSTO = banca('ves-justo', 'VES', 2000);
 const bancas = [USD1, USD_POCO, VES1, VES_JUSTO, banca('usd-vieja', 'USD', 900, { archivada: true }), banca('usd-ver', 'USD', 900, { puedeEditar: false })];
 
 const pago = (moneda: 'USD' | 'BS', extra: Partial<PagoNomina> = {}): PagoNomina => ({
-  id: moneda, monedaPago: moneda, bancaId: 'b', bancaNombre: moneda === 'USD' ? 'CAJA CHICA' : 'CAJA BS', movimientoId: 'm', movimientoNumero: 12,
+  id: moneda, trabajadorId: null, comprobantes: [], monedaPago: moneda, bancaId: 'b', bancaNombre: moneda === 'USD' ? 'CAJA CHICA' : 'CAJA BS', movimientoId: 'm', movimientoNumero: 12,
   anulado: false, monto: moneda === 'USD' ? 100 : 2000, montoUsd: moneda === 'USD' ? 100 : 50, cantidad: 1, fecha: '2026-10-09', referencia: null,
   pagadoEn: '2026-10-09T15:00:00Z', tasaBinance: null, tasaBinanceCapturada: null, equivalenteBinanceUsd: null, ...extra,
 });
@@ -166,5 +167,71 @@ describe('filasPagos (PDF)', () => {
       ['Pago anulado', 'Bs 2.000,00 desde CAJA BS · MV-0012 · 09/10/2026'],
     ]);
     expect(filasPagos({ pagos: [] })).toEqual([]);
+  });
+});
+
+// --- Pago por trabajador ---------------------------------------------------------------------------------------------
+
+const linea = (extra: Partial<LineaNomina> = {}): LineaNomina => ({
+  trabajadorId: 't1', trabajadorNombre: 'Ana', monedaPago: 'MIXTO', diasTrabajados: 5, montoBaseUsd: 12, montoBaseBs: 10, totalBrutoUsd: 110,
+  brutoBs: 2000, montoRefBs: 4400, bonificacionUsd: 0, descuentoTrabajoUsd: 0, descuentoPrestamoUsd: 0, pagarUsd: 60, pagarBs: 2000,
+  equivalenteBsUsd: 50, totalUsd: 110, totalBs: 4400, nota: null, cuotas: [], ...extra,
+});
+
+describe('gruposDePagoLinea', () => {
+  it('un trabajador con las dos partes: divisas y bolívares (con su equivalente), una persona cada uno', () => {
+    expect(gruposDePagoLinea(linea())).toEqual([
+      { moneda: 'USD', monto: 60, montoUsd: 60, cantidad: 1 },
+      { moneda: 'BS', monto: 2000, montoUsd: 50, cantidad: 1 },
+    ]);
+  });
+
+  it('solo la parte con monto; sin nada por cobrar, vacío', () => {
+    expect(gruposDePagoLinea(linea({ pagarBs: 0 })).map(g => g.moneda)).toEqual(['USD']);
+    expect(gruposDePagoLinea(linea({ pagarUsd: 0 })).map(g => g.moneda)).toEqual(['BS']);
+    expect(gruposDePagoLinea(linea({ pagarUsd: 0, pagarBs: null }))).toEqual([]);
+  });
+});
+
+describe('estado del pago de cada trabajador', () => {
+  const n = (pagos: PagoNomina[], estado: Nomina['estado'] = 'CERRADA') => ({
+    estado, pagos, lineas: [linea(), linea({ trabajadorId: 't2', trabajadorNombre: 'Luis', pagarBs: 0, totalUsd: 60 })],
+  });
+
+  it('sin pagos: todos pendientes y se puede pagar a cada uno', () => {
+    const nomina = n([]);
+    expect(estadoPagoTrabajador(nomina, nomina.lineas[0])).toBe('pendiente');
+    expect(sePuedePagarTrabajador(nomina, nomina.lineas[0])).toBe(true);
+    expect(resumenPagoTrabajadores(nomina)).toEqual({ pagados: 0, total: 2 });
+    expect(modoPagoNomina(nomina.pagos)).toBe('sin-pagos');
+  });
+
+  it('pagar a uno no marca al otro; el pagado ya no ofrece el botón', () => {
+    const nomina = n([pago('USD', { trabajadorId: 't1' }), pago('BS', { trabajadorId: 't1' })]);
+    expect(estadoPagoTrabajador(nomina, nomina.lineas[0])).toBe('pagado');
+    expect(sePuedePagarTrabajador(nomina, nomina.lineas[0])).toBe(false);
+    expect(estadoPagoTrabajador(nomina, nomina.lineas[1])).toBe('pendiente');
+    expect(sePuedePagarTrabajador(nomina, nomina.lineas[1])).toBe(true);
+    expect(resumenPagoTrabajadores(nomina)).toEqual({ pagados: 1, total: 2 });
+    expect(modoPagoNomina(nomina.pagos)).toBe('por-trabajador');
+    expect(pagosDeTrabajador(nomina.pagos, 't2')).toEqual([]);
+  });
+
+  it('el pago de toda la nómina cubre a todos y bloquea el botón individual', () => {
+    const nomina = n([pago('USD')]);
+    expect(modoPagoNomina(nomina.pagos)).toBe('completa');
+    expect(nomina.lineas.map(l => estadoPagoTrabajador(nomina, l))).toEqual(['pagado', 'pagado']);
+    expect(sePuedePagarTrabajador(nomina, nomina.lineas[0])).toBe(false);
+  });
+
+  it('un pago anulado figura como anulado; solo se paga una nómina cerrada; sin monto no hay nada que pagar', () => {
+    const anulada = n([pago('USD', { trabajadorId: 't1', anulado: true })], 'ANULADA');
+    expect(estadoPagoTrabajador(anulada, anulada.lineas[0])).toBe('anulado');
+    expect(sePuedePagarTrabajador(anulada, anulada.lineas[1])).toBe(false);
+    expect(sePuedePagarTrabajador(n([], 'BORRADOR'), linea())).toBe(false);
+    const vacia = linea({ pagarUsd: 0, pagarBs: 0, totalUsd: 0 });
+    expect(estadoPagoTrabajador(n([]), vacia)).toBe('sin-monto');
+    expect(sePuedePagarTrabajador(n([]), vacia)).toBe(false);
+    expect(resumenPagoTrabajadores({ pagos: [], lineas: [vacia] })).toEqual({ pagados: 0, total: 0 });
   });
 });

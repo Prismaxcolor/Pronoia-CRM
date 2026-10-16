@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   generarEstadoCuentaPdf,
+  textoPeriodoEstadoCuenta,
   generarNotaPdf,
   generarPagoPdf,
   nombreArchivoEstadoCuenta,
@@ -82,12 +83,23 @@ describe('comprobante de pago / cobro / cruce', () => {
   });
 });
 
+describe('textoPeriodoEstadoCuenta', () => {
+  it('vacío sin rango; con rango abierto usa inicio/hoy', () => {
+    expect(textoPeriodoEstadoCuenta(undefined)).toBe('');
+    expect(textoPeriodoEstadoCuenta({ desde: null, hasta: null })).toBe('');
+    expect(textoPeriodoEstadoCuenta({ desde: '2026-10-01', hasta: '2026-10-15' })).toBe('Periodo: 2026-10-01 al 2026-10-15');
+    expect(textoPeriodoEstadoCuenta({ desde: null, hasta: '2026-10-15' })).toBe('Periodo: inicio al 2026-10-15');
+    expect(textoPeriodoEstadoCuenta({ desde: '2026-10-01', hasta: null })).toBe('Periodo: 2026-10-01 al hoy');
+  });
+});
+
 describe('estado de cuenta', () => {
   it('genera PDF con entradas y totales (también vacío)', () => {
-    const base = { entidad: { id: 'P1', tipo: 'proveedor' as const, nombre: 'Reciclados El Valle' }, totales: { facturado: 500, pagado: 200, saldo: 300 } };
+    const base = { entidad: { id: 'P1', tipo: 'proveedor' as const, nombre: 'Reciclados El Valle' }, totales: { facturado: 500, pagado: 200, saldo: 300 }, saldoActual: 300 };
     const entradas = Array.from({ length: 80 }, (_, i) => ({ fecha: '2026-10-01', tipo: 'factura' as const, descripcion: 'x', referencia: `C-${i}`, cargo: 10, abono: 0 }));
     expect(esPdf(generarEstadoCuentaPdf({ ...base, entradas }, '2026-10-03'))).toBe(true); // varias páginas
     expect(esPdf(generarEstadoCuentaPdf({ ...base, entradas: [] }, '2026-10-03'))).toBe(true);
+    expect(esPdf(generarEstadoCuentaPdf({ ...base, entradas, saldoActual: 450, periodo: { desde: '2026-10-01', hasta: '2026-10-15' } }, '2026-10-16'))).toBe(true);
     expect(nombreArchivoEstadoCuenta({ ...base, entradas: [] }, '2026-10-03')).toBe('estado-de-cuenta-reciclados-el-valle-2026-10-03.pdf');
   });
 });

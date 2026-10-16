@@ -25,7 +25,10 @@
 --            when m.tipo = 'egreso'        and m.banca_origen_id  = b.id then -m.monto
 --            when m.tipo = 'transferencia' and m.banca_origen_id  = b.id then -m.monto
 --            when m.tipo = 'transferencia' and m.banca_destino_id = b.id
---                 and m.mesa_estado is distinct from 'en_proceso' then coalesce(m.monto_destino, m.monto)
+--                 and m.mesa_estado = 'en_proceso' then 0
+--            when m.tipo = 'transferencia' and m.banca_destino_id = b.id
+--                 and m.mesa_estado = 'parcial' then coalesce(m.mesa_monto_cobrado, 0)
+--            when m.tipo = 'transferencia' and m.banca_destino_id = b.id then coalesce(m.monto_destino, m.monto)
 --            else 0
 --          end), 0) as saldo_calculado
 --     from public.bancas b
@@ -40,16 +43,18 @@
 --  order by abs(b.saldo - c.saldo_calculado) desc;
 
 
--- 2. Transferencias con mesa de cambio EN PROCESO (pendientes de completar) ---------------------------------------
---    Informativa: revisa las más antiguas; dinero ya descontado del origen que el destino aún no recibe.
+-- 2. Transferencias con mesa de cambio EN PROCESO o en COBRO PARCIAL (pendientes de completar) -----------------------
+--    Informativa: revisa las más antiguas; dinero ya descontado del origen que el destino aún no recibe (total o en parte).
+--    Requiere migration_mesa_cambio_cobro_parcial.sql (mesa_monto_cobrado); sin ella, usa solo mesa_estado = 'en_proceso'.
 --
 -- select m.numero_sistema, m.fecha, now() - m.creado_en as antiguedad, c.nombre as cambista,
---        m.monto, m.moneda, m.mesa_monto_bruto, m.mesa_comision, bo.nombre as origen, bd.nombre as destino
+--        m.monto, m.moneda, m.mesa_monto_bruto, m.mesa_comision, m.mesa_estado, coalesce(m.mesa_monto_cobrado, 0) as cobrado,
+--        bo.nombre as origen, bd.nombre as destino
 --   from public.movimientos m
 --   join public.cambistas c  on c.id  = m.mesa_cambista_id
 --   join public.bancas bo    on bo.id = m.banca_origen_id
 --   join public.bancas bd    on bd.id = m.banca_destino_id
---  where m.mesa_estado = 'en_proceso' and not m.anulado
+--  where m.mesa_estado in ('en_proceso', 'parcial') and not m.anulado
 --  order by m.creado_en;
 
 
@@ -64,8 +69,10 @@
 --  where m.mesa_cambista_id is not null and not m.anulado
 --  group by m.id, m.numero_sistema, m.mesa_estado
 -- having (m.mesa_estado = 'en_proceso' and count(*) filter (where a.tipo = 'CARGO' and not a.anulado) <> 1)
+--     or (m.mesa_estado = 'parcial' and (count(*) filter (where a.tipo = 'CARGO' and not a.anulado) <> 1
+--                                       or count(*) filter (where a.tipo = 'COBRO' and not a.anulado) < 1))
 --     or (m.mesa_estado = 'completada' and (count(*) filter (where a.tipo = 'CARGO' and not a.anulado) <> 1
---                                          or count(*) filter (where a.tipo = 'COBRO' and not a.anulado) <> 1));
+--                                          or count(*) filter (where a.tipo = 'COBRO' and not a.anulado) < 1));
 --
 --    3b. Asientos vigentes de una transferencia ANULADA (debe dar 0 filas: al anular se anulan los asientos).
 --
@@ -81,12 +88,16 @@
 --   from public.cambista_asientos a
 --  where a.movimiento_id is null and a.nota like 'Transferencia %';
 --
---    3d. Importe del COBRO distinto del CARGO de la misma transferencia (debe dar 0 filas).
+--    3d. Transferencia COMPLETADA: la suma de sus COBRO vigentes debe igualar el CARGO (debe dar 0 filas).
+--        Con cobro parcial hay varios COBRO por transferencia; una parcial suma menos que el CARGO (es normal).
 --
--- select cg.movimiento_id, cg.monto_usd as cargo_usd, cb.monto_usd as cobro_usd
+-- select cg.movimiento_id, cg.monto_usd as cargo_usd, sum(cb.monto_usd) as cobros_usd
 --   from public.cambista_asientos cg
+--   join public.movimientos m on m.id = cg.movimiento_id and m.mesa_estado = 'completada' and not m.anulado
 --   join public.cambista_asientos cb on cb.movimiento_id = cg.movimiento_id and cb.tipo = 'COBRO' and not cb.anulado
---  where cg.tipo = 'CARGO' and not cg.anulado and cg.monto_usd <> cb.monto_usd;
+--  where cg.tipo = 'CARGO' and not cg.anulado
+--  group by cg.movimiento_id, cg.monto_usd
+-- having cg.monto_usd <> sum(cb.monto_usd);
 
 
 -- 4. Mesa de cambio completada: neto acreditado = bruto - comisión (debe dar 0 filas) -----------------------------

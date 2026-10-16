@@ -84,7 +84,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, o
           {etiquetaEstadoMesa(m) && (
             <Insignia
               tono={esTransferenciaEnProceso(m) ? 'aviso' : 'exito'}
-              title={esTransferenciaEnProceso(m) ? 'El dinero ya salió de la cuenta origen, pero la cuenta destino aún no lo recibe: falta completar la transferencia.' : 'La cuenta destino ya recibió el saldo.'}
+              title={m.mesaEstado === 'parcial' ? 'El cambista abonó solo una parte: la cuenta destino recibió lo cobrado y falta cobrar el resto.' : esTransferenciaEnProceso(m) ? 'El dinero ya salió de la cuenta origen, pero la cuenta destino aún no lo recibe: falta completar la transferencia.' : 'La cuenta destino ya recibió el saldo.'}
             >{etiquetaEstadoMesa(m)}</Insignia>
           )}
           {m.anulado && <Insignia tono="peligro" title={m.anuladoMotivo ? `Motivo: ${m.anuladoMotivo}` : undefined}>Anulado</Insignia>}
@@ -127,7 +127,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, o
           <Link to={rutaDetalleMovimiento(m.id)} aria-label="Ver detalle del movimiento" title="Ver, compartir o descargar"
             className="rounded p-1.5 text-text-secondary hover:bg-surface-hover hover:text-text-primary"><Eye size={14} /></Link>
           {onCompletar && esTransferenciaEnProceso(m) && (
-            <button type="button" onClick={() => onCompletar(m)} aria-label="Completar transferencia" {...soloEnLinea(false, 'Completar (acredita el saldo en la cuenta destino)')}
+            <button type="button" onClick={() => onCompletar(m)} aria-label="Completar transferencia" {...soloEnLinea(false, 'Completar o cobrar una parte (acredita el saldo en la cuenta destino)')}
               className="rounded p-1.5 text-emerald-700 hover:bg-emerald-50"><CheckCircle2 size={14} /></button>
           )}
           {esCargoDeComision(m) ? (

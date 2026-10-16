@@ -8,6 +8,7 @@ import type { EstadoCuenta } from '../src/services/estado-cuenta-service';
 const estado: EstadoCuenta = {
   entidad: { id: 'e1', tipo: 'proveedor', nombre: 'Prov' },
   totales: { facturado: 100, pagado: 40, saldo: 60 },
+  saldoActual: 60,
   datosCruceIncompletos: true,
   entradas: [
     { fecha: '2026-01-01', tipo: 'factura', descripcion: 'Factura', referencia: 'C-0001', cargo: 100, abono: 0, facturaId: 'f1' },
@@ -30,7 +31,15 @@ describe('aEstadoCuentaPortal', () => {
     for (const prohibida of ['notaId', 'pagoId', 'facturaId', 'montoAnulado', 'adelantoDisponible', 'adelantoAplicado', 'anulada', 'pagada']) {
       expect(claves.has(prohibida)).toBe(false);
     }
-    expect(Object.keys(r)).toEqual(['entidad', 'entradas', 'totales']);
+    expect(Object.keys(r)).toEqual(['entidad', 'entradas', 'totales', 'saldoActual']);
+  });
+
+  it('lleva el saldo actual y el periodo solo cuando se consultó un rango', () => {
+    expect(r.saldoActual).toBe(60);
+    expect(r.periodo).toBeUndefined();
+    const conRango = aEstadoCuentaPortal({ ...estado, saldoActual: 75, periodo: { desde: '2026-01-02', hasta: null } });
+    expect(conRango.saldoActual).toBe(75);
+    expect(conRango.periodo).toEqual({ desde: '2026-01-02', hasta: null });
   });
 
   it('etiqueta notas de crédito y débito sin exponer el motivo interno', () => {

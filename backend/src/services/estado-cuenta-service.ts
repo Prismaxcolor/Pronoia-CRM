@@ -72,10 +72,21 @@ export interface EntradaEstadoCuenta {
   categoria?: CategoriaDeNota | null;
 }
 
+/** Rango de fechas (YYYY-MM-DD) con el que se consultó el estado de cuenta. */
+export interface PeriodoEstadoCuenta {
+  desde: string | null;
+  hasta: string | null;
+}
+
 export interface EstadoCuenta {
   entidad: { id: string; tipo: TipoEntidad; nombre: string };
   entradas: EntradaEstadoCuenta[];
+  /** Del periodo consultado: con rango de fechas es solo lo ocurrido dentro del rango; sin rango, todo el historial. */
   totales: { facturado: number; pagado: number; saldo: number };
+  /** Saldo real de hoy: de toda la cuenta, sin importar el rango consultado (sin rango == totales.saldo). */
+  saldoActual: number;
+  /** Rango consultado; ausente si se pidió todo el historial. */
+  periodo?: PeriodoEstadoCuenta;
   /** true si los datos de cruces/adelantos aplicados no se pudieron cargar completos (el saldo no depende de ellos). */
   datosCruceIncompletos?: true;
 }
@@ -275,8 +286,20 @@ export function construirEstadoCuenta(
     entidad,
     entradas,
     totales: { facturado, pagado, saldo },
+    // Con todo el historial el saldo del periodo ya es el saldo actual; con rango lo reemplaza conSaldoActual.
+    saldoActual: saldo,
     ...(datosCruce.incompleto ? { datosCruceIncompletos: true as const } : {}),
   };
+}
+
+/**
+ * Con rango de fechas, el estado de cuenta debe mostrar además el saldo real de hoy: toma el saldo de la
+ * cuenta completa (`completo`, sin rango) y lo deja junto al del periodo, junto con el rango consultado.
+ * Sin rango devuelve el estado tal cual. No muta ninguno de los dos.
+ */
+export function conSaldoActual(periodo: EstadoCuenta, completo: EstadoCuenta, desde?: string, hasta?: string): EstadoCuenta {
+  if (!desde && !hasta) return periodo;
+  return { ...periodo, saldoActual: completo.totales.saldo, periodo: { desde: desde ?? null, hasta: hasta ?? null } };
 }
 
 // ---- acceso a datos --------------------------------------------------------
@@ -402,7 +425,11 @@ export async function obtenerEstadoCuenta(
     categoria: n.categoria_id ? (categoriaPorId.get(n.categoria_id) ?? null) : null,
   }));
 
-  return construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos, notas, datosCruce);
+  const delPeriodo = construirEstadoCuenta({ id: entidad.id, tipo: tipoEntidad, nombre: entidad.nombre }, facturas, pagos, notas, datosCruce);
+  if (!desde && !hasta) return delPeriodo;
+  // Con rango también se calcula la cuenta completa para mostrar el saldo real de hoy.
+  const completo = await obtenerEstadoCuenta(tipoEntidad, id, undefined, undefined, permitidas);
+  return completo ? conSaldoActual(delPeriodo, completo, desde, hasta) : delPeriodo;
 }
 
 /**

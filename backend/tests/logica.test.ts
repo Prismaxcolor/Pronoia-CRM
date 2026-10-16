@@ -3,7 +3,7 @@ import {
   construirGruposInventario,
   type ProductoInventario,
 } from '../src/services/inventario-service.js';
-import { construirEstadoCuenta, agruparPagos } from '../src/services/estado-cuenta-service.js';
+import { construirEstadoCuenta, agruparPagos, conSaldoActual } from '../src/services/estado-cuenta-service.js';
 import { construirNotaAjusteDetalle } from '../src/services/nota-ajuste-service.js';
 import { normalizarCambiosRol } from '../src/services/usuario-service.js';
 
@@ -381,5 +381,39 @@ describe('normalizarCambiosRol', () => {
   it('no toca nada si el cambio no incluye rol', () => {
     const cambios = normalizarCambiosRol({ activo: false });
     expect(cambios).toEqual({ activo: false });
+  });
+});
+
+describe('conSaldoActual (estado de cuenta con rango de fechas)', () => {
+  const ent = { id: 'e1', tipo: 'proveedor' as const, nombre: 'Prov' };
+  const completo = construirEstadoCuenta(
+    ent,
+    [
+      { id: 'f1abcdef', total: 100, descripcion: null, fecha: '2026-09-01T10:00:00Z' },
+      { id: 'f2abcdef', total: 50, descripcion: null, fecha: '2026-10-05T10:00:00Z' },
+    ],
+    [{ id: 'm1', monto: 30, descripcion: null, referencia: null, fecha: '2026-10-06' }]
+  );
+  const delPeriodo = construirEstadoCuenta(
+    ent,
+    [{ id: 'f2abcdef', total: 50, descripcion: null, fecha: '2026-10-05T10:00:00Z' }],
+    [{ id: 'm1', monto: 30, descripcion: null, referencia: null, fecha: '2026-10-06' }]
+  );
+
+  it('sin rango el saldo actual es el saldo de toda la cuenta', () => {
+    expect(completo.saldoActual).toBe(120);
+    expect(conSaldoActual(completo, completo)).toBe(completo);
+  });
+
+  it('con rango conserva el saldo del periodo y agrega el saldo real de hoy y el periodo', () => {
+    const r = conSaldoActual(delPeriodo, completo, '2026-10-01', '2026-10-31');
+    expect(r.totales.saldo).toBe(20);
+    expect(r.saldoActual).toBe(120);
+    expect(r.periodo).toEqual({ desde: '2026-10-01', hasta: '2026-10-31' });
+    expect(delPeriodo.saldoActual).toBe(20);
+  });
+
+  it('con solo "hasta" el periodo marca desde en null', () => {
+    expect(conSaldoActual(delPeriodo, completo, undefined, '2026-10-31').periodo).toEqual({ desde: null, hasta: '2026-10-31' });
   });
 });

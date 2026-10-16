@@ -144,4 +144,14 @@ describe('obtenerEstadoCuenta con cuentas restringidas', () => {
     expect(referencias(restringido!)).toEqual(expect.arrayContaining(['REF-A', TEXTO_CUENTA_RESTRINGIDA]));
     expect(JSON.stringify(restringido)).not.toContain('REF-B');
   });
+
+  it('con rango de fechas devuelve el periodo y el saldo actual de toda la cuenta', async () => {
+    estado.tablas.movimientos = [{ ...fila('m1', 'bA', 'REF-A', []), grupo_id: null, numero: null, subtipo: null }];
+    const r = await obtenerEstadoCuenta('proveedor', PROV, '2026-10-01', '2026-10-31');
+    expect(r?.periodo).toEqual({ desde: '2026-10-01', hasta: '2026-10-31' });
+    expect(r?.saldoActual).toBe(-100);
+    const sinRango = await obtenerEstadoCuenta('proveedor', PROV);
+    expect(sinRango?.periodo).toBeUndefined();
+    expect(sinRango?.saldoActual).toBe(sinRango?.totales.saldo);
+  });
 });

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
-import SelectorBanca from '../cochinito/SelectorBanca';
+import { X, Plus } from 'lucide-react';
 import { obtenerBancas } from '../../services/banca-service';
 import { obtenerTasaOficial } from '../../services/tasa-service';
 import { obtenerFacturas } from '../../services/factura-cv-service';
@@ -25,6 +24,13 @@ import CategoriaCobroBotones from './CategoriaCobroBotones';
 import { useCategoriasCobro } from './useCategoriasCobro';
 import AvisoCategoriasCobro from './AvisoCategoriasCobro';
 import { categoriaParaEnviar, categoriasBloqueanCobro, cobroPideCategoria, errorCategoriaCobro } from './categoria-cobro';
+import FilaBancaPago, { type LineaBanca } from './FilaBancaPago';
+import {
+  FUENTE_TASA_PAGO_INICIAL, errorEleccionComisionPago, llevaComisionDeLinea, montoBsDePago, tasaDePago,
+} from './pago-bs-tasa';
+import { useTasasUsd } from '../cochinito/useTasasUsd';
+import { useComisionDisponible } from '../cochinito/useComisionDisponible';
+import { bloqueoPorComision } from '../cochinito/comision-formulario';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -36,15 +42,6 @@ interface Props {
   notasCreditoPendientes: EntradaEstadoCuenta[];
   onClose: () => void;
   onRegistrado: (resultado: ResultadoCobroMultiple) => void;
-}
-
-interface LineaBanca {
-  id: number;
-  bancaId: string;
-  /** USD, string editable. */
-  montoUsd: string;
-  /** Referencia propia de esta banca (ej. número de transferencia). */
-  referencia: string;
 }
 
 function hoyISO(): string {
@@ -68,6 +65,9 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
 
   const [bancas, setBancas] = useState<Banca[]>([]);
   const [tasa, setTasa] = useState<number | null>(null);
+  // Pago a proveedor en Bs: tasas Binance/BCV (las del Wallet) para elegir con cuál calcular, y comisión bancaria del Wallet.
+  const tasasUsd = useTasasUsd(esProveedor);
+  const comisionDisponible = useComisionDisponible(esProveedor);
   const [facturasPendientes, setFacturasPendientes] = useState<FacturaCV[]>([]);
   /** Facturas marcadas → monto (USD, string editable) que se les aplica de este pago.
    *  Por defecto el saldo pendiente completo, pero se puede bajar para un pago parcial. */
@@ -299,6 +299,11 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   };
   const setLineaReferencia = (id: number, referencia: string) =>
     setLineasBanca(prev => prev.map(l => (l.id === id ? { ...l, referencia } : l)));
+  const setLineaCampos = (id: number, campos: Partial<LineaBanca>) =>
+    setLineasBanca(prev => prev.map(l => (l.id === id ? { ...l, ...campos } : l)));
+  /** Bs por USD de una línea: en el pago a proveedor la que se eligió (Binance, BCV o manual); en el cobro, la BCV de siempre. */
+  const tasaDeLinea = (l: LineaBanca): number | null =>
+    esProveedor ? tasaDePago(l.tasaFuente ?? FUENTE_TASA_PAGO_INICIAL, tasasUsd.tasas, l.tasaManual ?? '') : tasa;
 
   const sumaBancasUsd = lineasEfectivas.reduce((acc, l) => acc + (parseFloat(l.montoUsd) || 0), 0);
   const sumaBancasCuadra = Math.abs(sumaBancasUsd - totalEditadoNum) <= 0.01;
@@ -364,8 +369,18 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       const montoUsdLinea = parseFloat(linea.montoUsd) || 0;
       if (montoUsdLinea <= 0) { setError(`Cargá un monto para ${banca.nombre}.`); return; }
       const esBsLinea = banca.moneda === 'VES';
-      if (esBsLinea && !tasa) { setError('No hay tasa de cambio disponible para convertir a bolívares.'); return; }
-      const montoBanca = esBsLinea && tasa ? montoUsdLinea * tasa : montoUsdLinea;
+      const tasaLinea = tasaDeLinea(linea);
+      if (esBsLinea && !tasaLinea) {
+        setError(esProveedor ? `Elige una tasa disponible (Binance, BCV o manual) para ${banca.nombre}.` : 'No hay tasa de cambio disponible para convertir a bolívares.');
+        return;
+      }
+      // Comisión bancaria del Wallet: en una cuenta en Bs hay que responder Sí o No (si está habilitada).
+      const bloqueoComision = esProveedor && esBsLinea
+        ? bloqueoPorComision({ estado: comisionDisponible.estado, tipo: 'egreso', moneda: 'VES', mesaActiva: false })
+        : null;
+      const errorComision = esProveedor && esBsLinea && comisionDisponible.disponible ? errorEleccionComisionPago(linea.comision ?? '', banca.nombre) : null;
+      if (bloqueoComision ?? errorComision) { setError(bloqueoComision ?? errorComision); return; }
+      const montoBanca = esBsLinea && tasaLinea ? (esProveedor ? (montoBsDePago(montoUsdLinea, tasaLinea) ?? 0) : montoUsdLinea * tasaLinea) : montoUsdLinea;
       // Un pago a proveedor no bloquea si supera el saldo disponible (puede
       // quedar en negativo); un cobro de cliente nunca podría dejar una
       // banca en negativo (siempre suma), así que no aplica ninguno de los
@@ -376,6 +391,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
         moneda: banca.moneda as 'USD' | 'VES',
         montoUsd: montoUsdLinea,
         referencia: linea.referencia.trim() || null,
+        ...(esProveedor ? { llevaComision: llevaComisionDeLinea(linea.comision ?? '', esBsLinea, comisionDisponible.disponible) } : {}),
       });
     }
 
@@ -681,63 +697,28 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
             </div>
 
             <div className="space-y-2">
-              {lineasEfectivas.map(linea => {
-                const banca = bancas.find(b => b.id === linea.bancaId);
-                const esBsLinea = banca?.moneda === 'VES';
-                const montoUsdLinea = parseFloat(linea.montoUsd) || 0;
-                const montoBsLinea = esBsLinea && tasa ? montoUsdLinea * tasa : null;
-                return (
-                  <div key={linea.id} className="border border-border rounded-lg p-2 space-y-2">
-                    <div className="flex flex-col sm:flex-row items-start gap-2">
-                      <SelectorBanca
-                        bancas={bancas.filter(b => b.id === linea.bancaId || !bancasUsadas.has(b.id))}
-                        valor={linea.bancaId}
-                        placeholder="— Selecciona la cuenta o caja —"
-                        ariaLabel="Cuenta o caja"
-                        className="w-full sm:flex-1"
-                        onChange={id => setLineaBancaId(linea.id, id)}
-                      />
-                      <div className="flex items-start gap-2 w-full sm:w-auto">
-                        <div className="shrink-0">
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">$</span>
-                            <input
-                              type="number" step="0.001" min="0.01"
-                              value={linea.montoUsd}
-                              onChange={e => setLineaMonto(linea.id, e.target.value)}
-                              className={`${inputClass} w-28 pl-6`}
-                              placeholder="0.00"
-                            />
-                          </div>
-                          {montoBsLinea != null && (
-                            <p className="text-xs text-text-muted mt-1 text-right">≈ Bs {fmt(montoBsLinea)}</p>
-                          )}
-                        </div>
-                        {lineasBanca.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => quitarLinea(linea.id)}
-                            className="p-2.5 text-text-muted hover:text-red-600 transition-colors shrink-0"
-                            title="Quitar banca"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <input
-                      type="text" maxLength={50}
-                      value={linea.referencia}
-                      onChange={e => setLineaReferencia(linea.id, e.target.value)}
-                      className={`${inputClass} text-xs`}
-                      placeholder="Referencia de esta banca (opcional) — ej: TRF-432"
-                    />
-                  </div>
-                );
-              })}
+              {lineasEfectivas.map(linea => (
+                <FilaBancaPago
+                  key={linea.id}
+                  linea={linea}
+                  banca={bancas.find(b => b.id === linea.bancaId)}
+                  bancasElegibles={bancas.filter(b => b.id === linea.bancaId || !bancasUsadas.has(b.id))}
+                  esProveedor={esProveedor}
+                  puedeQuitar={lineasBanca.length > 1}
+                  tasaBs={tasaDeLinea(linea)}
+                  tasasUsd={tasasUsd}
+                  comisionEstado={comisionDisponible.estado}
+                  onBanca={id => setLineaBancaId(linea.id, id)}
+                  onMonto={monto => setLineaMonto(linea.id, monto)}
+                  onReferencia={ref => setLineaReferencia(linea.id, ref)}
+                  onCampos={campos => setLineaCampos(linea.id, campos)}
+                  onQuitar={() => quitarLinea(linea.id)}
+                  onReintentarComision={comisionDisponible.reintentar}
+                />
+              ))}
             </div>
 
-            {!tasa && lineasBanca.some(l => bancas.find(b => b.id === l.bancaId)?.moneda === 'VES') && (
+            {!esProveedor && !tasa && lineasBanca.some(l => bancas.find(b => b.id === l.bancaId)?.moneda === 'VES') && (
               <p className="text-xs text-red-600 mt-1">No se pudo obtener la tasa de cambio.</p>
             )}
 

@@ -18,3 +18,14 @@ export function partesDePago(row: Fila): { pagarUsd: number; pagarBs: number | n
     equivalenteBsUsd: enBs ? Number(row.total_usd) : 0,
   };
 }
+
+/**
+ * "Sueldo en Bs" diario del renglón en USD de referencia (así lo muestra la pantalla). Desde 2026-10-16 se guarda en USD de
+ * referencia (`sueldo_bs_en_usd` es true o no existe). Los renglones cerrados antes de ese cambio (`sueldo_bs_en_usd` = false)
+ * guardaron bolívares por día: se convierten a USD con la tasa de su nómina SOLO para mostrarlos; sus totales no cambian.
+ */
+export function sueldoBsComoUsd(row: Fila, tasaBs: number | null): number {
+  const guardado = Number(row.monto_base_bs ?? 0);
+  if (row.sueldo_bs_en_usd !== false || tasaBs === null || !(tasaBs > 0)) return guardado;
+  return Math.round((guardado / tasaBs) * 100) / 100;
+}

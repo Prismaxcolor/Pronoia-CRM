@@ -23,7 +23,7 @@ export interface RenglonEditor {
   trabajadorId: string;
   nombre: string;
   dias: string;
-  /** Sueldo diario en divisas (USD) y en bolívares (Bs); un trabajador puede cobrar las dos partes. */
+  /** Sueldo diario en divisas (USD) y "sueldo en Bs" (USD de referencia que se paga en Bs a la tasa); puede cobrar las dos partes. */
   montoBase: string;
   montoBaseBs: string;
   bonificacion: string;
@@ -117,8 +117,8 @@ export function validarRenglones(renglones: readonly RenglonEditor[], tasa: numb
   for (const r of renglones) {
     const dias = leerNumero(r.dias);
     if (dias === null || dias < 0 || dias > DIAS_MAX) return `${r.nombre}: los días trabajados deben estar entre 0 y ${DIAS_MAX}.`;
-    if (leerNumero(r.montoBase) === null && numeroOCero(r.montoBaseBs) === 0) return `${r.nombre}: falta el sueldo en divisas (o en bolívares).`;
-    if (numeroOCero(r.montoBaseBs) > 0 && tasa === null) return `${r.nombre} tiene sueldo en bolívares: escribe la tasa de la nómina.`;
+    if (leerNumero(r.montoBase) === null && numeroOCero(r.montoBaseBs) === 0) return `${r.nombre}: falta el sueldo en divisas (o el sueldo en Bs).`;
+    if (numeroOCero(r.montoBaseBs) > 0 && tasa === null) return `${r.nombre} tiene sueldo en Bs: escribe la tasa de la nómina (se paga en bolívares a esa tasa).`;
     for (const c of r.cuotas) {
       if (numeroOCero(c.monto) > c.saldoUsd) {
         return `${r.nombre}: la cuota del préstamo PRE-${String(c.numero).padStart(4, '0')} supera su saldo (USD ${c.saldoUsd}).`;
@@ -127,7 +127,7 @@ export function validarRenglones(renglones: readonly RenglonEditor[], tasa: numb
     if (prestamoExcedeGanado({
       diasTrabajados: dias, montoBaseUsd: numeroOCero(r.montoBase), montoBaseBs: numeroOCero(r.montoBaseBs),
       bonificacionUsd: numeroOCero(r.bonificacion), descuentoPrestamoUsd: r.cuotas.reduce((a, c) => a + numeroOCero(c.monto), 0),
-    }, tasa)) {
+    })) {
       return `${r.nombre}: las cuotas de préstamo superan lo que ganó en la semana (días x sueldo + bonificación). Baja la cuota.`;
     }
   }

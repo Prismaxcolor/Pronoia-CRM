@@ -48,6 +48,7 @@ function aMovimientoReporte(r: Fila): MovimientoReporte {
     anulado: Boolean(r.anulado),
     mesaCambistaId: (r.mesa_cambista_id as string) ?? null,
     mesaEstado: (r.mesa_estado as MovimientoReporte['mesaEstado']) ?? null,
+    mesaMontoCobrado: aNumeroONull(r.mesa_monto_cobrado),
   };
 }
 

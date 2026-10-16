@@ -45,7 +45,12 @@ export interface EntradaEstadoCuenta {
 export interface EstadoCuenta {
   entidad: { id: string; tipo: TipoEntidad; nombre: string };
   entradas: EntradaEstadoCuenta[];
+  /** Del periodo consultado (con rango de fechas, solo lo ocurrido dentro del rango). */
   totales: { facturado: number; pagado: number; saldo: number };
+  /** Saldo real de hoy de toda la cuenta, sin importar el rango consultado. */
+  saldoActual: number;
+  /** Rango consultado; ausente si se pidió todo el historial. */
+  periodo?: { desde: string | null; hasta: string | null };
 }
 
 /** Manda el estado de cuenta (PDF, versión externa) al Telegram de la entidad. Devuelve el mensaje de error si no se pudo. */

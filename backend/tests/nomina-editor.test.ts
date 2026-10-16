@@ -67,14 +67,14 @@ describe('cálculo en pantalla', () => {
     expect(r.calculo.totalUsd).toBe(0);
   });
   it('los dos sueldos de un mismo trabajador: divisas por un lado y Bs por otro', () => {
-    const [r] = renglonesConTotales([renglon({ montoBase: '20', montoBaseBs: '400' })], 40);
+    const [r] = renglonesConTotales([renglon({ montoBase: '20', montoBaseBs: '10' })], 40); // el sueldo en Bs son 10 USD de referencia por día
     expect(r.calculo).toMatchObject({ pagarUsd: 100, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 150, monedaPago: 'MIXTO' });
   });
   it('totales por moneda: un trabajador con las dos partes alimenta los dos totales', () => {
     const rs = renglonesConTotales([
       renglon({ montoBase: '20', montoBaseBs: '0' }),
-      renglon({ trabajadorId: 't2', montoBase: '0', montoBaseBs: '800' }),
-      renglon({ trabajadorId: 't3', montoBase: '10', montoBaseBs: '400' }),
+      renglon({ trabajadorId: 't2', montoBase: '0', montoBaseBs: '20' }),
+      renglon({ trabajadorId: 't3', montoBase: '10', montoBaseBs: '10' }),
     ], 40);
     expect(totalesDeRenglones(rs, 40)).toMatchObject({
       totalDivisasUsd: 150, totalBs: 6000, equivalenteUsdDeBs: 150, totalCombinadoUsd: 300, cantidadDivisas: 2, cantidadBs: 2,
@@ -108,8 +108,8 @@ describe('validarRenglones', () => {
     expect(validarRenglones([renglon({ montoBaseBs: '400' })], 40)).toBeNull();
     expect(validarRenglones([renglon()], null)).toBeNull();
   });
-  it('las cuotas cuentan contra lo ganado en divisas y en Bs (a la tasa)', () => {
-    const base = { dias: '1', montoBase: '0', montoBaseBs: '400' }; // 400 Bs a 40 = 10 USD
+  it('las cuotas cuentan contra lo ganado en divisas y en Bs (USD de referencia, sin depender de la tasa)', () => {
+    const base = { dias: '1', montoBase: '0', montoBaseBs: '10' }; // 10 USD de referencia
     const cuota = (monto: string) => [{ prestamoId: 'p1', numero: 3, saldoUsd: 50, monto }];
     expect(validarRenglones([renglon({ ...base, cuotas: cuota('10') })], 40)).toBeNull();
     expect(validarRenglones([renglon({ ...base, cuotas: cuota('10.01') })], 40)).toMatch(/superan lo que ganó/i);

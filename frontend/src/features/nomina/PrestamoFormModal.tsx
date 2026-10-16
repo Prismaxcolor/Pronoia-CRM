@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import { obtenerBancas } from '../../services/banca-service';
 import { crearPrestamo, obtenerTrabajadores } from '../../services/nomina-service';
+import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
+import { useComisionDisponible } from '../cochinito/useComisionDisponible';
+import type { Banca } from '../../../../shared/types/banca.js';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import {
   ETIQUETA_TIPO_PRESTAMO, ETIQUETA_TIPO_TRABAJADOR, TIPOS_PRESTAMO, formatearNumeroPrestamo, nombreCompleto, type TipoPrestamo, type Trabajador,
 } from '@shared/types/nomina';
 import { leerNumero } from './nomina-editor';
+import DesembolsoCampos from './DesembolsoCampos';
+import { MENSAJE_COMPROBANTE_NO_SUBIDO, useComprobantesPago } from './useComprobantesPago';
+import { construirDesembolso, cuentasDeDesembolso, desembolsoVacio, validarDesembolso } from './nomina-desembolso';
 
 interface Props {
   onClose: () => void;
@@ -18,6 +25,14 @@ const labelClass = 'block text-xs font-medium text-text-secondary mb-1';
 
 function PrestamoFormModal({ onClose, onCreado }: Props) {
   const toast = useToast();
+  const { tienePermiso } = useAuth();
+  // Registrar el pago mueve dinero del Wallet: hace falta poder crear movimientos.
+  const puedePagar = tienePermiso('cochinito', 'crear');
+  const comision = useComisionDisponible(puedePagar);
+  const comprobantes = useComprobantesPago();
+  const [bancas, setBancas] = useState<Banca[] | null>(null);
+  const [conPago, setConPago] = useState(puedePagar);
+  const [desembolso, setDesembolso] = useState(() => desembolsoVacio(hoyNegocio()));
   const [trabajadores, setTrabajadores] = useState<Trabajador[]>([]);
   const [trabajadorId, setTrabajadorId] = useState('');
   // Sin valor por defecto: hay que elegir si es préstamo o adelanto a propósito.
@@ -36,8 +51,9 @@ function PrestamoFormModal({ onClose, onCreado }: Props) {
       if ('error' in r) setError(r.error);
       else setTrabajadores(r.trabajadores);
     });
+    if (puedePagar) void obtenerBancas().then(lista => { if (vivo) setBancas(lista); });
     return () => { vivo = false; };
-  }, []);
+  }, [puedePagar]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,17 +67,26 @@ function PrestamoFormModal({ onClose, onCreado }: Props) {
       setError('La cuota semanal debe ser mayor a 0 y no puede superar el monto.');
       return;
     }
+    const cuentas = cuentasDeDesembolso(bancas ?? []);
+    const problemaPago = conPago ? validarDesembolso(desembolso, montoUsd, cuentas, comision.disponible) : null;
+    if (problemaPago) { setError(problemaPago); return; }
     setGuardando(true);
-    const r = await crearPrestamo({ trabajadorId, tipo, montoUsd, cuotaSemanalUsd, fecha, nota: nota.trim() || null });
+    const urls = conPago ? await comprobantes.subir() : [];
+    if (!urls) { setGuardando(false); setError(MENSAJE_COMPROBANTE_NO_SUBIDO); return; }
+    const r = await crearPrestamo({
+      trabajadorId, tipo, montoUsd, cuotaSemanalUsd, fecha, nota: nota.trim() || null,
+      ...(conPago ? { desembolso: construirDesembolso(desembolso, cuentas, comision.disponible, urls) } : {}),
+    });
     setGuardando(false);
     if ('error' in r) { setError(r.error); return; }
-    toast.exito(`${ETIQUETA_TIPO_PRESTAMO[r.prestamo.tipo]} ${formatearNumeroPrestamo(r.prestamo.numero)} registrado.`);
+    toast.exito(`${ETIQUETA_TIPO_PRESTAMO[r.prestamo.tipo]} ${formatearNumeroPrestamo(r.prestamo.numero)} registrado${conPago && !r.advertencia ? ' y pagado desde el Wallet' : ''}.`);
+    if (r.advertencia) toast.errorMsg(r.advertencia);
     onCreado();
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="prestamo-titulo">
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="prestamo-titulo">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 id="prestamo-titulo" className="text-lg font-bold text-text-primary">Nuevo préstamo o adelanto</h2>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
@@ -102,6 +127,22 @@ function PrestamoFormModal({ onClose, onCreado }: Props) {
             <label htmlFor="pre-nota" className={labelClass}>Nota</label>
             <textarea id="pre-nota" rows={2} maxLength={300} value={nota} onChange={e => setNota(e.target.value)} className={inputClass} />
           </div>
+          {puedePagar && (
+            <fieldset className="space-y-3 rounded-xl border border-border p-3">
+              <legend className="px-1 text-sm font-semibold text-text-primary">Pago desde el Wallet</legend>
+              <label className="flex items-center gap-2 text-sm text-text-primary">
+                <input type="checkbox" checked={conPago} onChange={e => setConPago(e.target.checked)} />
+                Registrar ahora el pago (sale dinero de una cuenta)
+              </label>
+              {conPago && (bancas === null ? <p role="status" className="text-sm text-text-muted">Cargando cuentas…</p> : (
+                <DesembolsoCampos
+                  montoUsd={leerNumero(monto)} bancas={bancas} estado={desembolso} onCambiar={setDesembolso} comisionDisponible={comision.disponible}
+                  estadoComision={comision.estado} onReintentarComision={comision.reintentar} comprobantes={comprobantes}
+                />
+              ))}
+              {!conPago && <p className="text-xs text-text-muted">El préstamo quedará sin pago: podrás registrarlo después con «Registrar pago».</p>}
+            </fieldset>
+          )}
           {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>

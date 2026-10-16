@@ -54,6 +54,8 @@ export interface BancaPagoDetalle {
   moneda: string;
   montoUsd: number;
   referencia: string | null;
+  /** Comisión bancaria (Bs) cargada a esta cuenta por el pago; null si no lleva (o la migración no está aplicada). */
+  comisionBancaria: number | null;
 }
 
 export interface ItemPagoDetalle {
@@ -203,6 +205,7 @@ export async function obtenerPagoDetalle(
   const { items, facturas } = await cargarItems(tipoEntidad, entidadId, grupoId);
   const totalUsd = propias.reduce((s, f) => s + Number(f.monto_usd ?? f.monto), 0);
   const filaAnulada = propias.find(f => f.anulado) ?? null;
+  const comisiones = await comisionesDeMovimientos(propias.map(f => f.id));
   const anulacion = await datosAnulacion(propias.every(f => f.anulado), filaAnulada?.anulado_motivo, filaAnulada?.anulado_at, filaAnulada?.anulado_por);
 
   return {
@@ -215,7 +218,7 @@ export async function obtenerPagoDetalle(
     comprobantes: filaComprobante?.comprobantes ?? [],
     registradoPor: nombreRegistradoPor,
     registradoEn: propias.map(f => f.creado_en).filter((x): x is string => !!x).sort()[0] ?? null,
-    bancas: propias.map(f => aBancaPagoDetalle(f, visible(f), nombrePorBancaId)),
+    bancas: propias.map(f => aBancaPagoDetalle(f, visible(f), nombrePorBancaId, comisiones.get(f.id) ?? null)),
     totalUsd,
     codigoPago: filaPago ? formatCodigoPago(tipoEntidad, filaPago.subtipo, filaPago.numero) : null,
     codigoAdelanto: filaAdelanto ? formatCodigoPago(tipoEntidad, filaAdelanto.subtipo, filaAdelanto.numero) : null,
@@ -226,7 +229,22 @@ export async function obtenerPagoDetalle(
   };
 }
 
-function aBancaPagoDetalle(f: MovimientoRow, visible: boolean, nombrePorBancaId: ReadonlyMap<string, string>): BancaPagoDetalle {
+/**
+ * Cargos de comisión bancaria ligados a los movimientos del pago (movimiento -> monto en Bs). Lectura opcional: sin la
+ * migración de comisión (columna inexistente) o ante cualquier error el comprobante sale igual, sin comisión.
+ */
+async function comisionesDeMovimientos(ids: readonly string[]): Promise<Map<string, number>> {
+  const porMovimiento = new Map<string, number>();
+  if (ids.length === 0) return porMovimiento;
+  const { data, error } = await supabaseAdmin.from('movimientos').select('comision_de_id, monto').in('comision_de_id', [...ids]);
+  if (error) return porMovimiento;
+  for (const c of (data as Array<{ comision_de_id: string; monto: number | string }> | null) ?? []) {
+    porMovimiento.set(c.comision_de_id, Number(c.monto));
+  }
+  return porMovimiento;
+}
+
+function aBancaPagoDetalle(f: MovimientoRow, visible: boolean, nombrePorBancaId: ReadonlyMap<string, string>, comision: number | null): BancaPagoDetalle {
   return {
     bancaId: visible ? f.banca_origen_id : null,
     bancaNombre: !visible ? TEXTO_CUENTA_RESTRINGIDA : f.banca_origen_id ? (nombrePorBancaId.get(f.banca_origen_id) ?? null) : null,
@@ -234,6 +252,7 @@ function aBancaPagoDetalle(f: MovimientoRow, visible: boolean, nombrePorBancaId:
     moneda: f.moneda,
     montoUsd: Number(f.monto_usd ?? f.monto),
     referencia: visible ? f.referencia : TEXTO_CUENTA_RESTRINGIDA,
+    comisionBancaria: visible ? comision : null,
   };
 }
 

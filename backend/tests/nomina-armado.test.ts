@@ -15,7 +15,7 @@ describe('armarNomina', () => {
   it('calcula cada renglón en el servidor y suma las cuotas como descuento de préstamo', () => {
     const input = entrada([
       { trabajadorId: T1, diasTrabajados: 5, montoBaseUsd: 20, bonificacionUsd: 10, descuentoTrabajoUsd: 5, cuotas: [{ prestamoId: P1, montoUsd: 15 }] },
-      { trabajadorId: T2, diasTrabajados: 6, montoBaseUsd: 0, montoBaseBs: 400 },
+      { trabajadorId: T2, diasTrabajados: 6, montoBaseUsd: 0, montoBaseBs: 10 }, // 10 USD de referencia por día, pagados en Bs
     ]);
     const a = armarNomina(input, nombres);
     expect(a.lineas[0]).toMatchObject({ trabajadorNombre: 'Ana Pérez', totalBrutoUsd: 100, descuentoPrestamoUsd: 15, pagarUsd: 90, totalUsd: 90, monedaPago: 'USD' });
@@ -26,9 +26,9 @@ describe('armarNomina', () => {
   });
 
   it('un trabajador con las dos partes cobra en divisas y en Bs', () => {
-    const input = entrada([{ trabajadorId: T1, diasTrabajados: 5, montoBaseUsd: 20, montoBaseBs: 400, descuentoTrabajoUsd: 10 }]);
+    const input = entrada([{ trabajadorId: T1, diasTrabajados: 5, montoBaseUsd: 20, montoBaseBs: 10, descuentoTrabajoUsd: 10 }]);
     const a = armarNomina(input, nombres);
-    expect(a.lineas[0]).toMatchObject({ montoBaseBs: 400, pagarUsd: 90, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 140, monedaPago: 'MIXTO' });
+    expect(a.lineas[0]).toMatchObject({ montoBaseBs: 10, brutoBsRefUsd: 50, pagarUsd: 90, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 140, monedaPago: 'MIXTO' });
     expect(a.totales).toMatchObject({ cantidad: 1, cantidadDivisas: 1, cantidadBs: 1, totalDivisasUsd: 90, totalBs: 2000, equivalenteUsdDeBs: 50 });
   });
 

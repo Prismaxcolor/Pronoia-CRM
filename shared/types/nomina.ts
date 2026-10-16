@@ -45,7 +45,7 @@ export interface Trabajador {
   binanceCorreoId: string | null;
   /** Sueldo diario en divisas (USD): la parte que se paga en efectivo o Binance. */
   pagoDiarioUsd: number;
-  /** Sueldo diario en bolívares (Bs): la otra parte del sueldo, pagada en Bs. */
+  /** Sueldo diario "en Bs": valor en USD de REFERENCIA, la otra parte del sueldo, que se paga en bolívares a la tasa del día. */
   pagoDiarioBs: number;
   activo: boolean;
   creadoEn: string;
@@ -57,6 +57,32 @@ export type EstadoPrestamo = 'ACTIVO' | 'PAGADO' | 'ANULADO';
 
 export const ETIQUETA_TIPO_PRESTAMO: Record<TipoPrestamo, string> = { PRESTAMO: 'Préstamo', ADELANTO: 'Adelanto' };
 export const ETIQUETA_ESTADO_PRESTAMO: Record<EstadoPrestamo, string> = { ACTIVO: 'Activo', PAGADO: 'Pagado', ANULADO: 'Anulado' };
+
+/**
+ * Pago (desembolso) del préstamo o adelanto al trabajador desde el Wallet: el egreso que lo entregó. Sin datos personales.
+ */
+export interface PagoPrestamo {
+  id: string;
+  bancaId: string;
+  bancaNombre: string;
+  /** Egreso del Wallet (enlace al detalle del movimiento). */
+  movimientoId: string;
+  movimientoNumero: number | null;
+  /** true si el egreso fue anulado (se anula junto con el préstamo). */
+  anulado: boolean;
+  /** Moneda de la cuenta: USD o VES. */
+  moneda: 'USD' | 'VES';
+  /** Monto del egreso en la moneda de la cuenta. */
+  monto: number;
+  /** Monto del préstamo en USD. */
+  montoUsd: number;
+  /** Solo cuentas en Bs: la tasa (Bs por USD) con que se convirtió el monto. */
+  tasaBs: number | null;
+  fecha: string;
+  referencia: string | null;
+  /** URLs de los comprobantes del egreso (vacío si no se subió ninguno). */
+  comprobantes: string[];
+}
 
 export interface Prestamo {
   id: string;
@@ -72,6 +98,8 @@ export interface Prestamo {
   nota: string | null;
   estado: EstadoPrestamo;
   anuladoMotivo: string | null;
+  /** Pago desde el Wallet; null mientras no se haya registrado el pago del préstamo. */
+  desembolso: PagoPrestamo | null;
 }
 
 export type EstadoNomina = 'BORRADOR' | 'CERRADA' | 'ANULADA';
@@ -91,7 +119,10 @@ export interface LineaNomina {
   diasTrabajados: number;
   /** Sueldo diario en divisas (USD) de esa semana. */
   montoBaseUsd: number;
-  /** Sueldo diario en Bs de esa semana. */
+  /**
+   * "Sueldo en Bs" diario de esa semana: un valor en USD de REFERENCIA que se paga en bolívares a la tasa de la nómina
+   * (no son bolívares). Los renglones cerrados antes de ese cambio se convierten a USD solo para mostrarlos.
+   */
   montoBaseBs: number;
   /** Bruto total en USD (divisas + Bs / tasa). */
   totalBrutoUsd: number;
@@ -118,6 +149,8 @@ export interface LineaNomina {
  */
 export interface PagoNomina {
   id: string;
+  /** Trabajador al que se pagó (pago individual); null si es el pago de toda la nómina. */
+  trabajadorId: string | null;
   monedaPago: MonedaPago;
   bancaId: string;
   bancaNombre: string;
@@ -133,6 +166,8 @@ export interface PagoNomina {
   cantidad: number;
   fecha: string;
   referencia: string | null;
+  /** URLs de los comprobantes del egreso (vacío si no se subió ninguno). */
+  comprobantes: string[];
   pagadoEn: string;
   /**
    * Solo pagos en Bs: tasa Binance (Bs por USD) vigente al mediodía de Caracas del día del pago, congelada al pagar
@@ -189,7 +224,7 @@ export interface CandidatoNomina {
   nombre: string;
   /** Sueldo diario en divisas (USD) de la ficha. */
   pagoDiarioUsd: number;
-  /** Sueldo diario en Bs de la ficha. */
+  /** Sueldo diario "en Bs" de la ficha (USD de referencia que se paga en Bs a la tasa del día). */
   pagoDiarioBs: number;
   prestamos: PrestamoCandidato[];
 }

@@ -5,7 +5,7 @@
  */
 import type { Banca } from '../../../../shared/types/banca.js';
 import type { MonedaPago, TotalesNomina } from '../../../../shared/types/nomina-calculo.js';
-import type { Nomina, PagoNomina } from '../../../../shared/types/nomina.js';
+import type { LineaNomina, Nomina, PagoNomina } from '../../../../shared/types/nomina.js';
 import { formatearFecha, formatearNumero } from '../../lib/formato';
 import { bancasEditables } from '../usuarios/acceso-bancas';
 import { textoEquivalenteUsd } from './nomina-cargo';
@@ -114,6 +114,12 @@ export function construirPayloadPago(
   };
 }
 
+/** Cuerpo del POST /nominas/:id/trabajadores/:trabajadorId/pagar: lo mismo que el pago de la nómina más los comprobantes. */
+export interface PayloadPagoTrabajador extends PayloadPago {
+  /** URLs ya subidas con subirComprobantePago (puede ir vacío). */
+  comprobantes: string[];
+}
+
 export type EstadoPagoNomina = 'sin-pagar' | 'pagada' | 'pago-anulado';
 
 export function estadoPagoNomina(pagos: readonly PagoNomina[]): EstadoPagoNomina {
@@ -155,3 +161,58 @@ export function bloqueoComisionPago(
   }
   return null;
 }
+
+// --- Pago por trabajador (botón «Pagar» de cada renglón) -------------------------------------------------------------
+
+const centavos = (n: number): number => Math.round(n * 100);
+
+type LineaPagable = Pick<LineaNomina, 'trabajadorId' | 'pagarUsd' | 'pagarBs' | 'totalUsd'>;
+
+/** Lo que se le paga a un trabajador en cada moneda (divisas primero); [] si no tiene nada por cobrar. */
+export function gruposDePagoLinea(l: Pick<LineaNomina, 'pagarUsd' | 'pagarBs' | 'totalUsd'>): GrupoPago[] {
+  const grupos: GrupoPago[] = [];
+  if (l.pagarUsd > 0) grupos.push({ moneda: 'USD', monto: l.pagarUsd, montoUsd: l.pagarUsd, cantidad: 1 });
+  if ((l.pagarBs ?? 0) > 0) {
+    grupos.push({ moneda: 'BS', monto: l.pagarBs ?? 0, montoUsd: (centavos(l.totalUsd) - centavos(l.pagarUsd)) / 100, cantidad: 1 });
+  }
+  return grupos;
+}
+
+/** Cómo se está pagando la nómina: aún sin pagos, completa (un egreso por moneda) o trabajador por trabajador. */
+export type ModoPagoNomina = 'sin-pagos' | 'completa' | 'por-trabajador';
+
+export function modoPagoNomina(pagos: readonly Pick<PagoNomina, 'trabajadorId'>[]): ModoPagoNomina {
+  if (pagos.length === 0) return 'sin-pagos';
+  return pagos.some(p => p.trabajadorId !== null) ? 'por-trabajador' : 'completa';
+}
+
+/** pendiente = sin pagar; pagado = pagos vigentes; anulado = sus pagos se anularon; sin-monto = nada que cobrar. */
+export type EstadoPagoTrabajador = 'pendiente' | 'pagado' | 'anulado' | 'sin-monto';
+
+/** Pagos que cubren a un trabajador: los suyos o, si se pagó la nómina completa, los de la nómina. */
+export function pagosDeTrabajador(pagos: readonly PagoNomina[], trabajadorId: string): PagoNomina[] {
+  return pagos.filter(p => p.trabajadorId === null || p.trabajadorId === trabajadorId);
+}
+
+export function estadoPagoTrabajador(nomina: Pick<Nomina, 'pagos'>, linea: LineaPagable): EstadoPagoTrabajador {
+  if (gruposDePagoLinea(linea).length === 0) return 'sin-monto';
+  const propios = pagosDeTrabajador(nomina.pagos, linea.trabajadorId);
+  if (propios.length === 0) return 'pendiente';
+  return propios.every(p => p.anulado) ? 'anulado' : 'pagado';
+}
+
+/** ¿Se ofrece el botón «Pagar» de este trabajador? Nómina cerrada, sin pago completo y él aún sin pagar. */
+export function sePuedePagarTrabajador(nomina: Pick<Nomina, 'estado' | 'pagos'>, linea: LineaPagable): boolean {
+  return nomina.estado === 'CERRADA' && modoPagoNomina(nomina.pagos) !== 'completa' && estadoPagoTrabajador(nomina, linea) === 'pendiente';
+}
+
+/** Cuántos trabajadores con algo que cobrar ya están pagados, de cuántos. */
+export function resumenPagoTrabajadores(nomina: Pick<Nomina, 'pagos' | 'lineas'>): { pagados: number; total: number } {
+  const conMonto = nomina.lineas.filter(l => estadoPagoTrabajador(nomina, l) !== 'sin-monto');
+  return { pagados: conMonto.filter(l => estadoPagoTrabajador(nomina, l) === 'pagado').length, total: conMonto.length };
+}
+
+/** Texto corto del estado de un trabajador para la tabla. */
+export const ETIQUETA_ESTADO_PAGO_TRABAJADOR: Record<EstadoPagoTrabajador, string> = {
+  pendiente: 'Pendiente', pagado: 'Pagado', anulado: 'Pago anulado', 'sin-monto': 'Sin monto',
+};

@@ -15,6 +15,8 @@ export interface EstadoCuentaPortal {
   entidad: { id: string; tipo: 'proveedor' | 'cliente'; nombre: string };
   entradas: EntradaEstadoCuenta[];
   totales: { facturado: number; pagado: number; saldo: number };
+  /** Saldo real de hoy (toda la cuenta). */
+  saldoActual: number;
 }
 
 export async function obtenerEstadoCuentaPortal(): Promise<EstadoCuentaPortal | null> {

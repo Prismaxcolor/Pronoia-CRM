@@ -356,6 +356,7 @@ describe('pagos, cobros y cruces', () => {
   it('pago simple (endpoint legacy /pagos): PDF del pago resolviendo su grupo', async () => {
     sembrarPago('proveedor');
     estado.rpc.registrar_pago_proveedor = 'M1';
+    estado.tablas.bancas = [{ id: 'B1', moneda: 'USD' }];
 
     const r = await registrarPago({ proveedorId: P1, bancaId: 'B1', monto: 100, moneda: 'USD', montoUsd: 100, comprobantes: [] } as never, 'U1');
     expect(r).toEqual({ movimientoId: 'M1' });

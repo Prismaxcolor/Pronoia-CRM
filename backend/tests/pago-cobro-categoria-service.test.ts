@@ -17,6 +17,7 @@ vi.mock('../src/config/supabase.js', () => ({
       return Promise.resolve({ data: bd.rpcError ? null : bd.rpcResultado, error: bd.rpcError });
     },
     from: (tabla: string) => ({
+      select: () => ({ in: () => Promise.resolve({ data: [{ id: 'b1', moneda: 'USD' }], error: null }) }),
       update: (valores: Record<string, unknown>) => {
         const fila = { tabla, valores, ids: null as unknown };
         bd.updates.push(fila);

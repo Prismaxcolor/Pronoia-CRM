@@ -59,14 +59,16 @@ export interface Movimiento {
   categoriaId: string | null;
   /** Transferencia con mesa de cambio: cambista elegido (null en los movimientos normales o si la migración no se aplicó). */
   mesaCambistaId: string | null;
-  /** 'en_proceso' = el destino aún no recibió el saldo; 'completada' = ya se acreditó. */
-  mesaEstado: 'en_proceso' | 'completada' | null;
+  /** 'en_proceso' = el destino aún no recibió el saldo; 'parcial' = recibió solo una parte; 'completada' = ya se acreditó todo. */
+  mesaEstado: 'en_proceso' | 'parcial' | 'completada' | null;
   /** Lo que el cambista debía entregar en el destino (moneda destino), antes de la comisión. */
   mesaMontoBruto: number | null;
   mesaComisionModo: 'porcentaje' | 'monto' | null;
   mesaComisionPct: number | null;
   /** Comisión en la moneda del destino; reduce lo acreditado. */
   mesaComision: number | null;
+  /** Neto ya acreditado al destino (moneda destino). Null si no hay mesa o la migración de cobro parcial no se aplicó. */
+  mesaMontoCobrado: number | null;
   mesaCompletadaEn: string | null;
   mesaCompletadaPor: string | null;
   /** Comisión bancaria (Bs) cargada a la cuenta junto a este movimiento; null si no lleva (o la migración no se aplicó). */
@@ -126,7 +128,7 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
 const aNumeroONull = (v: unknown): number | null => (v != null ? Number(v) : null);
 
 /** Campos de mesa de cambio; todos null si la fila no los trae (migración sin aplicar o movimiento normal). */
-function mapMesa(row: Record<string, unknown>): Pick<Movimiento, 'mesaCambistaId' | 'mesaEstado' | 'mesaMontoBruto' | 'mesaComisionModo' | 'mesaComisionPct' | 'mesaComision' | 'mesaCompletadaEn' | 'mesaCompletadaPor'> {
+function mapMesa(row: Record<string, unknown>): Pick<Movimiento, 'mesaCambistaId' | 'mesaEstado' | 'mesaMontoBruto' | 'mesaComisionModo' | 'mesaComisionPct' | 'mesaComision' | 'mesaMontoCobrado' | 'mesaCompletadaEn' | 'mesaCompletadaPor'> {
   return {
     mesaCambistaId: (row.mesa_cambista_id as string) ?? null,
     mesaEstado: (row.mesa_estado as Movimiento['mesaEstado']) ?? null,
@@ -134,6 +136,7 @@ function mapMesa(row: Record<string, unknown>): Pick<Movimiento, 'mesaCambistaId
     mesaComisionModo: (row.mesa_comision_modo as Movimiento['mesaComisionModo']) ?? null,
     mesaComisionPct: aNumeroONull(row.mesa_comision_pct),
     mesaComision: aNumeroONull(row.mesa_comision),
+    mesaMontoCobrado: aNumeroONull(row.mesa_monto_cobrado),
     mesaCompletadaEn: (row.mesa_completada_at as string) ?? null,
     mesaCompletadaPor: (row.mesa_completada_por as string) ?? null,
   };

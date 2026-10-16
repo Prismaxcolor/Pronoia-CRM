@@ -29,8 +29,26 @@ export interface TransferenciaMesaCreada {
 
 export interface TransferenciaMesaCompletada {
   movimiento: Movimiento;
+  /** Ya estaba cobrada por completo: esta llamada no acreditó nada. */
   yaCompletada: boolean;
+  /** true si tras este cobro no queda pendiente. */
+  completada: boolean;
+  /** Acreditado al destino en esta llamada y totales (moneda destino, neto de comisión). */
   montoAcreditado: number;
+  montoCobrado: number;
+  montoPendiente: number;
+  /** El cobro quedó hecho pero algo secundario falló (p. ej. adjuntar la foto). */
+  advertencia?: string;
+}
+
+/** Cuerpo de POST /api/cochinito/movimientos/:id/completar. Sin opciones se cobra todo lo pendiente, sin foto. */
+export interface OpcionesCobroMesa {
+  /** Neto a cobrar ahora; null/omitido = todo lo pendiente (cobro parcial si es menor). */
+  montoCobrado?: number | null;
+  /** Pendiente que vio el usuario: si cambió (otro cobro, doble clic) el servidor rechaza. */
+  pendienteEsperado?: number | null;
+  /** URLs de la foto del cobro, ya subidas. */
+  comprobantes?: string[];
 }
 
 const mensaje = (err: unknown, respaldo: string): string => (err instanceof Error && err.message ? err.message : respaldo);
@@ -44,10 +62,10 @@ export async function crearTransferenciaMesa(input: CrearTransferenciaMesaInput)
   }
 }
 
-/** Acredita el saldo en la cuenta destino (neto de comisión). Repetirla no vuelve a acreditar. */
-export async function completarTransferenciaMesa(id: string): Promise<TransferenciaMesaCompletada | { error: string }> {
+/** Acredita (todo o una parte de) lo pendiente en la cuenta destino, neto de comisión. Repetir un cobro total no vuelve a acreditar. */
+export async function completarTransferenciaMesa(id: string, opciones: OpcionesCobroMesa = {}): Promise<TransferenciaMesaCompletada | { error: string }> {
   try {
-    return await apiFetch<TransferenciaMesaCompletada>(`/api/cochinito/movimientos/${id}/completar`, { method: 'POST', body: {} });
+    return await apiFetch<TransferenciaMesaCompletada>(`/api/cochinito/movimientos/${id}/completar`, { method: 'POST', body: opciones });
   } catch (err) {
     return { error: mensaje(err, 'No se pudo completar la transferencia.') };
   }

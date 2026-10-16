@@ -8,7 +8,7 @@ export const fmtUsdPdf = (n: number): string => `USD ${numero(n)}`;
 export const fmtBsPdf = (n: number | null): string => (n === null ? '-' : `Bs ${numero(n)}`);
 
 export const ENCABEZADO_TABLA_PDF = [
-  'Trabajador', 'Días', 'Sueldo USD/día', 'Sueldo Bs/día', 'Bruto USD', 'Bonif. USD', 'Desc. USD', 'A pagar USD', 'A pagar Bs', 'Total USD',
+  'Trabajador', 'Días', 'Sueldo USD/día', 'Sueldo Bs (ref. USD)/día', 'Bruto USD', 'Bonif. USD', 'Desc. USD', 'A pagar USD', 'A pagar Bs', 'Total USD',
 ];
 
 /** Posiciones (desde 0) de las columnas numéricas del PDF: se alinean a la derecha. */

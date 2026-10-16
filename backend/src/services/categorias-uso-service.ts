@@ -4,7 +4,8 @@ import { logger } from '../utils/logger.js';
 import { listarCategorias, type Categoria } from './categoria-service.js';
 
 /** Operaciones que clasifican solas sus movimientos (ver docs/migration_categorias_uso.sql). */
-export type UsoCategoria = 'pago_proveedor' | 'cobro_cliente' | 'nomina_administrativo' | 'nomina_operativo';
+export type UsoCategoria =
+  | 'pago_proveedor' | 'cobro_cliente' | 'nomina_administrativo' | 'nomina_operativo' | 'comision_bancaria';
 
 /**
  * Categorías vigentes asignadas a una operación. Devuelve lista vacía (sin error) si la tabla aún no

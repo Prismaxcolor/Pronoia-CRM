@@ -16,6 +16,8 @@ import { equivalenteUsdDeBs } from './nomina-calculo.js';
 export const LIMITE_MOVIMIENTOS_CARGO = 100;
 
 export interface FilaLineaCargo {
+  /** Id del renglón: ubica su pago individual (nomina_pagos.linea_id). */
+  lineaId: string;
   nominaId: string;
   nominaNumero: number;
   /** Lunes de la semana (AAAA-MM-DD). */
@@ -29,6 +31,8 @@ export interface FilaLineaCargo {
 
 export interface FilaPagoCargo {
   nominaId: string;
+  /** Renglón al que se pagó (pago individual); null si es el pago de toda la nómina. */
+  lineaId: string | null;
   monedaPago: 'USD' | 'BS';
   fecha: string;
   /** El egreso del Wallet fue anulado (se anula junto con la nómina). */
@@ -99,10 +103,12 @@ function movimientoDeLinea(
 
 /** Movimientos de las nóminas cerradas (o anuladas después de cerrarse): una parte en divisas y/o una en Bs. */
 function movimientosDeNomina(lineas: readonly FilaLineaCargo[], pagos: readonly FilaPagoCargo[]): MovimientoCargo[] {
-  const pagoDe = (nominaId: string, moneda: 'USD' | 'BS') => pagos.find(p => p.nominaId === nominaId && p.monedaPago === moneda);
+  // El pago de la nómina completa cubre a todos sus renglones; el individual solo al suyo.
+  const pagoDe = (l: FilaLineaCargo, moneda: 'USD' | 'BS') =>
+    pagos.find(p => p.nominaId === l.nominaId && p.monedaPago === moneda && (p.lineaId === null || p.lineaId === l.lineaId));
   return lineas.filter(l => l.cerradaEn !== null).flatMap(l => [
-    ...(l.pagarUsd > 0 ? [movimientoDeLinea(l, 'USD', l.pagarUsd, pagoDe(l.nominaId, 'USD'))] : []),
-    ...(l.pagarBs !== null && l.pagarBs > 0 ? [movimientoDeLinea(l, 'BS', l.pagarBs, pagoDe(l.nominaId, 'BS'))] : []),
+    ...(l.pagarUsd > 0 ? [movimientoDeLinea(l, 'USD', l.pagarUsd, pagoDe(l, 'USD'))] : []),
+    ...(l.pagarBs !== null && l.pagarBs > 0 ? [movimientoDeLinea(l, 'BS', l.pagarBs, pagoDe(l, 'BS'))] : []),
   ]);
 }
 

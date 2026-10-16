@@ -465,6 +465,11 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   }),
   ev('banca.transferencia_mesa_completada', 'POST', '/api/cochinito/movimientos/:id/completar', 'tesoreria', 'critica', '✅', 'Se COMPLETÓ una transferencia con mesa de cambio', {
     etiqueta: etiquetaDinero('Movimiento de banca', 'movimiento'),
+    // Cobro parcial: el cambista entregó solo una parte; avisa cuánto falta (moneda de la cuenta destino).
+    detalles: ctx => {
+      const pendiente = num(ctx.resBody.montoPendiente);
+      return pendiente !== null && pendiente > 0 ? [`Cobro PARCIAL: faltan ${pendiente.toFixed(2)} por cobrar al cambista`] : [];
+    },
   }),
 
   ...eventosModificacionDinero('pago', '/api/pagos', 'grupoId', 'Pago', 'pago', 'el'),
@@ -493,6 +498,8 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('nomina.guardada', 'POST', '/api/nomina/nominas', 'tesoreria', 'ignorable', '🧾', 'Se guardó una nómina'),
   ev('nomina.cerrada', 'POST', '/api/nomina/nominas/:id/cerrar', 'tesoreria', 'ignorable', '🔒', 'Se cerró una nómina'),
   ev('nomina.pagada', 'POST', '/api/nomina/nominas/:id/pagar', 'tesoreria', 'ignorable', '💸', 'Se pagó una nómina desde el Wallet'),
+  ev('nomina.trabajador_pagado', 'POST', '/api/nomina/nominas/:id/trabajadores/:trabajadorId/pagar', 'tesoreria', 'ignorable', '💸', 'Se pagó a un trabajador de una nómina desde el Wallet'),
+  ev('nomina.prestamo_pagado', 'POST', '/api/nomina/prestamos/:id/pagar', 'tesoreria', 'ignorable', '💸', 'Se registró el pago de un préstamo de nómina desde el Wallet'),
   ev('nomina.anulada', 'POST', '/api/nomina/nominas/:id/anular', 'tesoreria', 'ignorable', '🗑️', 'Se anuló una nómina'),
 
   // --- Inventario: maestros y precios --------------------------------------

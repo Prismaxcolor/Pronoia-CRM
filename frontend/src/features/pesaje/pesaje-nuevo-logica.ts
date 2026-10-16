@@ -26,6 +26,12 @@ export function productoRequiereLote(productoId: string, productos: Producto[]):
   return !(producto.tipoMaterialSinLote === true && (producto.loteIds ?? []).length === 0);
 }
 
+/** true si el pesaje se registra sin pesaje global (casilla "Peso exterior / sin pesaje global").
+ *  Aplica igual en compra y venta; el traslado no usa pesaje global. */
+export function esSinPesajeGlobal(tipo: 'compra' | 'venta' | 'traslado', pesajeExterior: boolean): boolean {
+  return tipo !== 'traslado' && pesajeExterior;
+}
+
 /** Tickets en bruto de un proveedor, para continuarlos desde un pesaje nuevo. */
 export function ticketsBrutoDeEntidad(tickets: TicketPesaje[], entidadId: string): TicketPesaje[] {
   if (!entidadId) return [];

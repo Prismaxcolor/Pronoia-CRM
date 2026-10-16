@@ -89,10 +89,10 @@ describe('guardarNomina', () => {
   });
 
   it('los dos sueldos viajan a la función SQL con lo que se paga en cada moneda, calculado en el servidor', async () => {
-    const r = await guardarNomina(entrada([renglon({ montoBaseBs: 400, descuentoTrabajoUsd: 10 })]), USUARIO);
+    const r = await guardarNomina(entrada([renglon({ montoBaseBs: 10, descuentoTrabajoUsd: 10 })]), USUARIO);
     expect('error' in r).toBe(false);
     const p = bd.rpc.mock.calls[0][1].p_datos;
-    expect(p.lineas[0]).toMatchObject({ montoBaseUsd: 20, montoBaseBs: 400, pagarUsd: 90, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 140, monedaPago: 'MIXTO' });
+    expect(p.lineas[0]).toMatchObject({ montoBaseUsd: 20, montoBaseBs: 10, pagarUsd: 90, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 140, monedaPago: 'MIXTO' });
     expect(p.totales).toMatchObject({ totalDivisasUsd: 90, totalBs: 2000, equivalenteUsdDeBs: 50 });
   });
 

@@ -26,6 +26,8 @@ export const registrarPagoSchema = z.object({
   facturaId: z.string().uuid('Factura inválida.').optional().nullable(),
   /** URLs de los comprobantes ya subidos vía POST /api/uploads/comprobantes. */
   comprobantes: z.array(comprobanteUrlSchema).default([]),
+  /** Comisión bancaria (0.3%, mínimo 14 Bs) de un pago desde una cuenta en Bs: obligatoria si la migración está aplicada. */
+  llevaComision: z.boolean().optional(),
 });
 
 export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
@@ -52,6 +54,12 @@ export const bancaPagoSchema = z.object({
   referencia: textoOpcional(50),
 });
 
+/** Banca de origen de un pago a PROVEEDOR: añade la elección de comisión bancaria (los cobros y las ediciones no la llevan). */
+export const bancaPagoProveedorSchema = bancaPagoSchema.extend({
+  /** Solo para cuentas en Bs; undefined = la persona no eligió (el servicio lo exige si la comisión está habilitada). */
+  llevaComision: z.boolean().optional(),
+});
+
 /** Pago combinado ("Registrar pago"): puede repartirse entre varias bancas de
  *  origen, liquida varias facturas y/o notas de débito a la vez, y el
  *  excedente del total sobre la suma de esos ítems se registra aparte como
@@ -60,7 +68,7 @@ export const bancaPagoSchema = z.object({
  *  (`montoUsd` = 0, `bancas` vacío) es un cruce puro, sin movimiento de dinero. */
 export const registrarPagoMultipleSchema = z.object({
   proveedorId: z.string().uuid('Selecciona un proveedor.'),
-  bancas: z.array(bancaPagoSchema).default([]),
+  bancas: z.array(bancaPagoProveedorSchema).default([]),
   montoUsd: z.number().min(0, 'El monto en USD no puede ser negativo.'),
   descripcion: textoOpcional(300),
   referencia: textoOpcional(50),

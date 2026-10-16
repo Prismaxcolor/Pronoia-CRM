@@ -7,12 +7,14 @@ interface Props {
   /** Saldo acumulado de la cuenta tras la última fila (distinto de cargos - abonos si se filtró por tipo). */
   saldoFinal: number;
   filtradoPorTipo: boolean;
+  /** Saldo real de hoy de toda la cuenta; solo se pasa cuando se consultó un rango de fechas (null = sin rango). */
+  saldoActual: number | null;
 }
 
 /** Versión IMPRESA del estado de cuenta: la tabla clásica (fecha, concepto, referencia, cargo, abono) y los totales.
  *  Solo se ve al imprimir; en pantalla se usa la tabla interactiva. Se mantiene aparte para que lo impreso no cambie
  *  con el rediseño (sin botones, filtros ni gráficas). */
-function EstadoCuentaTablaImpresion({ entradas, saldoFinal, filtradoPorTipo }: Props) {
+function EstadoCuentaTablaImpresion({ entradas, saldoFinal, filtradoPorTipo, saldoActual }: Props) {
   const totales = totalesEstadoCuenta(entradas);
   return (
     <div className="hidden print:block">
@@ -76,9 +78,15 @@ function EstadoCuentaTablaImpresion({ entradas, saldoFinal, filtradoPorTipo }: P
           <span className="font-medium text-text-primary">{fmt(totales.totalAbonos)}</span>
         </div>
         <div className="flex w-full max-w-xs justify-between border-t border-border pt-2 text-base">
-          <span className="font-semibold text-text-primary">Saldo final</span>
+          <span className="font-semibold text-text-primary">{saldoActual != null ? 'Saldo del periodo' : 'Saldo final'}</span>
           <span className="font-bold text-text-primary">{fmt(saldoFinal)}</span>
         </div>
+        {saldoActual != null && (
+          <div className="flex w-full max-w-xs justify-between border-t border-border pt-2 text-base">
+            <span className="font-semibold text-text-primary">Saldo actual (hoy)</span>
+            <span className="font-bold text-text-primary">{fmt(saldoActual)}</span>
+          </div>
+        )}
         <p className="max-w-xs text-right text-xs text-text-muted">
           {filtradoPorTipo ? `Cargos y abonos de las ${totales.filas} filas filtradas; el saldo final es el de toda la cuenta.` : `Totales de las ${totales.filas} filas mostradas, en USD.`}
         </p>

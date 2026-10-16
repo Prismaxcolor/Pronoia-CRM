@@ -9,6 +9,8 @@ interface Props {
   onCambiar: (opcion: OpcionComision) => void;
   plan: PlanComisionBancaria;
   monto: number;
+  /** Nombre del grupo de opciones: debe ser distinto si hay varios campos en el mismo formulario (un pago con varias cuentas). */
+  nombre?: string;
 }
 
 const PORCENTAJE = `${Math.round(TASA_COMISION_BANCARIA * 1000) / 10}%`;
@@ -33,7 +35,7 @@ function Resumen({ plan, monto }: { plan: PlanComisionBancaria; monto: number })
 }
 
 /** Pregunta obligatoria "¿Lleva comisión bancaria?" para salidas desde una cuenta en Bs. Sin respuesta marcada de inicio. */
-function ComisionBancariaCampo({ opcion, onCambiar, plan, monto }: Props) {
+function ComisionBancariaCampo({ opcion, onCambiar, plan, monto, nombre = 'lleva-comision-bancaria' }: Props) {
   return (
     <fieldset className="rounded-lg border border-border p-3 space-y-3">
       <legend className="px-1 text-xs font-medium text-text-secondary">¿Lleva comisión bancaria del {PORCENTAJE}?</legend>
@@ -47,7 +49,7 @@ function ComisionBancariaCampo({ opcion, onCambiar, plan, monto }: Props) {
           >
             <input
               type="radio"
-              name="lleva-comision-bancaria"
+              name={nombre}
               value={o.valor}
               checked={opcion === o.valor}
               onChange={() => onCambiar(o.valor)}

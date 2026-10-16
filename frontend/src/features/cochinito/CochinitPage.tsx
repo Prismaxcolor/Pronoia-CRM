@@ -20,8 +20,7 @@ import BancaFormModal from './BancaFormModal';
 import EditarMovimientoModal from './EditarMovimientoModal';
 import AnularConLlaveModal from '../../components/AnularConLlaveModal';
 import { anularMovimiento } from '../../services/transaccion-edicion-service';
-import { completarTransferenciaMesa } from '../../services/transferencia-mesa-service';
-import { montoQueRecibeElDestino } from './detalle-movimiento';
+import CobrarTransferenciaModal from './CobrarTransferenciaModal';
 import KpisCochinito from './KpisCochinito';
 import { useTasasUsd } from './useTasasUsd';
 import SaldosBancas from './SaldosBancas';
@@ -72,6 +71,7 @@ function CochinitPage() {
   const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
   const catWallet = useCategorias();
   const [movCategoria, setMovCategoria] = useState<Movimiento | null>(null);
+  const [movCobro, setMovCobro] = useState<Movimiento | null>(null);
   // Tasas Binance y BCV: una sola carga por pantalla para los equivalentes en USD (tarjetas, total en Bs y formulario).
   const tasasUsd = useTasasUsd();
   const [bancas, setBancas] = useState<Banca[]>([]);
@@ -193,21 +193,8 @@ function CochinitPage() {
     await recargarTras();
   };
 
-  const handleCompletar = async (m: Movimiento) => {
-    const destino = bancas.find(b => b.id === m.bancaDestinoId);
-    const recibe = montoQueRecibeElDestino(m);
-    const simbolo = destino?.moneda === 'USD' ? 'USD' : destino?.moneda === 'VES' ? 'Bs' : destino?.moneda ?? '';
-    const monto = recibe == null ? '' : `${simbolo} ${recibe.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} `;
-    const ok = await confirmar({
-      titulo: 'Completar transferencia',
-      mensaje: `Se acreditarán ${monto}en ${destino?.nombre ?? 'la cuenta destino'} (ya descontada la comisión) y se saldará la deuda del cambista. Hazlo solo cuando el cambista ya entregó el dinero.`,
-      confirmarLabel: 'Completar',
-      variante: 'warning',
-    });
-    if (!ok) return;
-    const r = await completarTransferenciaMesa(m.id);
-    if ('error' in r) { toast.errorMsg(r.error); return; }
-    toast.exito(r.yaCompletada ? 'La transferencia ya estaba completada.' : 'Transferencia completada: el saldo ya está en la cuenta destino.');
+  const onCobrado = async () => {
+    setMovCobro(null);
     await recargarTras();
   };
 
@@ -388,7 +375,7 @@ function CochinitPage() {
             vacio={vacioTabla}
             onEditar={m => setEdicion({ modo: 'editar', movimiento: m })}
             onAnular={m => setEdicion({ modo: 'anular', movimiento: m })}
-            onCompletar={puedeCompletar ? handleCompletar : undefined}
+            onCompletar={puedeCompletar ? setMovCobro : undefined}
             categorias={catWallet.indice}
             onCambiarCategoria={puedeEditar && catWallet.categorias.length > 0 ? setMovCategoria : undefined}
           />
@@ -419,6 +406,14 @@ function CochinitPage() {
           bancas={bancas}
           onClose={() => setEdicion(null)}
           onGuardado={(_m, advertencia) => onMovimientoEditado(advertencia)}
+        />
+      )}
+      {movCobro && (
+        <CobrarTransferenciaModal
+          movimiento={movCobro}
+          bancaDestino={bancas.find(b => b.id === movCobro.bancaDestinoId)}
+          onClose={() => setMovCobro(null)}
+          onCobrado={() => void onCobrado()}
         />
       )}
       {edicion?.modo === 'anular' && (

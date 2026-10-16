@@ -210,6 +210,11 @@ function PagoDetallePage({ tipoEntidad }: Props) {
                   Referencia: <span className="font-medium text-text-primary">{b.referencia}</span>
                 </p>
               )}
+              {b.comisionBancaria != null && b.comisionBancaria > 0 && (
+                <p className="text-xs text-text-secondary mt-0.5">
+                  Comisión bancaria (0.3%): <span className="font-medium text-text-primary">Bs {fmt(b.comisionBancaria)}</span>, cargada a esta misma cuenta
+                </p>
+              )}
             </div>
           ))}
         </div>

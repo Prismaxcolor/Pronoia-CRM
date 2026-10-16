@@ -77,7 +77,7 @@ function TrabajadorFormModal({ tipo, trabajador, onClose, onGuardado }: Props) {
     const pagoDiarioUsd = f.pagoDiarioUsd.trim() ? leerNumero(f.pagoDiarioUsd) : 0;
     if (pagoDiarioUsd === null || pagoDiarioUsd < 0) { setError('El sueldo por día en divisas debe ser un número igual o mayor a 0.'); return; }
     const pagoDiarioBs = f.pagoDiarioBs.trim() ? leerNumero(f.pagoDiarioBs) : 0;
-    if (pagoDiarioBs === null || pagoDiarioBs < 0) { setError('El sueldo por día en bolívares debe ser un número igual o mayor a 0.'); return; }
+    if (pagoDiarioBs === null || pagoDiarioBs < 0) { setError('El sueldo por día en Bs (referencia en USD) debe ser un número igual o mayor a 0.'); return; }
     const datos: TrabajadorInput = {
       tipo: f.tipo, nombres: f.nombres.trim(), apellidos: f.apellidos.trim(), cedula: f.cedula.trim(),
       rif: vacioANull(f.rif), telefono: vacioANull(f.telefono), direccion: vacioANull(f.direccion),
@@ -124,7 +124,7 @@ function TrabajadorFormModal({ tipo, trabajador, onClose, onGuardado }: Props) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Campo id="trab-pago" etiqueta="Sueldo por día en divisas (USD)" inputMode="decimal" max={12} valor={f.pagoDiarioUsd} onCambio={poner('pagoDiarioUsd')} ayuda="La parte que se paga en efectivo o por Binance. Se puede cambiar en cada semana." />
-              <Campo id="trab-pago-bs" etiqueta="Sueldo por día en bolívares (Bs)" inputMode="decimal" max={16} valor={f.pagoDiarioBs} onCambio={poner('pagoDiarioBs')} ayuda="La otra parte del sueldo, pagada en Bs (pago móvil). Déjalo en 0 si todo se paga en divisas." />
+              <Campo id="trab-pago-bs" etiqueta="Sueldo por día en Bs (referencia en USD)" inputMode="decimal" max={16} valor={f.pagoDiarioBs} onCambio={poner('pagoDiarioBs')} ayuda="Es un valor en DÓLARES que se paga en bolívares: 8 significa 8 USD por día, convertidos a Bs con la tasa del día (Binance, mediodía de Caracas). Déjalo en 0 si todo se paga en divisas." />
             </div>
             <div>
               <label htmlFor="trab-direccion" className={labelClass}>Dirección</label>

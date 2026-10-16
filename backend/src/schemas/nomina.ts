@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DIAS_MAX_SEMANA, esLunes, prestamoExcedeGanado, sumarCuotas } from '../utils/nomina-calculo.js';
 import { normalizarCedula } from '../utils/nomina-cedula.js';
 import { hoyNegocio } from '../utils/fecha-negocio.js';
+import { comprobanteUrlSchema } from './comprobantes.js';
 
 /** Todo lo que entra a /api/nomina se valida aquí: son datos personales sensibles. */
 
@@ -69,7 +70,8 @@ export const crearTrabajadorSchema = z.object({
   cedula,
   ...camposTrabajador,
   pagoDiarioUsd: monto('El sueldo diario en divisas debe ser un número.').default(0),
-  pagoDiarioBs: monto('El sueldo diario en bolívares debe ser un número.').default(0),
+  /** Sueldo diario "en Bs": valor en USD de referencia que se paga en bolívares a la tasa del día. */
+  pagoDiarioBs: monto('El sueldo diario en Bs (referencia en USD) debe ser un número.').default(0),
 });
 export type CrearTrabajadorInput = z.infer<typeof crearTrabajadorSchema>;
 
@@ -80,10 +82,28 @@ export const actualizarTrabajadorSchema = z.object({
   cedula: cedula.optional(),
   ...camposTrabajador,
   pagoDiarioUsd: monto('El sueldo diario en divisas debe ser un número.').optional(),
-  pagoDiarioBs: monto('El sueldo diario en bolívares debe ser un número.').optional(),
+  pagoDiarioBs: monto('El sueldo diario en Bs (referencia en USD) debe ser un número.').optional(),
   activo: z.boolean().optional(),
 });
 export type ActualizarTrabajadorInput = z.infer<typeof actualizarTrabajadorSchema>;
+
+/** Máximo de comprobantes por pago (mismo tope que el resto del Wallet). */
+const MAX_COMPROBANTES_PAGO = 10;
+
+/**
+ * Pago (desembolso) de un préstamo o adelanto desde el Wallet. `tasaBs` solo se usa si la cuenta es en Bs (el préstamo es
+ * en USD y se convierte a esa tasa). `llevaComision` solo aplica a cuentas en Bs (Sí/No sin valor por defecto).
+ */
+export const desembolsoSchema = z.object({
+  bancaId: z.string().uuid('Selecciona una cuenta.'),
+  fecha: fechaNegocio.refine(v => v <= diaSiguienteNegocio(), 'La fecha del pago no puede ser posterior a mañana.'),
+  referencia: textoOpcional(50),
+  tasaBs: z.number().finite().positive('La tasa debe ser mayor a 0.').max(MAX_MONTO).refine(seisDecimales, 'La tasa admite hasta 6 decimales.')
+    .nullable().optional().transform(v => v ?? null),
+  llevaComision: z.boolean().optional(),
+  comprobantes: z.array(comprobanteUrlSchema).max(MAX_COMPROBANTES_PAGO).default([]),
+});
+export type DesembolsoInput = z.infer<typeof desembolsoSchema>;
 
 export const crearPrestamoSchema = z.object({
   trabajadorId: z.string().uuid('Trabajador inválido.'),
@@ -92,6 +112,8 @@ export const crearPrestamoSchema = z.object({
   cuotaSemanalUsd: montoPositivo('La cuota debe ser un número.').optional().nullable().transform(v => v ?? null),
   fecha: fechaNegocio,
   nota: textoOpcional(300),
+  /** Si viene, además de registrar el préstamo se registra su pago desde el Wallet. */
+  desembolso: desembolsoSchema.optional(),
 }).refine(v => v.cuotaSemanalUsd === null || v.cuotaSemanalUsd <= v.montoUsd, {
   path: ['cuotaSemanalUsd'], message: 'La cuota semanal no puede ser mayor al monto.',
 });
@@ -124,9 +146,12 @@ const renglonSchema = z.object({
   trabajadorId: z.string().uuid('Trabajador inválido.'),
   diasTrabajados: z.number({ message: 'Los días son obligatorios.' }).finite().min(0).max(DIAS_MAX_SEMANA, `Máximo ${DIAS_MAX_SEMANA} días.`)
     .refine(centavosExactos, 'Máximo 2 decimales.'),
-  /** Sueldo diario en divisas (USD) y en bolívares (Bs); un trabajador puede cobrar las dos partes. */
+  /**
+   * Sueldo diario en divisas (USD) y "sueldo en Bs": un valor en USD de REFERENCIA que se paga en bolívares a la tasa de la
+   * nómina (no son bolívares). Un trabajador puede cobrar las dos partes.
+   */
   montoBaseUsd: monto('El sueldo en divisas debe ser un número.'),
-  montoBaseBs: monto('El sueldo en bolívares debe ser un número.').default(0),
+  montoBaseBs: monto('El sueldo en Bs (referencia en USD) debe ser un número.').default(0),
   bonificacionUsd: monto('La bonificación debe ser un número.').default(0),
   descuentoTrabajoUsd: monto('El descuento debe ser un número.').default(0),
   cuotas: z.array(cuotaSchema).max(20).default([])
@@ -135,7 +160,7 @@ const renglonSchema = z.object({
 });
 
 const MENSAJE_PRESTAMO_EXCEDE =
-  'Las cuotas de préstamo no pueden superar lo que el trabajador ganó en la semana (días x sueldo en divisas y en Bs + bonificación).';
+  'Las cuotas de préstamo no pueden superar lo que el trabajador ganó en la semana (días x sueldo en divisas y en Bs [USD de referencia] + bonificación).';
 
 export const guardarNominaSchema = z.object({
   tipo: z.enum(TIPOS_TRABAJADOR, { message: 'Elige el tipo de personal.' }),
@@ -148,9 +173,9 @@ export const guardarNominaSchema = z.object({
   lineas: z.array(renglonSchema).min(1, 'Agrega al menos un trabajador.').max(MAX_LINEAS)
     .refine(l => new Set(l.map(x => x.trabajadorId)).size === l.length, 'Un trabajador aparece más de una vez.'),
 }).superRefine((v, ctx) => {
-  // Con sueldo en Bs el tope depende de la tasa de la nómina, por eso se evalúa aquí y no en cada renglón.
+  // Se evalúa sobre el renglón completo (días x sueldos + bonificación); el sueldo en Bs cuenta por su valor en USD de referencia.
   v.lineas.forEach((l, i) => {
-    if (prestamoExcedeGanado({ ...l, descuentoPrestamoUsd: sumarCuotas(l.cuotas) }, v.tasaBs)) {
+    if (prestamoExcedeGanado({ ...l, descuentoPrestamoUsd: sumarCuotas(l.cuotas) })) {
       ctx.addIssue({ code: 'custom', path: ['lineas', i, 'cuotas'], message: MENSAJE_PRESTAMO_EXCEDE });
     }
   });
@@ -199,6 +224,12 @@ export const pagarNominaSchema = z.object({
     .refine(b => new Set(b.map(x => x.bancaId)).size === b.length, 'La misma cuenta no puede pagar dos monedas.'),
 });
 export type PagarNominaInput = z.infer<typeof pagarNominaSchema>;
+
+/** Pagar a UN trabajador de una nómina cerrada: lo mismo que pagar la nómina completa, más comprobantes opcionales. */
+export const pagarTrabajadorSchema = pagarNominaSchema.extend({
+  comprobantes: z.array(comprobanteUrlSchema).max(MAX_COMPROBANTES_PAGO).default([]),
+});
+export type PagarTrabajadorInput = z.infer<typeof pagarTrabajadorSchema>;
 
 export const filtroCategoriaPagoSchema = z.object({
   tipo: z.enum(TIPOS_TRABAJADOR, { message: 'Elige el tipo de personal.' }),

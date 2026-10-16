@@ -10,8 +10,8 @@ import VisorFotos from '../../components/VisorFotos';
 import AnularConLlaveModal from '../../components/AnularConLlaveModal';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
-import { useConfirm } from '../../hooks/use-confirm-context';
-import { completarTransferenciaMesa } from '../../services/transferencia-mesa-service';
+import CobrarTransferenciaModal from './CobrarTransferenciaModal';
+import { montoCobradoMesa, montoPendienteMesa } from './cobro-mesa';
 import { obtenerBancas, obtenerDetalleMovimiento, type DetalleMovimiento } from '../../services/banca-service';
 import { anularMovimiento } from '../../services/transaccion-edicion-service';
 import { formatearFecha } from '../../lib/formato';
@@ -74,6 +74,8 @@ function FilasMesa({ detalle, simboloDestino }: { detalle: DetalleMovimiento; si
       {m.mesaMontoBruto != null && <FilaDocumento label="Entrega el cambista" valor={`${simboloDestino} ${formatearNumero(m.mesaMontoBruto, 2)}`} />}
       <FilaDocumento label="Comisión del cambio" valor={textoComisionMesa(m, simboloDestino)} />
       {recibe != null && <FilaDocumento label={enProceso ? 'Recibirá la banca destino al completar' : 'Recibe la banca destino'} valor={`${simboloDestino} ${formatearNumero(recibe, 2)}`} />}
+      {m.mesaEstado === 'parcial' && montoCobradoMesa(m) != null && <FilaDocumento label="Ya cobrado" valor={`${simboloDestino} ${formatearNumero(montoCobradoMesa(m) ?? 0, 2)}`} />}
+      {m.mesaEstado === 'parcial' && montoPendienteMesa(m) != null && <FilaDocumento label="Pendiente por cobrar" valor={`${simboloDestino} ${formatearNumero(montoPendienteMesa(m) ?? 0, 2)}`} />}
       {m.mesaCompletadaEn && <FilaDocumento label="Completada" valor={formatearFechaHora(m.mesaCompletadaEn)} />}
     </>
   );
@@ -111,10 +113,9 @@ function MovimientoDetallePage() {
   const { id = '' } = useParams();
   const { tienePermiso } = useAuth();
   const toast = useToast();
-  const confirmar = useConfirm();
   const [version, setVersion] = useState(0);
   const [resultado, setResultado] = useState<Resultado | null>(null);
-  const [modal, setModal] = useState<'editar' | 'anular' | null>(null);
+  const [modal, setModal] = useState<'editar' | 'anular' | 'cobrar' | null>(null);
   const [fotoAbierta, setFotoAbierta] = useState<number | null>(null);
 
   useEffect(() => {
@@ -156,24 +157,9 @@ function MovimientoDetallePage() {
   const monedaDestino = bancas.find(b => b.id === m.bancaDestinoId)?.moneda ?? m.moneda;
   const simboloDestino = simbolo(monedaDestino);
 
-  const completar = async () => {
-    const recibe = montoQueRecibeElDestino(m);
-    const ok = await confirmar({
-      titulo: 'Completar transferencia',
-      mensaje: `Se acreditarán ${recibe == null ? '' : `${simboloDestino} ${formatearNumero(recibe, 2)} `}en ${detalle.bancaDestinoNombre ?? 'la cuenta destino'} (ya descontada la comisión) y se saldará la deuda del cambista. Hazlo solo cuando el cambista ya entregó el dinero.`,
-      confirmarLabel: 'Completar',
-      variante: 'warning',
-    });
-    if (!ok) return;
-    const r = await completarTransferenciaMesa(m.id);
-    if ('error' in r) { toast.errorMsg(r.error); return; }
-    toast.exito(r.yaCompletada ? 'La transferencia ya estaba completada.' : 'Transferencia completada: el saldo ya está en la cuenta destino.');
-    recargar();
-  };
-
   const acciones: ReactNode = (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
-      {puedeCompletar && <BotonAccion soloEnLinea icono={<CheckCircle2 size={16} />} onClick={() => void completar()}>Completar</BotonAccion>}
+      {puedeCompletar && <BotonAccion soloEnLinea icono={<CheckCircle2 size={16} />} onClick={() => setModal('cobrar')}>{(montoCobradoMesa(m) ?? 0) > 0 ? 'Cobrar el resto' : 'Completar'}</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Pencil size={16} />} onClick={() => setModal('editar')}>Editar</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Ban size={16} />} onClick={() => setModal('anular')}>Anular</BotonAccion>}
       <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarMovimientoPDF(detalle)}>PDF</BotonAccion>
@@ -201,8 +187,13 @@ function MovimientoDetallePage() {
         {m.anulado && <BannerAnulado detalle={detalle} />}
         {enProceso && (
           <div role="status" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 print:border-black print:bg-transparent print:text-black">
-            <p className="font-bold">Transferencia en proceso</p>
-            <p>El dinero ya salió de {detalle.bancaOrigenNombre ?? 'la cuenta origen'}, pero {detalle.bancaDestinoNombre ?? 'la cuenta destino'} todavía no lo recibe. Se acredita cuando se complete.</p>
+            <p className="font-bold">{m.mesaEstado === 'parcial' ? 'Cobro parcial: falta cobrar el resto' : 'Transferencia en proceso'}</p>
+            <p>
+              El dinero ya salió de {detalle.bancaOrigenNombre ?? 'la cuenta origen'}.{' '}
+              {m.mesaEstado === 'parcial'
+                ? `${detalle.bancaDestinoNombre ?? 'La cuenta destino'} solo recibió ${simboloDestino} ${formatearNumero(montoCobradoMesa(m) ?? 0, 2)}; el resto se acredita cuando el cambista lo entregue.`
+                : `${detalle.bancaDestinoNombre ?? 'La cuenta destino'} todavía no lo recibe. Se acredita cuando se complete.`}
+            </p>
           </div>
         )}
 
@@ -234,6 +225,14 @@ function MovimientoDetallePage() {
         <VisorFotos fotos={m.comprobantes} indice={fotoAbierta} onCambiar={setFotoAbierta} onCerrar={() => setFotoAbierta(null)} alt="Comprobante ampliado" />
       )}
 
+      {modal === 'cobrar' && (
+        <CobrarTransferenciaModal
+          movimiento={m}
+          bancaDestino={bancas.find(b => b.id === m.bancaDestinoId)}
+          onClose={() => setModal(null)}
+          onCobrado={recargar}
+        />
+      )}
       {modal === 'editar' && (
         <EditarMovimientoModal
           movimiento={m}

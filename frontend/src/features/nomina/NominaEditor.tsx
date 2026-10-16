@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ban, FileDown, Lock, Plus, Save, UserPlus, Wallet } from 'lucide-react';
 import { anularNomina, cerrarNomina, guardarNomina } from '../../services/nomina-service';
-import { obtenerTasaOficial } from '../../services/tasa-service';
+import { obtenerTasa } from '../../services/tasa-service';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { BotonAccion, Insignia, useConfirm } from '../../components/ui';
 import { formatearFechaHora } from '../../lib/fecha-negocio';
-import { ETIQUETA_ESTADO_NOMINA, formatearNumeroNomina, type CandidatoNomina, type Nomina, type TipoTrabajador } from '@shared/types/nomina';
+import {
+  ETIQUETA_ESTADO_NOMINA, formatearNumeroNomina, type CandidatoNomina, type LineaNomina, type Nomina, type TipoTrabajador,
+} from '@shared/types/nomina';
 import { lineasNegativas, sumarTotales, type TotalesNomina } from '@shared/types/nomina-calculo';
 import MotivoModal from './MotivoModal';
 import NominaTabla from './NominaTabla';
 import NominaTotales from './NominaTotales';
 import PagarNominaModal from './PagarNominaModal';
+import PagarTrabajadorModal from './PagarTrabajadorModal';
+import PagoTrabajadoresPanel from './PagoTrabajadoresPanel';
 import PagoNominaEstado from './PagoNominaEstado';
 import { estadoPagoNomina, sePuedePagar } from './nomina-pago';
 import { descargarNominaPDF } from './nomina-pdf';
@@ -39,12 +43,13 @@ function RotuloFormulas() {
     <details className="mb-4 rounded-xl border border-border bg-surface p-3 text-sm">
       <summary className="cursor-pointer font-medium text-text-primary">Cómo se calcula cada trabajador</summary>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-text-secondary">
-        <li>Cada trabajador tiene <strong>dos sueldos por día</strong>: el de <strong>divisas</strong> (USD, efectivo o Binance) y el de <strong>bolívares</strong> (Bs, pago móvil). Puede cobrar las dos partes.</li>
-        <li><strong>Total bruto (USD)</strong> = días x sueldo en divisas + (días x sueldo en Bs) / tasa.</li>
+        <li>Cada trabajador tiene <strong>dos sueldos por día</strong>: el de <strong>divisas</strong> (USD, efectivo o Binance) y el de <strong>Bs</strong> (pago móvil). Puede cobrar las dos partes.</li>
+        <li>El número del <strong>sueldo en Bs es una referencia en USD</strong>, no bolívares: 8 significa 8 USD por día, que se pagan en bolívares convertidos a la tasa de la nómina (a tasa 40 son 320 Bs por día).</li>
+        <li><strong>Total bruto (USD)</strong> = días x sueldo en divisas + días x sueldo en Bs (USD de referencia).</li>
         <li><strong>A pagar en divisas</strong> = días x sueldo en divisas + bonificación extra - descuentos (por trabajo + cuotas de préstamo).</li>
-        <li><strong>A pagar en Bs</strong> = días x sueldo en Bs. Los descuentos se cargan primero a divisas; si no alcanzan, el sobrante se descuenta de los Bs a la tasa.</li>
-        <li><strong>Total del trabajador (USD)</strong> = a pagar en divisas + (a pagar en Bs) / tasa.</li>
-        <li>La tasa es obligatoria cuando algún trabajador tiene sueldo en Bs.</li>
+        <li><strong>A pagar en Bs</strong> = (días x sueldo en Bs en USD) x tasa. Los descuentos se cargan primero a divisas; si no alcanzan, el sobrante (en USD) se descuenta de la parte en Bs.</li>
+        <li><strong>Total del trabajador (USD)</strong> = a pagar en divisas + valor en USD de la parte en Bs (no cambia con la tasa).</li>
+        <li>La tasa es obligatoria cuando algún trabajador tiene sueldo en Bs: usa la del día (Binance al mediodía de Caracas).</li>
       </ul>
     </details>
   );
@@ -61,6 +66,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
   const [ocupado, setOcupado] = useState(false);
   const [anulando, setAnulando] = useState(false);
   const [pagando, setPagando] = useState(false);
+  const [pagandoA, setPagandoA] = useState<LineaNomina | null>(null);
   const [elegido, setElegido] = useState('');
 
   const estado = nomina?.estado ?? null;
@@ -74,7 +80,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
 
   useEffect(() => {
     let vivo = true;
-    void obtenerTasaOficial().then(t => { if (vivo) setTasaSugerida(t?.tasa ?? null); });
+    void obtenerTasa('binance').then(t => { if (vivo) setTasaSugerida(t?.tasa ?? null); });
     return () => { vivo = false; };
   }, []);
 
@@ -130,6 +136,13 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
     await onRecargar();
   };
 
+  const alPagarTrabajador = async (yaPagado: boolean, advertencia?: string) => {
+    setPagandoA(null);
+    toast.exito(yaPagado ? 'El trabajador ya estaba pagado.' : 'Pago registrado en el Wallet.');
+    if (advertencia) toast.errorMsg(advertencia);
+    await onRecargar();
+  };
+
   const anular = async (motivo: string): Promise<string | undefined> => {
     if (!nomina) return undefined;
     const r = await anularNomina(nomina.id, motivo);
@@ -151,7 +164,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
     <div>
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div>
-          <label htmlFor="nomina-tasa" className="block text-xs font-medium text-text-secondary mb-1">Tasa de la nómina (Bs por USD)</label>
+          <label htmlFor="nomina-tasa" className="block text-xs font-medium text-text-secondary mb-1">Tasa del día (Bs por USD, Binance mediodía)</label>
           <input
             id="nomina-tasa" inputMode="decimal" value={tasa} disabled={soloLectura} className={`${inputClass} w-44 tabular-nums`}
             onChange={e => { setTasa(e.target.value); setSucio(true); }}
@@ -159,7 +172,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
         </div>
         {!soloLectura && tasaSugerida !== null && tasaNum !== tasaSugerida && (
           <button type="button" onClick={() => { setTasa(String(tasaSugerida)); setSucio(true); }} className="pb-2 text-sm text-brand-700 underline">
-            Usar la tasa BCV de hoy ({num(tasaSugerida)})
+            Usar la tasa Binance de hoy ({num(tasaSugerida)})
           </button>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -176,6 +189,11 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
       )}
 
       {nomina && <PagoNominaEstado nomina={nomina} />}
+      {nomina && estado === 'CERRADA' && (
+        <PagoTrabajadoresPanel
+          nomina={nomina} puedePagar={tienePermiso('nomina', 'editar') && tienePermiso('cochinito', 'crear')} onPagar={setPagandoA}
+        />
+      )}
 
       <RotuloFormulas />
 
@@ -215,7 +233,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
           <BotonAccion variante="secundario" icono={<Lock size={16} />} onClick={() => void cerrar()} disabled={ocupado || sucio || hayNegativosAhora}>Cerrar nómina</BotonAccion>
         )}
         {nomina && sePuedePagar(nomina) && tienePermiso('nomina', 'editar') && tienePermiso('cochinito', 'crear') && (
-          <BotonAccion icono={<Wallet size={16} />} onClick={() => setPagando(true)} disabled={ocupado || sucio}>Pagar desde Wallet</BotonAccion>
+          <BotonAccion icono={<Wallet size={16} />} onClick={() => setPagando(true)} disabled={ocupado || sucio}>Pagar toda la nómina desde Wallet</BotonAccion>
         )}
         {nomina && estado !== 'ANULADA' && tienePermiso('nomina', 'eliminar') && (
           <BotonAccion variante="secundario" icono={<Ban size={16} />} onClick={() => setAnulando(true)} disabled={ocupado}>Anular nómina</BotonAccion>
@@ -227,6 +245,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
       </div>
 
       {pagando && nomina && <PagarNominaModal nomina={nomina} onClose={() => setPagando(false)} onPagada={alPagar} />}
+      {pagandoA && nomina && <PagarTrabajadorModal nomina={nomina} linea={pagandoA} onClose={() => setPagandoA(null)} onPagado={alPagarTrabajador} />}
       {anulando && nomina && (
         <MotivoModal
           titulo={`Anular ${formatearNumeroNomina(nomina.numero)}`}
@@ -236,7 +255,7 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
           etiquetaConfirmar="Anular nómina" onConfirmar={anular} onClose={() => setAnulando(false)}
         />
       )}
-      <p className="mt-6 text-xs text-text-muted">El cálculo no mueve dinero: una nómina cerrada se paga con «Pagar desde Wallet», que registra el egreso en la cuenta que elijas.</p>
+      <p className="mt-6 text-xs text-text-muted">El cálculo no mueve dinero: una nómina cerrada se paga con el botón «Pagar» de cada trabajador (o con «Pagar toda la nómina desde Wallet»), que registra el egreso en la cuenta que elijas. No se pueden mezclar las dos formas.</p>
     </div>
   );
 }

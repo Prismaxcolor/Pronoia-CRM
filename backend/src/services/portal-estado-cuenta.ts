@@ -15,6 +15,10 @@ export interface EstadoCuentaPortal {
   entidad: EstadoCuenta['entidad'];
   entradas: EntradaPortal[];
   totales: EstadoCuenta['totales'];
+  /** Saldo real de hoy (toda la cuenta); igual a totales.saldo salvo que se consulte un rango. */
+  saldoActual: number;
+  /** Solo si se consultó un rango de fechas. */
+  periodo?: EstadoCuenta['periodo'];
 }
 
 const DESCRIPCION_NOTA: Record<'nota_credito' | 'nota_debito', string> = {
@@ -40,5 +44,11 @@ export function aEstadoCuentaPortal(estado: EstadoCuenta): EstadoCuentaPortal {
       abono: e.abono,
       ...(e.montoCruzado !== undefined ? { montoCruzado: e.montoCruzado } : {}),
     }));
-  return { entidad: estado.entidad, entradas, totales: estado.totales };
+  return {
+    entidad: estado.entidad,
+    entradas,
+    totales: estado.totales,
+    saldoActual: estado.saldoActual ?? estado.totales.saldo,
+    ...(estado.periodo ? { periodo: estado.periodo } : {}),
+  };
 }

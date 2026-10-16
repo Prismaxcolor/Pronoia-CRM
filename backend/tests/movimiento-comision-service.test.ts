@@ -43,6 +43,11 @@ vi.mock('../src/services/auditoria-service.js', () => ({
   },
 }));
 
+const categoriaComision = vi.hoisted(() => ({ aplicadas: [] as string[][] }));
+vi.mock('../src/services/comision-categoria-service.js', () => ({
+  aplicarCategoriaAComisiones: (ids: string[]) => { categoriaComision.aplicadas.push(ids); return Promise.resolve({}); },
+}));
+
 vi.mock('../src/services/banca-service.js', () => ({
   crearMovimiento: (input: Fila) => {
     bd.legacy.push(input);
@@ -70,6 +75,19 @@ beforeEach(() => {
   bd.legacyResp = { movimiento };
   bd.leido = movimiento;
   auditoria.entradas = []; auditoria.resultado = true;
+  categoriaComision.aplicadas = [];
+});
+
+describe('registrarMovimiento: categoría COMISIONES BANCARIAS', () => {
+  it('con comisión, el cargo creado recibe la categoría de comisiones bancarias', async () => {
+    await registrarMovimiento(input({ llevaComision: true }), U);
+    expect(categoriaComision.aplicadas).toEqual([['m-2']]);
+  });
+
+  it('sin comisión no se aplica ninguna categoría de comisión', async () => {
+    await registrarMovimiento(input({ llevaComision: false }), U);
+    expect(categoriaComision.aplicadas).toEqual([]);
+  });
 });
 
 describe('registrarMovimiento: cuando NO aplica la comisión', () => {

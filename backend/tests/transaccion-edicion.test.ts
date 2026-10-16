@@ -52,6 +52,11 @@ vi.mock('../src/services/pago-detalle-service.js', () => ({
   obtenerPagoDetalle: async () => detalles.shift() ?? { error: 'no' },
 }));
 
+let grupoConComision = false;
+vi.mock('../src/services/pago-comision-service.js', () => ({
+  grupoLlevaComision: async () => grupoConComision,
+}));
+
 let movimientos: unknown[] = [];
 vi.mock('../src/services/banca-service.js', () => ({
   obtenerMovimiento: async () => movimientos.shift() ?? null,
@@ -91,6 +96,7 @@ beforeEach(() => {
   for (const k of Object.keys(tablas)) delete tablas[k];
   rpcLlamadas.length = 0;
   rpcRespuesta = { error: null };
+  grupoConComision = false;
   detalles = [];
   movimientos = [];
   liberar.mockClear();
@@ -207,6 +213,24 @@ describe('editarPagoCobro', () => {
     expect(cambios.monto_usd).toEqual({ antes: 100, despues: 80 });
     expect(cambios.moneda).toEqual({ antes: 'USD', despues: 'VES' });
     expect(cambios.banca).toEqual({ antes: 'Banesco: 100 USD', despues: 'Provincial: 2900 VES' });
+  });
+
+  it('un pago con comisión bancaria rechaza cambios contables antes de gastar la llave (como Wallet)', async () => {
+    detalles = [detallePago()];
+    grupoConComision = true;
+    const r = await editarPagoCobro('pago', G, {
+      bancas: [{ bancaId: B2, monto: 2900, moneda: 'VES', montoUsd: 80 }], montoUsd: 80, items: [{ tipo: 'factura', id: F1, montoUsd: 80 }],
+    }, ACTOR);
+    expect(r).toMatchObject({ codigo: 409, error: expect.stringContaining('comisión bancaria') });
+    expect(autorizarEdicion).not.toHaveBeenCalled();
+    expect(rpcLlamadas).toHaveLength(0);
+  });
+
+  it('un pago con comisión bancaria sí admite editar los campos libres', async () => {
+    detalles = [detallePago(), detallePago({ descripcion: 'Nuevo concepto' })];
+    grupoConComision = true;
+    await editarPagoCobro('pago', G, { descripcion: 'Nuevo concepto' }, ACTOR);
+    expect(rpcLlamadas[0].nombre).toBe('editar_pago_cobro_campos');
   });
 
   it('un cruce sin dinero rechaza cambios contables antes de gastar la llave', async () => {

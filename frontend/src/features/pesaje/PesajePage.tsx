@@ -23,7 +23,7 @@ import CantidadTaraInput from './CantidadTaraInput';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import TicketsBrutoProveedor from './TicketsBrutoProveedor';
-import { faltantesParaAgregar, productoRequiereLote, ticketsBrutoDeEntidad } from './pesaje-nuevo-logica';
+import { esSinPesajeGlobal, faltantesParaAgregar, productoRequiereLote, ticketsBrutoDeEntidad } from './pesaje-nuevo-logica';
 import { AlertaItem, EncabezadoPagina, Pestanas } from '../../components/ui';
 import TicketsSeccion from './lista-TicketsSeccion';
 import { CLAVES_FILTROS_PESAJE } from '../../lib/pesaje-lista';
@@ -104,8 +104,8 @@ function PesajePage() {
 
   // En compra y venta el pesaje global es obligatorio, salvo que se active
   // explícitamente "Peso exterior / sin pesaje global". Traslado no aplica.
-  // El "peso exterior" solo existe en compra: en venta el pesaje global siempre es obligatorio.
-  const sinPesajeGlobal = tipo === 'compra' && pesajeExterior;
+  // El "peso exterior / sin pesaje global" aplica igual en compra y venta.
+  const sinPesajeGlobal = esSinPesajeGlobal(tipo, pesajeExterior);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -648,7 +648,7 @@ function PesajePage() {
 
             {tipo !== 'traslado' && (
             <div>
-              {tipo === 'compra' && (
+              {(tipo === 'compra' || tipo === 'venta') && (
                 <label className="flex items-center gap-2 mb-4 text-sm font-medium text-text-primary cursor-pointer">
                   <input
                     type="checkbox"
@@ -661,7 +661,7 @@ function PesajePage() {
               )}
               <h3 className="text-lg font-bold text-text-primary mb-2">Pesaje global {sinPesajeGlobal ? '' : '*'}</h3>
               {sinPesajeGlobal ? (
-                <p className="text-xs text-text-muted">Sin pesaje global: la compra se registra con el peso exterior, sin peso global para reconciliar.</p>
+                <p className="text-xs text-text-muted">Sin pesaje global: {tipo === 'venta' ? 'la venta' : 'la compra'} se registra con el peso exterior, sin peso global para reconciliar.</p>
               ) : (
               <div className="space-y-2">
                 {pesajesGlobales.map((f, idx) => {

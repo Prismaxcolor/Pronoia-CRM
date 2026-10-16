@@ -176,15 +176,61 @@ describe('crearTransferenciaMesa', () => {
 
 describe('completarTransferenciaMesa', () => {
   it('completa y devuelve el movimiento actualizado', async () => {
-    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: false, montoAcreditado: 980, comision: 20 }, error: null };
-    bd.movimiento = filaMovimiento({ mesa_estado: 'completada', monto_destino: 980 });
+    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: false, completada: true, montoAcreditado: 980, montoCobrado: 980, montoPendiente: 0, comision: 20 }, error: null };
+    bd.movimiento = filaMovimiento({ mesa_estado: 'completada', monto_destino: 980, mesa_monto_cobrado: 980 });
     const r = await completarTransferenciaMesa('m-1', U);
-    expect(bd.llamadas[0]).toEqual({ fn: 'completar_transferencia_mesa_cambio', args: { p_movimiento_id: 'm-1', p_usuario: U } });
-    expect(r).toMatchObject({ movimiento: { mesaEstado: 'completada' }, yaCompletada: false, montoAcreditado: 980 });
+    expect(bd.llamadas[0]).toEqual({
+      fn: 'cobrar_transferencia_mesa_cambio',
+      args: { p_movimiento_id: 'm-1', p_monto: null, p_pendiente_esperado: null, p_usuario: U },
+    });
+    expect(r).toMatchObject({ movimiento: { mesaEstado: 'completada', mesaMontoCobrado: 980 }, yaCompletada: false, completada: true, montoAcreditado: 980, montoPendiente: 0 });
+    expect(bd.updates).toHaveLength(0);
+  });
+
+  it('cobro parcial: manda el monto y el pendiente esperado y deja la transferencia en parcial', async () => {
+    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: false, completada: false, montoAcreditado: 400, montoCobrado: 400, montoPendiente: 580 }, error: null };
+    bd.movimiento = filaMovimiento({ mesa_estado: 'parcial', mesa_monto_cobrado: 400 });
+    const r = await completarTransferenciaMesa('m-1', U, { montoCobrado: 400, pendienteEsperado: 980, comprobantes: [] });
+    expect(bd.llamadas[0].args).toMatchObject({ p_monto: 400, p_pendiente_esperado: 980 });
+    expect(r).toMatchObject({ movimiento: { mesaEstado: 'parcial', mesaMontoCobrado: 400 }, completada: false, montoAcreditado: 400, montoCobrado: 400, montoPendiente: 580 });
+  });
+
+  it('la foto se agrega a los comprobantes existentes sin duplicar', async () => {
+    const vieja = 'https://x.supabase.co/storage/v1/object/public/comprobantes/vieja.png';
+    const nueva = 'https://x.supabase.co/storage/v1/object/public/comprobantes/nueva.png';
+    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: false, completada: true, montoAcreditado: 980, montoCobrado: 980, montoPendiente: 0 }, error: null };
+    bd.movimiento = filaMovimiento({ comprobantes: [vieja] });
+    await completarTransferenciaMesa('m-1', U, { montoCobrado: null, pendienteEsperado: null, comprobantes: [nueva, vieja] });
+    expect(bd.updates).toEqual([{ tabla: 'movimientos', valores: { comprobantes: [vieja, nueva] } }]);
+  });
+
+  it('si la foto no se puede adjuntar el cobro ya quedó hecho y se avisa', async () => {
+    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: false, completada: true, montoAcreditado: 980, montoCobrado: 980, montoPendiente: 0 }, error: null };
+    bd.updateError = { message: 'fallo' };
+    const r = await completarTransferenciaMesa('m-1', U, { montoCobrado: null, pendienteEsperado: null, comprobantes: ['https://x.supabase.co/storage/v1/object/public/comprobantes/n.png'] });
+    expect(r).toMatchObject({ completada: true, advertencia: expect.stringContaining('foto') });
+  });
+
+  it('si el pendiente cambio (doble clic u otro cobro) la RPC lo rechaza con 409 y no se adjunta nada', async () => {
+    bd.rpcResp = { data: null, error: { code: 'P0001', message: 'El pendiente cambió: ahora faltan 580.00. Revisa y vuelve a intentar.' } };
+    const r = await completarTransferenciaMesa('m-1', U, { montoCobrado: 400, pendienteEsperado: 980, comprobantes: ['https://x.supabase.co/storage/v1/object/public/comprobantes/n.png'] });
+    expect(r).toMatchObject({ codigo: 409 });
+    expect(bd.updates).toHaveLength(0);
+  });
+
+  it('sin la migracion de cobro parcial, un cobro total cae a la RPC anterior; uno parcial da 503', async () => {
+    bd.rpcResp = { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
+    const total = await completarTransferenciaMesa('m-1', U);
+    expect(bd.llamadas.map(l => l.fn)).toEqual(['cobrar_transferencia_mesa_cambio', 'completar_transferencia_mesa_cambio']);
+    expect(total).toMatchObject({ codigo: 503 });
+    bd.llamadas = [];
+    const parcial = await completarTransferenciaMesa('m-1', U, { montoCobrado: 100, pendienteEsperado: null, comprobantes: [] });
+    expect(bd.llamadas.map(l => l.fn)).toEqual(['cobrar_transferencia_mesa_cambio']);
+    expect(parcial).toMatchObject({ codigo: 503, error: expect.stringContaining('migration_mesa_cambio_cobro_parcial.sql') });
   });
 
   it('completar otra vez es idempotente: informa yaCompletada sin error', async () => {
-    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: true, montoAcreditado: 980 }, error: null };
+    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: true, completada: true, montoAcreditado: 0 }, error: null };
     bd.movimiento = filaMovimiento({ mesa_estado: 'completada' });
     expect(await completarTransferenciaMesa('m-1', U)).toMatchObject({ yaCompletada: true });
   });

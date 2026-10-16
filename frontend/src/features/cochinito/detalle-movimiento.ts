@@ -69,14 +69,15 @@ export function tituloCompartirMovimiento(m: Pick<Movimiento, 'subtipo' | 'numer
 
 type CamposMesa = Pick<Movimiento, 'anulado' | 'mesaCambistaId' | 'mesaEstado'>;
 
-/** Transferencia vigente con mesa de cambio cuyo destino aún NO recibió el saldo. */
+/** Transferencia vigente con mesa de cambio con algo por cobrar: en proceso (nada recibido) o en cobro parcial. */
 export const esTransferenciaEnProceso = (m: CamposMesa): boolean =>
-  !m.anulado && m.mesaCambistaId != null && m.mesaEstado === 'en_proceso';
+  !m.anulado && m.mesaCambistaId != null && (m.mesaEstado === 'en_proceso' || m.mesaEstado === 'parcial');
 
-/** "En proceso" / "Completada" para una transferencia con mesa; null si no aplica o está anulada (manda "Anulado"). */
-export function etiquetaEstadoMesa(m: CamposMesa): 'En proceso' | 'Completada' | null {
+/** "En proceso" / "Cobro parcial" / "Completada" para una transferencia con mesa; null si no aplica o está anulada (manda "Anulado"). */
+export function etiquetaEstadoMesa(m: CamposMesa): 'En proceso' | 'Cobro parcial' | 'Completada' | null {
   if (m.anulado || m.mesaCambistaId == null) return null;
   if (m.mesaEstado === 'en_proceso') return 'En proceso';
+  if (m.mesaEstado === 'parcial') return 'Cobro parcial';
   return m.mesaEstado === 'completada' ? 'Completada' : null;
 }
 

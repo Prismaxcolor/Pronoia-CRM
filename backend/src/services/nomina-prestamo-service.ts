@@ -1,7 +1,9 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { falloNomina, type FalloNomina } from '../utils/nomina-errores.js';
+import { esFuncionInexistente } from '../utils/transaccion-edicion.js';
 import type { EstadoPrestamo, Prestamo, TipoPrestamo } from '../../../shared/types/nomina.js';
 import type { ActualizarPrestamoInput, CrearPrestamoInput } from '../schemas/nomina.js';
+import { pagosDePrestamos } from './nomina-prestamo-pago-lectura.js';
 
 const LIMITE_PRESTAMOS = 1000;
 const COLUMNAS = '*, trabajador:nomina_trabajadores(nombres, apellidos)';
@@ -27,7 +29,15 @@ export function mapPrestamo(row: Fila): Prestamo {
     nota: (row.nota as string | null) ?? null,
     estado: row.estado as EstadoPrestamo,
     anuladoMotivo: (row.anulado_motivo as string | null) ?? null,
+    desembolso: null,
   };
+}
+
+/** Agrega a cada préstamo su pago desde el Wallet (null si no se ha registrado o la migración no está aplicada). */
+async function conDesembolsos(prestamos: readonly Prestamo[]): Promise<{ prestamos: Prestamo[] } | FalloNomina> {
+  const r = await pagosDePrestamos(prestamos.map(p => p.id));
+  if ('error' in r) return r;
+  return { prestamos: prestamos.map(p => ({ ...p, desembolso: r.pagos.get(p.id) ?? null })) };
 }
 
 export async function listarPrestamos(
@@ -38,14 +48,16 @@ export async function listarPrestamos(
   if (filtro.estado) q = q.eq('estado', filtro.estado);
   const { data, error } = await q;
   if (error) return falloNomina(error, 'prestamos_listar', 'No se pudieron cargar los préstamos.');
-  return { prestamos: (data ?? []).map(mapPrestamo) };
+  return conDesembolsos((data ?? []).map(mapPrestamo));
 }
 
-async function obtenerPrestamo(id: string): Promise<{ prestamo: Prestamo } | FalloNomina> {
+export async function obtenerPrestamo(id: string): Promise<{ prestamo: Prestamo } | FalloNomina> {
   const { data, error } = await supabaseAdmin.from('nomina_prestamos').select(COLUMNAS).eq('id', id).maybeSingle();
   if (error) return falloNomina(error, 'prestamo_obtener', 'No se pudo cargar el préstamo.');
   if (!data) return { error: 'Préstamo no encontrado.', codigo: 404 };
-  return { prestamo: mapPrestamo(data) };
+  const r = await conDesembolsos([mapPrestamo(data)]);
+  if ('error' in r) return r;
+  return { prestamo: r.prestamos[0] };
 }
 
 export async function crearPrestamo(input: CrearPrestamoInput, userId: string): Promise<{ prestamo: Prestamo } | FalloNomina> {
@@ -82,8 +94,19 @@ export async function actualizarPrestamo(id: string, input: ActualizarPrestamoIn
   return obtenerPrestamo(id);
 }
 
-/** Anula un préstamo ACTIVO (nunca se borra). Si ya tiene cuotas descontadas, la BD lo rechaza con un mensaje claro. */
+/**
+ * Anula un préstamo ACTIVO (nunca se borra). Si ya tiene cuotas descontadas, la BD lo rechaza con un mensaje claro. Si el
+ * préstamo se pagó desde el Wallet, la misma función SQL anula también el egreso (el dinero vuelve a la cuenta). Sin la
+ * migración del desembolso se usa el UPDATE de siempre (no puede haber pago).
+ */
 export async function anularPrestamo(id: string, motivo: string, userId: string): Promise<{ ok: true } | FalloNomina> {
+  const { error } = await supabaseAdmin.rpc('nomina_prestamo_anular', { p_prestamo_id: id, p_motivo: motivo, p_usuario: userId });
+  if (!error) return { ok: true };
+  if (esFuncionInexistente(error)) return anularPrestamoSinWallet(id, motivo, userId);
+  return falloNomina(error, 'prestamo_anular', 'No se pudo anular el préstamo.');
+}
+
+async function anularPrestamoSinWallet(id: string, motivo: string, userId: string): Promise<{ ok: true } | FalloNomina> {
   const { data, error } = await supabaseAdmin
     .from('nomina_prestamos')
     .update({ estado: 'ANULADO', anulado_motivo: motivo, anulado_at: new Date().toISOString(), anulado_por: userId, updated_at: new Date().toISOString() })

@@ -16,11 +16,12 @@ type Modal = { abierto: false } | { abierto: true; trabajador: Trabajador | null
 
 const fmtUsd = (n: number) => `USD ${n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const fmtBs = (n: number) => `Bs ${n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-/** Los dos sueldos diarios: el de divisas y el de bolívares (solo se nombra el que tenga monto). */
+/** Los dos sueldos diarios: el de divisas y el que se paga en bolívares (referencia en USD); solo se nombra el que tenga monto. */
 function sueldoPorDia(t: Trabajador): string {
-  const partes = [t.pagoDiarioUsd > 0 || t.pagoDiarioBs === 0 ? fmtUsd(t.pagoDiarioUsd) : null, t.pagoDiarioBs > 0 ? fmtBs(t.pagoDiarioBs) : null];
+  const partes = [
+    t.pagoDiarioUsd > 0 || t.pagoDiarioBs === 0 ? fmtUsd(t.pagoDiarioUsd) : null,
+    t.pagoDiarioBs > 0 ? `${fmtUsd(t.pagoDiarioBs)} pagados en Bs` : null,
+  ];
   return `${partes.filter(Boolean).join(' + ')} por día`;
 }
 

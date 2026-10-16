@@ -175,9 +175,9 @@ movimiento en Bs muestre su equivalente en $ a la tasa Binance del mediodía del
 
 ### Dos sueldos
 
-- **Unidad**: por día, como antes. El sueldo en divisas es USD (`nomina_trabajadores.pago_diario_usd`, la columna no se renombra) y
-  el sueldo en Bs se guarda EN Bs (`pago_diario_bs`): así la parte en bolívares no cambia aunque cambie la tasa; su equivalente en USD
-  sale de la tasa de la nómina.
+- **Unidad**: por día, como antes. El sueldo en divisas es USD (`nomina_trabajadores.pago_diario_usd`, la columna no se renombra).
+  ~~El sueldo en Bs se guarda EN Bs (`pago_diario_bs`).~~ **Reemplazado en la fase 4:** el «sueldo en Bs» es un valor en USD de referencia
+  que se paga en Bs a la tasa de la nómina; las fórmulas de abajo en Bs/tasa quedan superadas por la sección «Fase 4».
 - **El renglón** lleva `monto_base_usd` y `monto_base_bs` (editables cada semana, se proponen de la ficha) y dos partes a pagar:
   `pagar_usd` (divisas) y `pagar_bs` (Bs). `moneda_pago` pasa a ser un dato deducido: `USD`, `BS` o `MIXTO` (las dos partes). Ya no se
   elige moneda por renglón.
@@ -248,9 +248,100 @@ movimiento en Bs muestre su equivalente en $ a la tasa Binance del mediodía del
 
 ### Supuestos a confirmar con Julio
 
-1. El sueldo en Bs es un monto fijo en Bs por día (no un monto en USD que se convierte).
+1. ~~El sueldo en Bs es un monto fijo en Bs por día.~~ CORREGIDO por Julio (2026-10-16): es un valor en USD de referencia que se paga en Bs a la tasa del día (ver «Fase 4»).
 2. «Cargo del trabajador» = historial de movimientos de nómina del trabajador, no una cuenta corriente con saldo en Bs.
 3. «12 del día» = mediodía hora de Caracas del día en que se REGISTRA el pago (hoy), no de la fecha que elige quien paga.
 4. La bonificación extra es siempre en divisas; los descuentos van primero a divisas y el sobrante a Bs.
 5. Máximo 3 días de antigüedad para la tasa Binance del día; más allá, el pago queda sin equivalente.
 6. Un trabajador migrado por «último renglón en Bs» se convierte a la tasa de esa nómina (hoy no aplica a nadie).
+
+## Fase 4: sueldo en Bs como referencia USD, pago por trabajador y pago de préstamos
+
+Pedido de Julio (2026-10-16): (1) el «sueldo en Bs» no son bolívares sino una referencia en dólares que se paga en bolívares a la tasa
+del día; (2) al registrar un préstamo poder registrar de una vez el pago (cuenta, fecha, tasa si es en Bs, foto del comprobante);
+(3) un botón «Pagar» por trabajador en la nómina cerrada, con estado pagado / pendiente y comprobante opcional.
+Migraciones (sin aplicar, cada una con su `_ROLLBACK.sql`): `migration_nomina_sueldo_bs_referencia_usd.sql`,
+`migration_nomina_pago_por_trabajador.sql`, `migration_nomina_prestamo_desembolso.sql`. Orden de despliegue: migraciones PRIMERO, código después
+(las tres son aditivas y el código tolera que falten: ver «Compatibilidad»).
+
+### 1. «Sueldo en Bs» = USD de referencia
+
+- **Qué significa ahora.** «Sueldo en Bs = 8» son 8 USD por día. Se pagan en bolívares convirtiéndolos a la **tasa de la nómina**: la del
+  día (Binance al mediodía de Caracas; la pantalla ofrece «Usar la tasa Binance de hoy»). A tasa 40 son 320 Bs por día. Las columnas no se
+  renombran (`nomina_trabajadores.pago_diario_bs`, `nomina_lineas.monto_base_bs`); cambia su lectura y las etiquetas
+  («Sueldo en Bs (USD de referencia por día)»).
+- **Fórmulas** (siguen en UN solo módulo, `backend/src/utils/nomina-calculo.ts`, y su espejo en `shared/types/nomina-calculo.ts`):
+  - referencia Bs (USD) = días x sueldo en Bs; total bruto USD = días x sueldo en divisas + referencia Bs (**ya no depende de la tasa**).
+  - Los descuentos y cuotas se cargan primero a divisas; el sobrante (USD) se descuenta de la referencia Bs.
+  - valor de la parte Bs (USD) = referencia Bs - sobrante (exacto, es el «equivalente»); a pagar en Bs = valor x tasa, al centavo.
+  - total del trabajador USD = a pagar en divisas + valor de la parte Bs: **no cambia con la tasa**, solo cambian los Bs a pagar.
+  - La tasa sigue siendo obligatoria cuando algún renglón tiene sueldo en Bs (para calcular los Bs); sin ella `pagarBs` es null y `faltaTasa`.
+  - El tope del préstamo (cuotas <= lo ganado) ya no necesita la tasa: `gananciaDeLinea` y `prestamoExcedeGanado` perdieron ese parámetro.
+- **Tasa y pago.** La nómina calcula los Bs con SU tasa. Al pagar, `nomina_pagar` / `nomina_pagar_trabajador` siguen congelando la
+  tasa Binance del mediodía del día real del registro y su equivalente en el cargo. Si la tasa escrita en la nómina difiere de la Binance
+  capturada, el USD de referencia (lo que vale el sueldo) es el de la nómina y el equivalente del cargo puede diferir en centavos o más: por
+  eso se recomienda escribir en la nómina la Binance del día. No se tocó el mecanismo que llena `tasas_cambio`.
+- **Datos ya guardados (sin migrar nada).** `pago_diario_bs` de los trabajadores NO se convierte: cualquier valor mayor que 0 pasa a
+  leerse como USD de referencia y hay que revisarlo en la ficha (la migración trae la consulta). Los renglones de nóminas en BORRADOR con
+  sueldo en Bs también se releen como USD (revisar antes de cerrar). Los renglones de nóminas CERRADAS o ANULADAS con sueldo en Bs se marcan
+  con `nomina_lineas.sueldo_bs_en_usd = false` (columna nueva, por defecto true): el backend los convierte a USD con la tasa de su nómina
+  solo para mostrarlos; sus montos pagados y totales guardados no cambian. Producción tenía 6 trabajadores con sueldo en Bs = 0 y ninguna
+  nómina con Bs al momento de la fase 3, así que se espera que no haya nada que revisar.
+
+### 2. Pago (desembolso) del préstamo o adelanto
+
+- **Pantalla.** «Nuevo préstamo o adelanto» tiene el bloque «Pago desde el Wallet» (marcado por defecto si la persona puede crear
+  movimientos): cuenta de origen (USD o Bs, con imagen y saldo), fecha, referencia, **tasa** (solo cuentas en Bs; sugiere Binance de hoy), comisión
+  bancaria Sí/No (solo cuentas en Bs) y foto del comprobante. Si se desmarca, el préstamo queda «Sin pago registrado» y se paga después con
+  el botón «Registrar pago» de la tarjeta (también sirve para los préstamos anteriores a esta función).
+- **Reutiliza.** Subida de comprobantes (`POST /api/uploads/comprobantes`, `useComprobantesPago` sobre `FotoMultiplePicker`), selector de cuenta, comisión
+  bancaria 0.3 % (`crear_movimiento_con_comision_bancaria`), egreso del Wallet (movimientos), auditoría del «sin comisión» y el patrón de
+  `nomina_pagar`. Los comprobantes viven en `movimientos.comprobantes` (se ven también en el detalle del movimiento del Wallet).
+- **Monto.** El préstamo es siempre USD. Cuenta USD: sale el monto. Cuenta Bs: sale monto x tasa (la que escribe quien paga), calculado por la
+  BD (`round(monto x tasa, 2)`); la tasa queda guardada en `nomina_prestamo_pagos.tasa_bs`.
+- **Datos.** `nomina_prestamo_pagos` (único por préstamo y por movimiento, inmutable, RLS deny-all). `nomina_prestamo_pagar(prestamo, datos, usuario)`
+  es atómica e idempotente (`yaPagado`). El egreso no lleva categoría (un préstamo no es gasto de nómina; se puede clasificar luego en el Wallet) ni datos
+  personales (`Préstamo PRE-0003 · desembolso`).
+- **Crear + pagar no es una sola transacción.** El backend valida la cuenta/tasa/comisión ANTES de crear el préstamo (si no sirve, no se crea nada).
+  Si el pago fallara después de crearlo (p. ej. saldo cambiado en ese instante), el préstamo queda registrado y se avisa con la advertencia
+  «Regístralo con el botón Registrar pago».
+- **Anular un préstamo pagado.** `nomina_prestamo_anular` anula el préstamo (mismas reglas: solo ACTIVO y sin cuotas descontadas) y su egreso del Wallet
+  en la misma transacción. La ruta exige además `cochinito.editar` y acceso de edición a la cuenta del pago (falla cerrado con 503 si no se puede leer).
+  `movimientos_nomina_proteger` ahora también impide anular o cambiar importes/cuentas del egreso de un desembolso desde el Wallet.
+- **Permisos.** Con `desembolso`, `POST /api/nomina/prestamos` exige `nomina.crear` + `cochinito.crear` + acceso de edición a la cuenta;
+  `POST /api/nomina/prestamos/:id/pagar` exige `nomina.editar` + `cochinito.crear` + acceso a la cuenta. Sin `desembolso` nada cambia.
+
+### 3. Botón «Pagar» por trabajador
+
+- **Qué había.** Solo «Pagar desde Wallet» de la nómina completa (`nomina_pagar`: un egreso por moneda para todos).
+- **Qué hay ahora.** Una nómina CERRADA muestra el panel «Pago por trabajador»: por renglón, lo que se le debe (divisas / Bs con su
+  equivalente), estado **Pendiente / Pagado / Pago anulado**, el pago (cuenta, MV-, fecha, referencia, enlace al movimiento y a cada comprobante) y el
+  botón «Pagar». El botón abre el pago del renglón: una cuenta por moneda con parte a pagar (un trabajador con las dos partes elige dos cuentas), fecha,
+  referencia, comisión Sí/No en cuentas Bs y foto del comprobante opcional. «Pagados X de N» resume el avance. El botón de la nómina completa
+  se renombró «Pagar toda la nómina desde Wallet».
+- **Reutiliza (no duplica).** `nomina_pagos` ya ligaba nómina y egreso; ahora puede ligar además un renglón (`linea_id`). Misma validación de
+  cuentas/comisión/categoría/saldo y misma tasa Binance congelada que `nomina_pagar`; mismos componentes (`PagarNominaGrupo`) y funciones puras
+  (`validarPago`, `construirPayloadPago`). `nomina_anular` ya recorría TODAS las filas de `nomina_pagos`, así que anular la nómina anula también estos egresos
+  sin tocarla; el guardián de movimientos también los cubre.
+- **Excluyentes.** O se paga la nómina completa o trabajador por trabajador (trigger `nomina_pagos_exclusividad` + chequeo en el backend con mensaje). Con el
+  primer pago individual desaparece el botón de la nómina completa; si ya se pagó completa, el panel marca a todos como pagados y no ofrece botones.
+- **Datos.** Índices únicos parciales: `(nomina_id, moneda_pago)` donde `linea_id is null` y `(linea_id, moneda_pago)` donde `linea_id is not null`.
+  `nomina_pagar_trabajador(nomina, trabajador, datos, usuario)` es atómica e idempotente (`yaPagada`); los montos salen del renglón (`pagar_usd`, `pagar_bs`),
+  nunca del navegador. Cada pago individual guarda su propia tasa Binance congelada; el cargo del trabajador usa la de su renglón.
+- **Permisos.** `POST /api/nomina/nominas/:id/trabajadores/:trabajadorId/pagar`: `nomina.editar` + `cochinito.crear` + acceso de edición a cada cuenta.
+- **Límite conocido.** Un pago individual mal hecho se corrige anulando la nómina completa (no hay «anular solo este pago»), igual que la nómina completa hoy.
+
+### Compatibilidad con la base sin migrar
+
+- Sin `migration_nomina_sueldo_bs_referencia_usd.sql`: todo se lee como USD de referencia (los renglones cerrados antiguos con Bs se verían en la unidad equivocada).
+- Sin `migration_nomina_pago_por_trabajador.sql`: el panel muestra «Pendiente» y el pago responde 503 con el nombre de la migración; la nómina completa sigue pagándose.
+- Sin `migration_nomina_prestamo_desembolso.sql`: los préstamos se ven «Sin pago registrado»; crear con pago o «Registrar pago» responde 503 con el nombre de la migración;
+  anular sigue funcionando por el camino anterior.
+
+### Supuestos a confirmar con Julio (fase 4)
+
+1. La tasa con que se convierte el sueldo en Bs es la que se escribe en la nómina (se sugiere la Binance de hoy), no se busca sola en `tasas_cambio`.
+2. El préstamo se paga siempre desde una cuenta en USD (sale el monto) o en Bs (monto x la tasa que se escriba). El egreso queda sin categoría.
+3. Un trabajador con las dos partes se paga de una vez (una cuenta por moneda); no se admite pagar solo una de las dos partes por separado.
+4. Primer pago individual => ya no se puede pagar la nómina completa (y al revés).
+5. «Por defecto marcado» el pago al crear un préstamo (si no se quiere, se desmarca).

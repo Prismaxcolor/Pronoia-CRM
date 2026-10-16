@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { MaterialFila } from '../../frontend/src/features/pesaje/material-fila';
 import {
   categoriaVigente,
+  esSinPesajeGlobal,
   faltantesFila,
   faltantesParaAgregar,
   guardarCategoriaRecordada,
@@ -93,5 +94,19 @@ describe('categoría recordada', () => {
     expect(categoriaVigente('c1', ['c1', 'c2'])).toBe('c1');
     expect(categoriaVigente('c9', ['c1'])).toBeNull();
     expect(categoriaVigente(null, ['c1'])).toBeNull();
+  });
+});
+
+describe('esSinPesajeGlobal', () => {
+  it('compra y venta con la casilla marcada no llevan pesaje global', () => {
+    expect(esSinPesajeGlobal('compra', true)).toBe(true);
+    expect(esSinPesajeGlobal('venta', true)).toBe(true);
+  });
+  it('sin la casilla el pesaje global sigue siendo el flujo normal', () => {
+    expect(esSinPesajeGlobal('compra', false)).toBe(false);
+    expect(esSinPesajeGlobal('venta', false)).toBe(false);
+  });
+  it('el traslado nunca usa la casilla', () => {
+    expect(esSinPesajeGlobal('traslado', true)).toBe(false);
   });
 });

@@ -52,3 +52,19 @@ export const crearTransferenciaMesaSchema = z.object({
 });
 
 export type CrearTransferenciaMesaInput = z.infer<typeof crearTransferenciaMesaSchema>;
+
+/**
+ * Completar (cobrar) una transferencia en proceso. Cuerpo vacío = cobro total sin foto, como antes.
+ * `montoCobrado` (neto, moneda destino) menor al pendiente deja el cobro parcial; `pendienteEsperado` es lo que
+ * el usuario vio pendiente: si cambió (otro cobro, doble clic) el servidor rechaza en vez de cobrar de más.
+ */
+export const completarTransferenciaMesaSchema = z.object({
+  montoCobrado: monto('El monto a cobrar debe ser mayor a 0.').optional().nullable().transform(v => v ?? null),
+  pendienteEsperado: monto('El pendiente esperado debe ser mayor a 0.').optional().nullable().transform(v => v ?? null),
+  comprobantes: z.array(comprobanteUrlSchema).max(10, 'Máximo 10 comprobantes.').default([]),
+}).refine(v => v.montoCobrado === null || v.pendienteEsperado !== null, {
+  message: 'Indica el pendiente que viste (pendienteEsperado) para registrar un cobro parcial.',
+  path: ['pendienteEsperado'],
+});
+
+export type CompletarTransferenciaMesaInput = z.infer<typeof completarTransferenciaMesaSchema>;

@@ -67,68 +67,82 @@ describe('calcularLinea (solo sueldo en divisas, como antes)', () => {
   });
 });
 
-describe('calcularLinea con los dos sueldos (divisas + Bs)', () => {
-  const dos = { ...base, diasTrabajados: 5, montoBaseUsd: 20, montoBaseBs: 400 };
+describe('calcularLinea con los dos sueldos (divisas + Bs como referencia en USD)', () => {
+  // "Sueldo en Bs = 8" son 8 USD por día de referencia, pagados en Bs a la tasa de la nómina (no 8 Bs).
+  const dos = { ...base, diasTrabajados: 5, montoBaseUsd: 20, montoBaseBs: 8 };
 
-  it('cada parte se calcula con su propio sueldo y el total suma las dos al valor de la tasa', () => {
+  it('el número del sueldo en Bs es USD de referencia: 8 por día x 5 días = 40 USD = 1600 Bs a tasa 40', () => {
     const l = back.calcularLinea(dos, 40);
     expect(l.pagarUsd).toBe(100);
-    expect(l.brutoBs).toBe(2000);
-    expect(l.pagarBs).toBe(2000);
-    expect(l.equivalenteBsUsd).toBe(50);
-    expect(l.totalBrutoUsd).toBe(150);
-    expect(l.montoRefBs).toBe(6000);
-    expect(l.totalUsd).toBe(150);
-    expect(l.totalBs).toBe(6000);
+    expect(l.brutoBsRefUsd).toBe(40);
+    expect(l.brutoBs).toBe(1600);
+    expect(l.pagarBs).toBe(1600);
+    expect(l.equivalenteBsUsd).toBe(40);
+    expect(l.totalBrutoUsd).toBe(140);
+    expect(l.montoRefBs).toBe(5600);
+    expect(l.totalUsd).toBe(140);
+    expect(l.totalBs).toBe(5600);
     expect(l.monedaPago).toBe('MIXTO');
+  });
+
+  it('el valor en USD de la parte en Bs no cambia con la tasa; los Bs sí', () => {
+    const a = back.calcularLinea(dos, 40);
+    const b = back.calcularLinea(dos, 50);
+    expect(b.equivalenteBsUsd).toBe(a.equivalenteBsUsd);
+    expect(b.totalUsd).toBe(a.totalUsd);
+    expect(b.pagarBs).toBe(2000);
   });
 
   it('solo sueldo en Bs: se paga en bolívares', () => {
     const l = back.calcularLinea({ ...dos, montoBaseUsd: 0 }, 40);
-    expect(l).toMatchObject({ pagarUsd: 0, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 50, monedaPago: 'BS' });
+    expect(l).toMatchObject({ pagarUsd: 0, pagarBs: 1600, equivalenteBsUsd: 40, totalUsd: 40, monedaPago: 'BS' });
   });
 
   it('la bonificación se paga en divisas', () => {
     const l = back.calcularLinea({ ...dos, bonificacionUsd: 10 }, 40);
-    expect(l).toMatchObject({ pagarUsd: 110, pagarBs: 2000, totalUsd: 160 });
+    expect(l).toMatchObject({ pagarUsd: 110, pagarBs: 1600, totalUsd: 150 });
   });
 
   it('los descuentos se cargan primero a divisas', () => {
     const l = back.calcularLinea({ ...dos, descuentoTrabajoUsd: 5, descuentoPrestamoUsd: 10 }, 40);
-    expect(l).toMatchObject({ pagarUsd: 85, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 135, negativo: false });
+    expect(l).toMatchObject({ pagarUsd: 85, pagarBs: 1600, equivalenteBsUsd: 40, totalUsd: 125, negativo: false });
   });
 
-  it('si las divisas no alcanzan, el sobrante se descuenta de los Bs a la tasa de la nómina', () => {
-    // divisas: 100; descuentos 130 => 30 USD al sobrante => 30 x 40 = 1200 Bs menos
+  it('si las divisas no alcanzan, el sobrante en USD se descuenta de la referencia de la parte en Bs', () => {
+    // divisas: 100; descuentos 130 => 30 USD de sobrante => quedan 10 USD de referencia => 400 Bs a tasa 40
     const l = back.calcularLinea({ ...dos, descuentoPrestamoUsd: 130 }, 40);
-    expect(l).toMatchObject({ pagarUsd: 0, pagarBs: 800, equivalenteBsUsd: 20, totalUsd: 20, negativo: false });
+    expect(l).toMatchObject({ pagarUsd: 0, pagarBs: 400, equivalenteBsUsd: 10, totalUsd: 10, negativo: false });
   });
 
-  it('un trabajador solo con sueldo en Bs puede tener cuotas de préstamo (se cargan a los Bs)', () => {
+  it('un trabajador solo con sueldo en Bs puede tener cuotas de préstamo (se cargan a la referencia)', () => {
     const l = back.calcularLinea({ ...dos, montoBaseUsd: 0, descuentoPrestamoUsd: 10 }, 40);
-    expect(l).toMatchObject({ pagarUsd: 0, pagarBs: 1600, totalUsd: 40, negativo: false });
+    expect(l).toMatchObject({ pagarUsd: 0, pagarBs: 1200, equivalenteBsUsd: 30, totalUsd: 30, negativo: false });
   });
 
-  it('si ni divisas ni Bs alcanzan, el total sale negativo', () => {
+  it('si ni divisas ni la referencia alcanzan, el total sale negativo', () => {
     const l = back.calcularLinea({ ...dos, descuentoTrabajoUsd: 200 }, 40);
     expect(l.pagarUsd).toBe(0);
-    expect(l.pagarBs).toBe(2000 - 100 * 40);
-    expect(l.totalUsd).toBe(-50);
+    expect(l.equivalenteBsUsd).toBe(-60);
+    expect(l.pagarBs).toBe(-60 * 40);
+    expect(l.totalUsd).toBe(-60);
     expect(l.negativo).toBe(true);
   });
 
-  it('sin tasa y con parte en Bs: faltaTasa, los montos en Bs son null (no 0)', () => {
+  it('sin tasa y con parte en Bs: faltaTasa, los Bs son null (no 0), pero el valor en USD sí se conoce', () => {
     const l = back.calcularLinea(dos, null);
     expect(l.faltaTasa).toBe(true);
     expect(l.pagarBs).toBeNull();
-    expect(l.equivalenteBsUsd).toBeNull();
+    expect(l.brutoBs).toBe(0);
+    expect(l.equivalenteBsUsd).toBe(40);
     expect(l.totalBs).toBeNull();
     expect(l.pagarUsd).toBe(100);
+    expect(l.totalUsd).toBe(140);
     expect(l.negativo).toBe(false);
   });
 
-  it('el equivalente de los Bs se redondea al centavo', () => {
-    const l = back.calcularLinea({ ...base, montoBaseUsd: 0, diasTrabajados: 1, montoBaseBs: 100 }, 36.4567);
+  it('los Bs a pagar se redondean al centavo; el valor en USD queda exacto', () => {
+    const l = back.calcularLinea({ ...base, montoBaseUsd: 0, diasTrabajados: 1, montoBaseBs: 2.74 }, 36.4567);
+    expect(l.pagarBs).toBe(99.89); // 2.74 x 36.4567 = 99.8895...
     expect(l.equivalenteBsUsd).toBe(2.74);
   });
 });
@@ -271,8 +285,8 @@ describe('paridad backend / shared', () => {
     expect(front.calcularTotales(f, tasa)).toEqual(back.calcularTotales(b, tasa));
     expect(front.sumarTotales([front.calcularTotales(f, tasa)])).toEqual(back.sumarTotales([back.calcularTotales(b, tasa)]));
     casos.forEach(c => {
-      expect(front.gananciaDeLinea(c, tasa)).toBe(back.gananciaDeLinea(c, tasa));
-      expect(front.prestamoExcedeGanado(c, tasa)).toBe(back.prestamoExcedeGanado(c, tasa));
+      expect(front.gananciaDeLinea(c)).toBe(back.gananciaDeLinea(c));
+      expect(front.prestamoExcedeGanado(c)).toBe(back.prestamoExcedeGanado(c));
     });
   });
   it('semanas, cuotas y negativos', () => {
@@ -289,22 +303,20 @@ describe('paridad backend / shared', () => {
 describe('préstamo frente a lo ganado', () => {
   const e = { ...base, diasTrabajados: 1, montoBaseUsd: 20, bonificacionUsd: 5 };
   it.each([['backend', back], ['shared', front]] as const)('%s: ganado = bruto + bonificación; el tope es inclusivo', (_n, m) => {
-    expect(m.gananciaDeLinea(e, null)).toBe(25);
-    expect(m.prestamoExcedeGanado({ ...e, descuentoPrestamoUsd: 25 }, null)).toBe(false);
-    expect(m.prestamoExcedeGanado({ ...e, descuentoPrestamoUsd: 25.01 }, null)).toBe(true);
+    expect(m.gananciaDeLinea(e)).toBe(25);
+    expect(m.prestamoExcedeGanado({ ...e, descuentoPrestamoUsd: 25 })).toBe(false);
+    expect(m.prestamoExcedeGanado({ ...e, descuentoPrestamoUsd: 25.01 })).toBe(true);
     expect(m.calcularLinea({ ...e, descuentoPrestamoUsd: 30 }, null).prestamoExcedeGanado).toBe(true);
     expect(m.calcularLinea({ ...e, descuentoPrestamoUsd: 10 }, null).prestamoExcedeGanado).toBe(false);
   });
-  it.each([['backend', back], ['shared', front]] as const)('%s: el sueldo en Bs cuenta como ganado a la tasa; sin tasa no se juzga', (_n, m) => {
-    const conBs = { ...e, montoBaseBs: 400 }; // 400 Bs a 40 = 10 USD => ganado 35
-    expect(m.gananciaDeLinea(conBs, 40)).toBe(35);
-    expect(m.prestamoExcedeGanado({ ...conBs, descuentoPrestamoUsd: 35 }, 40)).toBe(false);
-    expect(m.prestamoExcedeGanado({ ...conBs, descuentoPrestamoUsd: 35.01 }, 40)).toBe(true);
-    expect(m.gananciaDeLinea(conBs, null)).toBeNull();
-    expect(m.prestamoExcedeGanado({ ...conBs, descuentoPrestamoUsd: 999 }, null)).toBe(false);
+  it.each([['backend', back], ['shared', front]] as const)('%s: el sueldo en Bs (USD de referencia) cuenta como ganado sin necesitar la tasa', (_n, m) => {
+    const conBs = { ...e, montoBaseBs: 10 }; // 10 USD de referencia => ganado 35
+    expect(m.gananciaDeLinea(conBs)).toBe(35);
+    expect(m.prestamoExcedeGanado({ ...conBs, descuentoPrestamoUsd: 35 })).toBe(false);
+    expect(m.prestamoExcedeGanado({ ...conBs, descuentoPrestamoUsd: 35.01 })).toBe(true);
   });
   it('el descuento por trabajo no cuenta para este tope (eso lo cubre el aviso de total negativo)', () => {
-    expect(back.prestamoExcedeGanado({ ...e, descuentoPrestamoUsd: 25 }, null)).toBe(false);
+    expect(back.prestamoExcedeGanado({ ...e, descuentoPrestamoUsd: 25 })).toBe(false);
     expect(back.calcularLinea({ ...e, descuentoPrestamoUsd: 25, descuentoTrabajoUsd: 5 }, null)).toMatchObject({ negativo: true, prestamoExcedeGanado: false });
   });
 });

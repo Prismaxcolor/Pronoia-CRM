@@ -9,12 +9,12 @@ import type { MovimientoCargo, PagoNomina } from '../../shared/types/nomina';
 const vacio: EntradaCargo = { lineas: [], pagos: [], prestamos: [], cuotas: [] };
 
 const linea = (extra: Partial<EntradaCargo['lineas'][number]> = {}): EntradaCargo['lineas'][number] => ({
-  nominaId: 'n1', nominaNumero: 7, semanaInicio: '2026-10-05', estadoNomina: 'CERRADA', cerradaEn: '2026-10-09T15:00:00Z',
+  lineaId: 'l1', nominaId: 'n1', nominaNumero: 7, semanaInicio: '2026-10-05', estadoNomina: 'CERRADA', cerradaEn: '2026-10-09T15:00:00Z',
   pagarUsd: 100, pagarBs: 8750, ...extra,
 });
 
 const pago = (extra: Partial<EntradaCargo['pagos'][number]> = {}): EntradaCargo['pagos'][number] => ({
-  nominaId: 'n1', monedaPago: 'BS', fecha: '2026-10-09', anulado: false, tasaBinance: 875, tasaBinanceCapturada: '2026-10-09T16:02:00Z', ...extra,
+  nominaId: 'n1', lineaId: null, monedaPago: 'BS', fecha: '2026-10-09', anulado: false, tasaBinance: 875, tasaBinanceCapturada: '2026-10-09T16:02:00Z', ...extra,
 });
 
 describe('armarCargo: pagos de nómina', () => {
@@ -65,6 +65,23 @@ describe('armarCargo: pagos de nómina', () => {
   it('la fecha de un movimiento sin pago es el día del cierre en Caracas, no el UTC', () => {
     const m = armarCargo({ ...vacio, lineas: [linea({ cerradaEn: '2026-10-10T02:00:00Z', pagarBs: 0 })] }).movimientos[0];
     expect(m.fecha).toBe('2026-10-09');
+  });
+});
+
+describe('armarCargo: pago por trabajador', () => {
+  it('el pago individual de OTRO trabajador de la misma nómina no marca como pagado a este', () => {
+    const c = armarCargo({ ...vacio, lineas: [linea()], pagos: [pago({ lineaId: 'l-otro' })] });
+    expect(c.movimientos.find(m => m.tipo === 'PAGO_BS')).toMatchObject({ estado: 'PENDIENTE', equivalenteUsd: null });
+  });
+
+  it('el pago individual de este trabajador sí lo marca como pagado, con su propia tasa congelada', () => {
+    const c = armarCargo({ ...vacio, lineas: [linea()], pagos: [pago({ lineaId: 'l1', tasaBinance: 500 }), pago({ lineaId: 'l-otro', tasaBinance: 900 })] });
+    expect(c.movimientos.find(m => m.tipo === 'PAGO_BS')).toMatchObject({ estado: 'PAGADO', tasaBinance: 500, equivalenteUsd: 17.5 });
+  });
+
+  it('el pago de toda la nómina (sin renglón) cubre a todos sus trabajadores', () => {
+    const c = armarCargo({ ...vacio, lineas: [linea(), linea({ lineaId: 'l2' })], pagos: [pago({ lineaId: null })] });
+    expect(c.movimientos.filter(m => m.tipo === 'PAGO_BS').every(m => m.estado === 'PAGADO')).toBe(true);
   });
 });
 

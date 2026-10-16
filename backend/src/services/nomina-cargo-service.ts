@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { esColumnaInexistente, esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { falloNomina, type FalloNomina } from '../utils/nomina-errores.js';
 import { armarCargo, type FilaCuotaCargo, type FilaLineaCargo, type FilaPagoCargo, type FilaPrestamoCargo } from '../utils/nomina-cargo.js';
 import { nombreCompleto } from '../utils/nomina-armado.js';
@@ -16,7 +16,7 @@ type Consulta<T> = Promise<{ filas: T[] } | FalloNomina>;
 async function leerLineas(trabajadorId: string): Consulta<FilaLineaCargo> {
   const { data, error } = await supabaseAdmin
     .from('nomina_lineas')
-    .select('moneda_pago, total_usd, total_bs, pagar_usd, pagar_bs, nomina:nominas!inner(id, numero, semana_inicio, estado, cerrada_at)')
+    .select('id, moneda_pago, total_usd, total_bs, pagar_usd, pagar_bs, nomina:nominas!inner(id, numero, semana_inicio, estado, cerrada_at)')
     .eq('trabajador_id', trabajadorId)
     .not('nomina.cerrada_at', 'is', null)
     .limit(LIMITE_FILAS);
@@ -25,24 +25,37 @@ async function leerLineas(trabajadorId: string): Consulta<FilaLineaCargo> {
     const n = l.nomina as Fila;
     const { pagarUsd, pagarBs } = partesDePago(l);
     return {
-      nominaId: n.id as string, nominaNumero: Number(n.numero), semanaInicio: n.semana_inicio as string,
+      lineaId: l.id as string, nominaId: n.id as string, nominaNumero: Number(n.numero), semanaInicio: n.semana_inicio as string,
       estadoNomina: n.estado as EstadoNomina, cerradaEn: (n.cerrada_at as string | null) ?? null, pagarUsd, pagarBs,
     };
   });
   return { filas };
 }
 
-/** Pagos de las nóminas del trabajador. Sin la migración del pago desde el Wallet no hay pagos: la lista queda vacía. */
-async function leerPagos(nominaIds: readonly string[]): Consulta<FilaPagoCargo> {
-  const lotes = await Promise.all(trocear(nominaIds, IDS_POR_CONSULTA).map(trozo => supabaseAdmin
+const COLUMNAS_PAGO = 'nomina_id, moneda_pago, fecha, tasa_binance, tasa_binance_capturada, movimiento:movimientos(anulado)';
+
+function consultarPagos(trozo: readonly string[], conLinea: boolean) {
+  return supabaseAdmin
     .from('nomina_pagos')
-    .select('nomina_id, moneda_pago, fecha, tasa_binance, tasa_binance_capturada, movimiento:movimientos(anulado)')
-    .in('nomina_id', trozo)
-    .limit(LIMITE_FILAS)));
+    .select(conLinea ? `linea_id, ${COLUMNAS_PAGO}` : COLUMNAS_PAGO)
+    .in('nomina_id', [...trozo])
+    .limit(LIMITE_FILAS);
+}
+
+/**
+ * Pagos de las nóminas del trabajador. Sin la migración del pago desde el Wallet no hay pagos: la lista queda vacía. Sin la
+ * del pago por trabajador falta la columna linea_id: se lee sin ella (todos los pagos son de la nómina completa).
+ */
+async function leerPagos(nominaIds: readonly string[]): Consulta<FilaPagoCargo> {
+  let lotes = await Promise.all(trocear(nominaIds, IDS_POR_CONSULTA).map(trozo => consultarPagos(trozo, true)));
+  if (lotes.some(l => esColumnaInexistente(l.error, 'linea_id'))) {
+    lotes = await Promise.all(trocear(nominaIds, IDS_POR_CONSULTA).map(trozo => consultarPagos(trozo, false)));
+  }
   const fallo = lotes.find(l => l.error)?.error;
   if (fallo) return esObjetoInexistente(fallo) ? { filas: [] } : falloNomina(fallo, 'cargo_pagos', 'No se pudo cargar el cargo del trabajador.');
   const filas = lotes.flatMap(l => (l.data as unknown as Fila[] | null) ?? []).map(p => ({
     nominaId: p.nomina_id as string,
+    lineaId: (p.linea_id as string | null | undefined) ?? null,
     monedaPago: p.moneda_pago as 'USD' | 'BS',
     fecha: p.fecha as string,
     anulado: Boolean((p.movimiento as Fila | null)?.anulado),

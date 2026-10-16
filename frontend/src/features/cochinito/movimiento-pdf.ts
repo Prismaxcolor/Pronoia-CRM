@@ -10,6 +10,7 @@ import {
 import {
   ETIQUETA_SUBTIPO_MOVIMIENTO, ETIQUETA_TIPO_MOVIMIENTO, esTransferenciaEnProceso, etiquetaEstadoMesa, montoQueRecibeElDestino, numeroMovimiento, tasaDe,
 } from './detalle-movimiento';
+import { montoCobradoMesa, montoPendienteMesa } from './cobro-mesa';
 
 const COLOR_ANULADO: [number, number, number] = [185, 28, 28];
 const MARGEN_IZQUIERDO = 56;
@@ -31,6 +32,9 @@ function filasMesa(d: DetalleMovimiento): Array<[string, string | null]> {
     ['Estado de la transferencia', m.anulado ? 'Anulada' : etiquetaEstadoMesa(m)],
     ['Comisión del cambio', m.mesaComision == null ? null : fmt(m.mesaComision)],
     [esTransferenciaEnProceso(m) ? 'Recibirá la banca destino al completar' : 'Recibe la banca destino', recibe == null ? null : fmt(recibe)],
+    ...(m.mesaEstado === 'parcial' && !m.anulado
+      ? [['Ya cobrado', fmt(montoCobradoMesa(m) ?? 0)], ['Pendiente por cobrar', fmt(montoPendienteMesa(m) ?? 0)]] as Array<[string, string | null]>
+      : []),
   ];
 }
 

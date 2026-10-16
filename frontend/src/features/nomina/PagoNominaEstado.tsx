@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
 import type { Nomina } from '../../../../shared/types/nomina.js';
-import { estadoPagoNomina, lineaDePago, textoPagada } from './nomina-pago';
+import { estadoPagoNomina, lineaDePago, modoPagoNomina, textoPagada } from './nomina-pago';
 
 /**
  * Estado del pago desde el Wallet de una nómina cerrada: "Pagada desde X el fecha" con un enlace al egreso de cada
@@ -11,6 +11,8 @@ function PagoNominaEstado({ nomina }: { nomina: Pick<Nomina, 'pagos'> }) {
   const estado = estadoPagoNomina(nomina.pagos);
   if (estado === 'sin-pagar') return null;
   const anulado = estado === 'pago-anulado';
+  // Pago trabajador por trabajador: el detalle (y los comprobantes) se ve en el panel de cada trabajador.
+  if (!anulado && modoPagoNomina(nomina.pagos) === 'por-trabajador') return null;
   return (
     <section
       aria-label="Pago desde el Wallet"

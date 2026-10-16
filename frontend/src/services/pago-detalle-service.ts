@@ -8,6 +8,8 @@ export interface BancaPagoDetalle {
   moneda: string;
   montoUsd: number;
   referencia: string | null;
+  /** Comisión bancaria (Bs) cargada a esta cuenta por el pago; null/ausente si no lleva. */
+  comisionBancaria?: number | null;
 }
 
 export interface ItemPagoDetalle {

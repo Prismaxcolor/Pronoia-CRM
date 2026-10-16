@@ -17,6 +17,12 @@ const USO_POR_TIPO: Record<TipoTrabajador, UsoCategoria> = {
   OPERATIVO: 'nomina_operativo',
 };
 
+export const MENSAJE_NOMINA_PAGADA_POR_TRABAJADOR =
+  'Esta nómina se está pagando trabajador por trabajador: usa el botón «Pagar» de cada trabajador.';
+
+export const MENSAJE_NOMINA_PAGADA_COMPLETA =
+  'Esta nómina ya se pagó completa desde el Wallet: no se puede pagar por trabajador.';
+
 export const MENSAJE_PAGO_SIN_RECARGA = 'El pago se registró; recarga la nómina.';
 
 export const MENSAJE_SIN_AUDITORIA_COMISION =
@@ -57,7 +63,7 @@ export async function categoriaDePagoNomina(tipo: TipoTrabajador): Promise<{ cat
   return { categoria: valida ? { id: valida.id, nombre: valida.nombre } : null };
 }
 
-async function leerCuentas(ids: readonly string[]): Promise<{ cuentas: CuentaWallet[] } | FalloNomina> {
+export async function leerCuentas(ids: readonly string[]): Promise<{ cuentas: CuentaWallet[] } | FalloNomina> {
   const { data, error } = await supabaseAdmin.from('bancas').select('id, nombre, moneda, archivada').in('id', [...ids]);
   if (error) return falloNomina(error, 'nomina_pago_cuentas', 'No se pudieron leer las cuentas.');
   const filas = (data ?? []) as Array<{ id: string; nombre: string; moneda: string; archivada: boolean | null }>;
@@ -65,7 +71,7 @@ async function leerCuentas(ids: readonly string[]): Promise<{ cuentas: CuentaWal
 }
 
 /** Omitir la comisión de un pago en Bs es una decisión de la persona y queda auditada, como en un egreso manual. */
-async function auditarSinComision(movimientoIds: readonly string[], userId: string): Promise<string | undefined> {
+export async function auditarSinComision(movimientoIds: readonly string[], userId: string): Promise<string | undefined> {
   const resultados = await Promise.all(movimientoIds.map(id => registrarAuditoria({
     entidadTipo: 'movimiento_banca', entidadId: id, accion: 'sin_comision_bancaria', usuarioId: userId,
     cambios: { comision_bancaria: { antes: 'aplicaba (0.3%, mínimo 14 Bs)', despues: 'omitida por la persona' } },
@@ -91,22 +97,27 @@ async function auditarFechaDistinta(creados: RespuestaPagar, movimientoIds: read
   return MENSAJE_SIN_AUDITORIA_FECHA;
 }
 
-function datosSql(input: PagarNominaInput, categoriaId: string | null, pagos: readonly PagoPlanificado[]) {
+export function datosSql(
+  input: PagarNominaInput & { comprobantes?: readonly string[] }, categoriaId: string | null, pagos: readonly PagoPlanificado[],
+) {
   return {
     fecha: input.fecha,
     referencia: input.referencia ?? null,
     categoriaId,
+    ...(input.comprobantes ? { comprobantes: input.comprobantes } : {}),
     pagos: pagos.map(p => ({ moneda: p.moneda, bancaId: p.bancaId, llevaComision: p.llevaComision })),
   };
 }
 
-function fallaRpc(error: { code?: string; message?: string }): FalloNomina {
-  if (esFuncionInexistente(error)) return { error: MENSAJE_PAGO_NO_HABILITADO, codigo: 503 };
-  return falloNomina(error, 'nomina_pagar', 'No se pudo pagar la nómina.');
+export function fallaRpc(
+  error: { code?: string; message?: string }, mensajeNoHabilitado: string = MENSAJE_PAGO_NO_HABILITADO, operacion = 'nomina_pagar',
+): FalloNomina {
+  if (esFuncionInexistente(error)) return { error: mensajeNoHabilitado, codigo: 503 };
+  return falloNomina(error, operacion, 'No se pudo pagar la nómina.');
 }
 
 /** Valida cuentas y comisión contra la BD y devuelve lo que se manda a la función SQL (que vuelve a validar todo). */
-async function planDePago(nomina: Nomina, input: PagarNominaInput): Promise<{ pagos: PagoPlanificado[] } | FalloNomina> {
+export async function planDePago(nomina: Pick<Nomina, 'lineas'>, input: PagarNominaInput): Promise<{ pagos: PagoPlanificado[] } | FalloNomina> {
   const requeridas = monedasPorPagar(nomina.lineas);
   if (requeridas.length === 0) return { error: 'La nómina no tiene montos por pagar.', codigo: 409 };
   const cuentas = await leerCuentas(input.bancas.map(b => b.bancaId));
@@ -115,14 +126,14 @@ async function planDePago(nomina: Nomina, input: PagarNominaInput): Promise<{ pa
   return planificarPagos(requeridas, input.bancas, cuentas.cuentas, comisionDisponible);
 }
 
-function estadoNoPagable(nomina: Nomina): FalloNomina | null {
+export function estadoNoPagable(nomina: Nomina): FalloNomina | null {
   if (nomina.estado === 'ANULADA') return { error: 'No se puede pagar una nómina anulada.', codigo: 409 };
   if (nomina.estado !== 'CERRADA') return { error: 'Solo se puede pagar una nómina cerrada: ciérrala primero.', codigo: 409 };
   return null;
 }
 
 /** Tras la RPC: audita los pagos en Bs sin comisión y devuelve la nómina ya con su pago. */
-async function resultadoDe(previa: Nomina, data: unknown, userId: string): Promise<ResultadoPagoNomina> {
+export async function resultadoDe(previa: Nomina, data: unknown, userId: string): Promise<ResultadoPagoNomina> {
   const creados = (data as RespuestaPagar | null) ?? {};
   const sinComision = (creados.pagos ?? []).filter(p => p.sinComision).map(p => p.movimientoId);
   const movimientos = (creados.pagos ?? []).map(p => p.movimientoId);
@@ -152,6 +163,9 @@ export async function pagarNomina(id: string, input: PagarNominaInput, userId: s
   // Primero el estado: una nómina ANULADA que tuvo pago es 409, no "ya pagada".
   const rechazo = estadoNoPagable(previa.nomina);
   if (rechazo) return rechazo;
+  if (previa.nomina.pagos.some(p => p.trabajadorId !== null)) {
+    return { error: MENSAJE_NOMINA_PAGADA_POR_TRABAJADOR, codigo: 409 };
+  }
   if (previa.nomina.pagos.length > 0) return { nomina: previa.nomina, yaPagada: true };
   const plan = await planDePago(previa.nomina, input);
   if ('error' in plan) return plan;

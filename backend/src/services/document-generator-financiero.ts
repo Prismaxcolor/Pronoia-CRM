@@ -201,6 +201,24 @@ export function nombreArchivoEstadoCuenta(estado: EstadoCuentaPortal, hoy: strin
   return `estado-de-cuenta-${slug(estado.entidad.nombre)}-${hoy}.pdf`;
 }
 
+/** Texto del rango consultado ("Periodo: 01/10/2026 al 15/10/2026"); vacío si se pidió todo el historial. */
+export function textoPeriodoEstadoCuenta(periodo: EstadoCuentaPortal['periodo']): string {
+  if (!periodo || (!periodo.desde && !periodo.hasta)) return '';
+  return `Periodo: ${periodo.desde ?? 'inicio'} al ${periodo.hasta ?? 'hoy'}`;
+}
+
+/** Saldo al pie del PDF. Con rango se muestran los dos: el del periodo y el saldo actual de toda la cuenta. */
+function escribirSaldosEstadoCuenta(doc: jsPDF, y: number, estado: EstadoCuentaPortal, saldoPeriodo: number): void {
+  const conPeriodo = textoPeriodoEstadoCuenta(estado.periodo) !== '';
+  doc.setFontSize(conPeriodo ? 12 : 14).setFont('helvetica', 'bold').text(conPeriodo ? 'Saldo del periodo' : 'Saldo final', 56, y);
+  doc.text(fmt(saldoPeriodo), 539, y, { align: 'right' });
+  if (!conPeriodo) return;
+  y += 24;
+  doc.setFontSize(14).text('Saldo actual (hoy)', 56, y);
+  doc.text(fmt(estado.saldoActual), 539, y, { align: 'right' });
+  doc.setFontSize(9).setFont('helvetica', 'normal').text('Saldo real de toda la cuenta a hoy, sin importar el rango consultado.', 56, y + 14);
+}
+
 /** Estado de cuenta en su versión externa (misma proyección que ve el portal: sin ids
  *  internos, sin notas anuladas ni motivos internos). */
 export function generarEstadoCuentaPdf(estado: EstadoCuentaPortal, hoy: string): Buffer {
@@ -210,6 +228,8 @@ export function generarEstadoCuentaPdf(estado: EstadoCuentaPortal, hoy: string):
 
   y += 20;
   doc.setFontSize(10).setFont('helvetica', 'normal').text(`Emitido: ${formatearFechaHora(new Date())}`, 56, y);
+  const periodo = textoPeriodoEstadoCuenta(estado.periodo);
+  if (periodo) doc.text(periodo, 539, y, { align: 'right' });
 
   y += 30;
   y = escribirFilas(doc, y, [[esProveedor ? 'Proveedor' : 'Cliente', estado.entidad.nombre]]);
@@ -243,8 +263,7 @@ export function generarEstadoCuentaPdf(estado: EstadoCuentaPortal, hoy: string):
   doc.text('Total abonos', 56, y);
   doc.text(fmt(totales.totalAbonos), 539, y, { align: 'right' });
   y += 24;
-  doc.setFontSize(14).setFont('helvetica', 'bold').text('Saldo final', 56, y);
-  doc.text(fmt(totales.saldoFinal), 539, y, { align: 'right' });
+  escribirSaldosEstadoCuenta(doc, y, estado, totales.saldoFinal);
 
   return Buffer.from(doc.output('arraybuffer'));
 }

@@ -11,6 +11,12 @@ export const MENSAJE_COMISION_PENDIENTE =
 export const MENSAJE_PAGO_NO_HABILITADO =
   'El pago de nómina desde el Wallet aún no está habilitado en la base de datos (falta aplicar migration_nomina_pago_wallet.sql).';
 
+export const MENSAJE_PAGO_INDIVIDUAL_NO_HABILITADO =
+  'El pago por trabajador aún no está habilitado en la base de datos (falta aplicar migration_nomina_pago_por_trabajador.sql).';
+
+export const MENSAJE_PAGO_PRESTAMO_NO_HABILITADO =
+  'El pago del préstamo desde el Wallet aún no está habilitado en la base de datos (falta aplicar migration_nomina_prestamo_desembolso.sql).';
+
 /** Moneda de la cuenta del Wallet que corresponde a cada moneda de pago de la nómina. */
 export const MONEDA_CUENTA: Record<MonedaPago, string> = { USD: 'USD', BS: 'VES' };
 
@@ -62,7 +68,9 @@ function validarCuenta(pago: PagoSolicitado, cuenta: CuentaWallet | undefined): 
 }
 
 /** Decide la comisión de una cuenta: obligatoria elegir en Bs si la migración está aplicada; nunca en USD. */
-function comisionDe(pago: PagoSolicitado, cuenta: CuentaWallet, comisionDisponible: boolean): { llevaComision: boolean | null } | FalloPlan {
+export function comisionDe(
+  pago: Pick<PagoSolicitado, 'llevaComision'>, cuenta: CuentaWallet, comisionDisponible: boolean,
+): { llevaComision: boolean | null } | FalloPlan {
   if (!aplicaComisionBancaria('egreso', cuenta.moneda)) {
     return pago.llevaComision === true
       ? { error: 'La comisión bancaria solo aplica cuando la cuenta de origen está en bolívares (Bs).', codigo: 400 }

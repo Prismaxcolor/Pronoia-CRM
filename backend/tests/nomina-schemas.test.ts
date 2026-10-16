@@ -214,13 +214,13 @@ describe('descuento de préstamo vs lo ganado', () => {
     expect(r.success).toBe(false);
     expect(!r.success && r.error.issues[0].message).toMatch(/ganó/i);
   });
-  it('el sueldo en Bs suma a lo ganado a la tasa de la nómina (400 Bs a 40 = 10 USD)', () => {
-    expect(nomina({ montoBaseBs: 400, cuotas: [{ prestamoId: P1, montoUsd: 30 }] }).success).toBe(true);
-    expect(nomina({ montoBaseBs: 400, cuotas: [{ prestamoId: P1, montoUsd: 30.01 }] }).success).toBe(false);
+  it('el sueldo en Bs suma a lo ganado por su valor en USD de referencia (10 USD, sin depender de la tasa)', () => {
+    expect(nomina({ montoBaseBs: 10, cuotas: [{ prestamoId: P1, montoUsd: 30 }] }).success).toBe(true);
+    expect(nomina({ montoBaseBs: 10, cuotas: [{ prestamoId: P1, montoUsd: 30.01 }] }).success).toBe(false);
   });
   it('un trabajador con sueldo solo en Bs puede tener cuotas hasta su equivalente en USD', () => {
-    expect(nomina({ montoBaseUsd: 0, montoBaseBs: 400, cuotas: [{ prestamoId: P1, montoUsd: 10 }] }).success).toBe(true);
-    expect(nomina({ montoBaseUsd: 0, montoBaseBs: 400, cuotas: [{ prestamoId: P1, montoUsd: 10.01 }] }).success).toBe(false);
+    expect(nomina({ montoBaseUsd: 0, montoBaseBs: 10, cuotas: [{ prestamoId: P1, montoUsd: 10 }] }).success).toBe(true);
+    expect(nomina({ montoBaseUsd: 0, montoBaseBs: 10, cuotas: [{ prestamoId: P1, montoUsd: 10.01 }] }).success).toBe(false);
   });
   it('la suma de varias cuotas también cuenta', () => {
     const P2 = '44444444-4444-4444-8444-444444444444';
