@@ -1,6 +1,13 @@
 import { apiFetch } from './api-client';
+import { mensajeAmigable } from '../lib/mensaje-error';
+import { leerGet } from './lectura-service';
+import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
+import type { EstadoFacturaDerivado } from '../lib/estado-factura';
 
 export type TipoFactura = 'compra' | 'venta';
+/** 'emitida' = sin pagos; 'pendiente' = con pagos y saldo; 'pagada' = sin saldo (ver lib/estado-factura.ts).
+ *  'anulada': se conserva para historial, pero no es deuda ni se puede pagar. */
+export type EstadoFacturaCV = EstadoFacturaDerivado;
 
 export interface FacturaItemCV {
   id: string;
@@ -9,13 +16,15 @@ export interface FacturaItemCV {
   peso: number;
   precioUnitario: number;
   subtotal: number;
+  /** Kg descontados al facturar (0 salvo en compra). `peso` ya viene neto de esto. */
+  descuentoKg: number;
 }
 
 export interface FacturaCV {
   id: string;
-  /** Correlativo automático. Solo en compras (null en ventas). */
+  /** Correlativo automático, en ambos tipos de factura. */
   numero: number | null;
-  /** Código de control formateado ("Compra 0001"). Solo en compras. */
+  /** Código de control formateado ("C-0001" / "V-0001"). */
   codigo: string | null;
   tipo: TipoFactura;
   entidadId: string | null;
@@ -27,8 +36,11 @@ export interface FacturaCV {
   montoPagado: number;
   descripcion: string | null;
   observaciones: string | null;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: EstadoFacturaCV;
   createdAt: string;
+  /** Solo en el detalle: quién la creó y la última edición según auditoría. */
+  registradoPorNombre?: string | null;
+  ultimaEdicion?: { nombre: string; en: string } | null;
 }
 
 /**
@@ -48,6 +60,7 @@ export function consolidarItems(items: FacturaItemCV[]): FacturaItemCV[] {
     if (ex) {
       ex.peso += it.peso;
       ex.subtotal += it.subtotal;
+      ex.descuentoKg += it.descuentoKg;
       ex.precioUnitario = ex.peso > 0 ? ex.subtotal / ex.peso : ex.precioUnitario;
     } else {
       mapa.set(clave, { ...it });
@@ -60,6 +73,8 @@ export interface CrearFacturaItemInput {
   productoId: string;
   peso: number;
   precioUnitario: number;
+  /** Solo tiene efecto en factura de compra. */
+  descuentoKg?: number;
 }
 
 export interface CrearFacturaInput {
@@ -69,6 +84,8 @@ export interface CrearFacturaInput {
   descripcion?: string | null;
   observaciones?: string | null;
   estado?: 'borrador' | 'emitida' | 'pagada';
+  /** Clave de idempotencia (uuid): con la misma clave el servidor devuelve el resultado original en vez de repetir la operación. */
+  clientRequestId?: string;
 }
 
 export interface FiltrosFacturas {
@@ -86,23 +103,33 @@ export async function obtenerFacturas(
   tipo: TipoFactura,
   filtros: FiltrosFacturas = {}
 ): Promise<FacturaCV[]> {
+  try {
+    return await obtenerFacturasOError(tipo, filtros);
+  } catch {
+    return [];
+  }
+}
+
+/** Igual que `obtenerFacturas`, pero lanza el error si la carga falla (no lo disfraza de "sin facturas"). */
+export async function obtenerFacturasOError(
+  tipo: TipoFactura,
+  filtros: FiltrosFacturas = {}
+): Promise<FacturaCV[]> {
   const params = new URLSearchParams();
   if (filtros.desde) params.set('desde', filtros.desde);
   if (filtros.hasta) params.set('hasta', filtros.hasta);
   if (filtros.entidadId) params.set('entidadId', filtros.entidadId);
   if (filtros.productoId) params.set('productoId', filtros.productoId);
   const qs = params.toString();
-  try {
-    const { facturas } = await apiFetch<{ facturas: FacturaCV[] }>(`${base(tipo)}${qs ? `?${qs}` : ''}`);
-    return facturas;
-  } catch {
-    return [];
-  }
+  const { facturas } = await leerGet<{ facturas: FacturaCV[] }>(`${base(tipo)}${qs ? `?${qs}` : ''}`, {
+    recortar: d => recortarCampo(d, 'facturas', f => ultimasFilas(f as FacturaCV[], LIMITES_CACHE.maxFacturas, x => x.createdAt)),
+  });
+  return facturas;
 }
 
 export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<FacturaCV | null> {
   try {
-    const { factura } = await apiFetch<{ factura: FacturaCV }>(`${base(tipo)}/${id}`);
+    const { factura } = await leerGet<{ factura: FacturaCV }>(`${base(tipo)}/${id}`);
     return factura;
   } catch {
     return null;
@@ -120,6 +147,6 @@ export async function crearFactura(
     });
     return { factura };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo crear la factura.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudo crear la factura.' }) };
   }
 }

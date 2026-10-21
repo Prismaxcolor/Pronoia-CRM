@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { ejecutarOperacionFinanciera } from '../services/operacion-financiera.js';
+import { TIPO_OPERACION, cuerpoConRepetida } from '../services/operaciones-idempotentes-cola.js';
 import { listarFacturas, obtenerFactura, crearFactura } from '../services/factura-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
@@ -33,7 +35,11 @@ router.post(
   requirePermiso('facturacion', 'crear'),
   validateBody(crearFacturaSchema),
   async (req, res) => {
-    const result = await crearFactura('venta', req.body);
+    // Con clientRequestId un doble clic o reintento no crea una segunda factura (responde 200 con `repetida`).
+    const envio = await ejecutarOperacionFinanciera(res, TIPO_OPERACION.facturaVentaCrear, req.body, req.user!.sub,
+      () => crearFactura('venta', req.body, req.user!.sub));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -44,8 +50,9 @@ router.post(
       userId: req.user!.sub,
       facturaId: result.factura.id,
       ticketIds: result.factura.ticketIds,
+      repetida,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 

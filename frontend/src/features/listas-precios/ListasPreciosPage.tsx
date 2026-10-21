@@ -1,40 +1,57 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, ChevronRight, Tag } from 'lucide-react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { CalendarClock, ListChecks, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
 import {
   obtenerListas,
   eliminarLista,
 } from '../../services/lista-precios-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
+import { usePestanaRecordada } from '../../hooks/use-pestana-recordada';
+import {
+  BotonAccion, ControlSegmentado, EncabezadoPagina, GrillaKpis, Insignia, SkeletonBloque, SkeletonKpis, TarjetaKpi,
+  formatearFecha, formatearNumero,
+} from '../../components/ui';
+import type TablaDatosTipo from '../../components/ui/TablaDatos';
+import type { ColumnaTabla } from '../../components/ui';
+import { derivarKpisListas } from '../../lib/productos-kpis';
 import ListaFormModal from './ListaFormModal';
 import type { ListaPrecios } from '@shared/types/index.js';
+import { formatearFechaHora } from '../../lib/fecha-negocio';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+
+// lazy pierde el genérico de TablaDatos<T>: se restaura con su tipo.
+const TablaDatos = lazy(() => import('../../components/ui/TablaDatos')) as unknown as typeof TablaDatosTipo;
+
+type Tipo = 'compra' | 'venta';
+const BOTON_ICONO = 'p-1.5 rounded-md bg-surface-alt text-text-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
 function ListasPreciosPage() {
   const [listas, setListas] = useState<ListaPrecios[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [tipoVisible, setTipoVisible] = usePestanaRecordada<Tipo>(
+    'pronoia:listas-precios:tipo',
+    ['compra', 'venta'],
+    'compra',
+  );
   const [formAbierto, setFormAbierto] = useState<
     { abierto: true; lista: ListaPrecios | null } | { abierto: false }
   >({ abierto: false });
-  const navigate = useNavigate();
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
 
-  const puedeCrear = tienePermiso('productos', 'crear');
-  const puedeEditar = tienePermiso('productos', 'editar');
-  const puedeBorrar = tienePermiso('productos', 'eliminar');
+  const puedeCrear = tienePermiso('listas_precios', 'crear');
+  const puedeEditar = tienePermiso('listas_precios', 'editar');
+  const puedeBorrar = tienePermiso('listas_precios', 'eliminar');
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerListas().then(setListas).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerListas().then(setListas).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
 
-  const handleBorrar = async (l: ListaPrecios, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleBorrar = async (l: ListaPrecios) => {
     const ok = await confirmar({
       titulo: `Eliminar "${l.nombre}"`,
       mensaje: 'Se borrarán también todos sus precios. Si la lista está usada en alguna factura, no se podrá borrar.',
@@ -48,96 +65,173 @@ function ListasPreciosPage() {
     cargar();
   };
 
-  const handleEditar = (l: ListaPrecios, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setFormAbierto({ abierto: true, lista: l });
-  };
+  const listasVisibles = useMemo(() => listas.filter(l => l.tipo === tipoVisible), [listas, tipoVisible]);
+  const kpis = useMemo(() => derivarKpisListas(listas), [listas]);
+  const listaMasReciente = useMemo(
+    () => (kpis.ultimaVigencia ? listas.find(l => l.vigenteDesde === kpis.ultimaVigencia) : undefined),
+    [listas, kpis.ultimaVigencia],
+  );
+
+  const columnas = useMemo<ColumnaTabla<ListaPrecios>[]>(() => {
+    const base: ColumnaTabla<ListaPrecios>[] = [
+      {
+        clave: 'nombre',
+        titulo: 'Lista',
+        valorOrden: l => l.nombre,
+        celda: l => (
+          <Link to={`/listas-precios/${l.id}`} className="inline-flex items-center gap-2 font-medium text-text-primary hover:text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 rounded">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700" aria-hidden="true"><Tag size={15} /></span>
+            {l.nombre}
+          </Link>
+        ),
+      },
+      {
+        clave: 'vigencia',
+        titulo: 'Vigente desde',
+        ayuda: 'Fecha desde la que se usa esta lista. “Sin fecha” significa que no se indicó.',
+        valorOrden: l => l.vigenteDesde,
+        celda: l => (l.vigenteDesde ? formatearFecha(l.vigenteDesde) : <span className="text-text-muted">Sin fecha</span>),
+        valorCsv: l => formatearFecha(l.vigenteDesde),
+      },
+      {
+        clave: 'estado',
+        titulo: 'Estado',
+        valorOrden: l => (l.activo ? 'Activa' : 'Inactiva'),
+        celda: l => <Insignia tono={l.activo ? 'marca' : 'neutral'}>{l.activo ? 'Activa' : 'Inactiva'}</Insignia>,
+      },
+      {
+        clave: 'creada',
+        titulo: 'Creada',
+        ayuda: 'Fecha en que se creó la lista en el sistema (no es la fecha de vigencia).',
+        valorOrden: l => l.createdAt,
+        celda: l => formatearFechaHora(l.createdAt),
+        valorCsv: l => formatearFechaHora(l.createdAt),
+        ocultaEnMovil: true,
+      },
+    ];
+    if (!puedeEditar && !puedeBorrar) return base;
+    return [
+      ...base,
+      {
+        clave: 'acciones',
+        titulo: 'Acciones',
+        valorCsv: false,
+        celda: l => (
+          <div className="flex gap-1">
+            {puedeEditar && (
+              <button type="button" onClick={() => setFormAbierto({ abierto: true, lista: l })} title="Editar lista" aria-label={`Editar ${l.nombre}`}
+                className={`${BOTON_ICONO} hover:bg-brand-50 hover:text-brand-600`}>
+                <Pencil size={14} />
+              </button>
+            )}
+            {puedeBorrar && (
+              <button type="button" onClick={() => handleBorrar(l)} title="Eliminar lista" aria-label={`Eliminar ${l.nombre}`}
+                className={`${BOTON_ICONO} hover:bg-red-50 hover:text-red-600`}>
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        ),
+      },
+    ];
+    // handleBorrar solo cierra sobre estado estable (confirmar/toast/cargar); no hace falta recrear las columnas con cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [puedeEditar, puedeBorrar]);
+
+  const encabezado = (
+    <EncabezadoPagina lecturas={LECTURAS.listasPrecios}
+      titulo="Listas de precios"
+      subtitulo="Cuánto se paga por cada material (compra) y a cuánto se vende (venta). Se usan al facturar."
+      acciones={puedeCrear ? (
+        <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setFormAbierto({ abierto: true, lista: null })}>Nueva lista</BotonAccion>
+      ) : undefined}
+    />
+  );
 
   if (cargando) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-7xl">
+        {encabezado}
+        <SkeletonKpis cantidad={3} />
+        <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando listas" />
       </div>
     );
   }
 
+  const nombreTipo = tipoVisible === 'compra' ? 'compra' : 'venta';
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Listas de precios</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Cuánto se paga por cada material. Se usan al facturar compras.
-          </p>
-        </div>
-        {puedeCrear && (
-          <button
-            type="button"
-            onClick={() => setFormAbierto({ abierto: true, lista: null })}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-          >
-            <Plus size={18} />
-            Nueva lista
-          </button>
-        )}
+    <div className="max-w-7xl">
+      {encabezado}
+
+      <section aria-label="Indicadores principales">
+        <GrillaKpis>
+          <TarjetaKpi
+            titulo="Listas de precios"
+            icono={<ListChecks size={16} />}
+            ayuda="Cuántas listas de precios hay en total, activas e inactivas. Una lista de compra dice cuánto se paga por kilo a los proveedores; una de venta, cuánto se cobra por kilo a los clientes."
+            valor={`${formatearNumero(kpis.total, 0)} ${kpis.total === 1 ? 'lista' : 'listas'}`}
+            subtitulo={`${formatearNumero(kpis.compra, 0)} de compra · ${formatearNumero(kpis.venta, 0)} de venta`}
+            comparacion={null}
+          />
+          <TarjetaKpi
+            titulo="Listas activas"
+            icono={<ListChecks size={16} />}
+            ayuda="Cuántas listas están activas, es decir, disponibles para elegirlas al facturar. Una lista inactiva se guarda, pero ya no se ofrece."
+            valor={`${formatearNumero(kpis.activas, 0)} ${kpis.activas === 1 ? 'activa' : 'activas'}`}
+            subtitulo={kpis.inactivas > 0 ? `${formatearNumero(kpis.inactivas, 0)} inactivas` : 'ninguna inactiva'}
+            comparacion={null}
+          />
+          <TarjetaKpi
+            titulo="Vigencia más reciente"
+            icono={<CalendarClock size={16} />}
+            ayuda="De todas las listas, la fecha “Vigente desde” más reciente. Cada lista indica desde qué día aplica; las que no tienen fecha no cuentan. No es la fecha de la última actualización de precios: esa se ve dentro de cada lista, en “Último precio cargado”."
+            estado={kpis.ultimaVigencia ? 'listo' : 'vacio'}
+            mensajeVacio="Ninguna lista tiene fecha de vigencia"
+            valor={formatearFecha(kpis.ultimaVigencia)}
+            subtitulo={listaMasReciente ? `es la de la lista «${listaMasReciente.nombre}»` : undefined}
+            comparacion={null}
+          />
+        </GrillaKpis>
+      </section>
+
+      <div className="mb-4">
+        <ControlSegmentado<Tipo>
+          etiquetaAria="Tipo de lista"
+          valor={tipoVisible}
+          onCambiar={setTipoVisible}
+          opciones={[
+            { valor: 'compra', etiqueta: 'Compra', sufijo: <span className="tabular-nums text-xs">{kpis.compra}</span> },
+            { valor: 'venta', etiqueta: 'Venta', sufijo: <span className="tabular-nums text-xs">{kpis.venta}</span> },
+          ]}
+        />
       </div>
 
-      {listas.length === 0 ? (
-        <p className="text-center text-text-muted py-12">No hay listas de precios todavía.</p>
-      ) : (
-        <div className="bg-surface rounded-xl border border-border overflow-hidden">
-          {listas.map(l => (
-            <div
-              key={l.id}
-              onClick={() => navigate(`/listas-precios/${l.id}`)}
-              className="group flex items-center gap-4 px-5 py-4 border-b border-border last:border-b-0 hover:bg-surface-alt cursor-pointer transition-colors"
-            >
-              <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
-                <Tag size={18} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-text-primary text-sm truncate">{l.nombre}</h3>
-                  {!l.activo && (
-                    <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full shrink-0">Inactiva</span>
-                  )}
-                </div>
-                <p className="text-xs text-text-muted mt-0.5">
-                  {l.vigenteDesde ? `Vigente desde ${l.vigenteDesde}` : 'Sin fecha de vigencia'}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {puedeEditar && (
-                  <button
-                    type="button"
-                    onClick={e => handleEditar(l, e)}
-                    className="p-1.5 rounded-md bg-surface-alt hover:bg-brand-50 text-text-muted hover:text-brand-600 transition-colors"
-                    title="Editar lista"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                )}
-                {puedeBorrar && (
-                  <button
-                    type="button"
-                    onClick={e => handleBorrar(l, e)}
-                    className="p-1.5 rounded-md bg-surface-alt hover:bg-red-50 text-text-muted hover:text-red-600 transition-colors"
-                    title="Eliminar lista"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-              <ChevronRight size={18} className="text-text-muted shrink-0" />
-            </div>
-          ))}
-        </div>
-      )}
+      <section aria-label={`Listas de ${nombreTipo}`} className="mb-8">
+        <Suspense fallback={<SkeletonBloque alto="h-40" etiqueta="Cargando tabla" />}>
+          <TablaDatos
+            titulo={`Listas de ${nombreTipo}`}
+            columnas={columnas}
+            filas={listasVisibles}
+            claveFila={l => l.id}
+            etiquetaFila={l => l.nombre}
+            anchoMinimo="min-w-[36rem]"
+            claseFila={l => (l.activo ? '' : 'opacity-70')}
+            vacio={{
+              mensaje: `Todavía no hay listas de ${nombreTipo}`,
+              descripcion: tipoVisible === 'compra'
+                ? 'Una lista de compra dice cuánto se paga por kilo de cada material. Se elige al facturar una compra.'
+                : 'Una lista de venta dice a cuánto se vende cada material. Se elige al facturar una venta.',
+              accion: puedeCrear ? { etiqueta: `Crear la primera lista de ${nombreTipo}`, onClick: () => setFormAbierto({ abierto: true, lista: null }) } : undefined,
+            }}
+          />
+        </Suspense>
+      </section>
 
       {formAbierto.abierto && (
         <ListaFormModal
           lista={formAbierto.lista}
+          tipoInicial={tipoVisible}
           onClose={() => setFormAbierto({ abierto: false })}
           onGuardado={() => { setFormAbierto({ abierto: false }); cargar(); }}
         />

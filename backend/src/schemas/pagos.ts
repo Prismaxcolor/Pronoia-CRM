@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import { comprobanteUrlSchema } from './comprobantes.js';
+import { validarPagoCombinado } from './pago-combinado.js';
+import { clienteOperacionCampos } from './cliente-operacion.js';
+import { montoCuentaSchema, montoUsdPositivoSchema, montoUsdTotalSchema } from './montos-pago.js';
+
+/** Tasa pactada (Bs por USD) opcional: si viene, el servicio cruza monto/montoUsd contra ella y no contra las vigentes. */
+export const tasaExplicitaSchema = z.number().positive('La tasa debe ser mayor a 0.').max(1_000_000).optional().nullable();
 
 const textoOpcional = (max: number) =>
   z
@@ -14,16 +21,71 @@ const textoOpcional = (max: number) =>
 export const registrarPagoSchema = z.object({
   proveedorId: z.string().uuid('Selecciona un proveedor.'),
   bancaId: z.string().uuid('Selecciona una banca.'),
-  monto: z.number().positive('El monto debe ser mayor a 0.'),
+  monto: montoCuentaSchema,
   moneda: z.enum(['USD', 'VES']),
-  montoUsd: z.number().positive('El monto en USD debe ser mayor a 0.'),
+  montoUsd: montoUsdPositivoSchema,
+  tasa: tasaExplicitaSchema,
   descripcion: textoOpcional(200),
   referencia: textoOpcional(50),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   /** Factura a la que se aplica el pago. Si se omite, es un adelanto. */
   facturaId: z.string().uuid('Factura inválida.').optional().nullable(),
-  /** URL del comprobante ya subido vía POST /api/uploads/comprobantes. */
-  comprobanteUrl: z.string().url('Comprobante inválido.').optional().nullable(),
+  /** URLs de los comprobantes ya subidos vía POST /api/uploads/comprobantes. */
+  comprobantes: z.array(comprobanteUrlSchema).default([]),
+  /** Comisión bancaria (0.3%, mínimo 14 Bs) de un pago desde una cuenta en Bs: obligatoria si la migración está aplicada. */
+  llevaComision: z.boolean().optional(),
+  ...clienteOperacionCampos,
 });
 
 export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
+
+/** Un ítem del pago combinado: factura o nota de débito a liquidar (suman al
+ *  total a cubrir con banca); nota de crédito o adelanto con saldo sin aplicar
+ *  usados como método de pago (restan del total a cubrir con banca) — con el
+ *  monto (USD) que le corresponde. Para un adelanto, `id` es el adelanto_id que
+ *  devuelve GET /api/proveedores/:id/adelantos-disponibles. */
+export const itemPagoMultipleSchema = z.object({
+  tipo: z.enum(['factura', 'nota_debito', 'nota_credito', 'adelanto']),
+  id: z.string().uuid('Ítem inválido.'),
+  montoUsd: montoUsdPositivoSchema,
+});
+
+/** Una banca de origen del pago combinado, con el monto (en su propia
+ *  moneda y en USD) que aporta de este pago. */
+export const bancaPagoSchema = z.object({
+  bancaId: z.string().uuid('Selecciona una banca.'),
+  monto: montoCuentaSchema,
+  moneda: z.enum(['USD', 'VES']),
+  montoUsd: montoUsdPositivoSchema,
+  tasa: tasaExplicitaSchema,
+  /** Referencia propia de esta banca (ej. número de transferencia). */
+  referencia: textoOpcional(50),
+});
+
+/** Banca de origen de un pago a PROVEEDOR: añade la elección de comisión bancaria (los cobros y las ediciones no la llevan). */
+export const bancaPagoProveedorSchema = bancaPagoSchema.extend({
+  /** Solo para cuentas en Bs; undefined = la persona no eligió (el servicio lo exige si la comisión está habilitada). */
+  llevaComision: z.boolean().optional(),
+});
+
+/** Pago combinado ("Registrar pago"): puede repartirse entre varias bancas de
+ *  origen, liquida varias facturas y/o notas de débito a la vez, y el
+ *  excedente del total sobre la suma de esos ítems se registra aparte como
+ *  adelanto (lo separa la RPC, no el frontend). Los adelantos y notas de
+ *  crédito seleccionados se descuentan; si no queda nada por pagar
+ *  (`montoUsd` = 0, `bancas` vacío) es un cruce puro, sin movimiento de dinero. */
+export const registrarPagoMultipleSchema = z.object({
+  proveedorId: z.string().uuid('Selecciona un proveedor.'),
+  bancas: z.array(bancaPagoProveedorSchema).default([]),
+  montoUsd: montoUsdTotalSchema,
+  descripcion: textoOpcional(300),
+  referencia: textoOpcional(50),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
+  items: z.array(itemPagoMultipleSchema).default([]),
+  comprobantes: z.array(comprobanteUrlSchema).default([]),
+  ...clienteOperacionCampos,
+}).superRefine((data, ctx) => validarPagoCombinado(data, ctx, 'pago'));
+
+export type BancaPagoInput = z.infer<typeof bancaPagoSchema>;
+export type ItemPagoMultipleInput = z.infer<typeof itemPagoMultipleSchema>;
+export type RegistrarPagoMultipleInput = z.infer<typeof registrarPagoMultipleSchema>;

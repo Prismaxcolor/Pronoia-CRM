@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { clienteOperacionCampos } from './cliente-operacion.js';
+
 const textoOpcional = (max: number) =>
   z
     .string()
@@ -9,12 +11,21 @@ const textoOpcional = (max: number) =>
     .nullable()
     .transform(v => (v && v.length > 0 ? v : null));
 
-/** Una línea de la factura: un material con su peso y precio. */
-const itemSchema = z.object({
-  productoId: z.string().uuid('Material inválido.'),
-  peso: z.number().positive('El peso debe ser mayor a 0.'),
-  precioUnitario: z.number().positive('El precio unitario debe ser mayor a 0.'),
-});
+/** Una línea de la factura: un material con su peso y precio.
+ *  `descuentoKg` es un descuento de peso aplicado al facturar — ej. merma o
+ *  tara adicional no capturada en el pesaje — que se resta antes de calcular
+ *  el subtotal. El precio puede ser 0 tanto en compra como en venta. */
+const itemSchema = z
+  .object({
+    productoId: z.string().uuid('Material inválido.'),
+    peso: z.number().positive('El peso debe ser mayor a 0.'),
+    precioUnitario: z.number().nonnegative('El precio unitario no puede ser negativo.'),
+    descuentoKg: z.number().min(0, 'El descuento no puede ser negativo.').default(0),
+  })
+  .refine(i => i.descuentoKg < i.peso, {
+    message: 'El descuento no puede ser mayor o igual al peso.',
+    path: ['descuentoKg'],
+  });
 
 /** Esquema común a factura de compra y de venta. `entidadId` = proveedor o cliente. */
 export const crearFacturaSchema = z.object({
@@ -25,6 +36,7 @@ export const crearFacturaSchema = z.object({
   descripcion: textoOpcional(300),
   observaciones: textoOpcional(500),
   estado: z.enum(['borrador', 'emitida', 'pagada']).default('emitida'),
+  ...clienteOperacionCampos,
 });
 
 export type CrearFacturaInput = z.infer<typeof crearFacturaSchema>;

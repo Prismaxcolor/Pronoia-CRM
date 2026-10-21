@@ -1,0 +1,169 @@
+-- =============================================================================
+-- Verificación de contabilidad de Wallet (SOLO LECTURA). Para correr a mano en STAGING.
+--
+-- Cubre: saldos de cuentas, transferencias con mesa de cambio, asientos del cambista y comisiones bancarias.
+-- Requiere las migraciones: migration_mesa_cambio_transferencias.sql y migration_wallet_comision_bancaria.sql.
+--
+-- Cómo usarlo:
+--   * TODO está comentado a propósito: NO se ejecuta nada al abrir o correr el archivo completo.
+--   * Descomenta UNA consulta a la vez, ejecútala y revisa el resultado. Todas son `select`.
+--   * "Debe dar 0 filas" = si devuelve filas, hay una inconsistencia que investigar antes de producción.
+--   * NO llames a public.reconciliar_saldo_banca() para comparar: esa función ACTUALIZA bancas.saldo
+--     (no es de solo lectura). La consulta 1 repite su fórmula sin escribir nada.
+--
+-- Este archivo no modifica datos, no crea objetos y no hace commit de nada.
+-- =============================================================================
+
+
+-- 1. Saldo guardado vs saldo recalculado desde los movimientos (misma fórmula que reconciliar_saldo_banca) ----------
+--    Debe dar 0 filas (diferencia = 0). Una transferencia con mesa EN PROCESO no acredita aún el destino.
+--
+-- with calculado as (
+--   select b.id as banca_id,
+--          coalesce(sum(case
+--            when m.tipo = 'ingreso'       and m.banca_origen_id  = b.id then  m.monto
+--            when m.tipo = 'egreso'        and m.banca_origen_id  = b.id then -m.monto
+--            when m.tipo = 'transferencia' and m.banca_origen_id  = b.id then -m.monto
+--            when m.tipo = 'transferencia' and m.banca_destino_id = b.id
+--                 and m.mesa_estado = 'en_proceso' then 0
+--            when m.tipo = 'transferencia' and m.banca_destino_id = b.id
+--                 and m.mesa_estado = 'parcial' then coalesce(m.mesa_monto_cobrado, 0)
+--            when m.tipo = 'transferencia' and m.banca_destino_id = b.id then coalesce(m.monto_destino, m.monto)
+--            else 0
+--          end), 0) as saldo_calculado
+--     from public.bancas b
+--     left join public.movimientos m
+--            on not m.anulado and (m.banca_origen_id = b.id or m.banca_destino_id = b.id)
+--    group by b.id
+-- )
+-- select b.id, b.nombre, b.moneda, b.saldo as saldo_guardado, c.saldo_calculado,
+--        round(b.saldo - c.saldo_calculado, 2) as diferencia
+--   from public.bancas b join calculado c on c.banca_id = b.id
+--  where round(b.saldo - c.saldo_calculado, 2) <> 0
+--  order by abs(b.saldo - c.saldo_calculado) desc;
+
+
+-- 2. Transferencias con mesa de cambio EN PROCESO o en COBRO PARCIAL (pendientes de completar) -----------------------
+--    Informativa: revisa las más antiguas; dinero ya descontado del origen que el destino aún no recibe (total o en parte).
+--    Requiere migration_mesa_cambio_cobro_parcial.sql (mesa_monto_cobrado); sin ella, usa solo mesa_estado = 'en_proceso'.
+--
+-- select m.numero_sistema, m.fecha, now() - m.creado_en as antiguedad, c.nombre as cambista,
+--        m.monto, m.moneda, m.mesa_monto_bruto, m.mesa_comision, m.mesa_estado, coalesce(m.mesa_monto_cobrado, 0) as cobrado,
+--        bo.nombre as origen, bd.nombre as destino
+--   from public.movimientos m
+--   join public.cambistas c  on c.id  = m.mesa_cambista_id
+--   join public.bancas bo    on bo.id = m.banca_origen_id
+--   join public.bancas bd    on bd.id = m.banca_destino_id
+--  where m.mesa_estado in ('en_proceso', 'parcial') and not m.anulado
+--  order by m.creado_en;
+
+
+-- 3. Mesa de cambio: estado del movimiento vs asientos del cambista -------------------------------------------------
+--    3a. En proceso sin su CARGO vigente, o completadas sin CARGO/COBRO vigentes (debe dar 0 filas).
+--
+-- select m.id, m.numero_sistema, m.mesa_estado,
+--        count(*) filter (where a.tipo = 'CARGO' and not a.anulado) as cargos_vigentes,
+--        count(*) filter (where a.tipo = 'COBRO' and not a.anulado) as cobros_vigentes
+--   from public.movimientos m
+--   left join public.cambista_asientos a on a.movimiento_id = m.id
+--  where m.mesa_cambista_id is not null and not m.anulado
+--  group by m.id, m.numero_sistema, m.mesa_estado
+-- having (m.mesa_estado = 'en_proceso' and count(*) filter (where a.tipo = 'CARGO' and not a.anulado) <> 1)
+--     or (m.mesa_estado = 'parcial' and (count(*) filter (where a.tipo = 'CARGO' and not a.anulado) <> 1
+--                                       or count(*) filter (where a.tipo = 'COBRO' and not a.anulado) < 1))
+--     or (m.mesa_estado = 'completada' and (count(*) filter (where a.tipo = 'CARGO' and not a.anulado) <> 1
+--                                          or count(*) filter (where a.tipo = 'COBRO' and not a.anulado) < 1));
+--
+--    3b. Asientos vigentes de una transferencia ANULADA (debe dar 0 filas: al anular se anulan los asientos).
+--
+-- select a.id, a.numero, a.tipo, a.monto_usd, m.numero_sistema
+--   from public.cambista_asientos a
+--   join public.movimientos m on m.id = a.movimiento_id
+--  where m.anulado and not a.anulado;
+--
+--    3c. Asientos que dicen nacer de una transferencia pero no tienen movimiento (debe dar 0 filas).
+--        Los asientos manuales legítimos tienen movimiento_id nulo y una nota distinta.
+--
+-- select a.id, a.numero, a.tipo, a.nota, a.fecha
+--   from public.cambista_asientos a
+--  where a.movimiento_id is null and a.nota like 'Transferencia %';
+--
+--    3d. Transferencia COMPLETADA: la suma de sus COBRO vigentes debe igualar el CARGO (debe dar 0 filas).
+--        Con cobro parcial hay varios COBRO por transferencia; una parcial suma menos que el CARGO (es normal).
+--
+-- select cg.movimiento_id, cg.monto_usd as cargo_usd, sum(cb.monto_usd) as cobros_usd
+--   from public.cambista_asientos cg
+--   join public.movimientos m on m.id = cg.movimiento_id and m.mesa_estado = 'completada' and not m.anulado
+--   join public.cambista_asientos cb on cb.movimiento_id = cg.movimiento_id and cb.tipo = 'COBRO' and not cb.anulado
+--  where cg.tipo = 'CARGO' and not cg.anulado
+--  group by cg.movimiento_id, cg.monto_usd
+-- having cg.monto_usd <> sum(cb.monto_usd);
+
+
+-- 4. Mesa de cambio completada: neto acreditado = bruto - comisión (debe dar 0 filas) -----------------------------
+--    monto_destino queda nulo si es misma moneda y el neto igual al monto (ver completar_transferencia_mesa_cambio).
+--
+-- select m.id, m.numero_sistema, m.mesa_monto_bruto, m.mesa_comision, m.monto, m.monto_destino,
+--        round(m.mesa_monto_bruto - coalesce(m.mesa_comision, 0), 2) as neto_esperado
+--   from public.movimientos m
+--  where m.mesa_estado = 'completada' and not m.anulado
+--    and coalesce(m.monto_destino, m.monto) <> round(m.mesa_monto_bruto - coalesce(m.mesa_comision, 0), 2);
+
+
+-- 5. Comisiones bancarias huérfanas (todas deben dar 0 filas) -------------------------------------------------------
+--    5a. Movimiento principal vigente con comisión pero sin su cargo vigente.
+--
+-- select m.id, m.numero_sistema, m.comision_bancaria
+--   from public.movimientos m
+--  where m.comision_bancaria is not null and not m.anulado
+--    and not exists (select 1 from public.movimientos c where c.comision_de_id = m.id and not c.anulado);
+--
+--    5b. Cargo de comisión vigente cuyo principal está anulado (o no existe).
+--
+-- select c.id, c.numero_sistema, c.monto, c.comision_de_id
+--   from public.movimientos c
+--   left join public.movimientos m on m.id = c.comision_de_id
+--  where c.comision_de_id is not null and not c.anulado and (m.id is null or m.anulado);
+--
+--    5c. Cargo con importe distinto de la comisión registrada en el principal, o en otra cuenta/moneda.
+--
+-- select m.id as principal, c.id as cargo, m.comision_bancaria, c.monto as monto_cargo,
+--        m.banca_origen_id, c.banca_origen_id as banca_cargo
+--   from public.movimientos m
+--   join public.movimientos c on c.comision_de_id = m.id and not c.anulado
+--  where not m.anulado
+--    and (c.monto <> m.comision_bancaria or c.banca_origen_id <> m.banca_origen_id or c.moneda <> m.moneda);
+--
+--    5d. Principal que dice tener comisión pero la cuenta de origen no está en bolívares (VES).
+--
+-- select m.id, m.numero_sistema, b.nombre, b.moneda
+--   from public.movimientos m join public.bancas b on b.id = m.banca_origen_id
+--  where m.comision_bancaria is not null and b.moneda <> 'VES';
+
+
+-- 6. Saldo del cambista (vista) vs suma directa de asientos vigentes (debe dar 0 filas) -----------------------------
+--
+-- select s.cambista_id, s.saldo as saldo_vista,
+--        coalesce(sum(case when a.tipo in ('CARGO', 'ND') then a.monto_usd else -a.monto_usd end), 0) as saldo_directo
+--   from public.cambistas_saldos s
+--   left join public.cambista_asientos a on a.cambista_id = s.cambista_id and not a.anulado
+--  group by s.cambista_id, s.saldo
+-- having s.saldo <> coalesce(sum(case when a.tipo in ('CARGO', 'ND') then a.monto_usd else -a.monto_usd end), 0);
+
+
+-- 7. Importes con fracciones de centavo (debe dar 0 filas) -----------------------------------------------------------
+--    La RPC de mesa de cambio redondea a 2 decimales; esto detecta movimientos viejos o creados por otra vía.
+--
+-- select id, numero_sistema, tipo, monto, monto_destino
+--   from public.movimientos
+--  where not anulado and (monto <> round(monto, 2) or coalesce(monto_destino, 0) <> round(coalesce(monto_destino, 0), 2));
+
+
+-- 8. Omisiones de la comisión bancaria auditadas (informativa) ----------------------------------------------------------
+--    Quién registró movimientos sin comisión desde cuentas en Bs (auditoria_ediciones, accion = 'sin_comision_bancaria').
+--
+-- select usuario_nombre, count(*) as veces, min(created_at) as primera, max(created_at) as ultima
+--   from public.auditoria_ediciones
+--  where entidad_tipo = 'movimiento_banca' and accion = 'sin_comision_bancaria'
+--  group by usuario_nombre
+--  order by veces desc;
