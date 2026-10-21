@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react';
 import type { Tara } from '@shared/types/index.js';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
+import { conFotosAgregadas, quitarFotoLiberando, revocarFotos } from '../pesaje/fotos-preview';
 import CampoTaraSalida from './CampoTaraSalida';
 import {
   MAX_PESADAS_ENTRADA, netoPesadaEntrada, pesadaEntradaVacia, totalesEntrada, type PesadaEntradaForm,
@@ -24,7 +25,10 @@ function PesadasEntradaCampo({ pesadas, taras, onCambiar }: Props) {
 
   const actualizar = (uid: number, cambios: Partial<PesadaEntradaForm>) =>
     onCambiar(pesadas.map(p => (p.uid === uid ? { ...p, ...cambios } : p)));
-  const quitar = (uid: number) => onCambiar(pesadas.filter(p => p.uid !== uid));
+  const quitar = (uid: number) => {
+    revocarFotos(pesadas.find(p => p.uid === uid)?.fotos ?? []);
+    onCambiar(pesadas.filter(p => p.uid !== uid));
+  };
   const agregar = () => onCambiar([...pesadas, pesadaEntradaVacia()]);
 
   return (
@@ -50,8 +54,8 @@ function PesadasEntradaCampo({ pesadas, taras, onCambiar }: Props) {
           <CampoTaraSalida valor={p} taras={taras} onCambiar={campos => actualizar(p.uid, campos)} />
           <FotoMaterialPicker
             fotos={p.fotos}
-            onAgregar={files => actualizar(p.uid, { fotos: [...p.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] })}
-            onQuitar={i => actualizar(p.uid, { fotos: p.fotos.filter((_, k) => k !== i) })}
+            onAgregar={files => actualizar(p.uid, { fotos: conFotosAgregadas(p.fotos, files) })}
+            onQuitar={i => actualizar(p.uid, { fotos: quitarFotoLiberando(p.fotos, i) })}
             label={varias ? `Fotos de la pesada ${idx + 1} *` : 'Fotos de entrada *'}
           />
           {varias && (

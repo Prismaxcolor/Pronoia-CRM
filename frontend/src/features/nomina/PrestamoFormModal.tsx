@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Modal from '../../components/Modal';
 import { X } from 'lucide-react';
 import { obtenerBancas } from '../../services/banca-service';
 import { crearPrestamo, obtenerTrabajadores } from '../../services/nomina-service';
@@ -85,74 +86,72 @@ function PrestamoFormModal({ onClose, onCreado }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="prestamo-titulo">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 id="prestamo-titulo" className="text-lg font-bold text-text-primary">Nuevo préstamo o adelanto</h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
+    <Modal onClose={onClose} bloqueado={guardando} tituloId="prestamo-titulo">
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 id="prestamo-titulo" className="text-lg font-bold text-text-primary">Nuevo préstamo o adelanto</h2>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
+      </div>
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <div>
+          <label htmlFor="pre-trabajador" className={labelClass}>Trabajador *</label>
+          <select id="pre-trabajador" value={trabajadorId} onChange={e => setTrabajadorId(e.target.value)} className={inputClass}>
+            <option value="">Elige…</option>
+            {trabajadores.map(t => <option key={t.id} value={t.id}>{nombreCompleto(t)} · {ETIQUETA_TIPO_TRABAJADOR[t.tipo]}</option>)}
+          </select>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="pre-trabajador" className={labelClass}>Trabajador *</label>
-            <select id="pre-trabajador" value={trabajadorId} onChange={e => setTrabajadorId(e.target.value)} className={inputClass}>
+            <label htmlFor="pre-tipo" className={labelClass}>Tipo *</label>
+            <select id="pre-tipo" value={tipo} onChange={e => setTipo(e.target.value as TipoPrestamo | '')} className={inputClass}>
               <option value="">Elige…</option>
-              {trabajadores.map(t => <option key={t.id} value={t.id}>{nombreCompleto(t)} · {ETIQUETA_TIPO_TRABAJADOR[t.tipo]}</option>)}
+              {TIPOS_PRESTAMO.map(t => <option key={t} value={t}>{ETIQUETA_TIPO_PRESTAMO[t]}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="pre-tipo" className={labelClass}>Tipo *</label>
-              <select id="pre-tipo" value={tipo} onChange={e => setTipo(e.target.value as TipoPrestamo | '')} className={inputClass}>
-                <option value="">Elige…</option>
-                {TIPOS_PRESTAMO.map(t => <option key={t} value={t}>{ETIQUETA_TIPO_PRESTAMO[t]}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="pre-fecha" className={labelClass}>Fecha *</label>
-              <input id="pre-fecha" type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label htmlFor="pre-monto" className={labelClass}>Monto (USD) *</label>
-              <input id="pre-monto" inputMode="decimal" value={monto} onChange={e => setMonto(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label htmlFor="pre-cuota" className={labelClass}>Cuota por semana (USD)</label>
-              <input id="pre-cuota" inputMode="decimal" value={cuota} onChange={e => setCuota(e.target.value)} className={inputClass} aria-describedby="pre-cuota-ayuda" />
-            </div>
-          </div>
-          <p id="pre-cuota-ayuda" className="text-xs text-text-muted">
-            Con cuota semanal, cada nómina propone descontarla sola (tú puedes cambiarla). Sin cuota, la descuentas a mano cuando quieras.
-          </p>
           <div>
-            <label htmlFor="pre-nota" className={labelClass}>Nota</label>
-            <textarea id="pre-nota" rows={2} maxLength={300} value={nota} onChange={e => setNota(e.target.value)} className={inputClass} />
+            <label htmlFor="pre-fecha" className={labelClass}>Fecha *</label>
+            <input id="pre-fecha" type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
           </div>
-          {puedePagar && (
-            <fieldset className="space-y-3 rounded-xl border border-border p-3">
-              <legend className="px-1 text-sm font-semibold text-text-primary">Pago desde el Wallet</legend>
-              <label className="flex items-center gap-2 text-sm text-text-primary">
-                <input type="checkbox" checked={conPago} onChange={e => setConPago(e.target.checked)} />
-                Registrar ahora el pago (sale dinero de una cuenta)
-              </label>
-              {conPago && (bancas === null ? <p role="status" className="text-sm text-text-muted">Cargando cuentas…</p> : (
-                <DesembolsoCampos
-                  montoUsd={leerNumero(monto)} bancas={bancas} estado={desembolso} onCambiar={setDesembolso} comisionDisponible={comision.disponible}
-                  estadoComision={comision.estado} onReintentarComision={comision.reintentar} comprobantes={comprobantes}
-                />
-              ))}
-              {!conPago && <p className="text-xs text-text-muted">El préstamo quedará sin pago: podrás registrarlo después con «Registrar pago».</p>}
-            </fieldset>
-          )}
-          {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : 'Registrar'}
-            </button>
+          <div>
+            <label htmlFor="pre-monto" className={labelClass}>Monto (USD) *</label>
+            <input id="pre-monto" inputMode="decimal" value={monto} onChange={e => setMonto(e.target.value)} className={inputClass} />
           </div>
-        </form>
-      </div>
-    </div>
+          <div>
+            <label htmlFor="pre-cuota" className={labelClass}>Cuota por semana (USD)</label>
+            <input id="pre-cuota" inputMode="decimal" value={cuota} onChange={e => setCuota(e.target.value)} className={inputClass} aria-describedby="pre-cuota-ayuda" />
+          </div>
+        </div>
+        <p id="pre-cuota-ayuda" className="text-xs text-text-muted">
+          Con cuota semanal, cada nómina propone descontarla sola (tú puedes cambiarla). Sin cuota, la descuentas a mano cuando quieras.
+        </p>
+        <div>
+          <label htmlFor="pre-nota" className={labelClass}>Nota</label>
+          <textarea id="pre-nota" rows={2} maxLength={300} value={nota} onChange={e => setNota(e.target.value)} className={inputClass} />
+        </div>
+        {puedePagar && (
+          <fieldset className="space-y-3 rounded-xl border border-border p-3">
+            <legend className="px-1 text-sm font-semibold text-text-primary">Pago desde el Wallet</legend>
+            <label className="flex items-center gap-2 text-sm text-text-primary">
+              <input type="checkbox" checked={conPago} onChange={e => setConPago(e.target.checked)} />
+              Registrar ahora el pago (sale dinero de una cuenta)
+            </label>
+            {conPago && (bancas === null ? <p role="status" className="text-sm text-text-muted">Cargando cuentas…</p> : (
+              <DesembolsoCampos
+                montoUsd={leerNumero(monto)} bancas={bancas} estado={desembolso} onCambiar={setDesembolso} comisionDisponible={comision.disponible}
+                estadoComision={comision.estado} onReintentarComision={comision.reintentar} comprobantes={comprobantes}
+              />
+            ))}
+            {!conPago && <p className="text-xs text-text-muted">El préstamo quedará sin pago: podrás registrarlo después con «Registrar pago».</p>}
+          </fieldset>
+        )}
+        {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : 'Registrar'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

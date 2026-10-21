@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { clienteOperacionCampos } from './cliente-operacion.js';
+import { montoUsdPositivoSchema } from './montos-pago.js';
 
 /** Nota de crédito (resta del saldo del proveedor) o débito (suma al saldo). */
 export const crearNotaAjusteSchema = z.object({
   tipo: z.enum(['credito', 'debito']),
-  monto: z.number().positive('El monto debe ser mayor a 0.'),
+  monto: montoUsdPositivoSchema,
   motivo: z.string().trim().min(1, 'El motivo es obligatorio.').max(300),
   /** Factura de compra a la que se asocia la nota — opcional: las notas
    *  también se usan como ajuste general de saldo sin factura de por medio. */
@@ -12,6 +14,7 @@ export const crearNotaAjusteSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).').optional().nullable(),
   /** Categoría del Wallet (raíz o subcategoría activa, de cualquier tipo) — opcional. Solo se guarda y se muestra en la nota. */
   categoriaId: z.string().uuid('Categoría inválida.').nullable().optional(),
+  ...clienteOperacionCampos,
 });
 
 /** Cambia solo la categoría de una nota ya creada (null = quitarla). No toca montos. */

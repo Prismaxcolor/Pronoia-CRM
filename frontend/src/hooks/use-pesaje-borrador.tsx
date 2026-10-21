@@ -2,6 +2,8 @@ import { useState, type Dispatch, type ReactNode, type SetStateAction } from 're
 import { filaVacia, filasDesdeBorrador, type MaterialFila, type FotoMaterial } from '../features/pesaje/material-fila';
 import { pesajeGlobalVacio, pesajesDesdeBorrador, type PesajeGlobalFila } from '../features/pesaje/pesaje-global-fila';
 import { lotesTrasladoDesdeBorrador, type LoteTrasladoFila } from '../features/pesaje/lote-traslado-fila';
+import { revocarFotos, revocarFotosDeFilas } from '../features/pesaje/fotos-preview';
+import { useRevocarFotosAlDesmontar } from '../features/pesaje/use-revocar-fotos';
 import { difiereEstado } from '../lib/borrador';
 import { fechaRestaurable } from '../lib/borrador-vigentes';
 import { useAuth } from './use-auth-context';
@@ -66,18 +68,34 @@ function PesajeBorradorEstado({ children }: { children: ReactNode }) {
   // Los lotes a trasladar dependen del tipo y del almacén de origen: si
   // cambian por acción del usuario, la selección anterior ya no es válida.
   // La restauración de un borrador usa los setters crudos y no los limpia.
+  const vaciarLoteFilas = () => {
+    revocarFotosDeFilas(loteFilas);
+    setLoteFilas([]);
+  };
   const setTipo: Dispatch<SetStateAction<TipoPesajeBorrador>> = valor => {
     const nuevo = typeof valor === 'function' ? valor(tipo) : valor;
-    if (nuevo !== tipo) setLoteFilas([]);
+    if (nuevo !== tipo) vaciarLoteFilas();
     setTipoRaw(nuevo);
   };
   const setAlmacenOrigenId: Dispatch<SetStateAction<string>> = valor => {
     const nuevo = typeof valor === 'function' ? valor(almacenOrigenId) : valor;
-    if (nuevo !== almacenOrigenId) setLoteFilas([]);
+    if (nuevo !== almacenOrigenId) vaciarLoteFilas();
     setAlmacenOrigenRaw(nuevo);
   };
 
+  // Las fotos nuevas tienen una vista previa (URL.createObjectURL) que hay que liberar cuando
+  // la foto deja el borrador. Como el borrador sobrevive a la pantalla de Pesaje, la liberación
+  // final va aquí (al cerrar sesión) y no al desmontar la pantalla.
+  const fotosDelBorrador = [
+    ...fotosDevolucion,
+    ...materiales.flatMap(f => f.fotos),
+    ...pesajesGlobales.flatMap(f => f.fotos),
+    ...loteFilas.flatMap(f => f.fotos),
+  ];
+  useRevocarFotosAlDesmontar(fotosDelBorrador);
+
   const aplicarInicial = () => {
+    revocarFotos(fotosDelBorrador);
     const inicial = borradorInicial();
     setTipoRaw(inicial.tipo);
     setEntidadId(inicial.entidadId);

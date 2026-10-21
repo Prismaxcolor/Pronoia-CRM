@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { mensajeAmigable } from '../lib/mensaje-error';
 import { leerGet } from './lectura-service';
 import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
 import type { EstadoFacturaDerivado } from '../lib/estado-factura';
@@ -83,6 +84,8 @@ export interface CrearFacturaInput {
   descripcion?: string | null;
   observaciones?: string | null;
   estado?: 'borrador' | 'emitida' | 'pagada';
+  /** Clave de idempotencia (uuid): con la misma clave el servidor devuelve el resultado original en vez de repetir la operación. */
+  clientRequestId?: string;
 }
 
 export interface FiltrosFacturas {
@@ -100,20 +103,28 @@ export async function obtenerFacturas(
   tipo: TipoFactura,
   filtros: FiltrosFacturas = {}
 ): Promise<FacturaCV[]> {
+  try {
+    return await obtenerFacturasOError(tipo, filtros);
+  } catch {
+    return [];
+  }
+}
+
+/** Igual que `obtenerFacturas`, pero lanza el error si la carga falla (no lo disfraza de "sin facturas"). */
+export async function obtenerFacturasOError(
+  tipo: TipoFactura,
+  filtros: FiltrosFacturas = {}
+): Promise<FacturaCV[]> {
   const params = new URLSearchParams();
   if (filtros.desde) params.set('desde', filtros.desde);
   if (filtros.hasta) params.set('hasta', filtros.hasta);
   if (filtros.entidadId) params.set('entidadId', filtros.entidadId);
   if (filtros.productoId) params.set('productoId', filtros.productoId);
   const qs = params.toString();
-  try {
-    const { facturas } = await leerGet<{ facturas: FacturaCV[] }>(`${base(tipo)}${qs ? `?${qs}` : ''}`, {
-      recortar: d => recortarCampo(d, 'facturas', f => ultimasFilas(f as FacturaCV[], LIMITES_CACHE.maxFacturas, x => x.createdAt)),
-    });
-    return facturas;
-  } catch {
-    return [];
-  }
+  const { facturas } = await leerGet<{ facturas: FacturaCV[] }>(`${base(tipo)}${qs ? `?${qs}` : ''}`, {
+    recortar: d => recortarCampo(d, 'facturas', f => ultimasFilas(f as FacturaCV[], LIMITES_CACHE.maxFacturas, x => x.createdAt)),
+  });
+  return facturas;
 }
 
 export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<FacturaCV | null> {
@@ -136,6 +147,6 @@ export async function crearFactura(
     });
     return { factura };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo crear la factura.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudo crear la factura.' }) };
   }
 }

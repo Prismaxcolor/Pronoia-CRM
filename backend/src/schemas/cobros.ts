@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { comprobanteUrlSchema } from './comprobantes.js';
 import { bancaPagoSchema, itemPagoMultipleSchema } from './pagos.js';
 import { validarPagoCombinado } from './pago-combinado.js';
+import { clienteOperacionCampos } from './cliente-operacion.js';
+import { montoUsdTotalSchema } from './montos-pago.js';
 
 /** Espejo de registrarPagoMultipleSchema (pagos.ts) para cobros a cliente —
  *  bancaPagoSchema/itemPagoMultipleSchema se reutilizan tal cual: no tienen
@@ -9,7 +11,7 @@ import { validarPagoCombinado } from './pago-combinado.js';
 export const registrarCobroMultipleSchema = z.object({
   clienteId: z.string().uuid('Selecciona un cliente.'),
   bancas: z.array(bancaPagoSchema).default([]),
-  montoUsd: z.number().min(0, 'El monto en USD no puede ser negativo.'),
+  montoUsd: montoUsdTotalSchema,
   descripcion: z
     .string()
     .trim()
@@ -29,6 +31,7 @@ export const registrarCobroMultipleSchema = z.object({
   comprobantes: z.array(comprobanteUrlSchema).default([]),
   /** Categoría del Wallet (venta de chatarra NF / PCB). El servicio la exige si hay categorías configuradas y el cobro mueve dinero. */
   categoriaId: z.string().uuid('Categoría inválida.').optional().nullable(),
+  ...clienteOperacionCampos,
 }).superRefine((data, ctx) => validarPagoCombinado(data, ctx, 'cobro'));
 
 export type RegistrarCobroMultipleInput = z.infer<typeof registrarCobroMultipleSchema>;

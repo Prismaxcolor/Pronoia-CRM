@@ -56,6 +56,7 @@ const camposTrabajador = {
   rif: textoConFormato(RE_DOCUMENTO, 'RIF inválido.', 20),
   telefono: textoConFormato(RE_TELEFONO, 'Teléfono inválido.', 30),
   direccion: textoOpcional(300),
+  puesto: textoOpcional(80),
   contactoEmergenciaNombre: textoOpcional(120),
   contactoEmergenciaTelefono: textoConFormato(RE_TELEFONO, 'Teléfono de emergencia inválido.', 30),
   pagoMovilBanco: textoOpcional(60),

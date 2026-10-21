@@ -25,7 +25,7 @@ const BOTON_ICONO = 'inline-flex h-9 w-9 items-center justify-center rounded-md 
 function MiniaturaTara({ t }: { t: Tara }) {
   return (
     <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-brand-100 text-brand-700">
-      {t.fotos[0] ? <img src={t.fotos[0]} alt={`Foto de ${t.nombre}`} className="h-full w-full object-cover" /> : <Weight size={18} aria-hidden="true" />}
+      {t.fotos[0] ? <img loading="lazy" decoding="async" src={t.fotos[0]} alt={`Foto de ${t.nombre}`} className="h-full w-full object-cover" /> : <Weight size={18} aria-hidden="true" />}
     </div>
   );
 }

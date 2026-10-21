@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { ENV } from './config/env.js';
 import healthRouter from './routes/health.js';
 import tasasRouter from './routes/tasas.js';
+import avisosRouter from './routes/avisos.js';
 import authRouter from './routes/auth.js';
 import usuariosRouter from './routes/usuarios.js';
 import productosRouter from './routes/productos.js';
@@ -88,7 +89,7 @@ app.use(
   [
     '/api/tickets-pesaje', '/api/traslados', '/api/tomas-fisicas', '/api/proveedores', '/api/clientes',
     '/api/productos', '/api/taras', '/api/almacenes', '/api/vehiculos', '/api/transformaciones', '/api/packing-lists',
-    '/api/cochinito',
+    '/api/cochinito', '/api/pagos', '/api/cobros', '/api/facturas-compra', '/api/facturas-venta',
   ],
   operacionesClienteLimiter,
 );
@@ -118,6 +119,7 @@ app.use('/api/mesa-cambio', mesaCambioRouter);
 app.use('/api/nomina', nominaRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/tasas', tasasRouter);
+app.use('/api/avisos', avisosRouter);
 app.use('/api/portal', portalRouter);
 app.use('/api/citas', citasRouter);
 app.use('/api/almacenes', almacenesRouter);

@@ -88,7 +88,7 @@ function ResultadoCategorias({ reporte, seleccion }: { reporte: ReporteCategoria
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-text-secondary">{seleccion} · del {formatearFecha(reporte.desde)} al {formatearFecha(reporte.hasta)}</p>
-        <AccionesReporte generar={modo => descargarReporteCategoriasPDF(reporte, seleccion, modo)} />
+        <AccionesReporte generar={modo => descargarReporteCategoriasPDF(reporte, seleccion, modo)} exportarExcel={() => import('./reporte-wallet-xlsx').then(m => m.descargarReporteCategoriasXlsx(reporte, seleccion))} />
       </div>
       {aviso && <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">{aviso}</p>}
       {monedas.length === 0 && <p className="rounded-xl border border-dashed border-border-strong bg-surface px-4 py-6 text-center text-sm text-text-muted">No hay ingresos ni egresos con estos filtros en el periodo.</p>}

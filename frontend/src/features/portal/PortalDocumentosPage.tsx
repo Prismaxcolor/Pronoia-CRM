@@ -99,7 +99,7 @@ function PortalDocumentosPage() {
               aria-label={`Abrir comprobante ${i + 1} en una pestaña nueva`}
               className="h-11 w-11 overflow-hidden rounded-lg border border-border-strong hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
             >
-              <img src={url} alt="" className="h-full w-full object-cover" />
+              <img loading="lazy" decoding="async" src={url} alt="" className="h-full w-full object-cover" />
             </a>
           ))}
         </span>

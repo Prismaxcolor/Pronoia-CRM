@@ -15,6 +15,7 @@ export interface TrabajadorInput {
   rif: string | null;
   telefono: string | null;
   direccion: string | null;
+  puesto: string | null;
   contactoEmergenciaNombre: string | null;
   contactoEmergenciaTelefono: string | null;
   pagoMovilBanco: string | null;

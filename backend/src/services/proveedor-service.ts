@@ -1,5 +1,6 @@
 import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
+import { escribirConReportes } from './grupo-silencio-service.js';
 import type { CrearProveedorInput, ActualizarProveedorInput } from '../schemas/proveedores.js';
 
 interface ProveedorRow {
@@ -13,6 +14,7 @@ interface ProveedorRow {
   fotos: string[] | null;
   telegram_chat_id: string | null;
   telegram_linked_at: string | null;
+  telegram_reportes_activos?: boolean | null;
 }
 
 export interface ProveedorPublico {
@@ -26,6 +28,8 @@ export interface ProveedorPublico {
   fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
+  /** false = el superadmin apagó los avisos de Telegram de los movimientos de este proveedor. */
+  telegramReportesActivos: boolean;
 }
 
 function toPublico(row: ProveedorRow): ProveedorPublico {
@@ -40,6 +44,7 @@ function toPublico(row: ProveedorRow): ProveedorPublico {
     fotos: row.fotos ?? [],
     telegramChatId: row.telegram_chat_id,
     telegramLinkedAt: row.telegram_linked_at,
+    telegramReportesActivos: row.telegram_reportes_activos !== false,
   };
 }
 
@@ -71,7 +76,7 @@ export async function crearProveedor(
 export async function actualizarProveedor(
   id: string,
   cambios: ActualizarProveedorInput
-): Promise<{ proveedor: ProveedorPublico } | { error: string }> {
+): Promise<{ proveedor: ProveedorPublico } | { error: string; pendiente?: boolean }> {
   const update: Record<string, unknown> = {};
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.rfc !== undefined) update.rfc = cambios.rfc;
@@ -79,14 +84,13 @@ export async function actualizarProveedor(
   if (cambios.email !== undefined) update.email = cambios.email;
   if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
+  if (cambios.telegramReportesActivos !== undefined) update.telegram_reportes_activos = cambios.telegramReportesActivos;
 
-  const { data, error } = await supabaseAdmin
-    .from('proveedores')
-    .update(update)
-    .eq('id', id)
-    .select('*')
-    .maybeSingle();
-
+  const r = await escribirConReportes(update, u =>
+    supabaseAdmin.from('proveedores').update(u).eq('id', id).select('*').maybeSingle()
+  );
+  if ('pendiente' in r) return { error: r.mensaje, pendiente: true };
+  const { data, error } = r;
   if (error) return { error: error.message };
   if (!data) return { error: 'Proveedor no encontrado.' };
   return { proveedor: toPublico(data as ProveedorRow) };

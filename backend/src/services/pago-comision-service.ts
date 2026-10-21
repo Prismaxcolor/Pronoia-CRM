@@ -5,6 +5,7 @@ import { esColumnaInexistente } from '../utils/migracion-pendiente.js';
 import { registrarAuditoria } from './auditoria-service.js';
 import { comisionBancariaDisponible, MENSAJE_COMISION_PENDIENTE } from './movimiento-comision-service.js';
 import { aplicarCategoriaAComisiones } from './comision-categoria-service.js';
+import { MENSAJE_COMISION_NO_CARGADA } from '../utils/mensajes-pago-pasos.js';
 
 /**
  * Comisión bancaria (0.3%, mínimo 14 Bs) de los PAGOS A PROVEEDOR desde una cuenta en Bs. Reutiliza la regla y la
@@ -18,8 +19,6 @@ export const MENSAJE_PAGO_ELEGIR_COMISION =
   'Indica si el pago desde una cuenta en bolívares (Bs) lleva comisión bancaria del 0.3%.';
 export const MENSAJE_PAGO_COMISION_SOLO_BS = 'La comisión bancaria solo aplica cuando la cuenta de origen está en bolívares (Bs).';
 export const MENSAJE_PAGO_COMISION_PENDIENTE = `${MENSAJE_COMISION_PENDIENTE} Para pagos también falta aplicar migration_pago_comision_bancaria.sql.`;
-const MENSAJE_COMISION_NO_CARGADA =
-  'El pago se registró, pero no se pudo cargar la comisión bancaria de una o más cuentas. Regístrala como egreso en Wallet.';
 const MENSAJE_SIN_LECTURA = 'El pago se registró, pero no se pudo leer para cargar la comisión bancaria. Regístrala como egreso en Wallet.';
 
 /** Lo que el servicio necesita saber de cada cuenta de origen del pago. */
@@ -39,7 +38,13 @@ export interface ComisionPagoCreada {
 export interface ResultadoComisionesPago {
   comisiones: ComisionPagoCreada[];
   advertencia?: string;
+  /** Cuentas (en Bs, con Sí) cuyo cargo no se pudo crear: el llamador las anota para reintentarlas. */
+  bancasFallidas?: string[];
 }
+
+export type ResultadoCargaComision = { ok: true; comision?: ComisionPagoCreada } | { ok: false; error: string };
+
+const FRAGMENTO_YA_TIENE_COMISION = 'ya tiene comisión';
 
 interface FilaMovimiento {
   id: string;
@@ -103,18 +108,42 @@ async function leerFilas(movimientoIds: readonly string[]): Promise<FilaMovimien
   return (data as FilaMovimiento[] | null) ?? [];
 }
 
-async function cargarComision(movimientoId: string, usuarioId: string): Promise<{ id: string; monto: number } | null> {
+async function cargarComision(movimientoId: string, usuarioId: string): Promise<{ id: string; monto: number } | { error: string }> {
   const { data, error } = await supabaseAdmin.rpc('agregar_comision_bancaria_a_pago', { p_movimiento_id: movimientoId, p_usuario: usuarioId });
   if (error) {
     logger.error({ evento: 'pago_comision_rpc_fallida', movimientoId, code: error.code, mensaje: error.message });
-    return null;
+    return { error: error.message };
   }
   const r = (data ?? {}) as Record<string, unknown>;
   return { id: String(r.comisionId ?? ''), monto: Number(r.comision ?? 0) };
 }
 
+/** Carga el cargo de UNA cuenta sobre las filas ya leídas. Un reintento sobre un pago que ya tiene su comisión cuenta como resuelto. */
+async function cargarComisionDeBancaConFilas(
+  filas: readonly FilaMovimiento[], bancaId: string, usuarioId: string
+): Promise<ResultadoCargaComision> {
+  const principal = filaPrincipalDeBanca(filas, bancaId);
+  if (!principal) return { ok: false, error: 'No se encontró el movimiento de la cuenta.' };
+  const creada = await cargarComision(principal.id, usuarioId);
+  if ('error' in creada) {
+    return creada.error.includes(FRAGMENTO_YA_TIENE_COMISION) ? { ok: true } : { ok: false, error: creada.error };
+  }
+  return { ok: true, comision: { bancaId, movimientoId: creada.id, monto: creada.monto } };
+}
+
+/** Reintento del cargo de una cuenta (lee los movimientos del pago). Lo usa el servicio de pasos pendientes. */
+export async function reintentarComisionDeBanca(
+  movimientoIds: readonly string[], bancaId: string, usuarioId: string
+): Promise<ResultadoCargaComision> {
+  const filas = await leerFilas(movimientoIds);
+  if (!filas) return { ok: false, error: MENSAJE_SIN_LECTURA };
+  const resultado = await cargarComisionDeBancaConFilas(filas, bancaId, usuarioId);
+  if (resultado.ok && resultado.comision) await aplicarCategoriaAComisiones([resultado.comision.movimientoId].filter(Boolean));
+  return resultado;
+}
+
 /** Omitir la comisión de un pago desde Bs es una decisión de la persona y queda auditada (sin importes ni textos libres). */
-async function auditarOmisiones(lineas: readonly LineaComisionPago[], grupoId: string | null, usuarioId: string): Promise<void> {
+export async function auditarOmisiones(lineas: readonly LineaComisionPago[], grupoId: string | null, usuarioId: string): Promise<void> {
   if (!grupoId || !lineas.some(l => l.moneda === 'VES' && l.llevaComision === false)) return;
   const auditada = await registrarAuditoria({
     entidadTipo: 'pago',
@@ -144,20 +173,19 @@ export async function aplicarComisionesDePago(entrada: EntradaComisionesPago): P
   if (conComision.length === 0) return { comisiones: [] };
 
   const filas = await leerFilas(entrada.movimientoIds);
-  if (!filas) return { comisiones: [], advertencia: MENSAJE_SIN_LECTURA };
+  if (!filas) return { comisiones: [], advertencia: MENSAJE_SIN_LECTURA, bancasFallidas: conComision.map(l => l.bancaId) };
 
   const comisiones: ComisionPagoCreada[] = [];
-  let fallos = 0;
+  const bancasFallidas: string[] = [];
   for (const linea of conComision) {
-    const principal = filaPrincipalDeBanca(filas, linea.bancaId);
-    const creada = principal ? await cargarComision(principal.id, entrada.usuarioId) : null;
-    if (creada) comisiones.push({ bancaId: linea.bancaId, movimientoId: creada.id, monto: creada.monto });
-    else fallos += 1;
+    const r = await cargarComisionDeBancaConFilas(filas, linea.bancaId, entrada.usuarioId);
+    if (!r.ok) bancasFallidas.push(linea.bancaId);
+    else if (r.comision) comisiones.push(r.comision);
   }
 
   const categoria = await aplicarCategoriaAComisiones(comisiones.map(c => c.movimientoId).filter(Boolean));
-  const advertencia = fallos > 0 ? MENSAJE_COMISION_NO_CARGADA : categoria.advertencia;
-  return { comisiones, ...(advertencia ? { advertencia } : {}) };
+  const advertencia = bancasFallidas.length > 0 ? MENSAJE_COMISION_NO_CARGADA : categoria.advertencia;
+  return { comisiones, ...(advertencia ? { advertencia } : {}), ...(bancasFallidas.length > 0 ? { bancasFallidas } : {}) };
 }
 
 /** ¿El grupo de pago tiene cargos de comisión? Sin la migración (columna inexistente) cuenta como que no. */

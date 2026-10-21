@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
+import Modal from '../../components/Modal';
 import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X } from 'lucide-react';
 import { crearAlmacen, actualizarAlmacen } from '../../services/almacen-service';
@@ -21,6 +23,7 @@ function AlmacenFormModal({ almacen, onClose, onGuardado }: Props) {
   const [nombre, setNombre] = useState(almacen?.nombre ?? '');
   const [detalle, setDetalle] = useState(almacen?.detalle ?? '');
   const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(almacen?.fotos ?? []));
+  useLiberarVistasPrevias(fotos);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,41 +57,39 @@ function AlmacenFormModal({ almacen, onClose, onGuardado }: Props) {
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">{editando ? 'Editar almacén' : 'Nuevo almacén'}</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
-          </button>
+    <Modal onClose={onClose} bloqueado={guardando} ancho="max-w-md">
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 className="text-lg font-bold text-text-primary">{editando ? 'Editar almacén' : 'Nuevo almacén'}</h2>
+        <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <X size={20} />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <div>
+          <label className={labelClass}>Nombre</label>
+          <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} className={inputClass} placeholder="Ej. Almacén G1" />
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className={labelClass}>Nombre</label>
-            <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} className={inputClass} placeholder="Ej. Almacén G1" />
-          </div>
+        <div>
+          <label className={labelClass}>Dirección / detalle</label>
+          <textarea value={detalle} onChange={e => setDetalle(e.target.value)} className={`${inputClass} resize-none`} rows={3} placeholder="Ej. Zona industrial, galpón 4" />
+        </div>
 
-          <div>
-            <label className={labelClass}>Dirección / detalle</label>
-            <textarea value={detalle} onChange={e => setDetalle(e.target.value)} className={`${inputClass} resize-none`} rows={3} placeholder="Ej. Zona industrial, galpón 4" />
-          </div>
+        <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
 
-          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
+        {error && <p className="text-red-500 text-sm">{error}</p>}
 
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear almacén'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear almacén'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

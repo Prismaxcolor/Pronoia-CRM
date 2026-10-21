@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, KeyRound, Loader2, XCircle, X } from 'lucide-react';
+import Modal from './Modal';
 import type { EntidadConLlave } from '../services/auditoria-service';
 import {
   crearSolicitudLlave,
@@ -118,14 +119,13 @@ function SolicitarLlave({ entidadTipo, entidadId, onLlave, className = '' }: Pro
       )}
 
       {abierto && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={cerrar}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="titulo-solicitar-llave"
-            className="w-full sm:max-w-md bg-surface rounded-t-2xl sm:rounded-2xl p-5 shadow-xl max-h-[90dvh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
+        <Modal
+          onClose={cerrar}
+          cerrarAlClicFondo
+          tituloId="titulo-solicitar-llave"
+          overlayClassName="z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
+          panelClassName="w-full sm:max-w-md bg-surface rounded-t-2xl sm:rounded-2xl p-5 shadow-xl max-h-[90dvh] overflow-y-auto"
+        >
             <div className="flex items-start justify-between gap-3 mb-3">
               <h2 id="titulo-solicitar-llave" className="text-lg font-semibold text-text-primary">Solicitar llave de edición</h2>
               <button type="button" onClick={cerrar} className="p-2 -m-2 text-text-muted hover:text-text-primary" aria-label="Cerrar">
@@ -144,8 +144,7 @@ function SolicitarLlave({ entidadTipo, entidadId, onLlave, className = '' }: Pro
               onCerrar={cerrar}
               codigo={codigo}
             />
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

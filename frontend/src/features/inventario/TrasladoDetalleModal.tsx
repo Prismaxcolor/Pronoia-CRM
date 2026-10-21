@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Modal from '../../components/Modal';
 import { ArrowRight, X } from 'lucide-react';
 import { InsigniaEstado, formatearKgDecimales } from '../../components/ui';
 import VisorFotos from '../../components/VisorFotos';
@@ -21,16 +22,13 @@ function TrasladoDetalleModal({ traslado: t, onClose }: Props) {
 
   useEffect(() => {
     botonCerrar.current?.focus();
-    const alTecla = (e: KeyboardEvent) => { if (e.key === 'Escape' && !visor) onClose(); };
-    window.addEventListener('keydown', alTecla);
-    return () => window.removeEventListener('keydown', alTecla);
-  }, [onClose, visor]);
+  }, []);
 
   const fotosPorMaterial = t.materiales.flatMap(m => m.fotos);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-labelledby="traslado-detalle-titulo" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-surface shadow-xl">
+    <>
+    <Modal onClose={onClose} cerrarAlClicFondo tituloId="traslado-detalle-titulo" ancho="max-w-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-border p-5">
           <div>
             <h2 id="traslado-detalle-titulo" className="flex flex-wrap items-center gap-2 text-lg font-bold text-text-primary">
@@ -111,12 +109,12 @@ function TrasladoDetalleModal({ traslado: t, onClose }: Props) {
           <GaleriaFotos titulo="Fotos del envío (por pesada)" fotos={fotosPorMaterial} onAbrir={(fotos, indice) => setVisor({ fotos, indice })} />
           <GaleriaFotos titulo="Evidencia de la recepción" fotos={t.fotos} onAbrir={(fotos, indice) => setVisor({ fotos, indice })} vacio={t.estado === 'pendiente' ? 'Se agrega al recepcionar.' : 'No hay fotos de la recepción.'} />
         </div>
-      </div>
+    </Modal>
 
       {visor && (
         <VisorFotos fotos={visor.fotos} indice={visor.indice} onCambiar={indice => setVisor(v => (v ? { ...v, indice } : v))} onCerrar={() => setVisor(null)} alt={`Foto de ${t.codigo}`} />
       )}
-    </div>
+    </>
   );
 }
 
@@ -132,7 +130,7 @@ function GaleriaFotos({ titulo, fotos, onAbrir, vacio }: { titulo: string; fotos
           {fotos.map((f, i) => (
             <li key={`${f}-${i}`}>
               <button type="button" onClick={() => onAbrir(fotos, i)} aria-label={`Ampliar foto ${i + 1} de ${fotos.length}`} className="block h-20 w-20 overflow-hidden rounded-lg border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-                <img src={f} alt="" loading="lazy" className="h-full w-full object-cover" />
+                <img src={f} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
               </button>
             </li>
           ))}

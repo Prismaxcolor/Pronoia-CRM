@@ -20,6 +20,7 @@ export function mapTrabajador(row: Fila): Trabajador {
     rif: texto(row.rif),
     telefono: texto(row.telefono),
     direccion: texto(row.direccion),
+    puesto: texto(row.puesto),
     contactoEmergenciaNombre: texto(row.contacto_emergencia_nombre),
     contactoEmergenciaTelefono: texto(row.contacto_emergencia_telefono),
     pagoMovilBanco: texto(row.pago_movil_banco),
@@ -34,11 +35,11 @@ export function mapTrabajador(row: Fila): Trabajador {
 }
 
 /** La ficha completa (lo que lee mapTrabajador), con columnas explícitas: una columna nueva no se expone sin querer. */
-const COLUMNAS_FICHA = 'id, tipo, nombres, apellidos, cedula, rif, telefono, direccion, contacto_emergencia_nombre, contacto_emergencia_telefono, pago_movil_banco, pago_movil_telefono, pago_movil_cedula, binance_correo_id, pago_diario_usd, pago_diario_bs, activo, created_at';
+const COLUMNAS_FICHA = 'id, tipo, nombres, apellidos, cedula, rif, telefono, direccion, puesto, contacto_emergencia_nombre, contacto_emergencia_telefono, pago_movil_banco, pago_movil_telefono, pago_movil_cedula, binance_correo_id, pago_diario_usd, pago_diario_bs, activo, created_at';
 
 const COLUMNAS: Record<string, string> = {
   tipo: 'tipo', nombres: 'nombres', apellidos: 'apellidos', cedula: 'cedula', rif: 'rif', telefono: 'telefono',
-  direccion: 'direccion', contactoEmergenciaNombre: 'contacto_emergencia_nombre',
+  direccion: 'direccion', puesto: 'puesto', contactoEmergenciaNombre: 'contacto_emergencia_nombre',
   contactoEmergenciaTelefono: 'contacto_emergencia_telefono', pagoMovilBanco: 'pago_movil_banco',
   pagoMovilTelefono: 'pago_movil_telefono', pagoMovilCedula: 'pago_movil_cedula', binanceCorreoId: 'binance_correo_id',
   pagoDiarioUsd: 'pago_diario_usd', pagoDiarioBs: 'pago_diario_bs', activo: 'activo',

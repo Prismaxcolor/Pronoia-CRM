@@ -19,6 +19,7 @@ interface ClienteApi {
   fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
+  telegramReportesActivos?: boolean;
   tipoVenta?: TipoVentaCliente | null;
 }
 
@@ -72,7 +73,7 @@ export async function crearCliente(
 
 export async function actualizarCliente(
   id: string,
-  cambios: Partial<ClienteInput> & { activo?: boolean }
+  cambios: Partial<ClienteInput> & { activo?: boolean; telegramReportesActivos?: boolean }
 ): Promise<{ cliente: Cliente } | { error: string }> {
   try {
     const { cliente } = await apiFetch<{ cliente: ClienteApi }>(`/api/clientes/${id}`, {

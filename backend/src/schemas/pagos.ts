@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { comprobanteUrlSchema } from './comprobantes.js';
 import { validarPagoCombinado } from './pago-combinado.js';
+import { clienteOperacionCampos } from './cliente-operacion.js';
+import { montoCuentaSchema, montoUsdPositivoSchema, montoUsdTotalSchema } from './montos-pago.js';
+
+/** Tasa pactada (Bs por USD) opcional: si viene, el servicio cruza monto/montoUsd contra ella y no contra las vigentes. */
+export const tasaExplicitaSchema = z.number().positive('La tasa debe ser mayor a 0.').max(1_000_000).optional().nullable();
 
 const textoOpcional = (max: number) =>
   z
@@ -16,9 +21,10 @@ const textoOpcional = (max: number) =>
 export const registrarPagoSchema = z.object({
   proveedorId: z.string().uuid('Selecciona un proveedor.'),
   bancaId: z.string().uuid('Selecciona una banca.'),
-  monto: z.number().positive('El monto debe ser mayor a 0.'),
+  monto: montoCuentaSchema,
   moneda: z.enum(['USD', 'VES']),
-  montoUsd: z.number().positive('El monto en USD debe ser mayor a 0.'),
+  montoUsd: montoUsdPositivoSchema,
+  tasa: tasaExplicitaSchema,
   descripcion: textoOpcional(200),
   referencia: textoOpcional(50),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
@@ -28,6 +34,7 @@ export const registrarPagoSchema = z.object({
   comprobantes: z.array(comprobanteUrlSchema).default([]),
   /** Comisión bancaria (0.3%, mínimo 14 Bs) de un pago desde una cuenta en Bs: obligatoria si la migración está aplicada. */
   llevaComision: z.boolean().optional(),
+  ...clienteOperacionCampos,
 });
 
 export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
@@ -40,16 +47,17 @@ export type RegistrarPagoInput = z.infer<typeof registrarPagoSchema>;
 export const itemPagoMultipleSchema = z.object({
   tipo: z.enum(['factura', 'nota_debito', 'nota_credito', 'adelanto']),
   id: z.string().uuid('Ítem inválido.'),
-  montoUsd: z.number().positive('El monto de cada ítem debe ser mayor a 0.'),
+  montoUsd: montoUsdPositivoSchema,
 });
 
 /** Una banca de origen del pago combinado, con el monto (en su propia
  *  moneda y en USD) que aporta de este pago. */
 export const bancaPagoSchema = z.object({
   bancaId: z.string().uuid('Selecciona una banca.'),
-  monto: z.number().positive('El monto debe ser mayor a 0.'),
+  monto: montoCuentaSchema,
   moneda: z.enum(['USD', 'VES']),
-  montoUsd: z.number().positive('El monto en USD debe ser mayor a 0.'),
+  montoUsd: montoUsdPositivoSchema,
+  tasa: tasaExplicitaSchema,
   /** Referencia propia de esta banca (ej. número de transferencia). */
   referencia: textoOpcional(50),
 });
@@ -69,12 +77,13 @@ export const bancaPagoProveedorSchema = bancaPagoSchema.extend({
 export const registrarPagoMultipleSchema = z.object({
   proveedorId: z.string().uuid('Selecciona un proveedor.'),
   bancas: z.array(bancaPagoProveedorSchema).default([]),
-  montoUsd: z.number().min(0, 'El monto en USD no puede ser negativo.'),
+  montoUsd: montoUsdTotalSchema,
   descripcion: textoOpcional(300),
   referencia: textoOpcional(50),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   items: z.array(itemPagoMultipleSchema).default([]),
   comprobantes: z.array(comprobanteUrlSchema).default([]),
+  ...clienteOperacionCampos,
 }).superRefine((data, ctx) => validarPagoCombinado(data, ctx, 'pago'));
 
 export type BancaPagoInput = z.infer<typeof bancaPagoSchema>;

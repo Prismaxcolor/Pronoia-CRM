@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
-import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
+import { enviarN8n } from './n8n-cliente.js';
 import { logger } from '../utils/logger.js';
 import { generarToken, type EntidadTelegram } from './telegram-link-service.js';
 
@@ -103,15 +103,14 @@ export async function solicitarLogin(identificador: string): Promise<void> {
 
     const deepLink = `${ENV.PORTAL_URL}/portal/verificar?token=${token}`;
 
-    const respuesta = await fetch(ENV.N8N_WEBHOOK_PORTAL_LOGIN, {
-      method: 'POST',
-      headers: await cabecerasWebhookN8n(),
-      body: JSON.stringify({ chatId: entidad.chatId, deepLink }),
-      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-    });
-
-    if (!respuesta.ok) {
-      logger.error({ evento: 'portal_login_error_webhook_status', status: respuesta.status });
+    // Sin cola: el cuerpo lleva el link con el token de acceso (un secreto) y el link caduca.
+    const envio = await enviarN8n(
+      ENV.N8N_WEBHOOK_PORTAL_LOGIN,
+      { chatId: entidad.chatId, deepLink },
+      { timeoutMs: WEBHOOK_TIMEOUT_MS }
+    );
+    if (!envio.ok) {
+      logger.error({ evento: 'portal_login_error_webhook_status', status: envio.status, intentos: envio.intentos, mensaje: envio.error });
     }
   } catch (err) {
     logger.error({

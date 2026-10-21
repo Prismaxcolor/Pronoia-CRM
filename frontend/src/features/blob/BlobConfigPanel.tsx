@@ -72,9 +72,9 @@ export function BlobConfigPanel({ config, semilla, onCambiar }: Props) {
 
       <label className="flex items-center justify-between gap-3">
         <span className="text-sm text-text-primary">
-          Permitir que BLOB consulte datos
+          Permitir que Nous consulte datos
           <span className="block text-xs text-text-muted">
-            Es una preferencia personal de esta sesión del navegador. Mientras esté activada, tus preguntas y los resultados de tus consultas se procesan con OpenAI. BLOB solo consulta lo que tus permisos permiten.
+            Es una preferencia personal de esta sesión del navegador. Mientras esté activada, tus preguntas y los resultados de tus consultas se procesan con OpenAI. Nous solo consulta lo que tus permisos permiten.
           </span>
         </span>
         <Switch checked={config.consultarDatos} onChange={consultarDatos => onCambiar({ consultarDatos })} disabled={!config.iaActiva} />
@@ -110,7 +110,7 @@ export function BlobConfigPanel({ config, semilla, onCambiar }: Props) {
           className="rounded-md bg-surface-hover px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-border"
           onClick={() => onCambiar({ modo: 'minimizado' })}
         >
-          Minimizar a BLOB
+          Minimizar a Nous
         </button>
       </div>
     </div>

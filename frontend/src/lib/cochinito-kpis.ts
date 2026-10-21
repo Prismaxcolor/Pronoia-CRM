@@ -4,6 +4,7 @@
 import type { Banca, Movimiento } from '@shared/types/index.js';
 import { formatearFechaCorta } from './formato';
 import { colorDeBanca } from './color-banca';
+import { correlativoCoincide } from './correlativo-busqueda';
 
 export const TIPOS_MOVIMIENTO = ['ingreso', 'egreso', 'transferencia'] as const;
 export const SUBTIPOS_EGRESO = ['pago', 'adelanto'] as const;
@@ -69,7 +70,8 @@ export function filtrarMovimientos(
     if (f.hasta && dia > f.hasta) return false;
     if (q) {
       const texto = normalizar([m.descripcion, m.referencia, correlativoMovimiento(m), correlativoWallet(m), nombreContraparte?.(m) ?? ''].join(' '));
-      if (!texto.includes(q)) return false;
+      const porCorrelativo = [correlativoMovimiento(m), correlativoWallet(m)].some(c => correlativoCoincide(c, q));
+      if (!texto.includes(q) && !porCorrelativo) return false;
     }
     return true;
   });

@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { ejecutarOperacionFinanciera } from '../services/operacion-financiera.js';
+import { TIPO_OPERACION, cuerpoConRepetida } from '../services/operaciones-idempotentes-cola.js';
 import { registrarCobroMultiple } from '../services/cobro-service.js';
 import { opcionesCategoriaCobro } from '../services/pago-categoria-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
@@ -34,7 +36,11 @@ router.post(
   validateBody(registrarCobroMultipleSchema),
   exigirAccesoBancas(),
   async (req, res) => {
-    const result = await registrarCobroMultiple(req.body, req.user!.sub);
+    // Con clientRequestId un doble clic o reintento no registra el cobro dos veces (responde 200 con `repetida`).
+    const envio = await ejecutarOperacionFinanciera(res, TIPO_OPERACION.cobroClienteMultiple, req.body, req.user!.sub,
+      () => registrarCobroMultiple(req.body, req.user!.sub));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -49,8 +55,9 @@ router.post(
       numeroCobro: result.numeroCobro,
       numeroAnticipo: result.numeroAnticipo,
       numeroCruce: result.numeroCruce,
+      repetida,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 

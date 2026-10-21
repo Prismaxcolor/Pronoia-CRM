@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
+import Modal from './Modal';
 import { X, User, Search, Check, Maximize2 } from 'lucide-react';
 import VisorFotos from './VisorFotos';
-import { useCerrarConEscape } from '../hooks/use-cerrar-con-escape';
 
 interface EntidadConFoto {
   id: string;
@@ -40,7 +40,6 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
   const [busqueda, setBusqueda] = useState('');
   const [visor, setVisor] = useState<{ fotos: string[]; indice: number; nombre: string } | null>(null);
   // Escape cierra primero el visor de fotos (que atiende su propia tecla) y luego este selector, sin tocar el modal padre.
-  useCerrarConEscape(onClose, visor !== null, true);
   const claseImagen = tamanoTarjeta === 'compacto' ? 'aspect-[4/3] max-h-28' : 'aspect-square';
   const columnas = tamanoTarjeta === 'compacto' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3';
 
@@ -64,7 +63,7 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
         <button type="button" onClick={() => onSeleccionar(e.id)} className="block w-full text-left">
           <div className={`w-full ${claseImagen} bg-brand-100 flex items-center justify-center text-brand-700`}>
             {e.fotos?.[0] ? (
-              <img src={e.fotos[0]} alt={e.nombre} loading="lazy" className="w-full h-full object-cover" />
+              <img src={e.fotos[0]} alt={e.nombre} loading="lazy" decoding="async" className="w-full h-full object-cover" />
             ) : (
               renderSinFoto ? renderSinFoto(e) : <User size={28} />
             )}
@@ -94,8 +93,8 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+    <>
+      <Modal onClose={onClose} bloqueado={visor !== null} panelClassName="bg-surface rounded-2xl shadow-xl w-full max-w-2xl max-h-[85dvh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
           <h2 className="text-lg font-semibold text-text-primary">{titulo}</h2>
           <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary">
@@ -135,7 +134,7 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
             </>
           )}
         </div>
-      </div>
+      </Modal>
       {visor && (
         <VisorFotos
           fotos={visor.fotos}
@@ -145,7 +144,7 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
           pie={visor.nombre}
         />
       )}
-    </div>
+    </>
   );
 }
 

@@ -22,7 +22,7 @@ function FilaDocumento({ label, valor, onClick }: Props) {
           {valor}
         </button>
       ) : (
-        <span className="text-text-primary text-sm font-medium text-right">{valor}</span>
+        <span className="text-text-primary text-sm font-medium text-right whitespace-pre-line">{valor}</span>
       )}
     </div>
   );

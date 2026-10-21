@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import Modal from '../../components/Modal';
 import { Loader2, X } from 'lucide-react';
 import { editarTransformacion, type EditarSalidaInput, type EditarTransformacionInput } from '../../services/transformacion-service';
 import { calcularMermaEdicion, netoDe, validarPesosEdicion } from '../../lib/edicion-pesos-transformacion';
@@ -148,8 +149,8 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
-      <form onSubmit={guardar} className="bg-surface rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-5 space-y-4">
+    <Modal onClose={cerrar} bloqueado={guardando} overlayClassName="bg-black/50 flex items-center justify-center z-50 p-4 print:hidden" ancho="max-w-2xl" altura="max-h-[92dvh]">
+      <form onSubmit={guardar} className="p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">Editar transformación {t.codigo ?? ''}</h2>
           <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary" title="Cerrar"><X size={18} /></button>
@@ -242,7 +243,7 @@ function EditarTransformacionModal({ transformacion: t, requiereLlave, onClose, 
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }
 

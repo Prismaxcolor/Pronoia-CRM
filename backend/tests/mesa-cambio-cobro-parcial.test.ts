@@ -56,7 +56,14 @@ describe('planificarCobroMesa (espejo de cobrar_transferencia_mesa_cambio)', () 
 
 describe('completarTransferenciaMesaSchema', () => {
   it('el cuerpo vacío sigue siendo válido (cobro total, sin foto)', () => {
-    expect(completarTransferenciaMesaSchema.parse({})).toEqual({ montoCobrado: null, pendienteEsperado: null, comprobantes: [] });
+    expect(completarTransferenciaMesaSchema.parse({})).toEqual({ montoCobrado: null, pendienteEsperado: null, comprobantes: [], observacion: null });
+  });
+
+  it('la observación se recorta, es opcional y admite hasta 300 caracteres', () => {
+    expect(completarTransferenciaMesaSchema.parse({ observacion: '  Entregó en efectivo  ' }).observacion).toBe('Entregó en efectivo');
+    expect(completarTransferenciaMesaSchema.parse({ observacion: '   ' }).observacion).toBeNull();
+    expect(completarTransferenciaMesaSchema.safeParse({ observacion: 'a'.repeat(300) }).success).toBe(true);
+    expect(completarTransferenciaMesaSchema.safeParse({ observacion: 'a'.repeat(301) }).success).toBe(false);
   });
 
   it('acepta cobro parcial con foto y el pendiente que vio el usuario', () => {

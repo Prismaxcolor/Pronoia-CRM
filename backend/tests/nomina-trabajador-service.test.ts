@@ -26,7 +26,7 @@ vi.mock('../src/config/supabase.js', () => ({
 import { aColumnas, actualizarTrabajador, crearTrabajador, desactivarTrabajador, listarTrabajadores } from '../src/services/nomina-trabajador-service';
 
 const fila: Fila = {
-  id: 't1', tipo: 'OPERATIVO', nombres: 'Ana', apellidos: 'Pérez', cedula: 'V-1', rif: null, telefono: '', direccion: null,
+  id: 't1', tipo: 'OPERATIVO', nombres: 'Ana', apellidos: 'Pérez', cedula: 'V-1', rif: null, telefono: '', direccion: null, puesto: 'Operador',
   contacto_emergencia_nombre: 'Luis', contacto_emergencia_telefono: null, pago_movil_banco: 'Banesco', pago_movil_telefono: '0414',
   pago_movil_cedula: 'V-1', binance_correo_id: null, pago_diario_usd: '15.50', activo: true, created_at: '2026-10-01T00:00:00Z',
 };

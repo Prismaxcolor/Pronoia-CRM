@@ -326,7 +326,7 @@ function FacturaDetallePage({ tipo }: Props) {
                     <div className="flex flex-wrap gap-2 mt-4">
                       {ticket.fotos.map((url, i) => (
                         <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-border">
-                          <img src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
+                          <img decoding="async" src={url} alt={`Evidencia ${i + 1}`} className="w-full h-full object-cover" />
                         </a>
                       ))}
                     </div>

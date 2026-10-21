@@ -211,6 +211,29 @@ describe('completarTransferenciaMesa', () => {
     expect(r).toMatchObject({ completada: true, advertencia: expect.stringContaining('foto') });
   });
 
+  it('la observacion se agrega a las anteriores, una linea por cobro', async () => {
+    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: false, completada: true, montoAcreditado: 980, montoCobrado: 980, montoPendiente: 0 }, error: null };
+    bd.movimiento = filaMovimiento({ mesa_observacion: 'Primer abono en efectivo' });
+    await completarTransferenciaMesa('m-1', U, { montoCobrado: null, pendienteEsperado: null, comprobantes: [], observacion: 'Resto por Zelle' });
+    expect(bd.updates).toEqual([{ tabla: 'movimientos', valores: { mesa_observacion: 'Primer abono en efectivo\nResto por Zelle' } }]);
+  });
+
+  it('la primera observacion se guarda sola y sin ella no se toca la columna', async () => {
+    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: false, completada: true, montoAcreditado: 980, montoCobrado: 980, montoPendiente: 0 }, error: null };
+    await completarTransferenciaMesa('m-1', U, { montoCobrado: null, pendienteEsperado: null, comprobantes: [], observacion: 'Entregó el cambista' });
+    expect(bd.updates).toEqual([{ tabla: 'movimientos', valores: { mesa_observacion: 'Entregó el cambista' } }]);
+    bd.updates = [];
+    await completarTransferenciaMesa('m-1', U, { montoCobrado: null, pendienteEsperado: null, comprobantes: [], observacion: null });
+    expect(bd.updates).toHaveLength(0);
+  });
+
+  it('si la observacion no se puede guardar el cobro ya quedó hecho y se avisa', async () => {
+    bd.rpcResp = { data: { movimientoId: 'm-1', yaCompletada: false, completada: true, montoAcreditado: 980, montoCobrado: 980, montoPendiente: 0 }, error: null };
+    bd.updateError = { message: 'column "mesa_observacion" does not exist' };
+    const r = await completarTransferenciaMesa('m-1', U, { montoCobrado: null, pendienteEsperado: null, comprobantes: [], observacion: 'Nota' });
+    expect(r).toMatchObject({ completada: true, advertencia: expect.stringContaining('observación') });
+  });
+
   it('si el pendiente cambio (doble clic u otro cobro) la RPC lo rechaza con 409 y no se adjunta nada', async () => {
     bd.rpcResp = { data: null, error: { code: 'P0001', message: 'El pendiente cambió: ahora faltan 580.00. Revisa y vuelve a intentar.' } };
     const r = await completarTransferenciaMesa('m-1', U, { montoCobrado: 400, pendienteEsperado: 980, comprobantes: ['https://x.supabase.co/storage/v1/object/public/comprobantes/n.png'] });

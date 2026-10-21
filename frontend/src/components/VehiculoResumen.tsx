@@ -31,7 +31,7 @@ function VehiculoResumen({ vehiculo }: Props) {
           className="group relative w-14 h-14 rounded-lg overflow-hidden border border-border shrink-0"
           title="Ver fotos del vehículo"
         >
-          <img src={portada} alt={`Foto de ${vehiculo.placa ?? vehiculo.nombre}`} className="w-full h-full object-cover" />
+          <img loading="lazy" decoding="async" src={portada} alt={`Foto de ${vehiculo.placa ?? vehiculo.nombre}`} className="w-full h-full object-cover" />
           <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
             <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
           </span>

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { clienteOperacionCampos } from './cliente-operacion.js';
+
 const textoOpcional = (max: number) =>
   z
     .string()
@@ -34,6 +36,7 @@ export const crearFacturaSchema = z.object({
   descripcion: textoOpcional(300),
   observaciones: textoOpcional(500),
   estado: z.enum(['borrador', 'emitida', 'pagada']).default('emitida'),
+  ...clienteOperacionCampos,
 });
 
 export type CrearFacturaInput = z.infer<typeof crearFacturaSchema>;

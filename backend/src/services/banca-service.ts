@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { MENSAJE_REPORTES_TELEGRAM_PENDIENTE } from './grupo-silencio-service.js';
 import type { CrearBancaInput, ActualizarBancaInput, CrearMovimientoInput } from '../schemas/cochinito.js';
 
 /**
@@ -22,6 +23,8 @@ export interface Banca {
   color: string | null;
   /** Chat de Telegram al que van los avisos de esta banca; null = grupo general de cajas. */
   telegramChatId: string | null;
+  /** false = el superadmin apagó los avisos de Telegram de los movimientos de esta cuenta (true también si la migración no se aplicó). */
+  telegramReportesActivos: boolean;
   /** URL pública de la imagen (logo / foto de la caja); null si no tiene (o la migración aún no se aplicó). */
   imagenUrl: string | null;
 }
@@ -71,6 +74,8 @@ export interface Movimiento {
   mesaMontoCobrado: number | null;
   mesaCompletadaEn: string | null;
   mesaCompletadaPor: string | null;
+  /** Observaciones escritas al cobrar la transferencia (una línea por cobro); null si no hay o la migración no se aplicó. */
+  mesaObservacion: string | null;
   /** Comisión bancaria (Bs) cargada a la cuenta junto a este movimiento; null si no lleva (o la migración no se aplicó). */
   comisionBancaria: number | null;
   /** Si es el cargo de una comisión bancaria: id del movimiento al que pertenece; null en los demás. */
@@ -88,6 +93,7 @@ function mapBanca(row: Record<string, unknown>): Banca {
     archivada: Boolean(row.archivada),
     color: typeof row.color === 'string' && row.color ? row.color : null,
     telegramChatId: typeof row.telegram_chat_id === 'string' && row.telegram_chat_id ? row.telegram_chat_id : null,
+    telegramReportesActivos: row.telegram_reportes_activos !== false,
     imagenUrl: typeof row.imagen_url === 'string' && row.imagen_url ? row.imagen_url : null,
   };
 }
@@ -128,7 +134,7 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
 const aNumeroONull = (v: unknown): number | null => (v != null ? Number(v) : null);
 
 /** Campos de mesa de cambio; todos null si la fila no los trae (migración sin aplicar o movimiento normal). */
-function mapMesa(row: Record<string, unknown>): Pick<Movimiento, 'mesaCambistaId' | 'mesaEstado' | 'mesaMontoBruto' | 'mesaComisionModo' | 'mesaComisionPct' | 'mesaComision' | 'mesaMontoCobrado' | 'mesaCompletadaEn' | 'mesaCompletadaPor'> {
+function mapMesa(row: Record<string, unknown>): Pick<Movimiento, 'mesaCambistaId' | 'mesaEstado' | 'mesaMontoBruto' | 'mesaComisionModo' | 'mesaComisionPct' | 'mesaComision' | 'mesaMontoCobrado' | 'mesaCompletadaEn' | 'mesaCompletadaPor' | 'mesaObservacion'> {
   return {
     mesaCambistaId: (row.mesa_cambista_id as string) ?? null,
     mesaEstado: (row.mesa_estado as Movimiento['mesaEstado']) ?? null,
@@ -139,6 +145,7 @@ function mapMesa(row: Record<string, unknown>): Pick<Movimiento, 'mesaCambistaId
     mesaMontoCobrado: aNumeroONull(row.mesa_monto_cobrado),
     mesaCompletadaEn: (row.mesa_completada_at as string) ?? null,
     mesaCompletadaPor: (row.mesa_completada_por as string) ?? null,
+    mesaObservacion: typeof row.mesa_observacion === 'string' && row.mesa_observacion ? row.mesa_observacion : null,
   };
 }
 
@@ -216,19 +223,20 @@ export async function obtenerDetalleMovimiento(id: string, opts: OpcionesDetalle
 }
 
 /** Campos opcionales de bancas que dependen de una migración: si la columna falta se degrada sin ellos. */
-type CamposBanca = { color?: unknown; telegramChatId?: unknown; imagenUrl?: unknown };
+type CamposBanca = { color?: unknown; telegramChatId?: unknown; telegramReportesActivos?: unknown; imagenUrl?: unknown };
 
 /** Pasa los campos del schema a columnas de BD (telegramChatId -> telegram_chat_id, imagenUrl -> imagen_url). */
 function aColumnas<T extends CamposBanca>(campos: T): Record<string, unknown> {
-  const { telegramChatId, imagenUrl, ...resto } = campos;
+  const { telegramChatId, telegramReportesActivos, imagenUrl, ...resto } = campos;
   return {
     ...resto,
     ...(telegramChatId === undefined ? {} : { telegram_chat_id: telegramChatId }),
+    ...(telegramReportesActivos === undefined ? {} : { telegram_reportes_activos: telegramReportesActivos }),
     ...(imagenUrl === undefined ? {} : { imagen_url: imagenUrl }),
   };
 }
 
-const COLUMNAS_OPCIONALES = ['color', 'telegram_chat_id', 'imagen_url'] as const;
+const COLUMNAS_OPCIONALES = ['color', 'telegram_chat_id', 'telegram_reportes_activos', 'imagen_url'] as const;
 
 export const MENSAJE_TELEGRAM_BANCA_PENDIENTE =
   'El grupo de Telegram por cuenta aún no está habilitado en la base de datos (falta aplicar migration_bancas_telegram_chat.sql). Guarda sin grupo o aplica la migración.';
@@ -236,15 +244,19 @@ export const MENSAJE_TELEGRAM_BANCA_PENDIENTE =
 export const MENSAJE_IMAGEN_BANCA_PENDIENTE =
   'La imagen por cuenta aún no está habilitada en la base de datos (falta aplicar migration_bancas_imagen.sql). Guarda sin imagen o aplica la migración.';
 
-/** Columnas que no se descartan en silencio si faltan y se intentaba guardar un valor, con su mensaje. */
+/** Columnas que no se descartan en silencio si faltan y se intentaba guardar un valor (no el de por defecto), con su mensaje. */
 const MENSAJE_PENDIENTE_POR_COLUMNA: Readonly<Record<string, string>> = {
   telegram_chat_id: MENSAJE_TELEGRAM_BANCA_PENDIENTE,
   imagen_url: MENSAJE_IMAGEN_BANCA_PENDIENTE,
+  telegram_reportes_activos: MENSAJE_REPORTES_TELEGRAM_PENDIENTE,
 };
+
+/** Valor por defecto de la columna: si falta y se intenta guardar este valor, no hay nada que avisar (se descarta). */
+const VALOR_POR_DEFECTO: Readonly<Record<string, unknown>> = { telegram_reportes_activos: true };
 
 /** Mensaje de "migración pendiente" si alguna columna faltante tenía un valor que guardar; undefined si no. */
 function pendienteDe(faltan: readonly string[], columnas: Record<string, unknown>): string | undefined {
-  const columna = faltan.find(c => c in MENSAJE_PENDIENTE_POR_COLUMNA && columnas[c] != null);
+  const columna = faltan.find(c => c in MENSAJE_PENDIENTE_POR_COLUMNA && columnas[c] != null && columnas[c] !== VALOR_POR_DEFECTO[c]);
   return columna ? MENSAJE_PENDIENTE_POR_COLUMNA[columna] : undefined;
 }
 
@@ -294,6 +306,8 @@ export async function crearBanca(input: CrearBancaInput): Promise<ResultadoBanca
     ...base,
     ...(input.color ? { color: input.color } : {}),
     ...(input.telegramChatId ? { telegram_chat_id: input.telegramChatId } : {}),
+    // Solo si se apaga: una banca con avisos activos no depende de la columna.
+    ...(input.telegramReportesActivos === false ? { telegram_reportes_activos: false } : {}),
     ...(input.imagenUrl ? { imagen_url: input.imagenUrl } : {}),
   };
   const r = await escribirDegradando(completo, c => supabaseAdmin.from('bancas').insert(c).select().single());

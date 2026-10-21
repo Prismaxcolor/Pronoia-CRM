@@ -6,7 +6,7 @@ vi.mock('../src/config/env.js', async importOriginal => {
   return { ...real, ENV: { ...real.ENV, SUPABASE_URL: 'https://p.supabase.test' } };
 });
 import {
-  comprobantesReenviables, cuentasDeBody, detallesExtraDinero, htmlATextoPlano, lineaCuenta, MAX_COMPROBANTES_AVISO,
+  categoriaIdDeBody, comprobantesReenviables, cuentasDeBody, detallesExtraDinero, htmlATextoPlano, lineaCategoria, lineaCuenta, MAX_COMPROBANTES_AVISO,
 } from '../src/services/grupo-dinero.js';
 import { esUrlComprobanteValida } from '../src/utils/comprobante-url.js';
 import { crearMovimientoSchema } from '../src/schemas/cochinito.js';
@@ -14,6 +14,20 @@ import { filtrarComprobantes, validarImagenComprobante } from '../../frontend/sr
 
 const SUPABASE = 'https://p.supabase.test';
 const url = (n: string) => `${SUPABASE}/storage/v1/object/public/comprobantes/${n}`;
+
+describe('categoría del aviso', () => {
+  const ID = '3f1b8c52-7d4e-4a19-9b6c-2e5d8a0c1f34';
+  it('solo toma un id de categoría con forma de uuid', () => {
+    expect(categoriaIdDeBody({ categoriaId: ID })).toBe(ID);
+    expect(categoriaIdDeBody({ categoriaId: '  ' })).toBeNull();
+    expect(categoriaIdDeBody({ categoriaId: "x' or 1=1" })).toBeNull();
+    expect(categoriaIdDeBody({})).toBeNull();
+  });
+  it('la línea muestra categoría y subcategoría', () => {
+    expect(lineaCategoria('Luz', 'Servicios')).toBe('Categoría: Servicios › Luz');
+    expect(lineaCategoria('Alquiler', null)).toBe('Categoría: Alquiler');
+  });
+});
 
 describe('comprobantesReenviables', () => {
   it('acepta solo imágenes del bucket "comprobantes" de nuestro Supabase, sin repetir', () => {
@@ -45,6 +59,24 @@ describe('comprobantesReenviables', () => {
   it('limita a un álbum', () => {
     const muchos = Array.from({ length: 15 }, (_, i) => url(`${i}.jpg`));
     expect(comprobantesReenviables({ comprobantes: muchos }, SUPABASE)).toHaveLength(MAX_COMPROBANTES_AVISO);
+  });
+});
+
+describe('cuentasDeBody en pagos de nómina repartidos', () => {
+  it('lista cada cuenta del reparto con su monto y moneda (bancas[] del cuerpo de la nómina)', () => {
+    const refs = cuentasDeBody({ bancas: [
+      { moneda: 'USD', bancaId: 'binance', monto: 20 }, { moneda: 'USD', bancaId: 'chica', monto: 10 }, { moneda: 'BS', bancaId: 'bs', llevaComision: true },
+    ] });
+    expect(refs).toEqual([
+      { rol: 'Cuenta', id: 'binance', monto: 20, moneda: 'USD' },
+      { rol: 'Cuenta', id: 'chica', monto: 10, moneda: 'USD' },
+      { rol: 'Cuenta', id: 'bs', monto: null, moneda: 'BS' },
+    ]);
+    expect(lineaCuenta(refs[0], 'CAJA BINANCE PS', 'USD')).toContain('CAJA BINANCE PS');
+    expect(lineaCuenta(refs[0], 'CAJA BINANCE PS', 'USD')).toContain('20');
+  });
+  it('también lee el monto de pagos[] (contrato de la función SQL)', () => {
+    expect(cuentasDeBody({ pagos: [{ moneda: 'USD', bancaId: 'a', monto: 5 }] })).toEqual([{ rol: 'Cuenta', id: 'a', monto: 5, moneda: 'USD' }]);
   });
 });
 

@@ -13,6 +13,8 @@ const bd = vi.hoisted(() => ({
 vi.mock('../src/config/supabase.js', () => ({
   supabaseAdmin: {
     rpc: (nombre: string, args: Record<string, unknown>) => {
+      // Sin la migración de idempotencia no existen los envoltorios `*_completo`: el servicio cae al flujo anterior.
+      if (nombre.endsWith('_completo')) return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
       bd.rpcLlamadas.push({ nombre, args });
       return Promise.resolve({ data: bd.rpcError ? null : bd.rpcResultado, error: bd.rpcError });
     },

@@ -82,7 +82,7 @@ export function lineaFechas(hoy: string): string {
  */
 export function construirSystemPrompt({ nombre, pagina, personalidad, modo = 'charla', areas = [], areasNegadas = [], razonCharla, hoy }: ContextoPrompt): string {
   const lineas = [
-    'Eres BLOB, una mascota-asistente con forma de gota que vive en una esquina de Pronoia, un sistema de gestión para una empresa de compra y venta de chatarra y metales.',
+    'Eres Nous, una mascota-asistente con forma de gota que vive en una esquina de Pronoia, un sistema de gestión para una empresa de compra y venta de chatarra y metales.',
     TONO[personalidad],
   ];
   if (modo === 'datos') {

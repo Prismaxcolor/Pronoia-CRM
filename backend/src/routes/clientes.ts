@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ejecutarOperacionFinanciera } from '../services/operacion-financiera.js';
 import {
   listarClientes,
   crearCliente,
@@ -21,10 +22,12 @@ import { crearNotaAjusteSchema, anularNotaAjusteSchema, actualizarCategoriaNotaS
 import { asignarCategoriaNota } from '../services/categoria-nota-service.js';
 import { obtenerPagoDetalle } from '../services/pago-detalle-service.js';
 import { listarAdelantosDisponibles } from '../services/cruce-service.js';
+import { cambioReportesNoPermitido } from '../services/grupo-silencio-service.js';
+import { MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM } from '../utils/banca-acceso.js';
 import { logger, clienteIp } from '../utils/logger.js';
 import { registrarAuditoria } from '../services/auditoria-service.js';
 import { bancasPermitidas } from '../services/banca-acceso-service.js';
-import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
+import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION, tipoDeRecurso } from '../services/operaciones-idempotentes-cola.js';
 import { responderSaldos } from './saldos-handler.js';
 
 const router = Router();
@@ -114,11 +117,16 @@ router.get('/:id/adelantos-disponibles', requirePermiso('clientes', 'ver'), asyn
 // editar el cliente, no 'cochinito' porque no mueve dinero de ninguna banca.
 router.post(
   '/:id/notas-ajuste',
+  validarUuidParam('id'),
   requirePermiso('clientes', 'editar'),
   validateBody(crearNotaAjusteSchema),
   async (req, res) => {
     const clienteId = String(req.params.id);
-    const result = await crearNotaAjusteCliente(clienteId, req.body, req.user!.sub);
+    // Con clientRequestId un doble clic o reintento no crea una segunda nota (responde 200 con `repetida`).
+    const envio = await ejecutarOperacionFinanciera(res, tipoDeRecurso(TIPO_OPERACION.notaAjusteClienteCrear, clienteId), req.body, req.user!.sub,
+      () => crearNotaAjusteCliente(clienteId, req.body, req.user!.sub));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -130,8 +138,9 @@ router.post(
       clienteId,
       notaId: result.id,
       tipo: req.body.tipo,
+      repetida,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 
@@ -227,9 +236,13 @@ router.patch(
   validateBody(actualizarClienteSchema),
   async (req, res) => {
     const id = String(req.params.id);
+    if (await cambioReportesNoPermitido('clientes', id, req.user!.rol, req.body.telegramReportesActivos)) {
+      res.status(403).json({ error: MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM });
+      return;
+    }
     const result = await actualizarCliente(id, req.body);
     if ('error' in result) {
-      const status = result.error.includes('no encontrado') ? 404 : 400;
+      const status = 'pendiente' in result ? 409 : result.error.includes('no encontrado') ? 404 : 400;
       res.status(status).json(result);
       return;
     }

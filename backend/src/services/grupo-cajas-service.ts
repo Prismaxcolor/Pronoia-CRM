@@ -1,9 +1,9 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
 import { obtenerSecreto } from '../config/secretos.js';
-import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
+import { enviarAvisoN8n } from './n8n-aviso.js';
 import { logger } from '../utils/logger.js';
-import { cuentasDeBody, htmlATextoPlano, lineaCuenta } from './grupo-dinero.js';
+import { categoriaIdDeBody, cuentasDeBody, htmlATextoPlano, lineaCategoria, lineaCuenta } from './grupo-dinero.js';
 import { repartirFotos } from './telegram-notify-service.js';
 import { validarBotones } from '../utils/botones-aviso.js';
 import type { PayloadGrupo } from './grupo-notificar-service.js';
@@ -79,35 +79,42 @@ export async function lineasDeCuentas(body: Readonly<Record<string, unknown>>): 
   }
 }
 
-/** Devuelve true si el webhook aceptó el envío. Nunca lanza. */
-async function llamarWebhook(chatId: string, cuerpo: Record<string, unknown>, timeoutMs: number): Promise<boolean> {
+/** Línea "Categoría: Padre › Hijo" del movimiento si el body trae una categoría válida. Nunca lanza. */
+export async function lineaDeCategoria(body: Readonly<Record<string, unknown>>): Promise<string[]> {
+  const id = categoriaIdDeBody(body);
+  if (!id) return [];
   try {
-    if (!chatId) return false;
-    const respuesta = await fetch(ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO, {
-      method: 'POST',
-      headers: await cabecerasWebhookN8n(),
-      body: JSON.stringify({
-        tipoDocumento: 'aviso',
-        entidadTipo: 'cajas',
-        chatId,
-        nombreEntidad: NOMBRE_GRUPO_CAJAS,
-        ...cuerpo,
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!respuesta.ok) {
-      logger.error({ evento: 'cajas_notify_error_webhook_status', status: respuesta.status, accion: cuerpo.accion });
-      return false;
+    const { data } = await supabaseAdmin.from('categorias_wallet').select('nombre, padre_id').eq('id', id).maybeSingle();
+    const fila = data as { nombre: string | null; padre_id: string | null } | null;
+    if (!fila?.nombre) return [];
+    let padre: string | null = null;
+    if (fila.padre_id) {
+      const { data: p } = await supabaseAdmin.from('categorias_wallet').select('nombre').eq('id', fila.padre_id).maybeSingle();
+      padre = (p as { nombre: string | null } | null)?.nombre ?? null;
     }
-    return true;
-  } catch (err) {
-    logger.error({
-      evento: 'cajas_notify_error_webhook',
-      accion: cuerpo.accion,
-      mensaje: err instanceof Error ? err.message : String(err),
-    });
-    return false;
+    return [lineaCategoria(fila.nombre, padre)];
+  } catch {
+    return [];
   }
+}
+
+/** Devuelve true si el webhook aceptó el envío (con reintentos y cola). Nunca lanza. */
+async function llamarWebhook(chatId: string, cuerpo: Record<string, unknown>, timeoutMs: number): Promise<boolean> {
+  if (!chatId) return false;
+  const resultado = await enviarAvisoN8n({
+    destino: 'contenido',
+    evento: 'cajas_notify',
+    contexto: { accion: cuerpo.accion },
+    cuerpo: {
+      tipoDocumento: 'aviso',
+      entidadTipo: 'cajas',
+      chatId,
+      nombreEntidad: NOMBRE_GRUPO_CAJAS,
+      ...cuerpo,
+    },
+    opciones: { timeoutMs },
+  });
+  return resultado.ok;
 }
 
 const recortar = (t: string, max: number): string => (t.length > max ? `${t.slice(0, max - 1)}…` : t);

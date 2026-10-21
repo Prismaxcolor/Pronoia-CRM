@@ -12,6 +12,8 @@ export interface Banca {
   color?: string | null;
   /** Chat de Telegram al que van los avisos de esta banca; null = grupo general de cajas. */
   telegramChatId?: string | null;
+  /** false = el superadmin apagó los avisos de Telegram de los movimientos de esta cuenta; ausente = activos. */
+  telegramReportesActivos?: boolean;
   /** URL pública de la imagen de la cuenta (logo / foto de la caja); null o ausente = sin imagen. */
   imagenUrl?: string | null;
   /**

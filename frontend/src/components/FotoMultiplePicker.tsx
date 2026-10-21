@@ -41,7 +41,7 @@ function FotoMultiplePicker({ fotos, onAgregar, onQuitar, label = 'Fotos', max }
               className="block w-full h-full"
               title="Ver foto en grande"
             >
-              <img src={previewFotoLocal(f)} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+              <img loading="lazy" decoding="async" src={previewFotoLocal(f)} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
               <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
                 <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
               </span>

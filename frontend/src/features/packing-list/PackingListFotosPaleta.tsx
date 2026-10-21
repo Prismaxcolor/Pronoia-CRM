@@ -48,7 +48,7 @@ function PackingListFotosPaleta({ fotos, puedeEditar, onAgregar, onQuitar }: Pro
             <li key={f.ruta}>
               {f.url
                 ? <a href={f.url} target="_blank" rel="noreferrer" className="block h-16 w-16 overflow-hidden rounded-lg border border-border">
-                  <img src={f.url} alt={`Foto ${i + 1} de la paleta`} loading="lazy" className="h-full w-full object-cover" />
+                  <img src={f.url} alt={`Foto ${i + 1} de la paleta`} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                 </a>
                 : <span className="text-xs text-text-muted">Foto {i + 1} no disponible</span>}
             </li>

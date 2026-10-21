@@ -23,7 +23,7 @@ const MINIATURA = 'h-9 w-9 shrink-0 rounded-lg overflow-hidden flex items-center
 /** Miniatura de la cuenta: su imagen, o la inicial sobre su color. */
 function Miniatura({ entidad }: { entidad: EntidadBanca }) {
   if (entidad.fotos[0]) {
-    return <img src={entidad.fotos[0]} alt="" loading="lazy" className={`${MINIATURA} object-cover bg-surface-alt`} />;
+    return <img src={entidad.fotos[0]} alt="" loading="lazy" decoding="async" className={`${MINIATURA} object-cover bg-surface-alt`} />;
   }
   return <span aria-hidden="true" className={MINIATURA} style={{ backgroundColor: entidad.color }}>{inicialDeBanca(entidad.nombre)}</span>;
 }

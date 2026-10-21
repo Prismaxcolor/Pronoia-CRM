@@ -70,6 +70,8 @@ export interface Movimiento {
   mesaMontoCobrado?: number | null;
   mesaCompletadaEn?: string | null;
   mesaCompletadaPor?: string | null;
+  /** Observaciones escritas al completar o cobrar la transferencia (una línea por cobro). */
+  mesaObservacion?: string | null;
   // Comisión bancaria (0.3%, mínimo 14 Bs) de un movimiento que debita una cuenta en Bs; opcionales porque la API los
   // omite (o los manda null) en movimientos normales y mientras la migración no esté aplicada.
   /** En el movimiento principal: comisión (Bs) cargada a la misma cuenta como un egreso aparte. */

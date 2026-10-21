@@ -14,6 +14,7 @@ import {
 import { kpisCitas } from '../../lib/catalogos-kpis';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import { mensajeAmigable } from '../../lib/mensaje-error';
 
 type Vista = 'lista' | 'semana';
 
@@ -96,7 +97,7 @@ function CitasPage() {
       toast.exito(`Cita de ${cita.nombreEntidad} actualizada.`);
       cargar();
     } catch (err) {
-      toast.errorMsg(err instanceof Error ? err.message : 'No se pudo actualizar la cita.');
+      toast.errorMsg(mensajeAmigable(err, { porDefecto: 'No se pudo actualizar la cita.' }));
     }
   };
 

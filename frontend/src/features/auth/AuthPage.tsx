@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
+import { mensajeAmigable } from '../../lib/mensaje-error';
 
 interface NivelFuerza { score: number; label: string; color: string }
 
@@ -125,7 +126,7 @@ function AuthPage() {
         toast.exito('Cuenta creada. Ya estás dentro.');
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error inesperado';
+      const msg = mensajeAmigable(err, { mensajesLocales: true });
       setMensaje(msg);
       toast.errorMsg(msg);
       setShake(true);

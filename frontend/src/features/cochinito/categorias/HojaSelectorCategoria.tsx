@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import type { CategoriaWallet } from '@shared/types/index.js';
-import { useCerrarConEscape } from '../../../hooks/use-cerrar-con-escape';
+import Modal from '../../../components/Modal';
 import SelectorCategoriaTarjetas from './SelectorCategoriaTarjetas';
 
 interface Props {
@@ -18,14 +18,15 @@ interface Props {
  */
 function HojaSelectorCategoria({ tipo, categorias, valor, onElegir, onClose }: Props) {
   const titulo = tipo === 'ingreso' ? 'Categoría del ingreso' : 'Categoría del egreso';
-  useCerrarConEscape(onClose, false, true);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+    <Modal
+      onClose={onClose}
+      cerrarAlClicFondo
+      ariaLabel={titulo}
+      overlayClassName="z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
+      panelClassName="flex max-h-[85dvh] w-full flex-col rounded-t-2xl bg-surface shadow-xl sm:max-w-2xl sm:rounded-2xl"
     >
-      <div role="dialog" aria-modal="true" aria-label={titulo} className="flex max-h-[85vh] w-full flex-col rounded-t-2xl bg-surface shadow-xl sm:max-w-2xl sm:rounded-2xl">
         <div className="flex shrink-0 items-center justify-between border-b border-border p-4">
           <h2 className="text-lg font-semibold text-text-primary">{titulo}</h2>
           <button
@@ -45,8 +46,7 @@ function HojaSelectorCategoria({ tipo, categorias, valor, onElegir, onClose }: P
             etiqueta={titulo}
           />
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

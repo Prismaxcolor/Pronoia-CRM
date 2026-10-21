@@ -8,17 +8,23 @@ export interface ObtenerBancasOpts {
   incluirArchivadas?: boolean;
 }
 
+/** Igual que `obtenerBancas`, pero si la carga falla (y no hay copia guardada) lanza el error en vez de devolver
+ *  una lista vacía: para pantallas que no deben confundir "no se pudo cargar" con "no hay bancas". */
+export async function obtenerBancasOError(opts: ObtenerBancasOpts = {}): Promise<Banca[]> {
+  const query = opts.incluirArchivadas ? '?incluirArchivadas=true' : '';
+  const { datos } = await obtenerCatalogo(
+    opts.incluirArchivadas ? 'bancas:todas' : 'bancas:activas',
+    async () => {
+      const { bancas } = await apiFetch<{ bancas: Banca[] }>(`/api/cochinito/bancas${query}`);
+      return bancas;
+    },
+  );
+  return datos;
+}
+
 export async function obtenerBancas(opts: ObtenerBancasOpts = {}): Promise<Banca[]> {
   try {
-    const query = opts.incluirArchivadas ? '?incluirArchivadas=true' : '';
-    const { datos } = await obtenerCatalogo(
-      opts.incluirArchivadas ? 'bancas:todas' : 'bancas:activas',
-      async () => {
-        const { bancas } = await apiFetch<{ bancas: Banca[] }>(`/api/cochinito/bancas${query}`);
-        return bancas;
-      },
-    );
-    return datos;
+    return await obtenerBancasOError(opts);
   } catch {
     return [];
   }
@@ -46,6 +52,8 @@ export interface CrearBancaInput {
   imagenUrl?: string | null;
   /** Chat de Telegram de los avisos de la banca; null/omitido = grupo general de cajas. */
   telegramChatId?: string | null;
+  /** false = sin avisos de Telegram para esta cuenta. Solo superadmin; omitido = activos. */
+  telegramReportesActivos?: boolean;
 }
 
 /** Crea una banca con saldo 0. Para establecer saldo inicial se debe registrar un ingreso. */
@@ -72,6 +80,8 @@ export interface ActualizarBancaInput {
   imagenUrl?: string | null;
   /** null vuelve al grupo general de cajas. */
   telegramChatId?: string | null;
+  /** Solo superadmin; omitido = no cambia. */
+  telegramReportesActivos?: boolean;
 }
 
 export async function actualizarBanca(id: string, campos: ActualizarBancaInput): Promise<boolean> {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Modal from '../../components/Modal';
 import { X, Loader2, ChevronDown } from 'lucide-react';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import { obtenerProveedores } from '../../services/proveedor-service';
@@ -66,8 +67,8 @@ function NuevaCitaModal({ onClose, onAgendada }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md">
+    <>
+      <Modal onClose={onClose} bloqueado={guardando} panelClassName="bg-surface rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="text-lg font-bold text-text-primary">Agendar despacho</h2>
           <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
@@ -132,7 +133,7 @@ function NuevaCitaModal({ onClose, onAgendada }: Props) {
             </button>
           </div>
         </form>
-      </div>
+      </Modal>
       {mostrarSelectorEntidad && (
         <SeleccionarEntidadModal
           titulo={tipo === 'proveedor' ? 'Elegir proveedor' : 'Elegir cliente'}
@@ -141,7 +142,7 @@ function NuevaCitaModal({ onClose, onAgendada }: Props) {
           onSeleccionar={id => { setEntidadId(id); setMostrarSelectorEntidad(false); }}
         />
       )}
-    </div>
+    </>
   );
 }
 

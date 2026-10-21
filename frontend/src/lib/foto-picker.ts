@@ -41,3 +41,20 @@ export async function subirFotosLocal(
   if (resultados.some(url => url === null)) return null;
   return resultados as string[];
 }
+
+/** Vistas previas locales (URL.createObjectURL) que siguen en uso: solo las fotos nuevas tienen una. */
+export function vistasPreviasVigentes(fotos: readonly FotoLocal[]): ReadonlySet<string> {
+  return new Set(fotos.flatMap(f => (f.tipo === 'nueva' ? [f.preview] : [])));
+}
+
+/**
+ * Compara las vistas previas que se conocían con las que siguen en las fotos actuales:
+ * `liberar` son las que ya no están (la foto se quitó) y `vigentes` pasan a ser las conocidas.
+ */
+export function planLiberacionVistasPrevias(
+  conocidas: ReadonlySet<string>,
+  fotos: readonly FotoLocal[],
+): { liberar: readonly string[]; vigentes: ReadonlySet<string> } {
+  const vigentes = vistasPreviasVigentes(fotos);
+  return { liberar: [...conocidas].filter(url => !vigentes.has(url)), vigentes };
+}

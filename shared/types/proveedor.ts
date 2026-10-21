@@ -18,4 +18,6 @@ export interface Proveedor {
   telegramChatId: string | null;
   /** ISO timestamp de cuándo se vinculó, null si nunca se vinculó. */
   telegramLinkedAt: string | null;
+  /** false = el superadmin apagó los avisos de Telegram de los movimientos de este proveedor; ausente = activos. */
+  telegramReportesActivos?: boolean;
 }

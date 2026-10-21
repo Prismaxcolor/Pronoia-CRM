@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import Modal from '../../components/Modal';
 import { ADVERTENCIA_IMPORTACION, textoResumenImportacion, type ResumenImportacion } from '../../lib/offline/cola-seguridad';
 
 const LIMITE_VISIBLE = 5;
@@ -19,8 +20,12 @@ function DialogoImportacion({ resumen, onCancelar, onConfirmar }: Props) {
   const aImportar = resumen.nuevas - (incluirRevision ? 0 : resumen.requierenRevision);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-label="Importar respaldo">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 space-y-3">
+    <Modal
+      onClose={onCancelar}
+      ariaLabel="Importar respaldo"
+      overlayClassName="z-[70] flex items-center justify-center p-4 bg-black/50"
+      panelClassName="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90dvh] overflow-y-auto p-5 space-y-3"
+    >
         <h2 className="text-base font-bold">Importar respaldo</h2>
         <p role="alert" className="flex items-start gap-2 rounded-lg bg-red-50 text-red-800 p-2 text-sm font-medium">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
@@ -55,8 +60,7 @@ function DialogoImportacion({ resumen, onCancelar, onConfirmar }: Props) {
             Importar {aImportar}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

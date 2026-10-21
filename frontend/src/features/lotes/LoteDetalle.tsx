@@ -111,7 +111,7 @@ function LoteDetalle({ lote, fila, puedeEditar, puedeConfigurar, onEditar, onTog
                 {lote.fotos.map((f, i) => (
                   <li key={`${f}-${i}`}>
                     <button type="button" onClick={() => setVisor(i)} aria-label={`Ampliar foto ${i + 1} de ${lote.fotos.length}`} className="block h-16 w-16 overflow-hidden rounded-lg border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-                      <img src={f} alt="" loading="lazy" className="h-full w-full object-cover" />
+                      <img src={f} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     </button>
                   </li>
                 ))}

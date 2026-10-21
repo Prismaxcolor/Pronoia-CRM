@@ -10,7 +10,7 @@ import AccionesReporte from './AccionesReporte';
 import EtiquetaCategoria from './EtiquetaCategoria';
 import RangoFechas from './RangoFechas';
 import { descargarReporteCuentaPDF } from './reporte-wallet-pdf';
-import { etiquetaMoneda, mensajeRango, textoTipoFila } from './reporte-wallet-datos';
+import { etiquetaMoneda, filtrarFilasPorCorrelativo, mensajeRango, textoTipoFila, totalesDeFilas } from './reporte-wallet-datos';
 
 const CAMPO = 'w-full px-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent';
 const TH = 'px-3 py-2 text-left text-xs font-semibold text-text-secondary';
@@ -25,9 +25,17 @@ function ReporteCuentaPanel() {
   const [reporte, setReporte] = useState<ReporteCuenta | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [buscar, setBuscar] = useState('');
 
   useEffect(() => { obtenerBancas({ incluirArchivadas: true }).then(setBancas).finally(() => setCargandoBancas(false)); }, []);
   const moneda = useMemo(() => etiquetaMoneda(reporte?.banca.moneda ?? ''), [reporte]);
+  const conUsd = reporte?.banca.moneda === 'VES';
+  // Con búsqueda activa, la tabla, sus totales y el PDF muestran solo los movimientos que coinciden.
+  const vista = useMemo(() => {
+    if (!reporte || buscar.trim() === '') return reporte;
+    const filas = filtrarFilasPorCorrelativo(reporte.filas, buscar);
+    return { ...reporte, filas, totales: totalesDeFilas(filas) };
+  }, [reporte, buscar]);
 
   const generar = async () => {
     const falta = !bancaId ? 'Elige la cuenta o caja.' : mensajeRango(rango.desde, rango.hasta);
@@ -36,7 +44,7 @@ function ReporteCuentaPanel() {
     setCargando(true);
     const r = await obtenerReporteCuenta(bancaId, rango.desde, rango.hasta);
     setCargando(false);
-    if ('error' in r) { setError(r.error); setReporte(null); } else setReporte(r);
+    if ('error' in r) { setError(r.error); setReporte(null); } else { setReporte(r); setBuscar(''); }
   };
 
   return (
@@ -55,22 +63,28 @@ function ReporteCuentaPanel() {
         </button>
       </div>
       {error && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-      {reporte && (
+      {reporte && vista && (
         <div>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-text-secondary">
-              {reporte.banca.nombre} · del {formatearFecha(reporte.desde)} al {formatearFecha(reporte.hasta)} · {reporte.filas.length} {reporte.filas.length === 1 ? 'movimiento' : 'movimientos'}
+              {reporte.banca.nombre} · del {formatearFecha(reporte.desde)} al {formatearFecha(reporte.hasta)} · {vista.filas.length} {vista.filas.length === 1 ? 'movimiento' : 'movimientos'}
+              {vista.filas.length !== reporte.filas.length ? ` de ${reporte.filas.length}` : ''}
             </p>
-            <AccionesReporte generar={modo => descargarReporteCuentaPDF(reporte, modo)} />
+            <AccionesReporte generar={modo => descargarReporteCuentaPDF(vista, modo, buscar)} exportarExcel={() => import('./reporte-wallet-xlsx').then(m => m.descargarReporteCuentaXlsx(vista, buscar))} />
+          </div>
+          <div className="mb-3 max-w-xs">
+            <label htmlFor="reporte-buscar-correlativo" className="block text-xs font-medium text-text-secondary mb-1">Buscar por N° (ej. MV-0012)</label>
+            <input id="reporte-buscar-correlativo" type="search" value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="MV-0001, PG-0003…" className={CAMPO} />
           </div>
           <div className="overflow-x-auto rounded-xl border border-border bg-surface">
             <table className="min-w-full divide-y divide-border">
               <thead><tr>
                 <th className={TH}>Fecha</th><th className={TH}>N°</th><th className={TH}>Tipo</th><th className={TH}>Descripción</th><th className={TH}>Categoría</th>
                 <th className={`${TH} text-right`}>Entra ({moneda})</th><th className={`${TH} text-right`}>Sale ({moneda})</th>
+                {conUsd && <th className={`${TH} text-right`}>Equiv. USD</th>}
               </tr></thead>
               <tbody className="divide-y divide-border">
-                {reporte.filas.map(f => (
+                {vista.filas.map(f => (
                   <tr key={f.id} className={f.anulado ? 'text-text-muted line-through' : ''}>
                     <td className={`${TD} whitespace-nowrap`}>{formatearFecha(f.fecha)}</td>
                     <td className={`${TD} whitespace-nowrap tabular-nums`}>{numeroMovimiento(f)}</td>
@@ -79,16 +93,17 @@ function ReporteCuentaPanel() {
                     <td className={TD}>{f.categoria ? <EtiquetaCategoria nombre={f.categoria.nombre} color={f.categoria.color} /> : <span className="text-text-muted">Sin categoría</span>}</td>
                     <td className={`${TD} text-right tabular-nums`}>{f.entrada ? formatearNumero(f.entrada, 2) : ''}</td>
                     <td className={`${TD} text-right tabular-nums`}>{f.salida ? formatearNumero(f.salida, 2) : ''}</td>
+                    {conUsd && <td className={`${TD} text-right tabular-nums`}>{f.equivalenteUsd != null ? formatearNumero(f.equivalenteUsd, 2) : ''}</td>}
                   </tr>
                 ))}
-                {reporte.filas.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-sm text-text-muted">No hay movimientos de esta cuenta en el periodo.</td></tr>}
+                {vista.filas.length === 0 && <tr><td colSpan={conUsd ? 8 : 7} className="px-3 py-6 text-center text-sm text-text-muted">{reporte.filas.length === 0 ? 'No hay movimientos de esta cuenta en el periodo.' : 'Ningún movimiento coincide con esa búsqueda.'}</td></tr>}
               </tbody>
               <tfoot className="bg-surface-alt text-sm font-semibold">
-                <tr><td colSpan={5} className="px-3 py-2 text-right">Total que entra / sale</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatearNumero(reporte.totales.entradas, 2)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatearNumero(reporte.totales.salidas, 2)}</td></tr>
-                <tr><td colSpan={5} className="px-3 py-2 text-right">Neto del periodo ({moneda})</td>
-                  <td colSpan={2} className="px-3 py-2 text-right tabular-nums">{formatearNumero(reporte.totales.neto, 2)}</td></tr>
+                <tr><td colSpan={5} className="px-3 py-2 text-right">{buscar.trim() ? 'Total que entra / sale (solo filas filtradas)' : 'Total que entra / sale'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatearNumero(vista.totales.entradas, 2)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatearNumero(vista.totales.salidas, 2)}</td>{conUsd && <td />}</tr>
+                <tr><td colSpan={5} className="px-3 py-2 text-right">{buscar.trim() ? 'Neto de las filas filtradas' : 'Neto del periodo'} ({moneda})</td>
+                  <td colSpan={conUsd ? 3 : 2} className="px-3 py-2 text-right tabular-nums">{formatearNumero(vista.totales.neto, 2)}</td></tr>
               </tfoot>
             </table>
           </div>

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { AlertTriangle, Download } from 'lucide-react';
 import { nombreArchivoRespaldo, type PlanSalida } from '../lib/offline/salida-logica';
+import { mensajeAmigable } from '../lib/mensaje-error';
+import Modal from './Modal';
 
 interface Props {
   plan: PlanSalida;
@@ -33,7 +35,7 @@ function ConfirmarSalidaModal({ plan, onCancelar, onSalir, onExportar }: Props) 
       descargar(await onExportar(), nombreArchivoRespaldo(new Date()));
       setAviso('Respaldo descargado. Guárdalo en un lugar seguro.');
     } catch (err) {
-      setAviso(`No se pudo exportar el respaldo: ${err instanceof Error ? err.message : 'error desconocido'}.`);
+      setAviso(`No se pudo exportar el respaldo: ${mensajeAmigable(err, { porDefecto: 'error desconocido', mensajesLocales: true }).replace(/\.$/, '')}.`);
     } finally {
       setOcupado(false);
     }
@@ -49,14 +51,14 @@ function ConfirmarSalidaModal({ plan, onCancelar, onSalir, onExportar }: Props) 
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="salida-titulo"
-      className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/50"
-      onClick={ocupado ? undefined : onCancelar}
+    <Modal
+      onClose={onCancelar}
+      bloqueado={ocupado}
+      cerrarAlClicFondo
+      tituloId="salida-titulo"
+      overlayClassName="z-[95] flex items-center justify-center p-4 bg-black/50"
+      panelClassName="bg-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
     >
-      <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-start gap-4 p-5">
           <div className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center bg-amber-50 text-amber-600">
             <AlertTriangle size={22} />
@@ -111,8 +113,7 @@ function ConfirmarSalidaModal({ plan, onCancelar, onSalir, onExportar }: Props) 
             Cancelar
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -74,6 +74,8 @@ export const supabaseAdminFalso = {
   from: (tabla: string) => consulta(tabla),
   rpc: async (nombre: string, args: Record<string, unknown>) => {
     const r = estado.rpc[nombre];
+    // Los envoltorios `*_completo` (docs/migration_idempotencia_pagos_cobros.sql) no existen en estos tests: el backend cae al flujo anterior.
+    if (r === undefined && nombre.endsWith('_completo')) return { data: null, error: { code: 'PGRST202', message: `Could not find the function ${nombre}` } };
     if (r === undefined) return { data: null, error: { message: `rpc ${nombre} no simulada` } };
     return { data: typeof r === 'function' ? (r as (a: Record<string, unknown>) => unknown)(args) : r, error: null };
   },

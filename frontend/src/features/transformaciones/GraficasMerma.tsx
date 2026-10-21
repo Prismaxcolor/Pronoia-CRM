@@ -9,6 +9,7 @@ import { BarrasVerticales, Bloque, EstadoVacio, formatearNumero, formatearPct } 
 import { mermaPorTransformacionReciente, type RangoFechas } from '../../lib/transformaciones-kpis';
 import { obtenerReporteMerma, type ReporteMerma } from '../../services/transformacion-service';
 import { BloqueMermaPorCategoria, BloqueMermaPorTipo, type EstadoReporte } from './BloquesMermaReporte';
+import { mensajeAmigable } from '../../lib/mensaje-error';
 
 const MAX_TRANSFORMACIONES_GRAFICA = 12;
 const MIN_PUNTOS_BARRAS = 2;
@@ -35,7 +36,7 @@ function useReporteMerma(rango: RangoFechas, categoria: string | undefined): Est
     let cancelado = false;
     obtenerReporteMerma({ desde: rango.desde, hasta: rango.hasta, categoria, agrupar: 'mes' })
       .then(reporte => { if (!cancelado) setEstado({ clave, reporte, error: null }); })
-      .catch(err => { if (!cancelado) setEstado(prev => ({ clave, reporte: prev.reporte, error: err instanceof Error ? err.message : 'No se pudo leer el reporte de merma.' })); });
+      .catch(err => { if (!cancelado) setEstado(prev => ({ clave, reporte: prev.reporte, error: mensajeAmigable(err, { porDefecto: 'No se pudo leer el reporte de merma.' }) })); });
     return () => { cancelado = true; };
   }, [clave, rango.desde, rango.hasta, categoria]);
   const reintentar = useCallback(() => setVersion(v => v + 1), []);

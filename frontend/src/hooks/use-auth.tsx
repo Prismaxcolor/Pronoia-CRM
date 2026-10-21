@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { apiFetch, setToken, clearToken, getToken, ApiError, borrarBorradoresLocales, tokenEsDeSesion } from '../services/api-client';
+import { apiFetch, setToken, clearToken, getToken, borrarBorradoresLocales, tokenEsDeSesion } from '../services/api-client';
 import { limpiarUltimasRutas } from '../services/nav-memory';
 import { aplicarTemaMarca, normalizarTemaMarca } from '../lib/tema-marca';
 import { PERMISOS_POR_ROL, tienePermiso as checkPermiso } from '@shared/types/index.js';
@@ -14,6 +14,7 @@ import { contarBorradoresDeUsuario, planificarSalida, type PlanSalida } from '..
 import { storageSeguro } from '../lib/borrador';
 import ConfirmarSalidaModal from '../components/ConfirmarSalidaModal';
 import PantallaDesbloqueoPin from '../components/PantallaDesbloqueoPin';
+import { mensajeAmigable } from '../lib/mensaje-error';
 
 interface UsuarioApi {
   id: string;
@@ -241,7 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       iniciarSesionLocalmente(token, mapUsuario(u), remember);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Error inesperado al iniciar sesión.';
+      const msg = mensajeAmigable(err, { porDefecto: 'Error inesperado al iniciar sesión.' });
       setError(msg);
       throw new Error(msg, { cause: err });
     }
@@ -257,7 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       iniciarSesionLocalmente(token, mapUsuario(u), true);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Error inesperado al registrarse.';
+      const msg = mensajeAmigable(err, { porDefecto: 'Error inesperado al registrarse.' });
       setError(msg);
       throw new Error(msg, { cause: err });
     }

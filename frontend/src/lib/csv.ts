@@ -61,6 +61,11 @@ export function registrarProveedorPieCsv(proveedor: (() => string | null) | null
   proveedorPie = proveedor;
 }
 
+/** Pie de antigüedad vigente (datos de caché sin conexión) o null; lo usa también la exportación a Excel. */
+export function pieDatosCache(): string | null {
+  return proveedorPie ? proveedorPie() : null;
+}
+
 /** Añade al final del CSV una línea con el pie (p. ej. 'Generado sin conexión con datos de hace 3 h'). */
 export function conPieCsv(contenido: string, pie: string | null): string {
   return pie ? contenido + escaparCampoCsv(pie) + SALTO_CSV : contenido;

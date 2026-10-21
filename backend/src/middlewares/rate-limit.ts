@@ -107,3 +107,18 @@ export const cronLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes. Espera un minuto y reintenta.' },
 });
+
+/**
+ * GET públicos de tasas (/oficial, /euro, /binance, /historial): 60 por minuto por IP.
+ * No se exige sesión porque el frontend los llama sin Authorization (frontend/src/services/tasa-service.ts);
+ * lo que se limita es el abuso: con la caché vencida cada GET dispara un fetch externo + INSERT.
+ */
+export const LIMITE_TASAS_PUBLICAS_POR_MINUTO = 60;
+
+export const tasasPublicasLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: LIMITE_TASAS_PUBLICAS_POR_MINUTO,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiadas consultas de tasas. Espera un minuto y reintenta.' },
+});

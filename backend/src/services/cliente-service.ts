@@ -1,5 +1,6 @@
 import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
+import { escribirConReportes } from './grupo-silencio-service.js';
 import type { TipoVentaCliente, CrearClienteInput, ActualizarClienteInput } from '../schemas/clientes.js';
 
 interface ClienteRow {
@@ -17,6 +18,7 @@ interface ClienteRow {
   telegram_chat_id: string | null;
   telegram_linked_at: string | null;
   tipo_venta: TipoVentaCliente | null;
+  telegram_reportes_activos?: boolean | null;
 }
 
 export interface ClientePublico {
@@ -34,6 +36,8 @@ export interface ClientePublico {
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
   tipoVenta: TipoVentaCliente;
+  /** false = el superadmin apagó los avisos de Telegram de los movimientos de este cliente. */
+  telegramReportesActivos: boolean;
 }
 
 function toPublico(row: ClienteRow): ClientePublico {
@@ -52,6 +56,7 @@ function toPublico(row: ClienteRow): ClientePublico {
     telegramChatId: row.telegram_chat_id,
     telegramLinkedAt: row.telegram_linked_at,
     tipoVenta: row.tipo_venta ?? 'nacional',
+    telegramReportesActivos: row.telegram_reportes_activos !== false,
   };
 }
 
@@ -88,7 +93,7 @@ export async function crearCliente(
 export async function actualizarCliente(
   id: string,
   cambios: ActualizarClienteInput
-): Promise<{ cliente: ClientePublico } | { error: string }> {
+): Promise<{ cliente: ClientePublico } | { error: string; pendiente?: boolean }> {
   const update: Record<string, unknown> = {};
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.identificacion !== undefined) update.identificacion = cambios.identificacion;
@@ -99,14 +104,13 @@ export async function actualizarCliente(
   if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
   if (cambios.tipoVenta !== undefined) update.tipo_venta = cambios.tipoVenta;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
+  if (cambios.telegramReportesActivos !== undefined) update.telegram_reportes_activos = cambios.telegramReportesActivos;
 
-  const { data, error } = await supabaseAdmin
-    .from('clientes')
-    .update(update)
-    .eq('id', id)
-    .select('*')
-    .maybeSingle();
-
+  const r = await escribirConReportes(update, u =>
+    supabaseAdmin.from('clientes').update(u).eq('id', id).select('*').maybeSingle()
+  );
+  if ('pendiente' in r) return { error: r.mensaje, pendiente: true };
+  const { data, error } = r;
   if (error) return { error: error.message };
   if (!data) return { error: 'Cliente no encontrado.' };
   return { cliente: toPublico(data as ClienteRow) };

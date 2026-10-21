@@ -8,7 +8,7 @@ function EtiquetaCategoria({ nombre, color, imagenUrl }: { nombre: string; color
       style={{ backgroundColor: color, color: colorTextoSobre(color) }}
       title={nombre}
     >
-      {imagenUrl && <img src={imagenUrl} alt="" loading="lazy" className="mr-1.5 h-4 w-4 shrink-0 rounded-full bg-white object-cover" />}
+      {imagenUrl && <img src={imagenUrl} alt="" loading="lazy" decoding="async" className="mr-1.5 h-4 w-4 shrink-0 rounded-full bg-white object-cover" />}
       <span className="truncate">{nombre}</span>
     </span>
   );

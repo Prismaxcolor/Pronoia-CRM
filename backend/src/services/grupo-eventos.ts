@@ -468,7 +468,10 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
     // Cobro parcial: el cambista entregó solo una parte; avisa cuánto falta (moneda de la cuenta destino).
     detalles: ctx => {
       const pendiente = num(ctx.resBody.montoPendiente);
-      return pendiente !== null && pendiente > 0 ? [`Cobro PARCIAL: faltan ${pendiente.toFixed(2)} por cobrar al cambista`] : [];
+      return [
+        ...(pendiente !== null && pendiente > 0 ? [`Cobro PARCIAL: faltan ${pendiente.toFixed(2)} por cobrar al cambista`] : []),
+        ...linea('Observación', txt(ctx.reqBody.observacion)),
+      ];
     },
   }),
 

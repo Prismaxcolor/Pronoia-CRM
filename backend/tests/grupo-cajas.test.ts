@@ -56,6 +56,13 @@ import { notificarGrupoMiddleware } from '../src/middlewares/notificar-grupo.js'
 import { limpiarCacheActores } from '../src/services/grupo-notificar-service.js';
 import { configurarSecretosParaPruebas } from '../src/config/secretos.js';
 
+// Los reintentos de n8n esperan con backoff real; en tests se hacen al instante para que no se filtren a otros casos.
+vi.mock('../src/services/n8n-cliente.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/services/n8n-cliente.js')>();
+  return { ...real, enviarN8n: (u: string, c: Record<string, unknown>, o = {}) => real.enviarN8n(u, c, { ...o, esperar: async () => undefined }) };
+});
+
+
 const CHAT_CAJAS = '-1001234567890';
 
 interface FakeReq { method: string; originalUrl: string; body?: unknown; user?: unknown }
@@ -246,7 +253,7 @@ describe('dinero -> grupo de cajas', () => {
   it('si Telegram/n8n falla, no lanza: queda registrado y la operación sigue', async () => {
     fetchMock.mockRejectedValue(new Error('n8n caído'));
     const { next } = ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: PAGO }, 201, { numeroPago: 12 });
-    await esperarEnvios(1);
+    await esperarEnvios(3); // 3 intentos antes de dejarlo en la cola
     await pausa();
     expect(next).toHaveBeenCalled();
   });

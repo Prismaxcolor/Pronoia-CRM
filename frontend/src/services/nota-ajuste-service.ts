@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { mensajeAmigable } from '../lib/mensaje-error';
 import { leerGet } from './lectura-service';
 import type { CategoriaDeNota } from '@shared/types/index.js';
 
@@ -13,6 +14,8 @@ export interface CrearNotaAjusteInput {
   fecha?: string;
   /** Categoría del Wallet (opcional): solo se guarda y se muestra en la nota. */
   categoriaId?: string | null;
+  /** Clave de idempotencia (uuid): con la misma clave el servidor devuelve el resultado original en vez de repetir la operación. */
+  clientRequestId?: string;
 }
 
 export interface NotaAjusteDetalle {
@@ -65,7 +68,7 @@ export async function crearNotaAjuste(
       body: input,
     });
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo crear la nota.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudo crear la nota.' }) };
   }
 }
 
@@ -83,7 +86,7 @@ export async function anularNotaAjuste(
       body: { motivo, llaveEdicion: llaveEdicion || undefined },
     });
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo anular la nota.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudo anular la nota.' }) };
   }
 }
 
@@ -101,6 +104,6 @@ export async function cambiarCategoriaNota(
       body: { categoriaId },
     });
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo cambiar la categoría de la nota.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudo cambiar la categoría de la nota.' }) };
   }
 }

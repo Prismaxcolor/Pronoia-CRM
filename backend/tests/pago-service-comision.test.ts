@@ -15,7 +15,12 @@ const bd = vi.hoisted(() => ({
 
 vi.mock('../src/config/supabase.js', () => ({
   supabaseAdmin: {
-    rpc: () => { bd.rpcLlamadas += 1; return Promise.resolve({ data: bd.rpcResultado, error: null }); },
+    rpc: (nombre: string) => {
+      // Sin la migración de idempotencia no existen los envoltorios `*_completo`: el servicio cae al flujo anterior.
+      if (nombre.endsWith('_completo')) return Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
+      bd.rpcLlamadas += 1;
+      return Promise.resolve({ data: bd.rpcResultado, error: null });
+    },
     from: () => ({ update: () => ({ eq: () => Promise.resolve({ error: null }), in: () => Promise.resolve({ error: null }) }) }),
   },
 }));

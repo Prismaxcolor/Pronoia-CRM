@@ -33,7 +33,7 @@ function AlmacenTarjeta({ tarjeta, puedeEditar, puedeVerKg, onVerFotos, onEditar
           className="group relative block h-28 w-full overflow-hidden bg-surface-alt focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400"
           aria-label={`Ver ${a.fotos.length === 1 ? 'la foto' : `las ${a.fotos.length} fotos`} de ${a.nombre}`}
         >
-          <img src={foto} alt="" loading="lazy" className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]" />
+          <img src={foto} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]" />
           {a.fotos.length > 1 && (
             <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[11px] text-white">
               <ImagenIcono size={11} aria-hidden="true" /> {a.fotos.length}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Modal from '../../components/Modal';
 import { X } from 'lucide-react';
 import { editarMovimiento, type EditarMovimientoInput } from '../../services/transaccion-edicion-service';
 import type { Banca, Movimiento } from '@shared/types/index.js';
@@ -86,92 +87,90 @@ function EditarMovimientoModal({ movimiento, bancas, onClose, onGuardado }: Prop
   const labelClass = 'block text-xs font-medium text-text-secondary mb-1';
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface z-10">
-          <h2 className="text-lg font-bold text-text-primary">Editar {ETIQUETA_TIPO[movimiento.tipo].toLowerCase()}</h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
+    <Modal onClose={onClose} bloqueado={guardando} ancho="max-w-md">
+      <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface z-10">
+        <h2 className="text-lg font-bold text-text-primary">Editar {ETIQUETA_TIPO[movimiento.tipo].toLowerCase()}</h2>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        {contableBloqueado ? (
+          <p className="rounded-lg border border-border bg-surface-alt p-3 text-xs text-text-secondary">
+            {conMesa
+              ? 'Esta transferencia usa una mesa de cambio: sus cuentas y montos no se pueden cambiar. Si hay un error, anúlala y regístrala de nuevo. Aquí puedes editar la fecha, la referencia y el concepto.'
+              : 'Este movimiento lleva comisión bancaria: sus cuentas y montos no se pueden cambiar. Si hay un error, anúlalo (se anula también su comisión) y regístralo de nuevo. Aquí puedes editar la referencia y el concepto.'}
+          </p>
+        ) : (
+          <>
+        <div>
+          <label className={labelClass}>{esTransferencia ? 'Banca origen' : movimiento.tipo === 'ingreso' ? 'Banca que recibe' : 'Banca de la que sale'}</label>
+          <SelectorBanca
+            bancas={bancas.filter(b => b.id === movimiento.bancaOrigenId || (!b.archivada && puedeEditarBanca(b)))}
+            valor={bancaId}
+            conSaldo={false}
+            ariaLabel="Cuenta o caja de origen"
+            onChange={setBancaId}
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {contableBloqueado ? (
-            <p className="rounded-lg border border-border bg-surface-alt p-3 text-xs text-text-secondary">
-              {conMesa
-                ? 'Esta transferencia usa una mesa de cambio: sus cuentas y montos no se pueden cambiar. Si hay un error, anúlala y regístrala de nuevo. Aquí puedes editar la fecha, la referencia y el concepto.'
-                : 'Este movimiento lleva comisión bancaria: sus cuentas y montos no se pueden cambiar. Si hay un error, anúlalo (se anula también su comisión) y regístralo de nuevo. Aquí puedes editar la referencia y el concepto.'}
-            </p>
-          ) : (
-            <>
+        {esTransferencia && (
           <div>
-            <label className={labelClass}>{esTransferencia ? 'Banca origen' : movimiento.tipo === 'ingreso' ? 'Banca que recibe' : 'Banca de la que sale'}</label>
+            <label className={labelClass}>Banca destino</label>
             <SelectorBanca
-              bancas={bancas.filter(b => b.id === movimiento.bancaOrigenId || (!b.archivada && puedeEditarBanca(b)))}
-              valor={bancaId}
+              bancas={bancas.filter(b => b.id !== bancaId && (b.id === movimiento.bancaDestinoId || (!b.archivada && puedeEditarBanca(b))))}
+              valor={bancaDestinoId}
               conSaldo={false}
-              ariaLabel="Cuenta o caja de origen"
-              onChange={setBancaId}
+              titulo="Elegir cuenta o caja de destino"
+              placeholder="Selecciona banca…"
+              ariaLabel="Cuenta o caja de destino"
+              onChange={setBancaDestinoId}
             />
           </div>
+        )}
 
-          {esTransferencia && (
-            <div>
-              <label className={labelClass}>Banca destino</label>
-              <SelectorBanca
-                bancas={bancas.filter(b => b.id !== bancaId && (b.id === movimiento.bancaDestinoId || (!b.archivada && puedeEditarBanca(b))))}
-                valor={bancaDestinoId}
-                conSaldo={false}
-                titulo="Elegir cuenta o caja de destino"
-                placeholder="Selecciona banca…"
-                ariaLabel="Cuenta o caja de destino"
-                onChange={setBancaDestinoId}
-              />
-            </div>
-          )}
-
-          <div className={monedasDistintas ? 'grid grid-cols-2 gap-3' : ''}>
-            <div>
-              <label className={labelClass}>Monto {origen && `(${origen.moneda})`}</label>
-              <input type="text" inputMode="decimal" value={monto} onChange={e => setMonto(e.target.value)} className={inputClass} />
-            </div>
-            {monedasDistintas && (
-              <div>
-                <label className={labelClass}>Recibe destino ({destino?.moneda})</label>
-                <input type="text" inputMode="decimal" value={montoDestino} onChange={e => setMontoDestino(e.target.value)} className={inputClass} />
-              </div>
-            )}
-          </div>
-            </>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Fecha</label>
-              <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} required />
-            </div>
-            <div>
-              <label className={labelClass}>Referencia</label>
-              <input type="text" value={referencia} onChange={e => setReferencia(e.target.value)} maxLength={50} className={inputClass} />
-            </div>
-          </div>
-
+        <div className={monedasDistintas ? 'grid grid-cols-2 gap-3' : ''}>
           <div>
-            <label className={labelClass}>Concepto</label>
-            <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={200} className={inputClass} />
+            <label className={labelClass}>Monto {origen && `(${origen.moneda})`}</label>
+            <input type="text" inputMode="decimal" value={monto} onChange={e => setMonto(e.target.value)} className={inputClass} />
           </div>
+          {monedasDistintas && (
+            <div>
+              <label className={labelClass}>Recibe destino ({destino?.moneda})</label>
+              <input type="text" inputMode="decimal" value={montoDestino} onChange={e => setMontoDestino(e.target.value)} className={inputClass} />
+            </div>
+          )}
+        </div>
+          </>
+        )}
 
-          <CampoLlaveEdicion entidadTipo="movimiento_banca" entidadId={movimiento.id} valor={llave} onChange={setLlave} />
-
-          {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3"><p className="text-red-600 text-sm">{error}</p></div>}
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : 'Guardar cambios'}
-            </button>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelClass}>Fecha</label>
+            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} required />
           </div>
-        </form>
-      </div>
-    </div>
+          <div>
+            <label className={labelClass}>Referencia</label>
+            <input type="text" value={referencia} onChange={e => setReferencia(e.target.value)} maxLength={50} className={inputClass} />
+          </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>Concepto</label>
+          <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={200} className={inputClass} />
+        </div>
+
+        <CampoLlaveEdicion entidadTipo="movimiento_banca" entidadId={movimiento.id} valor={llave} onChange={setLlave} />
+
+        {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3"><p className="text-red-600 text-sm">{error}</p></div>}
+
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : 'Guardar cambios'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

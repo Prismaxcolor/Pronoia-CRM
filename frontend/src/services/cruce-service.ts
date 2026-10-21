@@ -16,11 +16,16 @@ export interface AdelantoDisponible {
 /** Adelantos (proveedor) o anticipos (cliente) con saldo sin aplicar a facturas,
  *  para cruzarlos al registrar un pago/cobro. Lista vacía si falla la carga. */
 export async function obtenerAdelantosDisponibles(tipo: TipoEntidad, entidadId: string): Promise<AdelantoDisponible[]> {
-  const base = tipo === 'proveedor' ? '/api/proveedores' : '/api/clientes';
   try {
-    const { adelantos } = await apiFetch<{ adelantos: AdelantoDisponible[] }>(`${base}/${entidadId}/adelantos-disponibles`);
-    return adelantos;
+    return await obtenerAdelantosDisponiblesOError(tipo, entidadId);
   } catch {
     return [];
   }
+}
+
+/** Igual que `obtenerAdelantosDisponibles`, pero lanza el error si la carga falla (no lo disfraza de "sin adelantos"). */
+export async function obtenerAdelantosDisponiblesOError(tipo: TipoEntidad, entidadId: string): Promise<AdelantoDisponible[]> {
+  const base = tipo === 'proveedor' ? '/api/proveedores' : '/api/clientes';
+  const { adelantos } = await apiFetch<{ adelantos: AdelantoDisponible[] }>(`${base}/${entidadId}/adelantos-disponibles`);
+  return adelantos;
 }

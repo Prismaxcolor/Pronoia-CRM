@@ -8,6 +8,7 @@
     { "source": "/health", "destination": "/api/index" }
   ],
   "crons": [
-    { "path": "/api/tasas/refrescar-oficiales", "schedule": "0 11 * * *" }
+    { "path": "/api/tasas/refrescar-oficiales", "schedule": "0 11 * * *" },
+    { "path": "/api/avisos/reprocesar", "schedule": "30 11 * * *" }
   ]
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
 import { Loader2, Plus } from 'lucide-react';
 import { obtenerLotes, crearLote, actualizarLote } from '../../services/lote-service';
 import { obtenerProductos } from '../../services/producto-service';
@@ -56,6 +57,7 @@ function LotesPanel() {
   const [mostrarForm, setMostrarForm] = useState(false);
   const [nombre, setNombre] = useState('');
   const [fotosNuevoLote, setFotosNuevoLote] = useState<FotoLocal[]>([]);
+  useLiberarVistasPrevias(fotosNuevoLote);
   const [guardando, setGuardando] = useState(false);
   const [loteEditando, setLoteEditando] = useState<Lote | null>(null);
   const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA);

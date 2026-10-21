@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useLiberarVistasPrevias } from '../../../hooks/use-liberar-vistas-previas';
+import Modal from '../../../components/Modal';
 import { X } from 'lucide-react';
 import type { CategoriaWallet, TipoCategoria } from '@shared/types/index.js';
 import { actualizarCategoria, crearCategoria } from '../../../services/categoria-wallet-service';
@@ -39,6 +41,7 @@ function CategoriaFormModal({ categoria, padre, onClose, onGuardado }: Props) {
   const [tipo, setTipo] = useState<TipoCategoria | ''>(categoria?.tipo ?? (permitidos.length === 1 ? permitidos[0] : ''));
   const [color, setColor] = useState(categoria?.color ?? padre?.color ?? COLOR_CATEGORIA_POR_DEFECTO);
   const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(categoria?.imagenUrl ? [categoria.imagenUrl] : []));
+  useLiberarVistasPrevias(fotos);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,41 +78,39 @@ function CategoriaFormModal({ categoria, padre, onClose, onGuardado }: Props) {
   const titulo = categoria ? (esSub ? 'Editar subcategoría' : 'Editar categoría') : (esSub ? 'Nueva subcategoría' : 'Nueva categoría');
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label={titulo}>
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
-          <h2 className="text-lg font-bold text-text-primary">{titulo}</h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded text-text-muted hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><X size={20} /></button>
-        </div>
-        <form onSubmit={enviar} className="p-5 space-y-4">
-          {esSub && <p className="text-sm text-text-secondary">Dentro de la categoría <span className="font-medium text-text-primary">{padre.nombre}</span>.</p>}
-          <div>
-            <label htmlFor="categoria-nombre" className="block text-xs font-medium text-text-secondary mb-1">Nombre</label>
-            <input id="categoria-nombre" type="text" required maxLength={80} value={nombre} onChange={e => setNombre(e.target.value)} className={CAMPO} placeholder={esSub ? 'Ej: Electricidad' : 'Ej: Servicios'} />
-          </div>
-          <div>
-            <label htmlFor="categoria-tipo" className="block text-xs font-medium text-text-secondary mb-1">Se usa en</label>
-            <select id="categoria-tipo" value={tipo} onChange={e => setTipo(e.target.value as TipoCategoria)} className={CAMPO} disabled={permitidos.length === 1}>
-              <option value="">— Elige —</option>
-              {permitidos.map(t => <option key={t} value={t}>{ETIQUETA_TIPO_CATEGORIA[t]}</option>)}
-            </select>
-            {esSub && permitidos.length === 1 && <p className="mt-1 text-xs text-text-muted">Una subcategoría usa el mismo tipo que su categoría.</p>}
-          </div>
-          <div>
-            <FotoMultiplePicker fotos={fotos} max={1} label="Imagen (opcional)" onAgregar={elegirImagen} onQuitar={() => setFotos([])} />
-            <p className="text-xs text-text-muted mt-1">Logo o imagen de la categoría. El nombre y el color se conservan. JPG, PNG o WEBP.</p>
-          </div>
-          <SelectorColor valor={color} onCambiar={setColor} />
-          {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3"><p className="text-red-600 text-sm">{error}</p></div>}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover">Cancelar</button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
-              {guardando ? 'Guardando…' : 'Guardar'}
-            </button>
-          </div>
-        </form>
+    <Modal onClose={onClose} bloqueado={guardando} ariaLabel={titulo} ancho="max-w-md">
+      <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
+        <h2 className="text-lg font-bold text-text-primary">{titulo}</h2>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded text-text-muted hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><X size={20} /></button>
       </div>
-    </div>
+      <form onSubmit={enviar} className="p-5 space-y-4">
+        {esSub && <p className="text-sm text-text-secondary">Dentro de la categoría <span className="font-medium text-text-primary">{padre.nombre}</span>.</p>}
+        <div>
+          <label htmlFor="categoria-nombre" className="block text-xs font-medium text-text-secondary mb-1">Nombre</label>
+          <input id="categoria-nombre" type="text" required maxLength={80} value={nombre} onChange={e => setNombre(e.target.value)} className={CAMPO} placeholder={esSub ? 'Ej: Electricidad' : 'Ej: Servicios'} />
+        </div>
+        <div>
+          <label htmlFor="categoria-tipo" className="block text-xs font-medium text-text-secondary mb-1">Se usa en</label>
+          <select id="categoria-tipo" value={tipo} onChange={e => setTipo(e.target.value as TipoCategoria)} className={CAMPO} disabled={permitidos.length === 1}>
+            <option value="">— Elige —</option>
+            {permitidos.map(t => <option key={t} value={t}>{ETIQUETA_TIPO_CATEGORIA[t]}</option>)}
+          </select>
+          {esSub && permitidos.length === 1 && <p className="mt-1 text-xs text-text-muted">Una subcategoría usa el mismo tipo que su categoría.</p>}
+        </div>
+        <div>
+          <FotoMultiplePicker fotos={fotos} max={1} label="Imagen (opcional)" onAgregar={elegirImagen} onQuitar={() => setFotos([])} />
+          <p className="text-xs text-text-muted mt-1">Logo o imagen de la categoría. El nombre y el color se conservan. JPG, PNG o WEBP.</p>
+        </div>
+        <SelectorColor valor={color} onCambiar={setColor} />
+        {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3"><p className="text-red-600 text-sm">{error}</p></div>}
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover">Cancelar</button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

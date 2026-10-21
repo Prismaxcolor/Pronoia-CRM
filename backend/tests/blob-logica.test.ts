@@ -161,6 +161,10 @@ describe('config', () => {
 
   it('"consultar datos" viene activado por defecto y solo acepta booleanos', () => {
     expect(CONFIG_DEFECTO.consultarDatos).toBe(true);
+    expect(normalizarConfig({ nombre: 'BLOB' }).nombre).toBe('Nous');
+    expect(normalizarConfig({ nombre: ' blob ' }).nombre).toBe('Nous');
+    expect(normalizarConfig({ nombre: 'Rosa' }).nombre).toBe('Rosa');
+    expect(CONFIG_DEFECTO.nombre).toBe('Nous');
     expect(normalizarConfig({ consultarDatos: false }).consultarDatos).toBe(false);
     expect(normalizarConfig({ consultarDatos: 'no' }).consultarDatos).toBe(true);
     expect(normalizarConfig({}).consultarDatos).toBe(true);

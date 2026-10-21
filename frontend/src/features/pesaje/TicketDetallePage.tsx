@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { fotoLocalDeFile } from '../../lib/foto-picker';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Printer, FileDown, Pencil, Loader2, Plus, Trash2, Scale, ChevronDown } from 'lucide-react';
 import { BotonAccion, EncabezadoPagina, EstadoVacio, SkeletonBloque, SkeletonKpis, formatearFecha } from '../../components/ui';
@@ -121,6 +123,7 @@ function TicketDetalleContenido() {
   const [vehiculoEdit, setVehiculoEdit] = useState('');
   const [fechaEdit, setFechaEdit] = useState('');
   const [pesajesEdit, setPesajesEdit] = useState<PesajeGlobalFila[]>([]);
+  useLiberarVistasPrevias(materiales.flatMap(m => m.fotos), fotosDevolucionEdit, pesajesEdit.flatMap(p => p.fotos));
   // Solo se envían las pesadas si el usuario las tocó (tickets viejos pueden no tener desglose ni fotos por pesada).
   const [pesajesTocados, setPesajesTocados] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -256,13 +259,13 @@ function TicketDetalleContenido() {
 
   const agregarFotosFila = (uid: number, files: File[]) =>
     setMateriales(prev => prev.map(f => (f.uid === uid
-      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      ? { ...f, fotos: [...f.fotos, ...files.map(fotoLocalDeFile)] }
       : f)));
   const quitarFotoFila = (uid: number, idx: number) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
 
   const agregarFotosDevolucion = (files: File[]) =>
-    setFotosDevolucionEdit(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+    setFotosDevolucionEdit(prev => [...prev, ...files.map(fotoLocalDeFile)]);
   const quitarFotoDevolucion = (idx: number) =>
     setFotosDevolucionEdit(prev => prev.filter((_, i) => i !== idx));
 

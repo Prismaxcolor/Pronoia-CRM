@@ -154,7 +154,7 @@ function VehiculosPage() {
                           title="Ver fotos"
                           aria-label={`Ver fotos de ${etiquetaVehiculo(v)}`}
                         >
-                          <img src={v.fotos[0]} alt={`Foto de ${etiquetaVehiculo(v)}`} className="h-full w-full object-cover" />
+                          <img loading="lazy" decoding="async" src={v.fotos[0]} alt={`Foto de ${etiquetaVehiculo(v)}`} className="h-full w-full object-cover" />
                           {v.fotos.length > 1 && (
                             <span className="absolute bottom-0 right-0 rounded-tl bg-black/60 px-1 text-[10px] text-white">{v.fotos.length}</span>
                           )}

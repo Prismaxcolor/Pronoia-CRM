@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
-import { Printer, DollarSign, FileEdit, Send } from 'lucide-react';
+import { Printer, DollarSign, FileEdit, FileSpreadsheet, Send } from 'lucide-react';
 import {
   obtenerEstadoCuenta,
   enviarEstadoCuentaTelegram,
@@ -81,6 +81,7 @@ function EstadoCuentaPage({ tipo }: Props) {
   const [notaAbierta, setNotaAbierta] = useState(false);
   const [notaAAnular, setNotaAAnular] = useState<EntradaEstadoCuenta | null>(null);
   const [enviandoTelegram, setEnviandoTelegram] = useState(false);
+  const [exportandoExcel, setExportandoExcel] = useState(false);
 
   const volverA = tipo === 'proveedor' ? '/proveedores' : '/clientes';
   const etiquetaEntidad = tipo === 'proveedor' ? 'Proveedores' : 'Clientes';
@@ -130,6 +131,22 @@ function EstadoCuentaPage({ tipo }: Props) {
   // El saldo corrido se calcula con TODAS las entradas del periodo; el filtro por tipo solo decide qué filas se ven.
   const conSaldo = useMemo(() => saldoCorrido(estado?.entradas ?? []), [estado]);
   const visibles = useMemo(() => filtrarEntradasPorTipo(conSaldo, tipoEntrada), [conSaldo, tipoEntrada]);
+  /** Excel con TODAS las filas del filtro vigente (no solo la página visible), igual que la tabla y la impresión. */
+  const exportarExcel = async () => {
+    if (!estado) return;
+    setExportandoExcel(true);
+    try {
+      const { descargarEstadoCuentaXlsx } = await import('./estado-cuenta-xlsx');
+      await descargarEstadoCuentaXlsx({
+        tipo, nombreEntidad: estado.entidad.nombre, filas: visibles, saldoFinal: conSaldo.length > 0 ? conSaldo[conSaldo.length - 1].saldoCorrido : 0,
+        saldoActual: estado.saldoActual ?? estado.totales.saldo, desde: desde || undefined, hasta: hasta || undefined, tipoEntrada,
+      });
+    } catch {
+      toast.errorMsg('No se pudo generar el archivo de Excel.');
+    }
+    setExportandoExcel(false);
+  };
+
   const kpis = useMemo(() => (estado ? kpisEstadoCuenta(estado.totales, estado.entradas) : null), [estado]);
   const fechaReferencia = hasta ? new Date(`${hasta}T00:00:00Z`) : hoyLocal();
   const alertas = useMemo(
@@ -217,6 +234,7 @@ function EstadoCuentaPage({ tipo }: Props) {
                 </span>
               )}
               <BotonAccion variante="secundario" onClick={() => window.print()} icono={<Printer size={16} />}>Imprimir</BotonAccion>
+              <BotonAccion variante="secundario" onClick={exportarExcel} disabled={exportandoExcel} icono={<FileSpreadsheet size={16} />}>{exportandoExcel ? 'Generando...' : 'Excel'}</BotonAccion>
               {puedeAjustar && (
                 <span title="Manda el estado de cuenta (PDF) al Telegram vinculado">
                   <BotonAccion soloEnLinea variante="secundario" onClick={enviarPorTelegram} disabled={enviandoTelegram} icono={<Send size={16} />}>

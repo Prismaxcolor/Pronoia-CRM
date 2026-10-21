@@ -63,7 +63,7 @@ vi.mock('../src/services/comision-categoria-service.js', () => ({
 }));
 
 import {
-  aplicarComisionesDePago, grupoLlevaComision, pagoComisionDisponible, validarEleccionComisionPago,
+  aplicarComisionesDePago, grupoLlevaComision, pagoComisionDisponible, validarEleccionComisionPago, reintentarComisionDeBanca,
   MENSAJE_PAGO_COMISION_PENDIENTE, MENSAJE_PAGO_COMISION_SOLO_BS, MENSAJE_PAGO_ELEGIR_COMISION,
   type LineaComisionPago,
 } from '../src/services/pago-comision-service.js';
@@ -185,6 +185,13 @@ describe('aplicarComisionesDePago', () => {
     const r = await aplicarComisionesDePago(entrada([bs('b1', true), bs('b2', true)], ['m1', 'm2']));
     expect(r.comisiones.map(c => c.bancaId)).toEqual(['b2']);
     expect(r.advertencia).toMatch(/no se pudo cargar la comisión bancaria/);
+    expect(r.bancasFallidas).toEqual(['b1']);
+  });
+
+  it('informa las cuentas fallidas para reintentarlas cuando no se pueden leer los movimientos', async () => {
+    bd.errorLectura = { message: 'caída' };
+    const r = await aplicarComisionesDePago(entrada([bs('b1', true), bs('b2', true), usd('b3', true)]));
+    expect(r.bancasFallidas).toEqual(['b1', 'b2']);
   });
 
   it('si no se pueden leer los movimientos devuelve una advertencia y no llama a la RPC', async () => {
@@ -228,5 +235,32 @@ describe('validarEleccionComisionPago: moneda real de la cuenta', () => {
   it('rechaza comisión declarada en Bs sobre una cuenta que en la BD es USD', async () => {
     bd.monedaPorBanca.b8 = 'USD';
     expect(await validarEleccionComisionPago([{ bancaId: 'b8', moneda: 'VES', llevaComision: true }])).toMatch(/no coincide/);
+  });
+});
+
+describe('reintentarComisionDeBanca', () => {
+  it('crea el cargo de la cuenta y le pone la categoría', async () => {
+    bd.filas = [{ id: 'm1', banca_origen_id: 'b1', subtipo: 'pago' }];
+    const r = await reintentarComisionDeBanca(['m1'], 'b1', USUARIO);
+    expect(r).toEqual({ ok: true, comision: { bancaId: 'b1', movimientoId: 'c-m1', monto: 14 } });
+    expect(bd.categoriaAplicada).toEqual([['c-m1']]);
+  });
+
+  it('si el pago ya tiene su comisión (un intento anterior sí llegó) cuenta como resuelto sin duplicar', async () => {
+    bd.filas = [{ id: 'm1', banca_origen_id: 'b1', subtipo: 'pago' }];
+    bd.rpcErrorPorMovimiento.m1 = { code: 'P0001', message: 'Este pago ya tiene comisión bancaria.' };
+    expect(await reintentarComisionDeBanca(['m1'], 'b1', USUARIO)).toEqual({ ok: true });
+  });
+
+  it('otro error de la RPC o una cuenta sin movimiento devuelve ok:false con el motivo', async () => {
+    bd.filas = [{ id: 'm1', banca_origen_id: 'b1', subtipo: 'pago' }];
+    bd.rpcErrorPorMovimiento.m1 = { code: 'P0001', message: 'El pago está anulado' };
+    expect(await reintentarComisionDeBanca(['m1'], 'b1', USUARIO)).toEqual({ ok: false, error: 'El pago está anulado' });
+    expect(await reintentarComisionDeBanca(['m1'], 'bX', USUARIO)).toMatchObject({ ok: false });
+  });
+
+  it('si no se pueden leer los movimientos devuelve ok:false', async () => {
+    bd.errorLectura = { message: 'caída' };
+    expect(await reintentarComisionDeBanca(['m1'], 'b1', USUARIO)).toMatchObject({ ok: false });
   });
 });

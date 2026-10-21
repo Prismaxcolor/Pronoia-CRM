@@ -51,6 +51,7 @@ export const crearBancaSchema = z.object({
   color: colorBancaSchema,
   imagenUrl: imagenBancaSchema,
   telegramChatId: telegramChatIdSchema,
+  telegramReportesActivos: z.boolean().optional(),
 });
 
 export const actualizarBancaSchema = z.object({
@@ -60,6 +61,7 @@ export const actualizarBancaSchema = z.object({
   color: colorBancaSchema,
   imagenUrl: imagenBancaSchema,
   telegramChatId: telegramChatIdSchema,
+  telegramReportesActivos: z.boolean().optional(),
 });
 
 export const crearMovimientoSchema = z.object({

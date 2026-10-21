@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { ejecutarOperacionFinanciera } from '../services/operacion-financiera.js';
+import { TIPO_OPERACION, cuerpoConRepetida } from '../services/operaciones-idempotentes-cola.js';
 import { registrarPago, registrarPagoMultiple } from '../services/pago-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
@@ -8,10 +10,22 @@ import { anularTransaccionSchema, editarPagoSchema, type EditarPagoInput } from 
 import { validateBody } from '../middlewares/validate.js';
 import { registrarPagoSchema, registrarPagoMultipleSchema } from '../schemas/pagos.js';
 import { logger, clienteIp } from '../utils/logger.js';
+import { exigirCronSecret } from '../middlewares/exigir-cron-secret.js';
+import { cronLimiter } from '../middlewares/rate-limit.js';
+import { reintentarPasosPendientes } from '../services/pagos-pasos-service.js';
 import { exigirAccesoBancas } from '../middlewares/exigir-acceso-bancas.js';
 import { idsBancasDeGrupo } from '../services/banca-acceso-service.js';
 
 const router = Router();
+
+// Cron: reintenta los pasos posteriores de pagos/cobros que quedaron pendientes (categoría, comprobante, comisión).
+// Va ANTES de requireAuth porque lo llama Vercel Cron con `Authorization: Bearer $CRON_SECRET`, sin sesión de usuario.
+// Para programarlo: añadir a backend/vercel.json, en "crons", { "path": "/api/pagos/reintentar-pasos-pendientes", "schedule": "..." }.
+router.all('/reintentar-pasos-pendientes', cronLimiter, exigirCronSecret, async (_req, res) => {
+  const resumen = await reintentarPasosPendientes();
+  logger.info({ evento: 'pagos_pasos_pendientes_reintentados', ...resumen });
+  res.json(resumen);
+});
 
 router.use(requireAuth);
 
@@ -22,7 +36,11 @@ router.post(
   validateBody(registrarPagoSchema),
   exigirAccesoBancas(),
   async (req, res) => {
-    const result = await registrarPago(req.body, req.user!.sub);
+    // Con clientRequestId un doble clic o reintento no registra el pago dos veces (responde 200 con `repetida`).
+    const envio = await ejecutarOperacionFinanciera(res, TIPO_OPERACION.pagoProveedorCrear, req.body, req.user!.sub,
+      () => registrarPago(req.body, req.user!.sub));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -34,8 +52,9 @@ router.post(
       proveedorId: req.body.proveedorId,
       facturaId: req.body.facturaId ?? null,
       movimientoId: result.movimientoId,
+      repetida,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 
@@ -47,7 +66,10 @@ router.post(
   validateBody(registrarPagoMultipleSchema),
   exigirAccesoBancas(),
   async (req, res) => {
-    const result = await registrarPagoMultiple(req.body, req.user!.sub);
+    const envio = await ejecutarOperacionFinanciera(res, TIPO_OPERACION.pagoProveedorMultiple, req.body, req.user!.sub,
+      () => registrarPagoMultiple(req.body, req.user!.sub));
+    if (!envio) return;
+    const { resultado: result, repetida } = envio;
     if ('error' in result) {
       res.status(400).json(result);
       return;
@@ -62,8 +84,9 @@ router.post(
       numeroPago: result.numeroPago,
       numeroAdelanto: result.numeroAdelanto,
       numeroCruce: result.numeroCruce,
+      repetida,
     });
-    res.status(201).json(result);
+    res.status(repetida ? 200 : 201).json(cuerpoConRepetida(result, repetida));
   }
 );
 

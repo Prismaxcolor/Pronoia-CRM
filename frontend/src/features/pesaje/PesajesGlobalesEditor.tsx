@@ -1,4 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react';
+import { fotoLocalDeFile } from '../../lib/foto-picker';
 import FotoMaterialPicker from './FotoMaterialPicker';
 import { netoPesajeGlobalFila, pesajeGlobalVacio, sumaPesajesGlobales, type PesajeGlobalFila } from './pesaje-global-fila';
 
@@ -53,7 +54,7 @@ function PesajesGlobalesEditor({ pesajes, onChange }: Props) {
               label="Fotos del pesaje"
               fotos={f.fotos}
               onAgregar={files => actualizar(f.uid, {
-                fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))],
+                fotos: [...f.fotos, ...files.map(fotoLocalDeFile)],
               })}
               onQuitar={i => actualizar(f.uid, { fotos: f.fotos.filter((_, k) => k !== i) })}
             />

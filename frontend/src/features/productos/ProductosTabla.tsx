@@ -30,7 +30,7 @@ function ProductosTabla({ productos, catalogo, acciones, vacio }: Props) {
         celda: p => (
           <span className="flex items-center gap-2">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-brand-100 text-brand-700">
-              {p.fotos[0] ? <img src={p.fotos[0]} alt="" loading="lazy" className="h-full w-full object-cover" /> : <Package size={16} aria-hidden="true" />}
+              {p.fotos[0] ? <img src={p.fotos[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package size={16} aria-hidden="true" />}
             </span>
             <span className="min-w-0 font-medium text-text-primary">{p.nombre}</span>
           </span>

@@ -1,9 +1,10 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
 import { nombreArchivoSeguro } from '../utils/nombre-archivo.js';
-import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
+import { enviarAvisoN8n } from './n8n-aviso.js';
 import { logger } from '../utils/logger.js';
 import { TABLA_ENTIDAD, type EntidadTelegram } from './telegram-link-service.js';
+import { reportesTelegramActivos, type TablaReportes } from './grupo-silencio-service.js';
 
 const BUCKET = 'documentos-telegram';
 // El archivo queda en Storage indefinidamente aunque esta URL expire — deuda técnica
@@ -17,6 +18,8 @@ const WEBHOOK_FOTOS_TIMEOUT_MS = 30_000;
 export const MAX_FOTOS_POR_ALBUM = 10;
 /** Límite de Telegram para el pie de foto/documento. */
 const MAX_CAPTION = 1000;
+/** Documentos de movimientos que el superadmin puede silenciar por proveedor/cliente (telegram_reportes_activos). */
+const TIPOS_SILENCIABLES: ReadonlySet<TipoDocumentoTelegram> = new Set(['pago', 'cruce', 'nota']);
 
 export type TipoDocumentoTelegram =
   | 'ticket'
@@ -89,40 +92,28 @@ interface CuerpoBase {
   entidadId: string;
 }
 
-/** POST al webhook v2 de n8n. Devuelve true si n8n respondió 2xx. Nunca lanza. */
+/** POST al webhook v2 de n8n (con reintentos y cola). Devuelve true si n8n respondió 2xx. Nunca lanza. */
 async function llamarWebhook(
   contacto: Contacto,
   base: CuerpoBase,
   payload: Record<string, unknown>,
   timeoutMs = WEBHOOK_TIMEOUT_MS
 ): Promise<boolean> {
-  try {
-    const respuesta = await fetch(ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO, {
-      method: 'POST',
-      headers: await cabecerasWebhookN8n(),
-      body: JSON.stringify({
-        tipoDocumento: base.tipoDocumento,
-        entidadTipo: base.entidadTipo,
-        entidadId: base.entidadId,
-        chatId: contacto.chatId,
-        nombreEntidad: contacto.nombre,
-        ...payload,
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!respuesta.ok) {
-      logger.error({ evento: 'telegram_notify_error_webhook_status', status: respuesta.status, accion: payload.accion });
-      return false;
-    }
-    return true;
-  } catch (err) {
-    logger.error({
-      evento: 'telegram_notify_error_webhook',
-      accion: payload.accion,
-      mensaje: err instanceof Error ? err.message : String(err),
-    });
-    return false;
-  }
+  const resultado = await enviarAvisoN8n({
+    destino: 'contenido',
+    evento: 'telegram_notify',
+    contexto: { accion: payload.accion },
+    cuerpo: {
+      tipoDocumento: base.tipoDocumento,
+      entidadTipo: base.entidadTipo,
+      entidadId: base.entidadId,
+      chatId: contacto.chatId,
+      nombreEntidad: contacto.nombre,
+      ...payload,
+    },
+    opciones: { timeoutMs },
+  });
+  return resultado.ok;
 }
 
 /** Manda las fotos en álbumes (o una foto suelta), en orden y de a un envío por vez. */
@@ -161,6 +152,12 @@ export interface NotificarDocumentoParams {
   preparar: (nombreEntidad: string) => DocumentoPreparado | Promise<DocumentoPreparado>;
 }
 
+/** false si el superadmin apagó los avisos de movimientos de este proveedor/cliente (solo pagos, cruces y notas). */
+async function debeAvisar(params: NotificarDocumentoParams): Promise<boolean> {
+  if (!TIPOS_SILENCIABLES.has(params.tipoDocumento)) return true;
+  return reportesTelegramActivos(TABLA_ENTIDAD[params.entidadTipo] as TablaReportes, params.entidadId);
+}
+
 /**
  * Fire-and-forget deliberado: cerrar un pesaje o emitir una factura NUNCA debe
  * fallar por un problema de Telegram/Storage/n8n. Todo error queda solo logueado.
@@ -172,6 +169,7 @@ export async function notificarDocumento(params: NotificarDocumentoParams): Prom
     if (!ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO) return;
     const contacto = await obtenerContacto(params.entidadTipo, params.entidadId);
     if (!contacto) return; // no vinculado a Telegram todavía — no hay a quién avisar
+    if (!(await debeAvisar(params))) return;
 
     const doc = await params.preparar(contacto.nombre);
     const ruta = `${params.entidadTipo}/${params.entidadId}/${Date.now()}-${nombreArchivoSeguro(doc.nombreArchivo)}`;

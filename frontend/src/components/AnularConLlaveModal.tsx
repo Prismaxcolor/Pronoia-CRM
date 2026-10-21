@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import Modal from './Modal';
 import { X } from 'lucide-react';
 import type { EntidadConLlave } from '../services/auditoria-service';
 import CampoLlaveEdicion from './CampoLlaveEdicion';
@@ -33,50 +34,48 @@ function AnularConLlaveModal({ titulo, entidadTipo, entidadId, children, etiquet
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
-          <h2 className="text-lg font-bold text-text-primary">{titulo}</h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
-          </button>
+    <Modal onClose={onClose} bloqueado={guardando} ancho="max-w-md">
+      <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
+        <h2 className="text-lg font-bold text-text-primary">{titulo}</h2>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors">
+          <X size={20} />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        {children}
+
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Motivo de la anulación *</label>
+          <textarea
+            required
+            value={motivo}
+            onChange={e => setMotivo(e.target.value)}
+            className="w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent resize-none"
+            rows={3}
+            maxLength={300}
+            placeholder="Ej: Registrado por error"
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {children}
+        <CampoLlaveEdicion entidadTipo={entidadTipo} entidadId={entidadId} valor={llave} onChange={setLlave} />
 
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Motivo de la anulación *</label>
-            <textarea
-              required
-              value={motivo}
-              onChange={e => setMotivo(e.target.value)}
-              className="w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent resize-none"
-              rows={3}
-              maxLength={300}
-              placeholder="Ej: Registrado por error"
-            />
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <p className="text-red-600 text-sm">{error}</p>
           </div>
+        )}
 
-          <CampoLlaveEdicion entidadTipo={entidadTipo} entidadId={entidadId} valor={llave} onChange={setLlave} />
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="text-red-600 text-sm">{error}</p>
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Anulando...' : etiquetaBoton}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Anulando...' : etiquetaBoton}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import Modal from '../../components/Modal';
 import { Plus, Trash2, X } from 'lucide-react';
 import { obtenerBancas } from '../../services/banca-service';
 import {
@@ -136,114 +137,112 @@ function EditarPagoModal({ tipo, pago, onClose, onGuardado }: Props) {
   const labelClass = 'block text-xs font-medium text-text-secondary mb-1';
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface z-10">
-          <h2 className="text-lg font-bold text-text-primary">Editar {esPago ? 'pago' : 'cobro'}</h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
+    <Modal onClose={onClose} bloqueado={guardando} ancho="max-w-2xl">
+      <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface z-10">
+        <h2 className="text-lg font-bold text-text-primary">Editar {esPago ? 'pago' : 'cobro'}</h2>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-5 space-y-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className={labelClass}>Fecha</label>
+            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} required />
+          </div>
+          <div>
+            <label className={labelClass}>Concepto</label>
+            <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={300} className={inputClass} />
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Fecha</label>
-              <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} required />
-            </div>
-            <div>
-              <label className={labelClass}>Concepto</label>
-              <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={300} className={inputClass} />
-            </div>
-          </div>
+        {!conDinero && (
+          <p className="text-xs text-text-muted">Este cruce no movió dinero: solo se pueden cambiar la fecha y el concepto. Para cambiar lo que compensó, anúlalo y regístralo de nuevo.</p>
+        )}
 
-          {!conDinero && (
-            <p className="text-xs text-text-muted">Este cruce no movió dinero: solo se pueden cambiar la fecha y el concepto. Para cambiar lo que compensó, anúlalo y regístralo de nuevo.</p>
-          )}
-
-          {conDinero && (
-            <section>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-text-secondary">{esPago ? 'Bancas de origen' : 'Bancas de destino'}</p>
-                <button type="button" onClick={() => setBancas(prev => [...prev, { bancaId: '', monto: '', montoUsd: '', referencia: '' }])}
-                  className="flex items-center gap-1 text-xs text-brand-700 hover:underline"><Plus size={12} /> Agregar banca</button>
-              </div>
-              <div className="space-y-3">
-                {bancas.map((b, i) => {
-                  const catalogo = bancaPorId.get(b.bancaId);
-                  const moneda = catalogo?.moneda ?? '';
-                  return (
-                    <div key={i} className="border border-border rounded-lg p-3 space-y-2">
-                      <div className="flex gap-2">
-                        <SelectorBanca
-                          bancas={bancasCatalogo.filter(c => c.id === b.bancaId || (!c.archivada && puedeEditarBanca(c)))}
-                          valor={b.bancaId}
-                          conSaldo={false}
-                          placeholder="Selecciona banca…"
-                          ariaLabel="Banca"
-                          onChange={id => actualizarBanca(i, { bancaId: id })}
-                        />
-                        {bancas.length > 1 && (
-                          <button type="button" onClick={() => setBancas(prev => prev.filter((_, k) => k !== i))} aria-label="Quitar banca" className="text-red-600 p-2"><Trash2 size={16} /></button>
-                        )}
+        {conDinero && (
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium text-text-secondary">{esPago ? 'Bancas de origen' : 'Bancas de destino'}</p>
+              <button type="button" onClick={() => setBancas(prev => [...prev, { bancaId: '', monto: '', montoUsd: '', referencia: '' }])}
+                className="flex items-center gap-1 text-xs text-brand-700 hover:underline"><Plus size={12} /> Agregar banca</button>
+            </div>
+            <div className="space-y-3">
+              {bancas.map((b, i) => {
+                const catalogo = bancaPorId.get(b.bancaId);
+                const moneda = catalogo?.moneda ?? '';
+                return (
+                  <div key={i} className="border border-border rounded-lg p-3 space-y-2">
+                    <div className="flex gap-2">
+                      <SelectorBanca
+                        bancas={bancasCatalogo.filter(c => c.id === b.bancaId || (!c.archivada && puedeEditarBanca(c)))}
+                        valor={b.bancaId}
+                        conSaldo={false}
+                        placeholder="Selecciona banca…"
+                        ariaLabel="Banca"
+                        onChange={id => actualizarBanca(i, { bancaId: id })}
+                      />
+                      {bancas.length > 1 && (
+                        <button type="button" onClick={() => setBancas(prev => prev.filter((_, k) => k !== i))} aria-label="Quitar banca" className="text-red-600 p-2"><Trash2 size={16} /></button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className={labelClass}>Monto {moneda && `(${moneda})`}</label>
+                        <input type="text" inputMode="decimal" value={b.monto} onChange={e => actualizarBanca(i, { monto: e.target.value, ...(moneda === 'USD' ? { montoUsd: e.target.value } : {}) })} className={inputClass} />
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className={labelClass}>Monto {moneda && `(${moneda})`}</label>
-                          <input type="text" inputMode="decimal" value={b.monto} onChange={e => actualizarBanca(i, { monto: e.target.value, ...(moneda === 'USD' ? { montoUsd: e.target.value } : {}) })} className={inputClass} />
-                        </div>
-                        <div>
-                          <label className={labelClass}>Equivalente USD</label>
-                          <input type="text" inputMode="decimal" value={b.montoUsd} onChange={e => actualizarBanca(i, { montoUsd: e.target.value })} className={inputClass} disabled={moneda === 'USD'} />
-                        </div>
-                        <div>
-                          <label className={labelClass}>Referencia</label>
-                          <input type="text" value={b.referencia} onChange={e => actualizarBanca(i, { referencia: e.target.value })} maxLength={50} className={inputClass} />
-                        </div>
+                      <div>
+                        <label className={labelClass}>Equivalente USD</label>
+                        <input type="text" inputMode="decimal" value={b.montoUsd} onChange={e => actualizarBanca(i, { montoUsd: e.target.value })} className={inputClass} disabled={moneda === 'USD'} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Referencia</label>
+                        <input type="text" value={b.referencia} onChange={e => actualizarBanca(i, { referencia: e.target.value })} maxLength={50} className={inputClass} />
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {conDinero && items.length > 0 && (
-            <section>
-              <p className="text-xs font-medium text-text-secondary mb-2">Documentos aplicados</p>
-              <div className="space-y-2">
-                {items.map((it, i) => (
-                  <div key={it.id} className="flex items-center gap-2">
-                    <span className="flex-1 text-sm text-text-primary">{it.codigo ?? '—'} <span className="text-text-muted">· {ETIQUETA_ITEM[it.tipo]}</span></span>
-                    <span className="text-sm text-text-muted">{esCredito(it.tipo) ? '−' : ''}$</span>
-                    <input type="text" inputMode="decimal" value={it.montoUsd} aria-label={`Monto de ${it.codigo ?? ETIQUETA_ITEM[it.tipo]}`}
-                      onChange={e => setItems(prev => prev.map((x, k) => (k === i ? { ...x, montoUsd: e.target.value } : x)))} className={`${inputClass} w-28`} />
-                    <button type="button" onClick={() => setItems(prev => prev.filter((_, k) => k !== i))} aria-label="Quitar documento" className="text-red-600 p-2"><Trash2 size={16} /></button>
                   </div>
-                ))}
-              </div>
-              <div className="mt-3 text-sm bg-surface-alt border border-border rounded-lg p-3 space-y-1">
-                <div className="flex justify-between"><span className="text-text-secondary">Total en bancas</span><span>${fmt(totalBancas)}</span></div>
-                <div className="flex justify-between"><span className="text-text-secondary">Aplicado a documentos</span><span>${fmt(aItems)}</span></div>
-                <div className={`flex justify-between ${excedente < -0.01 ? 'text-red-600' : ''}`}>
-                  <span>{excedente < -0.01 ? 'Falta cubrir' : esPago ? 'Queda como adelanto' : 'Queda como anticipo'}</span><span>${fmt(Math.abs(excedente))}</span>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {conDinero && items.length > 0 && (
+          <section>
+            <p className="text-xs font-medium text-text-secondary mb-2">Documentos aplicados</p>
+            <div className="space-y-2">
+              {items.map((it, i) => (
+                <div key={it.id} className="flex items-center gap-2">
+                  <span className="flex-1 text-sm text-text-primary">{it.codigo ?? '—'} <span className="text-text-muted">· {ETIQUETA_ITEM[it.tipo]}</span></span>
+                  <span className="text-sm text-text-muted">{esCredito(it.tipo) ? '−' : ''}$</span>
+                  <input type="text" inputMode="decimal" value={it.montoUsd} aria-label={`Monto de ${it.codigo ?? ETIQUETA_ITEM[it.tipo]}`}
+                    onChange={e => setItems(prev => prev.map((x, k) => (k === i ? { ...x, montoUsd: e.target.value } : x)))} className={`${inputClass} w-28`} />
+                  <button type="button" onClick={() => setItems(prev => prev.filter((_, k) => k !== i))} aria-label="Quitar documento" className="text-red-600 p-2"><Trash2 size={16} /></button>
                 </div>
+              ))}
+            </div>
+            <div className="mt-3 text-sm bg-surface-alt border border-border rounded-lg p-3 space-y-1">
+              <div className="flex justify-between"><span className="text-text-secondary">Total en bancas</span><span>${fmt(totalBancas)}</span></div>
+              <div className="flex justify-between"><span className="text-text-secondary">Aplicado a documentos</span><span>${fmt(aItems)}</span></div>
+              <div className={`flex justify-between ${excedente < -0.01 ? 'text-red-600' : ''}`}>
+                <span>{excedente < -0.01 ? 'Falta cubrir' : esPago ? 'Queda como adelanto' : 'Queda como anticipo'}</span><span>${fmt(Math.abs(excedente))}</span>
               </div>
-              <p className="text-xs text-text-muted mt-2">Agregar facturas nuevas a un pago ya registrado no se puede: anúlalo y regístralo de nuevo.</p>
-            </section>
-          )}
+            </div>
+            <p className="text-xs text-text-muted mt-2">Agregar facturas nuevas a un pago ya registrado no se puede: anúlalo y regístralo de nuevo.</p>
+          </section>
+        )}
 
-          <CampoLlaveEdicion entidadTipo={tipo} entidadId={pago.grupoId} valor={llave} onChange={setLlave} />
+        <CampoLlaveEdicion entidadTipo={tipo} entidadId={pago.grupoId} valor={llave} onChange={setLlave} />
 
-          {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3"><p className="text-red-600 text-sm">{error}</p></div>}
+        {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3"><p className="text-red-600 text-sm">{error}</p></div>}
 
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : 'Guardar cambios'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : 'Guardar cambios'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

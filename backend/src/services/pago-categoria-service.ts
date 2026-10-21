@@ -3,9 +3,8 @@ import { logger } from '../utils/logger.js';
 import { elegirCategoriaDePago, categoriasParaTipo } from '../utils/categoria-pago-cobro.js';
 import type { Categoria } from './categoria-service.js';
 import { categoriasDeUso } from './categorias-uso-service.js';
+import { MENSAJE_CATEGORIA_NO_GUARDADA } from '../utils/mensajes-pago-pasos.js';
 
-const MENSAJE_CATEGORIA_NO_GUARDADA =
-  'La operación se registró, pero no se pudo asignar la categoría a sus movimientos. Avisa al administrador.';
 
 /**
  * Categoría fija de los pagos a proveedor (uso `pago_proveedor`). Null si la tabla de usos no existe, no

@@ -13,6 +13,7 @@ import {
   type FiltrosComposicion,
 } from '../../../lib/inventario-composicion';
 import { BarraProgreso, EstadoVacio, InfoTooltip } from '../../../components/ui';
+import { mensajeAmigable } from '../../../lib/mensaje-error';
 
 export interface ComposicionLoteProps {
   loteId: string;
@@ -73,7 +74,7 @@ function useComposicion(loteId: string, filtros: FiltrosComposicion, version: nu
       })
       .catch((err: unknown) => {
         if (cancelado) return;
-        setResultado({ clave: claveCarga, estado: { fase: 'error', mensaje: err instanceof Error && err.message ? err.message : MENSAJE_ERROR } });
+        setResultado({ clave: claveCarga, estado: { fase: 'error', mensaje: mensajeAmigable(err, { porDefecto: MENSAJE_ERROR }) } });
       });
     return () => { cancelado = true; };
   }, [guardado, claveCache, claveCarga, loteId, desde, hasta, almacenId]);

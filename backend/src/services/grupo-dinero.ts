@@ -70,6 +70,17 @@ export function lineaCuenta(ref: CuentaRef, nombre: string | null, monedaCuenta:
   return `${ref.rol}: ${sanitizarValor(nombre ?? `#${ref.id.slice(0, 8)}`)}${monto}`;
 }
 
+/** Id de categoría del body si es un uuid (el body lo controla el cliente: nunca se consulta cualquier texto). */
+export function categoriaIdDeBody(body: Cuerpo): string | null {
+  const id = texto(body.categoriaId);
+  return id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : null;
+}
+
+/** "Categoría: Servicios › Luz" (o solo la categoría si no tiene padre). */
+export function lineaCategoria(nombre: string, nombrePadre: string | null): string {
+  return `Categoría: ${sanitizarValor(nombrePadre ? `${nombrePadre} › ${nombre}` : nombre)}`;
+}
+
 /**
  * Líneas extra de un movimiento de dinero que el body trae tal cual: concepto, referencia y
  * fecha. Solo texto de campos conocidos (nunca el body completo).

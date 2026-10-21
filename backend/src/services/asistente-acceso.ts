@@ -56,7 +56,7 @@ export async function verificarAcceso(
       if (!(await deps.usuarioActivo(userId))) return { ok: false, status: 401, error: MENSAJE_USUARIO_INACTIVO };
     } catch (err) {
       logger.error({ evento: 'asistente_usuario_error', userId, mensaje: err instanceof Error ? err.message : 'desconocido' });
-      return { ok: false, status: 503, error: 'BLOB no pudo verificar tu usuario. Intenta de nuevo en un momento.' };
+      return { ok: false, status: 503, error: 'Nous no pudo verificar tu usuario. Intenta de nuevo en un momento.' };
     }
     cacheActivos.set(userId, ahora + TTL_USUARIO_ACTIVO_MS);
   }

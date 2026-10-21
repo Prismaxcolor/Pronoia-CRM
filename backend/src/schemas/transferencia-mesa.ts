@@ -62,6 +62,8 @@ export const completarTransferenciaMesaSchema = z.object({
   montoCobrado: monto('El monto a cobrar debe ser mayor a 0.').optional().nullable().transform(v => v ?? null),
   pendienteEsperado: monto('El pendiente esperado debe ser mayor a 0.').optional().nullable().transform(v => v ?? null),
   comprobantes: z.array(comprobanteUrlSchema).max(10, 'Máximo 10 comprobantes.').default([]),
+  /** Nota libre de quien cobra (ej. "el cambista entregó en efectivo"); se guarda en el movimiento. */
+  observacion: textoOpcional(300),
 }).refine(v => v.montoCobrado === null || v.pendienteEsperado !== null, {
   message: 'Indica el pendiente que viste (pendienteEsperado) para registrar un cobro parcial.',
   path: ['pendienteEsperado'],

@@ -3,28 +3,13 @@ import type { RegistrarPagoInput, RegistrarPagoMultipleInput } from '../schemas/
 import { notificarPago } from './telegram-eventos-service.js';
 import { logger } from '../utils/logger.js';
 import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
-import { aplicarCategoriaAMovimientos, categoriaFijaDePago } from './pago-categoria-service.js';
+import { categoriaFijaDePago } from './pago-categoria-service.js';
 import {
-  aplicarComisionesDePago, validarEleccionComisionPago, type ComisionPagoCreada, type LineaComisionPago,
+  validarEleccionComisionPago, type ComisionPagoCreada, type LineaComisionPago,
 } from './pago-comision-service.js';
-
-/** Une advertencias de pasos independientes (categoría, comisión) en una sola, sin repetir. */
-function unirAdvertencias(...avisos: Array<string | undefined>): string | undefined {
-  const unicos = [...new Set(avisos.filter((a): a is string => !!a))];
-  return unicos.length > 0 ? unicos.join(' ') : undefined;
-}
-
-/** Guarda las fotos del comprobante en el movimiento. El pago ya quedó registrado antes
- *  de llamar esto — si guardarlas falla, no se deshace el pago, solo se loguea. La plata
- *  ya se movió, es lo que importa. */
-async function adjuntarComprobante(movimientoId: string, comprobantes: string[]): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from('movimientos')
-    .update({ comprobantes })
-    .eq('id', movimientoId);
-
-  if (error) logger.error({ evento: 'pago_comprobante_no_guardado', mensaje: error.message, movimientoId });
-}
+import { registrarConPasos, type IdsRegistro } from './pago-registro-comun.js';
+import { advertenciaDePasos } from './pagos-pasos-service.js';
+import { validarMontosDeLineas } from './montos-pago-service.js';
 
 /** Un movimiento suelto pertenece a un grupo de operación (o es su propio grupo si es legacy). */
 async function grupoDeMovimiento(movimientoId: string): Promise<string> {
@@ -32,67 +17,63 @@ async function grupoDeMovimiento(movimientoId: string): Promise<string> {
   return (data as { grupo_id: string | null } | null)?.grupo_id ?? movimientoId;
 }
 
-interface PostRegistro {
-  movimientoIds: string[];
-  grupoId: string | null;
-  categoriaId: string | null;
-  lineas: LineaComisionPago[];
-  usuarioId: string;
+/** La RPC original devuelve el id del movimiento; el envoltorio, {movimientoId, grupoId}. El grupo solo hace falta
+ *  de inmediato para auditar/cargar la comisión de una cuenta en Bs; Telegram lo resuelve en segundo plano. */
+async function normalizarPagoUnico(
+  data: unknown, viaEnvoltorio: boolean, esBs: boolean
+): Promise<{ creado: Record<string, unknown>; ids: IdsRegistro }> {
+  const d = data as { movimientoId?: string; grupoId?: string };
+  const movimientoId = viaEnvoltorio ? String(d.movimientoId) : String(data);
+  const grupoId = viaEnvoltorio ? (d.grupoId ?? null) : esBs ? await grupoDeMovimiento(movimientoId) : null;
+  return { creado: { movimientoId }, ids: { movimientoIds: [movimientoId], principalId: movimientoId, grupoId } };
 }
 
-/**
- * Pasos posteriores al registro del dinero (ya no se deshacen): categoría fija de los movimientos del pago y
- * comisión bancaria de las cuentas en Bs. Devuelve las comisiones creadas y una advertencia unificada.
- */
-async function completarPago(p: PostRegistro): Promise<{ comisiones: ComisionPagoCreada[]; advertencia?: string }> {
-  const categoria = await aplicarCategoriaAMovimientos(p.movimientoIds, p.categoriaId);
-  const comision = await aplicarComisionesDePago({
-    movimientoIds: p.movimientoIds, grupoId: p.grupoId, lineas: p.lineas, usuarioId: p.usuarioId,
-  });
-  const advertencia = unirAdvertencias(categoria.advertencia, comision.advertencia);
-  return { comisiones: comision.comisiones, ...(advertencia ? { advertencia } : {}) };
-}
-
+/** Pago a proveedor desde una sola banca. Con `clientRequestId` los reintentos los deduplica la ruta (operaciones_cliente)
+ *  y, si la migración de idempotencia está aplicada, también la base de datos. */
 export async function registrarPago(
   input: RegistrarPagoInput,
   registradoPor: string
 ): Promise<{ movimientoId: string; comision?: ComisionPagoCreada; advertencia?: string } | { error: string }> {
   const lineas: LineaComisionPago[] = [{ bancaId: input.bancaId, moneda: input.moneda, llevaComision: input.llevaComision }];
-  const rechazo = await validarEleccionComisionPago(lineas);
+  const rechazo = (await validarEleccionComisionPago(lineas))
+    ?? (await validarMontosDeLineas([{ monto: input.monto, montoUsd: input.montoUsd, moneda: input.moneda, tasa: input.tasa }]));
   if (rechazo) return { error: rechazo };
 
   const categoriaId = await categoriaFijaDePago();
-  const { data, error } = await supabaseAdmin.rpc('registrar_pago_proveedor', {
-    p_proveedor_id: input.proveedorId,
-    p_banca_id: input.bancaId,
-    p_monto: input.monto,
-    p_moneda: input.moneda,
-    p_monto_usd: input.montoUsd,
-    p_descripcion: input.descripcion,
-    p_referencia: input.referencia,
-    p_fecha: input.fecha,
-    p_registrado_por: registradoPor,
-    p_factura_id: input.facturaId ?? null,
+  const r = await registrarConPasos({
+    envoltorio: 'registrar_pago_proveedor_completo',
+    original: 'registrar_pago_proveedor',
+    args: {
+      p_proveedor_id: input.proveedorId,
+      p_banca_id: input.bancaId,
+      p_monto: input.monto,
+      p_moneda: input.moneda,
+      p_monto_usd: input.montoUsd,
+      p_descripcion: input.descripcion,
+      p_referencia: input.referencia,
+      p_fecha: input.fecha,
+      p_registrado_por: registradoPor,
+      p_factura_id: input.facturaId ?? null,
+    },
+    extraEnvoltorio: { p_con_comision: input.moneda === 'VES' && input.llevaComision === true },
+    clientRequestId: input.clientRequestId,
+    categoriaId, comprobantes: input.comprobantes, lineas, usuarioId: registradoPor,
+    mensajeError: 'No se pudo registrar el pago.',
+    normalizar: (data, viaEnvoltorio) => normalizarPagoUnico(data, viaEnvoltorio, input.moneda === 'VES'),
   });
+  if ('error' in r) return r;
 
-  if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
-  const movimientoId = data as string;
-
-  if (input.comprobantes.length > 0) await adjuntarComprobante(movimientoId, input.comprobantes);
-  // El grupo solo hace falta de inmediato para auditar la comisión de una cuenta en Bs; Telegram lo resuelve en segundo plano.
-  const grupoBs = input.moneda === 'VES' ? await grupoDeMovimiento(movimientoId) : null;
-  const { comisiones, advertencia } = await completarPago({
-    movimientoIds: [movimientoId], grupoId: grupoBs, categoriaId, lineas, usuarioId: registradoPor,
-  });
+  const movimientoId = String(r.creado.movimientoId);
+  const advertencia = advertenciaDePasos(r.estado);
   // Telegram (fire-and-forget): comprobante PDF del pago + fotos del comprobante bancario.
   ejecutarEnSegundoPlano(
-    (grupoBs ? Promise.resolve(grupoBs) : grupoDeMovimiento(movimientoId))
+    (r.ids.grupoId ? Promise.resolve(r.ids.grupoId) : grupoDeMovimiento(movimientoId))
       .then(grupoId => notificarPago('proveedor', input.proveedorId, grupoId, { comprobantes: input.comprobantes }))
       .catch(err => logger.error({ evento: 'pago_telegram_error', mensaje: err instanceof Error ? err.message : String(err) })),
     'pago_telegram'
   );
 
-  return { movimientoId, ...(comisiones[0] ? { comision: comisiones[0] } : {}), ...(advertencia ? { advertencia } : {}) };
+  return { movimientoId, ...(r.estado.comisiones[0] ? { comision: r.estado.comisiones[0] } : {}), ...(advertencia ? { advertencia } : {}) };
 }
 
 interface ResultadoPagoMulti {
@@ -108,8 +89,18 @@ interface ResultadoPagoMulti {
   categoriaId: string | null;
   /** Cargos de comisión bancaria creados (uno por cuenta en Bs donde se eligió Sí). */
   comisiones: ComisionPagoCreada[];
-  /** Se informa si el pago quedó registrado pero no se pudo asignar la categoría o cargar la comisión. */
+  /** Se informa si el pago quedó registrado pero un paso posterior (categoría, comprobante, comisión) sigue pendiente de reintento. */
   advertencia?: string;
+}
+
+type CreadoMulti = Omit<ResultadoPagoMulti, 'categoriaId' | 'comisiones' | 'advertencia'>;
+
+async function normalizarMulti(data: unknown): Promise<{ creado: Record<string, unknown>; ids: IdsRegistro }> {
+  const creado = data as CreadoMulti;
+  return {
+    creado: { ...creado },
+    ids: { movimientoIds: creado.movimientoIds ?? [], principalId: creado.movimientoPrincipalId, grupoId: creado.grupoId },
+  };
 }
 
 /** Pago combinado ("Registrar pago"): repartido entre una o varias bancas de
@@ -124,32 +115,37 @@ export async function registrarPagoMultiple(
   registradoPor: string
 ): Promise<ResultadoPagoMulti | { error: string }> {
   const lineas: LineaComisionPago[] = input.bancas.map(b => ({ bancaId: b.bancaId, moneda: b.moneda, llevaComision: b.llevaComision }));
-  const rechazo = await validarEleccionComisionPago(lineas);
+  const rechazo = (await validarEleccionComisionPago(lineas))
+    ?? (await validarMontosDeLineas(input.bancas.map(b => ({ monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, tasa: b.tasa }))));
   if (rechazo) return { error: rechazo };
 
   // La categoría fija solo aplica si hay movimiento de dinero (un cruce puro no lo tiene).
   const categoriaId = input.bancas.length > 0 ? await categoriaFijaDePago() : null;
-  const { data, error } = await supabaseAdmin.rpc('registrar_pago_proveedor_multi_banca', {
-    p_proveedor_id: input.proveedorId,
-    p_bancas: input.bancas.map(b => ({ bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, referencia: b.referencia ?? null })),
-    p_monto_usd: input.montoUsd,
-    p_descripcion: input.descripcion,
-    p_referencia: input.referencia,
-    p_fecha: input.fecha,
-    p_registrado_por: registradoPor,
-    p_items: input.items.map(i => ({ tipo: i.tipo, id: i.id, montoUsd: i.montoUsd })),
+  const r = await registrarConPasos({
+    envoltorio: 'registrar_pago_proveedor_multi_banca_completo',
+    original: 'registrar_pago_proveedor_multi_banca',
+    args: {
+      p_proveedor_id: input.proveedorId,
+      p_bancas: input.bancas.map(b => ({ bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, referencia: b.referencia ?? null })),
+      p_monto_usd: input.montoUsd,
+      p_descripcion: input.descripcion,
+      p_referencia: input.referencia,
+      p_fecha: input.fecha,
+      p_registrado_por: registradoPor,
+      p_items: input.items.map(i => ({ tipo: i.tipo, id: i.id, montoUsd: i.montoUsd })),
+    },
+    extraEnvoltorio: { p_bancas_con_comision: lineas.filter(l => l.moneda === 'VES' && l.llevaComision === true).map(l => l.bancaId) },
+    clientRequestId: input.clientRequestId,
+    categoriaId, comprobantes: input.comprobantes, lineas, usuarioId: registradoPor,
+    mensajeError: 'No se pudo registrar el pago.',
+    normalizar: normalizarMulti,
   });
+  if ('error' in r) return r;
 
-  if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago.' };
-  const creado = data as Omit<ResultadoPagoMulti, 'categoriaId' | 'comisiones' | 'advertencia'>;
-
-  if (input.comprobantes.length > 0 && creado.movimientoPrincipalId) {
-    await adjuntarComprobante(creado.movimientoPrincipalId, input.comprobantes);
-  }
-  const { comisiones, advertencia } = await completarPago({
-    movimientoIds: creado.movimientoIds ?? [], grupoId: creado.grupoId, categoriaId, lineas, usuarioId: registradoPor,
-  });
-  const resultado: ResultadoPagoMulti = { ...creado, categoriaId, comisiones, ...(advertencia ? { advertencia } : {}) };
+  const advertencia = advertenciaDePasos(r.estado);
+  const resultado: ResultadoPagoMulti = {
+    ...(r.creado as CreadoMulti), categoriaId, comisiones: r.estado.comisiones, ...(advertencia ? { advertencia } : {}),
+  };
   // Telegram (fire-and-forget): comprobante del pago/adelanto o del cruce puro (sin dinero).
   notificarPago('proveedor', input.proveedorId, resultado.grupoId, {
     comprobantes: resultado.movimientoPrincipalId ? input.comprobantes : [],

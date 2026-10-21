@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Modal from './Modal';
 import { X, Search, Car, ZoomIn, Check, PencilLine } from 'lucide-react';
 import VisorFotos from './VisorFotos';
 import type { Vehiculo } from '@shared/types/index.js';
@@ -42,8 +43,8 @@ function SeleccionarVehiculoModal({ vehiculos, elegidoId, textoTercero, onClose,
   const textoLimpio = texto.trim();
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-3xl max-h-[92vh] sm:max-h-[85vh] flex flex-col">
+    <>
+      <Modal onClose={onClose} overlayClassName="bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4" panelClassName="bg-surface rounded-2xl shadow-xl w-full max-w-3xl max-h-[92dvh] sm:max-h-[85dvh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
           <h2 className="text-lg font-semibold text-text-primary">Elegir vehículo</h2>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="p-1 text-text-muted hover:text-text-primary">
@@ -135,7 +136,7 @@ function SeleccionarVehiculoModal({ vehiculos, elegidoId, textoTercero, onClose,
                         title="Ampliar foto"
                         aria-label={`Ampliar foto de ${v.placa ?? v.nombre}`}
                       >
-                        <img src={v.fotos[0]} alt={`Foto de ${v.placa ?? v.nombre}`} loading="lazy" className="w-full h-full object-cover" />
+                        <img src={v.fotos[0]} alt={`Foto de ${v.placa ?? v.nombre}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                         <span className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white">
                           <ZoomIn size={14} />
                         </span>
@@ -170,7 +171,7 @@ function SeleccionarVehiculoModal({ vehiculos, elegidoId, textoTercero, onClose,
             </div>
           )}
         </div>
-      </div>
+      </Modal>
 
       {visor && (
         <VisorFotos
@@ -181,7 +182,7 @@ function SeleccionarVehiculoModal({ vehiculos, elegidoId, textoTercero, onClose,
           alt={`Foto ampliada de ${visor.vehiculo.placa ?? visor.vehiculo.nombre}`}
         />
       )}
-    </div>
+    </>
   );
 }
 

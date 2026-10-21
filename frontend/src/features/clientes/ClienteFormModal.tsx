@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
+import Modal from '../../components/Modal';
 import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X } from 'lucide-react';
 import { crearCliente, actualizarCliente } from '../../services/cliente-service';
@@ -6,6 +8,8 @@ import { subirFotoCliente } from '../../services/storage-service';
 import { useToast } from '../../hooks/use-toast-context';
 import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import SwitchAvisosTelegram from '../../components/SwitchAvisosTelegram';
+import { useAuth } from '../../hooks/use-auth-context';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import { CAMPOS_PERSONALES_BORRADOR, TTL_ALTA_BORRADOR_MS, difiereEstado, huellaDocumento, serializarEstado } from '../../lib/borrador';
@@ -21,6 +25,10 @@ interface Props {
 function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
   const toast = useToast();
   const editando = !!cliente;
+  const { usuario } = useAuth();
+  // Solo el superadmin ve y cambia el interruptor, y solo al editar (al crear arranca activo).
+  const puedeCambiarAvisos = editando && usuario?.rol === 'superadmin';
+  const [avisosActivos, setAvisosActivos] = useState(cliente?.telegramReportesActivos !== false);
 
   const [nombre, setNombre] = useState(cliente?.nombre ?? '');
   // Sin predeterminado al crear: hay que elegirlo. Al editar parte del valor actual.
@@ -31,6 +39,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
   const [direccion, setDireccion] = useState(cliente?.direccion ?? '');
   const [notas, setNotas] = useState(cliente?.notas ?? '');
   const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(cliente?.fotos ?? []));
+  useLiberarVistasPrevias(fotos);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +105,7 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
       direccion: direccion.trim() || null,
       notas: notas.trim() || null,
       fotos: urls,
+      ...(puedeCambiarAvisos ? { telegramReportesActivos: avisosActivos } : {}),
     };
 
     const result = editando && cliente
@@ -117,117 +127,124 @@ function ClienteFormModal({ cliente, onClose, onGuardado }: Props) {
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">
-            {editando ? 'Editar cliente' : 'Nuevo cliente'}
-          </h2>
-          <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
-          </button>
+    <Modal onClose={cerrar} bloqueado={guardando}>
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 className="text-lg font-bold text-text-primary">
+          {editando ? 'Editar cliente' : 'Nuevo cliente'}
+        </h2>
+        <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
+          <X size={20} />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <AvisoBorrador formulario="este cliente" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+        <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
+
+        <div>
+          <label className={labelClass}>Nombre *</label>
+          <input
+            type="text"
+            required
+            value={nombre}
+            onChange={e => setNombre(e.target.value)}
+            className={inputClass}
+            placeholder="Nombre o razón social"
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <AvisoBorrador formulario="este cliente" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
-          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
+        <div>
+          <label className={labelClass} htmlFor="cliente-tipo-venta">Tipo de venta *</label>
+          <select
+            id="cliente-tipo-venta"
+            required
+            value={tipoVenta}
+            onChange={e => setTipoVenta(e.target.value as TipoVentaCliente | '')}
+            className={inputClass}
+          >
+            <option value="" disabled>Selecciona…</option>
+            <option value="nacional">Venta nacional</option>
+            <option value="internacional">Venta internacional</option>
+          </select>
+        </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className={labelClass}>Nombre *</label>
+            <label className={labelClass}>RIF / Cédula</label>
             <input
               type="text"
-              required
-              value={nombre}
-              onChange={e => setNombre(e.target.value)}
+              value={identificacion}
+              onChange={e => setIdentificacion(e.target.value)}
               className={inputClass}
-              placeholder="Nombre o razón social"
+              placeholder="J-12345678-9"
             />
           </div>
-
           <div>
-            <label className={labelClass} htmlFor="cliente-tipo-venta">Tipo de venta *</label>
-            <select
-              id="cliente-tipo-venta"
-              required
-              value={tipoVenta}
-              onChange={e => setTipoVenta(e.target.value as TipoVentaCliente | '')}
-              className={inputClass}
-            >
-              <option value="" disabled>Selecciona…</option>
-              <option value="nacional">Venta nacional</option>
-              <option value="internacional">Venta internacional</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>RIF / Cédula</label>
-              <input
-                type="text"
-                value={identificacion}
-                onChange={e => setIdentificacion(e.target.value)}
-                className={inputClass}
-                placeholder="J-12345678-9"
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Teléfono</label>
-              <input
-                type="text"
-                value={telefono}
-                onChange={e => setTelefono(e.target.value)}
-                className={inputClass}
-                placeholder="+58 414 1234567"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className={labelClass}>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className={inputClass}
-              placeholder="cliente@ejemplo.com"
-            />
-          </div>
-
-          <div>
-            <label className={labelClass}>Dirección</label>
+            <label className={labelClass}>Teléfono</label>
             <input
               type="text"
-              value={direccion}
-              onChange={e => setDireccion(e.target.value)}
+              value={telefono}
+              onChange={e => setTelefono(e.target.value)}
               className={inputClass}
-              placeholder="Av. Principal, Edificio..."
+              placeholder="+58 414 1234567"
             />
           </div>
+        </div>
 
-          <div>
-            <label className={labelClass}>Notas</label>
-            <textarea
-              value={notas}
-              onChange={e => setNotas(e.target.value)}
-              className={`${inputClass} resize-none`}
-              rows={3}
-              placeholder="Detalles internos del cliente"
-            />
-          </div>
+        <div>
+          <label className={labelClass}>Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            className={inputClass}
+            placeholder="cliente@ejemplo.com"
+          />
+        </div>
 
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+        <div>
+          <label className={labelClass}>Dirección</label>
+          <input
+            type="text"
+            value={direccion}
+            onChange={e => setDireccion(e.target.value)}
+            className={inputClass}
+            placeholder="Av. Principal, Edificio..."
+          />
+        </div>
 
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear cliente'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div>
+          <label className={labelClass}>Notas</label>
+          <textarea
+            value={notas}
+            onChange={e => setNotas(e.target.value)}
+            className={`${inputClass} resize-none`}
+            rows={3}
+            placeholder="Detalles internos del cliente"
+          />
+        </div>
+
+        {puedeCambiarAvisos && (
+          <SwitchAvisosTelegram
+            id="cliente-avisos-telegram"
+            checked={avisosActivos}
+            onChange={setAvisosActivos}
+            ayuda={"Apagado: los cobros, anticipos, cruces y notas de este cliente no se avisan a Telegram (ni al grupo de cajas ni a su chat). Las facturas y el estado de cuenta enviado a mano no cambian. Solo lo ve el superadmin."}
+          />
+        )}
+
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear cliente'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

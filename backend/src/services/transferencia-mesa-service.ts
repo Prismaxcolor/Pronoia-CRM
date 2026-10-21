@@ -20,6 +20,7 @@ export const MENSAJE_MESA_TRANSFERENCIAS_PENDIENTE =
 export const MENSAJE_COBRO_PARCIAL_PENDIENTE =
   'El cobro parcial aún no está habilitado en la base de datos (falta aplicar migration_mesa_cambio_cobro_parcial.sql).';
 const MENSAJE_FOTO_COBRO = 'El cobro se registró, pero no se pudo adjuntar la foto. Adjúntala editando el movimiento.';
+const MENSAJE_OBSERVACION = 'El cobro se registró, pero no se pudo guardar la observación (falta aplicar migration_mesa_cambio_observacion.sql).';
 const MENSAJE_SIN_LECTURA = 'La transferencia se registró, pero no se pudo leer de vuelta. Actualiza la pantalla.';
 const MENSAJE_COMPROBANTE = 'La transferencia se registró, pero no se pudo adjuntar el comprobante. Adjúntalo editando el movimiento.';
 
@@ -55,6 +56,8 @@ export interface OpcionesCobroMesa {
   pendienteEsperado: number | null;
   /** Fotos del comprobante del cobro (se agregan a las del movimiento). */
   comprobantes: string[];
+  /** Nota de quien cobra; se agrega a las observaciones del movimiento. Opcional: los llamadores anteriores no la envían. */
+  observacion?: string | null;
 }
 
 const COBRO_TOTAL_SIN_FOTO: OpcionesCobroMesa = { montoCobrado: null, pendienteEsperado: null, comprobantes: [] };
@@ -149,7 +152,22 @@ function registrarFalloFoto(movimientoId: string, mensaje: string): string {
   return MENSAJE_FOTO_COBRO;
 }
 
-type RespuestaRpc = { data: unknown; error: NonNullable<ErrorRpc> | null };
+/** Agrega la observación a las que ya tiene el movimiento (una línea por cobro). Sin la columna avisa, no falla el cobro. */
+async function agregarObservacion(movimientoId: string, observacion: string | null | undefined): Promise<string | undefined> {
+  if (!observacion) return undefined;
+  const falla = (mensaje: string): string => {
+    logger.error({ evento: 'transferencia_mesa_observacion_fallida', movimientoId, mensaje });
+    return MENSAJE_OBSERVACION;
+  };
+  const { data, error: errLectura } = await supabaseAdmin.from('movimientos').select('mesa_observacion').eq('id', movimientoId).maybeSingle();
+  if (errLectura) return falla(errLectura.message);
+  const previa = typeof data?.mesa_observacion === 'string' ? data.mesa_observacion : '';
+  const unida = previa ? `${previa}\n${observacion}` : observacion;
+  const { error } = await supabaseAdmin.from('movimientos').update({ mesa_observacion: unida }).eq('id', movimientoId);
+  return error ? falla(error.message) : undefined;
+}
+
+type RespuestaRpc ={ data: unknown; error: NonNullable<ErrorRpc> | null };
 
 /** Cobra con la RPC nueva; si aún no existe y el cobro es total, usa la anterior (que acredita todo el neto). */
 async function cobrarPorRpc(movimientoId: string, userId: string, o: OpcionesCobroMesa): Promise<RespuestaRpc | Fallo> {
@@ -175,7 +193,12 @@ export async function completarTransferenciaMesa(
   if ('codigo' in resp) return resp;
   if (resp.error) return fallaDeRpcMesa(resp.error, 'completar');
   const r = (resp.data ?? {}) as Record<string, unknown>;
-  const advertencia = await agregarComprobantes(movimientoId, opciones.comprobantes);
+  const advertencias = [
+    await agregarComprobantes(movimientoId, opciones.comprobantes),
+    // Un reintento o doble clic ("ya completada") no cobró nada: no se repite la nota.
+    r.yaCompletada ? undefined : await agregarObservacion(movimientoId, opciones.observacion),
+  ].filter((a): a is string => a !== undefined);
+  const advertencia = advertencias.length > 0 ? advertencias.join(' ') : undefined;
   const movimiento = await obtenerMovimiento(movimientoId);
   if (!movimiento) return { error: MENSAJE_SIN_LECTURA, codigo: 500 };
   const completada = r.completada === undefined ? movimiento.mesaEstado === 'completada' : Boolean(r.completada);

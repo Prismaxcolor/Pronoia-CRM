@@ -2,7 +2,7 @@ import { ENV } from '../config/env.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
 import { formatearHoraNegocio } from '../utils/fecha-negocio.js';
-import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
+import { enviarAvisoN8n } from './n8n-aviso.js';
 import type { BotonAviso } from '../utils/botones-aviso.js';
 import type { SolicitudLlaveAviso } from '../utils/solicitud-llave-tipos.js';
 
@@ -94,32 +94,24 @@ async function chatPrivadoDe(userId: string | null | undefined): Promise<Destino
 
 /** Mensaje privado por el webhook v2 de n8n. true si el webhook lo aceptó. Nunca lanza. */
 async function enviarPrivado(destino: DestinoPrivado, mensaje: string, botones: BotonAviso[], evento: string): Promise<boolean> {
-  try {
-    if (!ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO) return false;
-    const respuesta = await fetch(ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO, {
-      method: 'POST',
-      headers: await cabecerasWebhookN8n(),
-      body: JSON.stringify({
-        tipoDocumento: 'aviso',
-        entidadTipo: 'usuario',
-        entidadId: destino.id,
-        chatId: destino.chatId,
-        nombreEntidad: destino.nombre,
-        accion: 'mensaje',
-        mensaje,
-        ...(botones.length > 0 ? { botones } : {}),
-      }),
-      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-    });
-    if (!respuesta.ok) {
-      logger.error({ evento: 'llave_aviso_error_webhook_status', clave: evento, status: respuesta.status });
-      return false;
-    }
-    return true;
-  } catch (err) {
-    logger.error({ evento: 'llave_aviso_error', clave: evento, mensaje: err instanceof Error ? err.message : String(err) });
-    return false;
-  }
+  if (!ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO) return false;
+  const resultado = await enviarAvisoN8n({
+    destino: 'contenido',
+    evento: 'llave_aviso',
+    contexto: { clave: evento },
+    cuerpo: {
+      tipoDocumento: 'aviso',
+      entidadTipo: 'usuario',
+      entidadId: destino.id,
+      chatId: destino.chatId,
+      nombreEntidad: destino.nombre,
+      accion: 'mensaje',
+      mensaje,
+      ...(botones.length > 0 ? { botones } : {}),
+    },
+    opciones: { timeoutMs: WEBHOOK_TIMEOUT_MS },
+  });
+  return resultado.ok;
 }
 
 /** Avisa por privado, con botones Aprobar/Rechazar, a cada superadmin vinculado. Si no hay ninguno, solo advierte en el log. */

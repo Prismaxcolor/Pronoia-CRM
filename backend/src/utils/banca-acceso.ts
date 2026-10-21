@@ -26,6 +26,14 @@ export function puedeCambiarTelegramBanca(rol: string): boolean {
   return veTodasLasBancas(rol);
 }
 
+export const MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM =
+  'Solo un superadmin puede activar o desactivar los avisos de Telegram de los movimientos.';
+
+/** Apagar/encender los avisos de Telegram (por cuenta, cliente o proveedor) lo decide solo el superadmin. */
+export function puedeCambiarReportesTelegram(rol: string): boolean {
+  return veTodasLasBancas(rol);
+}
+
 export function veTodasLasBancas(rol: string): boolean {
   return ROLES_CON_TODAS_LAS_BANCAS.has(rol);
 }

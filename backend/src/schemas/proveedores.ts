@@ -28,7 +28,7 @@ export const crearProveedorSchema = z.object({
 });
 
 export const actualizarProveedorSchema = crearProveedorSchema
-  .extend({ activo: z.boolean().optional() })
+  .extend({ activo: z.boolean().optional(), telegramReportesActivos: z.boolean().optional() })
   .partial()
   .refine(
     data => Object.keys(data).length > 0,

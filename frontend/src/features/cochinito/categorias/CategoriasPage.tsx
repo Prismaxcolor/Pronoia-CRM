@@ -30,7 +30,7 @@ function FilaCategoria({ categoria: c, esSub, puedeCrear, puedeEditar, onEditar,
   return (
     <li className={`flex flex-wrap items-center gap-2 px-3 py-2 ${esSub ? 'pl-9' : ''} ${c.activo ? '' : 'opacity-60'}`}>
       <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border" style={{ backgroundColor: c.color }} aria-hidden="true">
-        {c.imagenUrl && <img src={c.imagenUrl} alt="" loading="lazy" className="h-full w-full bg-white object-cover" />}
+        {c.imagenUrl && <img src={c.imagenUrl} alt="" loading="lazy" decoding="async" className="h-full w-full bg-white object-cover" />}
       </span>
       <span className={`text-sm ${esSub ? 'text-text-primary' : 'font-medium text-text-primary'}`}>{c.nombre}</span>
       <Insignia tono="neutral" forma="cuadrada">{ETIQUETA_TIPO_CATEGORIA[c.tipo]}</Insignia>

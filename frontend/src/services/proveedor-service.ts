@@ -16,6 +16,7 @@ interface ProveedorApi {
   fotos: string[];
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
+  telegramReportesActivos?: boolean;
 }
 
 function mapApi(api: ProveedorApi): Proveedor {
@@ -65,7 +66,7 @@ export async function crearProveedor(
 
 export async function actualizarProveedor(
   id: string,
-  cambios: Partial<ProveedorInput> & { activo?: boolean }
+  cambios: Partial<ProveedorInput> & { activo?: boolean; telegramReportesActivos?: boolean }
 ): Promise<{ proveedor: Proveedor } | { error: string }> {
   try {
     const { proveedor } = await apiFetch<{ proveedor: ProveedorApi }>(`/api/proveedores/${id}`, {

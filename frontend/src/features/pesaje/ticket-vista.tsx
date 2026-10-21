@@ -269,7 +269,7 @@ function TicketVista({ ticket, fotos, vehiculoDelCatalogo, ocultarDestino, onOcu
                   className="group relative block aspect-square w-full overflow-hidden rounded-lg border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                   aria-label={`Ver en grande la foto: ${f.label}`}
                 >
-                  <img src={f.url} alt={f.label} loading="lazy" className="h-full w-full object-cover" />
+                  <img src={f.url} alt={f.label} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-1 text-left text-[10px] leading-tight text-white">{f.label}</span>
                   <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/30">
                     <ZoomIn size={16} className="text-white opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />

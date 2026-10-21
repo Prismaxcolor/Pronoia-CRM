@@ -305,6 +305,27 @@ describe('POST/PATCH /api/cochinito/bancas: grupo de Telegram y acceso del cread
     expect((await llamar('PATCH', `/api/cochinito/bancas/${BANCA}`, 'root', { telegramChatId: '-100999999' })).status).toBe(409);
   });
 
+  // El doble de supabase de este archivo no sabe leer bancas: el valor actual del interruptor cae a "activo" (fail-open).
+  it('solo superadmin apaga los avisos de Telegram de una cuenta (403 al resto; reenviar el valor actual no es un cambio)', async () => {
+    s.actualizarBanca.mockResolvedValue({ banca: { id: BANCA } });
+    s.bancasPermitidas.mockResolvedValue(new Set([BANCA]));
+    const apagar = { telegramReportesActivos: false };
+    expect((await llamar('PATCH', `/api/cochinito/bancas/${BANCA}`, 'cajero', apagar)).status).toBe(403);
+    expect((await llamar('PATCH', `/api/cochinito/bancas/${BANCA}`, 'gestor', apagar)).status).toBe(403);
+    expect(s.actualizarBanca).not.toHaveBeenCalled();
+    expect((await llamar('PATCH', `/api/cochinito/bancas/${BANCA}`, 'cajero', { telegramReportesActivos: true, nombre: 'X' })).status).toBe(200);
+    expect((await llamar('PATCH', `/api/cochinito/bancas/${BANCA}`, 'root', apagar)).status).toBe(200);
+    expect(s.actualizarBanca).toHaveBeenLastCalledWith(BANCA, expect.objectContaining(apagar));
+  });
+
+  it('crear una cuenta con los avisos de Telegram apagados exige superadmin', async () => {
+    s.crearBanca.mockResolvedValue({ banca: { id: BANCA } });
+    s.concederBancaAUsuario.mockResolvedValue({ ok: true });
+    expect((await llamar('POST', '/api/cochinito/bancas', 'cajero', { ...nueva, telegramReportesActivos: false })).status).toBe(403);
+    expect(s.crearBanca).not.toHaveBeenCalled();
+    expect((await llamar('POST', '/api/cochinito/bancas', 'root', { ...nueva, telegramReportesActivos: false })).status).toBe(201);
+  });
+
   it('si no se pudo conceder el acceso al creador (trabajador), no hay 201: se archiva y devuelve 500', async () => {
     s.crearBanca.mockResolvedValue({ banca: { id: BANCA } });
     s.concederBancaAUsuario.mockResolvedValue({ error: 'fk' });

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Modal from '../../components/Modal';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { difiereEstado } from '../../lib/borrador';
@@ -191,166 +192,164 @@ export default function NuevaTomaFisicaModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">Nueva toma física de inventario</h2>
-          <p className="text-sm text-text-secondary mt-1">
-            Mientras esté abierta, solo se bloquean las categorías elegidas en este almacén —
-            el resto sigue operando normal.
-          </p>
+    <Modal onClose={cerrar} bloqueado={guardando} ancho="max-w-md">
+      <div className="p-5 border-b border-border">
+        <h2 className="text-lg font-bold text-text-primary">Nueva toma física de inventario</h2>
+        <p className="text-sm text-text-secondary mt-1">
+          Mientras esté abierta, solo se bloquean las categorías elegidas en este almacén —
+          el resto sigue operando normal.
+        </p>
+      </div>
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <AvisoBorrador formulario="la nueva toma física" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Almacén *</label>
+          <select value={almacenId} onChange={e => setAlmacenId(e.target.value)} className={inputClass}>
+            <option value="">— Selecciona el almacén —</option>
+            {almacenes.filter(a => a.activo).map(a => (
+              <option key={a.id} value={a.id}>{a.nombre}</option>
+            ))}
+          </select>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <AvisoBorrador formulario="la nueva toma física" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Almacén *</label>
-            <select value={almacenId} onChange={e => setAlmacenId(e.target.value)} className={inputClass}>
-              <option value="">— Selecciona el almacén —</option>
-              {almacenes.filter(a => a.activo).map(a => (
-                <option key={a.id} value={a.id}>{a.nombre}</option>
-              ))}
-            </select>
-          </div>
 
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">¿Qué vas a contar? *</label>
-            <div className="grid grid-cols-2 gap-2">
-              {ALCANCES.map(a => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => cambiarAlcance(a.id)}
-                  aria-pressed={alcance === a.id}
-                  className={`text-left p-3 rounded-lg border transition-colors ${alcance === a.id ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-border hover:bg-surface-alt'}`}
-                >
-                  <span className="block text-sm font-semibold text-text-primary">{a.titulo}</span>
-                  <span className="block text-[11px] text-text-secondary mt-0.5 leading-snug">{a.detalle}</span>
-                </button>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">¿Qué vas a contar? *</label>
+          <div className="grid grid-cols-2 gap-2">
+            {ALCANCES.map(a => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => cambiarAlcance(a.id)}
+                aria-pressed={alcance === a.id}
+                className={`text-left p-3 rounded-lg border transition-colors ${alcance === a.id ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-border hover:bg-surface-alt'}`}
+              >
+                <span className="block text-sm font-semibold text-text-primary">{a.titulo}</span>
+                <span className="block text-[11px] text-text-secondary mt-0.5 leading-snug">{a.detalle}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">
+            {alcance === 'categoria' ? 'Categorías a inventariar *' : 'Categoría de los lotes *'}
+          </label>
+          {categoriasDelAlcance.length === 0 ? (
+            <p className="text-xs text-amber-700">No hay categorías {alcance === 'categoria' ? 'sin productos anclados a un lote' : 'con productos anclados a un lote'}.</p>
+          ) : (
+            <div className="border border-border rounded-lg divide-y divide-border max-h-40 overflow-y-auto">
+              {categoriasDelAlcance.map(c => (
+                <label key={c.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={categoriaIds.includes(c.id)}
+                    onChange={() => toggleCategoria(c.id)}
+                    className="w-4 h-4 accent-brand-600"
+                  />
+                  <span className="text-sm text-text-primary">{c.nombre}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {alcance === 'categoria' && productosDeCategorias.length > 0 && (
+          <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-brand-800">
+                Materiales a contar * ({productosElegidos.length} de {productosDeCategorias.length})
+              </label>
+              <div className="flex gap-3 text-xs text-brand-700">
+                <button type="button" onClick={() => marcarTodosProductos(true)} className="hover:underline">Seleccionar todos</button>
+                <button type="button" onClick={() => marcarTodosProductos(false)} className="hover:underline">Deseleccionar todos</button>
+              </div>
+            </div>
+            <p className="text-xs text-brand-700/80 mb-2">
+              Solo se contarán (y se ajustarán al culminar) los materiales que dejes marcados.
+            </p>
+            <div className="border border-brand-200 rounded-lg divide-y divide-brand-100 max-h-48 overflow-y-auto bg-surface">
+              {productosDeCategorias.map(p => (
+                <label key={p.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={!productosExcluidos.includes(p.id)}
+                    onChange={() => toggleProducto(p.id)}
+                    className="w-4 h-4 accent-brand-600"
+                  />
+                  <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{p.nombre}</span>
+                  {categoriaIds.length > 1 && (
+                    <span className="text-xs text-text-muted shrink-0">{p.tipoMaterialNombre}</span>
+                  )}
+                </label>
               ))}
             </div>
           </div>
+        )}
 
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">
-              {alcance === 'categoria' ? 'Categorías a inventariar *' : 'Categoría de los lotes *'}
-            </label>
-            {categoriasDelAlcance.length === 0 ? (
-              <p className="text-xs text-amber-700">No hay categorías {alcance === 'categoria' ? 'sin productos anclados a un lote' : 'con productos anclados a un lote'}.</p>
+        {alcance === 'lote' && (
+          <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-brand-800">
+                Lotes a contar * ({loteIds.length} de {lotesOfrecidos.length})
+              </label>
+              <div className="flex gap-3 text-xs text-brand-700">
+                <button type="button" onClick={() => setLoteIds(lotesOfrecidos.map(l => l.id))} className="hover:underline">Todos</button>
+                <button type="button" onClick={() => setLoteIds([])} className="hover:underline">Ninguno</button>
+              </div>
+            </div>
+            <p className="text-xs text-brand-700/80 mb-2">
+              Se muestra cuánto tiene hoy cada lote en {almacenNombre}. Solo se contarán los que marques.
+            </p>
+            {categoriaIds.length === 0 ? (
+              <p className="text-xs text-amber-700">Elige primero la categoría para ver sus lotes.</p>
+            ) : loteIdsElegibles === null ? (
+              <p className="text-xs text-text-secondary">Cargando lotes…</p>
+            ) : lotesOfrecidos.length === 0 ? (
+              <p className="text-xs text-amber-700">No hay lotes activos para esta categoría.</p>
             ) : (
-              <div className="border border-border rounded-lg divide-y divide-border max-h-40 overflow-y-auto">
-                {categoriasDelAlcance.map(c => (
-                  <label key={c.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={categoriaIds.includes(c.id)}
-                      onChange={() => toggleCategoria(c.id)}
-                      className="w-4 h-4 accent-brand-600"
-                    />
-                    <span className="text-sm text-text-primary">{c.nombre}</span>
-                  </label>
-                ))}
+              <div className="border border-brand-200 rounded-lg divide-y divide-brand-100 max-h-40 overflow-y-auto bg-surface">
+                {lotesOfrecidos.map(l => {
+                  const kg = stockEnAlmacen(l);
+                  return (
+                    <label key={l.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={loteIds.includes(l.id)}
+                        onChange={() => toggleLote(l.id)}
+                        className="w-4 h-4 accent-brand-600"
+                      />
+                      <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{l.nombre}</span>
+                      <span className={`text-xs shrink-0 ${kg > 0 ? 'text-text-secondary' : 'text-text-muted'}`}>
+                        {kg > 0 ? `${fmtKg(kg)} kg` : 'sin stock aquí'}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             )}
           </div>
+        )}
 
-          {alcance === 'categoria' && productosDeCategorias.length > 0 && (
-            <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-brand-800">
-                  Materiales a contar * ({productosElegidos.length} de {productosDeCategorias.length})
-                </label>
-                <div className="flex gap-3 text-xs text-brand-700">
-                  <button type="button" onClick={() => marcarTodosProductos(true)} className="hover:underline">Seleccionar todos</button>
-                  <button type="button" onClick={() => marcarTodosProductos(false)} className="hover:underline">Deseleccionar todos</button>
-                </div>
-              </div>
-              <p className="text-xs text-brand-700/80 mb-2">
-                Solo se contarán (y se ajustarán al culminar) los materiales que dejes marcados.
-              </p>
-              <div className="border border-brand-200 rounded-lg divide-y divide-brand-100 max-h-48 overflow-y-auto bg-surface">
-                {productosDeCategorias.map(p => (
-                  <label key={p.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={!productosExcluidos.includes(p.id)}
-                      onChange={() => toggleProducto(p.id)}
-                      className="w-4 h-4 accent-brand-600"
-                    />
-                    <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{p.nombre}</span>
-                    {categoriaIds.length > 1 && (
-                      <span className="text-xs text-text-muted shrink-0">{p.tipoMaterialNombre}</span>
-                    )}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {alcance === 'lote' && (
-            <div className="bg-brand-50 border border-brand-200 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-brand-800">
-                  Lotes a contar * ({loteIds.length} de {lotesOfrecidos.length})
-                </label>
-                <div className="flex gap-3 text-xs text-brand-700">
-                  <button type="button" onClick={() => setLoteIds(lotesOfrecidos.map(l => l.id))} className="hover:underline">Todos</button>
-                  <button type="button" onClick={() => setLoteIds([])} className="hover:underline">Ninguno</button>
-                </div>
-              </div>
-              <p className="text-xs text-brand-700/80 mb-2">
-                Se muestra cuánto tiene hoy cada lote en {almacenNombre}. Solo se contarán los que marques.
-              </p>
-              {categoriaIds.length === 0 ? (
-                <p className="text-xs text-amber-700">Elige primero la categoría para ver sus lotes.</p>
-              ) : loteIdsElegibles === null ? (
-                <p className="text-xs text-text-secondary">Cargando lotes…</p>
-              ) : lotesOfrecidos.length === 0 ? (
-                <p className="text-xs text-amber-700">No hay lotes activos para esta categoría.</p>
-              ) : (
-                <div className="border border-brand-200 rounded-lg divide-y divide-brand-100 max-h-40 overflow-y-auto bg-surface">
-                  {lotesOfrecidos.map(l => {
-                    const kg = stockEnAlmacen(l);
-                    return (
-                      <label key={l.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-alt transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={loteIds.includes(l.id)}
-                          onChange={() => toggleLote(l.id)}
-                          className="w-4 h-4 accent-brand-600"
-                        />
-                        <span className="text-sm text-text-primary flex-1 min-w-0 truncate">{l.nombre}</span>
-                        <span className={`text-xs shrink-0 ${kg > 0 ? 'text-text-secondary' : 'text-text-muted'}`}>
-                          {kg > 0 ? `${fmtKg(kg)} kg` : 'sin stock aquí'}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Descripción</label>
-            <input
-              type="text" maxLength={200}
-              value={descripcion}
-              onChange={e => setDescripcion(e.target.value)}
-              className={inputClass}
-              placeholder="Ej. Cierre de mes agosto 2026 — No Ferroso"
-            />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Creando…' : 'Crear e iniciar conteo'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Descripción</label>
+          <input
+            type="text" maxLength={200}
+            value={descripcion}
+            onChange={e => setDescripcion(e.target.value)}
+            className={inputClass}
+            placeholder="Ej. Cierre de mes agosto 2026 — No Ferroso"
+          />
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Creando…' : 'Crear e iniciar conteo'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

@@ -33,6 +33,13 @@ export const TIPO_OPERACION = {
   packingListEditar: 'packing_list_editar',
   walletMovimientoCrear: 'wallet_movimiento_crear',
   walletMesaCambioCrear: 'wallet_mesa_cambio_crear',
+  pagoProveedorCrear: 'pago_proveedor_crear',
+  pagoProveedorMultiple: 'pago_proveedor_multiple',
+  cobroClienteMultiple: 'cobro_cliente_multiple',
+  notaAjusteProveedorCrear: 'nota_ajuste_proveedor_crear',
+  notaAjusteClienteCrear: 'nota_ajuste_cliente_crear',
+  facturaCompraCrear: 'factura_compra_crear',
+  facturaVentaCrear: 'factura_venta_crear',
 } as const;
 
 export type TipoOperacion = (typeof TIPO_OPERACION)[keyof typeof TIPO_OPERACION];

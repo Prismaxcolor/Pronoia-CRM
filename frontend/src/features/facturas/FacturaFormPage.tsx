@@ -9,6 +9,8 @@ import { crearFactura, type TipoFactura } from '../../services/factura-cv-servic
 import { obtenerListas, obtenerListaDetalle } from '../../services/lista-precios-service';
 import { useToast } from '../../hooks/use-toast-context';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { useIntentoEnvio } from '../../hooks/use-intento-envio';
+import { huellaDe } from '../../lib/intento-envio';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { difiereEstado, restaurarFilas } from '../../lib/borrador';
 import { esTicketFacturable } from '../../lib/tickets-facturables';
@@ -71,6 +73,7 @@ function FacturaFormPage({ tipo }: Props) {
   const [observaciones, setObservaciones] = useState('');
 
   const [guardando, setGuardando] = useState(false);
+  const envio = useIntentoEnvio();
   const [error, setError] = useState<string | null>(null);
   const [mostrarSelectorEntidad, setMostrarSelectorEntidad] = useState(false);
   // Validación de un borrador restaurado contra lo vigente (entidad activa, tickets aún pendientes).
@@ -276,26 +279,32 @@ function FacturaFormPage({ tipo }: Props) {
       return;
     }
 
+    if (!envio.iniciar()) return;
     setGuardando(true);
-
-    const result = await crearFactura(tipo, {
-      entidadId,
-      ticketIds,
-      items: lineas.map(l => ({
-        productoId: l.productoId,
-        peso: Number(l.peso),
-        precioUnitario: Number(l.precioUnitario),
-        descuentoKg: descuentoKgLinea(l),
-      })),
-      descripcion: descripcion.trim() || null,
-      observaciones: observaciones.trim() || null,
-    });
-    setGuardando(false);
-
-    if ('error' in result) { setError(result.error); return; }
-    toast.exito(esCompra ? 'Factura de compra emitida.' : 'Factura de venta emitida.');
-    borrador.limpiar();
-    navigate(`${ruta}/${result.factura.id}`);
+    try {
+      const datos = {
+        entidadId,
+        ticketIds,
+        items: lineas.map(l => ({
+          productoId: l.productoId,
+          peso: Number(l.peso),
+          precioUnitario: Number(l.precioUnitario),
+          descuentoKg: descuentoKgLinea(l),
+        })),
+        descripcion: descripcion.trim() || null,
+        observaciones: observaciones.trim() || null,
+      };
+      // Misma clave mientras no cambien los datos: un reintento tras un corte no duplica la factura.
+      const result = await crearFactura(tipo, { ...datos, clientRequestId: envio.idPara(huellaDe({ tipo, ...datos })) });
+      if ('error' in result) { setError(result.error); return; }
+      envio.renovar();
+      toast.exito(esCompra ? 'Factura de compra emitida.' : 'Factura de venta emitida.');
+      borrador.limpiar();
+      navigate(`${ruta}/${result.factura.id}`);
+    } finally {
+      setGuardando(false);
+      envio.terminar();
+    }
   };
 
   const inputClass = "w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";

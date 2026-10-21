@@ -40,6 +40,13 @@ import { registrarPago, registrarPagoMultiple } from '../src/services/pago-servi
 import { registrarCobroMultiple } from '../src/services/cobro-service.js';
 import { actualizarEstadoCita } from '../src/services/cita-despacho-service.js';
 
+// Los reintentos de n8n esperan con backoff real; en tests se hacen al instante para que no se filtren a otros casos.
+vi.mock('../src/services/n8n-cliente.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/services/n8n-cliente.js')>();
+  return { ...real, enviarN8n: (u: string, c: Record<string, unknown>, o = {}) => real.enviarN8n(u, c, { ...o, esperar: async () => undefined }) };
+});
+
+
 const fetchMock = vi.fn();
 
 /** Input mínimo válido de crearTicket (la RPC está simulada, solo importa que la forma no rompa el servicio). */

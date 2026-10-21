@@ -67,6 +67,8 @@ export interface FilaReporteCuenta {
   anulado: boolean;
   /** Transferencia con mesa de cambio cuyo saldo aún no llega a esta cuenta. */
   enProceso: boolean;
+  /** Equivalente en USD del importe (solo cuentas en Bs), a la tasa del momento del movimiento; null = sin dato ni tasa. */
+  equivalenteUsd?: number | null;
 }
 
 export interface ReporteCuenta {

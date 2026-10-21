@@ -36,7 +36,7 @@ export interface BlobConfig {
 }
 
 export const CONFIG_DEFECTO: BlobConfig = {
-  nombre: 'BLOB',
+  nombre: 'Nous',
   personalidad: 'amigable',
   modo: 'activo',
   tamano: 'mediano',
@@ -57,7 +57,9 @@ function enumOr<T extends string>(valor: unknown, validos: readonly T[], defecto
  */
 export function normalizarConfig(raw: unknown): BlobConfig {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const nombre = typeof r.nombre === 'string' ? r.nombre.trim().slice(0, 20) : '';
+  const nombreGuardado = typeof r.nombre === 'string' ? r.nombre.trim().slice(0, 20) : '';
+  // El nombre de fábrica anterior era "BLOB": quien no lo cambió pasa a ver "Nous".
+  const nombre = nombreGuardado.toUpperCase() === 'BLOB' ? '' : nombreGuardado;
   const frases = Array.isArray(r.frasesPropias)
     ? r.frasesPropias
         .filter((f): f is string => typeof f === 'string')

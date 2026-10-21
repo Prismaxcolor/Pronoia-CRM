@@ -16,6 +16,13 @@ vi.mock('../src/utils/logger.js', () => ({
 
 import { estado, reiniciarSupabaseFalso } from './helpers/supabase-falso';
 import { CHAT_P1, P1, P_SIN_VINCULAR, sembrarEntidades } from './helpers/fixtures-telegram';
+
+// Los reintentos de n8n esperan con backoff real; en tests se hacen al instante para que no se filtren a otros casos.
+vi.mock('../src/services/n8n-cliente.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/services/n8n-cliente.js')>();
+  return { ...real, enviarN8n: (u: string, c: Record<string, unknown>, o = {}) => real.enviarN8n(u, c, { ...o, esperar: async () => undefined }) };
+});
+
 import {
   entidadVinculada,
   notificarDocumento,
@@ -116,7 +123,7 @@ describe('notificarDocumento', () => {
   it('un álbum que falla no impide mandar el siguiente', async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200 }).mockResolvedValueOnce({ ok: false, status: 500 }).mockResolvedValue({ ok: true, status: 200 });
     await notificarDocumento({ entidadTipo: 'proveedor', entidadId: P1, tipoDocumento: 'ticket', preparar: () => pdf({ fotos: fotos(11) }) });
-    expect(fetchMock).toHaveBeenCalledTimes(3); // documento + 2 álbumes
+    expect(fetchMock).toHaveBeenCalledTimes(4); // documento + álbum 1 (500, reintentado una vez) + álbum 2
   });
 
   it('recorta el pie a 1000 caracteres (límite de Telegram: 1024)', async () => {

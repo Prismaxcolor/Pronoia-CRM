@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
-import { cabecerasWebhookN8n } from '../utils/n8n-headers.js';
+import { enviarAvisoN8n } from './n8n-aviso.js';
 import { logger } from '../utils/logger.js';
 import { formatCodigoNotaCredito, formatCodigoNotaDebito, formatCodigoNotaCreditoCliente, formatCodigoNotaDebitoCliente, formatCodigoTransformacion } from '../utils/codigos.js';
 import { validarBotones, type BotonAviso } from '../utils/botones-aviso.js';
@@ -10,7 +10,8 @@ import { obtenerTicket } from './ticket-pesaje-service.js';
 import { obtenerTransformacion } from './transformacion-service.js';
 import { generarFacturaPdf, generarTicketPdf, nombreArchivoFactura, nombreArchivoTicket } from './document-generator.js';
 import { comprobantesReenviables } from './grupo-dinero.js';
-import { enviarACajas, lineasDeCuentas, chatIdParaBody, puedeEnviarACajas } from './grupo-cajas-service.js';
+import { enviarACajas, lineaDeCategoria, lineasDeCuentas, chatIdParaBody, puedeEnviarACajas } from './grupo-cajas-service.js';
+import { avisoCajasSilenciado } from './grupo-silencio-service.js';
 import type { FacturaPublica } from './factura-service.js';
 import { columnasDiff, detallesDeCambios, esTablaDiff, type TablaDiff } from './grupo-diff.js';
 import {
@@ -63,15 +64,13 @@ export async function notificarGrupo(payload: PayloadGrupo): Promise<void> {
       ...(botones.length > 0 ? { botones } : {}),
       texto: payload.texto.length > MAX_TEXTO ? `${payload.texto.slice(0, MAX_TEXTO)}…` : payload.texto,
     };
-    const respuesta = await fetch(ENV.N8N_WEBHOOK_GRUPO, {
-      method: 'POST',
-      headers: await cabecerasWebhookN8n(),
-      body: JSON.stringify(cuerpo),
-      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+    await enviarAvisoN8n({
+      destino: 'grupo',
+      evento: 'grupo_notify',
+      contexto: { clave: payload.evento },
+      cuerpo: { ...cuerpo },
+      opciones: { timeoutMs: WEBHOOK_TIMEOUT_MS },
     });
-    if (!respuesta.ok) {
-      logger.error({ evento: 'grupo_notify_error_webhook_status', status: respuesta.status, clave: payload.evento });
-    }
   } catch (err) {
     logger.error({
       evento: 'grupo_notify_error_inesperado',
@@ -453,13 +452,15 @@ export async function construirPayloadGrupo(
   const destino = destinoEvento(evento, filtro);
   // Dinero sin grupo de cajas configurado: no se envía (ni se gastan consultas armándolo).
   if (!destino) return null;
+  // Cajas apagadas por el superadmin (cuenta, proveedor o cliente): sin aviso ni más consultas.
+  if (destino === 'cajas' && await avisoCajasSilenciado(evento, ctxBase)) return null;
   // Cajas: el chat es el de la banca que interviene o el general; sin ninguno no se arma el aviso.
   const chatCajas = destino === 'cajas' ? await chatIdParaBody(ctxBase.reqBody) : '';
   if (destino === 'cajas' && !puedeEnviarACajas(chatCajas)) return null;
   const hallado: EventoEncontrado = { evento, params: encontrado.params };
 
   const previa = pet.etiquetaPrevia ? await pet.etiquetaPrevia.catch(() => null) : null;
-  const [actor, etiqueta, contexto, auditoria, detallesDiff, cuentas, material] = await Promise.all([
+  const [actor, etiqueta, contexto, auditoria, detallesDiff, cuentas, material, categoria] = await Promise.all([
     actorDePeticion(pet),
     resolverEtiqueta(hallado, ctxBase, previa),
     resolverContexto(evento.contexto?.(ctxBase) ?? null),
@@ -469,6 +470,7 @@ export async function construirPayloadGrupo(
     detallesPorDiff(hallado, pet, ctxBase.reqBody).catch((): undefined => undefined),
     destino === 'cajas' ? lineasDeCuentas(ctxBase.reqBody) : Promise.resolve<string[]>([]),
     leerExtraTransformacion(evento.clave, ctxBase, pet, encontrado.params.id ?? ''),
+    destino === 'cajas' ? lineaDeCategoria(ctxBase.reqBody) : Promise.resolve<string[]>([]),
   ]);
   // Edición que no cambió nada real: sin aviso (silencioso).
   if (detallesDiff && detallesDiff.length === 0) return null;
@@ -479,7 +481,7 @@ export async function construirPayloadGrupo(
     icono: evento.icono,
     accion: evento.accion,
     entidad,
-    detalles: [...(detallesDiff ?? evento.detalles?.(ctx) ?? []), ...cuentas],
+    detalles: [...(detallesDiff ?? evento.detalles?.(ctx) ?? []), ...categoria, ...cuentas],
     actor,
     fecha: ahora,
     zona: ENV.GRUPO_ZONA_HORARIA,

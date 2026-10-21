@@ -55,7 +55,7 @@ function Tarjeta({ nombre, detalle, seleccionada, onElegir, imagen }: TarjetaPro
 }
 
 function ImagenCategoria({ t }: { t: TarjetaCategoria }) {
-  if (t.imagenUrl) return <img src={t.imagenUrl} alt="" loading="lazy" className="h-full w-full bg-white object-cover" />;
+  if (t.imagenUrl) return <img src={t.imagenUrl} alt="" loading="lazy" decoding="async" className="h-full w-full bg-white object-cover" />;
   return (
     <span className="flex h-full w-full items-center justify-center text-2xl font-bold" style={{ backgroundColor: t.color, color: colorTextoSobre(t.color) }} aria-hidden="true">
       {t.inicial}

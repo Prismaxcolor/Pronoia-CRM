@@ -1,8 +1,10 @@
 /** Datos de presentación de los reportes del Wallet (sin React ni jsPDF). Se prueba en backend/tests/reporte-wallet-datos.test.ts. */
 
-import type { CategoriaWallet, FilaReporteCuenta, ReporteCategorias, TotalesMoneda } from '@shared/types/index.js';
+import type { CategoriaWallet, FilaReporteCuenta, ReporteCategorias, ReporteCuenta, TotalesMoneda } from '@shared/types/index.js';
 import { nombreArchivoDocumento } from '../../../lib/nombre-archivo';
 import { etiquetaCategoria } from './categorias-logica';
+import { correlativoCoincide } from '../../../lib/correlativo-busqueda';
+import { numeroMovimiento } from '../detalle-movimiento';
 
 export const etiquetaMoneda = (moneda: string): string => (moneda === 'VES' ? 'Bs' : moneda);
 
@@ -77,4 +79,34 @@ export function textoSeleccion(ids: readonly string[], indice: ReadonlyMap<strin
   const nombres = ids.map(id => etiquetaCategoria(id, indice)?.nombre).filter((n): n is string => !!n);
   const sin = incluirSinCategoria ? ' y movimientos sin categoría' : '';
   return nombres.length === 0 ? `Todas las categorías${sin}` : `Categorías: ${nombres.join(', ')}${sin}`;
+}
+
+/** Máximo de filas por página impresa en los PDF de reportes del Wallet. */
+export const FILAS_POR_PAGINA_PDF = 15;
+
+/** Parte una lista en trozos de `tamano` (el último puede ser menor); lista vacía => sin trozos. No modifica la original. */
+export function partirEnTrozos<T>(items: readonly T[], tamano: number = FILAS_POR_PAGINA_PDF): T[][] {
+  if (!(tamano >= 1)) throw new Error('El tamaño del trozo debe ser al menos 1.');
+  const trozos: T[][] = [];
+  for (let i = 0; i < items.length; i += tamano) trozos.push(items.slice(i, i + tamano));
+  return trozos;
+}
+
+/** Filas cuyo correlativo (MV-0001, PG-0003, N000123...) o número contiene el texto; texto vacío => todas. Solo dígitos también compara con el número exacto. */
+export function filtrarFilasPorCorrelativo(filas: readonly FilaReporteCuenta[], texto: string): FilaReporteCuenta[] {
+  const q = texto.trim().toLowerCase();
+  if (q === '') return [...filas];
+  const exacto = /^\d+$/.test(q) ? Number(q) : null;
+  return filas.filter(f =>
+    correlativoCoincide(numeroMovimiento(f), q) ||
+    (exacto !== null && (f.numeroSistema === exacto || f.numero === exacto)));
+}
+
+/** Totales de entradas, salidas y neto de las filas vigentes (las anuladas no cuentan). */
+export function totalesDeFilas(filas: readonly FilaReporteCuenta[]): ReporteCuenta['totales'] {
+  const vigentes = filas.filter(f => !f.anulado);
+  const redondear = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+  const entradas = redondear(vigentes.reduce((s, f) => s + f.entrada, 0));
+  const salidas = redondear(vigentes.reduce((s, f) => s + f.salida, 0));
+  return { entradas, salidas, neto: redondear(entradas - salidas) };
 }

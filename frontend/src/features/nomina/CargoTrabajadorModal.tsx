@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
+import Modal from '../../components/Modal';
 import { X } from 'lucide-react';
 import { obtenerCargoTrabajador } from '../../services/nomina-service';
-import { useCerrarConEscape } from '../../hooks/use-cerrar-con-escape';
 import { Insignia, SkeletonBloque } from '../../components/ui';
 import {
   ETIQUETA_MOVIMIENTO_CARGO, nombreCompleto, type CargoTrabajador, type EstadoMovimientoCargo, type MovimientoCargo, type Trabajador,
@@ -43,7 +43,6 @@ function FilaMovimiento({ m }: { m: MovimientoCargo }) {
 function CargoTrabajadorModal({ trabajador, onClose }: Props) {
   const [cargo, setCargo] = useState<CargoTrabajador | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useCerrarConEscape(onClose, false);
 
   useEffect(() => {
     let vivo = true;
@@ -55,27 +54,26 @@ function CargoTrabajadorModal({ trabajador, onClose }: Props) {
   }, [trabajador.id]);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="cargo-titulo">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 id="cargo-titulo" className="text-lg font-bold text-text-primary">Cargo de {nombreCompleto(trabajador)}</h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
-        </div>
-        <div className="p-5">
-          {error ? <p role="alert" className="text-sm text-red-500">{error}</p> : !cargo ? <SkeletonBloque /> : (
-            <>
-              <p className="mb-3 rounded-lg bg-surface-alt p-3 text-sm text-text-secondary">
-                Saldo pendiente de préstamos y adelantos: <strong className="text-text-primary">USD {cargo.saldoPrestamosUsd.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>.
-                {' '}Los movimientos en bolívares muestran su equivalente en USD a la tasa Binance del mediodía (hora de Caracas) del día del pago; ese valor se fija al pagar y no cambia después.
-              </p>
-              {cargo.movimientos.length === 0
-                ? <p className="py-6 text-center text-sm text-text-secondary">Este trabajador aún no tiene movimientos.</p>
-                : <ul className="divide-y divide-border">{cargo.movimientos.map(m => <FilaMovimiento key={m.id} m={m} />)}</ul>}
-            </>
-          )}
-        </div>
+    <Modal onClose={onClose} tituloId="cargo-titulo" ancho="max-w-2xl">
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 id="cargo-titulo" className="text-lg font-bold text-text-primary">Cargo de {nombreCompleto(trabajador)}</h2>
+        {trabajador.puesto && <p className="text-sm text-text-secondary">{trabajador.puesto}</p>}
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors"><X size={20} /></button>
       </div>
-    </div>
+      <div className="p-5">
+        {error ? <p role="alert" className="text-sm text-red-500">{error}</p> : !cargo ? <SkeletonBloque /> : (
+          <>
+            <p className="mb-3 rounded-lg bg-surface-alt p-3 text-sm text-text-secondary">
+              Saldo pendiente de préstamos y adelantos: <strong className="text-text-primary">USD {cargo.saldoPrestamosUsd.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>.
+              {' '}Los movimientos en bolívares muestran su equivalente en USD a la tasa Binance del mediodía (hora de Caracas) del día del pago; ese valor se fija al pagar y no cambia después.
+            </p>
+            {cargo.movimientos.length === 0
+              ? <p className="py-6 text-center text-sm text-text-secondary">Este trabajador aún no tiene movimientos.</p>
+              : <ul className="divide-y divide-border">{cargo.movimientos.map(m => <FilaMovimiento key={m.id} m={m} />)}</ul>}
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 

@@ -16,7 +16,7 @@ const asistenteLimiter = rateLimit({
   limit: LIMITE_PETICIONES_POR_MINUTO,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: 'BLOB necesita respirar. Espera un minuto y vuelve a preguntar.' },
+  message: { error: 'Nous necesita respirar. Espera un minuto y vuelve a preguntar.' },
   keyGenerator: req => req.user?.sub ?? ipKeyGenerator(req.ip ?? 'na'),
 });
 

@@ -26,6 +26,8 @@ import {
   recursoComprobanteOperacion, rutaComprobanteOperacion, tasaDe, tituloCompartirMovimiento,
 } from './detalle-movimiento';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import { useCategorias } from './categorias/useCategorias';
+import { etiquetaCategoria } from './categorias/categorias-logica';
 
 const RUTA_WALLET = '/cochinito';
 const simbolo = (moneda: string) => (moneda === 'USD' ? 'USD' : moneda === 'VES' ? 'Bs' : moneda);
@@ -40,7 +42,7 @@ function Galeria({ fotos, onAbrir }: { fotos: string[]; onAbrir: (i: number) => 
       <div className="flex flex-wrap gap-3">
         {fotos.map((url, i) => (
           <a key={url} href={url} target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); onAbrir(i); }} aria-label={`Ampliar comprobante ${i + 1}`}>
-            <img src={url} alt={`Comprobante ${i + 1}`} crossOrigin="anonymous" className="max-h-44 max-w-full rounded-lg border border-border object-contain" />
+            <img decoding="async" src={url} alt={`Comprobante ${i + 1}`} crossOrigin="anonymous" className="max-h-44 max-w-full rounded-lg border border-border object-contain" />
           </a>
         ))}
       </div>
@@ -77,11 +79,12 @@ function FilasMesa({ detalle, simboloDestino }: { detalle: DetalleMovimiento; si
       {m.mesaEstado === 'parcial' && montoCobradoMesa(m) != null && <FilaDocumento label="Ya cobrado" valor={`${simboloDestino} ${formatearNumero(montoCobradoMesa(m) ?? 0, 2)}`} />}
       {m.mesaEstado === 'parcial' && montoPendienteMesa(m) != null && <FilaDocumento label="Pendiente por cobrar" valor={`${simboloDestino} ${formatearNumero(montoPendienteMesa(m) ?? 0, 2)}`} />}
       {m.mesaCompletadaEn && <FilaDocumento label="Completada" valor={formatearFechaHora(m.mesaCompletadaEn)} />}
+      {m.mesaObservacion && <FilaDocumento label="Observación" valor={m.mesaObservacion} />}
     </>
   );
 }
 
-function Filas({ detalle, simboloDestino }: { detalle: DetalleMovimiento; simboloDestino: string }) {
+function Filas({ detalle, simboloDestino, categoria }: { detalle: DetalleMovimiento; simboloDestino: string; categoria: string | null }) {
   const m = detalle.movimiento;
   const tasa = tasaDe(m);
   const usd = montoUsdDe(m);
@@ -95,6 +98,7 @@ function Filas({ detalle, simboloDestino }: { detalle: DetalleMovimiento; simbol
       <FilaDocumento label={m.bancaDestinoId ? 'Banca origen' : 'Banca'} valor={detalle.bancaOrigenNombre ?? 'Banca desconocida'} />
       {m.bancaDestinoId && <FilaDocumento label="Banca destino" valor={detalle.bancaDestinoNombre ?? 'Banca desconocida'} />}
       {(m.proveedorId || m.clienteId) && <FilaDocumento label={rolTercero} valor={tercero ?? `${rolTercero} (sin permiso para ver el nombre)`} />}
+      {categoria && <FilaDocumento label="Categoría" valor={categoria} />}
       {m.descripcion && <FilaDocumento label="Descripción" valor={m.descripcion} />}
       {m.referencia && <FilaDocumento label="Referencia" valor={m.referencia} />}
       {tasa != null && <FilaDocumento label="Tasa" valor={`${formatearNumero(tasa, 2)} Bs por USD`} />}
@@ -117,6 +121,7 @@ function MovimientoDetallePage() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [modal, setModal] = useState<'editar' | 'anular' | 'cobrar' | null>(null);
   const [fotoAbierta, setFotoAbierta] = useState<number | null>(null);
+  const categorias = useCategorias();
 
   useEffect(() => {
     let vigente = true;
@@ -147,6 +152,7 @@ function MovimientoDetallePage() {
   }
 
   const m = detalle.movimiento;
+  const nombreCategoria = etiquetaCategoria(m.categoriaId, categorias.indice)?.nombre ?? null;
   const numero = numeroMovimiento(m);
   const terceroOBanca = detalle.proveedorNombre ?? detalle.clienteNombre ?? detalle.bancaOrigenNombre;
   const rutaOperacion = rutaComprobanteOperacion(m);
@@ -162,7 +168,7 @@ function MovimientoDetallePage() {
       {puedeCompletar && <BotonAccion soloEnLinea icono={<CheckCircle2 size={16} />} onClick={() => setModal('cobrar')}>{(montoCobradoMesa(m) ?? 0) > 0 ? 'Cobrar el resto' : 'Completar'}</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Pencil size={16} />} onClick={() => setModal('editar')}>Editar</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Ban size={16} />} onClick={() => setModal('anular')}>Anular</BotonAccion>}
-      <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarMovimientoPDF(detalle)}>PDF</BotonAccion>
+      <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarMovimientoPDF(detalle, 'descargar', nombreCategoria)}>PDF</BotonAccion>
       <CompartirBoton titulo={tituloCompartirMovimiento(m, terceroOBanca)} />
     </div>
   );
@@ -197,7 +203,7 @@ function MovimientoDetallePage() {
           </div>
         )}
 
-        <div className="mb-2"><Filas detalle={detalle} simboloDestino={simboloDestino} /></div>
+        <div className="mb-2"><Filas detalle={detalle} simboloDestino={simboloDestino} categoria={nombreCategoria} /></div>
 
         <div className={`mt-4 flex items-baseline justify-between gap-3 border-t-2 border-brand-700 pt-3 print:border-black ${m.anulado ? 'text-text-muted line-through' : ''}`}>
           <span className="text-lg font-semibold text-text-primary">Monto</span>

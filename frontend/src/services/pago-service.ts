@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { mensajeAmigable } from '../lib/mensaje-error';
 
 export interface RegistrarPagoInput {
   proveedorId: string;
@@ -15,6 +16,8 @@ export interface RegistrarPagoInput {
   facturaId?: string | null;
   /** URLs de los comprobantes ya subidos vía subirComprobantePago(). */
   comprobantes?: string[];
+  /** Clave de idempotencia (uuid): con la misma clave el servidor devuelve el resultado original en vez de repetir la operación. */
+  clientRequestId?: string;
 }
 
 export async function registrarPago(
@@ -27,7 +30,7 @@ export async function registrarPago(
     });
     return result;
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo registrar el pago.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudo registrar el pago.' }) };
   }
 }
 
@@ -62,6 +65,8 @@ export interface RegistrarPagoMultipleInput {
   fecha: string;
   items: ItemPagoMultiple[];
   comprobantes?: string[];
+  /** Clave de idempotencia (uuid): con la misma clave el servidor devuelve el resultado original en vez de repetir la operación. */
+  clientRequestId?: string;
 }
 
 export interface ResultadoPagoMultiple {
@@ -92,6 +97,6 @@ export async function registrarPagoMultiple(
     });
     return result;
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo registrar el pago.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudo registrar el pago.' }) };
   }
 }

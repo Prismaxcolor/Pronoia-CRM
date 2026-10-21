@@ -72,7 +72,7 @@ export function BlobChat({ config, semilla, mensajes, escribiendo, onEnviar, onB
             <button type="button" className={botonIcono} aria-label="Borrar conversación" onClick={onBorrar} disabled={mensajes.length === 0}>
               <Trash2 size={16} />
             </button>
-            <button type="button" className={botonIcono} aria-label="Configuración de BLOB" onClick={() => setVerConfig(true)}>
+            <button type="button" className={botonIcono} aria-label="Configuración de Nous" onClick={() => setVerConfig(true)}>
               <Settings size={16} />
             </button>
           </>
@@ -132,7 +132,7 @@ export function BlobChat({ config, semilla, mensajes, escribiendo, onEnviar, onB
               maxLength={MAX_MENSAJE}
               disabled={!puedeEscribir}
               placeholder={!online ? 'El asistente requiere conexión' : config.iaActiva ? 'Escribe un mensaje…' : 'IA apagada'}
-              aria-label="Mensaje para BLOB"
+              aria-label="Mensaje para Nous"
               className="min-w-0 flex-1 rounded-full border border-border bg-surface px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:bg-surface-alt"
             />
             <button

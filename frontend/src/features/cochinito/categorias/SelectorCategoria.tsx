@@ -21,7 +21,7 @@ const MINIATURA = 'h-10 w-10 shrink-0 overflow-hidden rounded-lg flex items-cent
 
 function Miniatura({ t }: { t: TarjetaCategoria | null }) {
   if (!t) return <span className={`${MINIATURA} bg-surface text-text-muted`} aria-hidden="true"><Tag size={18} /></span>;
-  if (t.imagenUrl) return <img src={t.imagenUrl} alt="" loading="lazy" className={`${MINIATURA} bg-white object-cover`} />;
+  if (t.imagenUrl) return <img src={t.imagenUrl} alt="" loading="lazy" decoding="async" className={`${MINIATURA} bg-white object-cover`} />;
   return <span className={MINIATURA} style={{ backgroundColor: t.color, color: colorTextoSobre(t.color) }} aria-hidden="true">{t.inicial}</span>;
 }
 

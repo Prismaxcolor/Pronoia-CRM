@@ -398,7 +398,7 @@ function TransformacionDetallePage() {
             {galeria.map(f => (
               <button key={f.key} type="button" onClick={() => setFotoAmpliada(f)} title="Ver foto en grande"
                 className="group relative aspect-square rounded-lg overflow-hidden border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-                <img src={f.url} alt={f.label} loading="lazy" className="w-full h-full object-cover" />
+                <img src={f.url} alt={f.label} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] leading-tight px-1.5 py-1 truncate text-left">{f.label}</span>
                 <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
                   <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />

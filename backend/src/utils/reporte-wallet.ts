@@ -6,6 +6,7 @@
  */
 import { bancaPermitida, tieneExtremoOculto, TEXTO_CUENTA_RESTRINGIDA, type BancasPermitidas } from './banca-acceso.js';
 import { nombreCompletoCategoria, type CategoriaFila } from './categoria-wallet.js';
+import { equivalenteUsd, type TasaHistorica } from './equivalente-usd.js';
 
 export interface MovimientoReporte {
   id: string;
@@ -27,6 +28,8 @@ export interface MovimientoReporte {
   mesaEstado: 'en_proceso' | 'parcial' | 'completada' | null;
   /** Lo ya cobrado al cambista (moneda destino); solo cuenta en cobro parcial. */
   mesaMontoCobrado?: number | null;
+  /** Equivalente en USD guardado al momento del pago/cobro (null/ausente en movimientos manuales). */
+  montoUsd?: number | null;
 }
 
 export interface TotalesMonedaCalculo { moneda: string; ingresos: number; egresos: number; total: number }
@@ -151,6 +154,8 @@ export interface FilaCuentaCalculo {
   salida: number;
   anulado: boolean;
   enProceso: boolean;
+  /** Equivalente en USD del importe (solo cuentas en Bs); null si no hay dato ni tasa histórica. */
+  equivalenteUsd: number | null;
 }
 
 export interface ReporteCuentaCalculo {
@@ -164,6 +169,10 @@ export interface EntradaReporteCuenta {
   categorias: readonly CategoriaFila[];
   nombresBancas: ReadonlyMap<string, string>;
   permitidas: BancasPermitidas;
+  /** Moneda de la cuenta; el equivalente en USD solo se calcula si es VES. */
+  monedaCuenta?: string;
+  /** Tasas USD->VES históricas para movimientos sin monto_usd. */
+  tasas?: readonly TasaHistorica[];
 }
 
 /** Lo que entra y sale de la cuenta por un movimiento (una transferencia con mesa en proceso aún no acredita al destino). */
@@ -189,14 +198,21 @@ function categoriaImprimible(id: string | null, categorias: readonly CategoriaFi
   return nombre && color ? { nombre, color } : null;
 }
 
+function equivalenteDeFila(m: MovimientoReporte, e: EntradaReporteCuenta, importe: number): number | null {
+  if (e.monedaCuenta !== 'VES') return null;
+  const importeEnMonedaOrigen = m.tipo !== 'transferencia' || m.bancaOrigenId === e.bancaId;
+  return equivalenteUsd(importe, { moneda: m.moneda, monto: m.monto, montoUsd: m.montoUsd, fecha: m.fecha, importeEnMonedaOrigen }, e.tasas ?? []);
+}
+
 function filaDeCuenta(m: MovimientoReporte, e: EntradaReporteCuenta): FilaCuentaCalculo {
   // Con la cuenta contraria fuera del acceso, descripción y referencia podrían nombrarla: se enmascaran.
   const oculta = tieneExtremoOculto(e.permitidas, m);
+  const montos = montosEnCuenta(m, e.bancaId);
   return {
     id: m.id, fecha: dia(m.fecha), tipo: m.tipo, subtipo: m.subtipo, numero: m.numero, numeroSistema: m.numeroSistema,
     descripcion: oculta ? TEXTO_CUENTA_RESTRINGIDA : m.descripcion, referencia: oculta ? TEXTO_CUENTA_RESTRINGIDA : m.referencia, cuentaContraria: cuentaContraria(m, e),
     categoriaId: m.categoriaId, categoria: categoriaImprimible(m.categoriaId, e.categorias),
-    anulado: m.anulado, ...montosEnCuenta(m, e.bancaId),
+    anulado: m.anulado, ...montos, equivalenteUsd: equivalenteDeFila(m, e, montos.entrada || montos.salida),
   };
 }
 

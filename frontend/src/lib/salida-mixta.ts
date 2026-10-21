@@ -1,8 +1,4 @@
-import type {
-  ComposicionPCBItem,
-  EntradaDetalleTransformacion,
-  SalidaTransformacion,
-} from '@shared/types/index.js';
+import type { SalidaTransformacion } from '@shared/types/index.js';
 
 /** Funciones puras de "salidas mixtas" de una transformación: una misma
  *  transformación puede producir salidas a lote y salidas a material suelto.
@@ -138,43 +134,4 @@ export function etiquetaSalida(
   if (s.nombreProducto) return s.nombreProducto;
   if (s.nombreLoteDestino) return `Lote ${s.nombreLoteDestino}`;
   return '—';
-}
-
-export interface ComposicionProyectada { item: string; porcentaje: number; esNuevo: boolean }
-
-/** Estima cómo quedaría la composición del lote destino si esta salida se
- *  completa tal cual está ahora — mezclando lo que ya tiene el destino con
- *  lo que entra. Solo referencial: la composición real se recalcula a partir
- *  del stock real al completar.
- *
- *  `entradaDetalle` describe la composición de lo que entra. En PCB es lo que
- *  el backend congeló al crear la transformación; en una salida ferroso a lote
- *  es el material de la fila al 100%. */
-export function proyectarComposicion(
-  stockDestino: number,
-  compDestino: ComposicionPCBItem[],
-  entradaDetalle: EntradaDetalleTransformacion[],
-  netoEntrante: number
-): ComposicionProyectada[] {
-  if (netoEntrante <= 0) return [];
-  const stockTotalNuevo = stockDestino + netoEntrante;
-  if (stockTotalNuevo <= 0) return [];
-
-  const totalEntrada = entradaDetalle.reduce((acc, d) => acc + d.pesoKg, 0);
-  const compOrigen = totalEntrada > 0
-    ? entradaDetalle.map(d => ({ item: d.nombreProducto, porcentaje: (d.pesoKg / totalEntrada) * 100 }))
-    : [];
-
-  const itemsDestino = new Set(compDestino.map(c => c.item));
-  const todosItems = Array.from(new Set([...compDestino.map(c => c.item), ...compOrigen.map(c => c.item)]));
-
-  return todosItems
-    .map(item => {
-      const pctDestino = compDestino.find(c => c.item === item)?.porcentaje ?? 0;
-      const pctOrigen = compOrigen.find(c => c.item === item)?.porcentaje ?? 0;
-      const kg = (stockDestino * pctDestino) / 100 + (netoEntrante * pctOrigen) / 100;
-      return { item, porcentaje: Math.round((kg / stockTotalNuevo) * 10000) / 100, esNuevo: !itemsDestino.has(item) };
-    })
-    .filter(c => c.porcentaje > 0)
-    .sort((a, b) => b.porcentaje - a.porcentaje);
 }

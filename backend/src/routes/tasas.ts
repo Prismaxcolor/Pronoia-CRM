@@ -3,11 +3,17 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { tasaOficialVigente } from '../utils/tasa-vigencia.js';
 import { logger } from '../utils/logger.js';
 import { exigirCronSecret } from '../middlewares/exigir-cron-secret.js';
-import { cronLimiter } from '../middlewares/rate-limit.js';
+import { cronLimiter, tasasPublicasLimiter } from '../middlewares/rate-limit.js';
+import { esTasaCreible, UMBRAL_VARIACION_TASA } from '../utils/tasa-cordura.js';
 
 const router = Router();
 
 const HORA_MS = 60 * 60 * 1000;
+/** Tope de espera a las APIs externas de tasas (antes no había: una API colgada colgaba la petición). */
+const FETCH_TASA_TIMEOUT_MS = 8_000;
+
+/** La tasa nueva varía más del umbral respecto a la última guardada: no se guarda. */
+export class TasaFueraDeRangoError extends Error {}
 
 interface DolarApiResponse {
   fuente: string;
@@ -44,7 +50,7 @@ function mapTasa(row: TasaRow) {
 }
 
 async function fetchDolarApi(url: string): Promise<number> {
-  const resp = await fetch(url);
+  const resp = await fetch(url, { signal: AbortSignal.timeout(FETCH_TASA_TIMEOUT_MS) });
   if (!resp.ok) throw new Error(`dolarapi respondió ${resp.status}`);
   const data = await resp.json() as DolarApiResponse;
   if (!data.promedio || data.promedio <= 0) throw new Error('tasa inválida desde dolarapi');
@@ -78,7 +84,9 @@ const FUENTES = {
     esVigente: (capturadaEn: Date, ahora: Date) =>
       ahora.getTime() - capturadaEn.getTime() < HORA_MS / 4,
     fetchTasa: async () => {
-      const resp = await fetch('https://www.usdt.com.ve/api/v1/rates/current');
+      const resp = await fetch('https://www.usdt.com.ve/api/v1/rates/current', {
+        signal: AbortSignal.timeout(FETCH_TASA_TIMEOUT_MS),
+      });
       if (!resp.ok) throw new Error(`usdt.com.ve respondió ${resp.status}`);
       const data = await resp.json() as UsdtComVeResponse;
       const tasa = data?.data?.binance?.sell_rate;
@@ -105,9 +113,22 @@ async function buscarUltimaTasa(cfg: ConfigFuente): Promise<TasaRow | null> {
   return (data as TasaRow | null) ?? null;
 }
 
-/** Consulta la fuente externa y guarda la captura en `tasas_cambio`. Lanza si falla. */
-async function capturarYGuardarTasa(cfg: ConfigFuente): Promise<TasaRow> {
+/** Consulta la fuente externa y guarda la captura en `tasas_cambio`. Lanza si falla o si la tasa nueva
+ *  no es creíble frente a `ultima` (variación mayor a UMBRAL_VARIACION_TASA): en ese caso no se guarda. */
+async function capturarYGuardarTasa(cfg: ConfigFuente, ultima: TasaRow | null): Promise<TasaRow> {
   const tasa = await cfg.fetchTasa();
+  const referencia = ultima ? { tasa: Number(ultima.tasa), capturadaEn: new Date(ultima.fecha) } : null;
+  if (!esTasaCreible(tasa, referencia)) {
+    logger.warn({
+      evento: 'tasas_rechazada_fuera_de_rango',
+      fuente: cfg.fuente,
+      par: `${cfg.monedaOrigen}/${cfg.monedaDestino}`,
+      nueva: tasa,
+      anterior: referencia?.tasa ?? null,
+      umbral: UMBRAL_VARIACION_TASA,
+    });
+    throw new TasaFueraDeRangoError('La tasa recibida varía demasiado respecto a la anterior; se conserva la anterior');
+  }
   const { data: nueva, error } = await supabaseAdmin
     .from('tasas_cambio')
     .insert({
@@ -135,14 +156,14 @@ async function obtenerTasa(key: FuenteKey) {
   }
 
   try {
-    return { ...mapTasa(await capturarYGuardarTasa(cfg)), fromCache: false };
+    return { ...mapTasa(await capturarYGuardarTasa(cfg, ultima)), fromCache: false };
   } catch (err) {
     if (ultima) return { ...mapTasa(ultima), fromCache: true, stale: true };
     throw err;
   }
 }
 
-export type ResultadoRefresco = 'actualizada' | 'ya_vigente' | 'error';
+export type ResultadoRefresco = 'actualizada' | 'ya_vigente' | 'rechazada' | 'error';
 
 /** Fuerza la captura de una tasa oficial. Idempotente: si ya hay una captura
  *  vigente (posterior al último corte de las 7:00 Caracas) no consulta ni inserta. */
@@ -151,9 +172,10 @@ async function refrescarTasaOficial(key: 'bcv' | 'euro', ahora: Date): Promise<R
   try {
     const ultima = await buscarUltimaTasa(cfg);
     if (ultima && cfg.esVigente(new Date(ultima.fecha), ahora)) return 'ya_vigente';
-    await capturarYGuardarTasa(cfg);
+    await capturarYGuardarTasa(cfg, ultima);
     return 'actualizada';
   } catch (err) {
+    if (err instanceof TasaFueraDeRangoError) return 'rechazada';
     logger.error({ evento: 'tasas_refresco_error', tasa: key, mensaje: err instanceof Error ? err.message : 'desconocido' });
     return 'error';
   }
@@ -166,7 +188,7 @@ export async function refrescarTasasOficiales(ahora: Date = new Date()): Promise
 }
 
 function registrarRutaTasa(path: string, key: FuenteKey) {
-  router.get(path, async (_req, res) => {
+  router.get(path, tasasPublicasLimiter, async (_req, res) => {
     try {
       res.json(await obtenerTasa(key));
     } catch (err) {
@@ -193,14 +215,14 @@ router.all('/refrescar-oficiales', cronLimiter, exigirCronSecret, async (req, re
     return;
   }
   const resultados = await refrescarTasasOficiales();
-  const fallo = Object.values(resultados).includes('error');
+  const fallo = Object.values(resultados).some(r => r === 'error' || r === 'rechazada');
   res.status(fallo ? 502 : 200).json(fallo
     ? { error: 'No se pudo actualizar alguna tasa oficial', resultados }
     : { resultados });
 });
 
 /** GET /api/tasas/historial?fuenteKey=bcv|euro|binance&limit=30 */
-router.get('/historial', async (req, res) => {
+router.get('/historial', tasasPublicasLimiter, async (req, res) => {
   const limite = Math.min(parseInt(req.query.limit as string) || 30, 200);
   const fuenteKey = (req.query.fuenteKey as string) || 'bcv';
   const cfg = FUENTES[fuenteKey as FuenteKey];

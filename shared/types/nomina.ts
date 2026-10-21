@@ -37,6 +37,8 @@ export interface Trabajador {
   rif: string | null;
   telefono: string | null;
   direccion: string | null;
+  /** Puesto de trabajo (cargo laboral), p. ej. «Operador de planta». */
+  puesto: string | null;
   contactoEmergenciaNombre: string | null;
   contactoEmergenciaTelefono: string | null;
   pagoMovilBanco: string | null;

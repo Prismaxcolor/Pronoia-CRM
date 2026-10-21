@@ -83,6 +83,13 @@ vi.mock('../src/services/transformacion-service.js', () => ({ obtenerTransformac
 import { notificarGrupoMiddleware } from '../src/middlewares/notificar-grupo.js';
 import { limpiarCacheActores } from '../src/services/grupo-notificar-service.js';
 
+// Los reintentos de n8n esperan con backoff real; en tests se hacen al instante para que no se filtren a otros casos.
+vi.mock('../src/services/n8n-cliente.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/services/n8n-cliente.js')>();
+  return { ...real, enviarN8n: (u: string, c: Record<string, unknown>, o = {}) => real.enviarN8n(u, c, { ...o, esperar: async () => undefined }) };
+});
+
+
 interface FakeReq { method: string; originalUrl: string; body?: unknown; user?: unknown; portalUser?: unknown }
 
 /** Simula el ciclo de Express: middleware → handler (que responde) → evento 'finish'. */
@@ -238,12 +245,12 @@ describe('notificarGrupoMiddleware', () => {
   it('un fallo de n8n (rechazo de red o HTTP 500) nunca rompe la operación', async () => {
     fetchMock.mockRejectedValueOnce(new Error('ECONNRESET'));
     const a = ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { almacen: { nombre: 'V-0006' } });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2)); // el rechazo de red se reintenta
     expect(a.next).toHaveBeenCalledTimes(1);
 
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
     ejecutar({ method: 'POST', originalUrl: '/api/almacenes', user: ana, body: {} }, 201, { almacen: { nombre: 'V-0007' } });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4)); // el 500 también se reintenta
   });
 
   it('fetch con timeout corto', async () => {

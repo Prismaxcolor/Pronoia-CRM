@@ -7,9 +7,10 @@ import { obtenerAlmacenes } from '../../services/almacen-service';
 import SeleccionarMaterialModal from '../pesaje/SeleccionarMaterialModal';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import FotoMaterialPicker from '../pesaje/FotoMaterialPicker';
+import { conFotosAgregadas, quitarFotoLiberando, revocarFotos } from '../pesaje/fotos-preview';
+import { useRevocarFotosAlDesmontar } from '../pesaje/use-revocar-fotos';
 import { BloqueLoteDestino, BloqueMaterialDestino, SelectorTipoSalida } from './SalidaMixtaFila';
-import { netoDe } from '../../lib/edicion-pesos-transformacion';
-import { aNumero, filaSalidaNuevaVacia, type FilaSalidaNueva } from '../../lib/salida-nueva-edicion';
+import { filaSalidaNuevaVacia, type FilaSalidaNueva } from '../../lib/salida-nueva-edicion';
 
 const inputClass = 'w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400';
 const labelClass = 'block text-xs font-medium text-text-secondary mb-1';
@@ -38,6 +39,13 @@ function SalidasNuevasEdicion({ transformacion: t, filas, onCambiar }: Props) {
       .catch(() => undefined);
   }, []);
 
+  // Las vistas previas de las fotos se liberan al quitar la salida o al cerrar la edición.
+  useRevocarFotosAlDesmontar(filas.flatMap(f => f.fotos));
+  const quitarFila = (uid: number) => {
+    revocarFotos(filas.find(f => f.uid === uid)?.fotos ?? []);
+    onCambiar(filas.filter(x => x.uid !== uid));
+  };
+
   const esPcb = t.categoria === 'pcb';
   const actualizar = (uid: number, campo: Partial<FilaSalidaNueva>) =>
     onCambiar(filas.map(f => (f.uid === uid ? { ...f, ...campo } : f)));
@@ -54,7 +62,7 @@ function SalidasNuevasEdicion({ transformacion: t, filas, onCambiar }: Props) {
           <div key={f.uid} className="bg-surface-alt rounded-lg p-3 border border-border space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-text-secondary">Salida nueva {i + 1}</span>
-              <button type="button" onClick={() => onCambiar(filas.filter(x => x.uid !== f.uid))} className="text-text-muted hover:text-red-500" title="Quitar">
+              <button type="button" onClick={() => quitarFila(f.uid)} className="text-text-muted hover:text-red-500" title="Quitar">
                 <Trash2 size={14} />
               </button>
             </div>
@@ -64,9 +72,6 @@ function SalidasNuevasEdicion({ transformacion: t, filas, onCambiar }: Props) {
                 {!esPcb && <p className="text-[11px] text-text-muted">Entra al lote el material de la transformación: {t.nombreProductoEntrada ?? '—'}.</p>}
                 <BloqueLoteDestino
                   lote={lotes.find(l => l.id === f.loteDestinoId)}
-                  almacenId={t.almacenId}
-                  entradaDetalle={esPcb ? t.entradaDetalle : [{ productoId: t.productoEntradaId ?? '', nombreProducto: t.nombreProductoEntrada ?? '', pesoKg: 1 }]}
-                  neto={netoDe(aNumero(f.pesoBruto) || 0, aNumero(f.tara) || 0)}
                   onElegirLote={() => setSelector({ uid: f.uid, que: 'lote' })}
                 />
               </>
@@ -94,8 +99,8 @@ function SalidasNuevasEdicion({ transformacion: t, filas, onCambiar }: Props) {
             <FotoMaterialPicker
               label={esPcb ? 'Fotos de esta salida (opcional)' : 'Fotos de esta salida *'}
               fotos={f.fotos}
-              onAgregar={files => actualizar(f.uid, { fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] })}
-              onQuitar={idx => actualizar(f.uid, { fotos: f.fotos.filter((_, k) => k !== idx) })}
+              onAgregar={files => actualizar(f.uid, { fotos: conFotosAgregadas(f.fotos, files) })}
+              onQuitar={idx => actualizar(f.uid, { fotos: quitarFotoLiberando(f.fotos, idx) })}
             />
           </div>
         ))}

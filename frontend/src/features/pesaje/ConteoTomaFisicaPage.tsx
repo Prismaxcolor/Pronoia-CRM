@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { fotoLocalDeFile } from '../../lib/foto-picker';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import AvisoBorrador from '../../components/AvisoBorrador';
+import Modal from '../../components/Modal';
 import { difiereEstado } from '../../lib/borrador';
 import { idVigenteOVacio, mensajeSaneoBorrador, sanearTara } from '../../lib/borrador-vigentes';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
@@ -46,6 +49,7 @@ function ConteoTomaFisicaPage() {
   const [pesoBruto, setPesoBruto] = useState('');
   const [campoTara, setCampoTara] = useState<CampoTara>(taraVacia());
   const [fotos, setFotos] = useState<FotoMaterial[]>([]);
+  useLiberarVistasPrevias(fotos);
   const [guardando, setGuardando] = useState(false);
   const [mostrarSelectorMaterial, setMostrarSelectorMaterial] = useState(false);
   const [mostrarSelectorTara, setMostrarSelectorTara] = useState(false);
@@ -212,7 +216,7 @@ function ConteoTomaFisicaPage() {
   }, [loteSeleccionado, netoActual, pesoBruto]);
 
   const agregarFotos = (files: File[]) =>
-    setFotos(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+    setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
   const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const handleAgregar = async (e: React.FormEvent) => {
@@ -536,8 +540,12 @@ function ConteoTomaFisicaPage() {
       )}
 
       {galeriaAbierta && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setGaleriaAbierta(null)}>
-          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <Modal
+          onClose={() => setGaleriaAbierta(null)}
+          cerrarAlClicFondo
+          ancho="max-w-md"
+          altura="max-h-[85dvh]"
+        >
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h2 className="text-sm font-semibold text-text-primary truncate">{galeriaAbierta.label}</h2>
               <button type="button" onClick={() => setGaleriaAbierta(null)} className="text-text-muted hover:text-text-primary transition-colors shrink-0">
@@ -553,15 +561,14 @@ function ConteoTomaFisicaPage() {
                   className="group relative aspect-square rounded-lg overflow-hidden border border-border"
                   title="Ver foto en grande"
                 >
-                  <img src={url} alt={`Foto ${i + 1}`} loading="lazy" className="w-full h-full object-cover" />
+                  <img src={url} alt={`Foto ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
                     <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                   </span>
                 </button>
               ))}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {fotoAmpliada && (

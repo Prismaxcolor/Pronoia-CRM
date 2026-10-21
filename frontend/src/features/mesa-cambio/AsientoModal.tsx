@@ -1,8 +1,8 @@
 import { useState } from 'react';
+import Modal from '../../components/Modal';
 import { X } from 'lucide-react';
 import { registrarAsiento } from '../../services/mesa-cambio-service';
 import { useToast } from '../../hooks/use-toast-context';
-import { useCerrarConEscape } from '../../hooks/use-cerrar-con-escape';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import { ETIQUETA_TIPO_ASIENTO, TIPOS_ASIENTO, formatearNumeroDocumento, type TipoAsiento } from '@shared/types/mesa-cambio';
 
@@ -35,7 +35,6 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
   const [referencia, setReferencia] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useCerrarConEscape(onClose, guardando);
   const notaObligatoria = tipo === 'NC' || tipo === 'ND';
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,59 +57,57 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="asiento-titulo">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 id="asiento-titulo" className="text-lg font-bold text-text-primary">Registrar asiento · {cambistaNombre}</h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
+    <Modal onClose={onClose} bloqueado={guardando} tituloId="asiento-titulo" ancho="max-w-md">
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 id="asiento-titulo" className="text-lg font-bold text-text-primary">Registrar asiento · {cambistaNombre}</h2>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors">
+          <X size={20} />
+        </button>
+      </div>
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <p className="text-xs text-text-secondary">
+          Es solo una anotación de deuda en USD: no mueve el saldo de Wallet ni de ninguna banca.
+        </p>
+        <div>
+          <label htmlFor="asiento-tipo" className={labelClass}>Tipo de asiento *</label>
+          <select id="asiento-tipo" required value={tipo} onChange={e => setTipo(e.target.value as TipoAsiento | '')} className={inputClass}>
+            <option value="">— Selecciona —</option>
+            {TIPOS_ASIENTO.map(t => <option key={t} value={t}>{ETIQUETA_TIPO_ASIENTO[t]}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="asiento-monto" className={labelClass}>Monto (USD) *</label>
+            <input id="asiento-monto" type="text" inputMode="decimal" required value={monto} onChange={e => setMonto(e.target.value)} className={inputClass} placeholder="0,00" />
+          </div>
+          <div>
+            <label htmlFor="asiento-fecha" className={labelClass}>Fecha *</label>
+            <input id="asiento-fecha" type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="asiento-tasa" className={labelClass}>Tasa (opcional, solo informativa)</label>
+          <input id="asiento-tasa" type="text" inputMode="decimal" value={tasa} onChange={e => setTasa(e.target.value)} className={inputClass} placeholder="Ej. 36,50" />
+        </div>
+        <div>
+          <label htmlFor="asiento-referencia" className={labelClass}>Referencia (opcional)</label>
+          <input id="asiento-referencia" type="text" maxLength={60} value={referencia} onChange={e => setReferencia(e.target.value)} className={inputClass} />
+        </div>
+        <div>
+          <label htmlFor="asiento-nota" className={labelClass}>{notaObligatoria ? 'Nota * (motivo de la nota)' : 'Nota (opcional)'}</label>
+          <textarea id="asiento-nota" rows={2} maxLength={300} required={notaObligatoria} value={nota} onChange={e => setNota(e.target.value)} className={inputClass} />
+        </div>
+        {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : 'Registrar asiento'}
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <p className="text-xs text-text-secondary">
-            Es solo una anotación de deuda en USD: no mueve el saldo de Wallet ni de ninguna banca.
-          </p>
-          <div>
-            <label htmlFor="asiento-tipo" className={labelClass}>Tipo de asiento *</label>
-            <select id="asiento-tipo" required value={tipo} onChange={e => setTipo(e.target.value as TipoAsiento | '')} className={inputClass}>
-              <option value="">— Selecciona —</option>
-              {TIPOS_ASIENTO.map(t => <option key={t} value={t}>{ETIQUETA_TIPO_ASIENTO[t]}</option>)}
-            </select>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="asiento-monto" className={labelClass}>Monto (USD) *</label>
-              <input id="asiento-monto" type="text" inputMode="decimal" required value={monto} onChange={e => setMonto(e.target.value)} className={inputClass} placeholder="0,00" />
-            </div>
-            <div>
-              <label htmlFor="asiento-fecha" className={labelClass}>Fecha *</label>
-              <input id="asiento-fecha" type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="asiento-tasa" className={labelClass}>Tasa (opcional, solo informativa)</label>
-            <input id="asiento-tasa" type="text" inputMode="decimal" value={tasa} onChange={e => setTasa(e.target.value)} className={inputClass} placeholder="Ej. 36,50" />
-          </div>
-          <div>
-            <label htmlFor="asiento-referencia" className={labelClass}>Referencia (opcional)</label>
-            <input id="asiento-referencia" type="text" maxLength={60} value={referencia} onChange={e => setReferencia(e.target.value)} className={inputClass} />
-          </div>
-          <div>
-            <label htmlFor="asiento-nota" className={labelClass}>{notaObligatoria ? 'Nota * (motivo de la nota)' : 'Nota (opcional)'}</label>
-            <textarea id="asiento-nota" rows={2} maxLength={300} required={notaObligatoria} value={nota} onChange={e => setNota(e.target.value)} className={inputClass} />
-          </div>
-          {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : 'Registrar asiento'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }
 

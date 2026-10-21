@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import Modal from '../../components/Modal';
 import { ScanLine, CheckCircle2, Printer, FileDown, ZoomIn, X, XCircle, Scale, ClipboardCheck, Warehouse, Target } from 'lucide-react';
 import {
   obtenerTomaFisica,
@@ -314,8 +315,13 @@ function TomaFisicaDetallePage() {
       )}
 
       {galeriaAbierta && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden" onClick={() => setGaleriaAbierta(null)}>
-          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <Modal
+          onClose={() => setGaleriaAbierta(null)}
+          cerrarAlClicFondo
+          overlayClassName="bg-black/50 flex items-center justify-center z-50 p-4 print:hidden"
+          ancho="max-w-md"
+          altura="max-h-[85dvh]"
+        >
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h2 className="text-sm font-semibold text-text-primary truncate">{galeriaAbierta.label}</h2>
               <button type="button" onClick={() => setGaleriaAbierta(null)} aria-label="Cerrar galería" className="text-text-muted hover:text-text-primary transition-colors shrink-0">
@@ -331,15 +337,14 @@ function TomaFisicaDetallePage() {
                   className="group relative aspect-square rounded-lg overflow-hidden border border-border"
                   title="Ver foto en grande"
                 >
-                  <img src={url} alt={`Foto ${i + 1}`} loading="lazy" className="w-full h-full object-cover" />
+                  <img src={url} alt={`Foto ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
                     <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                   </span>
                 </button>
               ))}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {fotoAmpliada && (

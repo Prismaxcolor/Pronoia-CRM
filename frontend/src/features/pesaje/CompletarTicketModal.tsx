@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { fotoLocalDeFile } from '../../lib/foto-picker';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
+import Modal from '../../components/Modal';
 import { X, Plus, Trash2, Loader2, Scale, ChevronDown } from 'lucide-react';
 import { completarTicket, cuerpoCompletarTicket, obtenerTickets } from '../../services/ticket-pesaje-service';
 import { iniciarEnvio, enviarOEncolar } from './pesaje-envio';
@@ -45,6 +48,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   const [devolucion, setDevolucion] = useState('');
   const [notas, setNotas] = useState('');
   const [fotosDevolucion, setFotosDevolucion] = useState<FotoMaterial[]>([]);
+  useLiberarVistasPrevias(materiales.flatMap(m => m.fotos), fotosDevolucion);
   const [guardando, setGuardando] = useState(false);
   // Id de la operación en curso: se conserva si el envío falla para que un reintento no duplique.
   const idEnvioRef = useRef<string | null>(null);
@@ -127,13 +131,13 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
 
   const agregarFotosFila = (uid: number, files: File[]) =>
     setMateriales(prev => prev.map(f => (f.uid === uid
-      ? { ...f, fotos: [...f.fotos, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))] }
+      ? { ...f, fotos: [...f.fotos, ...files.map(fotoLocalDeFile)] }
       : f)));
   const quitarFotoFila = (uid: number, idx: number) =>
     setMateriales(prev => prev.map(f => (f.uid === uid ? { ...f, fotos: f.fotos.filter((_, i) => i !== idx) } : f)));
 
   const agregarFotosDevolucion = (files: File[]) =>
-    setFotosDevolucion(prev => [...prev, ...files.map(file => ({ tipo: 'nueva' as const, file, preview: URL.createObjectURL(file) }))]);
+    setFotosDevolucion(prev => [...prev, ...files.map(fotoLocalDeFile)]);
   const quitarFotoDevolucion = (idx: number) =>
     setFotosDevolucion(prev => prev.filter((_, i) => i !== idx));
 
@@ -222,8 +226,8 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-4xl max-h-[92vh] overflow-y-auto">
+    <>
+      <Modal onClose={cerrar} bloqueado={guardando} ancho="max-w-4xl" altura="max-h-[92dvh]">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="text-lg font-bold text-text-primary">Completar {ticket.codigo}</h2>
           <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
@@ -434,7 +438,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
             </button>
           </div>
         </form>
-      </div>
+      </Modal>
 
       {mostrarSelectorMaterial && (
         <SeleccionarMaterialModal
@@ -459,7 +463,7 @@ function CompletarTicketModal({ ticket, productos, lotes, taras, onClose, onComp
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 

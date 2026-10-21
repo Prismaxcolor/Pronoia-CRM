@@ -48,6 +48,13 @@ import { limpiarCacheActores } from '../src/services/grupo-notificar-service.js'
 import { buscarEvento } from '../src/services/grupo-eventos.js';
 import type { SolicitudLlaveAviso } from '../src/utils/solicitud-llave-tipos.js';
 
+// Los reintentos de n8n esperan con backoff real; en tests se hacen al instante para que no se filtren a otros casos.
+vi.mock('../src/services/n8n-cliente.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/services/n8n-cliente.js')>();
+  return { ...real, enviarN8n: (u: string, c: Record<string, unknown>, o = {}) => real.enviarN8n(u, c, { ...o, esperar: async () => undefined }) };
+});
+
+
 const base: SolicitudLlaveAviso = {
   id: 'sol-1',
   solicitanteNombre: 'Maria Perez',
@@ -157,7 +164,7 @@ describe('avisos privados de solicitud de llave', () => {
     superadmins(abraham, rosa);
     fetchMock.mockRejectedValueOnce(new Error('red caída'));
     await expect(avisarSolicitudLlave(pendiente)).resolves.toBeUndefined();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // el fallo de red se reintenta y el otro superadmin recibe su aviso
   });
 
   it('webhook con 500 no lanza', async () => {

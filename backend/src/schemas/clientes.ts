@@ -45,7 +45,7 @@ export const crearClienteSchema = datosClienteSchema.extend({
 });
 
 export const actualizarClienteSchema = datosClienteSchema
-  .extend({ tipoVenta: tipoVentaSchema, activo: z.boolean().optional() })
+  .extend({ tipoVenta: tipoVentaSchema, activo: z.boolean().optional(), telegramReportesActivos: z.boolean().optional() })
   .partial()
   .refine(
     data => Object.keys(data).length > 0,

@@ -37,7 +37,7 @@ function SelectorDestinoLote({ lotes, loteIdsPosibles, valor, onChange, titulo =
       >
         <span className="w-8 h-8 rounded-md bg-brand-100 text-brand-700 flex items-center justify-center overflow-hidden shrink-0">
           {elegido?.fotos?.[0] ? (
-            <img src={elegido.fotos[0]} alt={elegido.nombre} className="w-full h-full object-cover" />
+            <img decoding="async" src={elegido.fotos[0]} alt={elegido.nombre} className="w-full h-full object-cover" />
           ) : (
             <Boxes size={16} />
           )}

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
+import Modal from '../../components/Modal';
 import { X, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, ChevronDown } from 'lucide-react';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import SelectorBanca from './SelectorBanca';
@@ -67,6 +69,7 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [comprobantes, setComprobantes] = useState<FotoLocal[]>([]);
+  useLiberarVistasPrevias(comprobantes);
   const mesa = useTransferenciaMesa();
   // Categoría (solo ingreso/egreso): sin valor por defecto. El selector se ve siempre; si no hay categorías queda deshabilitado y no se exige.
   const { categorias } = useCategorias();
@@ -212,8 +215,8 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
   const inputClass = "w-full px-3 py-2.5 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label="Nuevo movimiento">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <>
+      <Modal onClose={onClose} ariaLabel="Nuevo movimiento" bloqueado={guardando} ancho="max-w-md">
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-surface">
           <h2 className="text-lg font-bold text-text-primary">Nuevo movimiento</h2>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded text-text-muted hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
@@ -494,7 +497,7 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
             </button>
           </div>
         </form>
-      </div>
+      </Modal>
       {mostrarSelectorEntidad && (
         <SeleccionarEntidadModal
           titulo={tipo === 'egreso' ? 'Elegir proveedor' : 'Elegir cliente'}
@@ -503,7 +506,7 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
           onSeleccionar={id => { setEntidadId(id); setMostrarSelectorEntidad(false); }}
         />
       )}
-    </div>
+    </>
   );
 }
 

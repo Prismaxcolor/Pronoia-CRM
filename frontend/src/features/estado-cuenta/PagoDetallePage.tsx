@@ -234,7 +234,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
           <div className="flex flex-wrap gap-3">
             {pago.comprobantes.map((url, idx) => (
               <a key={idx} href={url} target="_blank" rel="noreferrer">
-                <img src={url} alt={`Comprobante ${idx + 1}`} className="max-w-full max-h-64 rounded-lg border border-border" />
+                <img decoding="async" src={url} alt={`Comprobante ${idx + 1}`} className="max-w-full max-h-64 rounded-lg border border-border" />
               </a>
             ))}
           </div>

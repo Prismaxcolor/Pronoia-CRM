@@ -4,6 +4,7 @@ import { useToast } from '../hooks/use-toast-context';
 import { useEstadoConexion } from '../lib/offline/conexion';
 import { configurarPinOffline, PinAgotadoError, pinOfflineConfigurado, quitarPinOffline } from '../lib/offline/sesion';
 import { LARGO_PIN_MAX, validarFormatoPin } from '../lib/offline/pin-logica';
+import { mensajeAmigable } from '../lib/mensaje-error';
 
 /** Activa, cambia o quita el PIN de desbloqueo sin conexión (va en la pantalla de perfil). Solo se puede
  *  configurar con internet y con el modo sin conexión activo para el usuario. */
@@ -44,7 +45,7 @@ function PinOfflinePerfil() {
       void logout();
       return;
     }
-    setError(err instanceof Error ? err.message : porDefecto);
+    setError(mensajeAmigable(err, { porDefecto, mensajesLocales: true }));
   };
 
   const guardar = async (e: FormEvent) => {

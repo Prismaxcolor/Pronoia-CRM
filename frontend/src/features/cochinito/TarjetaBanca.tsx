@@ -54,7 +54,7 @@ function TarjetaBanca({ banca, indice = 0, seleccionada, tasaBinance, onAlternar
       >
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-brand-50 text-brand-700" aria-hidden="true">
-            {banca.imagenUrl ? <img src={banca.imagenUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : ICONO_TIPO[banca.tipo]}
+            {banca.imagenUrl ? <img src={banca.imagenUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : ICONO_TIPO[banca.tipo]}
           </span>
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-sm font-semibold text-text-primary">

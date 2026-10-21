@@ -35,7 +35,7 @@ function ProductosTarjetas({ productos, catalogo, acciones }: Props) {
 
           <div className="mb-3 flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg bg-brand-100 text-brand-700">
             {p.fotos[0]
-              ? <img src={p.fotos[0]} alt={p.nombre} loading="lazy" className="h-full w-full object-cover" />
+              ? <img src={p.fotos[0]} alt={p.nombre} loading="lazy" decoding="async" className="h-full w-full object-cover" />
               : <Package size={28} aria-hidden="true" />}
           </div>
 

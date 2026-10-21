@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { Download, Printer } from 'lucide-react';
+import { Download, FileSpreadsheet, Printer } from 'lucide-react';
 import type { ArchivoPdf, ModoPdf } from '../../../services/pdf-documento';
 import { useToast } from '../../../hooks/use-toast-context';
 
 interface Props {
   generar: (modo: ModoPdf) => Promise<ArchivoPdf | undefined>;
+  /** Descarga el reporte en Excel (.xlsx); sin esta función no se muestra el botón. */
+  exportarExcel?: () => Promise<void>;
 }
 
 const BOTON = 'flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
 /** Descargar el PDF o abrirlo en otra pestaña para imprimirlo. */
-function AccionesReporte({ generar }: Props) {
+function AccionesReporte({ generar, exportarExcel }: Props) {
   const toast = useToast();
   const [ocupado, setOcupado] = useState(false);
 
@@ -35,10 +37,18 @@ function AccionesReporte({ generar }: Props) {
     setOcupado(false);
   };
 
+  const descargarExcel = async () => {
+    if (!exportarExcel) return;
+    setOcupado(true);
+    try { await exportarExcel(); } catch { toast.errorMsg('No se pudo generar el archivo de Excel.'); }
+    setOcupado(false);
+  };
+
   return (
     <div className="flex flex-wrap gap-2">
       <button type="button" className={BOTON} onClick={descargar} disabled={ocupado}><Download size={16} aria-hidden="true" />Descargar PDF</button>
       <button type="button" className={BOTON} onClick={imprimir} disabled={ocupado}><Printer size={16} aria-hidden="true" />Ver e imprimir</button>
+      {exportarExcel && <button type="button" className={BOTON} onClick={descargarExcel} disabled={ocupado}><FileSpreadsheet size={16} aria-hidden="true" />Excel</button>}
     </div>
   );
 }

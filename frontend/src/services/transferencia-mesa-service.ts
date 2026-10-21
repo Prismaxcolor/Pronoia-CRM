@@ -49,6 +49,8 @@ export interface OpcionesCobroMesa {
   pendienteEsperado?: number | null;
   /** URLs de la foto del cobro, ya subidas. */
   comprobantes?: string[];
+  /** Nota libre de quien cobra (se muestra en el detalle del movimiento). */
+  observacion?: string | null;
 }
 
 const mensaje = (err: unknown, respaldo: string): string => (err instanceof Error && err.message ? err.message : respaldo);

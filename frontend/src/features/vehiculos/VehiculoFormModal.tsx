@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
+import Modal from '../../components/Modal';
 import { altaEnColaActiva } from '../../services/maestros-cola';
 import { X } from 'lucide-react';
 import { crearVehiculo, actualizarVehiculo } from '../../services/vehiculo-service';
@@ -31,6 +33,7 @@ function VehiculoFormModal({ vehiculo, onClose, onGuardado }: Props) {
   const [conductor, setConductor] = useState(vehiculo?.conductor ?? '');
   const [descripcion, setDescripcion] = useState(vehiculo?.descripcion ?? '');
   const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(vehiculo?.fotos ?? []));
+  useLiberarVistasPrevias(fotos);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,65 +79,63 @@ function VehiculoFormModal({ vehiculo, onClose, onGuardado }: Props) {
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">{editando ? 'Editar vehículo' : 'Nuevo vehículo'}</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
-          </button>
+    <Modal onClose={onClose} bloqueado={guardando} ancho="max-w-md">
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 className="text-lg font-bold text-text-primary">{editando ? 'Editar vehículo' : 'Nuevo vehículo'}</h2>
+        <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <X size={20} />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos del vehículo" />
+
+        <div>
+          <label className={labelClass}>Placa{placaObligatoria ? '' : ' (opcional)'}</label>
+          <input type="text" value={placa} onChange={e => setPlaca(e.target.value.toUpperCase())} maxLength={20} className={inputClass} placeholder="Ej. A12345B" />
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos del vehículo" />
+        <div>
+          <label className={labelClass}>Nombre</label>
+          <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={80} className={inputClass} placeholder="Ej. Margarita" />
+        </div>
 
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelClass}>Placa{placaObligatoria ? '' : ' (opcional)'}</label>
-            <input type="text" value={placa} onChange={e => setPlaca(e.target.value.toUpperCase())} maxLength={20} className={inputClass} placeholder="Ej. A12345B" />
+            <label className={labelClass}>Marca (opcional)</label>
+            <input type="text" value={marca} onChange={e => setMarca(e.target.value)} maxLength={60} className={inputClass} placeholder="Ej. Hino" />
           </div>
-
           <div>
-            <label className={labelClass}>Nombre</label>
-            <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={80} className={inputClass} placeholder="Ej. Margarita" />
+            <label className={labelClass}>Modelo (opcional)</label>
+            <input type="text" value={modelo} onChange={e => setModelo(e.target.value)} maxLength={60} className={inputClass} placeholder="Ej. 500" />
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Marca (opcional)</label>
-              <input type="text" value={marca} onChange={e => setMarca(e.target.value)} maxLength={60} className={inputClass} placeholder="Ej. Hino" />
-            </div>
-            <div>
-              <label className={labelClass}>Modelo (opcional)</label>
-              <input type="text" value={modelo} onChange={e => setModelo(e.target.value)} maxLength={60} className={inputClass} placeholder="Ej. 500" />
-            </div>
-            <div>
-              <label className={labelClass}>Color (opcional)</label>
-              <input type="text" value={color} onChange={e => setColor(e.target.value)} maxLength={60} className={inputClass} placeholder="Ej. Blanco" />
-            </div>
-            <div>
-              <label className={labelClass}>Chofer habitual (opcional)</label>
-              <input type="text" value={conductor} onChange={e => setConductor(e.target.value)} maxLength={60} className={inputClass} />
-            </div>
-          </div>
-
           <div>
-            <label className={labelClass}>Descripción / tipo (opcional)</label>
-            <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={200} className={inputClass} placeholder="Ej. Camión 350, rastra" />
+            <label className={labelClass}>Color (opcional)</label>
+            <input type="text" value={color} onChange={e => setColor(e.target.value)} maxLength={60} className={inputClass} placeholder="Ej. Blanco" />
           </div>
-
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear vehículo'}
-            </button>
+          <div>
+            <label className={labelClass}>Chofer habitual (opcional)</label>
+            <input type="text" value={conductor} onChange={e => setConductor(e.target.value)} maxLength={60} className={inputClass} />
           </div>
-        </form>
-      </div>
-    </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>Descripción / tipo (opcional)</label>
+          <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={200} className={inputClass} placeholder="Ej. Camión 350, rastra" />
+        </div>
+
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear vehículo'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

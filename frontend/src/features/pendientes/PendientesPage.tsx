@@ -8,6 +8,7 @@ import DialogoImportacion from './DialogoImportacion';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { camposEditables, aplicarCampo, type CampoEditable } from './campos-editables';
+import { mensajeAmigable } from '../../lib/mensaje-error';
 
 function fechaLegible(iso: string): string {
   const d = new Date(iso);
@@ -126,7 +127,7 @@ function PendientesPage() {
       URL.revokeObjectURL(url);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
-      toast.errorMsg(e instanceof Error ? e.message : 'No se pudo crear el respaldo.');
+      toast.errorMsg(mensajeAmigable(e, { porDefecto: 'No se pudo crear el respaldo.', mensajesLocales: true }));
     }
   };
 
@@ -142,7 +143,7 @@ function PendientesPage() {
       }
       setPlanPendiente(plan);
     } catch (e) {
-      toast.errorMsg(e instanceof Error ? e.message : 'No se pudo importar el respaldo.');
+      toast.errorMsg(mensajeAmigable(e, { porDefecto: 'No se pudo importar el respaldo.', mensajesLocales: true }));
     }
   };
 
@@ -154,7 +155,7 @@ function PendientesPage() {
       const n = await aplicarImportacionCola(plan, incluirRevision);
       toast.exito(n === 0 ? 'No había operaciones nuevas en el respaldo.' : `Se importaron ${n} operación${n === 1 ? '' : 'es'}.`);
     } catch (e) {
-      toast.errorMsg(e instanceof Error ? e.message : 'No se pudo importar el respaldo.');
+      toast.errorMsg(mensajeAmigable(e, { porDefecto: 'No se pudo importar el respaldo.', mensajesLocales: true }));
     }
   };
 

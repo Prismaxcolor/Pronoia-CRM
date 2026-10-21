@@ -35,11 +35,12 @@ function filasMesa(d: DetalleMovimiento): Array<[string, string | null]> {
     ...(m.mesaEstado === 'parcial' && !m.anulado
       ? [['Ya cobrado', fmt(montoCobradoMesa(m) ?? 0)], ['Pendiente por cobrar', fmt(montoPendienteMesa(m) ?? 0)]] as Array<[string, string | null]>
       : []),
+    ['Observación', m.mesaObservacion ?? null],
   ];
 }
 
 /** Filas etiqueta/valor del encabezado; las vacías se omiten. */
-function filasDelMovimiento(d: DetalleMovimiento): Array<[string, string]> {
+function filasDelMovimiento(d: DetalleMovimiento, categoria: string | null): Array<[string, string]> {
   const m = d.movimiento;
   const tasa = tasaDe(m);
   const usd = montoUsdDe(m);
@@ -50,6 +51,7 @@ function filasDelMovimiento(d: DetalleMovimiento): Array<[string, string]> {
     ['Fecha', formatearFecha(m.fecha)],
     ['Banca', banca],
     ['Proveedor / cliente', tercero],
+    ['Categoría', categoria],
     ['Descripción', m.descripcion || null],
     ['Referencia', m.referencia || null],
     ['Tasa', tasa == null ? null : `${fmt(tasa)} Bs por USD`],
@@ -60,7 +62,7 @@ function filasDelMovimiento(d: DetalleMovimiento): Array<[string, string]> {
 }
 
 /** Comprobante de un movimiento de Wallet: mismas filas de encabezado que los demás documentos, monto grande al pie. */
-export async function descargarMovimientoPDF(d: DetalleMovimiento, modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
+export async function descargarMovimientoPDF(d: DetalleMovimiento, modo: ModoPdf = 'descargar', categoria: string | null = null): Promise<ArchivoPdf | undefined> {
   const { default: jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const m = d.movimiento;
@@ -72,7 +74,7 @@ export async function descargarMovimientoPDF(d: DetalleMovimiento, modo: ModoPdf
   y += 16;
   subtitulo(doc, y, formatearFecha(m.fecha));
   y += 26;
-  for (const [etiqueta, valor] of filasDelMovimiento(d)) y = filaEncabezado(doc, y, etiqueta, valor);
+  for (const [etiqueta, valor] of filasDelMovimiento(d, categoria)) y = filaEncabezado(doc, y, etiqueta, valor);
 
   if (m.anulado) {
     const quien = d.anuladoPorNombre ? ` por ${d.anuladoPorNombre}` : '';

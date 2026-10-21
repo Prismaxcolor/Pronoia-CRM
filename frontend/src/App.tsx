@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, type ComponentType, type LazyExoticComponent } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AuthProvider } from './hooks/use-auth';
 import { useAuth } from './hooks/use-auth-context';
 import { PortalAuthProvider } from './hooks/use-portal-auth';
@@ -13,6 +13,7 @@ import InstallPwaBanner from './components/InstallPwaBanner';
 import AvisoNuevaVersion from './components/AvisoNuevaVersion';
 import PrecargaCatalogos from './components/PrecargaCatalogos';
 import PantallaCargando from './components/PantallaCargando';
+import ErrorBoundary from './components/ErrorBoundary';
 import RequiereConexion from './components/RequiereConexion';
 import { elegirRutaInicial } from './lib/ruta-inicial';
 import { consumirRutaDeRegreso } from './lib/ruta-de-regreso';
@@ -137,10 +138,14 @@ function InicioPage() {
 
 /** Suspense dentro del Layout: el menú sigue visible mientras carga el chunk. */
 function SalidaConSuspense() {
+  const { pathname } = useLocation();
+  // Un error de render en una pantalla no tumba el menú, y al navegar a otra se vuelve a intentar.
   return (
-    <Suspense fallback={<PantallaCargando />}>
-      <Outlet />
-    </Suspense>
+    <ErrorBoundary variante="pantalla" resetKey={pathname}>
+      <Suspense fallback={<PantallaCargando />}>
+        <Outlet />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -148,6 +153,7 @@ function SalidaConSuspense() {
 // del staff (usePortalAuth, no useAuth), por eso vive en su propio subárbol.
 function PortalRoutes() {
   const { entidad, cargando } = usePortalAuth();
+  const { pathname } = useLocation();
 
   if (cargando) {
     return (
@@ -158,6 +164,7 @@ function PortalRoutes() {
   }
 
   return (
+    <ErrorBoundary variante="completa" resetKey={pathname}>
     <Suspense fallback={<PantallaCargando />}>
     <Routes>
       <Route path="login" element={entidad ? <Navigate to="/portal" replace /> : <PortalLoginPage />} />
@@ -171,6 +178,7 @@ function PortalRoutes() {
       <Route path="*" element={<Navigate to="/portal" replace />} />
     </Routes>
     </Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -256,7 +264,9 @@ function AppRoutes() {
 }
 
 function App() {
+  // Último recurso: si falla algo fuera de las pantallas (proveedores, rutas), se ve un aviso en vez de una pantalla en blanco.
   return (
+    <ErrorBoundary variante="completa">
     <BrowserRouter>
       <ToastProvider>
         <ConfirmProvider>
@@ -273,6 +283,7 @@ function App() {
         </ConfirmProvider>
       </ToastProvider>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

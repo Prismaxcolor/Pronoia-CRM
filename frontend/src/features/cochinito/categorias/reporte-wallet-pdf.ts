@@ -6,7 +6,7 @@ import {
 } from '../../../services/pdf-documento';
 import { numeroMovimiento } from '../detalle-movimiento';
 import {
-  etiquetaMoneda, filasPorMoneda, monedasDelReporte, nombreArchivoReporte, textoMovimientosAcceso, textoTipoFila, totalGeneral,
+  etiquetaMoneda, filasPorMoneda, monedasDelReporte, nombreArchivoReporte, partirEnTrozos, textoMovimientosAcceso, textoTipoFila, totalGeneral,
 } from './reporte-wallet-datos';
 import { esHexValido } from './categorias-logica';
 
@@ -56,12 +56,12 @@ function encabezado(doc: any, titulo: string, lineas: readonly string[]): number
   return y + 18;
 }
 
-/** Reporte imprimible de los movimientos de una cuenta o caja en un rango de fechas (con categoría, entradas, salidas y neto). */
-export async function descargarReporteCuentaPDF(r: ReporteCuenta, modo: ModoPdf = 'descargar'): Promise<ArchivoPdf | undefined> {
-  const { doc, autoTable } = await nuevoDocumento();
-  const moneda = etiquetaMoneda(r.banca.moneda);
-  const y = encabezado(doc, 'Movimientos de la cuenta', [`${r.banca.nombre} · ${moneda}`, `Del ${formatearFecha(r.desde)} al ${formatearFecha(r.hasta)}`]);
-  const cuerpo = r.filas.map(f => [
+const MARGEN_SUPERIOR_CONTINUACION = 50;
+
+type FilaCuenta = ReporteCuenta['filas'][number];
+
+function cuerpoCuenta(filas: readonly FilaCuenta[], conUsd: boolean): string[][] {
+  return filas.map(f => [
     formatearFecha(f.fecha),
     numeroMovimiento(f),
     textoTipoFila(f) + (f.anulado ? ' (anulado)' : f.enProceso ? ' (en proceso)' : ''),
@@ -69,45 +69,75 @@ export async function descargarReporteCuentaPDF(r: ReporteCuenta, modo: ModoPdf 
     f.categoria?.nombre ?? 'Sin categoría',
     f.entrada ? fmt(f.entrada) : '',
     f.salida ? fmt(f.salida) : '',
+    ...(conUsd ? [f.equivalenteUsd != null ? fmt(f.equivalenteUsd) : ''] : []),
   ].map(sanitizarPdf));
+}
+
+function pieCuenta(r: ReporteCuenta, conUsd: boolean, filtrado: boolean): any[][] {
   const { entradas, salidas, neto } = r.totales;
-  autoTable(doc, {
-    startY: y,
+  const relleno = conUsd ? [''] : [];
+  return [
+    [{ content: filtrado ? 'Total que entra (solo filas filtradas)' : 'Total que entra', colSpan: 5, styles: { halign: 'right' } }, fmt(entradas), '', ...relleno],
+    [{ content: filtrado ? 'Total que sale (solo filas filtradas)' : 'Total que sale', colSpan: 5, styles: { halign: 'right' } }, '', fmt(salidas), ...relleno],
+    [{ content: filtrado ? 'Neto de las filas filtradas' : 'Neto del periodo', colSpan: 5, styles: { halign: 'right' } }, { content: fmt(neto), colSpan: conUsd ? 3 : 2, styles: { halign: 'right' } }],
+  ];
+}
+
+function opcionesTablaCuenta(doc: any, filas: readonly FilaCuenta[], moneda: string, conUsd: boolean): Record<string, any> {
+  const derecha = { halign: 'right', cellWidth: 52 };
+  return {
     margin: { left: BOX_LEFT, right: MARGEN_PAGINA_DER, bottom: 44 },
-    head: [['Fecha', 'N°', 'Tipo', 'Descripción', 'Categoría', `Entra (${moneda})`, `Sale (${moneda})`]],
-    body: cuerpo,
-    foot: [
-      [{ content: 'Total que entra', colSpan: 5, styles: { halign: 'right' } }, fmt(entradas), ''],
-      [{ content: 'Total que sale', colSpan: 5, styles: { halign: 'right' } }, '', fmt(salidas)],
-      [{ content: 'Neto del periodo', colSpan: 5, styles: { halign: 'right' } }, { content: fmt(neto), colSpan: 2, styles: { halign: 'right' } }],
-    ],
+    head: [['Fecha', 'N°', 'Tipo', 'Descripción', 'Categoría', `Entra (${moneda})`, `Sale (${moneda})`, ...(conUsd ? ['Equiv. USD'] : [])]],
+    body: cuerpoCuenta(filas, conUsd),
     showFoot: 'lastPage',
     theme: 'grid',
     styles: ESTILOS_TABLA,
     headStyles: { fillColor: GRIS_FONDO, textColor: 0, fontStyle: 'bold' },
     footStyles: { fillColor: GRIS_FONDO, textColor: 0, fontStyle: 'bold' },
-    columnStyles: { 0: { cellWidth: 46 }, 1: { cellWidth: 46 }, 2: { cellWidth: 62 }, 4: { cellWidth: 82 }, 5: { halign: 'right', cellWidth: 52 }, 6: { halign: 'right', cellWidth: 52 } },
+    columnStyles: { 0: { cellWidth: 46 }, 1: { cellWidth: 46 }, 2: { cellWidth: conUsd ? 56 : 62 }, 4: { cellWidth: conUsd ? 70 : 82 }, 5: derecha, 6: derecha, ...(conUsd ? { 7: derecha } : {}) },
     didParseCell: (d: any) => {
-      if (d.section === 'body' && d.column.index === 4 && r.filas[d.row.index]?.categoria) d.cell.styles.cellPadding = { top: 4, bottom: 4, left: SANGRIA_PUNTO, right: 4 };
-      if (d.section === 'body' && r.filas[d.row.index]?.anulado) d.cell.styles.textColor = 130;
+      if (d.section === 'body' && d.column.index === 4 && filas[d.row.index]?.categoria) d.cell.styles.cellPadding = { top: 4, bottom: 4, left: SANGRIA_PUNTO, right: 4 };
+      if (d.section === 'body' && filas[d.row.index]?.anulado) d.cell.styles.textColor = 130;
     },
     didDrawCell: (d: any) => {
-      if (d.section === 'body' && d.column.index === 4) dibujarPunto(doc, d.cell, r.filas[d.row.index]?.categoria?.color);
+      if (d.section === 'body' && d.column.index === 4) dibujarPunto(doc, d.cell, filas[d.row.index]?.categoria?.color);
     },
+  };
+}
+
+/**
+ * Reporte imprimible de los movimientos de una cuenta o caja en un rango de fechas (con categoría, entradas, salidas y neto).
+ * Máximo FILAS_POR_PAGINA_PDF movimientos por página; la última lleva los totales. En cuentas en Bs agrega el equivalente en USD.
+ * `filtro` (opcional) solo se imprime como aviso: las filas y totales que llegan en `r` ya vienen filtrados.
+ */
+export async function descargarReporteCuentaPDF(r: ReporteCuenta, modo: ModoPdf = 'descargar', filtro?: string): Promise<ArchivoPdf | undefined> {
+  const { doc, autoTable } = await nuevoDocumento();
+  const moneda = etiquetaMoneda(r.banca.moneda);
+  const conUsd = r.banca.moneda === 'VES';
+  const aviso = filtro?.trim() ? [`Filtrado por N°: ${filtro.trim()}`] : [];
+  const y = encabezado(doc, 'Movimientos de la cuenta', [`${r.banca.nombre} · ${moneda}`, `Del ${formatearFecha(r.desde)} al ${formatearFecha(r.hasta)}`, ...aviso]);
+  const trozos = partirEnTrozos(r.filas);
+  const paginas: readonly FilaCuenta[][] = trozos.length > 0 ? trozos : [[]];
+  paginas.forEach((filas, i) => {
+    if (i > 0) doc.addPage();
+    const esUltimo = i === paginas.length - 1;
+    autoTable(doc, {
+      ...opcionesTablaCuenta(doc, filas, moneda, conUsd),
+      startY: i === 0 ? y : MARGEN_SUPERIOR_CONTINUACION,
+      ...(esUltimo ? { foot: pieCuenta(r, conUsd, aviso.length > 0) } : {}),
+    });
   });
   pieDeFecha(doc);
   return entregarPdf(doc, nombreArchivoReporte('Movimientos', r.banca.nombre, r.desde, r.hasta), modo);
 }
 
-function tablaDeMoneda(doc: any, autoTable: any, r: ReporteCategorias, moneda: string, y: number): number {
-  const filas = filasPorMoneda(r, moneda);
-  const total = totalGeneral(r, moneda);
-  autoTable(doc, {
-    startY: y,
+type FilaCategoria = ReturnType<typeof filasPorMoneda>[number];
+
+function opcionesTablaCategoria(doc: any, filas: readonly FilaCategoria[], moneda: string): Record<string, any> {
+  return {
     margin: { left: BOX_LEFT, right: MARGEN_PAGINA_DER, bottom: 44 },
     head: [[`Categoría (${etiquetaMoneda(moneda)})`, 'Ingresos', 'Egresos', 'Total']],
     body: filas.map(f => [sanitizarPdf(f.nombre), fmt(f.ingresos), fmt(f.egresos), fmt(f.total)]),
-    foot: [['Total general', fmt(total.ingresos), fmt(total.egresos), fmt(total.total)]],
     showFoot: 'lastPage',
     theme: 'grid',
     styles: { ...ESTILOS_TABLA, fontSize: 9 },
@@ -124,6 +154,23 @@ function tablaDeMoneda(doc: any, autoTable: any, r: ReporteCategorias, moneda: s
       const fila = filas[d.row.index];
       if (d.section === 'body' && d.column.index === 0 && fila) dibujarPunto(doc, { ...d.cell, x: d.cell.x + (fila.nivel === 0 ? 0 : 10) }, fila.color);
     },
+  };
+}
+
+/** Tabla de una moneda: FILAS_POR_PAGINA_PDF filas por página con el encabezado repetido; la última página lleva el total. */
+function tablaDeMoneda(doc: any, autoTable: any, r: ReporteCategorias, moneda: string, y: number): number {
+  const filas = filasPorMoneda(r, moneda);
+  const total = totalGeneral(r, moneda);
+  const trozos = partirEnTrozos(filas);
+  const paginas: readonly FilaCategoria[][] = trozos.length > 0 ? trozos : [[]];
+  paginas.forEach((trozo, i) => {
+    if (i > 0) doc.addPage();
+    const esUltimo = i === paginas.length - 1;
+    autoTable(doc, {
+      ...opcionesTablaCategoria(doc, trozo, moneda),
+      startY: i === 0 ? y : MARGEN_SUPERIOR_CONTINUACION,
+      ...(esUltimo ? { foot: [['Total general', fmt(total.ingresos), fmt(total.egresos), fmt(total.total)]] } : {}),
+    });
   });
   return (doc.lastAutoTable.finalY as number) + 22;
 }

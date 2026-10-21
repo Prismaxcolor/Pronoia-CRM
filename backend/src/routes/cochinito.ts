@@ -22,9 +22,10 @@ import { validateBody } from '../middlewares/validate.js';
 import { crearBancaSchema, actualizarBancaSchema, crearMovimientoSchema } from '../schemas/cochinito.js';
 import { logger, clienteIp } from '../utils/logger.js';
 import { aplicarCategoriaSiFalta, validarCategoriaDeMovimiento } from '../services/categoria-service.js';
+import { cambioReportesNoPermitido } from '../services/grupo-silencio-service.js';
 import { exigirAccesoBancas } from '../middlewares/exigir-acceso-bancas.js';
 import { accesoBancas, bancasPermitidas, concederBancaAUsuario, idsBancasDeMovimiento } from '../services/banca-acceso-service.js';
-import { anotarPuedeEditar, bancaPermitida, filtrarBancas, enmascararDetalleMovimiento, filtrarMovimientos, enmascararMovimientosPorBanca, puedeCambiarTelegramBanca, MENSAJE_SIN_ACCESO_BANCA, MENSAJE_SOLO_ADMIN_TELEGRAM } from '../utils/banca-acceso.js';
+import { anotarPuedeEditar, bancaPermitida, filtrarBancas, enmascararDetalleMovimiento, filtrarMovimientos, enmascararMovimientosPorBanca, puedeCambiarTelegramBanca, puedeCambiarReportesTelegram, MENSAJE_SIN_ACCESO_BANCA, MENSAJE_SOLO_ADMIN_TELEGRAM, MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM } from '../utils/banca-acceso.js';
 
 const router = Router();
 
@@ -44,6 +45,11 @@ router.post(
   async (req, res) => {
     if (req.body.telegramChatId && !puedeCambiarTelegramBanca(req.user!.rol)) {
       res.status(403).json({ error: MENSAJE_SOLO_ADMIN_TELEGRAM });
+      return;
+    }
+    // Crear con los avisos apagados es cambiar el valor por defecto (true): solo superadmin.
+    if (req.body.telegramReportesActivos === false && !puedeCambiarReportesTelegram(req.user!.rol)) {
+      res.status(403).json({ error: MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM });
       return;
     }
     const result = await crearBanca(req.body);
@@ -86,6 +92,11 @@ router.patch(
       res.status(403).json({ error: MENSAJE_SOLO_ADMIN_TELEGRAM });
       return;
     }
+    const nuevoReportes: boolean | undefined = req.body.telegramReportesActivos;
+    if (await cambioReportesNoPermitido('bancas', id, req.user!.rol, nuevoReportes)) {
+      res.status(403).json({ error: MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM });
+      return;
+    }
     const result = await actualizarBanca(id, req.body);
     if ('error' in result) {
       const status = result.pendiente ? 409 : result.error.includes('no encontrada') ? 404 : 400;
@@ -98,6 +109,9 @@ router.patch(
       userId: req.user!.sub,
       bancaId: id,
     });
+    if (nuevoReportes !== undefined) {
+      logger.info({ evento: 'banca_telegram_reportes_modificado', userId: req.user!.sub, bancaId: id, activos: nuevoReportes });
+    }
     if (cambiaChat) {
       logger.info({ evento: 'banca_telegram_chat_modificado', userId: req.user!.sub, bancaId: id, anterior: anteriorChat, nuevo: nuevoChat });
     }

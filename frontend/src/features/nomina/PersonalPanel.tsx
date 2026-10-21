@@ -133,6 +133,7 @@ function PersonalPanel({ tipo }: Props) {
                   <p className="font-semibold text-text-primary break-words">
                     {nombreCompleto(t)} {!t.activo && <Insignia tono="neutral">Inactivo</Insignia>}
                   </p>
+                  {t.puesto && <p className="mt-0.5 text-xs font-medium text-text-primary">{t.puesto}</p>}
                   <p className="mt-0.5 text-xs text-text-secondary">Cédula {t.cedula} · {t.telefono ?? 'sin teléfono'}</p>
                   <p className="mt-0.5 text-xs text-text-secondary">{sueldoPorDia(t)} · {medioDePago(t)}</p>
                 </div>

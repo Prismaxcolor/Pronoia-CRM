@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { mensajeAmigable } from '../lib/mensaje-error';
 import type { CategoriaWallet } from '@shared/types/index.js';
 import type { ItemPagoMultiple, BancaPago } from './pago-service';
 
@@ -18,6 +19,8 @@ export interface RegistrarCobroMultipleInput {
   comprobantes?: string[];
   /** Categoría del Wallet (venta de chatarra NF / PCB): obligatoria si el cobro mueve dinero y hay categorías configuradas. */
   categoriaId?: string | null;
+  /** Clave de idempotencia (uuid): con la misma clave el servidor devuelve el resultado original en vez de repetir la operación. */
+  clientRequestId?: string;
 }
 
 export interface ResultadoCobroMultiple {
@@ -48,7 +51,7 @@ export async function registrarCobroMultiple(
     });
     return result;
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo registrar el cobro.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudo registrar el cobro.' }) };
   }
 }
 
@@ -57,6 +60,6 @@ export async function obtenerCategoriasCobro(): Promise<{ categorias: CategoriaW
   try {
     return await apiFetch<{ categorias: CategoriaWallet[] }>('/api/cobros/categorias');
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudieron cargar las categorías del cobro.' };
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudieron cargar las categorías del cobro.' }) };
   }
 }

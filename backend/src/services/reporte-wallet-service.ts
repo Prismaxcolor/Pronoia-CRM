@@ -1,9 +1,10 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import { ErrorLecturaBd, IDS_POR_CONSULTA, leerPaginado, trocear } from '../utils/paginacion.js';
+import { ErrorLecturaBd, IDS_POR_CONSULTA, TAMANO_PAGINA, leerPaginado, trocear } from '../utils/paginacion.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { MENSAJE_ERROR_GENERICO } from '../utils/errores-bd.js';
 import { bancaPermitida, MENSAJE_SIN_ACCESO_BANCA, type BancasPermitidas } from '../utils/banca-acceso.js';
 import { logger } from '../utils/logger.js';
+import { finDeDiaCaracas, type TasaHistorica } from '../utils/equivalente-usd.js';
 import { resolverSeleccion } from '../utils/categoria-wallet.js';
 import {
   construirReporteCategorias, construirReporteCuenta, type MovimientoReporte,
@@ -23,6 +24,9 @@ export type ReporteCategoriasResultado = ReturnType<typeof construirReporteCateg
 export type PermitidasOPromesa = BancasPermitidas | PromiseLike<BancasPermitidas>;
 
 const MENSAJE_FALLO_LECTURA = MENSAJE_ERROR_GENERICO;
+
+/** Capturas anteriores al rango que se leen para tener la tasa vigente al inicio (BCV y Binance). */
+const TASAS_PREVIAS = 20;
 
 const COLUMNAS_REPORTE_CATEGORIAS = 'id, tipo, monto, moneda, fecha, banca_origen_id, categoria_id';
 
@@ -49,6 +53,7 @@ function aMovimientoReporte(r: Fila): MovimientoReporte {
     mesaCambistaId: (r.mesa_cambista_id as string) ?? null,
     mesaEstado: (r.mesa_estado as MovimientoReporte['mesaEstado']) ?? null,
     mesaMontoCobrado: aNumeroONull(r.mesa_monto_cobrado),
+    montoUsd: aNumeroONull(r.monto_usd),
   };
 }
 
@@ -75,6 +80,28 @@ async function nombresDeBancas(ids: readonly string[]): Promise<Map<string, stri
 async function categoriasOpcionales(): Promise<Categoria[]> {
   const r = await listarCategorias();
   return 'error' in r ? [] : r.categorias;
+}
+
+function aTasas(data: unknown): TasaHistorica[] {
+  const filas = Array.isArray(data) ? (data as Fila[]) : [];
+  return filas
+    .map(r => ({ tasa: Number(r.tasa), fecha: String(r.fecha ?? ''), fuente: r.fuente as string | undefined }))
+    .filter(t => t.tasa > 0 && t.fecha !== '');
+}
+
+/** Tasas USD->VES del rango más las últimas anteriores a él. Si falla la lectura, vacío: el equivalente queda en null (no se inventa). */
+async function leerTasasDelRango(f: FiltroReporteCuenta): Promise<TasaHistorica[]> {
+  try {
+    const base = () => supabaseAdmin.from('tasas_cambio').select('tasa, fecha, fuente').eq('moneda_origen', 'USD').eq('moneda_destino', 'VES');
+    const [enRango, previas] = await Promise.all([
+      base().gte('fecha', f.desde).lte('fecha', new Date(finDeDiaCaracas(f.hasta)).toISOString()).order('fecha', { ascending: false }).limit(TAMANO_PAGINA),
+      base().lt('fecha', f.desde).order('fecha', { ascending: false }).limit(TASAS_PREVIAS),
+    ]);
+    return [...aTasas(enRango.data), ...aTasas(previas.data)];
+  } catch (e) {
+    logger.warn({ evento: 'reporte_wallet_sin_tasas', mensaje: e instanceof Error ? e.message : String(e) });
+    return [];
+  }
 }
 
 async function leerMovimientosDeCuenta(f: FiltroReporteCuenta): Promise<MovimientoReporte[]> {
@@ -112,8 +139,9 @@ export async function obtenerReporteCuenta(
     const { movimientos } = lecturaMovimientos;
     const otras = movimientos.flatMap(m => [m.bancaOrigenId, m.bancaDestinoId]).filter((x): x is string => !!x);
     const nombresBancas = await nombresDeBancas(otras);
-    const calculo = construirReporteCuenta({ bancaId: f.bancaId, movimientos, categorias, nombresBancas, permitidas });
     const b = banca as { id: string; nombre: string; moneda: string };
+    const tasas = b.moneda === 'VES' ? await leerTasasDelRango(f) : [];
+    const calculo = construirReporteCuenta({ bancaId: f.bancaId, movimientos, categorias, nombresBancas, permitidas, monedaCuenta: b.moneda, tasas });
     return { reporte: { banca: { id: b.id, nombre: b.nombre, moneda: b.moneda }, desde: f.desde, hasta: f.hasta, ...calculo } };
   } catch (e) {
     return falloDeLectura(e, 'cuenta');
