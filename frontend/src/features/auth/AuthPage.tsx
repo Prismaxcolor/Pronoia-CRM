@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { mensajeAmigable } from '../../lib/mensaje-error';
 
 interface NivelFuerza { score: number; label: string; color: string }
 
@@ -125,7 +126,7 @@ function AuthPage() {
         toast.exito('Cuenta creada. Ya estás dentro.');
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error inesperado';
+      const msg = mensajeAmigable(err, { mensajesLocales: true });
       setMensaje(msg);
       toast.errorMsg(msg);
       setShake(true);
@@ -258,8 +259,8 @@ function AuthPage() {
           </form>
 
           {mensaje && (
-            <div className="mt-4 w-full max-w-xs flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
-              <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+            <div role="alert" className="mt-4 w-full max-w-xs flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+              <AlertCircle size={16} aria-hidden="true" className="text-red-500 shrink-0 mt-0.5" />
               <p className="text-sm text-red-600">{mensaje}</p>
             </div>
           )}
@@ -356,8 +357,8 @@ function AuthPage() {
           </form>
 
           {mensaje && (
-            <div className="mt-4 w-full max-w-xs flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
-              <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+            <div role="alert" className="mt-4 w-full max-w-xs flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+              <AlertCircle size={16} aria-hidden="true" className="text-red-500 shrink-0 mt-0.5" />
               <p className="text-sm text-red-600">{mensaje}</p>
             </div>
           )}

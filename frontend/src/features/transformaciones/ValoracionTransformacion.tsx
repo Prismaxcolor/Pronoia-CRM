@@ -1,0 +1,216 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import type { Transformacion, Proveedor } from '@shared/types/index.js';
+import { obtenerProveedores } from '../../services/proveedor-service';
+import { obtenerFacturas, obtenerFactura, consolidarItems, type FacturaCV } from '../../services/factura-cv-service';
+import { guardarValoracion } from '../../services/transformacion-valoracion-service';
+import { calcularGananciaTransformacion } from '../../lib/ganancia-transformacion';
+import { useToast } from '../../hooks/use-toast-context';
+import { unificarSalidas, salidasAGuardar } from '../../lib/salidas-unificadas';
+import { formatearFecha } from '../../lib/formato';
+
+interface Props {
+  transformacion: Transformacion;
+  puedeEditar: boolean;
+  onGuardada: (t: Transformacion) => void;
+}
+
+const fmt = (n: number) => n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const aTexto = (n: number | null | undefined) => (n == null ? '' : String(n));
+const aNumero = (s: string): number | null => (s.trim() === '' || Number.isNaN(Number(s)) ? null : Number(s));
+
+const inputClass = 'w-24 px-2 py-1 bg-surface-alt border border-border rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:opacity-60';
+const selectClass = 'w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:opacity-60';
+
+/** Precio por kg de un material según los ítems de la factura (promedio ponderado
+ *  por material), sin redondear: el redondeo a 2 decimales ocurre solo en el
+ *  resultado final (calcularGananciaTransformacion). */
+function precioEnFactura(factura: FacturaCV | null, productoId: string | null): number | null {
+  if (!factura || !productoId) return null;
+  return consolidarItems(factura.items).find(i => i.productoId === productoId)?.precioUnitario ?? null;
+}
+
+/** Texto para el input: limpia ruido de coma flotante sin perder precisión útil. */
+const precioATexto = (n: number) => String(Number(n.toFixed(6)));
+
+/** Valoración opcional: anclar a factura de compra, precios editables, ganancia.
+ *  El estado inicial sale de `transformacion`; el padre remonta con `key` tras guardar. */
+function ValoracionTransformacion({ transformacion: t, puedeEditar, onGuardada }: Props) {
+  const toast = useToast();
+  const disponible = t.valoracionDisponible === true;
+  const editable = puedeEditar && disponible;
+
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [proveedorId, setProveedorId] = useState('');
+  const [facturas, setFacturas] = useState<FacturaCV[]>([]);
+  const [facturaId, setFacturaId] = useState(t.facturaCompraId ?? '');
+  const [costo, setCosto] = useState(aTexto(t.costoUnitario));
+  // Un solo renglón (y un solo precio) por material/lote: las pesadas repetidas se suman.
+  // Si sus precios eran distintos, el precio único es el promedio ponderado por peso.
+  const renglones = useMemo(() => unificarSalidas(t.salidas), [t.salidas]);
+  const [precios, setPrecios] = useState<Record<string, string>>(
+    () => Object.fromEntries(renglones.map(r => [r.clave, r.precioUnitario == null ? '' : precioATexto(r.precioUnitario)]))
+  );
+  // Claves de renglones cuyo precio tocó el usuario (o vino de la factura): solo esos se escriben.
+  const [editados, setEditados] = useState<ReadonlySet<string>>(() => new Set());
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    obtenerProveedores().then(lista => setProveedores(lista));
+    if (!t.facturaCompraId) return;
+    obtenerFactura('compra', t.facturaCompraId).then(f => {
+      if (!f) return;
+      if (f.entidadId) setProveedorId(f.entidadId);
+      setFacturas([f]);
+    });
+  }, [t.facturaCompraId]);
+
+  const elegirProveedor = async (id: string) => {
+    setProveedorId(id);
+    setFacturaId('');
+    setFacturas(id ? (await obtenerFacturas('compra', { entidadId: id })).filter(f => f.estado !== 'anulada') : []);
+  };
+
+  const elegirFactura = (id: string) => {
+    setFacturaId(id);
+    const f = facturas.find(x => x.id === id) ?? null;
+    if (!f) return;
+    const costoFactura = precioEnFactura(f, t.productoEntradaId);
+    if (costoFactura != null) setCosto(precioATexto(costoFactura));
+    setPrecios(prev => Object.fromEntries(renglones.map(r => {
+      const p = precioEnFactura(f, r.productoId);
+      return [r.clave, p != null ? precioATexto(p) : (prev[r.clave] ?? '')];
+    })));
+    const conPrecioFactura = renglones.filter(r => precioEnFactura(f, r.productoId) != null).map(r => r.clave);
+    setEditados(prev => new Set([...prev, ...conPrecioFactura]));
+  };
+
+  const editarPrecio = (clave: string, valor: string) => {
+    setPrecios(prev => ({ ...prev, [clave]: valor }));
+    setEditados(prev => new Set([...prev, clave]));
+  };
+
+  const resultado = useMemo(
+    () => calcularGananciaTransformacion(
+      t.pesoNeto,
+      aNumero(costo),
+      renglones.map(r => ({ pesoNeto: r.pesoNeto, precioUnitario: aNumero(precios[r.clave] ?? '') }))
+    ),
+    [t.pesoNeto, renglones, costo, precios]
+  );
+
+  const guardar = async () => {
+    setGuardando(true);
+    const res = await guardarValoracion(t.id, {
+      facturaCompraId: facturaId || null,
+      costoUnitario: aNumero(costo),
+      // Solo renglones editados; el precio único del renglón va a todas sus pesadas.
+      salidas: salidasAGuardar(renglones, clave => aNumero(precios[clave] ?? ''), editados),
+    });
+    setGuardando(false);
+    if ('error' in res) { toast.errorMsg(res.error); return; }
+    toast.exito('Valoración guardada.');
+    onGuardada(res.transformacion);
+  };
+
+  return (
+    <div className="bg-surface rounded-xl border border-border p-5 mb-6 print:hidden">
+      <h2 className="text-sm font-semibold text-text-primary mb-1">Valoración (opcional)</h2>
+      <p className="text-xs text-text-muted mb-4">
+        Opcional: elige la factura de compra del material para tomar de ella los precios por kg (se pueden editar a mano). Con eso se calcula la ganancia: valor de lo que salió menos lo que costó lo que entró.
+      </p>
+
+      {!disponible && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+          La valoración aún no está habilitada en la base de datos.
+        </p>
+      )}
+
+      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Proveedor</label>
+          <select value={proveedorId} disabled={!editable} onChange={e => void elegirProveedor(e.target.value)} className={selectClass}>
+            <option value="">— Sin proveedor —</option>
+            {proveedorId && !proveedores.some(p => p.id === proveedorId) && (
+              <option value={proveedorId}>{facturas[0]?.nombreEntidad ?? 'Proveedor de la factura'}</option>
+            )}
+            {proveedores.filter(p => p.activo || p.id === proveedorId).map(p => (
+              <option key={p.id} value={p.id}>{p.nombre}{p.activo ? '' : ' (inactivo)'}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Factura de compra</label>
+          <select value={facturaId} disabled={!editable || !proveedorId} onChange={e => elegirFactura(e.target.value)} className={selectClass}>
+            <option value="">— Sin anclar —</option>
+            {facturas.map(f => (
+              <option key={f.id} value={f.id}>{f.codigo ?? f.id.slice(0, 8)} · {formatearFecha(f.createdAt)} · ${fmt(f.total)}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-sm mb-2">
+        <span className="text-text-secondary">
+          Costo de lo que entró: {fmt(t.pesoNeto)} kg × precio de compra ($ por kg)
+        </span>
+        <input type="number" min="0" step="0.01" value={costo} disabled={!editable} onChange={e => setCosto(e.target.value)} className={inputClass} />
+      </div>
+
+      {renglones.length > 0 && (
+        <div className="border-t border-border pt-2 mb-3">
+          {renglones.map(r => {
+            const precio = aNumero(precios[r.clave] ?? '');
+            const esPromedio = r.preciosDistintos > 1 && !editados.has(r.clave);
+            return (
+              <div key={r.clave} className="py-1.5 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-text-secondary flex-1 min-w-0 truncate">
+                    {r.etiqueta} — {fmt(r.pesoNeto)} kg{r.ids.length > 1 ? ` (${r.ids.length} pesadas sumadas)` : ''}
+                  </span>
+                  <span className="text-xs text-text-muted">$/kg</span>
+                  <input
+                    type="number" min="0" step="0.01" disabled={!editable}
+                    aria-label={`Precio por kg de ${r.etiqueta}`}
+                    value={precios[r.clave] ?? ''}
+                    onChange={e => editarPrecio(r.clave, e.target.value)}
+                    className={inputClass}
+                  />
+                  <span className="w-24 text-right tabular-nums text-text-primary">{precio == null ? '—' : `$${fmt(r.pesoNeto * precio)}`}</span>
+                </div>
+                {esPromedio && (
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Promedio de {r.preciosDistintos} precios distintos que tenían las pesadas. No se cambia hasta que lo edites.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="border-t border-border pt-3 space-y-1 text-sm">
+        <div className="flex justify-between"><span className="text-text-secondary">Valor de salidas (kg × $/kg)</span><span className="font-medium">${fmt(resultado.valorSalidas)}</span></div>
+        <div className="flex justify-between"><span className="text-text-secondary">Costo de la entrada</span><span className="font-medium">{resultado.costo == null ? '—' : `$${fmt(resultado.costo)}`}</span></div>
+        <div className="flex justify-between text-base">
+          <span className="font-semibold text-text-primary">Ganancia</span>
+          <span className={`font-bold ${resultado.ganancia == null ? 'text-text-muted' : resultado.ganancia < 0 ? 'text-red-600' : 'text-green-700'}`}>
+            {resultado.ganancia == null ? 'Incompleta' : `$${fmt(resultado.ganancia)}`}
+          </span>
+        </div>
+        {!resultado.completo && disponible && (
+          <p className="text-xs text-text-muted">Para ver la ganancia falta el costo de la entrada o el precio de alguna salida.</p>
+        )}
+      </div>
+
+      {editable && (
+        <button type="button" onClick={guardar} disabled={guardando}
+          className="mt-4 flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+          {guardando ? <><Loader2 size={15} className="animate-spin" /> Guardando...</> : 'Guardar valoración'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default ValoracionTransformacion;

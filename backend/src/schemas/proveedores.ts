@@ -13,6 +13,7 @@ export const crearProveedorSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(120),
   rfc: opcionalTrim(40),
   telefono: opcionalTrim(40),
+  direccion: opcionalTrim(300),
   email: z
     .string()
     .trim()
@@ -21,10 +22,14 @@ export const crearProveedorSchema = z.object({
     .optional()
     .nullable()
     .transform(v => (v && v.length > 0 ? v : null)),
+  // .optional() en vez de .default([]) a propósito: ver nota en clientes.ts —
+  // con default, este schema (usado por actualizarProveedorSchema.partial())
+  // dejaría "fotos" siempre presente y borraría fotos existentes en PATCH.
+  fotos: z.array(z.string().trim().max(500)).optional(),
 });
 
 export const actualizarProveedorSchema = crearProveedorSchema
-  .extend({ activo: z.boolean().optional() })
+  .extend({ activo: z.boolean().optional(), telegramReportesActivos: z.boolean().optional() })
   .partial()
   .refine(
     data => Object.keys(data).length > 0,

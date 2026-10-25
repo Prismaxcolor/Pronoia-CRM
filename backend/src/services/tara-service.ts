@@ -1,3 +1,4 @@
+import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearTaraInput, ActualizarTaraInput } from '../schemas/tara.js';
 
@@ -5,7 +6,7 @@ interface TaraRow {
   id: string;
   nombre: string;
   peso: number;
-  foto: string | null;
+  fotos: string[] | null;
   activo: boolean;
   created_at: string;
 }
@@ -14,7 +15,7 @@ export interface TaraPublica {
   id: string;
   nombre: string;
   peso: number;
-  foto: string | null;
+  fotos: string[];
   activo: boolean;
   createdAt: string;
 }
@@ -24,7 +25,7 @@ function toPublico(row: TaraRow): TaraPublica {
     id: row.id,
     nombre: row.nombre,
     peso: Number(row.peso),
-    foto: row.foto,
+    fotos: row.fotos ?? [],
     activo: row.activo,
     createdAt: row.created_at,
   };
@@ -41,13 +42,13 @@ export async function listarTaras(): Promise<TaraPublica[]> {
 }
 
 export async function crearTara(
-  input: CrearTaraInput
+  input: CrearTaraInput & MetaOperacion
 ): Promise<{ tara: TaraPublica } | { error: string }> {
-  const { data, error } = await supabaseAdmin
-    .from('taras')
-    .insert({ nombre: input.nombre, peso: input.peso, foto: input.foto ?? null })
-    .select('*')
-    .single();
+  const { data, error } = await insertarMaestroIdempotente<TaraRow>(
+    'taras',
+    { nombre: input.nombre, peso: input.peso, fotos: input.fotos ?? [] },
+    { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn }
+  );
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear la tara.' };
   return { tara: toPublico(data as TaraRow) };
@@ -60,7 +61,7 @@ export async function actualizarTara(
   const update: Record<string, unknown> = {};
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.peso !== undefined) update.peso = cambios.peso;
-  if (cambios.foto !== undefined) update.foto = cambios.foto;
+  if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
 
   const { data, error } = await supabaseAdmin
