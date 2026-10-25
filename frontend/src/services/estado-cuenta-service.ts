@@ -22,8 +22,12 @@ export interface EntradaEstadoCuenta {
   anulada?: boolean;
   /** Solo notas anuladas: monto original, para mostrarlo tachado. */
   montoAnulado?: number;
-  /** Solo notas de débito: ya se liquidó en un pago combinado ("Registrar pago"). */
+  /** Solo notas: ya se aplicó COMPLETA en pagos/cobros (una aplicada solo en parte sigue en false). */
   pagada?: boolean;
+  /** Solo notas vigentes: monto (USD) ya aplicado a pagos/cobros (cruce parcial). */
+  notaAplicada?: number;
+  /** Solo notas vigentes: lo que le queda por aplicar (monto - notaAplicada); 0 si ya está pagada. */
+  notaDisponible?: number;
   /** Solo facturas: id para abrir el detalle. Ausente para pagos/notas. */
   facturaId?: string;
   /** Solo pagos/adelantos: id para abrir el comprobante imprimible. Ausente para facturas/notas. */

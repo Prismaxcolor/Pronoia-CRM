@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Plus, RefreshCw, Users } from 'lucide-react';
 import {
   Bloque, BotonAccion, ControlSegmentado, EncabezadoPagina, EstadoVacio, FiltrosBarra, ListaAlertas, SkeletonBloque, SkeletonKpis,
@@ -45,6 +45,8 @@ interface Props {
   puedeBorrar: boolean;
   /** Segmento de la lista (p. ej. «nacionales»): los indicadores de saldo se calculan sobre estos terceros y lo muestran en el rótulo. */
   segmento?: string;
+  /** Indicador adicional al final de los indicadores (p. ej. «Por pagar a proveedores» en Clientes). */
+  kpiExtra?: ReactNode;
   onNuevo: () => void;
   onEditar: (id: string) => void;
   onDesactivar: (id: string) => void;
@@ -154,7 +156,7 @@ function ListadoTerceros(props: Props) {
       )}
 
       <section aria-label="Indicadores principales">
-        {cargando ? <SkeletonKpis /> : <TercerosKpis tipo={tipo} filas={filas} estadoSaldos={saldos.estado} segmento={segmento} />}
+        {cargando ? <SkeletonKpis /> : <TercerosKpis tipo={tipo} filas={filas} estadoSaldos={saldos.estado} segmento={segmento} extra={props.kpiExtra} />}
       </section>
 
       <Bloque

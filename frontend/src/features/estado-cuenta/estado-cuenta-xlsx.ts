@@ -11,7 +11,7 @@ import {
   celdaCabecera, celdaFecha, celdaImporte, celdaTexto, celdaTitulo, descargarXlsx, nombreArchivoXlsx, textoGenerado, type HojaXlsx,
 } from '../../lib/xlsx';
 import { hoyNegocio } from '../../lib/fecha-negocio';
-import { LABEL_POR_TIPO, fmt } from './estado-cuenta-comun';
+import { LABEL_POR_TIPO, fmt, notaAplicadaEnParte, textoNotaAplicadaEnParte } from './estado-cuenta-comun';
 
 export interface DatosEstadoCuentaXlsx {
   tipo: TipoEntidad;
@@ -41,9 +41,10 @@ export function textoPeriodoEstadoCuenta(desde?: string, hasta?: string): string
 }
 
 /** Estado de la fila: anulada (con su monto original), pagada o vacío. */
-export function estadoEntrada(e: Pick<EntradaConSaldo, 'anulada' | 'pagada' | 'montoAnulado' | 'tipo' | 'montoCruzado' | 'adelantoAplicado' | 'adelantoDisponible'>): string {
+export function estadoEntrada(e: Pick<EntradaConSaldo, 'anulada' | 'pagada' | 'montoAnulado' | 'tipo' | 'montoCruzado' | 'adelantoAplicado' | 'adelantoDisponible' | 'notaAplicada' | 'notaDisponible'>): string {
   if (e.anulada) return e.montoAnulado ? `Anulada (monto original ${fmt(e.montoAnulado)})` : 'Anulada';
   if (e.pagada) return 'Pagada';
+  if (notaAplicadaEnParte(e)) return textoNotaAplicadaEnParte(e);
   if (e.tipo === 'cruce') return `Saldó ${fmt(e.montoCruzado ?? 0)} en facturas sin mover dinero`;
   if (e.tipo === 'adelanto' && e.adelantoAplicado) return `Aplicado ${fmt(e.adelantoAplicado)} · disponible ${fmt(e.adelantoDisponible ?? 0)}`;
   return '';

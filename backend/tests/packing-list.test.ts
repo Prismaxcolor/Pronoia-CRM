@@ -161,10 +161,11 @@ describe('guardarPackingListSchema', () => {
     expect(guardarPackingListSchema.safeParse({ ...base, items: [{ ...base.items[0], pesoBruto: 0 }] }).success).toBe(false);
     expect(guardarPackingListSchema.safeParse({ ...base, items: [{ ...base.items[0], pesoBruto: 10.123 }] }).success).toBe(false);
   });
-  it('descarta lote y color cuando no es PCB', () => {
-    const r = guardarPackingListSchema.safeParse({ ...base, esPcb: false });
+  it('conserva lote y color aunque no sea PCB (listas antiguas con es_pcb=false)', () => {
+    const conLote = { ...base, esPcb: false, items: [{ ...base.items[0], lote: '7', color: 'green' }] };
+    const r = guardarPackingListSchema.safeParse(conLote);
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.items[0]).toMatchObject({ lote: null, color: null });
+    if (r.success) expect(r.data.items[0]).toMatchObject({ lote: '7', color: 'green' });
   });
   it('exige contenedor, fecha válida y referencia completa', () => {
     expect(guardarPackingListSchema.safeParse({ ...base, contenedor: '  ' }).success).toBe(false);

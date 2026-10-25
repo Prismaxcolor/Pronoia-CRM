@@ -5,6 +5,7 @@ import type { ExportacionResumen } from '@shared/types/index.js';
 import { BotonAccion, EncabezadoPagina, EstadoVacio, Insignia, SkeletonBloque } from '../../components/ui';
 import type { Tono } from '../../lib/paleta';
 import { useAuth } from '../../hooks/use-auth-context';
+import { RUTA_EXPORTACIONES } from './rutas';
 import { obtenerExportaciones } from '../../services/exportaciones-service';
 import { formatearFechaDocumento, formatearPeso } from '../../lib/packing-list';
 import { ETIQUETA_ESTADO, estadoExportacion, totalesExportacion, type EstadoExportacion } from '../../lib/exportaciones';
@@ -36,7 +37,7 @@ function TarjetaExportacion({ e, puedeVerValores }: { e: ExportacionResumen; pue
     <li className="rounded-xl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <Link to={`/exportaciones/${e.packingListId}`} className="font-semibold text-text-primary hover:text-brand-700 hover:underline break-words">
+          <Link to={`${RUTA_EXPORTACIONES}/${e.packingListId}`} className="font-semibold text-text-primary hover:text-brand-700 hover:underline break-words">
             {e.clienteNombre ?? 'Cliente sin nombre'}
           </Link>
           <p className="mt-0.5 text-xs text-text-secondary">
@@ -80,7 +81,7 @@ function ExportacionesPage() {
   }, []);
 
   const acciones = puedeCrear
-    ? <BotonAccion soloEnLinea icono={<Plus size={16} />} to="/exportaciones/nueva">Nueva exportación</BotonAccion>
+    ? <BotonAccion soloEnLinea icono={<Plus size={16} />} to={`${RUTA_EXPORTACIONES}/nueva`}>Nueva exportación</BotonAccion>
     : undefined;
 
   return (
@@ -99,7 +100,7 @@ function ExportacionesPage() {
         <EstadoVacio icono={<Ship size={28} />}
           mensaje="Aún no hay exportaciones"
           descripcion="Crea la primera: elige un packing list y el cliente internacional, valora los lotes y luego compara con el resultado real."
-          accion={puedeCrear ? { etiqueta: 'Crear la primera exportación', to: '/exportaciones/nueva', soloEnLinea: true } : undefined} />
+          accion={puedeCrear ? { etiqueta: 'Crear la primera exportación', to: `${RUTA_EXPORTACIONES}/nueva`, soloEnLinea: true } : undefined} />
       )}
       {lista.length > 0 && (
         <ul className="space-y-3">

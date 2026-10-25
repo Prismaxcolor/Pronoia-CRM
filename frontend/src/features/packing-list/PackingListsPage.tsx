@@ -97,7 +97,8 @@ function PackingListsPage() {
                 <tr key={p.id} className="border-b border-border/60 last:border-0">
                   <td className="px-3 py-2">
                     <Link to={`/packing-list/${p.id}`} className="inline-flex items-center gap-2 font-medium text-text-primary hover:text-brand-700 hover:underline">
-                      <PackageOpen size={15} aria-hidden="true" /> {p.contenedor}
+                      <PackageOpen size={15} aria-hidden="true" /> {p.contenedor || '(sin contenedor)'}
+                      {p.esBorrador && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Borrador</span>}
                     </Link>
                   </td>
                   <td className="px-3 py-2 tabular-nums">{formatearFechaDocumento(p.fecha, 'es')}</td>

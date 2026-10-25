@@ -58,6 +58,8 @@ export const completarTransformacionFerrosoSchema = z.object({
   salidas: z.array(salidaFerrosoSchema).min(1, 'Agrega al menos una salida.'),
   /** Merma por tipo (opcional): se guarda tras completar, no cambia el flujo actual. */
   mermaDetalle: mermaDetalleSchema.optional(),
+  /** Observación opcional al completar (se muestra en el detalle). */
+  observacion: textoOpcional(1000),
 });
 
 /** Config: guarda cuáles son los materiales de salida comunes de un producto de entrada. */
@@ -99,6 +101,7 @@ export const completarTransformacionPCBSchema = z.object({
   ...clienteOperacionCampos,
   salidas: z.array(salidaPCBSchema).min(1, 'Agrega al menos un lote de destino.'),
   mermaDetalle: mermaDetalleSchema.optional(),
+  observacion: textoOpcional(1000),
 });
 
 export type CrearTransformacionPCBInput = z.infer<typeof crearTransformacionPCBSchema>;
@@ -140,6 +143,7 @@ export const salidaMixtaSchema = z.discriminatedUnion('tipo', [salidaMixtaMateri
 export const completarTransformacionMixtaSchema = z.object({
   ...clienteOperacionCampos,
   mermaDetalle: mermaDetalleSchema.optional(),
+  observacion: textoOpcional(1000),
   salidas: z
     .array(salidaMixtaSchema)
     .min(1, 'Agrega al menos una salida.')

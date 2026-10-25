@@ -54,7 +54,7 @@ function CambistaDetallePage() {
     <div>
       <EncabezadoPagina
         titulo={estado?.cambista.nombre ?? 'Estado de cuenta'}
-        subtitulo="Estado de cuenta en USD. Cargo y nota de débito aumentan lo que les debemos; cobro y nota de crédito lo reducen."
+        subtitulo="Estado de cuenta en USD. Cargo y nota de débito aumentan lo que el cambista nos debe (pendiente por cobrar); cobro y nota de crédito lo reducen. Si el saldo queda negativo, se le debe al cambista."
         migas={[{ etiqueta: 'Mesa de cambio', to: '/mesa-cambio' }, { etiqueta: estado?.cambista.nombre ?? 'Estado de cuenta' }]}
        
         acciones={puedeCrear && estado?.cambista.activo && (
@@ -101,7 +101,7 @@ function CambistaDetallePage() {
           ) : (
             <div className="overflow-x-auto rounded-xl border border-border bg-surface">
               <table className="w-full text-sm">
-                <caption className="sr-only">Asientos del cambista con saldo corrido (positivo: les debemos; negativo: nos deben)</caption>
+                <caption className="sr-only">Asientos del cambista con saldo corrido (positivo: pendiente por cobrar, nos debe el cambista; negativo: se le debe al cambista)</caption>
                 <thead>
                   <tr className="text-left text-xs text-text-secondary border-b border-border">
                     <th scope="col" className="p-3">N.°</th>

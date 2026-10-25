@@ -103,7 +103,13 @@ export function detallesExtraDinero(body: Cuerpo): string[] {
  */
 export function comprobantesReenviables(body: Cuerpo, supabaseUrl: string): string[] {
   if (!supabaseUrl) return [];
-  const lista = Array.isArray(body.comprobantes) ? body.comprobantes : [];
+  // Los generales del body y los de cada cuenta (pago de nómina por banca: cada cuenta sube su propio comprobante).
+  const generales = Array.isArray(body.comprobantes) ? body.comprobantes : [];
+  const porCuenta = (Array.isArray(body.bancas) ? body.bancas : []).flatMap(b => {
+    const c = registro(b).comprobantes;
+    return Array.isArray(c) ? c : [];
+  });
+  const lista = [...generales, ...porCuenta];
   const validas = lista.filter((u): u is string => esUrlComprobanteValida(u, supabaseUrl));
   return [...new Set(validas)].slice(0, MAX_COMPROBANTES_AVISO);
 }

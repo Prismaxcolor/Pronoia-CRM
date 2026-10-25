@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, Download, RefreshCw, Save } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, RefreshCw, Save } from 'lucide-react';
 import type { Cliente, EmpresaPackingList, FotoPaletaPacking, IdiomaPackingList, PackingListDetalle } from '@shared/types/index.js';
 import { Bloque, BotonAccion, EncabezadoPagina, SkeletonBloque } from '../../components/ui';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -14,13 +14,10 @@ import { MAX_FOTOS_POR_PALETA } from './PackingListFotosPaleta';
 import { obtenerOpcionesLotePacking } from '../../services/packing-list-fotos-service';
 import { CARGA_LOTES_INICIAL, cargaLotesDesdeRespuesta, controlarDisponible, mostrarAvisoLotesNoCargados, type CargaLotes } from '../../lib/lotes-packing';
 import PackingListTotales from './PackingListTotales';
-import PackingListProyeccion from './PackingListProyeccion';
-import PackingListResultados from './PackingListResultados';
 import { obtenerClientes } from '../../services/cliente-service';
-import { kgPorLote } from '../../lib/proyeccion-packing';
 import {
-  OPCIONES_EMBALAJE, opcionesCliente, aFilaNumerica, cabeceraDesde, cabeceraInicial, construirEntrada, filaSiguiente, filasDesde, valoracionDesde, valoracionVacia,
-  type CabeceraForm, type ValoracionForm,
+  OPCIONES_EMBALAJE, opcionesCliente, aFilaNumerica, cabeceraDesde, cabeceraInicial, construirEntrada, MOSTRAR_LOTE_Y_COLOR, filaSiguiente, filasDesde,
+  type CabeceraForm,
 } from './formulario';
 import LeyendaRegistro from '../../components/LeyendaRegistro';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
@@ -52,15 +49,12 @@ function PackingListEditorPage() {
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [hayConflicto, setHayConflicto] = useState(false);
   const [recargando, setRecargando] = useState(false);
-  const [valoracion, setValoracion] = useState<ValoracionForm>(valoracionVacia);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   // Estado de la carga de la lista de lotes: solo 'error' (no 'cargando') avisa y deja el lote a mano.
   const [cargaLotes, setCargaLotes] = useState<CargaLotes>(CARGA_LOTES_INICIAL);
   const opcionesLote = cargaLotes.opciones;
-  const [instantanea, setInstantanea] = useState(() => JSON.stringify([cabeceraInicial(), [], valoracionVacia()]));
+  const [instantanea, setInstantanea] = useState(() => JSON.stringify([cabeceraInicial(), []]));
 
-  // La proyección es un dato de valor (USD estimados): solo con facturacion:ver.
-  const puedeVerValores = tienePermiso('facturacion', 'ver');
   // El almacén, las fotos de las paletas y los kg disponibles son control interno: productos:ver (inventario) o facturacion:ver.
   const puedeVerControl = tienePermiso('productos', 'ver') || tienePermiso('facturacion', 'ver');
   const puedeEditar = esNuevo ? tienePermiso('despachos', 'crear') : tienePermiso('despachos', 'editar');
@@ -72,9 +66,7 @@ function PackingListEditorPage() {
     setHayConflicto(false);
     setCabecera(c);
     setFilas(f);
-    const v = valoracionDesde(p);
-    setValoracion(v);
-    setInstantanea(JSON.stringify([c, f.map(datosFila), v]));
+    setInstantanea(JSON.stringify([c, f.map(datosFila)]));
   }, []);
 
   useEffect(() => {
@@ -90,14 +82,13 @@ function PackingListEditorPage() {
 
   const filasNumericas = useMemo(() => filas.map(aFilaNumerica), [filas]);
   const totales = useMemo(() => calcularTotales(filasNumericas), [filasNumericas]);
-  const grupos = useMemo(() => resumirPorLote(filasNumericas, cabecera.esPcb), [filasNumericas, cabecera.esPcb]);
+  const grupos = useMemo(() => resumirPorLote(filasNumericas, MOSTRAR_LOTE_Y_COLOR), [filasNumericas]);
   const nombreBulto = OPCIONES_EMBALAJE.find(o => o.valor === cabecera.tipoEmbalaje)?.bulto ?? 'Bulto';
-  const kgs = useMemo(() => kgPorLote(filasNumericas), [filasNumericas]);
   const control = useMemo(
-    () => (cabecera.esPcb && opcionesLote ? controlarDisponible(filasNumericas, opcionesLote) : []),
-    [filasNumericas, opcionesLote, cabecera.esPcb]
+    () => (MOSTRAR_LOTE_Y_COLOR && opcionesLote ? controlarDisponible(filasNumericas, opcionesLote) : []),
+    [filasNumericas, opcionesLote]
   );
-  const sinGuardar = JSON.stringify([cabecera, filas.map(datosFila), valoracion]) !== instantanea;
+  const sinGuardar = JSON.stringify([cabecera, filas.map(datosFila)]) !== instantanea;
   const clientesInternacionales = useMemo(
     () => opcionesCliente(clientes, cabecera.clienteId, guardado?.clienteNombre ?? null),
     [clientes, cabecera.clienteId, guardado?.clienteNombre]
@@ -116,12 +107,16 @@ function PackingListEditorPage() {
   const quitarFoto = (clave: string, ruta: string) =>
     actualizarFila(clave, f => ({ ...f, fotos: f.fotos.filter(x => x.ruta !== ruta) }));
 
-  const handleGuardar = async () => {
+  // Borrador (nuevo o ya guardado como borrador): se guarda con datos faltantes. Finalizar y editar uno final exigen todo.
+  const esBorrador = esNuevo || guardado?.esBorrador === true;
+
+  const handleGuardar = async (comoBorrador: boolean) => {
+    // La proyección y los resultados se editan en Exportaciones: aquí no se envían y el servidor conserva lo guardado.
     const r = construirEntrada(cabecera, filas, {
       referenciaTipo: guardado?.referenciaTipo ?? null,
       referenciaId: guardado?.referenciaId ?? null,
       version: esNuevo ? undefined : guardado?.version,
-    }, puedeVerValores ? valoracion : undefined, puedeVerControl);
+    }, undefined, puedeVerControl, comoBorrador);
     if ('error' in r) { toast.errorMsg(r.error); return; }
     setGuardando(true);
     const res = await guardarPackingList(esNuevo ? null : id, r.entrada);
@@ -132,7 +127,7 @@ function PackingListEditorPage() {
       return;
     }
     if (res.enCola) toast.info('Packing list guardado en el teléfono. Se enviará al volver la conexión.');
-    else toast.exito('Packing list guardado.');
+    else toast.exito(comoBorrador ? 'Borrador guardado.' : 'Packing list guardado.');
     aplicar(res.packingList);
     if (esNuevo) navigate(`/packing-list/${res.packingList.id}`, { replace: true });
   };
@@ -160,20 +155,29 @@ function PackingListEditorPage() {
     <>
       {IDIOMAS.map(({ idioma, etiqueta }) => (
         <BotonAccion key={idioma} variante="secundario" icono={<Download size={16} />}
-          disabled={!guardado || sinGuardar} onClick={() => handleExportar(idioma)}>
+          disabled={!guardado || sinGuardar || guardado.esBorrador === true} onClick={() => handleExportar(idioma)}>
           PDF {etiqueta}
         </BotonAccion>
       ))}
-      {puedeEditar && <BotonAccion icono={<Save size={16} />} disabled={guardando || !sinGuardar} onClick={handleGuardar}>{guardando ? 'Guardando…' : 'Guardar'}</BotonAccion>}
+      {puedeEditar && esBorrador && (
+        <BotonAccion variante="secundario" icono={<Save size={16} />} disabled={guardando || !sinGuardar} onClick={() => handleGuardar(true)}>
+          {guardando ? 'Guardando…' : 'Guardar borrador'}
+        </BotonAccion>
+      )}
+      {puedeEditar && (
+        <BotonAccion icono={esBorrador ? <CheckCircle2 size={16} /> : <Save size={16} />} disabled={guardando || (!esBorrador && !sinGuardar)} onClick={() => handleGuardar(false)}>
+          {guardando ? 'Guardando…' : esBorrador ? 'Finalizar' : 'Guardar'}
+        </BotonAccion>
+      )}
     </>
   );
 
   return (
     <div className="max-w-6xl">
       <EncabezadoPagina lecturas={LECTURAS.packingLists}
-        titulo={esNuevo ? 'Nuevo packing list' : `Packing list ${guardado?.contenedor ?? ''}`}
+        titulo={esNuevo ? 'Nuevo packing list' : `Packing list ${guardado?.contenedor || (esBorrador ? '(borrador)' : '')}`}
         subtitulo="Arma la lista de paletas del contenedor. El peso neto de cada paleta es bruto menos el peso de la paleta; los totales se calculan solos."
-        migas={[{ etiqueta: 'Packing list', to: '/packing-list' }, { etiqueta: esNuevo ? 'Nuevo' : guardado?.contenedor ?? '' }]}
+        migas={[{ etiqueta: 'Packing list', to: '/packing-list' }, { etiqueta: esNuevo ? 'Nuevo' : guardado?.contenedor || '(borrador)' }]}
         acciones={acciones}
       />
 
@@ -189,12 +193,18 @@ function PackingListEditorPage() {
         </div>
       )}
 
+      {esBorrador && (
+        <p role="status" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          Borrador: puedes guardarlo con datos faltantes (contenedor, pesos, cliente…). Al finalizar se exige el contenedor y el peso bruto de cada paleta; hasta entonces no se puede exportar a PDF.
+        </p>
+      )}
+
       {guardado && <LeyendaRegistro className="mb-3 text-xs text-text-muted" nombre={guardado.creadoPorNombre} instante={guardado.createdAt} />}
 
       <Bloque titulo="Datos del envío" queEstasViendo="Estos datos salen en el encabezado de los dos documentos (español e inglés).">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label htmlFor="pl-contenedor" className={LABEL}>Contenedor *</label>
+            <label htmlFor="pl-contenedor" className={LABEL}>Contenedor{esBorrador ? '' : ' *'}</label>
             <input id="pl-contenedor" className={INPUT} value={cabecera.contenedor} disabled={!puedeEditar}
               onChange={e => cambiarCabecera('contenedor', e.target.value)} placeholder="Ej. SEKU-6057558" maxLength={60} />
           </div>
@@ -210,11 +220,6 @@ function PackingListEditorPage() {
               {OPCIONES_EMBALAJE.map(o => <option key={o.valor} value={o.valor}>{o.etiqueta}</option>)}
             </select>
           </div>
-          <label className="flex items-center gap-2 self-end pb-2 text-sm text-text-secondary cursor-pointer">
-            <input type="checkbox" checked={cabecera.esPcb} disabled={!puedeEditar}
-              onChange={e => cambiarCabecera('esPcb', e.target.checked)} className="rounded border-border text-brand-600 focus:ring-brand-400" />
-            Tarjetas electrónicas (PCB): indicar lote y color
-          </label>
           <div>
             <label htmlFor="pl-cliente" className={LABEL}>Cliente internacional</label>
             <select id="pl-cliente" className={INPUT} value={cabecera.clienteId} disabled={!puedeEditar}
@@ -254,43 +259,26 @@ function PackingListEditorPage() {
         </div>
       </Bloque>
 
-      <Bloque titulo={`Detalle de ${nombreBulto.toLowerCase()}s`} queEstasViendo="Una fila por cada bulto. Al agregar una fila nueva se copian el lote, el color y el peso de la paleta de la anterior. El disponible, el almacén y las fotos son de control interno: no salen en los PDF.">
-        {mostrarAvisoLotesNoCargados(cargaLotes, cabecera.esPcb) && (
+      <Bloque id="packing-detalle-bultos" titulo={`Detalle de ${nombreBulto.toLowerCase()}s`} queEstasViendo="Una fila por cada bulto. Al agregar una fila nueva se copian el lote, el color y el peso de la paleta de la anterior. El disponible, el almacén y las fotos son de control interno: no salen en los PDF.">
+        {mostrarAvisoLotesNoCargados(cargaLotes, MOSTRAR_LOTE_Y_COLOR) && (
           <p role="status" className="mb-3 text-xs text-amber-800">
             No se pudo cargar la lista de lotes de exportación (¿sin conexión?). Mientras tanto el lote se escribe a mano; no se compara con el inventario.
           </p>
         )}
-        <PackingListFilas filas={filas} esPcb={cabecera.esPcb} nombreBulto={nombreBulto} puedeEditar={puedeEditar}
+        <PackingListFilas filas={filas} esPcb={MOSTRAR_LOTE_Y_COLOR} nombreBulto={nombreBulto} puedeEditar={puedeEditar}
           opcionesLote={opcionesLote} puedeVerControl={puedeVerControl} onCambiar={cambiarFila} onElegirLote={elegirLote}
           onAgregarFoto={agregarFoto} onQuitarFoto={quitarFoto} onQuitar={k => setFilas(fs => fs.filter(f => f.clave !== k))}
           onAgregar={() => setFilas(fs => [...fs, filaSiguiente(fs)])} />
       </Bloque>
 
       <Bloque titulo="Totales" queEstasViendo="Se recalculan al escribir. Es lo que sale en la primera página del documento.">
-        <PackingListTotales grupos={grupos} totales={totales} esPcb={cabecera.esPcb} nombreBulto={`${nombreBulto}s`} />
+        <PackingListTotales grupos={grupos} totales={totales} esPcb={MOSTRAR_LOTE_Y_COLOR} nombreBulto={`${nombreBulto}s`} />
       </Bloque>
 
-      {puedeVerControl && cabecera.esPcb && opcionesLote !== null && (
+      {puedeVerControl && MOSTRAR_LOTE_Y_COLOR && opcionesLote !== null && (
         <Bloque titulo="Control interno de lotes"
           queEstasViendo="Uso interno: NO sale en los PDF. Compara los kg netos de este packing con lo que hay disponible del lote en cada almacén. Solo avisa; no descuenta ni mueve inventario.">
           <PackingListControlLotes control={control} />
-        </Bloque>
-      )}
-
-      {puedeVerValores && (
-        <Bloque titulo="Proyección de exportación"
-          queEstasViendo="Uso interno: NO sale en los PDF. Escribe el valor estimado por kg (USD) de cada lote; el total es kg netos × valor.">
-          <PackingListProyeccion kgs={kgs} valores={valoracion.estimado} puedeEditar={puedeEditar}
-            onCambiar={(lote, texto) => setValoracion(v => ({ ...v, estimado: { ...v.estimado, [lote]: texto } }))} />
-        </Bloque>
-      )}
-
-      {puedeVerValores && (
-        <Bloque titulo="Resultados: proyección frente a lo real"
-          queEstasViendo="Uso interno: NO sale en los PDF. Cuando se conozca el resultado, escribe el total real cobrado de la exportación (USD) para ver cuánto se desvió de la proyección; si quieres, también el valor real por kg de cada lote.">
-          <PackingListResultados kgs={kgs} valoracion={valoracion} puedeEditar={puedeEditar}
-            onCambiarReal={(lote, texto) => setValoracion(v => ({ ...v, real: { ...v.real, [lote]: texto } }))}
-            onCambiarTotalReal={texto => setValoracion(v => ({ ...v, totalReal: texto }))} />
         </Bloque>
       )}
     </div>

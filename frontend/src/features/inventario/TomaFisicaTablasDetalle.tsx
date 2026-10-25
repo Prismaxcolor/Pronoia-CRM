@@ -159,7 +159,7 @@ function TomaFisicaTablasDetalle({ lineas, detalle, lotes, tomaFisicaId, puedeCo
           vacio={{ mensaje: 'Esta toma no tiene materiales para comparar.', descripcion: 'Aparecen cuando hay productos o lotes en el alcance elegido.' }}
         />
       </Bloque>
-      <Bloque titulo={`Ticket de pesajes (${detalle.length})`} queEstasViendo="Cada pesaje de esta toma, en el orden en que se registró. La suma de los pesos netos de un material es lo que aparece como «Real».">
+      <Bloque id="toma-ticket-pesajes" titulo={`Ticket de pesajes (${detalle.length})`} queEstasViendo="Cada pesaje de esta toma, en el orden en que se registró. La suma de los pesos netos de un material es lo que aparece como «Real».">
         <TablaDatos
           titulo="Ticket de pesajes de la toma física"
           columnas={columnasTicket}

@@ -56,6 +56,8 @@ export interface Transformacion {
   fecha: string;
   estado: EstadoTransformacion;
   notas: string | null;
+  /** Observación escrita al completar la transformación (null/ausente = sin observación). */
+  observacionCierre?: string | null;
   registradoPor: string | null;
   completadoPor: string | null;
   completadoEn: string | null;

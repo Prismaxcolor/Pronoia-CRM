@@ -67,13 +67,15 @@ export function useExportacionAsistente(id: string): { estado: EstadoAsistente; 
     obtenerClientes().then(setClientes);
     if (esNueva) {
       obtenerPackingLists().then(r => {
-        if (Array.isArray(r)) setPackingLists(r.filter(p => packingListTemporal(p.id) === null)); else setError(mensajeDe(r));
+        if (Array.isArray(r)) setPackingLists(r.filter(p => packingListTemporal(p.id) === null && !p.esBorrador)); else setError(mensajeDe(r));
         setCargando(false);
       });
       return;
     }
     obtenerPackingList(id).then(r => {
-      if ('error' in r) setError(r.error); else aplicar(r);
+      if ('error' in r) setError(r.error);
+      else if (r.esBorrador) setError(`Este packing list es un borrador: termínalo y guárdalo en /packing-list/${id} antes de exportar.`);
+      else aplicar(r);
       setCargando(false);
     });
   }, [id, esNueva, aplicar]);
@@ -89,7 +91,9 @@ export function useExportacionAsistente(id: string): { estado: EstadoAsistente; 
   const elegirPackingList = async (idElegido: string) => {
     if (idElegido === '') { setDetalle(null); setClienteId(''); setValoracion(valoracionVacia()); return; }
     const r = await obtenerPackingList(idElegido);
-    if ('error' in r) toast.errorMsg(r.error); else aplicar(r);
+    if ('error' in r) toast.errorMsg(r.error);
+    else if (r.esBorrador) toast.errorMsg('Ese packing list es un borrador: termínalo y guárdalo antes de exportar.');
+    else aplicar(r);
   };
 
   const cambiarValoracion = (campo: 'estimado' | 'real', lote: string, texto: string) =>

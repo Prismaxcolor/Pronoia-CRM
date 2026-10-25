@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
 import Modal from '../../components/Modal';
 import { X, Building2, Globe, Coins, Wallet, Check, Ban } from 'lucide-react';
-import { crearBanca, actualizarBanca } from '../../services/banca-service';
+import { crearBanca, actualizarBanca, guardarComisionAutomatica } from '../../services/banca-service';
 import { PALETA_BANCAS, hexDeColorGuardado } from '../../lib/color-banca';
 import { useAuth } from '../../hooks/use-auth-context';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
@@ -11,6 +11,8 @@ import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } fr
 import { subirImagenBanca } from '../../services/storage-service';
 import { puedeEditarBanca } from '../usuarios/acceso-bancas';
 import { errorImagenBanca, imagenParaGuardar } from './imagen-banca';
+import ComisionAutomaticaSeccion from './ComisionAutomaticaSeccion';
+import { comisionCambio, estadoInicialComision, validarComision, type EstadoComisionAuto } from './comision-automatica-form';
 import { esChatIdTelegramValido, gruposTelegramConocidos, normalizarChatIdTelegram } from './telegram-banca';
 import type { Banca, TipoBanca } from '@shared/types/index.js';
 
@@ -144,6 +146,11 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
   const [grupoSel, setGrupoSel] = useState(grupos.some(g => g.chatId === chatInicial) || chatInicial === '' ? chatInicial : OPCION_OTRO);
   const [grupoOtro, setGrupoOtro] = useState(grupos.some(g => g.chatId === chatInicial) ? '' : chatInicial);
   const [reportesActivos, setReportesActivos] = useState(banca?.telegramReportesActivos !== false);
+  const [comision, setComision] = useState<EstadoComisionAuto>(() => estadoInicialComision(banca));
+  // La regla solo se edita en cuentas existentes y por quien puede editarlas (el servidor lo vuelve a exigir).
+  const veComision = editando && !!banca && puedeEditarBanca(banca);
+  // La comisión automática la cambia solo un superadmin (el backend lo exige); el resto la ve en solo lectura.
+  const puedeCambiarComision = veComision && puedeCambiarTelegram;
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -168,6 +175,12 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
     const chatId = normalizarChatIdTelegram(grupoSel === OPCION_OTRO ? grupoOtro : grupoSel);
     if (chatId !== null && !esChatIdTelegramValido(chatId)) {
       setError('El id del grupo de Telegram debe ser numérico (ej. -1001234567890).');
+      return;
+    }
+
+    const comisionValida = puedeCambiarComision ? validarComision(comision) : null;
+    if (comisionValida && !comisionValida.ok) {
+      setError(comisionValida.error);
       return;
     }
 
@@ -205,6 +218,16 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
         ...(puedeCambiarTelegram && !reportesActivos ? { telegramReportesActivos: false } : {}),
       });
       ok = !!result;
+    }
+
+    // La regla de comisión va por su propia ruta; solo se envía si cambió.
+    if (ok && banca && comisionValida?.ok && comisionCambio(comision, banca)) {
+      const errorComision = await guardarComisionAutomatica(banca.id, comisionValida.valor);
+      if (errorComision) {
+        setGuardando(false);
+        setError(`Se guardaron los datos de la cuenta, pero no la comisión automática: ${errorComision}`);
+        return;
+      }
     }
 
     setGuardando(false);
@@ -324,6 +347,16 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
             checked={reportesActivos}
             onChange={setReportesActivos}
             ayuda={"Apagado: los movimientos de esta cuenta no se avisan a Telegram (ni al grupo de cajas ni al grupo de la cuenta). Solo lo ve el superadmin."}
+          />
+        )}
+
+        {veComision && (
+          <ComisionAutomaticaSeccion
+            estado={comision}
+            onCambiar={setComision}
+            moneda={banca?.moneda ?? moneda}
+            claseInput={inputClass}
+            soloLectura={!puedeCambiarComision}
           />
         )}
 

@@ -4,6 +4,7 @@ import type { FacturaCV } from '../../services/factura-cv-service';
 import type { BancaPago, ItemPagoMultiple } from '../../services/pago-service';
 import type { EntradaEstadoCuenta } from '../../services/estado-cuenta-service';
 import { redondear2, validarMontoAplicable, type ResultadoCruce } from '../../lib/cruce';
+import { errorMontoDeNota, montoAplicadoDeNota } from '../../lib/cruce-notas';
 import { bloqueoPorComision, type EstadoComision } from '../cochinito/comision-formulario';
 import { categoriasBloqueanCobro, errorCategoriaCobro } from './categoria-cobro';
 import type { LineaBanca } from './FilaBancaPago';
@@ -26,6 +27,8 @@ export interface EntradaPagoCobro {
   montosFactura: Readonly<Record<string, string>>;
   notasSel: readonly EntradaEstadoCuenta[];
   notasCreditoSel: readonly EntradaEstadoCuenta[];
+  /** Notas marcadas → monto (USD, texto) a aplicar de cada una (cruce parcial); sin entrada = todo lo disponible. */
+  montosNota?: Readonly<Record<string, string>>;
   adelantosSel: readonly AdelantoDisponible[];
   montosAdelanto: Readonly<Record<string, string>>;
   /** Líneas de banca tal como se ven (con el monto auto-sincronizado si hay una sola). */
@@ -63,6 +66,14 @@ function errorDeItems(e: EntradaPagoCobro): string | null {
   }
   for (const a of e.adelantosSel) {
     const mensaje = validarMontoAplicable(numero(e.montosAdelanto[a.id]), a.disponible, a.codigo ?? e.etiquetaAdelanto);
+    if (mensaje) return mensaje;
+  }
+  return errorDeNotas(e);
+}
+
+function errorDeNotas(e: EntradaPagoCobro): string | null {
+  for (const nota of [...e.notasSel, ...e.notasCreditoSel]) {
+    const mensaje = errorMontoDeNota(nota, montoAplicadoDeNota(nota, e.montosNota ?? {}, nota.notaId ?? ''), nota.referencia ?? 'la nota');
     if (mensaje) return mensaje;
   }
   return null;
@@ -128,8 +139,8 @@ function armarBancas(e: EntradaPagoCobro): BancaPago[] | string {
 function armarItems(e: EntradaPagoCobro): ItemPagoMultiple[] {
   return [
     ...e.facturasSel.map(f => ({ tipo: 'factura' as const, id: f.id, montoUsd: numero(e.montosFactura[f.id]) })),
-    ...e.notasSel.flatMap(n => (n.notaId ? [{ tipo: 'nota_debito' as const, id: n.notaId, montoUsd: n.cargo }] : [])),
-    ...e.notasCreditoSel.flatMap(n => (n.notaId ? [{ tipo: 'nota_credito' as const, id: n.notaId, montoUsd: n.abono }] : [])),
+    ...e.notasSel.flatMap(n => (n.notaId ? [{ tipo: 'nota_debito' as const, id: n.notaId, montoUsd: redondear2(montoAplicadoDeNota(n, e.montosNota ?? {}, n.notaId)) }] : [])),
+    ...e.notasCreditoSel.flatMap(n => (n.notaId ? [{ tipo: 'nota_credito' as const, id: n.notaId, montoUsd: redondear2(montoAplicadoDeNota(n, e.montosNota ?? {}, n.notaId)) }] : [])),
     ...e.adelantosSel.map(a => ({ tipo: 'adelanto' as const, id: a.id, montoUsd: redondear2(numero(e.montosAdelanto[a.id])) })),
   ];
 }

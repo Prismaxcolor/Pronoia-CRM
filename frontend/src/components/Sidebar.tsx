@@ -4,6 +4,7 @@ import { LayoutDashboard, Package, Wallet, Users, Contact, Tag, Truck, Scale, Sh
 import { useAuth } from '../hooks/use-auth-context';
 import BloqueUsuarioMenu from './BloqueUsuarioMenu';
 import { leerUltimasRutas, guardarUltimaRuta } from '../services/nav-memory';
+import { RUTA_EXPORTACIONES } from '../features/exportaciones/rutas';
 import type { Recurso } from '@shared/types/index.js';
 
 interface NavItem {
@@ -45,7 +46,6 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Taras', to: '/taras', icon: <Weight size={20} />, recurso: 'taras' },
       { label: 'Despachos', to: '/citas', icon: <CalendarClock size={20} />, recurso: 'despachos' },
       { label: 'Packing list', to: '/packing-list', icon: <PackageOpen size={20} />, recurso: 'despachos', recordable: true },
-      { label: 'Exportaciones', to: '/exportaciones', icon: <Ship size={20} />, recurso: 'despachos' },
     ],
   },
   {
@@ -60,6 +60,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Clientes', to: '/clientes', icon: <Contact size={20} />, recurso: 'clientes', recordable: true },
       { label: 'Ventas', to: '/ventas', icon: <ShoppingBag size={20} />, recurso: 'facturacion', recordable: true },
+      { label: 'Exportaciones', to: RUTA_EXPORTACIONES, icon: <Ship size={20} />, recurso: 'despachos' },
     ],
   },
   {
@@ -86,7 +87,7 @@ const NAV_SECTIONS: NavSection[] = [
  *  no fichas de detalle a las que tenga sentido volver. Ej. "/pesaje/conteo/:id"
  *  deja de servir en cuanto se culmina esa toma física — si quedara recordada,
  *  el link "Pesaje" del sidebar apuntaría ahí para siempre en esa pestaña. */
-const RUTAS_NO_RECORDABLES = [/^\/pesaje\/conteo\//];
+const RUTAS_NO_RECORDABLES = [/^\/pesaje\/conteo\//, /^\/ventas\/exportaciones(\/|$)/];
 
 function esRutaRecordable(pathname: string): boolean {
   return !RUTAS_NO_RECORDABLES.some(re => re.test(pathname));
@@ -204,6 +205,8 @@ function Sidebar({ abierto, onCerrar, llavesPendientes = 0 }: Props) {
                 ? location.pathname === '/'
                 : item.to === '/transformaciones' && enMerma
                   ? false // "Merma" es un ítem aparte: no marcar también Transformaciones
+                  : item.to === '/ventas' && location.pathname.startsWith(RUTA_EXPORTACIONES)
+                    ? false // "Exportaciones" es un ítem aparte dentro de Ventas
                   : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
               return (
                 <Link

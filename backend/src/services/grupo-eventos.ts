@@ -97,6 +97,8 @@ export interface EventoCatalogo {
   contexto?: (ctx: ContextoEvento) => ContextoRef | null;
   /** Líneas de detalle: solo campos seguros. */
   detalles?: (ctx: ContextoEvento) => string[];
+  /** true: el detalle ya nombra cada cuenta con su monto, así que no se agregan las líneas "Cuenta: ..." leídas del body. */
+  omitirLineasCuenta?: boolean;
   /** Cambia icono/acción/clave según el resultado (ej. pesaje global por recepcionar vs completo). */
   variante?: (ctx: ContextoEvento) => Partial<Pick<EventoCatalogo, 'clave' | 'icono' | 'accion'>> | null;
   enriquecer?: Enriquecimiento;
@@ -245,6 +247,88 @@ function detallesEntidadComercialEditada(ctx: ContextoEvento): string[] {
   if ('activo' in b) cambios.push(b.activo === false ? 'desactivado' : 'activo');
   return cambios.length > 0 ? [`Cambió: ${cambios.join(', ')}`] : [];
 }
+
+// ---------------------------------------------------------------------------
+// Avisos de nómina (pagos y anulaciones): se leen de la nómina que devuelve la respuesta
+// ---------------------------------------------------------------------------
+
+const TIPO_PERSONAL_NOMINA: Readonly<Record<string, string>> = {
+  ADMINISTRATIVO: 'Personal administrativo',
+  OPERATIVO: 'Personal operativo',
+};
+
+/** "2026-10-12" -> "12/10/2026"; null si no es una fecha AAAA-MM-DD. */
+function fechaCorta(iso: string | null): string | null {
+  return iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10).split('-').reverse().join('/') : null;
+}
+
+/** "Nómina NOM-0007" desde la nómina de la respuesta; null si la respuesta no la trae (el aviso sale sin identificarla). */
+export function etiquetaNomina(ctx: ContextoEvento): string | null {
+  const numero = num(rec(ctx.resBody.nomina).numero);
+  return numero === null ? null : `Nómina NOM-${pad4(numero)}`;
+}
+
+function montoDePago(moneda: string | null, monto: number): string {
+  const importe = monto.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${moneda === 'BS' ? 'Bs' : 'USD'} ${importe}`;
+}
+
+/** "USD 100 desde CAJA CHICA PS · Ref. 8841 · MV-0012": un pago de la nómina con su cuenta, su referencia y su movimiento. */
+function lineaPagoNomina(p: Record<string, unknown>): string | null {
+  const monto = num(p.monto);
+  if (monto === null) return null;
+  const cuenta = txt(p.bancaNombre);
+  const ref = txt(p.referencia);
+  const mv = num(p.movimientoNumero);
+  const partes = [
+    `${montoDePago(txt(p.monedaPago), monto)}${cuenta ? ` desde ${sanitizarValor(cuenta)}` : ''}`,
+    ...(ref ? [`Ref. ${sanitizarValor(ref)}`] : []),
+    ...(mv !== null ? [`MV-${pad4(mv)}`] : []),
+  ];
+  return `Pago: ${partes.join(' · ')}`;
+}
+
+/**
+ * Detalle del aviso de un pago de nómina: tipo de personal, semana, el trabajador (si es un pago individual) y UNA línea por
+ * cuenta con su monto y su referencia (cada banca lleva la suya). Solo nombres de cuenta, montos y referencias: nada de la ficha
+ * del trabajador. Los pagos salen de la nómina que devuelve el servidor, no de lo que mandó el navegador.
+ */
+export function detallesPagoNomina(ctx: ContextoEvento): string[] {
+  const n = rec(ctx.resBody.nomina);
+  const trabajadorId = ctx.params.trabajadorId ?? null;
+  const lineaTrabajador = trabajadorId
+    ? arr(n.lineas).map(rec).find(l => l.trabajadorId === trabajadorId)
+    : undefined;
+  const pagos = arr(n.pagos).map(rec)
+    .filter(p => p.anulado !== true && (trabajadorId ? p.trabajadorId === trabajadorId : p.trabajadorId == null))
+    .flatMap(p => lineaPagoNomina(p) ?? []);
+  return [
+    ...linea('Personal', TIPO_PERSONAL_NOMINA[txt(n.tipo) ?? ''] ?? null),
+    ...linea('Semana del', fechaCorta(txt(n.semanaInicio))),
+    ...linea('Trabajador', lineaTrabajador ? txt(lineaTrabajador.trabajadorNombre) : null),
+    ...(ctx.resBody.yaPagada === true || ctx.resBody.yaPagado === true ? ['Ya estaba pagado: no se registró ningún egreso nuevo'] : pagos),
+    ...linea('Fecha del pago', fechaCorta(txt(ctx.reqBody.fecha))),
+  ];
+}
+
+/** Anulación de una nómina: cuál y por qué (el motivo es obligatorio); si estaba pagada, el dinero volvió a las cuentas. */
+function detallesAnulacionNomina(ctx: ContextoEvento): string[] {
+  const n = rec(ctx.resBody.nomina);
+  const pagada = arr(n.pagos).length > 0;
+  return [
+    ...linea('Personal', TIPO_PERSONAL_NOMINA[txt(n.tipo) ?? ''] ?? null),
+    ...linea('Semana del', fechaCorta(txt(n.semanaInicio))),
+    ...linea('Motivo', txt(ctx.reqBody.motivo)),
+    ...(pagada ? ['Estaba pagada: los egresos del Wallet se anularon y el dinero volvió a las cuentas'] : []),
+  ];
+}
+
+/** Categoría o subcategoría del Wallet según la respuesta (una subcategoría tiene categoría padre). */
+function esSubcategoriaWallet(ctx: ContextoEvento): boolean {
+  return txt(rec(ctx.resBody.categoria).padreId) !== null;
+}
+
+const claseCategoriaWallet = (ctx: ContextoEvento): string => (esSubcategoriaWallet(ctx) ? 'SUBCATEGORÍA' : 'CATEGORÍA');
 
 const MAX_SALIDAS = 8;
 const TOLERANCIA_KG = 0.005;
@@ -438,10 +522,31 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   }),
   ev('banca.creada', 'POST', '/api/cochinito/bancas', 'tesoreria', 'normal', '🏦', 'Se creó una banca', { entidad: { rotulo: 'Banca', resp: 'banca' } }),
   ev('banca.editada', 'PATCH', '/api/cochinito/bancas/:id', 'tesoreria', 'normal', '✏️', 'Se editó una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
-  ev('banca.archivada', 'POST', '/api/cochinito/bancas/:id/archivar', 'tesoreria', 'critica', '📦', 'Se ARCHIVÓ una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
+  ev('banca.comision_automatica', 'PUT', '/api/cochinito/bancas/:id/comision-automatica', 'tesoreria', 'normal', '💱', 'Se cambió la comisión automática de una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
+  ev('banca.archivada','POST', '/api/cochinito/bancas/:id/archivar', 'tesoreria', 'critica', '📦', 'Se ARCHIVÓ una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
   ev('banca.desarchivada', 'POST', '/api/cochinito/bancas/:id/desarchivar', 'tesoreria', 'normal', '📤', 'Se desarchivó una banca', { entidad: { rotulo: 'Banca', tabla: 'bancas' } }),
-  ev('categoria_wallet.creada', 'POST', '/api/cochinito/categorias', 'tesoreria', 'normal', '🏷️', 'Se creó una categoría del Wallet', { entidad: { rotulo: 'Categoría', resp: 'categoria' } }),
-  ev('categoria_wallet.editada', 'PATCH', '/api/cochinito/categorias/:id', 'tesoreria', 'normal', '✏️', 'Se editó o archivó una categoría del Wallet', { entidad: { rotulo: 'Categoría', resp: 'categoria' } }),
+  // El aviso dice si es una CATEGORÍA o una SUBCATEGORÍA (la respuesta trae padreId solo en las subcategorías).
+  ev('categoria_wallet.creada', 'POST', '/api/cochinito/categorias', 'tesoreria', 'normal', '🏷️', 'Se creó una categoría del Wallet', {
+    entidad: { rotulo: 'Categoría', resp: 'categoria' },
+    variante: ctx => ({ accion: `Se creó una ${claseCategoriaWallet(ctx)} del Wallet` }),
+    etiqueta: ctx => {
+      const nombre = txt(rec(ctx.resBody.categoria).nombre);
+      return nombre ? `${esSubcategoriaWallet(ctx) ? 'Subcategoría' : 'Categoría'} ${nombre}` : null;
+    },
+    detalles: ctx => linea('Clase', claseCategoriaWallet(ctx)),
+  }),
+  ev('categoria_wallet.editada', 'PATCH', '/api/cochinito/categorias/:id', 'tesoreria', 'normal', '✏️', 'Se editó o archivó una categoría del Wallet', {
+    entidad: { rotulo: 'Categoría', resp: 'categoria' },
+    variante: ctx => {
+      const verbo = ctx.reqBody.activo === false ? 'archivó' : ctx.reqBody.activo === true ? 'restauró' : 'editó';
+      return { accion: `Se ${verbo} una ${claseCategoriaWallet(ctx)} del Wallet` };
+    },
+    etiqueta: ctx => {
+      const nombre = txt(rec(ctx.resBody.categoria).nombre);
+      return nombre ? `${esSubcategoriaWallet(ctx) ? 'Subcategoría' : 'Categoría'} ${nombre}` : null;
+    },
+    detalles: ctx => linea('Clase', claseCategoriaWallet(ctx)),
+  }),
   ev('banca.movimiento_categoria', 'PATCH', '/api/cochinito/movimientos/:id/categoria', 'tesoreria', 'ruidosa', '🏷️', 'Se cambió la categoría de un movimiento de banca'),
   ev('banca.movimiento', 'POST', '/api/cochinito/movimientos', 'tesoreria', 'critica', '🔁', 'Se registró un movimiento de banca', {
     contexto: ctx => contextoDeEntidadTipo(ctx.reqBody.proveedorId ? 'proveedor' : 'cliente', ctx.reqBody.proveedorId ?? ctx.reqBody.clienteId),
@@ -500,10 +605,14 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('nomina.prestamo_anulado', 'POST', '/api/nomina/prestamos/:id/anular', 'tesoreria', 'critica', '🗑️', 'Se anuló un préstamo de nómina'),
   ev('nomina.guardada', 'POST', '/api/nomina/nominas', 'tesoreria', 'ignorable', '🧾', 'Se guardó una nómina'),
   ev('nomina.cerrada', 'POST', '/api/nomina/nominas/:id/cerrar', 'tesoreria', 'ignorable', '🔒', 'Se cerró una nómina'),
-  ev('nomina.pagada', 'POST', '/api/nomina/nominas/:id/pagar', 'tesoreria', 'critica', '💸', 'Se pagó una nómina desde el Wallet', { detalles: ctx => detallesExtraDinero(ctx.reqBody) }),
-  ev('nomina.trabajador_pagado', 'POST', '/api/nomina/nominas/:id/trabajadores/:trabajadorId/pagar', 'tesoreria', 'critica', '💸', 'Se pagó a un trabajador de una nómina desde el Wallet', { detalles: ctx => detallesExtraDinero(ctx.reqBody) }),
+  ev('nomina.pagada', 'POST', '/api/nomina/nominas/:id/pagar', 'tesoreria', 'critica', '💸', 'Se pagó una nómina desde el Wallet', {
+    etiqueta: etiquetaNomina, detalles: detallesPagoNomina, omitirLineasCuenta: true,
+  }),
+  ev('nomina.trabajador_pagado', 'POST', '/api/nomina/nominas/:id/trabajadores/:trabajadorId/pagar', 'tesoreria', 'critica', '💸', 'Se pagó a un trabajador de una nómina desde el Wallet', {
+    etiqueta: etiquetaNomina, detalles: detallesPagoNomina, omitirLineasCuenta: true,
+  }),
   ev('nomina.prestamo_pagado', 'POST', '/api/nomina/prestamos/:id/pagar', 'tesoreria', 'critica', '💸', 'Se registró el pago de un préstamo de nómina desde el Wallet', { detalles: ctx => detallesExtraDinero(ctx.reqBody) }),
-  ev('nomina.anulada', 'POST', '/api/nomina/nominas/:id/anular', 'tesoreria', 'critica', '🗑️', 'Se anuló una nómina'),
+  ev('nomina.anulada', 'POST', '/api/nomina/nominas/:id/anular', 'tesoreria', 'critica', '🗑️', 'Se anuló una nómina', { etiqueta: etiquetaNomina, detalles: detallesAnulacionNomina }),
 
   // --- Inventario: maestros y precios --------------------------------------
   ...maestro('/api/productos', 'producto', 'inventario', 'Producto', 'productos', 'el', 'producto', true, 'producto'),

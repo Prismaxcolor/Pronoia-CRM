@@ -322,6 +322,7 @@ function TablaDetalleInventario({ filtros, recarga = 0 }: TablaDetalleInventario
   return (
     <div id="detalle-inventario">
       <Bloque
+        id="detalle-inventario"
         titulo={rotulo ? `Detalle del inventario · ${rotulo}` : 'Detalle del inventario'}
         queEstasViendo={rotulo
           ? `cada producto y lote con los kg que tenía al cierre de esa fecha (${rotulo.toLowerCase()}), agrupado por vista y categoría. Es de solo lectura: los días en inventario, el último despacho y lo que estaba en transformación se calculan con los movimientos hasta esa fecha.`

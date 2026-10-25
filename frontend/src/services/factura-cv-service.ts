@@ -127,6 +127,28 @@ export async function obtenerFacturasOError(
   return facturas;
 }
 
+/** Totales (USD) de las notas de crédito/débito vigentes de los clientes en el periodo. */
+export interface ResumenNotasVenta {
+  notasDebito: number;
+  notasCredito: number;
+  cantidadDebito: number;
+  cantidadCredito: number;
+}
+
+/** Notas de los clientes del periodo (para el indicador de Ventas); null si no se pudieron cargar. */
+export async function obtenerResumenNotasVenta(desde?: string, hasta?: string): Promise<ResumenNotasVenta | null> {
+  const params = new URLSearchParams();
+  if (desde) params.set('desde', desde);
+  if (hasta) params.set('hasta', hasta);
+  const qs = params.toString();
+  try {
+    const { resumen } = await leerGet<{ resumen: ResumenNotasVenta }>(`/api/facturas-venta/notas-resumen${qs ? `?${qs}` : ''}`);
+    return resumen;
+  } catch {
+    return null;
+  }
+}
+
 export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<FacturaCV | null> {
   try {
     const { factura } = await leerGet<{ factura: FacturaCV }>(`${base(tipo)}/${id}`);

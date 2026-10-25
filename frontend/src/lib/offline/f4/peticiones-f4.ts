@@ -273,6 +273,7 @@ export function peticionTransformacionCompletar(
   transformacionId: string,
   salidas: SalidaConFotos[],
   mermaDetalle?: unknown,
+  observacion?: string,
 ): PeticionF4 {
   const neto = salidas.reduce((s, x) => s + x.pesoBruto - x.tara, 0);
   return {
@@ -284,6 +285,7 @@ export function peticionTransformacionCompletar(
     cuerpo: fotos => ({
       salidas: salidas.map((s, i) => ({ ...s.datos, pesoBruto: s.pesoBruto, tara: s.tara, fotos: fotos[i] ?? [] })),
       ...(mermaDetalle ? { mermaDetalle } : {}),
+      ...(observacion ? { observacion } : {}),
     }),
   };
 }

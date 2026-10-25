@@ -66,7 +66,7 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
       </div>
       <form onSubmit={handleSubmit} className="p-5 space-y-4">
         <p className="text-xs text-text-secondary">
-          Es solo una anotación de deuda en USD: no mueve el saldo de Wallet ni de ninguna banca.
+          Es solo una anotación en USD de lo que el cambista nos debe: no mueve el saldo de Wallet ni de ninguna banca.
         </p>
         <div>
           <label htmlFor="asiento-tipo" className={labelClass}>Tipo de asiento *</label>

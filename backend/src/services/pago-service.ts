@@ -5,11 +5,24 @@ import { logger } from '../utils/logger.js';
 import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
 import { categoriaFijaDePago } from './pago-categoria-service.js';
 import {
-  validarEleccionComisionPago, type ComisionPagoCreada, type LineaComisionPago,
+  conComisionAutomatica, lineaCargaComision, validarEleccionComisionPago, type ComisionPagoCreada,
 } from './pago-comision-service.js';
+import { ComisionAutomaticaNoDisponibleError } from './comision-automatica-service.js';
 import { registrarConPasos, type IdsRegistro } from './pago-registro-comun.js';
 import { advertenciaDePasos } from './pagos-pasos-service.js';
 import { validarMontosDeLineas } from './montos-pago-service.js';
+
+type Lineas = Awaited<ReturnType<typeof conComisionAutomatica>>;
+
+/** Marca la comisión automática de las cuentas; si no se puede verificar falla cerrado (el pago no se registra). */
+async function lineasConComision(entrada: Parameters<typeof conComisionAutomatica>[0]): Promise<Lineas | { error: string }> {
+  try {
+    return await conComisionAutomatica(entrada);
+  } catch (e) {
+    if (e instanceof ComisionAutomaticaNoDisponibleError) return { error: e.message };
+    throw e;
+  }
+}
 
 /** Un movimiento suelto pertenece a un grupo de operación (o es su propio grupo si es legacy). */
 async function grupoDeMovimiento(movimientoId: string): Promise<string> {
@@ -34,7 +47,8 @@ export async function registrarPago(
   input: RegistrarPagoInput,
   registradoPor: string
 ): Promise<{ movimientoId: string; comision?: ComisionPagoCreada; advertencia?: string } | { error: string }> {
-  const lineas: LineaComisionPago[] = [{ bancaId: input.bancaId, moneda: input.moneda, llevaComision: input.llevaComision }];
+  const lineas = await lineasConComision([{ bancaId: input.bancaId, moneda: input.moneda, llevaComision: input.llevaComision }]);
+  if ('error' in lineas) return lineas;
   const rechazo = (await validarEleccionComisionPago(lineas))
     ?? (await validarMontosDeLineas([{ monto: input.monto, montoUsd: input.montoUsd, moneda: input.moneda, tasa: input.tasa }]));
   if (rechazo) return { error: rechazo };
@@ -55,7 +69,7 @@ export async function registrarPago(
       p_registrado_por: registradoPor,
       p_factura_id: input.facturaId ?? null,
     },
-    extraEnvoltorio: { p_con_comision: input.moneda === 'VES' && input.llevaComision === true },
+    extraEnvoltorio: { p_con_comision: lineaCargaComision(lineas[0]) },
     clientRequestId: input.clientRequestId,
     categoriaId, comprobantes: input.comprobantes, lineas, usuarioId: registradoPor,
     mensajeError: 'No se pudo registrar el pago.',
@@ -114,7 +128,8 @@ export async function registrarPagoMultiple(
   input: RegistrarPagoMultipleInput,
   registradoPor: string
 ): Promise<ResultadoPagoMulti | { error: string }> {
-  const lineas: LineaComisionPago[] = input.bancas.map(b => ({ bancaId: b.bancaId, moneda: b.moneda, llevaComision: b.llevaComision }));
+  const lineas = await lineasConComision(input.bancas.map(b => ({ bancaId: b.bancaId, moneda: b.moneda, llevaComision: b.llevaComision })));
+  if ('error' in lineas) return lineas;
   const rechazo = (await validarEleccionComisionPago(lineas))
     ?? (await validarMontosDeLineas(input.bancas.map(b => ({ monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, tasa: b.tasa }))));
   if (rechazo) return { error: rechazo };
@@ -134,7 +149,7 @@ export async function registrarPagoMultiple(
       p_registrado_por: registradoPor,
       p_items: input.items.map(i => ({ tipo: i.tipo, id: i.id, montoUsd: i.montoUsd })),
     },
-    extraEnvoltorio: { p_bancas_con_comision: lineas.filter(l => l.moneda === 'VES' && l.llevaComision === true).map(l => l.bancaId) },
+    extraEnvoltorio: { p_bancas_con_comision: lineas.filter(lineaCargaComision).map(l => l.bancaId) },
     clientRequestId: input.clientRequestId,
     categoriaId, comprobantes: input.comprobantes, lineas, usuarioId: registradoPor,
     mensajeError: 'No se pudo registrar el pago.',

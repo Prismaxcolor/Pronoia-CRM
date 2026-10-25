@@ -31,6 +31,8 @@ vi.mock('../src/services/pago-categoria-service.js', () => ({
   aplicarCategoriaAMovimientos: async (ids: string[], categoriaId: string | null) => { bd.categorias.push({ ids, categoriaId }); return {}; },
 }));
 vi.mock('../src/services/pago-comision-service.js', () => ({
+  conComisionAutomatica: async (lineas: Array<Record<string, unknown>>) => lineas.map(l => ({ ...l })),
+  lineaCargaComision: (l: { llevaComision?: boolean; moneda: string; automatica?: boolean }) => l.llevaComision === true && (l.moneda === 'VES' || l.automatica === true),
   validarEleccionComisionPago: async (lineas: unknown) => { bd.validadas.push(lineas); return bd.rechazo; },
   aplicarComisionesDePago: async (e: unknown) => {
     bd.aplicadas.push(e);

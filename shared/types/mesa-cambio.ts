@@ -3,9 +3,12 @@
  *
  * Los asientos manuales son anotaciones de deuda: NO mueven saldos de Wallet ni de bancas. Los asientos
  * ligados a una transferencia con mesa de cambio (movimientoId) los crean y anulan las RPC de esa transferencia.
- * Convención: CARGO y N/D (nota de débito) aumentan lo que les debemos; COBRO y N/C (nota de crédito) lo reducen
- * (o lo vuelven a nuestro favor).
- * saldo = suma de (cargos + N/D) - suma de (cobros + N/C), sin anulados. Positivo = "Les debemos"; negativo = "Nos deben".
+ * Convención (confirmada con el cliente): con el cambista la deuda es SUYA hacia nosotros. CARGO y N/D (nota de débito) aumentan
+ * lo que el cambista nos debe ("pendiente por cobrar"); COBRO y N/C (nota de crédito) lo reducen (o, si se pasan, pasan a ser
+ * una deuda NUESTRA con el cambista: "se le debe").
+ * saldo = suma de (cargos + N/D) - suma de (cobros + N/C), sin anulados. Positivo = "Pendiente por cobrar" (nos debe el
+ * cambista); negativo = "Se le debe" (le debemos al cambista). Una transferencia con cambista crea su CARGO al registrarse y queda
+ * pendiente por cobrar hasta que se cobra completa.
  *
  * El cálculo del estado de cuenta vive en el servidor (backend/src/utils/mesa-cambio.ts); aquí solo van los
  * tipos del contrato y la descripción legible del saldo, que usa la pantalla.
@@ -15,10 +18,10 @@ export const TIPOS_ASIENTO = ['CARGO', 'COBRO', 'NC', 'ND'] as const;
 export type TipoAsiento = (typeof TIPOS_ASIENTO)[number];
 
 export const ETIQUETA_TIPO_ASIENTO: Record<TipoAsiento, string> = {
-  CARGO: 'Cargo (aumenta lo que les debemos)',
-  COBRO: 'Cobro / abono (reduce lo que les debemos)',
-  NC: 'Nota de crédito (reduce lo que les debemos)',
-  ND: 'Nota de débito (aumenta lo que les debemos)',
+  CARGO: 'Cargo (aumenta lo que nos debe el cambista)',
+  COBRO: 'Cobro / abono (reduce lo que nos debe el cambista)',
+  NC: 'Nota de crédito (reduce lo que nos debe el cambista)',
+  ND: 'Nota de débito (aumenta lo que nos debe el cambista)',
 };
 
 /** Etiqueta corta del tipo, para la columna "Detalle" del estado de cuenta. */
@@ -37,7 +40,7 @@ export interface Cambista {
 }
 
 export interface CambistaConSaldo extends Cambista {
-  /** Cargos - cobros vigentes, en USD. Positivo = les debemos; negativo = nos deben. */
+  /** Cargos - cobros vigentes, en USD. Positivo = pendiente por cobrar (nos debe el cambista); negativo = se le debe al cambista. */
   saldo: number;
   asientos: number;
 }
@@ -91,13 +94,13 @@ export function formatearNumeroDocumento(a: { tipo: TipoAsiento; numero: number;
 /** Por debajo de medio centavo el saldo se considera en cero. */
 const SALDO_NULO_USD = 0.005;
 
-export type SentidoSaldo = 'les_debemos' | 'nos_deben' | 'en_cero';
+export type SentidoSaldo = 'por_cobrar' | 'se_le_debe' | 'en_cero';
 
 export interface DescripcionSaldo {
   sentido: SentidoSaldo;
   /** Importe absoluto en USD. */
   monto: number;
-  /** "Les debemos" / "Nos deben" / "Al día" (sin importe). */
+  /** "Pendiente por cobrar" / "Se le debe" / "Al día" (sin importe). */
   etiqueta: string;
   /** Frase completa con el importe, ya formateado es-VE. */
   texto: string;
@@ -111,6 +114,6 @@ export function describirSaldo(saldo: number): DescripcionSaldo {
     return { sentido: 'en_cero', monto: 0, etiqueta: 'Al día', texto: 'Al día (saldo en cero)' };
   }
   const monto = Math.round(Math.abs(saldo) * 100) / 100;
-  if (saldo > 0) return { sentido: 'les_debemos', monto, etiqueta: 'Les debemos', texto: `Les debemos ${formatearUsd(monto)}` };
-  return { sentido: 'nos_deben', monto, etiqueta: 'Nos deben', texto: `Nos deben ${formatearUsd(monto)}` };
+  if (saldo > 0) return { sentido: 'por_cobrar', monto, etiqueta: 'Pendiente por cobrar', texto: `Pendiente por cobrar ${formatearUsd(monto)} (nos debe el cambista)` };
+  return { sentido: 'se_le_debe', monto, etiqueta: 'Se le debe', texto: `Se le debe ${formatearUsd(monto)} al cambista` };
 }

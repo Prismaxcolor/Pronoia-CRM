@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Ban, CheckCircle2, FileDown, Pencil } from 'lucide-react';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { Ban, CheckCircle2, ChevronLeft, ChevronRight, FileDown, Pencil } from 'lucide-react';
 import { BotonAccion, EncabezadoPagina, EstadoVacio, Insignia, SkeletonBloque, formatearNumero } from '../../components/ui';
 import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
@@ -12,7 +12,7 @@ import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import CobrarTransferenciaModal from './CobrarTransferenciaModal';
 import { montoCobradoMesa, montoPendienteMesa } from './cobro-mesa';
-import { obtenerBancas, obtenerDetalleMovimiento, type DetalleMovimiento } from '../../services/banca-service';
+import { obtenerBancas, obtenerDetalleMovimiento, obtenerMovimientos, type DetalleMovimiento } from '../../services/banca-service';
 import { anularMovimiento } from '../../services/transaccion-edicion-service';
 import { formatearFecha } from '../../lib/formato';
 import { formatearFechaHora } from '../../lib/fecha-negocio';
@@ -22,7 +22,7 @@ import EditarMovimientoModal from './EditarMovimientoModal';
 import { descargarMovimientoPDF } from './movimiento-pdf';
 import {
   ETIQUETA_SUBTIPO_MOVIMIENTO, ETIQUETA_TIPO_MOVIMIENTO, esCargoDeComision, esManualVigente, tieneComision, esTransferenciaEnProceso, etiquetaEstadoMesa, etiquetaOperacion,
-  montoQueRecibeElDestino, numeroMovimiento, textoComisionMesa,
+  idsDeNavegacion, montoQueRecibeElDestino, montosTransferencia, numeroMovimiento, ordenCronologico, rutaDetalleMovimiento, vecinosEnLista, textoComisionMesa,
   recursoComprobanteOperacion, rutaComprobanteOperacion, tasaDe, tituloCompartirMovimiento,
 } from './detalle-movimiento';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
@@ -77,14 +77,14 @@ function FilasMesa({ detalle, simboloDestino }: { detalle: DetalleMovimiento; si
       <FilaDocumento label="Comisión del cambio" valor={textoComisionMesa(m, simboloDestino)} />
       {recibe != null && <FilaDocumento label={enProceso ? 'Recibirá la banca destino al completar' : 'Recibe la banca destino'} valor={`${simboloDestino} ${formatearNumero(recibe, 2)}`} />}
       {m.mesaEstado === 'parcial' && montoCobradoMesa(m) != null && <FilaDocumento label="Ya cobrado" valor={`${simboloDestino} ${formatearNumero(montoCobradoMesa(m) ?? 0, 2)}`} />}
-      {m.mesaEstado === 'parcial' && montoPendienteMesa(m) != null && <FilaDocumento label="Pendiente por cobrar" valor={`${simboloDestino} ${formatearNumero(montoPendienteMesa(m) ?? 0, 2)}`} />}
+      {enProceso && montoPendienteMesa(m) != null && <FilaDocumento label="Pendiente por cobrar (el cambista nos debe)" valor={`${simboloDestino} ${formatearNumero(montoPendienteMesa(m) ?? 0, 2)}`} />}
       {m.mesaCompletadaEn && <FilaDocumento label="Completada" valor={formatearFechaHora(m.mesaCompletadaEn)} />}
       {m.mesaObservacion && <FilaDocumento label="Observación" valor={m.mesaObservacion} />}
     </>
   );
 }
 
-function Filas({ detalle, simboloDestino, categoria }: { detalle: DetalleMovimiento; simboloDestino: string; categoria: string | null }) {
+function Filas({ detalle, simboloDestino, categoria, equivalenteAparte }: { detalle: DetalleMovimiento; simboloDestino: string; categoria: string | null; equivalenteAparte: boolean }) {
   const m = detalle.movimiento;
   const tasa = tasaDe(m);
   const usd = montoUsdDe(m);
@@ -102,13 +102,34 @@ function Filas({ detalle, simboloDestino, categoria }: { detalle: DetalleMovimie
       {m.descripcion && <FilaDocumento label="Descripción" valor={m.descripcion} />}
       {m.referencia && <FilaDocumento label="Referencia" valor={m.referencia} />}
       {tasa != null && <FilaDocumento label="Tasa" valor={`${formatearNumero(tasa, 2)} Bs por USD`} />}
-      {usd != null && m.moneda !== 'USD' && <FilaDocumento label="Equivalente en USD" valor={`USD ${formatearNumero(usd, 2)}`} />}
+      {usd != null && m.moneda !== 'USD' && !equivalenteAparte && <FilaDocumento label="Equivalente en USD" valor={`USD ${formatearNumero(usd, 2)}`} />}
       {tieneComision(m) && <FilaDocumento label="Comisión bancaria" valor={`Bs ${formatearNumero(m.comisionBancaria as number, 2)} (cargada a la misma cuenta como un egreso aparte)`} />}
       {esCargoDeComision(m) && <FilaDocumento label="Comisión bancaria de" valor="Otro movimiento de Wallet: se anula junto con él" />}
       {m.mesaCambistaId != null
         ? <FilasMesa detalle={detalle} simboloDestino={simboloDestino} />
         : m.montoDestino != null && <FilaDocumento label="Recibe la banca destino" valor={formatearNumero(m.montoDestino, 2)} />}
     </>
+  );
+}
+
+const ENLACE_VECINO = 'inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text-primary hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
+const ENLACE_VECINO_INACTIVO = 'inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text-muted opacity-50';
+
+/** Ir al movimiento anterior o siguiente (en el tiempo) de la lista que se estaba viendo, sin volver atrás. */
+function NavegacionMovimientos({ ids, id }: { ids: string[]; id: string }) {
+  const { anteriorId, siguienteId, posicion, total } = vecinosEnLista(ids, id);
+  if (posicion === null) return null;
+  const estado = { navegacion: ids };
+  return (
+    <nav aria-label="Navegar entre movimientos" className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
+      {anteriorId
+        ? <Link to={rutaDetalleMovimiento(anteriorId)} replace state={estado} className={ENLACE_VECINO} title="Ir al movimiento anterior (el inmediatamente más antiguo de la lista)"><ChevronLeft size={16} aria-hidden="true" /> Anterior</Link>
+        : <span className={ENLACE_VECINO_INACTIVO} aria-disabled="true"><ChevronLeft size={16} aria-hidden="true" /> Anterior</span>}
+      <span className="text-xs text-text-secondary">Movimiento {posicion} de {total}</span>
+      {siguienteId
+        ? <Link to={rutaDetalleMovimiento(siguienteId)} replace state={estado} className={ENLACE_VECINO} title="Ir al movimiento siguiente (el inmediatamente más reciente de la lista)">Siguiente <ChevronRight size={16} aria-hidden="true" /></Link>
+        : <span className={ENLACE_VECINO_INACTIVO} aria-disabled="true">Siguiente <ChevronRight size={16} aria-hidden="true" /></span>}
+    </nav>
   );
 }
 
@@ -122,6 +143,17 @@ function MovimientoDetallePage() {
   const [modal, setModal] = useState<'editar' | 'anular' | 'cobrar' | null>(null);
   const [fotoAbierta, setFotoAbierta] = useState<number | null>(null);
   const categorias = useCategorias();
+  // Lista de la que viene la persona (la tabla ya filtrada); sin ella (enlace directo) se usan todos los movimientos.
+  const idsEstado = idsDeNavegacion(useLocation().state);
+  const [idsCargados, setIdsCargados] = useState<string[]>([]);
+  useEffect(() => {
+    if (idsEstado) return;
+    let vigente = true;
+    obtenerMovimientos().then(ms => { if (vigente) setIdsCargados(ordenCronologico(ms).map(x => x.id)); })
+      .catch(() => { /* sin la lista no hay anterior/siguiente; la pantalla sigue funcionando */ });
+    return () => { vigente = false; };
+  }, [idsEstado]);
+  const idsNavegacion = idsEstado ?? idsCargados;
 
   useEffect(() => {
     let vigente = true;
@@ -162,13 +194,15 @@ function MovimientoDetallePage() {
   const puedeCompletar = enProceso && tienePermiso('cochinito', 'editar') && tienePermiso('mesa_cambio', 'ver');
   const monedaDestino = bancas.find(b => b.id === m.bancaDestinoId)?.moneda ?? m.moneda;
   const simboloDestino = simbolo(monedaDestino);
+  // Transferencia con una punta en Bs: primero el monto en bolívares y después su equivalente en USD.
+  const montosBs = montosTransferencia(m, monedaDestino);
 
   const acciones: ReactNode = (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
       {puedeCompletar && <BotonAccion soloEnLinea icono={<CheckCircle2 size={16} />} onClick={() => setModal('cobrar')}>{(montoCobradoMesa(m) ?? 0) > 0 ? 'Cobrar el resto' : 'Completar'}</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Pencil size={16} />} onClick={() => setModal('editar')}>Editar</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Ban size={16} />} onClick={() => setModal('anular')}>Anular</BotonAccion>}
-      <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarMovimientoPDF(detalle, 'descargar', nombreCategoria)}>PDF</BotonAccion>
+      <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarMovimientoPDF(detalle, 'descargar', nombreCategoria, monedaDestino)}>PDF</BotonAccion>
       <CompartirBoton titulo={tituloCompartirMovimiento(m, terceroOBanca)} />
     </div>
   );
@@ -181,6 +215,8 @@ function MovimientoDetallePage() {
         subtitulo={formatearFecha(m.fecha)}
         acciones={acciones}
       />
+
+      <NavegacionMovimientos ids={idsNavegacion} id={id} />
 
       <div data-compartir-imagen className="mb-6 rounded-xl border border-border bg-surface p-4 sm:p-6 print:rounded-none print:border-0 print:bg-transparent print:p-0">
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -203,11 +239,19 @@ function MovimientoDetallePage() {
           </div>
         )}
 
-        <div className="mb-2"><Filas detalle={detalle} simboloDestino={simboloDestino} categoria={nombreCategoria} /></div>
+        <div className="mb-2"><Filas detalle={detalle} simboloDestino={simboloDestino} categoria={nombreCategoria} equivalenteAparte={montosBs !== null} /></div>
 
-        <div className={`mt-4 flex items-baseline justify-between gap-3 border-t-2 border-brand-700 pt-3 print:border-black ${m.anulado ? 'text-text-muted line-through' : ''}`}>
-          <span className="text-lg font-semibold text-text-primary">Monto</span>
-          <span className="text-2xl font-bold text-brand-700 tabular-nums">{fmtMonto(m.monto, m.moneda)}</span>
+        <div className={`mt-4 border-t-2 border-brand-700 pt-3 print:border-black ${m.anulado ? 'text-text-muted line-through' : ''}`}>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-lg font-semibold text-text-primary">Monto</span>
+            <span className="text-2xl font-bold text-brand-700 tabular-nums">{montosBs ? fmtMonto(montosBs.bs, 'VES') : fmtMonto(m.monto, m.moneda)}</span>
+          </div>
+          {montosBs && (
+            <div className="mt-1 flex items-baseline justify-between gap-3 text-sm text-text-secondary">
+              <span>Equivalente en USD{tasaDe(m) != null ? ` (${formatearNumero(tasaDe(m) as number, 2)} Bs por USD)` : ''}</span>
+              <span className="font-semibold tabular-nums">{montosBs.usd != null ? `USD ${formatearNumero(montosBs.usd, 2)}` : 'Sin tasa de ese momento'}</span>
+            </div>
+          )}
         </div>
 
         {m.comprobantes.length > 0 && <Galeria fotos={m.comprobantes} onAbrir={setFotoAbierta} />}

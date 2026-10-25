@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Building2, Coins, Globe, Pencil, Wallet } from 'lucide-react';
+import { Archive, ArchiveRestore, Building2, ChevronLeft, ChevronRight, Coins, Globe, Pencil, Wallet } from 'lucide-react';
 import { Insignia, formatearNumero } from '../../components/ui';
 import { colorDeBanca, nombreDeColor } from '../../lib/color-banca';
 import { textoEquivalenteTotal } from './equivalente-usd';
@@ -34,15 +34,17 @@ interface Props {
   onEditar?: () => void;
   onArchivar?: () => void;
   onDesarchivar?: () => void;
+  /** Reordenar (solo con el modo "Ordenar" activo): mover la banca antes o después. Si falta uno de los dos, ese botón queda inactivo. */
+  orden?: { onAntes?: () => void; onDespues?: () => void };
 }
 
 /** Tarjeta de una banca: saldo con su unidad, tipo, filtro por clic y acciones de editar/archivar/restaurar. */
-function TarjetaBanca({ banca, indice = 0, seleccionada, tasaBinance, onAlternarFiltro, onEditar, onArchivar, onDesarchivar }: Props) {
+function TarjetaBanca({ banca, indice = 0, seleccionada, tasaBinance, onAlternarFiltro, onEditar, onArchivar, onDesarchivar, orden }: Props) {
   const negativo = banca.saldo < 0;
   const simbolo = banca.moneda === 'USD' ? 'USD' : banca.moneda === 'VES' ? 'Bs' : banca.moneda;
   const color = colorDeBanca(banca, indice);
   const nombreColor = nombreDeColor(banca.color);
-  const hayAcciones = Boolean(onEditar || onArchivar || onDesarchivar);
+  const hayAcciones = Boolean(onEditar || onArchivar || onDesarchivar || orden);
   return (
     <article style={{ borderTopColor: color }} className={`rounded-xl border border-t-4 bg-surface p-4 ${banca.archivada ? 'opacity-70' : ''} ${seleccionada ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'}`}>
       <button
@@ -79,6 +81,16 @@ function TarjetaBanca({ banca, indice = 0, seleccionada, tasaBinance, onAlternar
       </button>
       {hayAcciones && (
         <div className="mt-3 flex gap-2 border-t border-border pt-3">
+          {orden && (
+            <>
+              <button type="button" onClick={orden.onAntes} disabled={!orden.onAntes} className={`${BOTON_ACCION} disabled:cursor-not-allowed disabled:opacity-40`} title="Mover antes" aria-label={`Mover la banca ${banca.nombre} antes`}>
+                <ChevronLeft size={14} aria-hidden="true" />
+              </button>
+              <button type="button" onClick={orden.onDespues} disabled={!orden.onDespues} className={`${BOTON_ACCION} disabled:cursor-not-allowed disabled:opacity-40`} title="Mover después" aria-label={`Mover la banca ${banca.nombre} después`}>
+                <ChevronRight size={14} aria-hidden="true" />
+              </button>
+            </>
+          )}
           {onEditar && !banca.archivada && (
             <button type="button" onClick={onEditar} className={BOTON_ACCION} title="Editar banca" aria-label={`Editar la banca ${banca.nombre}`}>
               <Pencil size={14} aria-hidden="true" />

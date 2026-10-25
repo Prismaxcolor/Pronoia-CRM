@@ -78,4 +78,9 @@ export interface Movimiento {
   comisionBancaria?: number | null;
   /** En el cargo de la comisión: id del movimiento principal al que pertenece. */
   comisionDeId?: string | null;
+  /**
+   * Movimientos en Bs sin `montoUsd` guardado: USD a la tasa Binance vigente cuando se registró (calculado al leer,
+   * no se guarda). Ausente/null si no hay tasa de ese momento. `montoUsd`, cuando existe, manda sobre este valor.
+   */
+  equivalenteUsd?: number | null;
 }

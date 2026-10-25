@@ -44,6 +44,8 @@ interface ListaRow {
   created_at: string;
   updated_at: string;
   version: number;
+  /** Ausente si la migración de borradores aún no está aplicada. */
+  es_borrador?: boolean | null;
 }
 
 /** Opciones de lectura/escritura que dependen de quién pide: la proyección es un dato de valor. */
@@ -91,6 +93,8 @@ export const MENSAJE_LOTE_FOTOS_NO_HABILITADO =
   'Guardar el almacén o las fotos de las paletas aún no está habilitado en la base de datos (falta aplicar migration_packing_list_lote_fotos.sql).';
 export const MENSAJE_TOTAL_REAL_NO_HABILITADO =
   'Guardar el total real cobrado aún no está habilitado en la base de datos (falta aplicar migration_packing_list_total_real.sql).';
+export const MENSAJE_BORRADOR_NO_HABILITADO =
+  'Guardar un borrador aún no está habilitado en la base de datos (falta aplicar migration_packing_list_borrador.sql).';
 export const MENSAJE_PACKING_CONFLICTO = 'Otra persona modificó este packing list; recarga.';
 /** SQLSTATE que lanza guardar_packing_list cuando la versión esperada ya no es la vigente. */
 export const CODIGO_CONFLICTO_VERSION = 'PL409';
@@ -159,12 +163,15 @@ export function clasificarError(error: { code?: string; message?: string }): { e
 }
 
 export async function listarPackingLists(): Promise<PackingListResumen[]> {
-  const { data, error } = await supabaseAdmin
+  const leer = (columnas: string) => supabaseAdmin
     .from('packing_lists')
-    .select(`${COLUMNAS_LISTA}, packing_list_items(peso_bruto, peso_paleta)`)
+    .select(`${columnas}, packing_list_items(peso_bruto, peso_paleta)`)
     .order('fecha', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(LIMITE_LISTADO);
+  // es_borrador viaja en la misma consulta; si falta la columna (migración pendiente) se reintenta sin ella.
+  let { data, error } = await leer(`${COLUMNAS_LISTA}, es_borrador`);
+  if (error && esObjetoInexistente(error)) ({ data, error } = await leer(COLUMNAS_LISTA));
   if (error) {
     if (esObjetoInexistente(error)) return [];
     logger.error({ evento: 'packing_lists_no_leidos', motivo: error.message });
@@ -174,7 +181,7 @@ export async function listarPackingLists(): Promise<PackingListResumen[]> {
   const nombres = await nombresDeUsuarios(filas.map(f => f.creado_por));
   return filas.map(f => {
     const pesos = f.packing_list_items.map(i => ({ pesoBruto: Number(i.peso_bruto), pesoPaleta: Number(i.peso_paleta) }));
-    return { ...listaToPublico(f, nombres), totalBultos: pesos.length, totalNeto: totalNeto(pesos) };
+    return { ...listaToPublico(f, nombres), esBorrador: f.es_borrador === true, totalBultos: pesos.length, totalNeto: totalNeto(pesos) };
   });
 }
 
@@ -192,13 +199,15 @@ export const proyeccionToPublica = (filas: readonly LineaProyeccionRow[] | null 
  * no existe, se reintenta sin la más nueva hasta dar con un conjunto que la BD acepte.
  */
 async function leerCabecera(id: string, conValores: boolean) {
-  const candidatos = [
+  const base = [
     ...(conValores
       ? [`${COLUMNAS_LISTA}, cliente_id, proyeccion, total_real_usd`, `${COLUMNAS_LISTA}, cliente_id, proyeccion`, `${COLUMNAS_LISTA}, proyeccion`]
       : []),
     `${COLUMNAS_LISTA}, cliente_id`,
     COLUMNAS_LISTA,
   ];
+  // es_borrador se pide en la misma consulta; sin esa columna (migración pendiente) se prueban las mismas sin ella.
+  const candidatos = [...base.map(c => `${c}, es_borrador`), ...base];
   let ultimo = await supabaseAdmin.from('packing_lists').select(candidatos[0]).eq('id', id).maybeSingle();
   for (const columnas of candidatos.slice(1)) {
     if (!ultimo.error || !esObjetoInexistente(ultimo.error)) break;
@@ -268,6 +277,7 @@ export async function obtenerPackingList(id: string, opciones: OpcionesValores =
   const nombres = await nombresDeUsuarios([fila.creado_por]);
   const detalle = {
     ...listaToPublico(fila, nombres),
+    esBorrador: fila.es_borrador === true,
     clienteId: fila.cliente_id ?? null,
     clienteNombre: await nombreDeCliente(fila.cliente_id),
     items: filasItems.map(i => itemToPublico(i, extras)),
@@ -298,6 +308,7 @@ function cabeceraParaRpc(input: GuardarPackingListInput, puedeVerValores: boolea
     ...proyeccion,
     ...cliente,
     ...total,
+    es_borrador: input.esBorrador,
     contenedor: input.contenedor,
     fecha: input.fecha,
     tipo_embalaje: input.tipoEmbalaje,
@@ -363,6 +374,12 @@ async function migracionLoteFotosAplicada(): Promise<boolean> {
   return !sonda.error;
 }
 
+/** True si packing_lists ya tiene es_borrador (migration_packing_list_borrador.sql). */
+async function migracionBorradorAplicada(): Promise<boolean> {
+  const sonda = await supabaseAdmin.from('packing_lists').select('es_borrador').limit(1);
+  return !sonda.error;
+}
+
 /** Crea (id null) o actualiza el packing list con todos sus ítems en una sola transacción SQL. */
 export async function guardarPackingList(
   id: string | null,
@@ -379,6 +396,9 @@ export async function guardarPackingList(
   if (input.clienteId) {
     const cliente = await validarClienteInternacional(input.clienteId);
     if (!cliente.ok) return cliente;
+  }
+  if (input.esBorrador && !(await migracionBorradorAplicada())) {
+    return { ok: false, error: MENSAJE_BORRADOR_NO_HABILITADO, status: 409 };
   }
   if (puedeVerControl && input.items.some(usaControlInterno) && !(await migracionLoteFotosAplicada())) {
     return { ok: false, error: MENSAJE_LOTE_FOTOS_NO_HABILITADO, status: 409 };

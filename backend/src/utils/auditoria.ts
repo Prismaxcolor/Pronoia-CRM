@@ -14,6 +14,8 @@ export const ENTIDADES_AUDITABLES = [
   'pago',
   'cobro',
   'movimiento_banca',
+  // Cambios de configuración de una cuenta (regla de comisión automática).
+  'banca',
   'nota_ajuste_proveedor',
   'nota_ajuste_cliente',
 ] as const;
@@ -63,6 +65,7 @@ export const RECURSO_POR_ENTIDAD: Record<EntidadAuditable, Recurso> = {
   pago: 'cochinito',
   cobro: 'cochinito',
   movimiento_banca: 'cochinito',
+  banca: 'cochinito',
   nota_ajuste_proveedor: 'proveedores',
   nota_ajuste_cliente: 'clientes',
 };

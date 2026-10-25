@@ -25,6 +25,16 @@ export const AYUDA_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], string> = {
   cruce: 'Facturas saldadas con adelantos o notas de crédito sin mover dinero: el saldo no cambia.',
 };
 
+/** Una nota vigente que ya se aplicó en parte a pagos/cobros (cruce parcial) pero todavía tiene saldo por aplicar. */
+export function notaAplicadaEnParte(e: Pick<EntradaEstadoCuenta, 'tipo' | 'anulada' | 'pagada' | 'notaAplicada'>): boolean {
+  return (e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && !e.pagada && (e.notaAplicada ?? 0) > 0.005;
+}
+
+/** Texto de la nota aplicada en parte: "Aplicada $40,00 · disponible $60,00" (cruce parcial). */
+export function textoNotaAplicadaEnParte(e: Pick<EntradaEstadoCuenta, 'notaAplicada' | 'notaDisponible'>): string {
+  return `Aplicada $${fmt(e.notaAplicada ?? 0)} · por aplicar $${fmt(e.notaDisponible ?? 0)}`;
+}
+
 /** Tono de la insignia de cada tipo (el texto de la etiqueta es lo que lo distingue; el color solo acompaña). */
 export const TONO_POR_TIPO: Record<EntradaEstadoCuenta['tipo'], Tono> = {
   factura: 'aviso',

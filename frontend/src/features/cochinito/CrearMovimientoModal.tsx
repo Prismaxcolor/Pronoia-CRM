@@ -38,6 +38,8 @@ interface Props {
   onCreado: () => void;
   /** Tasas Binance y BCV ya cargadas por la pantalla (para el equivalente en USD de los montos en Bs). */
   tasasUsd: EstadoTasasUsd;
+  /** Cuenta que se deja elegida al abrir (la seleccionada en Wallet). Se ignora si no es una cuenta donde se pueda registrar. */
+  bancaInicialId?: string;
 }
 
 type Tipo = 'ingreso' | 'egreso' | 'transferencia';
@@ -50,13 +52,13 @@ const FUENTES_TASA: { key: FuenteTasaKey; label: string }[] = [
   { key: 'binance', label: 'Binance' },
 ];
 
-function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasasUsd }: Props) {
+function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasasUsd, bancaInicialId }: Props) {
   // Solo se ofrecen cuentas donde se puede registrar; las de solo consulta se ven en la tabla pero no aquí.
   const bancas = bancasEditables(todasLasBancas);
   const { usuario } = useAuth();
-  // Sin valores predeterminados: tipo y cuenta/caja los elige la persona (obligatorios al guardar).
+  // Sin valores predeterminados: tipo y cuenta/caja los elige la persona (obligatorios al guardar); la cuenta solo viene elegida si se abrió con una seleccionada en Wallet.
   const [tipo, setTipo] = useState<Tipo | ''>('');
-  const [bancaId, setBancaId] = useState('');
+  const [bancaId, setBancaId] = useState(() => (bancaInicialId && bancas.some(b => b.id === bancaInicialId) ? bancaInicialId : ''));
   const [bancaDestinoId, setBancaDestinoId] = useState('');
   const [monto, setMonto] = useState('');
   const [montoDestino, setMontoDestino] = useState('');
@@ -449,7 +451,7 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
                 onClick={() => setMostrarSelectorEntidad(true)}
                 className={`${inputClass} flex items-center justify-between gap-2 text-left`}
               >
-                <span className={entidadId ? 'text-text-primary truncate' : 'text-text-muted'}>
+                <span className={entidadId ? 'text-text-primary break-words min-w-0' : 'text-text-muted'}>
                   {(tipo === 'egreso' ? proveedores : clientes).find(e => e.id === entidadId)?.nombre ?? '— Sin atribuir —'}
                 </span>
                 <ChevronDown size={14} className="text-text-muted shrink-0" />

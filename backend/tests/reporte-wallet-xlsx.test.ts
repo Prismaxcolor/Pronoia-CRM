@@ -12,9 +12,9 @@ const cuentaBs: ReporteCuenta = {
   banca: { id: 'b1', nombre: 'Banesco', moneda: 'VES' }, desde: '2026-10-01', hasta: '2026-10-31',
   filas: [
     { id: 'm1', fecha: '2026-10-02', tipo: 'ingreso', subtipo: null, numero: null, numeroSistema: 1, descripcion: '=Depósito', referencia: 'R-1', cuentaContraria: null,
-      categoriaId: 'c1', categoria: { nombre: 'Ventas › Mayor', color: '#15803D' }, entrada: 1000, salida: 0, anulado: false, enProceso: false, equivalenteUsd: 25.5 },
+      categoriaId: 'c1', categoria: { nombre: 'Ventas › Mayor', color: '#15803D' }, entrada: 1000, salida: 0, anulado: false, enProceso: false, equivalenteUsd: 25.5, saldo: 1000 },
     { id: 'm2', fecha: '2026-10-03', tipo: 'transferencia', subtipo: null, numero: null, numeroSistema: 2, descripcion: 'Traspaso', referencia: '', cuentaContraria: 'Caja USD',
-      categoriaId: null, categoria: null, entrada: 0, salida: 300, anulado: true, enProceso: false, equivalenteUsd: null },
+      categoriaId: null, categoria: null, entrada: 0, salida: 300, anulado: true, enProceso: false, equivalenteUsd: null, saldo: 1000 },
   ],
   totales: { entradas: 1000, salidas: 0, neto: 1000 },
 };
@@ -33,11 +33,11 @@ describe('Excel: reporte de cuenta', () => {
     expect(h.nombre).toBe('Movimientos');
     expect(h.fila(1)[0]).toBe('Movimientos de la cuenta');
     expect(h.fila(2)[0]).toBe('Banesco · Bs');
-    expect(h.fila(5)).toEqual(['Fecha', 'N°', 'Tipo', 'Descripción', 'Referencia', 'Cuenta contraria', 'Categoría', 'Entra (Bs)', 'Sale (Bs)', 'Equiv. USD', 'Estado']);
+    expect(h.fila(5)).toEqual(['Fecha', 'N°', 'Tipo', 'Descripción', 'Referencia', 'Cuenta contraria', 'Categoría', 'Entra (Bs)', 'Sale (Bs)', 'Saldo (Bs)', 'Equiv. USD', 'Estado']);
     expect(h.negrita('A5')).toBe(true);
     expect(h.filasFijas).toBe(5);
-    expect(h.fila(6)).toEqual(['2026-10-02', 'MV-0001', 'Ingreso', '=Depósito', 'R-1', undefined, 'Ventas › Mayor', 1000, undefined, 25.5, 'Vigente']);
-    expect(h.fila(7)).toEqual(['2026-10-03', 'MV-0002', 'Transferencia', 'Traspaso', undefined, 'Caja USD', 'Sin categoría', undefined, undefined, undefined, 'Anulado']);
+    expect(h.fila(6)).toEqual(['2026-10-02', 'MV-0001', 'Ingreso', '=Depósito', 'R-1', undefined, 'Ventas › Mayor', 1000, undefined, 1000, 25.5, 'Vigente']);
+    expect(h.fila(7)).toEqual(['2026-10-03', 'MV-0002', 'Transferencia', 'Traspaso', undefined, 'Caja USD', 'Sin categoría', undefined, undefined, 1000, undefined, 'Anulado']);
     expect(h.fila(9)[3]).toBe('Total que entra / sale');
     expect(h.fila(9)[7]).toBe(1000);
     expect(h.fila(9)[8]).toBe(0);
@@ -46,8 +46,8 @@ describe('Excel: reporte de cuenta', () => {
   });
   it('cuenta en USD no lleva columna de equivalente', () => {
     const hoja = hojaReporteCuenta({ ...cuentaBs, banca: { ...cuentaBs.banca, moneda: 'USD' } });
-    expect(hoja.filas[4]).toHaveLength(10);
-    expect(hoja.anchos).toHaveLength(10);
+    expect(hoja.filas[4]).toHaveLength(11);
+    expect(hoja.anchos).toHaveLength(11);
   });
   it('con búsqueda por N° lo avisa y rotula los totales como filtrados', () => {
     const hoja = hojaReporteCuenta({ ...cuentaBs, filas: [cuentaBs.filas[0]], totales: { entradas: 1000, salidas: 0, neto: 1000 } }, ' MV-0001 ');

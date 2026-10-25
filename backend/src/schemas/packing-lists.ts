@@ -40,7 +40,8 @@ export const itemPackingListSchema = z
     /** Almacén del que se trabaja el lote (control interno, solo PCB). Ausente = conservar; null = sin almacén. */
     almacenId: z.string().uuid('El almacén no es válido.').nullable().optional(),
     fotos: fotosPaleta,
-    pesoBruto: peso.refine(n => n > 0, 'El peso bruto debe ser mayor a 0.'),
+    // Mayor a 0 solo se exige al finalizar (ver guardarPackingListSchema); en un borrador puede quedar en 0.
+    pesoBruto: peso,
     pesoPaleta: peso.default(0),
   })
   .refine(i => i.pesoPaleta <= i.pesoBruto, {
@@ -84,7 +85,9 @@ const fechaIso = z
 export const guardarPackingListSchema = z
   .object({
     ...clienteOperacionCampos,
-    contenedor: z.string().trim().min(1, 'El número de contenedor es obligatorio.').max(60),
+    /** true = borrador: se puede guardar con datos faltantes (contenedor, pesos); se exigen al finalizar. */
+    esBorrador: z.boolean().optional().default(false),
+    contenedor: z.string().trim().max(60),
     fecha: fechaIso,
     tipoEmbalaje: z.enum(['big_bag', 'paleta', 'paquete'], { message: 'Tipo de embalaje inválido.' }),
     esPcb: z.boolean(),
@@ -104,6 +107,14 @@ export const guardarPackingListSchema = z
     /** Total real cobrado de la exportación. Ausente = conservar lo guardado; null = borrarlo. Solo se persiste con facturacion:ver. */
     totalRealUsd: totalRealUsd.nullable().optional(),
   })
+  .refine(d => d.esBorrador || d.contenedor.length > 0, {
+    message: 'El número de contenedor es obligatorio.',
+    path: ['contenedor'],
+  })
+  .refine(d => d.esBorrador || d.items.every(i => i.pesoBruto > 0), {
+    message: 'El peso bruto debe ser mayor a 0.',
+    path: ['items'],
+  })
   .refine(d => new Set(d.proyeccion?.map(l => l.lote)).size === (d.proyeccion?.length ?? 0), {
     message: 'Hay lotes repetidos en la proyección.',
     path: ['proyeccion'],
@@ -113,8 +124,8 @@ export const guardarPackingListSchema = z
     path: ['referenciaId'],
   })
   .transform(d => {
-    // Lote, color y almacén solo existen en PCB: se descartan por si el cliente los envía de más. Las fotos son de cada paleta.
-    const items = d.items.map(i => (d.esPcb ? i : { ...i, lote: null, color: null, almacenId: null }));
+    // Lote, color y almacén se conservan tal como se envían, sea o no PCB (una lista antigua con es_pcb=false no pierde esos datos).
+    const items = d.items;
     // La proyección solo valora lotes que siguen incluidos en los ítems y descarta líneas sin ningún valor.
     const lotes = new Set(items.map(i => i.lote ?? ''));
     return { ...d, items, proyeccion: d.proyeccion?.filter(l => lotes.has(l.lote) && tieneValor(l)) };

@@ -43,6 +43,8 @@ vi.mock('../src/services/comision-categoria-service.js', () => ({
   aplicarCategoriaAComisiones: async (ids: string[]) => { bd.categoriaComision.push(ids); return {}; },
 }));
 vi.mock('../src/services/pago-comision-service.js', () => ({
+  conComisionAutomatica: async (lineas: Array<Record<string, unknown>>) => lineas.map(l => ({ ...l })),
+  lineaCargaComision: (l: { llevaComision?: boolean; moneda: string; automatica?: boolean }) => l.llevaComision === true && (l.moneda === 'VES' || l.automatica === true),
   validarEleccionComisionPago: async () => null,
   auditarOmisiones: async (...a: unknown[]) => { bd.auditorias.push(a); },
 }));

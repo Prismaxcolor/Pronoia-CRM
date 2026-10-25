@@ -15,6 +15,7 @@ import { formatearKgPesaje } from '../pesaje/pesaje-nuevo-logica';
 import { revocarFotos } from '../pesaje/fotos-preview';
 import { useRevocarFotosAlDesmontar } from '../pesaje/use-revocar-fotos';
 import MermaPorTipoBloque from './MermaPorTipoBloque';
+import ObservacionCierreCampo from './ObservacionCierreCampo';
 import AvisoSaneoBorrador from './AvisoSaneoBorrador';
 import ResumenSalidasCard from './ResumenSalidasCard';
 import SalidaFerrosoFila from './SalidaFerrosoFila';
@@ -46,6 +47,8 @@ function CompletarFerrosoModal({ transformacion, productos, taras, salidasComune
   const [avisoSaneo, setAvisoSaneo] = useState<string | null>(null);
   // Merma por tipo: opcional, no forma parte del borrador persistente.
   const [mermaForm, setMermaForm] = useState<MermaForm>(mermaFormVacio);
+  // Observación opcional al completar: tampoco forma parte del borrador persistente.
+  const [observacion, setObservacion] = useState('');
   // Las vistas previas de las fotos se liberan al cerrar el modal.
   useRevocarFotosAlDesmontar(filas.flatMap(f => f.fotos));
 
@@ -107,6 +110,7 @@ function CompletarFerrosoModal({ transformacion, productos, taras, salidasComune
       transformacion,
       salidasParaCompletar(variante, 'ferroso_no_ferroso', filasEfectivas.map(f => ({ ...f, pesoBruto: Number(f.pesoBruto), tara: taraKgFila(f, taras) }))),
       armarMermaDetalle(mermaForm),
+      observacion.trim() || undefined,
     );
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
@@ -163,6 +167,8 @@ function CompletarFerrosoModal({ transformacion, productos, taras, salidasComune
         <div className="mb-4">
           <MermaPorTipoBloque mermaKg={merma} valores={mermaForm} onCambiar={setMermaForm} />
         </div>
+
+        <ObservacionCierreCampo valor={observacion} onChange={setObservacion} />
 
         {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
 

@@ -131,6 +131,8 @@ export interface LineaNomina {
   brutoBs: number;
   montoRefBs: number | null;
   bonificacionUsd: number;
+  /** Bonificación extra «en Bs (ref.)»: USD de referencia que se pagan en bolívares a la tasa de la nómina. */
+  bonificacionBsUsd: number;
   descuentoTrabajoUsd: number;
   descuentoPrestamoUsd: number;
   /** Lo que se paga en divisas (USD). */

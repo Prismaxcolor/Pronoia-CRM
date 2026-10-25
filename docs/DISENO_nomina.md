@@ -378,3 +378,31 @@ cuenta vigente de la moneda a la que la persona tenga acceso de edición (no se 
 1. Máximo 5 cuentas por moneda.
 2. Los comprobantes/foto del pago del trabajador se adjuntan al egreso de CADA cuenta del reparto.
 3. En un reparto en Bs el equivalente en USD de cada cuenta es proporcional a su monto (diferencias de centavos entre filas se absorben en la última).
+
+## Fase 6: bonificación extra en Bs, referencia y comprobante por banca, reporte de pagos
+
+Pedido (lista de Julio 2026-10-24). Migraciones (sin aplicar; migración PRIMERO, código después):
+`docs/migration_nomina_bonificacion_bs.sql` y `docs/migration_nomina_pago_por_banca.sql` (cada una con su `_ROLLBACK.sql`).
+
+- **Bonificación extra «en Bs (ref.)».** Cada renglón puede llevar, además de la bonificación de siempre (que se paga en divisas), una bonificación
+  en USD de REFERENCIA que se paga en bolívares a la tasa de la nómina (igual que el «sueldo en Bs»: 10 a tasa 40 = 400 Bs). Columna
+  `nomina_lineas.bonificacion_bs_usd` (default 0). Fórmula (`utils/nomina-calculo.ts` y su espejo en `shared/types/nomina-calculo.ts`): se suma a la
+  parte en Bs (a pagar en Bs, equivalente en USD y total del trabajador); NO entra al bruto; cuenta como «ganado» para el tope del préstamo (zod,
+  cálculo, `nomina_guardar` y el CHECK). Con ella la tasa es obligatoria. Los descuentos siguen cargándose primero a divisas y el sobrante a la parte en Bs.
+- **PDF de nómina pagada.** Ya no detalla cuentas, montos ni movimientos: una sola fila «Estado del pago: Pagada correctamente» (y el rótulo
+  del encabezado pasa a «Pagada»). Si el pago es por trabajador y faltan personas: «Pago parcial: X de Y trabajadores pagados»; con el pago anulado: «Pago anulado».
+- **Pago por banca.** Cada cuenta del pago (nómina completa o un trabajador) lleva SU referencia y SUS comprobantes: `bancas[].referencia` y
+  `bancas[].comprobantes` (zod, `PagoSolicitado`, `datosSql`). La referencia va en el egreso de esa cuenta y en su `nomina_pagos.referencia`; los comprobantes
+  (máx. 10 por cuenta) solo en el egreso principal de esa cuenta. Compatibilidad: sin referencia de cuenta rige la general; sin comprobantes de cuenta rigen
+  los generales (solo el pago por trabajador). La pantalla pide, cuenta por cuenta, monto, referencia y foto (ya no hay una referencia/foto general).
+  `nomina_reparto_normalizar` no cambia: las funciones leen los campos por cuenta de `p_datos->'pagos'` buscando por `bancaId`.
+- **Reporte de Telegram de nómina.** Los avisos de pago (completo y por trabajador) y de anulación ahora identifican la nómina (NOM-0007, tipo de
+  personal y semana), el trabajador (pago individual) y listan UNA línea por cuenta con su monto, referencia y MV, leídos de la nómina que devuelve el
+  servidor (`detallesPagoNomina`); antes salían sin identificar la nómina y, con una sola cuenta, sin monto. El álbum de comprobantes reenvía los de cada cuenta.
+- **Telegram de categorías.** El aviso de crear/editar/archivar una categoría del Wallet dice CATEGORÍA o SUBCATEGORÍA (según `padreId`).
+
+### Supuestos a confirmar con Julio (fase 6)
+
+1. «Bonificación extra en Bs (ref.)» se escribe en USD de referencia y se convierte a la tasa, como el sueldo en Bs (no se escribe en bolívares).
+2. «Reporte de NOMINA Provi» se interpretó como el aviso de Telegram de los pagos/anulaciones de nómina (que sale con la nómina, las cuentas y las referencias).
+3. La referencia por cuenta es opcional (como antes la general).

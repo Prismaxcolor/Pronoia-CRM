@@ -468,7 +468,7 @@ export async function construirPayloadGrupo(
       ? leerAuditoriaReciente(evento.clave, encontrado.params.id ?? encontrado.params.grupoId ?? '', ahora)
       : Promise.resolve<ExtraEvento>({}),
     detallesPorDiff(hallado, pet, ctxBase.reqBody).catch((): undefined => undefined),
-    destino === 'cajas' ? lineasDeCuentas(ctxBase.reqBody) : Promise.resolve<string[]>([]),
+    destino === 'cajas' && !evento.omitirLineasCuenta ? lineasDeCuentas(ctxBase.reqBody) : Promise.resolve<string[]>([]),
     leerExtraTransformacion(evento.clave, ctxBase, pet, encontrado.params.id ?? ''),
     destino === 'cajas' ? lineaDeCategoria(ctxBase.reqBody) : Promise.resolve<string[]>([]),
   ]);

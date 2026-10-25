@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, type ComponentType, type LazyExoticComponent } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider } from './hooks/use-auth';
 import { useAuth } from './hooks/use-auth-context';
 import { PortalAuthProvider } from './hooks/use-portal-auth';
@@ -7,6 +7,7 @@ import { usePortalAuth } from './hooks/use-portal-auth-context';
 import { ToastProvider } from './hooks/use-toast';
 import { ConfirmProvider } from './hooks/use-confirm';
 import { PesajeBorradorProvider } from './hooks/use-pesaje-borrador';
+import { RUTA_EXPORTACIONES } from './features/exportaciones/rutas';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import InstallPwaBanner from './components/InstallPwaBanner';
@@ -107,6 +108,13 @@ const PackingListsPage = lazyConReintento(() => import('./features/packing-list/
 const PackingListEditorPage = lazyConReintento(() => import('./features/packing-list/PackingListEditorPage'));
 const ExportacionesPage = lazyConReintento(() => import('./features/exportaciones/ExportacionesPage'));
 const ExportacionAsistentePage = lazyConReintento(() => import('./features/exportaciones/ExportacionAsistentePage'));
+
+/** Redirige las rutas viejas '/exportaciones[/:id]' a Ventas conservando el id y los parámetros (?paso=). */
+function RedirigirExportacion() {
+  const { id } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={`${RUTA_EXPORTACIONES}${id ? `/${id}` : ''}${search}`} replace />;
+}
 const VehiculosPage = lazyConReintento(() => import('./features/vehiculos/VehiculosPage'));
 const PesajePage = lazyConReintento(() => import('./features/pesaje/PesajePage'));
 const PerfilPage = lazyConReintento(() => import('./features/perfil/PerfilPage'));
@@ -213,8 +221,11 @@ function AppRoutes() {
         <Route path="/taras" element={<ProtectedRoute recurso="taras"><TarasPage /></ProtectedRoute>} />
         <Route path="/packing-list" element={<ProtectedRoute recurso="despachos"><PackingListsPage /></ProtectedRoute>} />
         <Route path="/packing-list/:id" element={<ProtectedRoute recurso="despachos"><PackingListEditorPage /></ProtectedRoute>} />
-        <Route path="/exportaciones" element={<ProtectedRoute recurso="despachos"><RequiereConexion seccion="Exportaciones"><ExportacionesPage /></RequiereConexion></ProtectedRoute>} />
-        <Route path="/exportaciones/:id" element={<ProtectedRoute recurso="despachos"><RequiereConexion seccion="Exportaciones"><ExportacionAsistentePage /></RequiereConexion></ProtectedRoute>} />
+        {/* Exportaciones vive dentro de Ventas; las rutas viejas redirigen. Las rutas estáticas pesan más que /ventas/:id. */}
+        <Route path="/exportaciones" element={<RedirigirExportacion />} />
+        <Route path="/exportaciones/:id" element={<RedirigirExportacion />} />
+        <Route path={RUTA_EXPORTACIONES} element={<ProtectedRoute recurso="despachos"><RequiereConexion seccion="Exportaciones"><ExportacionesPage /></RequiereConexion></ProtectedRoute>} />
+        <Route path={`${RUTA_EXPORTACIONES}/:id`} element={<ProtectedRoute recurso="despachos"><RequiereConexion seccion="Exportaciones"><ExportacionAsistentePage /></RequiereConexion></ProtectedRoute>} />
         <Route path="/vehiculos" element={<ProtectedRoute recurso="vehiculos"><VehiculosPage /></ProtectedRoute>} />
         <Route path="/inventario" element={<ProtectedRoute recurso="productos"><InventarioNuevoPage /></ProtectedRoute>} />
         {/* Pantalla anterior, íntegra. Acepta ?pestana=almacenes|lotes|traslados|toma-fisica. */}

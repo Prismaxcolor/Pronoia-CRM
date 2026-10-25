@@ -26,6 +26,8 @@ export interface ItemPackingListInput {
 }
 
 export interface GuardarPackingListInput {
+  /** true = borrador (puede faltar contenedor y pesos). Se exige completo al finalizar (false). */
+  esBorrador?: boolean;
   contenedor: string;
   fecha: string;
   tipoEmbalaje: TipoEmbalajePackingList;

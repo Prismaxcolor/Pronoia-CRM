@@ -1,4 +1,8 @@
+import { useState } from 'react';
 import { X } from 'lucide-react';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import { fotoLocalDeFile } from '../../lib/foto-picker';
+import { filtrarComprobantes } from '../../lib/comprobante-imagen';
 import SelectorBanca from '../cochinito/SelectorBanca';
 import ComisionBancariaCampo, { AvisoComisionNoVerificada } from '../cochinito/ComisionBancariaCampo';
 import { bloqueoPorComision, planDeComision, type EstadoComision } from '../cochinito/comision-formulario';
@@ -39,6 +43,15 @@ function PagarNominaCuenta({
     : { ok: true as const, aplica: false as const, comision: 0 as const, totalDebitado: monto };
   const nombreMoneda = grupo.moneda === 'USD' ? 'divisas' : 'bolívares';
   const idMonto = `monto-${grupo.moneda}-${indice}`;
+  const idReferencia = `referencia-${grupo.moneda}-${indice}`;
+  const fotos = fila.fotos ?? [];
+  const [avisoFotos, setAvisoFotos] = useState<string | null>(null);
+
+  const agregarFotos = (files: File[]) => {
+    const { validos, errores } = filtrarComprobantes(files, fotos.length);
+    setAvisoFotos(errores.length > 0 ? errores.join(' ') : null);
+    onCambiar({ ...fila, fotos: [...fotos, ...validos.map(fotoLocalDeFile)] });
+  };
 
   return (
     <div className={reparto ? 'space-y-3 rounded-lg border border-border bg-surface-alt/40 p-3' : 'space-y-3'}>
@@ -72,6 +85,18 @@ function PagarNominaCuenta({
           />
         </div>
       )}
+      <div>
+        <label htmlFor={idReferencia} className="mb-1 block text-xs font-medium text-text-secondary">Referencia de esta cuenta (opcional)</label>
+        <input
+          id={idReferencia} maxLength={50} autoComplete="off" value={fila.referencia ?? ''}
+          onChange={e => onCambiar({ ...fila, referencia: e.target.value })} className={inputClass}
+        />
+      </div>
+      <FotoMultiplePicker
+        fotos={fotos} onAgregar={agregarFotos} onQuitar={i => onCambiar({ ...fila, fotos: fotos.filter((_, j) => j !== i) })}
+        label={`Comprobante de esta cuenta${banca ? ` (${banca.nombre})` : ''} (opcional)`}
+      />
+      {avisoFotos && <p role="status" className="text-xs text-amber-700">{avisoFotos}</p>}
       {bloqueo && <AvisoComisionNoVerificada mensaje={bloqueo} enError={estadoComision === 'error'} onReintentar={onReintentarComision} />}
       {banca && pregunta && (
         <ComisionBancariaCampo opcion={fila.comision} onCambiar={comision => onCambiar({ ...fila, comision })} plan={plan} monto={monto} />

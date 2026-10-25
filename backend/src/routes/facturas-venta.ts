@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ejecutarOperacionFinanciera } from '../services/operacion-financiera.js';
 import { TIPO_OPERACION, cuerpoConRepetida } from '../services/operaciones-idempotentes-cola.js';
 import { listarFacturas, obtenerFactura, crearFactura } from '../services/factura-service.js';
+import { resumenNotasVentaONull } from '../services/notas-resumen-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
 import { crearFacturaSchema } from '../schemas/facturas.js';
@@ -19,6 +20,20 @@ router.get('/', requirePermiso('facturacion', 'ver'), async (req, res) => {
     productoId: req.query.productoId ? String(req.query.productoId) : undefined,
   });
   res.json({ facturas });
+});
+
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+const fechaDeConsulta = (v: unknown): string | undefined => (typeof v === 'string' && FECHA_ISO.test(v) ? v : undefined);
+
+// Totales de notas de crédito/débito vigentes de los clientes en el periodo: el indicador "Emitido sin registro de
+// cobros" las suma (débito) y resta (crédito) a lo facturado. Debe ir antes de '/:id'.
+router.get('/notas-resumen', requirePermiso('facturacion', 'ver'), async (req, res) => {
+  const resumen = await resumenNotasVentaONull(fechaDeConsulta(req.query.desde), fechaDeConsulta(req.query.hasta));
+  if (!resumen) {
+    res.status(503).json({ error: 'No se pudieron calcular las notas del periodo. Intenta de nuevo.' });
+    return;
+  }
+  res.json({ resumen });
 });
 
 router.get('/:id', requirePermiso('facturacion', 'ver'), async (req, res) => {

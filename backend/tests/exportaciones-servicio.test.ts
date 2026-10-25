@@ -14,6 +14,7 @@ vi.mock('../src/config/supabase.js', () => ({
       const cadena: Record<string, unknown> = {};
       cadena.select = (cols: string) => { if (tabla === 'packing_lists') bd.selects.push(cols); return cadena; };
       cadena.not = (c: string, op: string, v: unknown) => { bd.filtros.push([c, op, v]); return cadena; };
+      cadena.eq = (c: string, v: unknown) => { bd.filtros.push([c, 'eq', v]); return cadena; };
       cadena.order = () => cadena;
       cadena.in = () => Promise.resolve({ data: bd.clientes, error: null });
       cadena.limit = () => {
@@ -65,6 +66,19 @@ describe('listarExportaciones', () => {
       packingListId: 'p1', contenedor: 'SEKU-1', fecha: '2026-01-01', clienteId: 'c1', clienteNombre: 'ACME Corp',
       totalNeto: 195, kgPorLote: [{ lote: '1', kg: 135 }, { lote: '2', kg: 50 }, { lote: '', kg: 10 }],
     }]);
+  });
+
+  it('excluye los borradores del listado', async () => {
+    await listarExportaciones({ puedeVerValores: false });
+    expect(bd.filtros).toContainEqual(['es_borrador', 'eq', false]);
+  });
+
+  it('si aún no existe la columna es_borrador lista igual, sin el filtro', async () => {
+    bd.errores = [{ code: '42703', message: 'column packing_lists.es_borrador does not exist' }];
+    const r = await listarExportaciones({ puedeVerValores: false });
+    expect(r.exportaciones).toHaveLength(1);
+    expect(bd.filtros.filter(f => f[0] === 'es_borrador')).toHaveLength(1);
+    expect(bd.selects).toHaveLength(2);
   });
 
   it('sin facturacion:ver no pide ni devuelve la valoración', async () => {

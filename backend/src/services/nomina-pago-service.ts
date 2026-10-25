@@ -107,6 +107,9 @@ export function datosSql(
     ...(input.comprobantes ? { comprobantes: input.comprobantes } : {}),
     pagos: pagos.map(p => ({
       moneda: p.moneda, bancaId: p.bancaId, llevaComision: p.llevaComision, ...(p.monto === undefined ? {} : { monto: p.monto }),
+      // Cada cuenta lleva su propia referencia y sus comprobantes (la función SQL los toma por cuenta).
+      ...(p.referencia ? { referencia: p.referencia } : {}),
+      ...(p.comprobantes && p.comprobantes.length > 0 ? { comprobantes: p.comprobantes } : {}),
     })),
   };
 }

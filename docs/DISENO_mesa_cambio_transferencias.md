@@ -67,9 +67,17 @@ Estado: implementado en la rama Julio (migración `migration_mesa_cambio_cobro_p
 - Ruta: `POST /api/cochinito/movimientos/:id/completar` acepta `{ montoCobrado?, pendienteEsperado?, comprobantes? }`; cuerpo vacío = comportamiento anterior. La foto se sube con el mecanismo de siempre (`POST /api/uploads/comprobantes`, requiere `cochinito:crear`) y sus URLs se **agregan** a `movimientos.comprobantes` (sin duplicar); si falla el adjunto, el cobro ya quedó y la respuesta trae `advertencia`.
 - Compatibilidad: sin la migración, el cobro total sigue funcionando con la RPC anterior y el cobro parcial responde 503.
 
+## Sentido del saldo del cambista (2026-10-24)
+
+Confirmado con el cliente: con el cambista la deuda es SUYA hacia nosotros. Los importes y signos no cambian (CARGO y N/D suman; COBRO y N/C restan);
+cambia cómo se LEE el saldo: positivo = **pendiente por cobrar** (nos debe el cambista); negativo = **se le debe** al cambista (le debemos). Toda transferencia
+con cambista crea su CARGO al registrarse (`crear_transferencia_mesa_cambio`, siempre, en la misma transacción) y queda pendiente por cobrar hasta que se cobra
+completa; el detalle de la transferencia en Wallet muestra «Pendiente por cobrar» mientras esté en proceso o en cobro parcial. Solo textos y totales de pantalla
+(`describirSaldo`, Mesa de cambio, detalle y PDF del movimiento): sin migración. Ojo: los asientos manuales cargados antes se leen ahora con este sentido.
+
 ## Riesgos
 
-- Interpretación del signo: el CARGO ("les debemos") queda abierto mientras la operación está en proceso y se salda al completar. Confirmar con el cliente si prefiere leerlo al revés.
+- Interpretación del signo (resuelta el 2026-10-24, ver «Sentido del saldo del cambista»): el CARGO es lo que el cambista nos debe y queda abierto (pendiente por cobrar) mientras la operación está en proceso; se salda al cobrar.
 - Anular una transferencia completada puede fallar por saldo insuficiente en el destino: es intencional.
 - Con la migración sin aplicar, el backend responde 503 en crear/completar (no toca nada); las transferencias normales siguen igual.
 - Acceso por cuenta: crear/completar/anular exigen acceso a origen y destino (falla cerrado).

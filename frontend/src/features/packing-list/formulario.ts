@@ -63,11 +63,15 @@ export function cabeceraInicial(): CabeceraForm {
   };
 }
 
+/** Ya no hay casilla PCB: todos los lotes muestran siempre lote y color, sea cual sea el es_pcb guardado en la lista. */
+export const MOSTRAR_LOTE_Y_COLOR = true;
+
 export function cabeceraDesde(p: PackingListDetalle): CabeceraForm {
   return {
     contenedor: p.contenedor,
     fecha: p.fecha,
     tipoEmbalaje: p.tipoEmbalaje,
+    // Se conserva el valor guardado (no se reescribe al guardar). La UI muestra siempre lote y color: ver MOSTRAR_LOTE_Y_COLOR.
     esPcb: p.esPcb,
     descripcionEs: p.descripcionEs ?? '',
     descripcionEn: p.descripcionEn ?? '',
@@ -179,20 +183,26 @@ export function construirEntrada(
   /** Solo si el usuario ve valores (facturacion:ver); undefined = no enviar proyección. */
   valoracion?: ValoracionForm,
   /** Con permiso de inventario o facturación (control interno). Sin él no se envían almacén ni fotos: el servidor conserva lo guardado. */
-  conControl = true
+  conControl = true,
+  /** true = guardar como borrador: se permite dejar sin contenedor y sin pesos; se exigen solo al finalizar. */
+  borrador = false
 ): { entrada: GuardarPackingListInput } | { error: string } {
-  if (c.contenedor.trim() === '') return { error: 'Indica el número de contenedor.' };
+  if (!borrador && c.contenedor.trim() === '') return { error: 'Indica el número de contenedor.' };
   if (c.fecha === '') return { error: 'Indica la fecha.' };
   const items: GuardarPackingListInput['items'] = [];
   for (const [i, f] of filas.entries()) {
     const n = aFilaNumerica(f, i);
-    if (n.pesoBruto === null || n.pesoBruto <= 0) return { error: `Fila ${i + 1}: indica el peso bruto.` };
     if (n.pesoPaleta === null) return { error: `Fila ${i + 1}: el peso de la paleta no es un número válido.` };
-    if (n.pesoPaleta > n.pesoBruto) return { error: `Fila ${i + 1}: la tara de la paleta no puede ser mayor al peso bruto.` };
+    if (!borrador && (n.pesoBruto === null || n.pesoBruto <= 0)) return { error: `Fila ${i + 1}: indica el peso bruto.` };
+    // En un borrador un peso bruto vacío queda en 0 (y la tara también, porque no puede superar al bruto).
+    const pesoBruto = n.pesoBruto ?? 0;
+    if (borrador && f.pesoBruto.trim() !== '' && n.pesoBruto === null) return { error: `Fila ${i + 1}: el peso bruto no es un número válido.` };
+    const pesoPaleta = pesoBruto === 0 && borrador ? 0 : n.pesoPaleta;
+    if (pesoPaleta > pesoBruto) return { error: `Fila ${i + 1}: la tara de la paleta no puede ser mayor al peso bruto.` };
     items.push({
-      numero: i + 1, numeroPaleta: n.numeroPaleta, lote: c.esPcb ? n.lote : null, color: c.esPcb ? n.color : null,
-      ...(conControl ? { almacenId: c.esPcb ? n.almacenId ?? null : null, fotos: f.fotos.map(x => x.ruta) } : {}),
-      pesoBruto: n.pesoBruto, pesoPaleta: n.pesoPaleta,
+      numero: i + 1, numeroPaleta: n.numeroPaleta, lote: n.lote, color: n.color,
+      ...(conControl ? { almacenId: n.almacenId ?? null, fotos: f.fotos.map(x => x.ruta) } : {}),
+      pesoBruto, pesoPaleta,
     });
   }
   const lotes = new Set(items.map(i => i.lote ?? ''));
@@ -204,6 +214,7 @@ export function construirEntrada(
     entrada: {
       ...(proy ? { proyeccion: proy.proyeccion } : {}),
       ...(total ? { totalRealUsd: total.total } : {}),
+      esBorrador: borrador,
       contenedor: c.contenedor.trim(),
       fecha: c.fecha,
       tipoEmbalaje: c.tipoEmbalaje,

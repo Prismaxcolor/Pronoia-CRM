@@ -43,6 +43,25 @@ const telegramChatIdSchema = z
   .nullable()
   .optional();
 
+/** Tope de la comisión automática: coincide con el check de la BD (tasa <= 0.1, es decir 10 %). */
+export const COMISION_AUTO_PORCENTAJE_MAX = 10;
+export const COMISION_AUTO_MINIMO_MAX = 1_000_000;
+
+/**
+ * Regla de comisión automática de una cuenta. `porcentaje` es en % (0.3 = 0.3 %), `minimo` en la moneda de la cuenta.
+ * Desactivar guarda la cuenta sin regla (los dos valores se ignoran). Activar exige que al menos uno sea > 0.
+ */
+export const aTasa = (porcentaje: number): number => Math.round(porcentaje * 1000) / 100000;
+export const aMinimo = (minimo: number): number => Math.round(minimo * 100) / 100;
+export const comisionAutomaticaSchema = z
+  .object({
+    activa: z.boolean(),
+    porcentaje: z.number().finite().min(0, 'El porcentaje no puede ser negativo.').max(COMISION_AUTO_PORCENTAJE_MAX, `El porcentaje máximo es ${COMISION_AUTO_PORCENTAJE_MAX} %.`),
+    minimo: z.number().finite().min(0, 'El mínimo no puede ser negativo.').max(COMISION_AUTO_MINIMO_MAX, 'El mínimo es demasiado alto.'),
+  })
+  .refine(v => !v.activa || aTasa(v.porcentaje) > 0 || aMinimo(v.minimo) > 0, { message: 'Indica un porcentaje o un mínimo mayor a 0, o desactiva la comisión.', path: ['porcentaje'] });
+export type ComisionAutomaticaInput = z.infer<typeof comisionAutomaticaSchema>;
+
 export const crearBancaSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(100),
   tipo: z.enum(['banco_nacional', 'banco_internacional', 'exchange', 'efectivo']),

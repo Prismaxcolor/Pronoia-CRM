@@ -36,6 +36,10 @@ export interface PagoSolicitado {
   llevaComision?: boolean;
   /** Monto de esta cuenta en la moneda del pago (reparto entre varias cuentas); sin él, la cuenta paga todo. */
   monto?: number;
+  /** Referencia propia de esta cuenta (sin ella, rige la referencia general del pago). */
+  referencia?: string | null;
+  /** Comprobantes (URLs) propios del egreso de esta cuenta. */
+  comprobantes?: readonly string[];
 }
 
 /** Lo que se paga en cada moneda, en centavos; 0 = nada que pagar en esa moneda. */
@@ -48,6 +52,10 @@ export interface PagoPlanificado {
   llevaComision: boolean | null;
   /** Monto de la cuenta en su moneda, ya validado; solo cuando el pago trae reparto (con una cuenta lo calcula la BD). */
   monto?: number;
+  /** Referencia propia de la cuenta (null/ausente: rige la general del pago). */
+  referencia?: string | null;
+  /** Comprobantes propios de la cuenta (ausente o vacío: rigen los generales del pago, si los hay). */
+  comprobantes?: readonly string[];
 }
 
 export interface FalloPlan {
@@ -105,6 +113,8 @@ function planDeCuenta(pago: PagoSolicitado, cuentas: readonly CuentaWallet[], co
   return {
     moneda: pago.moneda, bancaId: pago.bancaId, llevaComision: comision.llevaComision,
     ...(pago.monto === undefined ? {} : { monto: pago.monto }),
+    ...(pago.referencia ? { referencia: pago.referencia } : {}),
+    ...(pago.comprobantes && pago.comprobantes.length > 0 ? { comprobantes: pago.comprobantes } : {}),
   };
 }
 

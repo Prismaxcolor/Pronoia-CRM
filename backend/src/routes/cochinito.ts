@@ -11,7 +11,7 @@ import {
 } from '../services/banca-service.js';
 import { comisionBancariaDisponible, registrarMovimiento } from '../services/movimiento-comision-service.js';
 import { MINIMO_COMISION_BANCARIA_BS, TASA_COMISION_BANCARIA } from '../utils/comision-bancaria.js';
-import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/require-auth.js';
+import { requireAuth, requirePermiso, requireSuperadmin, reqTienePermiso } from '../middlewares/require-auth.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import { cargarPermisosSiFaltan } from '../middlewares/cargar-permisos.js';
 import { cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
@@ -19,13 +19,16 @@ import { anularMovimientoBanca, editarMovimientoBanca } from '../services/movimi
 import { anularTransaccionSchema, editarMovimientoSchema, type EditarMovimientoInput } from '../schemas/transacciones-editar.js';
 import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearBancaSchema, actualizarBancaSchema, crearMovimientoSchema } from '../schemas/cochinito.js';
+import { crearBancaSchema, actualizarBancaSchema, crearMovimientoSchema, comisionAutomaticaSchema } from '../schemas/cochinito.js';
+import { guardarReglaDeBanca } from '../services/comision-automatica-service.js';
+import { registrarAuditoria } from '../services/auditoria-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
 import { aplicarCategoriaSiFalta, validarCategoriaDeMovimiento } from '../services/categoria-service.js';
+import { conEquivalenteUsd } from '../services/movimiento-equivalente-service.js';
 import { cambioReportesNoPermitido } from '../services/grupo-silencio-service.js';
 import { exigirAccesoBancas } from '../middlewares/exigir-acceso-bancas.js';
 import { accesoBancas, bancasPermitidas, concederBancaAUsuario, idsBancasDeMovimiento } from '../services/banca-acceso-service.js';
-import { anotarPuedeEditar, bancaPermitida, filtrarBancas, enmascararDetalleMovimiento, filtrarMovimientos, enmascararMovimientosPorBanca, puedeCambiarTelegramBanca, puedeCambiarReportesTelegram, MENSAJE_SIN_ACCESO_BANCA, MENSAJE_SOLO_ADMIN_TELEGRAM, MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM } from '../utils/banca-acceso.js';
+import { anotarPuedeEditar, bancaPermitida, filtrarBancas, enmascararDetalleMovimiento, filtrarMovimientos, enmascararMovimientosPorBanca, puedeCambiarTelegramBanca, puedeCambiarReportesTelegram, MENSAJE_SIN_ACCESO_BANCA, MENSAJE_SOLO_ADMIN_COMISION_AUTOMATICA, MENSAJE_SOLO_ADMIN_TELEGRAM, MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM } from '../utils/banca-acceso.js';
 
 const router = Router();
 
@@ -119,6 +122,44 @@ router.patch(
   }
 );
 
+// Regla de comisión automática de la cuenta (porcentaje + mínimo, o desactivada). Solo superadmin; afecta a movimientos futuros.
+router.put(
+  '/bancas/:id/comision-automatica',
+  validarUuidParam('id'),
+  requirePermiso('cochinito', 'editar'),
+  requireSuperadmin(MENSAJE_SOLO_ADMIN_COMISION_AUTOMATICA),
+  validateBody(comisionAutomaticaSchema),
+  exigirAccesoBancas(async req => [String(req.params.id)]),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const result = await guardarReglaDeBanca(id, req.body);
+    if ('error' in result) {
+      res.status(result.pendiente ? 409 : result.noEncontrada ? 404 : 400).json({ error: result.error });
+      return;
+    }
+    const descripcion = (r: typeof result.regla): string => (r ? `${+(r.tasa * 100).toFixed(3)} % / mínimo ${r.minimo}` : 'sin comisión automática');
+    const auditada = await registrarAuditoria({
+      entidadTipo: 'banca',
+      entidadId: id,
+      accion: 'comision_automatica',
+      usuarioId: req.user!.sub,
+      cambios: { comision_automatica: { antes: descripcion(result.anterior), despues: descripcion(result.regla) } },
+    });
+    if (!auditada) {
+      // Auditoría obligatoria: sin constancia no se deja el cambio. Se restaura la regla anterior y se avisa.
+      const anterior = result.anterior;
+      const revertido = await guardarReglaDeBanca(id, {
+        activa: anterior !== null, porcentaje: anterior ? anterior.tasa * 100 : 0, minimo: anterior?.minimo ?? 0,
+      });
+      logger.error({ evento: 'banca_comision_automatica_sin_auditoria', userId: req.user!.sub, bancaId: id, revertido: !('error' in revertido) });
+      res.status(500).json({ error: 'No se pudo dejar constancia en el historial de auditoría, así que el cambio no se aplicó. Intenta de nuevo.' });
+      return;
+    }
+    logger.info({ evento: 'banca_comision_automatica_modificada', ip: clienteIp(req), userId: req.user!.sub, bancaId: id, activa: result.regla !== null, auditada });
+    res.json({ comisionAuto: result.regla });
+  }
+);
+
 router.post('/bancas/:id/archivar', requirePermiso('cochinito', 'editar'), exigirAccesoBancas(async req => [String(req.params.id)]), async (req, res) => {
   const id = String(req.params.id);
   const result = await archivarBanca(id);
@@ -154,7 +195,8 @@ router.post('/bancas/:id/desarchivar', requirePermiso('cochinito', 'editar'), ex
 router.get('/movimientos', requirePermiso('cochinito', 'ver'), async (req, res) => {
   const permitidas = await bancasPermitidas(req.user!.sub, req.user!.rol);
   // Quien ve solo una punta de una transferencia no ve referencia, comprobantes ni descripción (podrían nombrar la otra cuenta).
-  const movimientos = enmascararMovimientosPorBanca(filtrarMovimientos(await listarMovimientos(), permitidas), permitidas);
+  const visibles = enmascararMovimientosPorBanca(filtrarMovimientos(await listarMovimientos(), permitidas), permitidas);
+  const movimientos = await conEquivalenteUsd(visibles);
   res.json({ movimientos });
 });
 
@@ -182,7 +224,8 @@ router.get('/movimientos/:id', validarUuidParam('id'), requirePermiso('cochinito
     res.status(403).json({ error: MENSAJE_SIN_ACCESO_BANCA });
     return;
   }
-  res.json(enmascararDetalleMovimiento(detalle, permitidas));
+  const [conEquivalente] = await conEquivalenteUsd([detalle.movimiento]);
+  res.json(enmascararDetalleMovimiento({ ...detalle, movimiento: conEquivalente }, permitidas));
 });
 
 router.post(

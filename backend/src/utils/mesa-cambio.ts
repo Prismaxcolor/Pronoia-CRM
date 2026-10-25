@@ -6,7 +6,10 @@
  * Todo devuelve valores nuevos; nunca se muta la entrada.
  */
 
-/** CARGO y ND (nota de débito) aumentan lo que les debemos; COBRO y NC (nota de crédito) lo reducen. */
+/**
+ * CARGO y ND (nota de débito) aumentan lo que el cambista nos debe (pendiente por cobrar); COBRO y NC (nota de crédito) lo reducen.
+ * Saldo positivo = nos debe el cambista; negativo = se le debe al cambista.
+ */
 export type TipoAsiento = 'CARGO' | 'COBRO' | 'NC' | 'ND';
 
 export interface AsientoMesa {

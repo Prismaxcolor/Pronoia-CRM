@@ -93,6 +93,24 @@ export async function actualizarBanca(id: string, campos: ActualizarBancaInput):
   }
 }
 
+export interface ComisionAutomaticaEntrada {
+  activa: boolean;
+  /** En % (0.3 = 0.3 %). */
+  porcentaje: number;
+  /** En la moneda de la cuenta. */
+  minimo: number;
+}
+
+/** Guarda o quita la comisión automática de una cuenta. Devuelve null si salió bien, o el mensaje de error. */
+export async function guardarComisionAutomatica(id: string, entrada: ComisionAutomaticaEntrada): Promise<string | null> {
+  try {
+    await apiFetch(`/api/cochinito/bancas/${id}/comision-automatica`, { method: 'PUT', body: entrada });
+    return null;
+  } catch (err) {
+    return err instanceof Error && err.message ? err.message : 'No se pudo guardar la comisión automática.';
+  }
+}
+
 export interface ArchivarBancaResult {
   ok: boolean;
   razon?: string;

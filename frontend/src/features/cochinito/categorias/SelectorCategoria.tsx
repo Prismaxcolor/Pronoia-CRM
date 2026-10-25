@@ -53,8 +53,8 @@ function SelectorCategoria({ tipo, categorias, valor, onChange, error }: Props) 
       <div className={`flex items-center gap-3 rounded-lg border bg-surface-alt p-2 ${error ? 'border-red-400' : 'border-border'}`}>
         <Miniatura t={elegida} />
         <span className="min-w-0 flex-1">
-          <span className={`block truncate text-sm ${sinElegir ? 'text-text-muted' : 'text-text-primary'}`}>{nombre}</span>
-          {detalle && <span className="block truncate text-xs text-text-muted">{detalle}</span>}
+          <span className={`block break-words text-sm ${sinElegir ? 'text-text-muted' : 'text-text-primary'}`} title={nombre}>{nombre}</span>
+          {detalle && <span className="block break-words text-xs text-text-muted" title={detalle}>{detalle}</span>}
         </span>
         <button
           ref={boton}

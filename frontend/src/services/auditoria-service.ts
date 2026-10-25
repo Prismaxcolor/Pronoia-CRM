@@ -2,7 +2,7 @@ import { apiFetch } from './api-client';
 
 export type EntidadAuditable =
   | 'ticket_pesaje' | 'factura_compra' | 'factura_venta' | 'transformacion' | 'traslado'
-  | 'pago' | 'cobro' | 'movimiento_banca' | 'nota_ajuste_proveedor' | 'nota_ajuste_cliente';
+  | 'pago' | 'cobro' | 'movimiento_banca' | 'banca' | 'nota_ajuste_proveedor' | 'nota_ajuste_cliente';
 
 /** Entidades que aceptan llave de edición (espejo de ENTIDADES_CON_LLAVE del backend; las facturas aún no). */
 export type EntidadConLlave =

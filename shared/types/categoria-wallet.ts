@@ -69,6 +69,8 @@ export interface FilaReporteCuenta {
   enProceso: boolean;
   /** Equivalente en USD del importe (solo cuentas en Bs), a la tasa del momento del movimiento; null = sin dato ni tasa. */
   equivalenteUsd?: number | null;
+  /** Saldo de la cuenta (en su moneda) justo después de este movimiento; las filas anuladas no lo cambian. */
+  saldo?: number;
 }
 
 export interface ReporteCuenta {
@@ -77,6 +79,9 @@ export interface ReporteCuenta {
   hasta: string;
   filas: FilaReporteCuenta[];
   totales: { entradas: number; salidas: number; neto: number };
+  /** Saldo de la cuenta al empezar y al terminar el rango. */
+  saldoInicial?: number;
+  saldoFinal?: number;
 }
 
 /** Categoría de una nota de crédito/débito ya resuelta para mostrar. Espejo de backend/src/utils/categoria-nota.ts. */

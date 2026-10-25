@@ -43,6 +43,8 @@ function mapLinea(row: Fila, tasaBs: number | null): LineaNomina {
     brutoBs: Number(row.bruto_bs ?? 0),
     montoRefBs: numeroONull(row.monto_ref_bs),
     bonificacionUsd: Number(row.bonificacion_usd),
+    // Columna de migration_nomina_bonificacion_bs.sql; sin ella (o en nóminas anteriores) es 0.
+    bonificacionBsUsd: Number(row.bonificacion_bs_usd ?? 0),
     descuentoTrabajoUsd: Number(row.descuento_trabajo_usd),
     descuentoPrestamoUsd: Number(row.descuento_prestamo_usd),
     ...partesDePago(row),

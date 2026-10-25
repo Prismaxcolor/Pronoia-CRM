@@ -69,6 +69,8 @@ export interface PackingList {
   creadoPorNombre?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** true = borrador guardado con datos faltantes; no se puede exportar ni usar en una exportación hasta finalizarlo. Ausente = finalizado. */
+  esBorrador?: boolean;
   /** Versión para control de concurrencia: se envía al editar y sube en cada guardado. */
   version: number;
 }

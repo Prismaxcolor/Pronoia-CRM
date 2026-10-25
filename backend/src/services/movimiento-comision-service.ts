@@ -7,6 +7,9 @@ import { logger } from '../utils/logger.js';
 import { crearMovimiento, obtenerMovimiento, type Movimiento } from './banca-service.js';
 import { registrarAuditoria } from './auditoria-service.js';
 import { aplicarCategoriaAComisiones } from './comision-categoria-service.js';
+import { ComisionAutomaticaNoDisponibleError, MENSAJE_COMISION_AUTO_NO_VERIFICABLE, reglaAutomaticaDe } from './comision-automatica-service.js';
+import { equivalenteUsdParaAdelanto } from './movimiento-adelanto-service.js';
+import { calcularComisionAutomatica, totalConComisionAutomatica, type ReglaComisionAutomatica } from '../utils/comision-automatica.js';
 import type { CrearMovimientoInput } from '../schemas/cochinito.js';
 
 /**
@@ -24,6 +27,9 @@ const MENSAJE_ELEGIR = 'Indica si el movimiento lleva comisión bancaria del 0.3
 const MENSAJE_SIN_LECTURA = 'El movimiento se registró, pero no se pudo leer de vuelta. Actualiza la pantalla.';
 const MENSAJE_SIN_AUDITORIA =
   'El movimiento se registró sin comisión bancaria, pero no se pudo dejar constancia en el historial de auditoría. Avisa al administrador.';
+const MENSAJE_MONEDA_DISTINTA = 'La moneda del movimiento no coincide con la de la cuenta de origen. Actualiza la pantalla e intenta de nuevo.';
+const MENSAJE_ORIGEN_INEXISTENTE = 'La cuenta de origen no existe.';
+const MENSAJE_DESTINO_INEXISTENTE = 'La cuenta destino no existe.';
 const MENSAJE_COMPROBANTE = 'El movimiento se registró, pero no se pudo adjuntar el comprobante. Adjúntalo editando el movimiento.';
 
 type Fallo = { error: string; codigo: number };
@@ -50,7 +56,10 @@ async function leerOrigen(bancaId: string): Promise<{ moneda: string; saldo: num
 }
 
 async function sinComision(input: CrearMovimientoInput, userId: string): Promise<MovimientoRegistrado | Fallo> {
-  const r = await crearMovimiento(input, userId);
+  // Un egreso con proveedor / ingreso con cliente nace como adelanto/anticipo: desde una cuenta en Bs guarda su USD.
+  const equivalente = await equivalenteUsdParaAdelanto(input);
+  if ('error' in equivalente) return fallo(409, equivalente.error);
+  const r = await crearMovimiento(input, userId, { montoUsd: equivalente.montoUsd });
   return 'error' in r ? fallo(400, r.error) : { movimiento: r.movimiento, comision: null };
 }
 
@@ -127,14 +136,59 @@ async function registrarDesdeBs(
   return conComision(input, userId);
 }
 
-/** Registra un movimiento manual de Wallet; aplica la comisión bancaria cuando corresponde y la persona la eligió. */
+/**
+ * Cuenta con comisión AUTOMÁTICA (p. ej. Citibank, docs/migration_comision_automatica_banca.sql): toda salida de dinero
+ * de la cuenta lleva su comisión, calculada con la regla de la cuenta y en su moneda; no se pregunta ni se puede omitir.
+ * Se valida el saldo contra monto + comisión y el movimiento y su cargo se crean juntos con la RPC de comisión.
+ */
+async function registrarConReglaAutomatica(
+  input: CrearMovimientoInput, userId: string, regla: ReglaComisionAutomatica
+): Promise<MovimientoRegistrado | Fallo> {
+  // La cuenta EXIGE comisión: sin la migración del Wallet o sin poder leer la cuenta no se registra sin ella (falla cerrado).
+  if (!(await comisionBancariaDisponible())) return fallo(503, MENSAJE_COMISION_PENDIENTE);
+  const origen = await leerOrigen(input.bancaId);
+  if (!origen) return fallo(503, MENSAJE_COMISION_AUTO_NO_VERIFICABLE);
+  const comision = calcularComisionAutomatica(input.monto, regla);
+  const total = totalConComisionAutomatica(input.monto, regla);
+  if (total > origen.saldo) {
+    const cifra = (n: number): string => `${origen.moneda} ${n.toFixed(2)}`;
+    return fallo(409, `Saldo insuficiente: el monto más la comisión bancaria automática de ${cifra(comision)} suman ${cifra(total)} y el disponible es ${cifra(origen.saldo)}.`);
+  }
+  return conComision(input, userId);
+}
+
+/**
+ * La moneda efectiva es la de la cuenta de origen: si el payload trae otra se rechaza (evita, por ejemplo, un egreso en Bs
+ * enviado con moneda USD para saltarse la conversión del adelanto). En transferencias también se valida que exista la cuenta destino.
+ */
+async function validarMonedasDelMovimiento(input: CrearMovimientoInput): Promise<Fallo | null> {
+  const origen = await leerOrigen(input.bancaId);
+  if (!origen) return fallo(409, MENSAJE_ORIGEN_INEXISTENTE);
+  if (input.moneda.trim().toUpperCase() !== origen.moneda.trim().toUpperCase()) return fallo(409, MENSAJE_MONEDA_DISTINTA);
+  if (input.tipo === 'transferencia' && (!input.bancaDestinoId || !(await leerOrigen(input.bancaDestinoId)))) {
+    return fallo(409, MENSAJE_DESTINO_INEXISTENTE);
+  }
+  return null;
+}
+
+/** Registra un movimiento manual de Wallet; aplica la comisión bancaria cuando corresponde (la elegida en Bs, o la automática de la cuenta). */
 export async function registrarMovimiento(
   input: CrearMovimientoInput,
   userId: string
 ): Promise<MovimientoRegistrado | Fallo> {
+  const monedaInvalida = await validarMonedasDelMovimiento(input);
+  if (monedaInvalida) return monedaInvalida;
   if (input.tipo === 'ingreso') {
     return input.llevaComision === true ? fallo(400, MENSAJE_SOLO_SALIDAS) : sinComision(input, userId);
   }
+  let reglaAutomatica: Awaited<ReturnType<typeof reglaAutomaticaDe>>;
+  try {
+    reglaAutomatica = await reglaAutomaticaDe(input.bancaId);
+  } catch (e) {
+    if (e instanceof ComisionAutomaticaNoDisponibleError) return fallo(503, e.message);
+    throw e;
+  }
+  if (reglaAutomatica) return registrarConReglaAutomatica(input, userId, reglaAutomatica);
   const origen = await leerOrigen(input.bancaId);
   // Cuenta ilegible: el registro normal informa el problema real (cuenta inexistente, etc.).
   if (!origen) return sinComision(input, userId);

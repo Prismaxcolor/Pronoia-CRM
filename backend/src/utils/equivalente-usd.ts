@@ -1,7 +1,8 @@
 /**
  * Equivalente en USD de un importe en Bs de un movimiento (puro, sin BD).
  * Prioridad: monto_usd guardado en el movimiento (tasa del momento del pago/cobro); si no existe, la tasa
- * histórica USD->VES más cercana que no sea posterior al movimiento; si tampoco hay, null (nunca se inventa).
+ * histórica USD->VES más cercana que no sea posterior al momento del movimiento, prefiriendo Binance; si tampoco hay,
+ * null (nunca se inventa).
  */
 export interface TasaHistorica {
   /** Bs por 1 USD. */
@@ -15,12 +16,14 @@ export interface DatosEquivalente {
   monto: number;
   montoUsd?: number | null;
   fecha: string;
+  /** Instante en que se registró (ISO). Si cae en el mismo día de `fecha` se usa como momento del movimiento. */
+  creadoEn?: string | null;
   /** El importe de la cuenta se expresa en la moneda y monto del movimiento (origen, ingreso o egreso). */
   importeEnMonedaOrigen: boolean;
 }
 
 const MONEDA_BS = 'VES';
-const FUENTE_PREFERIDA = 'BCV';
+const FUENTE_PREFERIDA = 'Binance';
 const MS_POR_HORA = 3_600_000;
 const HORAS_POR_DIA = 24;
 /** Caracas está en UTC-4 todo el año: su día D termina a las 04:00 UTC del día D+1. */
@@ -39,6 +42,17 @@ function instante(fecha: string): number {
   return fecha.length <= LARGO_FECHA_DIA ? finDeDiaCaracas(fecha) : Date.parse(fecha);
 }
 
+/**
+ * Momento del movimiento: la hora real de registro (`creadoEn`) si pertenece al día de `fecha` en Caracas; si no
+ * (movimiento con fecha atrasada o sin hora), el final del día de `fecha`.
+ */
+export function instanteDeMovimiento(fecha: string, creadoEn?: string | null): string {
+  const dia = fecha.slice(0, LARGO_FECHA_DIA);
+  const ms = creadoEn ? Date.parse(creadoEn) : NaN;
+  if (Number.isFinite(ms) && ms <= finDeDiaCaracas(dia) && ms > finDeDiaCaracas(dia) - HORAS_POR_DIA * MS_POR_HORA) return new Date(ms).toISOString();
+  return new Date(finDeDiaCaracas(dia)).toISOString();
+}
+
 function masCercana(tasas: readonly TasaHistorica[], limite: number): TasaHistorica | null {
   return tasas.reduce<TasaHistorica | null>((mejor, t) => {
     const ms = Date.parse(t.fecha);
@@ -47,12 +61,12 @@ function masCercana(tasas: readonly TasaHistorica[], limite: number): TasaHistor
   }, null);
 }
 
-/** Tasa (Bs por USD) vigente a la fecha dada: la más reciente <= fecha, prefiriendo BCV; null si no hay ninguna. */
+/** Tasa (Bs por USD) vigente a la fecha dada: la más reciente <= fecha, prefiriendo Binance; null si no hay ninguna. */
 export function tasaVigenteA(tasas: readonly TasaHistorica[], fecha: string): number | null {
   const limite = instante(fecha);
   if (!Number.isFinite(limite)) return null;
-  const bcv = masCercana(tasas.filter(t => t.fuente === FUENTE_PREFERIDA), limite);
-  return (bcv ?? masCercana(tasas, limite))?.tasa ?? null;
+  const preferida = masCercana(tasas.filter(t => t.fuente === FUENTE_PREFERIDA), limite);
+  return (preferida ?? masCercana(tasas, limite))?.tasa ?? null;
 }
 
 /** Equivalente en USD de `importe` (Bs) o null si no se puede determinar. */
@@ -61,6 +75,6 @@ export function equivalenteUsd(importe: number, d: DatosEquivalente, tasas: read
   if (d.importeEnMonedaOrigen && d.moneda === MONEDA_BS && d.montoUsd != null && d.montoUsd > 0 && d.monto > 0) {
     return redondear2((d.montoUsd * importe) / d.monto);
   }
-  const tasa = tasaVigenteA(tasas, d.fecha);
+  const tasa = tasaVigenteA(tasas, instanteDeMovimiento(d.fecha, d.creadoEn));
   return tasa === null ? null : redondear2(importe / tasa);
 }

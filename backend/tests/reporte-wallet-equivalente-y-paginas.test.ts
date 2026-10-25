@@ -14,18 +14,18 @@ const tasas: TasaHistorica[] = [
 const base = { moneda: 'VES', monto: 3600, montoUsd: null, fecha: '2026-10-05', importeEnMonedaOrigen: true };
 
 describe('tasaVigenteA', () => {
-  it('toma la más reciente que no sea posterior al movimiento y prefiere BCV', () => {
+  it('toma la más reciente que no sea posterior al movimiento y prefiere Binance sobre BCV', () => {
     expect(tasaVigenteA(tasas, '2026-10-05')).toBe(36);
     expect(tasaVigenteA(tasas, '2026-10-10T13:00:00Z')).toBe(40);
-    expect(tasaVigenteA(tasas, '2026-10-20')).toBe(40);
+    expect(tasaVigenteA(tasas, '2026-10-20')).toBe(50);
   });
   it('sin tasa anterior o con fecha inválida devuelve null', () => {
     expect(tasaVigenteA(tasas, '2026-09-30')).toBeNull();
     expect(tasaVigenteA([], '2026-10-05')).toBeNull();
     expect(tasaVigenteA(tasas, 'no-es-fecha')).toBeNull();
   });
-  it('sin BCV usa otra fuente', () => {
-    expect(tasaVigenteA([{ tasa: 50, fecha: '2026-10-11T12:00:00Z', fuente: 'Binance' }], '2026-10-12')).toBe(50);
+  it('sin Binance usa otra fuente', () => {
+    expect(tasaVigenteA([{ tasa: 36, fecha: '2026-10-11T12:00:00Z', fuente: 'BCV' }], '2026-10-12')).toBe(36);
   });
 });
 

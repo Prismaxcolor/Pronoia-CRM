@@ -8,14 +8,15 @@ const personas = (n: number) => `${n} trabajador${n === 1 ? '' : 'es'}`;
 
 interface Props {
   titulo: string;
+  id?: string;
   queEstasViendo: string;
   totales: TotalesNomina;
 }
 
 /** Los cuatro totales que pide la nómina: divisas, Bs, equivalente en divisas de los Bs y la suma combinada. */
-function NominaTotales({ titulo, queEstasViendo, totales: t }: Props) {
+function NominaTotales({ titulo, id, queEstasViendo, totales: t }: Props) {
   return (
-    <Bloque titulo={titulo} queEstasViendo={queEstasViendo}>
+    <Bloque titulo={titulo} id={id} queEstasViendo={queEstasViendo}>
       <GrillaKpis>
         <TarjetaKpi
           titulo="Total a pagar en divisas" valor={usd(t.totalDivisasUsd)} subtitulo={`${personas(t.cantidadDivisas)} con sueldo en USD`}

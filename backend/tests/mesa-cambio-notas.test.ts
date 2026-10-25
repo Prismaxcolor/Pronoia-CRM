@@ -13,7 +13,7 @@ const asiento = (tipo: AsientoMesa['tipo'], monto: number, fecha = '2026-10-01',
 });
 
 describe('N/C y N/D en el saldo', () => {
-  it('N/D aumenta lo que les debemos (como un cargo) y N/C lo reduce (como un cobro)', () => {
+  it('N/D aumenta lo que nos debe el cambista (como un cargo) y N/C lo reduce (como un cobro)', () => {
     expect(importeFirmado({ tipo: 'ND', montoUsd: 40, anulado: false })).toBe(40);
     expect(importeFirmado({ tipo: 'NC', montoUsd: 40, anulado: false })).toBe(-40);
   });

@@ -26,6 +26,8 @@ export function puedeCambiarTelegramBanca(rol: string): boolean {
   return veTodasLasBancas(rol);
 }
 
+export const MENSAJE_SOLO_ADMIN_COMISION_AUTOMATICA = 'Solo un superadmin puede cambiar la comisión automática de una cuenta.';
+
 export const MENSAJE_SOLO_ADMIN_REPORTES_TELEGRAM =
   'Solo un superadmin puede activar o desactivar los avisos de Telegram de los movimientos.';
 

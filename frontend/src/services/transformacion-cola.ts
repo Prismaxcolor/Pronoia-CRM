@@ -51,10 +51,11 @@ export async function completarTransformacionF4(
   actual: Transformacion,
   salidas: SalidaConFotos[],
   mermaDetalle?: unknown,
+  observacion?: string,
 ): Promise<ResultadoCompletarF4> {
   if (offlineHabilitado() && (await completarYaPendiente(actual.id))) return { error: MENSAJE_COMPLETAR_YA_PENDIENTE };
   const r = await ejecutarF4<{ transformacion: Transformacion; advertencia?: string }>(
-    peticionTransformacionCompletar(variante, actual.id, salidas, mermaDetalle)
+    peticionTransformacionCompletar(variante, actual.id, salidas, mermaDetalle, observacion)
   );
   if (r.tipo === 'error') return { error: r.error };
   if (r.tipo === 'enviada') {

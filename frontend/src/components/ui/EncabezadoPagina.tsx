@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import BannerSinConexion from '../BannerSinConexion';
+import ControlColapsarTodo from './ControlColapsarTodo';
 
 /** CUÁNDO USARLO: arriba de CADA pantalla. Un solo título (h1), una línea que dice para qué sirve la pantalla y,
  *  a la derecha, las acciones principales (máximo una primaria). Las migas solo en pantallas de detalle. */
@@ -43,7 +44,7 @@ function EncabezadoPagina({ titulo, subtitulo, acciones, migas, lecturas }: Enca
           <h1 className="text-2xl font-bold text-text-primary">{titulo}</h1>
           {subtitulo && <p className="mt-1 text-sm text-text-secondary">{subtitulo}</p>}
         </div>
-        {acciones && <div className="flex flex-wrap items-center gap-2">{acciones}</div>}
+        <div className="flex flex-wrap items-center gap-2">{acciones}<ControlColapsarTodo /></div>
       </div>
       {lecturas && <BannerSinConexion prefijos={lecturas} className="mt-3" />}
     </header>

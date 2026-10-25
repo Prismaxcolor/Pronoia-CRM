@@ -69,6 +69,7 @@ function cuerpoCuenta(filas: readonly FilaCuenta[], conUsd: boolean): string[][]
     f.categoria?.nombre ?? 'Sin categoría',
     f.entrada ? fmt(f.entrada) : '',
     f.salida ? fmt(f.salida) : '',
+    f.saldo != null ? fmt(f.saldo) : '',
     ...(conUsd ? [f.equivalenteUsd != null ? fmt(f.equivalenteUsd) : ''] : []),
   ].map(sanitizarPdf));
 }
@@ -77,24 +78,24 @@ function pieCuenta(r: ReporteCuenta, conUsd: boolean, filtrado: boolean): any[][
   const { entradas, salidas, neto } = r.totales;
   const relleno = conUsd ? [''] : [];
   return [
-    [{ content: filtrado ? 'Total que entra (solo filas filtradas)' : 'Total que entra', colSpan: 5, styles: { halign: 'right' } }, fmt(entradas), '', ...relleno],
-    [{ content: filtrado ? 'Total que sale (solo filas filtradas)' : 'Total que sale', colSpan: 5, styles: { halign: 'right' } }, '', fmt(salidas), ...relleno],
-    [{ content: filtrado ? 'Neto de las filas filtradas' : 'Neto del periodo', colSpan: 5, styles: { halign: 'right' } }, { content: fmt(neto), colSpan: conUsd ? 3 : 2, styles: { halign: 'right' } }],
+    [{ content: filtrado ? 'Total que entra (solo filas filtradas)' : 'Total que entra', colSpan: 5, styles: { halign: 'right' } }, fmt(entradas), '', '', ...relleno],
+    [{ content: filtrado ? 'Total que sale (solo filas filtradas)' : 'Total que sale', colSpan: 5, styles: { halign: 'right' } }, '', fmt(salidas), '', ...relleno],
+    [{ content: filtrado ? 'Neto de las filas filtradas' : 'Neto del periodo', colSpan: 5, styles: { halign: 'right' } }, { content: fmt(neto), colSpan: conUsd ? 4 : 3, styles: { halign: 'right' } }],
   ];
 }
 
 function opcionesTablaCuenta(doc: any, filas: readonly FilaCuenta[], moneda: string, conUsd: boolean): Record<string, any> {
-  const derecha = { halign: 'right', cellWidth: 52 };
+  const derecha = { halign: 'right', cellWidth: 50 };
   return {
     margin: { left: BOX_LEFT, right: MARGEN_PAGINA_DER, bottom: 44 },
-    head: [['Fecha', 'N°', 'Tipo', 'Descripción', 'Categoría', `Entra (${moneda})`, `Sale (${moneda})`, ...(conUsd ? ['Equiv. USD'] : [])]],
+    head: [['Fecha', 'N°', 'Tipo', 'Descripción', 'Categoría', `Entra (${moneda})`, `Sale (${moneda})`, `Saldo (${moneda})`, ...(conUsd ? ['Equiv. USD'] : [])]],
     body: cuerpoCuenta(filas, conUsd),
     showFoot: 'lastPage',
     theme: 'grid',
     styles: ESTILOS_TABLA,
     headStyles: { fillColor: GRIS_FONDO, textColor: 0, fontStyle: 'bold' },
     footStyles: { fillColor: GRIS_FONDO, textColor: 0, fontStyle: 'bold' },
-    columnStyles: { 0: { cellWidth: 46 }, 1: { cellWidth: 46 }, 2: { cellWidth: conUsd ? 56 : 62 }, 4: { cellWidth: conUsd ? 70 : 82 }, 5: derecha, 6: derecha, ...(conUsd ? { 7: derecha } : {}) },
+    columnStyles: { 0: { cellWidth: 46 }, 1: { cellWidth: 46 }, 2: { cellWidth: conUsd ? 56 : 62 }, 4: { cellWidth: conUsd ? 62 : 74 }, 5: derecha, 6: derecha, 7: derecha, ...(conUsd ? { 8: derecha } : {}) },
     didParseCell: (d: any) => {
       if (d.section === 'body' && d.column.index === 4 && filas[d.row.index]?.categoria) d.cell.styles.cellPadding = { top: 4, bottom: 4, left: SANGRIA_PUNTO, right: 4 };
       if (d.section === 'body' && filas[d.row.index]?.anulado) d.cell.styles.textColor = 130;
@@ -115,7 +116,8 @@ export async function descargarReporteCuentaPDF(r: ReporteCuenta, modo: ModoPdf 
   const moneda = etiquetaMoneda(r.banca.moneda);
   const conUsd = r.banca.moneda === 'VES';
   const aviso = filtro?.trim() ? [`Filtrado por N°: ${filtro.trim()}`] : [];
-  const y = encabezado(doc, 'Movimientos de la cuenta', [`${r.banca.nombre} · ${moneda}`, `Del ${formatearFecha(r.desde)} al ${formatearFecha(r.hasta)}`, ...aviso]);
+  const saldos = r.saldoInicial != null && r.saldoFinal != null ? [`Saldo inicial: ${moneda} ${fmt(r.saldoInicial)} · Saldo final: ${moneda} ${fmt(r.saldoFinal)}`] : [];
+  const y = encabezado(doc, 'Movimientos de la cuenta', [`${r.banca.nombre} · ${moneda}`, `Del ${formatearFecha(r.desde)} al ${formatearFecha(r.hasta)}`, ...saldos, ...aviso]);
   const trozos = partirEnTrozos(r.filas);
   const paginas: readonly FilaCuenta[][] = trozos.length > 0 ? trozos : [[]];
   paginas.forEach((filas, i) => {

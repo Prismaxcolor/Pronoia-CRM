@@ -94,7 +94,7 @@ function CobrarTransferenciaModal({ movimiento, bancaDestino, onClose, onCobrado
       </div>
       <form onSubmit={e => void confirmar(e)} className="p-5 space-y-4">
         <p className="text-sm text-text-secondary">
-          Se acreditará en {bancaDestino?.nombre ?? 'la cuenta destino'} lo que el cambista entregó (ya descontada la comisión) y se saldará esa parte de su deuda.
+          Se acreditará en {bancaDestino?.nombre ?? 'la cuenta destino'} lo que el cambista entregó (ya descontada la comisión) y se cobrará esa parte de lo que el cambista nos debe.
           Hazlo solo cuando ya recibiste el dinero.
         </p>
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm" aria-label="Resumen del cobro">

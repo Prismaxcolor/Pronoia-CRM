@@ -155,6 +155,8 @@ const renglonSchema = z.object({
   montoBaseUsd: monto('El sueldo en divisas debe ser un número.'),
   montoBaseBs: monto('El sueldo en Bs (referencia en USD) debe ser un número.').default(0),
   bonificacionUsd: monto('La bonificación debe ser un número.').default(0),
+  /** Bonificación extra «en Bs (ref.)»: USD de referencia que se pagan en bolívares a la tasa de la nómina. */
+  bonificacionBsUsd: monto('La bonificación extra en Bs (referencia en USD) debe ser un número.').default(0),
   descuentoTrabajoUsd: monto('El descuento debe ser un número.').default(0),
   cuotas: z.array(cuotaSchema).max(20).default([])
     .refine(c => new Set(c.map(x => x.prestamoId)).size === c.length, 'Un préstamo solo puede descontarse una vez por renglón.'),
@@ -162,7 +164,7 @@ const renglonSchema = z.object({
 });
 
 const MENSAJE_PRESTAMO_EXCEDE =
-  'Las cuotas de préstamo no pueden superar lo que el trabajador ganó en la semana (días x sueldo en divisas y en Bs [USD de referencia] + bonificación).';
+  'Las cuotas de préstamo no pueden superar lo que el trabajador ganó en la semana (días x sueldo en divisas y en Bs [USD de referencia] + bonificaciones).';
 
 export const guardarNominaSchema = z.object({
   tipo: z.enum(TIPOS_TRABAJADOR, { message: 'Elige el tipo de personal.' }),
@@ -220,6 +222,12 @@ const pagoCuentaSchema = z.object({
     .positive('El monto de cada cuenta debe ser mayor a cero.')
     .refine(tieneDosDecimales, 'El monto de cada cuenta debe tener como máximo 2 decimales.')
     .optional(),
+  /**
+   * Referencia y comprobantes PROPIOS de esta cuenta (cada banca se paga con su referencia y su foto). Si falta la referencia de la
+   * cuenta se usa la general del pago (clientes anteriores); los comprobantes de la cuenta van solo en el egreso de esa cuenta.
+   */
+  referencia: textoOpcional(50),
+  comprobantes: z.array(comprobanteUrlSchema).max(MAX_COMPROBANTES_PAGO).default([]),
 });
 
 type PagoCuenta = z.infer<typeof pagoCuentaSchema>;

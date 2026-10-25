@@ -305,6 +305,7 @@ function TransformacionDetallePage() {
           <FilaDocumento label="Registrada por" valor={`${nombres.registradoPor ?? '—'} · ${fechaHora(t.createdAt)}`} />
           {completa && <FilaDocumento label="Completada por" valor={`${nombres.completadoPor ?? '—'} · ${fechaHora(t.completadoEn)}`} />}
           {t.notas && <FilaDocumento label="Notas" valor={t.notas} />}
+          {t.observacionCierre && <FilaDocumento label="Observación al completar" valor={t.observacionCierre} />}
         </div>
 
         {/* Peso de entrada: en pantalla ya está en los indicadores; en la impresión se conserva. */}

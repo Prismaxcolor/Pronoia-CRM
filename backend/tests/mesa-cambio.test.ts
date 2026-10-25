@@ -25,7 +25,7 @@ describe('saldoDeAsientos', () => {
     const l = [asiento('CARGO', 500, '2026-10-01'), asiento('COBRO', 200, '2026-10-02'), asiento('CARGO', 999, '2026-10-03', true)];
     expect(saldoDeAsientos(l)).toBe(300);
   });
-  it('negativo cuando nos deben', () => {
+  it('negativo cuando se le debe al cambista', () => {
     expect(saldoDeAsientos([asiento('CARGO', 10, '2026-10-01'), asiento('COBRO', 25, '2026-10-02')])).toBe(-15);
   });
   it('sin error de coma flotante', () => {
@@ -93,15 +93,15 @@ describe('formatearNumeroAsiento', () => {
 });
 
 describe('describirSaldo', () => {
-  it('positivo: les debemos', () => expect(describirSaldo(120.5)).toMatchObject({ sentido: 'les_debemos', monto: 120.5 }));
-  it('negativo: nos deben, monto absoluto', () => expect(describirSaldo(-30)).toMatchObject({ sentido: 'nos_deben', monto: 30 }));
+  it('positivo: pendiente por cobrar (nos debe el cambista)', () => expect(describirSaldo(120.5)).toMatchObject({ sentido: 'por_cobrar', monto: 120.5, etiqueta: 'Pendiente por cobrar' }));
+  it('negativo: se le debe al cambista, monto absoluto', () => expect(describirSaldo(-30)).toMatchObject({ sentido: 'se_le_debe', monto: 30, etiqueta: 'Se le debe' }));
   it('cero o ruido de centavos: en cero', () => {
     expect(describirSaldo(0).sentido).toBe('en_cero');
     expect(describirSaldo(0.004).sentido).toBe('en_cero');
   });
   it('el texto dice claramente quién debe', () => {
-    expect(describirSaldo(10).texto).toMatch(/^Les debemos/);
-    expect(describirSaldo(-10).texto).toMatch(/^Nos deben/);
+    expect(describirSaldo(10).texto).toMatch(/^Pendiente por cobrar/);
+    expect(describirSaldo(-10).texto).toMatch(/^Se le debe/);
     expect(describirSaldo(0).texto).toMatch(/al día/i);
   });
 });
@@ -160,7 +160,7 @@ describe('lista de cambistas (frontend)', () => {
   it('busca sin tildes ni mayúsculas', () => {
     expect(filtrarCambistas(lista, { q: 'andes' }).map(x => x.nombre)).toEqual(['Casa Ándes']);
   });
-  it('totales separados: les debemos / nos deben', () => {
-    expect(totalesMesa(lista)).toEqual({ lesDebemos: 100.1, nosDeben: 40.5 });
+  it('totales separados: pendiente por cobrar / se les debe', () => {
+    expect(totalesMesa(lista)).toEqual({ porCobrar: 100.1, seLesDebe: 40.5 });
   });
 });

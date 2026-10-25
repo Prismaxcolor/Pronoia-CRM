@@ -36,13 +36,13 @@ describe('renglonDeCandidato', () => {
 describe('renglonDeLinea', () => {
   const linea: LineaNomina = {
     trabajadorId: 't1', trabajadorNombre: 'Ana Pérez', monedaPago: 'MIXTO', diasTrabajados: 4.5, montoBaseUsd: 18, montoBaseBs: 300,
-    totalBrutoUsd: 81, brutoBs: 1350, montoRefBs: 3240, bonificacionUsd: 5, descuentoTrabajoUsd: 2, descuentoPrestamoUsd: 10,
+    totalBrutoUsd: 81, brutoBs: 1350, montoRefBs: 3240, bonificacionUsd: 5, bonificacionBsUsd: 3, descuentoTrabajoUsd: 2, descuentoPrestamoUsd: 10,
     pagarUsd: 74, pagarBs: 1350, equivalenteBsUsd: 33.75, totalUsd: 107.75, totalBs: 2960, nota: 'ok',
     cuotas: [{ prestamoId: 'p1', prestamoNumero: 3, montoUsd: 10 }],
   };
   it('reconstruye el renglón guardado, con el saldo vigente del préstamo', () => {
     const r = renglonDeLinea(linea, [candidato]);
-    expect(r).toMatchObject({ dias: '4.5', montoBase: '18', montoBaseBs: '300', bonificacion: '5', descuentoTrabajo: '2', nota: 'ok' });
+    expect(r).toMatchObject({ dias: '4.5', montoBase: '18', montoBaseBs: '300', bonificacion: '5', bonificacionBs: '3', descuentoTrabajo: '2', nota: 'ok' });
     expect(r.cuotas).toEqual([
       { prestamoId: 'p1', numero: 3, saldoUsd: 50, monto: '10' },
       { prestamoId: 'p2', numero: 4, saldoUsd: 10, monto: '' },
@@ -69,6 +69,10 @@ describe('cálculo en pantalla', () => {
   it('los dos sueldos de un mismo trabajador: divisas por un lado y Bs por otro', () => {
     const [r] = renglonesConTotales([renglon({ montoBase: '20', montoBaseBs: '10' })], 40); // el sueldo en Bs son 10 USD de referencia por día
     expect(r.calculo).toMatchObject({ pagarUsd: 100, pagarBs: 2000, equivalenteBsUsd: 50, totalUsd: 150, monedaPago: 'MIXTO' });
+  });
+  it('la bonificación extra en Bs (ref.) se paga en bolívares a la tasa y no toca la parte en divisas', () => {
+    const [r] = renglonesConTotales([renglon({ montoBase: '20', bonificacion: '5', bonificacionBs: '10' })], 40);
+    expect(r.calculo).toMatchObject({ pagarUsd: 105, pagarBs: 400, equivalenteBsUsd: 10, bonificacionBsUsd: 10, totalUsd: 115, monedaPago: 'MIXTO' });
   });
   it('totales por moneda: un trabajador con las dos partes alimenta los dos totales', () => {
     const rs = renglonesConTotales([
@@ -103,6 +107,10 @@ describe('validarRenglones', () => {
     const ok = renglon({ dias: '1', montoBase: '20', bonificacion: '5', cuotas: [{ prestamoId: 'p1', numero: 3, saldoUsd: 50, monto: '25' }] });
     expect(validarRenglones([ok], 40)).toBeNull();
   });
+  it('una bonificación extra en Bs también exige la tasa', () => {
+    expect(validarRenglones([renglon({ bonificacionBs: '5' })], null)).toMatch(/tasa/i);
+    expect(validarRenglones([renglon({ bonificacionBs: '5' })], 40)).toBeNull();
+  });
   it('con sueldo en Bs la tasa es obligatoria; sin sueldo en Bs no hace falta', () => {
     expect(validarRenglones([renglon({ montoBaseBs: '400' })], null)).toMatch(/tasa/i);
     expect(validarRenglones([renglon({ montoBaseBs: '400' })], 40)).toBeNull();
@@ -134,10 +142,17 @@ describe('construirPayload', () => {
     expect(p).toEqual({
       tipo: 'OPERATIVO', semanaInicio: '2026-10-05', tasaBs: 40.5, version: 2, confirmarNegativos: false,
       lineas: [{
-        trabajadorId: 't1', diasTrabajados: 5, montoBaseUsd: 20, montoBaseBs: 0, bonificacionUsd: 2.5, descuentoTrabajoUsd: 0,
+        trabajadorId: 't1', diasTrabajados: 5, montoBaseUsd: 20, montoBaseBs: 0, bonificacionUsd: 2.5, bonificacionBsUsd: 0, descuentoTrabajoUsd: 0,
         cuotas: [{ prestamoId: 'p1', montoUsd: 15 }], nota: 'x',
       }],
     });
+  });
+  it('la bonificación extra en Bs (ref.) viaja aparte de la de divisas', () => {
+    const p = construirPayload({
+      tipo: 'OPERATIVO', semana: '2026-10-05', tasa: '40', version: null, confirmarNegativos: false,
+      renglones: [renglon({ bonificacion: '2', bonificacionBs: '7,5' })],
+    });
+    expect(p.lineas[0]).toMatchObject({ bonificacionUsd: 2, bonificacionBsUsd: 7.5 });
   });
   it('tasa vacía => null', () => {
     expect(construirPayload({ tipo: 'OPERATIVO', semana: '2026-10-05', tasa: '', version: null, confirmarNegativos: true, renglones: [renglon()] }).tasaBs).toBeNull();

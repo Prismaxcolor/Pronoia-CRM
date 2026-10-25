@@ -8,6 +8,8 @@ interface ProveedorRow {
   nombre: string;
   rfc: string | null;
   telefono: string | null;
+  /** Ausente mientras no se aplique docs/migration_proveedores_direccion.sql. */
+  direccion?: string | null;
   email: string | null;
   activo: boolean;
   created_at: string;
@@ -22,6 +24,7 @@ export interface ProveedorPublico {
   nombre: string;
   rfc: string | null;
   telefono: string | null;
+  direccion: string | null;
   email: string | null;
   activo: boolean;
   createdAt: string;
@@ -38,6 +41,7 @@ function toPublico(row: ProveedorRow): ProveedorPublico {
     nombre: row.nombre,
     rfc: row.rfc,
     telefono: row.telefono,
+    direccion: row.direccion ?? null,
     email: row.email,
     activo: row.activo,
     createdAt: row.created_at,
@@ -67,6 +71,8 @@ export async function crearProveedor(
     telefono: input.telefono,
     email: input.email,
     fotos: input.fotos ?? [],
+    // Solo si viene: sin dirección el alta no depende de la columna nueva.
+    ...(input.direccion ? { direccion: input.direccion } : {}),
   }, { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn });
 
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el proveedor.' };
@@ -81,6 +87,7 @@ export async function actualizarProveedor(
   if (cambios.nombre !== undefined) update.nombre = cambios.nombre;
   if (cambios.rfc !== undefined) update.rfc = cambios.rfc;
   if (cambios.telefono !== undefined) update.telefono = cambios.telefono;
+  if (cambios.direccion !== undefined) update.direccion = cambios.direccion;
   if (cambios.email !== undefined) update.email = cambios.email;
   if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
   if (cambios.activo !== undefined) update.activo = cambios.activo;

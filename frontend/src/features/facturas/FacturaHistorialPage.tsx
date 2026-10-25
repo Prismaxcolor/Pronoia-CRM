@@ -2,7 +2,9 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Plus } from 'lucide-react';
 import {
   obtenerFacturas,
+  obtenerResumenNotasVenta,
   type FacturaCV,
+  type ResumenNotasVenta,
   type TipoFactura,
 } from '../../services/factura-cv-service';
 import { obtenerProveedores } from '../../services/proveedor-service';
@@ -17,7 +19,7 @@ import {
 import PesajesPendientesFacturar from './PesajesPendientesFacturar';
 import { INICIO_HISTORICO, hoyLocal } from '../../lib/rango-fechas';
 import {
-  antiguedadSaldos, compararTotalFacturado, porcentajeEntero, periodoAnterior, periodoEfectivo, porcentajePagado, resumirFacturas,
+  antiguedadSaldos, compararTotalFacturado, emitidoConNotas, porcentajeEntero, periodoAnterior, periodoEfectivo, porcentajePagado, resumirFacturas,
   severidadAntiguedad, textoDesglosePorEstado, type PeriodoEfectivo,
 } from '../../lib/facturas-kpis';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
@@ -100,6 +102,7 @@ function FacturaHistorialPage({ tipo }: Props) {
   const [entidades, setEntidades] = useState<Entidad[] | undefined>(undefined);
   const [productos, setProductos] = useState<Producto[] | undefined>(undefined);
   const [claveCargada, setClaveCargada] = useState<string | null>(null);
+  const [notasVenta, setNotasVenta] = useState<ResumenNotasVenta | null>(null);
   const [mostrarGraficas, setMostrarGraficas] = useState(false);
   const productosPedidos = useRef(false);
 
@@ -135,6 +138,14 @@ function FacturaHistorialPage({ tipo }: Props) {
     return () => { cancelado = true; };
   }, [tipo, periodo, rangoAnterior, entidadId, productoId, claveActual]);
 
+  // Ventas: notas de crédito/débito vigentes del periodo, que el indicador "Emitido sin registro de cobros" suma y resta.
+  useEffect(() => {
+    if (esCompra) return;
+    let cancelado = false;
+    void obtenerResumenNotasVenta(periodo.desde, periodo.hasta).then(r => { if (!cancelado) setNotasVenta(r); });
+    return () => { cancelado = true; };
+  }, [esCompra, periodo.desde, periodo.hasta]);
+
   // Todas las facturas del tipo (sin filtros): para la antigüedad de las emitidas y para saber si de verdad no hay ninguna.
   useEffect(() => {
     let cancelado = false;
@@ -152,6 +163,8 @@ function FacturaHistorialPage({ tipo }: Props) {
   }, [claveCargada]);
 
   const resumen = useMemo(() => resumirFacturas(facturas, tipo), [facturas, tipo]);
+  // Ventas: lo emitido más las notas de débito y menos las de crédito del periodo (sin las notas cargadas, solo facturas).
+  const emitido = useMemo(() => emitidoConNotas(resumen.totalEmitidas, esCompra ? null : notasVenta), [resumen.totalEmitidas, esCompra, notasVenta]);
   // Facturas con saldo vivo: emitidas + pendientes (con pago parcial).
   const cantidadConSaldo = resumen.porEstado.emitida.cantidad + resumen.porEstado.pendiente.cantidad;
   const resumenPrevio = useMemo(() => (previas ? resumirFacturas(previas, tipo) : null), [previas, tipo]);
@@ -276,9 +289,11 @@ function FacturaHistorialPage({ tipo }: Props) {
             ) : (
               <TarjetaKpi
                 titulo="Emitido sin registro de cobros"
-                ayuda="Dinero (USD) que suman las facturas de venta en estado «emitida» del periodo. El sistema todavía no registra cuándo los clientes pagan, así que este monto no dice si ya se cobró o si falta cobrar: solo que la factura se emitió."
-                valor={formatearUsdDecimales(resumen.totalEmitidas)}
-                subtitulo="Aún no se registran cobros de ventas: no es un saldo por cobrar."
+                ayuda="Dinero (USD) que suman las facturas de venta en estado «emitida» del periodo, más todas las notas de débito vigentes del periodo y menos todas las notas de crédito vigentes (las anuladas no cuentan). El sistema todavía no registra cuándo los clientes pagan, así que este monto no dice si ya se cobró o si falta cobrar: solo lo que se emitió."
+                valor={formatearUsdDecimales(emitido.total)}
+                subtitulo={notasVenta
+                  ? `Facturas ${formatearUsdDecimales(emitido.facturas)} + notas de débito ${formatearUsdDecimales(emitido.notasDebito)} − notas de crédito ${formatearUsdDecimales(emitido.notasCredito)}`
+                  : 'Aún no se registran cobros de ventas: no es un saldo por cobrar.'}
                 estado={kpiEstado}
                 mensajeVacio="Sin facturas en este periodo"
               />

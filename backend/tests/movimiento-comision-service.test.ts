@@ -90,6 +90,25 @@ describe('registrarMovimiento: categoría COMISIONES BANCARIAS', () => {
   });
 });
 
+describe('registrarMovimiento: la moneda es la de la cuenta', () => {
+  it('egreso de 5000 sobre cuenta Bs enviado como USD con proveedor se rechaza (409) sin registrar nada', async () => {
+    const r = await registrarMovimiento(input({ monto: 5000, moneda: 'USD', proveedorId: U, llevaComision: false }), U);
+    expect(r).toMatchObject({ codigo: 409, error: expect.stringMatching(/moneda/i) });
+    expect(bd.legacy).toHaveLength(0);
+    expect(bd.llamadas).toHaveLength(0);
+  });
+  it('una cuenta de origen inexistente se rechaza', async () => {
+    bd.origen = null;
+    expect(await registrarMovimiento(input(), U)).toMatchObject({ codigo: 409, error: expect.stringMatching(/origen/i) });
+    expect(bd.legacy).toHaveLength(0);
+  });
+  it('una transferencia a una cuenta destino inexistente se rechaza', async () => {
+    const r = await registrarMovimiento(input({ tipo: 'transferencia', bancaDestinoId: null }), U);
+    expect(r).toMatchObject({ codigo: 409, error: expect.stringMatching(/destino/i) });
+    expect(bd.legacy).toHaveLength(0);
+  });
+});
+
 describe('registrarMovimiento: cuando NO aplica la comisión', () => {
   it('un ingreso se registra como siempre', async () => {
     const r = await registrarMovimiento(input({ tipo: 'ingreso' }), U);
@@ -113,7 +132,7 @@ describe('registrarMovimiento: cuando NO aplica la comisión', () => {
 
   it('llevaComision=true con una cuenta en USD se rechaza con 400', async () => {
     bd.origen = { id: 'b-o', moneda: 'USD', saldo: 500 };
-    const r = await registrarMovimiento(input({ llevaComision: true }), U);
+    const r = await registrarMovimiento(input({ llevaComision: true, moneda: 'USD' }), U);
     expect(r).toMatchObject({ codigo: 400, error: expect.stringContaining('bolívares') });
   });
 

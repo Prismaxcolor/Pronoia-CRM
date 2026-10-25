@@ -92,6 +92,25 @@ export function resumirFacturas(facturas: readonly FacturaCV[], tipo: TipoFactur
   return r;
 }
 
+export interface EmitidoConNotas {
+  /** Facturas de venta emitidas del periodo. */
+  facturas: number;
+  notasDebito: number;
+  notasCredito: number;
+  /** Facturas emitidas + notas de débito - notas de crédito. */
+  total: number;
+}
+
+/** Ventas: lo emitido sin registro de cobros ya incluye las notas de débito (suman) y de crédito (restan) emitidas.
+ *  Sin las notas cargadas (null) se queda en las facturas. Todo en centavos enteros. */
+export function emitidoConNotas(totalFacturasEmitidas: number, notas: { notasDebito: number; notasCredito: number } | null): EmitidoConNotas {
+  const aCentavos = (n: number): number => Math.round(n * 100);
+  const facturas = aCentavos(totalFacturasEmitidas);
+  const debito = notas ? aCentavos(notas.notasDebito) : 0;
+  const credito = notas ? aCentavos(notas.notasCredito) : 0;
+  return { facturas: facturas / 100, notasDebito: debito / 100, notasCredito: credito / 100, total: (facturas + debito - credito) / 100 };
+}
+
 /** "13 pagadas, 4 emitidas": desglose por estado en palabras (solo los estados con facturas). */
 export function textoDesglosePorEstado(r: ResumenFacturas): string {
   const nombres: Record<EstadoFactura, [string, string]> = {

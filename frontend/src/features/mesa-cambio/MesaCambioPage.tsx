@@ -49,7 +49,7 @@ function MesaCambioPage() {
     <div>
       <EncabezadoPagina
         titulo="Mesa de cambio"
-        subtitulo="Cambistas que nos hacen cambios de divisas y lo que les debemos o nos deben, en USD. Son anotaciones: no mueven Wallet ni bancas."
+        subtitulo="Cambistas que nos hacen cambios de divisas, en USD: lo que está pendiente por cobrarles y, si hay saldo a favor del cambista, lo que se les debe. Las transferencias con cambista quedan pendientes por cobrar hasta que se cobran completas."
        
         acciones={puedeCrear && (
           <BotonAccion icono={<Plus size={16} />} onClick={() => setModal({ abierto: true, cambista: null })}>Nuevo cambista</BotonAccion>
@@ -65,12 +65,12 @@ function MesaCambioPage() {
         <>
           <section aria-label="Resumen" className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             <div className="rounded-xl border border-border bg-surface p-4">
-              <p className="text-xs text-text-secondary mb-1">Total que les debemos</p>
-              <p className="text-xl font-bold tabular-nums text-text-primary">{fmtUsd(totales.lesDebemos)}</p>
+              <p className="text-xs text-text-secondary mb-1">Total pendiente por cobrar a cambistas</p>
+              <p className="text-xl font-bold tabular-nums text-text-primary">{fmtUsd(totales.porCobrar)}</p>
             </div>
             <div className="rounded-xl border border-border bg-surface p-4">
-              <p className="text-xs text-text-secondary mb-1">Total que nos deben</p>
-              <p className="text-xl font-bold tabular-nums text-text-primary">{fmtUsd(totales.nosDeben)}</p>
+              <p className="text-xs text-text-secondary mb-1">Total que se les debe a cambistas</p>
+              <p className="text-xl font-bold tabular-nums text-text-primary">{fmtUsd(totales.seLesDebe)}</p>
             </div>
           </section>
 

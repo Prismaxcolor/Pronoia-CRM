@@ -13,6 +13,7 @@ export const crearProveedorSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(120),
   rfc: opcionalTrim(40),
   telefono: opcionalTrim(40),
+  direccion: opcionalTrim(300),
   email: z
     .string()
     .trim()

@@ -159,11 +159,28 @@ describe('construirReporteCuenta', () => {
     expect(propio.filas[0]).toMatchObject({ descripcion: 'A Secreta', referencia: 'REF-S' });
   });
 
-  it('ordena por fecha ascendente y luego por número de sistema', () => {
+  it('ordena por fecha ascendente y, dentro del día, por hora de creación (no por número)', () => {
     const r = construirReporteCuenta({
       ...base,
-      movimientos: [mov({ fecha: '2026-10-07', numeroSistema: 3 }), mov({ fecha: '2026-10-02', numeroSistema: 9 }), mov({ fecha: '2026-10-07', numeroSistema: 2 })],
+      movimientos: [
+        mov({ fecha: '2026-10-07', numeroSistema: 3, creadoEn: '2026-10-07T15:00:00Z' }),
+        mov({ fecha: '2026-10-02', numeroSistema: 9, creadoEn: '2026-10-02T10:00:00Z' }),
+        mov({ fecha: '2026-10-07', numeroSistema: 2, creadoEn: '2026-10-07T16:00:00Z' }),
+      ],
     });
-    expect(r.filas.map(f => f.numeroSistema)).toEqual([9, 2, 3]);
+    expect(r.filas.map(f => f.numeroSistema)).toEqual([9, 3, 2]);
+  });
+
+  it('con la misma hora de creación desempata por id; el saldo corrido sigue ese orden', () => {
+    const t = '2026-10-07T15:00:00Z';
+    const r = construirReporteCuenta({
+      ...base, saldoInicial: 10,
+      movimientos: [
+        mov({ id: 'b', tipo: 'egreso', monto: 15, fecha: '2026-10-07', creadoEn: t }),
+        mov({ id: 'a', tipo: 'ingreso', monto: 20, fecha: '2026-10-07', creadoEn: t }),
+      ],
+    });
+    expect(r.filas.map(f => f.id)).toEqual(['a', 'b']);
+    expect(r.filas.map(f => f.saldo)).toEqual([30, 15]);
   });
 });

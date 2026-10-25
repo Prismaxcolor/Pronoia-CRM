@@ -23,6 +23,8 @@ export interface SaldoEntidad {
   facturado: number;
   pagado: number;
   saldo: number;
+  /** Total entregado en adelantos/anticipos vigentes (no anulados), esté o no aplicado a facturas. */
+  adelantado: number;
   /** Adelantos/anticipos con saldo sin aplicar a facturas. */
   adelantoDisponible: number;
   /** Suma de notas de crédito vigentes (no anuladas) que aún no se aplicaron a una factura. */
@@ -46,6 +48,10 @@ export interface TotalesSaldos {
   porCobrar?: number;
   /** Suma (en positivo) de los saldos negativos: lo que ya se pagó/cobró de más. */
   aFavor: number;
+  /** Suma de `adelantado` de todas las entidades (en proveedores: cuánto se les ha adelantado en total). */
+  adelantado: number;
+  /** Suma de `adelantoDisponible`: lo adelantado que todavía no se aplicó a facturas. */
+  adelantoDisponible: number;
 }
 
 export interface RespuestaSaldos {

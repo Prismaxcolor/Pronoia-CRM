@@ -69,6 +69,7 @@ function ReporteCuentaPanel() {
             <p className="text-sm text-text-secondary">
               {reporte.banca.nombre} · del {formatearFecha(reporte.desde)} al {formatearFecha(reporte.hasta)} · {vista.filas.length} {vista.filas.length === 1 ? 'movimiento' : 'movimientos'}
               {vista.filas.length !== reporte.filas.length ? ` de ${reporte.filas.length}` : ''}
+              {reporte.saldoInicial != null && reporte.saldoFinal != null && <> · Saldo inicial {moneda} {formatearNumero(reporte.saldoInicial, 2)} · Saldo final {moneda} {formatearNumero(reporte.saldoFinal, 2)}</>}
             </p>
             <AccionesReporte generar={modo => descargarReporteCuentaPDF(vista, modo, buscar)} exportarExcel={() => import('./reporte-wallet-xlsx').then(m => m.descargarReporteCuentaXlsx(vista, buscar))} />
           </div>
@@ -80,8 +81,8 @@ function ReporteCuentaPanel() {
             <table className="min-w-full divide-y divide-border">
               <thead><tr>
                 <th className={TH}>Fecha</th><th className={TH}>N°</th><th className={TH}>Tipo</th><th className={TH}>Descripción</th><th className={TH}>Categoría</th>
-                <th className={`${TH} text-right`}>Entra ({moneda})</th><th className={`${TH} text-right`}>Sale ({moneda})</th>
-                {conUsd && <th className={`${TH} text-right`}>Equiv. USD</th>}
+                <th className={`${TH} text-right`}>Entra ({moneda})</th><th className={`${TH} text-right`}>Sale ({moneda})</th><th className={`${TH} text-right`}>Saldo ({moneda})</th>
+                {conUsd && <th className={`${TH} text-right`} title="Equivalente en USD a la tasa Binance del momento en que se hizo el movimiento (o la del pago, si se guardó)">Equiv. USD</th>}
               </tr></thead>
               <tbody className="divide-y divide-border">
                 {vista.filas.map(f => (
@@ -93,17 +94,18 @@ function ReporteCuentaPanel() {
                     <td className={TD}>{f.categoria ? <EtiquetaCategoria nombre={f.categoria.nombre} color={f.categoria.color} /> : <span className="text-text-muted">Sin categoría</span>}</td>
                     <td className={`${TD} text-right tabular-nums`}>{f.entrada ? formatearNumero(f.entrada, 2) : ''}</td>
                     <td className={`${TD} text-right tabular-nums`}>{f.salida ? formatearNumero(f.salida, 2) : ''}</td>
+                    <td className={`${TD} text-right tabular-nums font-medium`}>{f.saldo != null ? formatearNumero(f.saldo, 2) : ''}</td>
                     {conUsd && <td className={`${TD} text-right tabular-nums`}>{f.equivalenteUsd != null ? formatearNumero(f.equivalenteUsd, 2) : ''}</td>}
                   </tr>
                 ))}
-                {vista.filas.length === 0 && <tr><td colSpan={conUsd ? 8 : 7} className="px-3 py-6 text-center text-sm text-text-muted">{reporte.filas.length === 0 ? 'No hay movimientos de esta cuenta en el periodo.' : 'Ningún movimiento coincide con esa búsqueda.'}</td></tr>}
+                {vista.filas.length === 0 && <tr><td colSpan={conUsd ? 9 : 8} className="px-3 py-6 text-center text-sm text-text-muted">{reporte.filas.length === 0 ? 'No hay movimientos de esta cuenta en el periodo.' : 'Ningún movimiento coincide con esa búsqueda.'}</td></tr>}
               </tbody>
               <tfoot className="bg-surface-alt text-sm font-semibold">
                 <tr><td colSpan={5} className="px-3 py-2 text-right">{buscar.trim() ? 'Total que entra / sale (solo filas filtradas)' : 'Total que entra / sale'}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatearNumero(vista.totales.entradas, 2)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatearNumero(vista.totales.salidas, 2)}</td>{conUsd && <td />}</tr>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatearNumero(vista.totales.salidas, 2)}</td><td />{conUsd && <td />}</tr>
                 <tr><td colSpan={5} className="px-3 py-2 text-right">{buscar.trim() ? 'Neto de las filas filtradas' : 'Neto del periodo'} ({moneda})</td>
-                  <td colSpan={conUsd ? 3 : 2} className="px-3 py-2 text-right tabular-nums">{formatearNumero(vista.totales.neto, 2)}</td></tr>
+                  <td colSpan={conUsd ? 4 : 3} className="px-3 py-2 text-right tabular-nums">{formatearNumero(vista.totales.neto, 2)}</td></tr>
               </tfoot>
             </table>
           </div>

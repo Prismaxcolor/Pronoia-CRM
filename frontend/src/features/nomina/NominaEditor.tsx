@@ -46,8 +46,9 @@ function RotuloFormulas() {
         <li>Cada trabajador tiene <strong>dos sueldos por día</strong>: el de <strong>divisas</strong> (USD, efectivo o Binance) y el de <strong>Bs</strong> (pago móvil). Puede cobrar las dos partes.</li>
         <li>El número del <strong>sueldo en Bs es una referencia en USD</strong>, no bolívares: 8 significa 8 USD por día, que se pagan en bolívares convertidos a la tasa de la nómina (a tasa 40 son 320 Bs por día).</li>
         <li><strong>Total bruto (USD)</strong> = días x sueldo en divisas + días x sueldo en Bs (USD de referencia).</li>
+        <li><strong>Bonificación extra en Bs (USD ref.)</strong>: un extra que se paga en bolívares, como el sueldo en Bs (se escribe en USD de referencia y se convierte a la tasa). La bonificación extra de siempre se paga en divisas.</li>
         <li><strong>A pagar en divisas</strong> = días x sueldo en divisas + bonificación extra - descuentos (por trabajo + cuotas de préstamo).</li>
-        <li><strong>A pagar en Bs</strong> = (días x sueldo en Bs en USD) x tasa. Los descuentos se cargan primero a divisas; si no alcanzan, el sobrante (en USD) se descuenta de la parte en Bs.</li>
+        <li><strong>A pagar en Bs</strong> = (días x sueldo en Bs en USD + bonificación extra en Bs) x tasa. Los descuentos se cargan primero a divisas; si no alcanzan, el sobrante (en USD) se descuenta de la parte en Bs.</li>
         <li><strong>Total del trabajador (USD)</strong> = a pagar en divisas + valor en USD de la parte en Bs (no cambia con la tasa).</li>
         <li>La tasa es obligatoria cuando algún trabajador tiene sueldo en Bs: usa la del día (Binance al mediodía de Caracas).</li>
       </ul>
@@ -218,9 +219,10 @@ function NominaEditor({ tipo, semana, nomina, candidatos, totalesOtroTipo, onRec
         <div className="mb-6"><NominaTabla renglones={calculados} soloLectura={soloLectura} onCambiar={cambiar} onQuitar={quitar} /></div>
       )}
 
-      <NominaTotales titulo="Totales de esta nómina" queEstasViendo="Lo que se debe pagar al personal de este tipo esta semana, separando la parte en divisas y la parte en bolívares." totales={totales} />
+      <NominaTotales id="nomina-totales" titulo="Totales de esta nómina" queEstasViendo="Lo que se debe pagar al personal de este tipo esta semana, separando la parte en divisas y la parte en bolívares." totales={totales} />
       {totalesOtroTipo && (
         <NominaTotales
+          id="nomina-total-general"
           titulo="Total general de la semana"
           queEstasViendo="Esta nómina más la del otro tipo de personal de la misma semana (la otra, tal como está guardada)."
           totales={sumarTotales([totales, totalesOtroTipo])}

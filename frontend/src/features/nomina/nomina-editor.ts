@@ -27,6 +27,8 @@ export interface RenglonEditor {
   montoBase: string;
   montoBaseBs: string;
   bonificacion: string;
+  /** Bonificación extra «en Bs (ref.)»: USD de referencia que se pagan en bolívares a la tasa de la nómina. */
+  bonificacionBs: string;
   descuentoTrabajo: string;
   cuotas: CuotaEditor[];
   nota: string;
@@ -55,6 +57,7 @@ export function renglonDeCandidato(c: CandidatoNomina): RenglonEditor {
     montoBase: aTexto(c.pagoDiarioUsd),
     montoBaseBs: aTexto(c.pagoDiarioBs),
     bonificacion: '',
+    bonificacionBs: '',
     descuentoTrabajo: '',
     // Todos los préstamos con saldo quedan a la vista; solo se propone descontar los que tienen cuota semanal.
     cuotas: c.prestamos.map(p => ({
@@ -87,6 +90,7 @@ export function renglonDeLinea(l: LineaNomina, candidatos: readonly CandidatoNom
     montoBase: aTexto(l.montoBaseUsd),
     montoBaseBs: aTexto(l.montoBaseBs),
     bonificacion: l.bonificacionUsd > 0 ? aTexto(l.bonificacionUsd) : '',
+    bonificacionBs: l.bonificacionBsUsd > 0 ? aTexto(l.bonificacionBsUsd) : '',
     descuentoTrabajo: l.descuentoTrabajoUsd > 0 ? aTexto(l.descuentoTrabajoUsd) : '',
     cuotas: cuotasDeLinea(l, prestamos),
     nota: l.nota ?? '',
@@ -101,6 +105,7 @@ export function renglonesConTotales(renglones: readonly RenglonEditor[], tasa: n
       montoBaseUsd: numeroOCero(r.montoBase),
       montoBaseBs: numeroOCero(r.montoBaseBs),
       bonificacionUsd: numeroOCero(r.bonificacion),
+      bonificacionBsUsd: numeroOCero(r.bonificacionBs),
       descuentoTrabajoUsd: numeroOCero(r.descuentoTrabajo),
       descuentoPrestamoUsd: r.cuotas.reduce((a, c) => a + numeroOCero(c.monto), 0),
     }, tasa),
@@ -118,7 +123,9 @@ export function validarRenglones(renglones: readonly RenglonEditor[], tasa: numb
     const dias = leerNumero(r.dias);
     if (dias === null || dias < 0 || dias > DIAS_MAX) return `${r.nombre}: los días trabajados deben estar entre 0 y ${DIAS_MAX}.`;
     if (leerNumero(r.montoBase) === null && numeroOCero(r.montoBaseBs) === 0) return `${r.nombre}: falta el sueldo en divisas (o el sueldo en Bs).`;
-    if (numeroOCero(r.montoBaseBs) > 0 && tasa === null) return `${r.nombre} tiene sueldo en Bs: escribe la tasa de la nómina (se paga en bolívares a esa tasa).`;
+    if ((numeroOCero(r.montoBaseBs) > 0 || numeroOCero(r.bonificacionBs) > 0) && tasa === null) {
+      return `${r.nombre} tiene una parte en Bs (sueldo o bonificación): escribe la tasa de la nómina (se paga en bolívares a esa tasa).`;
+    }
     for (const c of r.cuotas) {
       if (numeroOCero(c.monto) > c.saldoUsd) {
         return `${r.nombre}: la cuota del préstamo PRE-${String(c.numero).padStart(4, '0')} supera su saldo (USD ${c.saldoUsd}).`;
@@ -126,7 +133,7 @@ export function validarRenglones(renglones: readonly RenglonEditor[], tasa: numb
     }
     if (prestamoExcedeGanado({
       diasTrabajados: dias, montoBaseUsd: numeroOCero(r.montoBase), montoBaseBs: numeroOCero(r.montoBaseBs),
-      bonificacionUsd: numeroOCero(r.bonificacion), descuentoPrestamoUsd: r.cuotas.reduce((a, c) => a + numeroOCero(c.monto), 0),
+      bonificacionUsd: numeroOCero(r.bonificacion), bonificacionBsUsd: numeroOCero(r.bonificacionBs), descuentoPrestamoUsd: r.cuotas.reduce((a, c) => a + numeroOCero(c.monto), 0),
     })) {
       return `${r.nombre}: las cuotas de préstamo superan lo que ganó en la semana (días x sueldo + bonificación). Baja la cuota.`;
     }
@@ -155,6 +162,7 @@ export interface PayloadNomina {
     montoBaseUsd: number;
     montoBaseBs: number;
     bonificacionUsd: number;
+    bonificacionBsUsd: number;
     descuentoTrabajoUsd: number;
     cuotas: Array<{ prestamoId: string; montoUsd: number }>;
     nota: string | null;
@@ -175,6 +183,7 @@ export function construirPayload(e: EstadoParaGuardar): PayloadNomina {
       montoBaseUsd: numeroOCero(r.montoBase),
       montoBaseBs: numeroOCero(r.montoBaseBs),
       bonificacionUsd: numeroOCero(r.bonificacion),
+      bonificacionBsUsd: numeroOCero(r.bonificacionBs),
       descuentoTrabajoUsd: numeroOCero(r.descuentoTrabajo),
       cuotas: r.cuotas.filter(c => numeroOCero(c.monto) > 0).map(c => ({ prestamoId: c.prestamoId, montoUsd: numeroOCero(c.monto) })),
       nota: r.nota.trim() || null,

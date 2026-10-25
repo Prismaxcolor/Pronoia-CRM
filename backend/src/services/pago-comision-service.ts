@@ -5,6 +5,7 @@ import { esColumnaInexistente } from '../utils/migracion-pendiente.js';
 import { registrarAuditoria } from './auditoria-service.js';
 import { comisionBancariaDisponible, MENSAJE_COMISION_PENDIENTE } from './movimiento-comision-service.js';
 import { aplicarCategoriaAComisiones } from './comision-categoria-service.js';
+import { reglasAutomaticasDe } from './comision-automatica-service.js';
 import { MENSAJE_COMISION_NO_CARGADA } from '../utils/mensajes-pago-pasos.js';
 
 /**
@@ -25,8 +26,19 @@ const MENSAJE_SIN_LECTURA = 'El pago se registró, pero no se pudo leer para car
 export interface LineaComisionPago {
   bancaId: string;
   moneda: 'USD' | 'VES';
-  /** undefined = la persona no eligió. */
+  /** undefined = la persona no eligió. En una cuenta con comisión automática siempre es true (no se elige). */
   llevaComision?: boolean;
+  /** La cuenta lleva comisión automática (p. ej. Citibank, docs/migration_comision_automatica_banca.sql): se carga sola, en cualquier moneda. */
+  automatica?: boolean;
+}
+
+/** ¿Esta línea carga comisión? Una cuenta en Bs con Sí, o una cuenta con comisión automática (en cualquier moneda). */
+export const lineaCargaComision = (l: LineaComisionPago): boolean => l.llevaComision === true && (l.moneda === 'VES' || l.automatica === true);
+
+/** Marca las líneas cuya cuenta tiene comisión automática: llevan comisión siempre, sin elegir Sí/No. Valores nuevos; no muta la entrada. */
+export async function conComisionAutomatica(lineas: readonly LineaComisionPago[]): Promise<LineaComisionPago[]> {
+  const reglas = await reglasAutomaticasDe(lineas.map(l => l.bancaId));
+  return lineas.map(l => (reglas.has(l.bancaId) ? { ...l, llevaComision: true, automatica: true } : { ...l }));
 }
 
 export interface ComisionPagoCreada {
@@ -84,11 +96,12 @@ async function monedaDeclaradaDifiereDeLaCuenta(lineas: readonly LineaComisionPa
 export async function validarEleccionComisionPago(lineas: readonly LineaComisionPago[]): Promise<string | null> {
   const monedaIncorrecta = await monedaDeclaradaDifiereDeLaCuenta(lineas);
   if (monedaIncorrecta) return monedaIncorrecta;
-  if (lineas.some(l => l.llevaComision === true && l.moneda !== 'VES')) return MENSAJE_PAGO_COMISION_SOLO_BS;
-  const enBs = lineas.filter(l => l.moneda === 'VES');
-  if (enBs.length === 0) return null;
+  if (lineas.some(l => l.llevaComision === true && l.moneda !== 'VES' && !l.automatica)) return MENSAJE_PAGO_COMISION_SOLO_BS;
+  const enBs = lineas.filter(l => l.moneda === 'VES' && !l.automatica);
+  const hayAutomatica = lineas.some(l => l.automatica);
+  if (enBs.length === 0 && !hayAutomatica) return null;
   const disponible = await pagoComisionDisponible();
-  if (enBs.some(l => l.llevaComision === true) && !disponible) return MENSAJE_PAGO_COMISION_PENDIENTE;
+  if ((enBs.some(l => l.llevaComision === true) || hayAutomatica) && !disponible) return MENSAJE_PAGO_COMISION_PENDIENTE;
   if (disponible && enBs.some(l => l.llevaComision === undefined)) return MENSAJE_PAGO_ELEGIR_COMISION;
   return null;
 }
@@ -169,7 +182,7 @@ export interface EntradaComisionesPago {
  */
 export async function aplicarComisionesDePago(entrada: EntradaComisionesPago): Promise<ResultadoComisionesPago> {
   await auditarOmisiones(entrada.lineas, entrada.grupoId, entrada.usuarioId);
-  const conComision = entrada.lineas.filter(l => l.moneda === 'VES' && l.llevaComision === true);
+  const conComision = entrada.lineas.filter(lineaCargaComision);
   if (conComision.length === 0) return { comisiones: [] };
 
   const filas = await leerFilas(entrada.movimientoIds);
@@ -188,19 +201,24 @@ export async function aplicarComisionesDePago(entrada: EntradaComisionesPago): P
   return { comisiones, ...(advertencia ? { advertencia } : {}), ...(bancasFallidas.length > 0 ? { bancasFallidas } : {}) };
 }
 
-/** ¿El grupo de pago tiene cargos de comisión? Sin la migración (columna inexistente) cuenta como que no. */
+/**
+ * ¿Algún movimiento del grupo tiene un cargo de comisión ligado (movimientos.comision_de_id)? Un movimiento sin
+ * grupo es su propio grupo (coalesce(grupo_id, id)). Sin la migración (columna inexistente) cuenta como que no.
+ * `grupoId` debe ser un UUID ya validado (se interpola en el filtro).
+ */
 export async function grupoLlevaComision(grupoId: string): Promise<boolean> {
-  const { data, error } = await supabaseAdmin
-    .from('movimientos')
-    .select('id')
-    .eq('grupo_id', grupoId)
-    .not('comision_bancaria', 'is', null)
-    .limit(1);
-  if (error) {
-    if (!esColumnaInexistente(error, 'comision_bancaria')) {
-      logger.error({ evento: 'pago_comision_grupo_lectura_fallida', grupoId, mensaje: error.message });
-    }
-    return false;
+  const miembros = await supabaseAdmin.from('movimientos').select('id').or(`grupo_id.eq.${grupoId},id.eq.${grupoId}`);
+  if (miembros.error) return falloLecturaComision(grupoId, miembros.error);
+  const ids = ((miembros.data as Array<{ id: string }> | null) ?? []).map(m => m.id);
+  if (ids.length === 0) return false;
+  const cargos = await supabaseAdmin.from('movimientos').select('id').in('comision_de_id', ids);
+  if (cargos.error) return falloLecturaComision(grupoId, cargos.error);
+  return ((cargos.data as unknown[] | null) ?? []).length > 0;
+}
+
+function falloLecturaComision(grupoId: string, error: { code?: string; message: string }): false {
+  if (!esColumnaInexistente(error, 'comision_de_id')) {
+    logger.error({ evento: 'pago_comision_grupo_lectura_fallida', grupoId, mensaje: error.message });
   }
-  return ((data as unknown[] | null) ?? []).length > 0;
+  return false;
 }

@@ -1,4 +1,4 @@
-import { correlativoMovimiento } from '../../lib/cochinito-kpis';
+import { correlativoMovimiento, diaDe, montoUsdDe } from '../../lib/cochinito-kpis';
 import type { Movimiento } from '@shared/types/index.js';
 
 const SIN_NUMERO = '—';
@@ -29,9 +29,37 @@ export function numeroMovimiento(m: Pick<Movimiento, 'subtipo' | 'numero'> & { n
 }
 
 /** Bolívares por dólar implícitos en el movimiento; null si no aplica (ya está en USD o falta el equivalente). */
-export function tasaDe(m: Pick<Movimiento, 'monto' | 'moneda' | 'montoUsd'>): number | null {
-  if (m.moneda === 'USD' || m.montoUsd == null || !(m.montoUsd > 0) || !(m.monto > 0)) return null;
-  return m.monto / m.montoUsd;
+export function tasaDe(m: Pick<Movimiento, 'monto' | 'moneda' | 'montoUsd'> & { equivalenteUsd?: number | null }): number | null {
+  const usd = m.montoUsd ?? m.equivalenteUsd ?? null;
+  if (m.moneda === 'USD' || usd == null || !(usd > 0) || !(m.monto > 0)) return null;
+  return m.monto / usd;
+}
+
+export interface MontosTransferencia {
+  /** Monto en bolívares (siempre se muestra primero). */
+  bs: number;
+  /** Equivalente en USD; null si no hay dato ni tasa. */
+  usd: number | null;
+}
+
+/**
+ * Transferencia con una punta en bolívares: el monto en Bs y, después, su equivalente en USD.
+ * Origen en Bs: lo que sale en Bs. Origen en USD y destino en Bs: lo que recibe el destino (en Bs) y los USD enviados.
+ * null si no es una transferencia o ninguna punta es en bolívares.
+ */
+export function montosTransferencia(
+  m: Pick<Movimiento, 'tipo' | 'monto' | 'moneda' | 'montoUsd' | 'montoDestino' | 'mesaCambistaId' | 'mesaEstado' | 'mesaMontoBruto' | 'mesaComision'> & { equivalenteUsd?: number | null },
+  monedaDestino?: string,
+): MontosTransferencia | null {
+  if (m.tipo !== 'transferencia') return null;
+  if (m.moneda === 'VES') {
+    // VES -> USD: los USD realmente recibidos (montoDestino) mandan sobre el estimado a tasa.
+    const usdRecibido = monedaDestino === 'USD' && m.montoDestino != null && m.montoDestino > 0 ? m.montoDestino : null;
+    return { bs: m.monto, usd: usdRecibido ?? montoUsdDe(m) };
+  }
+  if (monedaDestino !== 'VES') return null;
+  const bs = montoQueRecibeElDestino(m) ?? m.montoDestino;
+  return bs == null ? null : { bs, usd: montoUsdDe(m) };
 }
 
 /** Solo los movimientos manuales vigentes se editan o anulan desde Wallet; los de un pago o cobro, desde su comprobante. */
@@ -111,3 +139,39 @@ export const tieneComision = (m: Pick<Movimiento, 'comisionBancaria'>): boolean 
 
 /** ¿Es el cargo de la comisión bancaria de otro movimiento? Se anula junto con su movimiento, no por separado. */
 export const esCargoDeComision = (m: Pick<Movimiento, 'comisionDeId'>): boolean => m.comisionDeId != null;
+
+// ---------------------------------------------------------------------------
+// Navegación entre movimientos (anterior / siguiente desde el detalle)
+// ---------------------------------------------------------------------------
+
+/** Movimientos del más antiguo al más reciente (fecha, luego hora de registro, luego id). No muta la entrada. */
+export function ordenCronologico<T extends Pick<Movimiento, 'id' | 'fecha' | 'creadoEn'>>(movimientos: readonly T[]): T[] {
+  return [...movimientos].sort((a, b) =>
+    diaDe(a).localeCompare(diaDe(b)) || (a.creadoEn ?? '').localeCompare(b.creadoEn ?? '') || a.id.localeCompare(b.id));
+}
+
+export interface VecinosMovimiento {
+  /** Movimiento anterior en el tiempo (más antiguo); null si es el primero. */
+  anteriorId: string | null;
+  /** Movimiento siguiente en el tiempo (más reciente); null si es el último. */
+  siguienteId: string | null;
+  /** Posición (desde 1) y total de la lista; null si el movimiento no está en ella. */
+  posicion: number | null;
+  total: number;
+}
+
+/** Vecinos de un movimiento dentro de una lista de ids ya ordenada cronológicamente. */
+export function vecinosEnLista(ids: readonly string[], id: string): VecinosMovimiento {
+  const i = ids.indexOf(id);
+  if (i === -1) return { anteriorId: null, siguienteId: null, posicion: null, total: ids.length };
+  return { anteriorId: i > 0 ? ids[i - 1] : null, siguienteId: i < ids.length - 1 ? ids[i + 1] : null, posicion: i + 1, total: ids.length };
+}
+
+/** Estado de navegación que lleva el enlace al detalle: la lista (filtrada) de la que viene la persona. */
+export interface EstadoNavegacionMovimiento { navegacion: string[] }
+
+/** Lee con seguridad la lista de ids que trae el estado del enrutador (cualquier otra cosa => null). */
+export function idsDeNavegacion(estado: unknown): string[] | null {
+  const lista = (estado as Partial<EstadoNavegacionMovimiento> | null)?.navegacion;
+  return Array.isArray(lista) && lista.every(x => typeof x === 'string') ? lista : null;
+}

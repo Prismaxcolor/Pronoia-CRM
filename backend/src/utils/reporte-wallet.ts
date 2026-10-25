@@ -30,6 +30,8 @@ export interface MovimientoReporte {
   mesaMontoCobrado?: number | null;
   /** Equivalente en USD guardado al momento del pago/cobro (null/ausente en movimientos manuales). */
   montoUsd?: number | null;
+  /** Instante de registro (ISO): afina la tasa del equivalente en USD dentro del día del movimiento. */
+  creadoEn?: string | null;
 }
 
 export interface TotalesMonedaCalculo { moneda: string; ingresos: number; egresos: number; total: number }
@@ -156,11 +158,16 @@ export interface FilaCuentaCalculo {
   enProceso: boolean;
   /** Equivalente en USD del importe (solo cuentas en Bs); null si no hay dato ni tasa histórica. */
   equivalenteUsd: number | null;
+  /** Saldo de la cuenta (su moneda) justo después de este movimiento; las filas anuladas no lo cambian. */
+  saldo: number;
 }
 
 export interface ReporteCuentaCalculo {
   filas: FilaCuentaCalculo[];
   totales: { entradas: number; salidas: number; neto: number };
+  /** Saldo de la cuenta al empezar el rango y al terminarlo. */
+  saldoInicial: number;
+  saldoFinal: number;
 }
 
 export interface EntradaReporteCuenta {
@@ -173,6 +180,8 @@ export interface EntradaReporteCuenta {
   monedaCuenta?: string;
   /** Tasas USD->VES históricas para movimientos sin monto_usd. */
   tasas?: readonly TasaHistorica[];
+  /** Saldo de la cuenta antes del primer movimiento del rango (0 si se desconoce). */
+  saldoInicial?: number;
 }
 
 /** Lo que entra y sale de la cuenta por un movimiento (una transferencia con mesa en proceso aún no acredita al destino). */
@@ -201,10 +210,12 @@ function categoriaImprimible(id: string | null, categorias: readonly CategoriaFi
 function equivalenteDeFila(m: MovimientoReporte, e: EntradaReporteCuenta, importe: number): number | null {
   if (e.monedaCuenta !== 'VES') return null;
   const importeEnMonedaOrigen = m.tipo !== 'transferencia' || m.bancaOrigenId === e.bancaId;
-  return equivalenteUsd(importe, { moneda: m.moneda, monto: m.monto, montoUsd: m.montoUsd, fecha: m.fecha, importeEnMonedaOrigen }, e.tasas ?? []);
+  return equivalenteUsd(importe, { moneda: m.moneda, monto: m.monto, montoUsd: m.montoUsd, fecha: m.fecha, creadoEn: m.creadoEn, importeEnMonedaOrigen }, e.tasas ?? []);
 }
 
-function filaDeCuenta(m: MovimientoReporte, e: EntradaReporteCuenta): FilaCuentaCalculo {
+type FilaSinSaldo = Omit<FilaCuentaCalculo, 'saldo'>;
+
+function filaDeCuenta(m: MovimientoReporte, e: EntradaReporteCuenta): FilaSinSaldo {
   // Con la cuenta contraria fuera del acceso, descripción y referencia podrían nombrarla: se enmascaran.
   const oculta = tieneExtremoOculto(e.permitidas, m);
   const montos = montosEnCuenta(m, e.bancaId);
@@ -216,14 +227,35 @@ function filaDeCuenta(m: MovimientoReporte, e: EntradaReporteCuenta): FilaCuenta
   };
 }
 
-const claveOrden = (f: FilaCuentaCalculo): number => f.numeroSistema ?? f.numero ?? 0;
+/** Desempate dentro del mismo día: primero la hora de creación y luego el id, para que el saldo corrido sea cronológico. */
+const porCreacion = (a: { creadoEn: string; id: string }, b: { creadoEn: string; id: string }): number =>
+  porTexto(a.creadoEn, b.creadoEn) || porTexto(a.id, b.id);
+
+/** Neto (entra - sale) que una fila deja en la cuenta; las anuladas no cuentan. */
+const netoDeFila = (f: FilaSinSaldo): number => (f.anulado ? 0 : f.entrada - f.salida);
+
+/** Saldo de una cuenta a partir de los movimientos anteriores al rango (para el saldo inicial del reporte). */
+export function saldoDeMovimientos(bancaId: string, movimientos: readonly MovimientoReporte[]): number {
+  const total = movimientos
+    .filter(m => !m.anulado)
+    .reduce((s, m) => { const x = montosEnCuenta(m, bancaId); return s + x.entrada - x.salida; }, 0);
+  return redondear2(total);
+}
 
 export function construirReporteCuenta(e: EntradaReporteCuenta): ReporteCuentaCalculo {
-  const filas = e.movimientos
-    .map(m => filaDeCuenta(m, e))
-    .sort((a, b) => porTexto(a.fecha, b.fecha) || claveOrden(a) - claveOrden(b));
+  const ordenadas = e.movimientos
+    .map(m => ({ fila: filaDeCuenta(m, e), creadoEn: m.creadoEn ?? '', id: m.id }))
+    .sort((a, b) => porTexto(a.fila.fecha, b.fila.fecha) || porCreacion(a, b))
+    .map(x => x.fila);
+  const saldoInicial = redondear2(e.saldoInicial ?? 0);
+  // Saldo corrido en centavos para no arrastrar errores de coma flotante.
+  let acumulado = Math.round(saldoInicial * 100);
+  const filas: FilaCuentaCalculo[] = ordenadas.map(f => {
+    acumulado += Math.round(netoDeFila(f) * 100);
+    return { ...f, saldo: acumulado / 100 };
+  });
   const vigentes = filas.filter(f => !f.anulado);
   const entradas = redondear2(vigentes.reduce((s, f) => s + f.entrada, 0));
   const salidas = redondear2(vigentes.reduce((s, f) => s + f.salida, 0));
-  return { filas, totales: { entradas, salidas, neto: redondear2(entradas - salidas) } };
+  return { filas, totales: { entradas, salidas, neto: redondear2(entradas - salidas) }, saldoInicial, saldoFinal: acumulado / 100 };
 }

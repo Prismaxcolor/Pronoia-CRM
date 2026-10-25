@@ -34,19 +34,20 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
   const [rfc, setRfc] = useState(proveedor?.rfc ?? '');
   const [telefono, setTelefono] = useState(proveedor?.telefono ?? '');
   const [email, setEmail] = useState(proveedor?.email ?? '');
+  const [direccion, setDireccion] = useState(proveedor?.direccion ?? '');
   const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(proveedor?.fotos ?? []));
   useLiberarVistasPrevias(fotos);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Borrador del formulario (uno por proveedor, o uno para "nuevo"): sobrevive a F5.
-  const estadoBorrador = { nombre, rfc, telefono, email, fotos };
+  const estadoBorrador = { nombre, rfc, telefono, email, direccion, fotos };
   const estadoInicial = () => ({
-    nombre: proveedor?.nombre ?? '', rfc: proveedor?.rfc ?? '', telefono: proveedor?.telefono ?? '', email: proveedor?.email ?? '',
+    nombre: proveedor?.nombre ?? '', rfc: proveedor?.rfc ?? '', telefono: proveedor?.telefono ?? '', email: proveedor?.email ?? '', direccion: proveedor?.direccion ?? '',
     fotos: fotosLocalDeUrls(proveedor?.fotos ?? []),
   });
   const aplicarEstado = (e: ReturnType<typeof estadoInicial>) => {
-    setNombre(e.nombre); setRfc(e.rfc); setTelefono(e.telefono); setEmail(e.email); setFotos(e.fotos);
+    setNombre(e.nombre); setRfc(e.rfc); setTelefono(e.telefono); setEmail(e.email); setDireccion(e.direccion); setFotos(e.fotos);
   };
   const borrador = useBorradorPersistente<typeof estadoBorrador>({
     formulario: 'proveedor',
@@ -64,7 +65,7 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
       const base = estadoInicial();
       aplicarEstado({
         nombre: d.nombre ?? base.nombre, rfc: d.rfc ?? base.rfc, telefono: d.telefono ?? base.telefono,
-        email: d.email ?? base.email, fotos: d.fotos ?? base.fotos,
+        email: d.email ?? base.email, direccion: d.direccion ?? base.direccion, fotos: d.fotos ?? base.fotos,
       });
     },
     restablecer: () => aplicarEstado(estadoInicial()),
@@ -93,6 +94,8 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
       rfc: rfc.trim() || null,
       telefono: telefono.trim() || null,
       email: email.trim() || null,
+      // Solo si cambió: mientras la columna no exista en la base, guardar sin tocar la dirección sigue funcionando.
+      ...(direccion.trim() !== (proveedor?.direccion ?? '') ? { direccion: direccion.trim() || null } : {}),
       fotos: urls,
       ...(puedeCambiarAvisos ? { telegramReportesActivos: avisosActivos } : {}),
     };
@@ -173,6 +176,17 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
             onChange={e => setEmail(e.target.value)}
             className={inputClass}
             placeholder="proveedor@ejemplo.com"
+          />
+        </div>
+
+        <div>
+          <label className={labelClass}>Dirección</label>
+          <input
+            type="text"
+            value={direccion}
+            onChange={e => setDireccion(e.target.value)}
+            className={inputClass}
+            placeholder="Av. Principal, Galpón..."
           />
         </div>
 

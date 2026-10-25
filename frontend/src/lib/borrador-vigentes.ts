@@ -43,6 +43,8 @@ export interface SeleccionPago {
   notaIdsSel: string[];
   notaCreditoIdsSel: string[];
   montosAdelanto: Record<string, string>;
+  /** Monto aplicado por nota (débito y crédito); se recorta a las notas vigentes. */
+  montosNota?: Record<string, string>;
 }
 
 export interface IdsVigentesPago {
@@ -61,6 +63,8 @@ export function recortarSeleccionPago(
   const adelantos = conservarVigentesEnMapa(seleccion.montosAdelanto, vigentes.adelantoIds);
   const notas = intersectarIds(seleccion.notaIdsSel, vigentes.notaIds);
   const notasCredito = intersectarIds(seleccion.notaCreditoIdsSel, vigentes.notaCreditoIds);
+  // Los montos de notas ya no vigentes no cuentan como selección descartada (la nota ya se contó), pero se limpian.
+  const montosNota = conservarVigentesEnMapa(seleccion.montosNota ?? {}, [...vigentes.notaIds, ...vigentes.notaCreditoIds]);
   const descartados = facturas.descartados + adelantos.descartados + notas.descartados.length + notasCredito.descartados.length;
   return {
     seleccion: {
@@ -68,6 +72,7 @@ export function recortarSeleccionPago(
       notaIdsSel: notas.validos,
       notaCreditoIdsSel: notasCredito.validos,
       montosAdelanto: adelantos.mapa,
+      ...(seleccion.montosNota ? { montosNota: montosNota.mapa } : {}),
     },
     recortado: descartados > 0,
     descartados,

@@ -4,13 +4,12 @@ import { obtenerBancas } from '../../services/banca-service';
 import { obtenerCategoriaPagoNomina, pagarTrabajadorNomina } from '../../services/nomina-service';
 import { useComisionDisponible } from '../cochinito/useComisionDisponible';
 import { useConfirm } from '../../components/ui';
-import FotoMultiplePicker from '../../components/FotoMultiplePicker';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import { formatearNumeroNomina, type LineaNomina, type Nomina } from '../../../../shared/types/nomina.js';
 import type { Banca } from '../../../../shared/types/banca.js';
 import PagarNominaGrupo from './PagarNominaGrupo';
 import type { EleccionPago } from './nomina-reparto';
-import { MENSAJE_COMPROBANTE_NO_SUBIDO, useComprobantesPago } from './useComprobantesPago';
+import { MENSAJE_COMPROBANTE_NO_SUBIDO, subirComprobantesPorCuenta } from './useComprobantesPago';
 import {
   bloqueoComisionPago, construirPayloadPago, gruposDePagoLinea, resumenDebitos, validarPago, type Elecciones,
 } from './nomina-pago';
@@ -29,12 +28,10 @@ const inputClass = 'w-full min-h-[44px] px-3 py-2 bg-surface-alt border border-b
 function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
   const confirmar = useConfirm();
   const comision = useComisionDisponible();
-  const comprobantes = useComprobantesPago();
   const [bancas, setBancas] = useState<Banca[] | null>(null);
   const [categoria, setCategoria] = useState<{ cargando: boolean; nombre: string | null }>({ cargando: true, nombre: null });
   const [elecciones, setElecciones] = useState<Elecciones>({});
   const [fecha, setFecha] = useState(hoyNegocio());
-  const [referencia, setReferencia] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const grupos = useMemo(() => gruposDePagoLinea(linea), [linea]);
@@ -62,9 +59,10 @@ function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
     });
     if (!ok) return;
     setOcupado(true);
-    const urls = await comprobantes.subir();
+    // Cada cuenta sube sus propios comprobantes y lleva su propia referencia.
+    const urls = await subirComprobantesPorCuenta(elecciones);
     if (!urls) { setOcupado(false); setError(MENSAJE_COMPROBANTE_NO_SUBIDO); return; }
-    const payload = { ...construirPayloadPago(grupos, elecciones, lista, comision.disponible, fecha, referencia), comprobantes: urls };
+    const payload = construirPayloadPago(grupos, elecciones, lista, comision.disponible, fecha, '', urls);
     const r = await pagarTrabajadorNomina(nomina.id, linea.trabajadorId, payload);
     setOcupado(false);
     if ('error' in r) { setError(r.error); return; }
@@ -82,7 +80,7 @@ function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-text-secondary">
-            {formatearNumeroNomina(nomina.numero)}: elige la cuenta de la que sale el pago (o divídelo entre varias cuentas de la misma moneda). Se crea un egreso por cuenta en el Wallet y queda enlazado a este trabajador.
+            {formatearNumeroNomina(nomina.numero)}: elige la cuenta de la que sale el pago (o divídelo entre varias cuentas de la misma moneda). Se crea un egreso por cuenta en el Wallet y queda enlazado a este trabajador. Cada cuenta lleva su propia referencia y su propio comprobante.
           </p>
           {!categoria.cargando && (
             <p className="text-xs text-text-secondary">
@@ -96,18 +94,10 @@ function PagarTrabajadorModal({ nomina, linea, onClose, onPagado }: Props) {
               estadoComision={comision.estado} onReintentarComision={comision.reintentar} onCambiar={filas => cambiar(g.moneda, filas)}
             />
           ))}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor="pago-trab-fecha" className="block text-xs font-medium text-text-secondary mb-1">Fecha del pago *</label>
-              <input id="pago-trab-fecha" type="date" value={fecha} min={nomina.semanaInicio} onChange={e => setFecha(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label htmlFor="pago-trab-ref" className="block text-xs font-medium text-text-secondary mb-1">Referencia (opcional)</label>
-              <input id="pago-trab-ref" maxLength={50} value={referencia} onChange={e => setReferencia(e.target.value)} className={inputClass} />
-            </div>
+          <div>
+            <label htmlFor="pago-trab-fecha" className="block text-xs font-medium text-text-secondary mb-1">Fecha del pago *</label>
+            <input id="pago-trab-fecha" type="date" value={fecha} min={nomina.semanaInicio} onChange={e => setFecha(e.target.value)} className={inputClass} />
           </div>
-          <FotoMultiplePicker fotos={comprobantes.fotos} onAgregar={comprobantes.agregar} onQuitar={comprobantes.quitar} label="Foto del comprobante de pago (opcional)" />
-          {comprobantes.aviso && <p role="status" className="text-xs text-amber-700">{comprobantes.aviso}</p>}
           {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="flex-1 min-h-[44px] py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">Cancelar</button>

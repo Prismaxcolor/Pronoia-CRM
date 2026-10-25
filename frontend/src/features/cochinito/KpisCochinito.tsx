@@ -1,13 +1,19 @@
-import { useMemo } from 'react';
-import { ArrowUpRight, Coins, Landmark, Scale } from 'lucide-react';
-import { BarraApilada, GrillaKpis, TarjetaKpi, colorDeSerie, formatearFecha, formatearNumero, formatearUsdDecimales } from '../../components/ui';
+import { Suspense, lazy, useMemo } from 'react';
+import { ArrowUpRight, Coins, Landmark } from 'lucide-react';
+import { GrillaKpis, SkeletonTarjeta, TarjetaKpi, formatearFecha, formatearNumero, formatearUsdDecimales } from '../../components/ui';
 import { compararConPeriodoAnterior } from '../../lib/comparacion';
 import type { KpisCochinito } from '../../lib/cochinito-kpis';
+import type { Movimiento } from '@shared/types/index.js';
 import type { TasaUsd } from '../../../../shared/types/equivalente-usd.js';
 import { textoEquivalenteTotal } from './equivalente-usd';
 
+// La gráfica pequeña se carga aparte, después de los indicadores.
+const FlujoCajaKpi = lazy(() => import('./FlujoCajaKpi'));
+
 interface Props {
   kpis: KpisCochinito;
+  /** Movimientos vigentes del periodo elegido (alimentan la gráfica de flujo de caja). */
+  movimientos: readonly Movimiento[];
   periodo: { desde: string; hasta: string };
   /** Tasa Binance para el equivalente en USD del saldo en Bs: undefined = aún cargando, null = no disponible. */
   tasaBinance?: TasaUsd | null;
@@ -15,8 +21,8 @@ interface Props {
 
 const SIN_COMPARABLE = 'Sin historial comparable: el periodo anterior empieza antes del primer movimiento registrado, así que estaría incompleto y la comparación engañaría.';
 
-/** Cuatro indicadores de /cochinito: saldos (USD y VES) y, del periodo elegido, egresos y adelantos frente a pagos. */
-function KpisCochinitoGrilla({ kpis, periodo, tasaBinance }: Props) {
+/** Cuatro indicadores de /cochinito: saldos (USD y VES) y, del periodo elegido, egresos y flujo de caja. */
+function KpisCochinitoGrilla({ kpis, periodo, tasaBinance, movimientos }: Props) {
   const cmpEgresos = useMemo(() => {
     if (!kpis.anterior) return undefined;
     const c = compararConPeriodoAnterior(kpis.periodo.totalUsd, kpis.anterior.totalUsd, 'baja');
@@ -25,7 +31,6 @@ function KpisCochinitoGrilla({ kpis, periodo, tasaBinance }: Props) {
   }, [kpis]);
 
   const textoPeriodo = `Del ${formatearFecha(periodo.desde)} al ${formatearFecha(periodo.hasta)}`;
-  const totalEgresosPeriodo = kpis.periodo.pagosUsd + kpis.periodo.adelantosUsd;
 
   return (
     <GrillaKpis>
@@ -65,27 +70,9 @@ function KpisCochinitoGrilla({ kpis, periodo, tasaBinance }: Props) {
         {kpis.periodo.sinEquivalente > 0 && <p className="mt-1 text-xs text-amber-800">{kpis.periodo.sinEquivalente} sin equivalente en USD (no sumados)</p>}
       </TarjetaKpi>
 
-      <TarjetaKpi
-        titulo="Adelantos frente a pagos"
-        icono={<Scale size={16} />}
-        ayuda="De los egresos del periodo, cuántos USD fueron adelantos (dinero entregado antes de tener la factura) y cuántos fueron pagos de facturas. El número grande es el total de adelantos; debajo van los pagos, y la barra muestra qué parte es cada uno. Otros egresos sin tipo no entran aquí."
-        valor={`${formatearUsdDecimales(kpis.periodo.adelantosUsd)}`}
-        subtitulo={`adelantos del periodo (${kpis.periodo.cantidadAdelantos}) · pagos de facturas: ${formatearUsdDecimales(kpis.periodo.pagosUsd)} (${kpis.periodo.cantidadPagos})`}
-        estado={totalEgresosPeriodo > 0 ? 'listo' : 'vacio'}
-        mensajeVacio="No hubo pagos ni adelantos en este periodo"
-      >
-        <div className="mt-2">
-          <BarraApilada
-            rotulo="Egresos del periodo"
-            leyenda="fila"
-            formatoValor={formatearUsdDecimales}
-            segmentos={[
-              { clave: 'pagos', etiqueta: 'Pagos', valor: kpis.periodo.pagosUsd, color: colorDeSerie(0) },
-              { clave: 'adelantos', etiqueta: 'Adelantos', valor: kpis.periodo.adelantosUsd, color: colorDeSerie(1) },
-            ]}
-          />
-        </div>
-      </TarjetaKpi>
+      <Suspense fallback={<SkeletonTarjeta />}>
+        <FlujoCajaKpi movimientos={movimientos} />
+      </Suspense>
     </GrillaKpis>
   );
 }

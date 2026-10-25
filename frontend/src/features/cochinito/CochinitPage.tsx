@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Wallet } from 'lucide-react';
+import { ArrowLeftRight, Plus, Wallet } from 'lucide-react';
 import { obtenerBancas, obtenerMovimientos, archivarBanca, desarchivarBanca } from '../../services/banca-service';
 import { obtenerProveedores } from '../../services/proveedor-service';
 import { obtenerClientes } from '../../services/cliente-service';
@@ -25,6 +25,7 @@ import KpisCochinito from './KpisCochinito';
 import { useTasasUsd } from './useTasasUsd';
 import SaldosBancas from './SaldosBancas';
 import TarjetaBanca from './TarjetaBanca';
+import { useOrdenBancas } from './useOrdenBancas';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 import AvisoSinCategorias from './categorias/AvisoSinCategorias';
 import NavegacionWallet from './categorias/NavegacionWallet';
@@ -65,7 +66,7 @@ const OPCIONES_SUBTIPO = [
 const str = (v: string | boolean | undefined): string | undefined => (typeof v === 'string' ? v : undefined);
 
 function CochinitPage() {
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
   const { filtros, cambiar, limpiar } = useFiltrosUrl(ESQUEMA_FILTROS);
@@ -78,6 +79,9 @@ function CochinitPage() {
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [cargando, setCargando] = useState(true);
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false);
+  const [ordenando, setOrdenando] = useState(false);
+  // Cada persona ordena sus bancas como prefiera (se recuerda por usuario en este navegador).
+  const { ordenadas: bancasOrdenadas, mover: moverBanca, restablecer: restablecerOrden, personalizado: ordenPersonalizado } = useOrdenBancas(usuario?.id, bancas);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalBanca, setModalBanca] = useState<{ abierto: true; banca: Banca | null } | { abierto: false }>({ abierto: false });
   const [edicion, setEdicion] = useState<{ modo: 'editar' | 'anular'; movimiento: Movimiento } | null>(null);
@@ -282,7 +286,7 @@ function CochinitPage() {
       />
 
       <section aria-label="Indicadores principales">
-        <KpisCochinito kpis={kpis} periodo={periodo} tasaBinance={tasasUsd.cargando ? undefined : tasasUsd.tasas.binance} />
+        <KpisCochinito kpis={kpis} movimientos={movimientosPeriodo} periodo={periodo} tasaBinance={tasasUsd.cargando ? undefined : tasasUsd.tasas.binance} />
       </section>
 
       {kpis.bancasNegativas > 0 && (
@@ -301,13 +305,27 @@ function CochinitPage() {
 
       <Bloque
         titulo="Bancas"
-        queEstasViendo="El saldo actual de cada banca en su propia moneda (lo que ha entrado menos lo que ha salido). Pulsa una banca para ver solo sus movimientos en la tabla de abajo."
+        queEstasViendo="El saldo actual de cada banca en su propia moneda (lo que ha entrado menos lo que ha salido). Pulsa una banca para ver solo sus movimientos en la tabla de abajo; con «Ordenar bancas» las acomodas a tu gusto."
         acciones={
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-text-secondary">
               <input type="checkbox" checked={mostrarArchivadas} onChange={e => setMostrarArchivadas(e.target.checked)} className="h-4 w-4 accent-brand-600" />
               Ver archivadas
             </label>
+            {bancas.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setOrdenando(o => !o)}
+                aria-pressed={ordenando}
+                title="Mueve las bancas para verlas en el orden que prefieras; se recuerda para tu usuario"
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${ordenando ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-border bg-surface text-text-secondary hover:bg-surface-hover'}`}
+              >
+                <ArrowLeftRight size={14} aria-hidden="true" /> {ordenando ? 'Listo' : 'Ordenar bancas'}
+              </button>
+            )}
+            {ordenando && ordenPersonalizado && (
+              <button type="button" onClick={restablecerOrden} className="text-xs text-text-secondary underline hover:text-text-primary">Restablecer orden</button>
+            )}
             {puedeCrear && <BotonAccion soloEnLinea variante="secundario" icono={<Plus size={14} />} onClick={abrirNuevaBanca}>Nueva banca</BotonAccion>}
           </div>
         }
@@ -322,7 +340,7 @@ function CochinitPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-3">
-              {bancas.map((banca, i) => (
+              {bancasOrdenadas.map((banca, i) => (
                 <TarjetaBanca
                   key={banca.id}
                   banca={banca}
@@ -333,6 +351,7 @@ function CochinitPage() {
                   onEditar={puedeEditar ? () => setModalBanca({ abierto: true, banca }) : undefined}
                   onArchivar={puedeArchivar ? () => handleArchivarBanca(banca) : undefined}
                   onDesarchivar={puedeArchivar ? () => handleDesarchivarBanca(banca) : undefined}
+                  orden={ordenando ? { onAntes: i > 0 ? () => moverBanca(banca.id, -1) : undefined, onDespues: i < bancasOrdenadas.length - 1 ? () => moverBanca(banca.id, 1) : undefined } : undefined}
                 />
               ))}
             </div>
@@ -342,26 +361,6 @@ function CochinitPage() {
           </div>
         )}
       </Bloque>
-
-      <Bloque
-        titulo="Tasas de cambio"
-        queEstasViendo="Cuántos bolívares (Bs) cuesta hoy 1 USD (tasa oficial BCV y tasa de Binance) y 1 EUR (BCV). Cada tarjeta muestra cuánto cambió en las últimas lecturas, cuándo se actualizó y cuándo se vuelve a consultar."
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <TasaCambioWidget fuenteKey="bcv" titulo="Tasa BCV" subtitulo="Dólar oficial · Banco Central de Venezuela" monedaOrigen="USD" cacheMs={24 * 60 * 60 * 1000} acento="brand" />
-          <TasaCambioWidget fuenteKey="binance" titulo="Tasa Binance" subtitulo="Dólar paralelo · Binance P2P, precio de venta" monedaOrigen="USD" cacheMs={15 * 60 * 1000} acento="binance" />
-          <TasaCambioWidget fuenteKey="euro" titulo="Tasa Euro" subtitulo="Euro oficial · Banco Central de Venezuela" monedaOrigen="EUR" cacheMs={24 * 60 * 60 * 1000} acento="euro" />
-        </div>
-      </Bloque>
-
-      <Suspense fallback={<SkeletonBloque alto="h-64" conMargen etiqueta="Cargando gráficas" />}>
-        <BloquesGraficas
-          movimientos={movimientosPeriodo}
-          puedeCrear={puedeCrear}
-          hayIngresosEnHistorial={hayIngresos}
-          onRegistrar={() => setModalAbierto(true)}
-        />
-      </Suspense>
 
       <Bloque
         titulo="Movimientos"
@@ -382,6 +381,26 @@ function CochinitPage() {
         </Suspense>
       </Bloque>
 
+      <Suspense fallback={<SkeletonBloque alto="h-64" conMargen etiqueta="Cargando gráficas" />}>
+        <BloquesGraficas
+          movimientos={movimientosPeriodo}
+          puedeCrear={puedeCrear}
+          hayIngresosEnHistorial={hayIngresos}
+          onRegistrar={() => setModalAbierto(true)}
+        />
+      </Suspense>
+
+      <Bloque
+        titulo="Tasas de cambio"
+        queEstasViendo="Cuántos bolívares (Bs) cuesta hoy 1 USD (tasa oficial BCV y tasa de Binance) y 1 EUR (BCV). Cada tarjeta muestra cuánto cambió en las últimas lecturas, cuándo se actualizó y cuándo se vuelve a consultar."
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <TasaCambioWidget fuenteKey="bcv" titulo="Tasa BCV" subtitulo="Dólar oficial · Banco Central de Venezuela" monedaOrigen="USD" cacheMs={24 * 60 * 60 * 1000} acento="brand" />
+          <TasaCambioWidget fuenteKey="binance" titulo="Tasa Binance" subtitulo="Dólar paralelo · Binance P2P, precio de venta" monedaOrigen="USD" cacheMs={15 * 60 * 1000} acento="binance" />
+          <TasaCambioWidget fuenteKey="euro" titulo="Tasa Euro" subtitulo="Euro oficial · Banco Central de Venezuela" monedaOrigen="EUR" cacheMs={24 * 60 * 60 * 1000} acento="euro" />
+        </div>
+      </Bloque>
+
       {/* Modales */}
       {movCategoria && (
         <CambiarCategoriaModal
@@ -398,6 +417,7 @@ function CochinitPage() {
           onClose={() => setModalAbierto(false)}
           onCreado={onMovimientoCreado}
           tasasUsd={tasasUsd}
+          bancaInicialId={bancaFiltro}
         />
       )}
       {edicion?.modo === 'editar' && (

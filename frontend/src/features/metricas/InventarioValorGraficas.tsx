@@ -46,7 +46,7 @@ export function TopProductos({ productos }: { productos: readonly ProductoValor[
     return { etiqueta: p.nombre, valor: p.valorUsd ?? 0, color: e.color, simbolo: e.simbolo, detalle: `${p.categoria} · ${formatearKg(p.kg)}` };
   }), [top]);
   return (
-    <Bloque titulo={`Los ${TOP} productos que más valen`} queEstasViendo="los productos con mayor valor a costo en galpón (kg × costo por kg). Útil para saber dónde está el dinero.">
+    <Bloque id="top-valor-productos" titulo={`Los ${TOP} productos que más valen`} queEstasViendo="los productos con mayor valor a costo en galpón (kg × costo por kg). Útil para saber dónde está el dinero.">
       {hayDatosParaGrafica(top.map(p => p.valorUsd ?? 0))
         ? <BarrasHorizontales datos={datos} formatoValor={formatearUsd} etiquetaAria={`Los ${TOP} productos de mayor valor a costo`} />
         : <EstadoVacio mensaje="Todavía no hay suficientes productos con costo" descripcion={SIN_DATOS} />}

@@ -73,11 +73,13 @@ function PesajeGlobalSeccion(p: Props) {
           onChange={e => p.setPesajeExterior(e.target.checked)}
           className="rounded border-border"
         />
-        Peso exterior (sin pesaje global)
+        {p.tipo === 'venta' ? 'Sin pesaje global' : 'Peso exterior (sin pesaje global)'}
       </label>
       <h3 className="text-lg font-bold text-text-primary mb-2">Pesaje global {p.sinPesajeGlobal ? '' : '*'}</h3>
       {p.sinPesajeGlobal ? (
-        <p className="text-xs text-text-muted">Sin pesaje global: {p.tipo === 'venta' ? 'la venta' : 'la compra'} se registra con el peso exterior, sin peso global para reconciliar.</p>
+        <p className="text-xs text-text-muted">{p.tipo === 'venta'
+          ? 'Sin pesaje global: la venta se registra sin peso global para reconciliar.'
+          : 'Sin pesaje global: la compra se registra con el peso exterior, sin peso global para reconciliar.'}</p>
       ) : (
         <div className="space-y-2">
           {p.pesajesGlobales.map((f, idx) => (

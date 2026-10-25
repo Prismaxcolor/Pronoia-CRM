@@ -32,8 +32,7 @@ export interface ResultadoPagoEdicion {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MSG_NO_ENCONTRADO = 'Pago o cobro no encontrado.';
-const MSG_PAGO_CON_COMISION =
-  'Este pago lleva comisión bancaria: no se pueden cambiar sus montos, cuentas ni facturas. Anúlalo (se anula también su comisión) y regístralo de nuevo. Concepto, referencia, fecha y comprobantes sí se pueden editar.';
+const MSG_PAGO_CON_COMISION = 'Este pago lleva comisión bancaria y no se puede editar. Anúlalo y regístralo de nuevo.';
 const MSG_SIN_REGISTRO_HISTORIAL =
   'El cambio se guardó, pero no se pudo registrar en el historial de ediciones. Avisa al administrador.';
 
@@ -166,8 +165,8 @@ export async function editarPagoCobro(
     return { error: 'Un cruce sin movimiento de dinero no admite cambios contables: anúlalo y regístralo de nuevo.', codigo: 409 };
   }
 
-  // Como en Wallet: con comisión bancaria solo cambian los campos libres (el cargo cuelga del importe original).
-  if (contable && tipo === 'pago' && (await grupoLlevaComision(grupoId))) return { error: MSG_PAGO_CON_COMISION, codigo: 409 };
+  // El cargo de comisión cuelga del movimiento (comision_de_id, ON DELETE RESTRICT): la RPC contable fallaría por FK.
+  if (contable && (await grupoLlevaComision(grupoId))) return { error: MSG_PAGO_CON_COMISION, codigo: 409 };
 
   const auth = await autorizarEdicion(actor, tipo, grupoId);
   if (!auth.ok) return { error: auth.error, codigo: auth.codigo };

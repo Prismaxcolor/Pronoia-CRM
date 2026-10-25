@@ -8,6 +8,7 @@
 import type { Banca } from '../../../../shared/types/banca.js';
 import type { MonedaPago } from '../../../../shared/types/nomina-calculo.js';
 import { formatearNumero } from '../../lib/formato';
+import type { FotoLocal } from '../../lib/foto-picker';
 import type { OpcionComision } from '../cochinito/comision-formulario';
 
 /** Mismo tope que el backend (MAX_CUENTAS_POR_MONEDA) y la función SQL. */
@@ -19,6 +20,10 @@ export interface EleccionPago {
   comision: OpcionComision;
   /** Texto del monto; '' mientras haya una sola cuenta (paga todo). */
   monto: string;
+  /** Referencia propia de ESTA cuenta (opcional; cada banca lleva la suya). */
+  referencia?: string;
+  /** Fotos del comprobante de ESTA cuenta (opcionales; se suben justo antes de pagar). */
+  fotos?: FotoLocal[];
 }
 
 export const ELECCION_VACIA: EleccionPago = { bancaId: '', comision: '', monto: '' };

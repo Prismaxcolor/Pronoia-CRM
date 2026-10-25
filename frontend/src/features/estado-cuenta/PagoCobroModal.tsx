@@ -5,6 +5,7 @@ import type { AdelantoDisponible } from '../../services/cruce-service';
 import type { FacturaCV } from '../../services/factura-cv-service';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
 import { calcularCruce, sugerirMontoCredito, type ItemCruce } from '../../lib/cruce';
+import { montoAplicadoDeNota, montoSugeridoDeNota } from '../../lib/cruce-notas';
 import { fotoLocalDeFile, type FotoLocal } from '../../lib/foto-picker';
 import { filtrarComprobantes } from '../../lib/comprobante-imagen';
 import { fechaRestaurable, recortarSeleccionPago } from '../../lib/borrador-vigentes';
@@ -76,6 +77,9 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   const [montosFactura, setMontosFactura] = useState<Record<string, string>>({});
   const [notaIdsSel, setNotaIdsSel] = useState<string[]>([]);
   const [notaCreditoIdsSel, setNotaCreditoIdsSel] = useState<string[]>([]);
+  /** Notas marcadas → monto (USD, string editable) que se aplica de cada una en este pago/cobro (cruce parcial).
+   *  Sin entrada = todo lo que le queda disponible a la nota. */
+  const [montosNota, setMontosNota] = useState<Record<string, string>>({});
   /** Adelantos/anticipos marcados → monto (USD, string editable) que se cruza con las facturas. */
   const [montosAdelanto, setMontosAdelanto] = useState<Record<string, string>>({});
 
@@ -110,9 +114,9 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
 
   // Borrador del pago/cobro: sobrevive a F5. Un pago a medias (facturas marcadas, montos, bancas)
   // se recupera al volver a abrir el modal de la misma entidad.
-  const estadoBorrador = { montosFactura, notaIdsSel, notaCreditoIdsSel, montosAdelanto, totalEditadoManual, lineasBanca, bancaLineaTocada, fecha, descripcion, comprobantes };
+  const estadoBorrador = { montosFactura, notaIdsSel, notaCreditoIdsSel, montosNota, montosAdelanto, totalEditadoManual, lineasBanca, bancaLineaTocada, fecha, descripcion, comprobantes };
   const hayCambiosBorrador =
-    Object.keys(montosFactura).length > 0 || notaIdsSel.length > 0 || notaCreditoIdsSel.length > 0
+    Object.keys(montosFactura).length > 0 || notaIdsSel.length > 0 || notaCreditoIdsSel.length > 0 || Object.keys(montosNota).length > 0
     || Object.keys(montosAdelanto).length > 0 || totalEditadoManual !== null || descripcion !== ''
     || comprobantes.length > 0 || bancaLineaTocada || lineasBanca.length > 1
     || lineasBanca.some(l => l.montoUsd !== '' || l.referencia !== '');
@@ -127,6 +131,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       setMontosFactura(d.montosFactura ?? {});
       setNotaIdsSel(d.notaIdsSel ?? []);
       setNotaCreditoIdsSel(d.notaCreditoIdsSel ?? []);
+      setMontosNota(d.montosNota ?? {});
       setMontosAdelanto(d.montosAdelanto ?? {});
       setTotalEditadoManual(d.totalEditadoManual ?? null);
       const lineas = d.lineasBanca ?? [];
@@ -142,6 +147,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       setMontosFactura({});
       setNotaIdsSel([]);
       setNotaCreditoIdsSel([]);
+      setMontosNota({});
       setMontosAdelanto({});
       setTotalEditadoManual(null);
       // La cuenta/caja inicia vacía: la persona la elige (obligatoria al registrar).
@@ -163,7 +169,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   useEffect(() => {
     if (!recortePendiente || datos.fase !== 'listo') return;
     const r = recortarSeleccionPago(
-      { montosFactura, notaIdsSel, notaCreditoIdsSel, montosAdelanto },
+      { montosFactura, notaIdsSel, notaCreditoIdsSel, montosAdelanto, montosNota },
       {
         facturaIds: facturasPendientes.map(f => f.id),
         notaIds: notasDebitoPendientes.flatMap(n => (n.notaId ? [n.notaId] : [])),
@@ -174,6 +180,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     // Validación única de lo restaurado contra datos que llegan de forma asíncrona: no se puede derivar en render sin perder la limpieza del estado.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRecortePendiente(false);
+    if (r.seleccion.montosNota && Object.keys(r.seleccion.montosNota).length !== Object.keys(montosNota).length) setMontosNota(r.seleccion.montosNota);
     if (!r.recortado) return;
     setMontosFactura(r.seleccion.montosFactura);
     setNotaIdsSel(r.seleccion.notaIdsSel);
@@ -183,7 +190,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     setAvisoRecorte(
       `Del borrador recuperado se quitaron ${r.descartados} ${r.descartados === 1 ? 'selección' : 'selecciones'} que ya no están vigentes (facturas, notas o ${etiquetaAdelanto}s ya pagados, anulados o aplicados). El total a ${verbo} se recalculó: revísalo antes de registrar.`
     );
-  }, [recortePendiente, datos.fase, facturasPendientes, adelantos, notasDebitoPendientes, notasCreditoPendientes, montosFactura, notaIdsSel, notaCreditoIdsSel, montosAdelanto, etiquetaAdelanto, verbo]);
+  }, [recortePendiente, datos.fase, facturasPendientes, adelantos, notasDebitoPendientes, notasCreditoPendientes, montosFactura, notaIdsSel, notaCreditoIdsSel, montosAdelanto, montosNota, etiquetaAdelanto, verbo]);
 
   const toggleFactura = (f: FacturaCV) =>
     setMontosFactura(prev => {
@@ -191,8 +198,24 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
       return Object.fromEntries(Object.entries(prev).filter(([id]) => id !== f.id));
     });
   const setMontoFactura = (id: string, value: string) => setMontosFactura(prev => ({ ...prev, [id]: value }));
-  const toggleNota = (id: string) => setNotaIdsSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
-  const toggleNotaCredito = (id: string) => setNotaCreditoIdsSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const quitarMontoNota = (id: string) => setMontosNota(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== id)));
+  const toggleNota = (id: string) => {
+    const nota = notasDebitoPendientes.find(n => n.notaId === id);
+    const marcada = notaIdsSel.includes(id);
+    setNotaIdsSel(prev => (marcada ? prev.filter(x => x !== id) : [...prev, id]));
+    if (marcada || !nota) { quitarMontoNota(id); return; }
+    setMontosNota(prev => ({ ...prev, [id]: montoSugeridoDeNota(nota, 'debito', 0).toFixed(2) }));
+  };
+  const toggleNotaCredito = (id: string) => {
+    const nota = notasCreditoPendientes.find(n => n.notaId === id);
+    const marcada = notaCreditoIdsSel.includes(id);
+    setNotaCreditoIdsSel(prev => (marcada ? prev.filter(x => x !== id) : [...prev, id]));
+    if (marcada || !nota) { quitarMontoNota(id); return; }
+    // Sugiere lo que falta por cubrir sin pasarse de lo que le queda a la nota: se puede aplicar solo una parte.
+    const pendiente = cruce.totalCargos - cruce.totalCreditos;
+    setMontosNota(prev => ({ ...prev, [id]: montoSugeridoDeNota(nota, 'credito', pendiente).toFixed(2) }));
+  };
+  const setMontoNota = (id: string, value: string) => setMontosNota(prev => ({ ...prev, [id]: value }));
 
   const facturasSel = useMemo(() => facturasPendientes.filter(f => f.id in montosFactura), [facturasPendientes, montosFactura]);
   const notasSel = useMemo(
@@ -210,9 +233,9 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   // notas de crédito se usan como método de pago: reducen lo que se paga con banca.
   const itemsCruce: ItemCruce[] = [
     ...facturasSel.map(f => ({ tipo: 'factura' as const, montoUsd: parseFloat(montosFactura[f.id]) || 0 })),
-    ...notasSel.map(n => ({ tipo: 'nota_debito' as const, montoUsd: n.cargo })),
+    ...notasSel.map(n => ({ tipo: 'nota_debito' as const, montoUsd: montoAplicadoDeNota(n, montosNota, n.notaId ?? '') })),
     ...adelantosSel.map(a => ({ tipo: 'adelanto' as const, montoUsd: parseFloat(montosAdelanto[a.id]) || 0 })),
-    ...notasCreditoSel.map(n => ({ tipo: 'nota_credito' as const, montoUsd: n.abono })),
+    ...notasCreditoSel.map(n => ({ tipo: 'nota_credito' as const, montoUsd: montoAplicadoDeNota(n, montosNota, n.notaId ?? '') })),
   ];
   const cruce = calcularCruce(itemsCruce);
   const totalItems = cruce.efectivo;
@@ -272,7 +295,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     if (adelantosSel.length > 0) partes.push(`${etiquetaAdelanto}${adelantosSel.length === 1 ? '' : 's'} aplicado${adelantosSel.length === 1 ? '' : 's'}: ${adelantosSel.map(a => a.codigo ?? a.id.slice(0, 8)).join(', ')}`);
     if (adelantoCalculado > 0.01) partes.push(`${etiquetaAdelanto} $${fmt(adelantoCalculado)}`);
     if (partes.length === 0) return '';
-    return `${esCrucePuro ? 'Cruce' : esProveedor ? 'Pago combinado' : 'Cobro combinado'}: ${partes.join(', ')}`;
+    return `${esCrucePuro ? 'Cruce' : esProveedor ? 'Pago' : 'Cobro'}: ${partes.join(', ')}`;
   }, [facturasSel, notasSel, notasCreditoSel, adelantosSel, adelantoCalculado, etiquetaAdelanto, esProveedor, esCrucePuro]);
 
   const bloqueoCarga = bloqueoPorCarga(datos.fase);
@@ -281,7 +304,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   const registrar = async () => {
     const validacion = validarPagoCobro({
       esProveedor, etiquetaAdelanto, cruce, hayItems, esCrucePuro, totalItems, totalEditadoNum,
-      facturasSel, montosFactura, notasSel, notasCreditoSel, adelantosSel, montosAdelanto,
+      facturasSel, montosFactura, notasSel, notasCreditoSel, montosNota, adelantosSel, montosAdelanto,
       lineas: lineasEfectivas, bancas, tasaDeLinea,
       comision: { estado: comisionDisponible.estado, disponible: comisionDisponible.disponible },
       categorias, categoriaCobroId,
@@ -336,7 +359,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
 
             <div>
               <label className={labelClass}>Notas de débito pendientes</label>
-              <ListaNotasPago notas={notasDebitoPendientes} seleccionadas={notaIdsSel} tipo="debito" textoVacio="Sin notas de débito pendientes." onToggle={toggleNota} />
+              <ListaNotasPago notas={notasDebitoPendientes} seleccionadas={notaIdsSel} montos={montosNota} tipo="debito" textoVacio="Sin notas de débito pendientes." onToggle={toggleNota} onMonto={setMontoNota} />
             </div>
 
             {datos.fase === 'listo' && (
@@ -348,7 +371,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
 
             <div>
               <label className={labelClass}>Notas de crédito disponibles <span className="text-text-muted">(se aplican como método de {esProveedor ? 'pago' : 'cobro'})</span></label>
-              <ListaNotasPago notas={notasCreditoPendientes} seleccionadas={notaCreditoIdsSel} tipo="credito" textoVacio="Sin notas de crédito disponibles." onToggle={toggleNotaCredito} />
+              <ListaNotasPago notas={notasCreditoPendientes} seleccionadas={notaCreditoIdsSel} montos={montosNota} tipo="credito" textoVacio="Sin notas de crédito disponibles." onToggle={toggleNotaCredito} onMonto={setMontoNota} />
             </div>
 
             <ResumenTotalPago
@@ -383,7 +406,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
                 value={descripcion}
                 onChange={e => setDescripcion(e.target.value)}
                 className={inputClass}
-                placeholder={descripcionSugerida || `Ej: ${esProveedor ? 'Pago' : 'Cobro'} combinado de facturas`}
+                placeholder={descripcionSugerida || `Ej: ${esProveedor ? 'Pago' : 'Cobro'} de facturas`}
               />
             </div>
 

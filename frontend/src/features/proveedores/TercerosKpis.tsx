@@ -1,7 +1,8 @@
-import { Clock, HandCoins, Send, Users } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Banknote, Clock, HandCoins, Send, Users } from 'lucide-react';
 import { GrillaKpis, TarjetaKpi, formatearNumero, formatearUsdDecimales } from '../../components/ui';
 import {
-  DIAS_ANTIGUEDAD_URGENTE, TEXTO_TERCERO, antiguedadMasVieja, resumenTerceros, textoSaldoPorSegmento, totalesDeFilas,
+  DIAS_ANTIGUEDAD_URGENTE, TEXTO_TERCERO, antiguedadMasVieja, resumenTerceros, textoSaldoPorSegmento, totalesAdelantosDeFilas, totalesDeFilas,
   type FilaTercero, type TipoTercero,
 } from '../../lib/terceros-kpis';
 import type { EstadoSaldos } from './useSaldosTerceros';
@@ -12,10 +13,12 @@ interface Props {
   estadoSaldos: EstadoSaldos;
   /** Segmento de la lista que se está viendo (p. ej. «nacionales»); va en el rótulo del saldo. */
   segmento?: string;
+  /** Indicador adicional al final de la grilla (p. ej. lo que se debe a proveedores, en la pantalla de Clientes). */
+  extra?: ReactNode;
 }
 
 /** Los 4 indicadores de la lista. Son una foto de HOY (no hay periodo anterior con el cual comparar). */
-function TercerosKpis({ tipo, filas, estadoSaldos, segmento }: Props) {
+function TercerosKpis({ tipo, filas, estadoSaldos, segmento, extra }: Props) {
   const t = TEXTO_TERCERO[tipo];
   const r = resumenTerceros(filas);
   const vieja = antiguedadMasVieja(filas);
@@ -23,6 +26,7 @@ function TercerosKpis({ tipo, filas, estadoSaldos, segmento }: Props) {
   const mensajeSinCifras = 'No se pudieron calcular los saldos. Usa "Reintentar" arriba.';
   // Los importes salen de las filas visibles de la pestaña (no del total global del servidor).
   const { porSaldar, aFavor, conAFavor } = totalesDeFilas(filas);
+  const adelantos = totalesAdelantosDeFilas(filas);
 
   return (
     <GrillaKpis>
@@ -73,6 +77,19 @@ function TercerosKpis({ tipo, filas, estadoSaldos, segmento }: Props) {
         tonoValor={vieja && vieja.dias >= DIAS_ANTIGUEDAD_URGENTE ? 'peligro' : 'normal'}
         comparacion={null}
       />
+      {tipo === 'proveedor' && (
+        <TarjetaKpi
+          titulo="Adelantado a proveedores"
+          icono={<Banknote size={16} />}
+          ayuda="Cuánto dinero se les ha adelantado en total a los proveedores, en USD: la suma de todos los adelantos vigentes (los que sobraron al registrar un pago y los egresos de Wallet con proveedor), estén aplicados a facturas o no. Los anulados no cuentan. Debajo, la parte que todavía no se ha aplicado a ninguna factura."
+          estado={estadoCifras}
+          mensajeVacio={mensajeSinCifras}
+          valor={formatearUsdDecimales(adelantos.adelantado, 2)}
+          subtitulo={`${formatearUsdDecimales(adelantos.disponible, 2)} sin aplicar a facturas${adelantos.conAdelanto > 0 ? ` · ${formatearNumero(adelantos.conAdelanto, 0)} ${adelantos.conAdelanto === 1 ? 'proveedor' : 'proveedores'}` : ''}`}
+          comparacion={null}
+        />
+      )}
+      {extra}
     </GrillaKpis>
   );
 }

@@ -43,8 +43,8 @@ function Tarjeta({ nombre, detalle, seleccionada, onElegir, imagen }: TarjetaPro
       >
         <span className="flex aspect-[4/3] max-h-28 w-full items-center justify-center overflow-hidden">{imagen}</span>
         <span className="block p-2">
-          <span className="block truncate text-xs text-text-primary">{nombre}</span>
-          {detalle && <span className="block truncate text-[11px] text-text-muted">en {detalle}</span>}
+          <span className="block line-clamp-2 break-words text-xs text-text-primary" title={nombre}>{nombre}</span>
+          {detalle && <span className="block line-clamp-2 break-words text-[11px] text-text-muted" title={`en ${detalle}`}>en {detalle}</span>}
         </span>
         {seleccionada && (
           <span className="pointer-events-none absolute left-1.5 top-1.5 rounded-full bg-brand-600 p-1 text-white" aria-hidden="true"><Check size={12} /></span>

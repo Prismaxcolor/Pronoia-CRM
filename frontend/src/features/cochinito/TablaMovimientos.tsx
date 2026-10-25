@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Ban, CheckCircle2, Eye, Pencil, Tag } from 'lucide-react';
 import { Insignia, TablaDatos, formatearNumero, type ColumnaTabla, type EstadoVacioProps, type OrdenTabla } from '../../components/ui';
 import { diaDe, montoUsdDe } from '../../lib/cochinito-kpis';
-import { esCargoDeComision, esManualVigente, esTransferenciaEnProceso, etiquetaEstadoMesa, numeroMovimiento, rutaDetalleMovimiento } from './detalle-movimiento';
+import { esCargoDeComision, esManualVigente, esTransferenciaEnProceso, etiquetaEstadoMesa, montosTransferencia, numeroMovimiento, ordenCronologico, rutaDetalleMovimiento, type EstadoNavegacionMovimiento } from './detalle-movimiento';
 import type { Banca, CategoriaWallet, Movimiento, TipoMovimiento } from '@shared/types/index.js';
 import EtiquetaCategoria from './categorias/EtiquetaCategoria';
 import { etiquetaCategoria } from './categorias/categorias-logica';
@@ -53,7 +53,13 @@ function PuntoBanca({ color }: { color?: string }) {
 /** Tabla de movimientos de /cochinito: ordenable, exportable a CSV (solo lo filtrado) y apilada en móvil. */
 function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, onAnular, onCompletar, categorias, onCambiarCategoria }: Props) {
   const { props: soloEnLinea } = useSoloEnLinea();
+  // Al abrir un movimiento se lleva la lista filtrada que se está viendo, para poder ir al anterior o al siguiente sin volver.
+  const estadoNavegacion = useMemo<EstadoNavegacionMovimiento>(() => ({ navegacion: ordenCronologico(filas).map(m => m.id) }), [filas]);
   const bancaPorId = useMemo(() => new Map(bancas.map(b => [b.id, b.nombre])), [bancas]);
+  const monedaPorId = useMemo(() => new Map(bancas.map(b => [b.id, b.moneda])), [bancas]);
+  // Transferencias con una punta en Bs: primero el monto en bolívares y después su equivalente en USD.
+  const bsDeTransferencia = useMemo(() => (m: Movimiento) => montosTransferencia(m, m.bancaDestinoId ? monedaPorId.get(m.bancaDestinoId) : undefined), [monedaPorId]);
+  const usdDe = useMemo(() => (m: Movimiento) => { const t = bsDeTransferencia(m); return t ? t.usd : montoUsdDe(m); }, [bsDeTransferencia]);
   const colorPorId = useMemo(() => new Map(bancas.map((b, i) => [b.id, colorDeBanca(b, i)])), [bancas]);
   const textoBanca = useMemo(() => (m: Movimiento) => {
     const origen = bancaPorId.get(m.bancaOrigenId) ?? 'Banca desconocida';
@@ -74,7 +80,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, o
     { clave: 'fecha', titulo: 'Fecha', valorOrden: m => diaDe(m), celda: m => fechaConHora(diaDe(m), m.creadoEn), claseCelda: 'whitespace-nowrap' },
     {
       clave: 'numero', titulo: 'N°', valorOrden: m => numeroMovimiento(m), claseCelda: 'whitespace-nowrap tabular-nums',
-      celda: m => <Link to={rutaDetalleMovimiento(m.id)} className="font-medium text-brand-600 hover:underline" title="Ver el detalle del movimiento">{numeroMovimiento(m)}</Link>,
+      celda: m => <Link to={rutaDetalleMovimiento(m.id)} state={estadoNavegacion} className="font-medium text-brand-600 hover:underline" title="Ver el detalle del movimiento">{numeroMovimiento(m)}</Link>,
     },
     {
       clave: 'tipo', titulo: 'Tipo', valorOrden: m => textoTipo(m),
@@ -108,23 +114,23 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, o
       ayuda: 'Categoría o subcategoría del movimiento. "—" es un movimiento sin categoría (los pagos y cobros de proveedores y clientes, las transferencias y los movimientos anteriores no la llevan).',
     },
     { clave: 'banca', titulo: 'Banca', valorOrden: textoBanca, celda: celdaBanca },
-    { clave: 'moneda', titulo: 'Moneda', valorOrden: m => m.moneda, ocultaEnMovil: true },
+    { clave: 'moneda', titulo: 'Moneda', valorOrden: m => bsDeTransferencia(m) ? 'VES' : m.moneda, valorCsv: m => (bsDeTransferencia(m) ? 'VES' : m.moneda), celda: m => (bsDeTransferencia(m) ? 'VES' : m.moneda), ocultaEnMovil: true },
     {
-      clave: 'monto', titulo: 'Monto', alinear: 'derecha', valorOrden: m => m.monto, valorCsv: m => m.monto,
-      celda: m => `${simbolo(m.moneda)} ${formatearNumero(m.monto, 2)}`, claseCelda: 'whitespace-nowrap tabular-nums',
+      clave: 'monto', titulo: 'Monto', alinear: 'derecha', valorOrden: m => bsDeTransferencia(m)?.bs ?? m.monto, valorCsv: m => bsDeTransferencia(m)?.bs ?? m.monto,
+      celda: m => { const t = bsDeTransferencia(m); return t ? `Bs ${formatearNumero(t.bs, 2)}` : `${simbolo(m.moneda)} ${formatearNumero(m.monto, 2)}`; }, claseCelda: 'whitespace-nowrap tabular-nums',
     },
     {
-      clave: 'montoUsd', titulo: 'Monto en USD', alinear: 'derecha', valorOrden: m => montoUsdDe(m), valorCsv: m => montoUsdDe(m),
-      celda: m => { const v = montoUsdDe(m); return v == null ? '—' : `USD ${formatearNumero(v, 2)}`; },
-      total: fs => `USD ${formatearNumero(fs.filter(m => !m.anulado).reduce((s, m) => s + (montoUsdDe(m) ?? 0), 0), 2)}`,
-      ayuda: 'Equivalente en dólares (USD) del movimiento: el mismo monto si la banca es en USD, o el equivalente guardado en el movimiento si es en bolívares. Es "—" si no hay equivalente y entonces no se suma en el total de abajo.',
+      clave: 'montoUsd', titulo: 'Monto en USD', alinear: 'derecha', valorOrden: m => usdDe(m), valorCsv: m => usdDe(m),
+      celda: m => { const v = usdDe(m); return v == null ? '—' : `USD ${formatearNumero(v, 2)}`; },
+      total: fs => `USD ${formatearNumero(fs.filter(m => !m.anulado).reduce((s, m) => s + (usdDe(m) ?? 0), 0), 2)}`,
+      ayuda: 'Equivalente en dólares (USD) del movimiento: el mismo monto si la banca es en USD; si es en bolívares, el equivalente guardado en el pago o, si no lo hay, el calculado a la tasa Binance del momento en que se hizo el movimiento. Es "—" si no hay tasa de ese momento y entonces no se suma en el total de abajo.',
       claseCelda: 'whitespace-nowrap tabular-nums',
     },
     {
       clave: 'acciones', titulo: 'Acciones', alinear: 'derecha', ocultaEnMovil: false,
       celda: m => (
         <span className="inline-flex items-center gap-1">
-          <Link to={rutaDetalleMovimiento(m.id)} aria-label="Ver detalle del movimiento" title="Ver, compartir o descargar"
+          <Link to={rutaDetalleMovimiento(m.id)} state={estadoNavegacion} aria-label="Ver detalle del movimiento" title="Ver, compartir o descargar"
             className="rounded p-1.5 text-text-secondary hover:bg-surface-hover hover:text-text-primary"><Eye size={14} /></Link>
           {onCompletar && esTransferenciaEnProceso(m) && (
             <button type="button" onClick={() => onCompletar(m)} aria-label="Completar transferencia" {...soloEnLinea(false, 'Completar o cobrar una parte (acredita el saldo en la cuenta destino)')}
@@ -153,7 +159,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, o
         </span>
       ),
     },
-  ], [textoContraparte, textoBanca, celdaBanca, onEditar, onAnular, onCompletar, soloEnLinea, categorias, onCambiarCategoria]);
+  ], [estadoNavegacion, textoContraparte, textoBanca, celdaBanca, bsDeTransferencia, usdDe, onEditar, onAnular, onCompletar, soloEnLinea, categorias, onCambiarCategoria]);
 
   return (
     <TablaDatos

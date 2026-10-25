@@ -9,6 +9,7 @@ import { ETIQUETA_TIPO_TRABAJADOR, formatearNumeroNomina, type Nomina } from '..
 import type { Banca } from '../../../../shared/types/banca.js';
 import PagarNominaGrupo from './PagarNominaGrupo';
 import type { EleccionPago } from './nomina-reparto';
+import { MENSAJE_COMPROBANTE_NO_SUBIDO, subirComprobantesPorCuenta } from './useComprobantesPago';
 import {
   bloqueoComisionPago, construirPayloadPago, gruposDePago, resumenDebitos, validarPago, type Elecciones,
 } from './nomina-pago';
@@ -43,7 +44,6 @@ function PagarNominaModal({ nomina, onClose, onPagada }: Props) {
   const [categoria, setCategoria] = useState<{ cargando: boolean; valor: Categoria }>({ cargando: true, valor: null });
   const [elecciones, setElecciones] = useState<Elecciones>({});
   const [fecha, setFecha] = useState(hoyNegocio());
-  const [referencia, setReferencia] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const grupos = useMemo(() => gruposDePago(nomina.totales), [nomina.totales]);
@@ -71,7 +71,10 @@ function PagarNominaModal({ nomina, onClose, onPagada }: Props) {
     });
     if (!ok) return;
     setOcupado(true);
-    const r = await pagarNomina(nomina.id, construirPayloadPago(grupos, elecciones, lista, comision.disponible, fecha, referencia));
+    // Cada cuenta sube sus propios comprobantes y lleva su propia referencia.
+    const urls = await subirComprobantesPorCuenta(elecciones);
+    if (!urls) { setOcupado(false); setError(MENSAJE_COMPROBANTE_NO_SUBIDO); return; }
+    const r = await pagarNomina(nomina.id, construirPayloadPago(grupos, elecciones, lista, comision.disponible, fecha, '', urls));
     setOcupado(false);
     if ('error' in r) { setError(r.error); return; }
     await onPagada(r.yaPagada, r.advertencia);
@@ -88,7 +91,7 @@ function PagarNominaModal({ nomina, onClose, onPagada }: Props) {
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-text-secondary">
-            Elige la cuenta de la que sale cada pago (o divídelo entre varias cuentas de la misma moneda). Se crea un egreso por cuenta en el Wallet y queda enlazado a esta nómina.
+            Elige la cuenta de la que sale cada pago (o divídelo entre varias cuentas de la misma moneda). Se crea un egreso por cuenta en el Wallet y queda enlazado a esta nómina. Cada cuenta lleva su propia referencia y su propio comprobante.
           </p>
           <AvisoCategoria categoria={categoria.valor} tipo={nomina.tipo} cargando={categoria.cargando} />
           {bancas === null && <p role="status" className="text-sm text-text-muted">Cargando cuentas…</p>}
@@ -98,15 +101,9 @@ function PagarNominaModal({ nomina, onClose, onPagada }: Props) {
               estadoComision={comision.estado} onReintentarComision={comision.reintentar} onCambiar={filas => cambiar(g.moneda, filas)}
             />
           ))}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor="pago-nomina-fecha" className="block text-xs font-medium text-text-secondary mb-1">Fecha del pago *</label>
-              <input id="pago-nomina-fecha" type="date" value={fecha} min={nomina.semanaInicio} onChange={e => setFecha(e.target.value)} className={inputClass} />
-            </div>
-            <div>
-              <label htmlFor="pago-nomina-ref" className="block text-xs font-medium text-text-secondary mb-1">Referencia (opcional)</label>
-              <input id="pago-nomina-ref" maxLength={50} value={referencia} onChange={e => setReferencia(e.target.value)} className={inputClass} />
-            </div>
+          <div>
+            <label htmlFor="pago-nomina-fecha" className="block text-xs font-medium text-text-secondary mb-1">Fecha del pago *</label>
+            <input id="pago-nomina-fecha" type="date" value={fecha} min={nomina.semanaInicio} onChange={e => setFecha(e.target.value)} className={inputClass} />
           </div>
           {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-3">

@@ -10,6 +10,7 @@ interface ProveedorApi {
   nombre: string;
   rfc: string | null;
   telefono: string | null;
+  direccion?: string | null;
   email: string | null;
   activo: boolean;
   createdAt: string;
@@ -20,13 +21,14 @@ interface ProveedorApi {
 }
 
 function mapApi(api: ProveedorApi): Proveedor {
-  return { ...api };
+  return { ...api, direccion: api.direccion ?? null };
 }
 
 export interface ProveedorInput {
   nombre: string;
   rfc?: string | null;
   telefono?: string | null;
+  direccion?: string | null;
   email?: string | null;
   fotos?: string[];
 }

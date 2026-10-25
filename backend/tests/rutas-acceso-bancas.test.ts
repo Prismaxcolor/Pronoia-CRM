@@ -19,7 +19,7 @@ vi.mock('../src/config/supabase.js', () => ({
       const b: Record<string, unknown> = {
         select: () => b,
         eq: (_c: string, v: string) => { id = v; return b; },
-        maybeSingle: async () => ({ data: tabla === 'users' && id ? usuarios[id] ?? null : null, error: null }),
+        maybeSingle: async () => ({ data: tabla === 'users' && id ? usuarios[id] ?? null : tabla === 'bancas' ? { moneda: 'USD', saldo: 0 } : null, error: null }),
       };
       return b;
     },
@@ -35,6 +35,16 @@ vi.mock('../src/services/auth-service.js', () => ({
 
 /** undefined = lo editable es igual a lo visible; si no, el conjunto (o null) que edita el usuario. */
 const editables = vi.hoisted(() => ({ valor: undefined as ReadonlySet<string> | null | undefined }));
+
+const comisionAuto = vi.hoisted(() => ({ guardarReglaDeBanca: vi.fn(), registrarAuditoria: vi.fn() }));
+vi.mock('../src/services/comision-automatica-service.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../src/services/comision-automatica-service.js')>()),
+  guardarReglaDeBanca: comisionAuto.guardarReglaDeBanca,
+}));
+vi.mock('../src/services/auditoria-service.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../src/services/auditoria-service.js')>()),
+  registrarAuditoria: comisionAuto.registrarAuditoria,
+}));
 
 const s = vi.hoisted(() => ({
   listarBancasDeUsuario: vi.fn(),
@@ -133,6 +143,8 @@ beforeEach(() => {
   usuarios.conFactura = { rol: 'trabajador', permisos: permisos(['despachos', 'ver'], ['facturacion', 'ver']), activo: true };
   editables.valor = undefined;
   for (const f of Object.values(s)) f.mockReset();
+  comisionAuto.guardarReglaDeBanca.mockReset();
+  comisionAuto.registrarAuditoria.mockReset().mockResolvedValue(true);
   s.listarBancas.mockResolvedValue([]);
   vi.mocked(logger.info).mockClear();
   s.bancasPermitidas.mockResolvedValue(null);
@@ -263,6 +275,35 @@ describe('GET /api/cochinito/movimientos/:id', () => {
   it('404 si el movimiento no existe', async () => {
     s.obtenerDetalleMovimiento.mockResolvedValue(null);
     expect((await llamar('GET', `/api/cochinito/movimientos/${MOV}`, 'cajero')).status).toBe(404);
+  });
+});
+
+describe('PUT /api/cochinito/bancas/:id/comision-automatica: solo superadmin', () => {
+  const cuerpo = { activa: true, porcentaje: 0.3, minimo: 14 };
+  const ruta = `/api/cochinito/bancas/${BANCA}/comision-automatica`;
+
+  it('un usuario con permiso de editar cochinito pero sin ser superadmin recibe 403', async () => {
+    const r = await llamar('PUT', ruta, 'cajero', cuerpo);
+    expect(r.status).toBe(403);
+    expect((r.json as { error: string }).error).toMatch(/superadmin/);
+    expect(comisionAuto.guardarReglaDeBanca).not.toHaveBeenCalled();
+  });
+
+  it('un superadmin guarda la regla y queda auditada: 200', async () => {
+    comisionAuto.guardarReglaDeBanca.mockResolvedValue({ anterior: null, regla: { tasa: 0.003, minimo: 14 } });
+    comisionAuto.registrarAuditoria.mockResolvedValue(true);
+    const r = await llamar('PUT', ruta, 'root', cuerpo);
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ comisionAuto: { tasa: 0.003, minimo: 14 } });
+  });
+
+  it('sin auditoría se revierte la regla anterior y responde 500', async () => {
+    comisionAuto.guardarReglaDeBanca.mockResolvedValue({ anterior: null, regla: { tasa: 0.003, minimo: 14 } });
+    comisionAuto.registrarAuditoria.mockResolvedValue(false);
+    const r = await llamar('PUT', ruta, 'root', cuerpo);
+    expect(r.status).toBe(500);
+    expect(comisionAuto.guardarReglaDeBanca).toHaveBeenCalledTimes(2);
+    expect(comisionAuto.guardarReglaDeBanca).toHaveBeenLastCalledWith(BANCA, { activa: false, porcentaje: 0, minimo: 0 });
   });
 });
 

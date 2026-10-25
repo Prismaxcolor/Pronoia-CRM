@@ -8,6 +8,7 @@ import EstadoConexion from './EstadoConexion';
 import IndicadorPendientes from '../features/pendientes/IndicadorPendientes';
 import { useAuth } from '../hooks/use-auth-context';
 import { useSolicitudesLlavePendientes } from '../hooks/use-solicitudes-llave-pendientes';
+import { instalarTituloSelects } from '../lib/titulo-selects';
 
 function Layout() {
   // El contenedor externo estaba en min-h-screen (crece con el contenido en
@@ -25,6 +26,9 @@ function Layout() {
   useEffect(() => {
     mainRef.current?.scrollTo(0, 0);
   }, [pathname]);
+
+  // Los selects angostos cortan el texto elegido: al pasar el cursor o enfocarlos se ve completo (tooltip).
+  useEffect(() => instalarTituloSelects(), []);
 
   // El drawer del menú no debe seguir abierto al cambiar de pantalla
   // (estado derivado durante el render, no en un efecto).

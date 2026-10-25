@@ -22,7 +22,7 @@ const OPCIONES_COMISION: ReadonlyArray<{ valor: ModoComisionFormulario; etiqueta
 
 const simbolo = (moneda: string | undefined): string => (moneda === 'USD' ? 'USD' : moneda === 'VES' ? 'Bs' : moneda ?? '');
 
-/** Resumen en vivo: comisión, lo que recibirá el destino al completar y la deuda con el cambista en USD. */
+/** Resumen en vivo: comisión, lo que recibirá el destino al completar y lo pendiente por cobrar al cambista en USD. */
 function VistaPrevia({ form, bancaOrigen, bancaDestino, monto, montoDestino }: { form: FormularioMesa } & Omit<Props, 'mesa'>) {
   if (!bancaOrigen || !bancaDestino || !(monto > 0)) return null;
   const plan = planDeFormulario(form, {
@@ -36,7 +36,7 @@ function VistaPrevia({ form, bancaOrigen, bancaDestino, monto, montoDestino }: {
       <dd className="text-right font-medium tabular-nums">{s} {formatearNumero(plan.comision, 2)}</dd>
       <dt className="text-text-secondary">Recibirá {bancaDestino.nombre} al completar</dt>
       <dd className="text-right font-medium tabular-nums">{s} {formatearNumero(plan.montoNeto, 2)}</dd>
-      <dt className="text-text-secondary">Deuda con el cambista (USD)</dt>
+      <dt className="text-text-secondary">Pendiente por cobrar al cambista (USD)</dt>
       <dd className="text-right font-medium tabular-nums">USD {formatearNumero(plan.montoUsd, 2)}</dd>
     </dl>
   );
@@ -58,7 +58,7 @@ function MesaCambioCampos({ mesa, bancaOrigen, bancaDestino, monto, montoDestino
       {activa && (
         <>
           <p className="text-xs text-text-secondary">
-            Quedará <strong>en proceso</strong>: se descuenta de la cuenta de origen, pero la cuenta destino no recibe el saldo hasta que la completes. Mientras tanto se anota una deuda en el estado de cuenta del cambista.
+            Quedará <strong>en proceso</strong>: se descuenta de la cuenta de origen, pero la cuenta destino no recibe el saldo hasta que la completes. Mientras tanto se anota lo que el cambista nos debe en su estado de cuenta.
           </p>
           <div>
             <label htmlFor="mesa-cambista" className={labelClass}>Cambista *</label>

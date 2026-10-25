@@ -49,7 +49,7 @@ function montoUsdManualEfectivo(f: Pick<FormularioMesa, 'montoUsd'>, monedaOrige
   return monedaOrigen === 'USD' || monedaDestino === 'USD' ? null : leerNumero(f.montoUsd);
 }
 
-/** Vista previa / validación: comisión, neto que recibirá el destino y USD de la deuda con el cambista. */
+/** Vista previa / validación: comisión, neto que recibirá el destino y USD pendientes por cobrar al cambista. */
 export function planDeFormulario(f: FormularioMesa, e: EntradaPlanFormulario): PlanTransferenciaMesa {
   return planificarTransferenciaMesa({
     ...e, montoUsdManual: montoUsdManualEfectivo(f, e.monedaOrigen, e.monedaDestino), comision: comisionDeFormulario(f),

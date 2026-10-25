@@ -468,6 +468,7 @@ function ConteoTomaFisicaPage() {
       </Bloque>
 
       <Bloque
+        id="toma-pesajes-registrados"
         titulo={`Pesajes registrados (${detalle.length})`}
         queEstasViendo={detalle.length > 0 ? `Lo que ya pesaste en esta toma: ${fmt(totalNeto)} kg netos en total (peso sin envase). Si te equivocaste, quita el pesaje con la papelera.` : 'Aquí aparecerán los pesajes que vayas agregando a esta toma.'}
       >

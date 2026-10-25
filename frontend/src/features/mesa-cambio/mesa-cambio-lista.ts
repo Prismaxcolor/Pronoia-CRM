@@ -18,19 +18,19 @@ export function filtrarCambistas(lista: readonly CambistaConSaldo[], filtro: Fil
 }
 
 export interface TotalesMesa {
-  /** Suma de los saldos positivos (lo que les debemos en conjunto). */
-  lesDebemos: number;
-  /** Suma de los saldos negativos, en positivo (lo que nos deben en conjunto). */
-  nosDeben: number;
+  /** Suma de los saldos positivos: lo que los cambistas nos deben en conjunto (pendiente por cobrar). */
+  porCobrar: number;
+  /** Suma de los saldos negativos, en positivo: lo que se les debe a los cambistas en conjunto. */
+  seLesDebe: number;
 }
 
 export function totalesMesa(lista: readonly Pick<CambistaConSaldo, 'saldo'>[]): TotalesMesa {
-  let debemos = 0;
-  let nosDeben = 0;
+  let porCobrar = 0;
+  let seLesDebe = 0;
   for (const { saldo } of lista) {
     const centavos = Math.round(saldo * 100);
-    if (centavos > 0) debemos += centavos;
-    else nosDeben -= centavos;
+    if (centavos > 0) porCobrar += centavos;
+    else seLesDebe -= centavos;
   }
-  return { lesDebemos: debemos / 100, nosDeben: nosDeben / 100 };
+  return { porCobrar: porCobrar / 100, seLesDebe: seLesDebe / 100 };
 }

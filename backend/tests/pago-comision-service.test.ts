@@ -10,6 +10,7 @@ const bd = vi.hoisted(() => ({
   filas: [] as Array<Record<string, unknown>>,
   errorLectura: null as ErrorBd,
   errorGrupo: null as ErrorBd,
+  errorCargos: null as ErrorBd,
   grupoConComision: false,
   llamadasRpc: [] as Array<{ nombre: string; args: Record<string, unknown> }>,
   auditorias: [] as Array<Record<string, unknown>>,
@@ -35,15 +36,18 @@ vi.mock('../src/config/supabase.js', () => ({
     },
     from: (tabla: string) => {
       const c: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'not', 'limit']) c[m] = () => c;
+      for (const m of ['select', 'eq', 'not', 'limit', 'or']) c[m] = () => c;
       if (tabla === 'bancas') {
         c.in = (_k: string, ids: string[]) =>
           Promise.resolve({ data: ids.map(id => ({ id, moneda: bd.monedaPorBanca[id] })), error: null });
         return c;
       }
-      c.in = () => Promise.resolve({ data: bd.errorLectura ? null : bd.filas, error: bd.errorLectura });
+      c.in = (k: string) =>
+        k === 'comision_de_id'
+          ? Promise.resolve({ data: bd.errorCargos ? null : bd.grupoConComision ? [{ id: 'cargo' }] : [], error: bd.errorCargos })
+          : Promise.resolve({ data: bd.errorLectura ? null : bd.filas, error: bd.errorLectura });
       c.then = (ok: (r: unknown) => unknown) =>
-        Promise.resolve({ data: bd.errorGrupo ? null : bd.grupoConComision ? [{ id: 'x' }] : [], error: bd.errorGrupo }).then(ok);
+        Promise.resolve({ data: bd.errorGrupo ? null : [{ id: 'g-1' }], error: bd.errorGrupo }).then(ok);
       return c;
     },
   },
@@ -80,7 +84,7 @@ const USUARIO = 'u-1';
 
 beforeEach(() => {
   bd.comisionHabilitada = true; bd.rpcDisponible = true; bd.rpcErrorPorMovimiento = {};
-  bd.filas = []; bd.errorLectura = null; bd.errorGrupo = null; bd.grupoConComision = false;
+  bd.filas = []; bd.errorLectura = null; bd.errorGrupo = null; bd.errorCargos = null; bd.grupoConComision = false;
   bd.llamadasRpc = []; bd.auditorias = []; bd.categoriaAplicada = []; bd.avisoCategoria = undefined;
 });
 
@@ -212,7 +216,7 @@ describe('aplicarComisionesDePago', () => {
 });
 
 describe('grupoLlevaComision', () => {
-  it('es true si algún movimiento del grupo tiene comisión', async () => {
+  it('es true si algún movimiento del grupo tiene un cargo de comisión ligado (comision_de_id)', async () => {
     bd.grupoConComision = true;
     expect(await grupoLlevaComision('g-1')).toBe(true);
   });
@@ -220,7 +224,10 @@ describe('grupoLlevaComision', () => {
     expect(await grupoLlevaComision('g-1')).toBe(false);
   });
   it('es false sin la migración (columna inexistente) y ante un error de lectura', async () => {
-    bd.errorGrupo = { code: '42703', message: 'column movimientos.comision_bancaria does not exist' };
+    bd.errorCargos = { code: '42703', message: 'column movimientos.comision_de_id does not exist' };
+    expect(await grupoLlevaComision('g-1')).toBe(false);
+    bd.errorCargos = null;
+    bd.errorGrupo = { code: '42703', message: 'column movimientos.comision_de_id does not exist' };
     expect(await grupoLlevaComision('g-1')).toBe(false);
     bd.errorGrupo = { message: 'caída' };
     expect(await grupoLlevaComision('g-1')).toBe(false);

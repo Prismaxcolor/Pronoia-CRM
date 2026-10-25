@@ -6,7 +6,7 @@ import type { Row } from 'write-excel-file/universal';
 import {
   celdaCabecera, celdaFecha, celdaImporte, celdaTexto, celdaTitulo, descargarXlsx, nombreArchivoXlsx, textoGenerado, type HojaXlsx,
 } from '../../../lib/xlsx';
-import { formatearFecha } from '../../../lib/formato';
+import { formatearFecha, formatearNumero } from '../../../lib/formato';
 import { numeroMovimiento } from '../detalle-movimiento';
 import {
   etiquetaMoneda, filasPorMoneda, monedasDelReporte, textoMovimientosAcceso, textoTipoFila, totalGeneral,
@@ -20,7 +20,7 @@ const estadoFila = (f: FilaCuenta): string => (f.anulado ? 'Anulado' : f.enProce
 function cabeceraCuenta(moneda: string, conUsd: boolean): Row {
   return [
     celdaCabecera('Fecha'), celdaCabecera('N°'), celdaCabecera('Tipo'), celdaCabecera('Descripción'), celdaCabecera('Referencia'),
-    celdaCabecera('Cuenta contraria'), celdaCabecera('Categoría'), celdaCabecera(`Entra (${moneda})`, true), celdaCabecera(`Sale (${moneda})`, true),
+    celdaCabecera('Cuenta contraria'), celdaCabecera('Categoría'), celdaCabecera(`Entra (${moneda})`, true), celdaCabecera(`Sale (${moneda})`, true), celdaCabecera(`Saldo (${moneda})`, true),
     ...(conUsd ? [celdaCabecera('Equiv. USD', true)] : []), celdaCabecera('Estado'),
   ];
 }
@@ -28,7 +28,7 @@ function cabeceraCuenta(moneda: string, conUsd: boolean): Row {
 function filaCuenta(f: FilaCuenta, conUsd: boolean): Row {
   return [
     celdaFecha(f.fecha), celdaTexto(numeroMovimiento(f)), celdaTexto(textoTipoFila(f)), celdaTexto(f.descripcion), celdaTexto(f.referencia),
-    celdaTexto(f.cuentaContraria), celdaTexto(f.categoria?.nombre ?? 'Sin categoría'), celdaImporte(f.anulado ? null : f.entrada || null), celdaImporte(f.anulado ? null : f.salida || null),
+    celdaTexto(f.cuentaContraria), celdaTexto(f.categoria?.nombre ?? 'Sin categoría'), celdaImporte(f.anulado ? null : f.entrada || null), celdaImporte(f.anulado ? null : f.salida || null), celdaImporte(f.saldo ?? null),
     ...(conUsd ? [celdaImporte(f.anulado ? null : f.equivalenteUsd)] : []), celdaTexto(estadoFila(f)),
   ];
 }
@@ -38,7 +38,7 @@ function totalesCuenta(r: ReporteCuenta, conUsd: boolean, filtrado: boolean): Ro
   const sufijo = filtrado ? ' (solo filas filtradas)' : '';
   const hueco = (n: number): null[] => Array.from({ length: n }, () => null);
   const fila = (etiqueta: string, entra: number | null, sale: number | null): Row =>
-    [...hueco(3), celdaTexto(etiqueta, true), ...hueco(3), celdaImporte(entra, true), celdaImporte(sale, true), ...(conUsd ? [null] : [])];
+    [...hueco(3), celdaTexto(etiqueta, true), ...hueco(3), celdaImporte(entra, true), celdaImporte(sale, true), null, ...(conUsd ? [null] : [])];
   return [
     fila(`Total que entra / sale${sufijo}`, r.totales.entradas, r.totales.salidas),
     fila(`${filtrado ? 'Neto de las filas filtradas' : 'Neto del periodo'} (${etiquetaMoneda(r.banca.moneda)})`, r.totales.neto, null),
@@ -54,12 +54,13 @@ export function hojaReporteCuenta(r: ReporteCuenta, filtro = ''): HojaXlsx {
     [celdaTitulo('Movimientos de la cuenta')],
     [celdaTexto(`${r.banca.nombre} · ${moneda}`, true)],
     [celdaTexto(`${textoPeriodo(r.desde, r.hasta)}${aviso} · ${textoGenerado()}`)],
+    ...(r.saldoInicial != null && r.saldoFinal != null ? [[celdaTexto(`Saldo inicial: ${moneda} ${formatearNumero(r.saldoInicial, 2)} · Saldo final: ${moneda} ${formatearNumero(r.saldoFinal, 2)}`)]] : []),
     [],
   ];
   return {
     nombre: 'Movimientos',
     filas: [...encabezado, cabeceraCuenta(moneda, conUsd), ...r.filas.map(f => filaCuenta(f, conUsd)), [], ...totalesCuenta(r, conUsd, aviso !== '')],
-    anchos: [12, 12, 20, 36, 18, 22, 26, 16, 16, ...(conUsd ? [14] : []), 12],
+    anchos: [12, 12, 20, 36, 18, 22, 26, 16, 16, 16, ...(conUsd ? [14] : []), 12],
     filasFijas: encabezado.length + 1,
   };
 }

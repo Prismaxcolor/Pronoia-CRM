@@ -46,6 +46,8 @@ export interface DatosSaldos {
   notas: NotaSaldo[];
   /** Monto aplicado de cada adelanto (pago_aplicaciones tipo 'adelanto'), por item_id. */
   aplicadoPorAdelanto: Map<string, number>;
+  /** Monto aplicado de cada nota (pago_aplicaciones tipo 'nota_debito'/'nota_credito', cruce parcial), por item_id. */
+  aplicadoPorNota?: Map<string, number>;
 }
 
 const redondear = (n: number): number => Math.round(n * 100) / 100;
@@ -72,6 +74,8 @@ function calcularTotales(tipo: TipoEntidad, saldos: SaldoEntidad[]): TotalesSald
     saldo: redondear(saldos.reduce((s, x) => s + x.saldo, 0)),
     ...(tipo === 'proveedor' ? { porPagar: porSaldar } : { porCobrar: porSaldar }),
     aFavor: redondear(saldos.reduce((s, x) => s + Math.max(-x.saldo, 0), 0)),
+    adelantado: redondear(saldos.reduce((s, x) => s + x.adelantado, 0)),
+    adelantoDisponible: redondear(saldos.reduce((s, x) => s + x.adelantoDisponible, 0)),
   };
 }
 
@@ -82,6 +86,7 @@ function saldoDeEntidad(
   pagos: PagoSaldo[],
   notas: NotaSaldo[],
   aplicadoPorAdelanto: Map<string, number>,
+  aplicadoPorNota: Map<string, number>,
   ahora: Date
 ): SaldoEntidad {
   const pagosCrudos: PagoCrudo[] = pagos.map(p => ({
@@ -93,7 +98,7 @@ function saldoDeEntidad(
     facturas.map(f => ({ id: f.id, total: f.total, descripcion: null, fecha: f.fecha })),
     agruparPagos(pagosCrudos),
     notas.map(n => ({ id: n.id, tipo: n.tipo, monto: Number(n.monto), motivo: '', anulada: n.anulada, pagada: n.pagada, fecha: n.fecha })),
-    { cruces: [], adelantoAplicadoPorId: aplicadoPorAdelanto }
+    { cruces: [], adelantoAplicadoPorId: aplicadoPorAdelanto, notaAplicadaPorId: aplicadoPorNota }
   );
 
   const pendientes = facturas.filter(
@@ -109,8 +114,12 @@ function saldoDeEntidad(
     facturado: redondear(estado.totales.facturado),
     pagado: redondear(estado.totales.pagado),
     saldo: redondear(estado.totales.saldo),
+    adelantado: redondear(estado.entradas.reduce((s, e) => s + (e.tipo === 'adelanto' ? e.abono : 0), 0)),
     adelantoDisponible: redondear(estado.entradas.reduce((s, e) => s + (e.tipo === 'adelanto' ? e.adelantoDisponible ?? 0 : 0), 0)),
-    notasCreditoDisponibles: redondear(notas.filter(n => n.tipo === 'credito' && !n.anulada && !n.pagada).reduce((s, n) => s + Number(n.monto), 0)),
+    notasCreditoDisponibles: redondear(
+      notas.filter(n => n.tipo === 'credito' && !n.anulada && !n.pagada)
+        .reduce((s, n) => s + Math.max(0, Number(n.monto) - (aplicadoPorNota.get(n.id) ?? 0)), 0)
+    ),
     ultimaOperacion: ultima,
     cantidadFacturasPendientes: pendientes.length,
     antiguedadMasVieja: masVieja === null ? null : diasDesde(masVieja, ahora),
@@ -128,7 +137,7 @@ export function calcularSaldos(
   const pagos = agrupar(datos.pagos);
   const notas = agrupar(datos.notas);
   const saldos = entidades.map(e =>
-    saldoDeEntidad(tipo, e, facturas.get(e.id) ?? [], pagos.get(e.id) ?? [], notas.get(e.id) ?? [], datos.aplicadoPorAdelanto, ahora)
+    saldoDeEntidad(tipo, e, facturas.get(e.id) ?? [], pagos.get(e.id) ?? [], notas.get(e.id) ?? [], datos.aplicadoPorAdelanto, datos.aplicadoPorNota ?? new Map(), ahora)
   );
   return { tipo, saldos, totales: calcularTotales(tipo, saldos), calculadoEn: ahora.toISOString() };
 }
@@ -160,13 +169,15 @@ export async function cargarDatosSaldos(tipo: TipoEntidad): Promise<DatosSaldos 
     leerTabla(t.facturas, `id, ${col}, total, monto_pagado, estado, created_at`, q => q.neq('estado', 'anulada')),
     leerTabla('movimientos', `id, ${col}, monto, monto_usd, fecha, subtipo, grupo_id`, q => q.eq('tipo', t.tipoMov).eq('anulado', false)),
     leerTabla(t.notas, `id, ${col}, tipo, monto, anulada, pagada, fecha`),
-    leerTabla('pago_aplicaciones', 'id, item_id, monto_usd', q => q.eq('tipo', 'adelanto').eq('anulada', false)),
+    leerTabla('pago_aplicaciones', 'id, item_id, tipo, monto_usd', q => q.in('tipo', ['adelanto', 'nota_debito', 'nota_credito']).eq('anulada', false)),
   ]);
 
   const aplicadoPorAdelanto = new Map<string, number>();
+  const aplicadoPorNota = new Map<string, number>();
   for (const a of aplicaciones) {
+    const destino = a.tipo === 'adelanto' ? aplicadoPorAdelanto : aplicadoPorNota;
     const k = String(a.item_id);
-    aplicadoPorAdelanto.set(k, (aplicadoPorAdelanto.get(k) ?? 0) + Number(a.monto_usd));
+    destino.set(k, (destino.get(k) ?? 0) + Number(a.monto_usd));
   }
 
   return {
@@ -186,6 +197,7 @@ export async function cargarDatosSaldos(tipo: TipoEntidad): Promise<DatosSaldos 
       anulada: Boolean(n.anulada), pagada: Boolean(n.pagada), fecha: String(n.fecha),
     })),
     aplicadoPorAdelanto,
+    aplicadoPorNota,
   };
 }
 

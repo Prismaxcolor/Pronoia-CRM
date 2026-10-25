@@ -9,7 +9,7 @@ import {
   ETIQUETA_ESTADO_NOMINA, ETIQUETA_TIPO_TRABAJADOR, formatearNumeroNomina, type Nomina,
 } from '../../../../shared/types/nomina.js';
 import { domingoDe } from '../../../../shared/types/nomina-calculo.js';
-import { COLUMNAS_NUMERICAS_PDF, ENCABEZADO_TABLA_PDF, filasPagos, filasTabla, filasTotales } from './nomina-pdf-filas';
+import { COLUMNAS_NUMERICAS_PDF, ENCABEZADO_TABLA_PDF, filasPagos, filasTabla, filasTotales, nominaPagadaPorCompleto } from './nomina-pdf-filas';
 
 const GRIS_GRID: [number, number, number] = [70, 70, 70];
 
@@ -23,7 +23,7 @@ export async function descargarNominaPDF(n: Nomina, modo: ModoPdf = 'descargar')
 
   encabezadoMarca(doc);
   let y = 56 + 52;
-  tituloConBadge(doc, y, `Nómina ${formatearNumeroNomina(n.numero)}`, ETIQUETA_ESTADO_NOMINA[n.estado]);
+  tituloConBadge(doc, y, `Nómina ${formatearNumeroNomina(n.numero)}`, n.estado === 'CERRADA' && nominaPagadaPorCompleto(n) ? 'Pagada' : ETIQUETA_ESTADO_NOMINA[n.estado]);
   y += 16;
   subtitulo(doc, y, `${ETIQUETA_TIPO_TRABAJADOR[n.tipo]} · semana del ${formatearFecha(n.semanaInicio)} al ${formatearFecha(domingoDe(n.semanaInicio))}`);
   y += 26;

@@ -5,7 +5,7 @@ import { Insignia, TablaDatos, type ColumnaTabla } from '../../components/ui';
 import type { EntradaConSaldo } from '../../lib/terceros-kpis';
 import type { EntradaEstadoCuenta, TipoEntidad } from '../../services/estado-cuenta-service';
 import { totalesEstadoCuenta } from '@shared/types/estado-cuenta-totales.js';
-import { AYUDA_POR_TIPO, LABEL_POR_TIPO, TONO_POR_TIPO, fmt, rutaDetalle } from './estado-cuenta-comun';
+import { AYUDA_POR_TIPO, LABEL_POR_TIPO, TONO_POR_TIPO, fmt, notaAplicadaEnParte, rutaDetalle, textoNotaAplicadaEnParte } from './estado-cuenta-comun';
 import { fechaConHora } from '../../lib/fecha-negocio';
 import EtiquetaCategoria from '../cochinito/categorias/EtiquetaCategoria';
 import { useSoloEnLinea } from '../../lib/offline/solo-en-linea';
@@ -37,6 +37,7 @@ function Concepto({ e }: { e: EntradaEstadoCuenta }) {
       <span className={`ml-2 ${e.anulada ? 'line-through' : ''}`}>{e.descripcion}</span>
       {e.anulada && <span className="ml-2 text-xs font-medium text-text-secondary">Anulada</span>}
       {e.pagada && !e.anulada && <span className="ml-2 text-xs text-text-secondary">(pagada)</span>}
+      {notaAplicadaEnParte(e) && <span className="mt-0.5 block text-xs text-text-secondary">{textoNotaAplicadaEnParte(e)}</span>}
       {e.facturaAsociadaCodigo && <span className="mt-0.5 block text-xs text-text-secondary">→ {e.facturaAsociadaCodigo}</span>}
       {e.categoria && <span className="mt-1 block"><EtiquetaCategoria nombre={e.categoria.nombre} color={e.categoria.color} imagenUrl={e.categoria.imagenUrl} /></span>}
       {e.tipo === 'cruce' && (
@@ -72,7 +73,7 @@ function EstadoCuentaTabla({ tipo, entidadId, nombreEntidad, filas, saldoFinal, 
     );
   };
   const botonAnular = (e: EntradaConSaldo) => (
-    (e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && !e.pagada ? (
+    (e.tipo === 'nota_credito' || e.tipo === 'nota_debito') && !e.anulada && !e.pagada && !notaAplicadaEnParte(e) ? (
       <button type="button" onClick={() => onAnular(e)} className="inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-50" {...soloEnLinea(false, 'Anular nota')}>
         <Ban size={13} aria-hidden="true" /> Anular
       </button>

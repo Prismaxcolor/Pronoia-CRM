@@ -38,10 +38,14 @@ export function correlativoMovimiento(m: Pick<Movimiento, 'subtipo' | 'numero'>)
   return `${prefijo}-${String(m.numero).padStart(4, '0')}`;
 }
 
-/** Equivalente en USD: el campo montoUsd si existe; si no, el monto cuando ya está en USD; si no, null (desconocido). */
-export function montoUsdDe(m: Pick<Movimiento, 'monto' | 'moneda' | 'montoUsd'>): number | null {
+/**
+ * Equivalente en USD: el campo montoUsd si existe (tasa del momento del pago); si no, el monto cuando ya está en USD;
+ * si no, el que calcula el servidor con la tasa Binance del momento del movimiento (Bs sin monto_usd); si no, null.
+ */
+export function montoUsdDe(m: Pick<Movimiento, 'monto' | 'moneda' | 'montoUsd'> & { equivalenteUsd?: number | null }): number | null {
   if (m.montoUsd != null && Number.isFinite(m.montoUsd)) return m.montoUsd;
-  return m.moneda === 'USD' ? m.monto : null;
+  if (m.moneda === 'USD') return m.monto;
+  return m.equivalenteUsd != null && Number.isFinite(m.equivalenteUsd) ? m.equivalenteUsd : null;
 }
 
 /** Correlativo del sistema de un movimiento manual ("MV-0005"); '' si no lo tiene. Para la búsqueda. */
@@ -207,6 +211,40 @@ export function serieSemanal(movimientos: readonly Movimiento[], tipo: 'egreso' 
     else otros[i] += usd;
   }
   return { categorias: lunes.map(l => formatearFechaCorta(l)), lunes, pagos, adelantos, otros, total: lunes.map((_, i) => pagos[i] + adelantos[i] + otros[i]) };
+}
+
+export interface FlujoCajaSemanal {
+  /** Etiquetas "dd/mm" (lunes de cada semana). */
+  categorias: string[];
+  ingresos: number[];
+  egresos: number[];
+  /** Ingresos menos egresos de cada semana (USD). */
+  neto: number[];
+  totalIngresos: number;
+  totalEgresos: number;
+}
+
+/** Flujo de caja en USD por semana: lo que entró, lo que salió y el neto, rellenando las semanas sin movimientos. */
+export function flujoCajaSemanal(movimientos: readonly Movimiento[]): FlujoCajaSemanal {
+  const ing = serieSemanal(movimientos, 'ingreso');
+  const egr = serieSemanal(movimientos, 'egreso');
+  const lunes = [...new Set([...ing.lunes, ...egr.lunes])].sort();
+  if (lunes.length === 0) return { categorias: [], ingresos: [], egresos: [], neto: [], totalIngresos: 0, totalEgresos: 0 };
+  const desde = aFechaUtc(lunes[0]).getTime();
+  const hasta = aFechaUtc(lunes[lunes.length - 1]).getTime();
+  const semanas: string[] = [];
+  for (let t = desde; t <= hasta; t += 7 * DIA_MS) semanas.push(aIso(new Date(t)));
+  const valorDe = (s: SeriesSemanales, l: string): number => s.total[s.lunes.indexOf(l)] ?? 0;
+  const ingresos = semanas.map(l => valorDe(ing, l));
+  const egresos = semanas.map(l => valorDe(egr, l));
+  return {
+    categorias: semanas.map(l => formatearFechaCorta(l)),
+    ingresos,
+    egresos,
+    neto: semanas.map((_, i) => ingresos[i] - egresos[i]),
+    totalIngresos: ingresos.reduce((a, b) => a + b, 0),
+    totalEgresos: egresos.reduce((a, b) => a + b, 0),
+  };
 }
 
 export interface SaldoBanca {

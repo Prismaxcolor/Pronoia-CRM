@@ -28,7 +28,7 @@ function FilaCuotas({ r, i, soloLectura, onCambiar }: { r: RenglonCalculado; i: 
   const cambiarCuota = (k: number, monto: string) => onCambiar(i, { cuotas: r.cuotas.map((c, j) => (j === k ? { ...c, monto } : c)) });
   return (
     <tr className="bg-surface-alt/50">
-      <td colSpan={12} className="px-3 py-2">
+      <td colSpan={13} className="px-3 py-2">
         <p className="mb-1 text-xs font-medium text-text-secondary">Préstamos de {r.nombre}: cuota a descontar esta semana (USD)</p>
         <div className="flex flex-wrap gap-3">
           {r.cuotas.map((c, k) => (
@@ -48,7 +48,7 @@ function FilaCuotas({ r, i, soloLectura, onCambiar }: { r: RenglonCalculado; i: 
 function NominaTabla({ renglones, soloLectura, onCambiar, onQuitar }: Props) {
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-      <table className="w-full min-w-[1180px] text-sm">
+      <table className="w-full min-w-[1320px] text-sm">
         <caption className="sr-only">Renglones de la nómina semanal</caption>
         <thead className="bg-surface-alt text-xs text-text-secondary">
           <tr>
@@ -58,6 +58,7 @@ function NominaTabla({ renglones, soloLectura, onCambiar, onQuitar }: Props) {
             <th scope="col" className="px-2 py-2 text-right font-medium">Sueldo en Bs (USD de referencia por día)</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Total bruto (USD)</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Bonificación extra (USD)</th>
+            <th scope="col" className="px-2 py-2 text-right font-medium">Bonificación extra en Bs (USD ref.)</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Descuento por trabajo (USD)</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">Cuotas de préstamo (USD)</th>
             <th scope="col" className="px-2 py-2 text-right font-medium">A pagar en divisas</th>
@@ -77,6 +78,7 @@ function NominaTabla({ renglones, soloLectura, onCambiar, onQuitar }: Props) {
                 <td className="px-2 py-2"><CeldaNumero etiqueta={`Sueldo en Bs (USD de referencia por día) de ${r.nombre}`} valor={r.montoBaseBs} soloLectura={soloLectura} onCambio={v => onCambiar(i, { montoBaseBs: v })} /></td>
                 <td className="px-2 py-2 text-right tabular-nums">{num(c.totalBrutoUsd)}</td>
                 <td className="px-2 py-2"><CeldaNumero etiqueta={`Bonificación de ${r.nombre}`} valor={r.bonificacion} soloLectura={soloLectura} onCambio={v => onCambiar(i, { bonificacion: v })} /></td>
+                <td className="px-2 py-2"><CeldaNumero etiqueta={`Bonificación extra en Bs (USD de referencia) de ${r.nombre}`} valor={r.bonificacionBs} soloLectura={soloLectura} onCambio={v => onCambiar(i, { bonificacionBs: v })} /></td>
                 <td className="px-2 py-2"><CeldaNumero etiqueta={`Descuento por trabajo de ${r.nombre}`} valor={r.descuentoTrabajo} soloLectura={soloLectura} onCambio={v => onCambiar(i, { descuentoTrabajo: v })} /></td>
                 <td className="px-2 py-2 text-right tabular-nums">{num(c.descuentoPrestamoUsd)}</td>
                 <td className="px-2 py-2 text-right tabular-nums">USD {num(c.pagarUsd)}</td>

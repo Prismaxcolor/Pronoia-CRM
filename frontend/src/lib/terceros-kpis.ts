@@ -116,6 +116,25 @@ export function totalesDeFilas(filas: readonly FilaTercero[]): TotalesFilas {
   };
 }
 
+export interface TotalesAdelantos {
+  /** Total entregado en adelantos/anticipos vigentes (aplicados o no a facturas). */
+  adelantado: number;
+  /** Lo adelantado que todavía no se aplicó a facturas. */
+  disponible: number;
+  /** Cuántas entidades tienen algún adelanto/anticipo vigente. */
+  conAdelanto: number;
+}
+
+/** Adelantos/anticipos de SOLO las filas recibidas (misma base que los demás importes de la pestaña). Sin cifras cuenta 0. */
+export function totalesAdelantosDeFilas(filas: readonly FilaTercero[]): TotalesAdelantos {
+  const adelantado = filas.map(f => f.saldo?.adelantado ?? 0);
+  return {
+    adelantado: redondear(adelantado.reduce((a, n) => a + n, 0)),
+    disponible: redondear(filas.reduce((a, f) => a + (f.saldo?.adelantoDisponible ?? 0), 0)),
+    conAdelanto: adelantado.filter(n => n > SALDO_MINIMO_USD).length,
+  };
+}
+
 /** Rótulo del indicador de saldo: «Por cobrar a clientes nacionales» (el segmento es opcional). */
 export const textoSaldoPorSegmento = (saldo: string, plural: string, segmento?: string): string =>
   `${saldo} a ${plural}${segmento ? ` ${segmento}` : ''}`;

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { logger } from '../utils/logger.js';
 import { formatCodigoTransformacion } from '../utils/codigos.js';
 import { leerPaginado } from '../utils/paginacion.js';
 import { esErrorFuncionInexistente } from './ticket-principal.js';
@@ -68,6 +69,8 @@ interface TransformacionRow {
   fecha: string;
   estado: 'bruto' | 'completa';
   notas: string | null;
+  /** Columna de migration_transformacion_observacion_cierre.sql: ausente hasta aplicarla. */
+  observacion_cierre?: string | null;
   registrado_por: string | null;
   completado_por: string | null;
   completado_en: string | null;
@@ -96,6 +99,8 @@ export interface TransformacionPublica {
   fecha: string;
   estado: 'bruto' | 'completa';
   notas: string | null;
+  /** Observación escrita al completar (null si no hay o falta aplicar la migración). */
+  observacionCierre: string | null;
   registradoPor: string | null;
   completadoPor: string | null;
   completadoEn: string | null;
@@ -144,6 +149,7 @@ function toPublico(row: TransformacionRow): TransformacionPublica {
     fecha: row.fecha,
     estado: row.estado,
     notas: row.notas,
+    observacionCierre: row.observacion_cierre ?? null,
     registradoPor: row.registrado_por,
     completadoPor: row.completado_por,
     completadoEn: row.completado_en,
@@ -342,6 +348,24 @@ async function prevalidarMerma(
   return validarMermaContraNetos(Number(cab.peso_neto ?? 0), salidas.map(netoDeSalida), mermaDetalle);
 }
 
+export const MENSAJE_OBSERVACION_NO_GUARDADA =
+  'La transformación se completó, pero la observación no se pudo guardar (falta aplicar migration_transformacion_observacion_cierre.sql).';
+
+/** Guarda la observación escrita al completar. Mejor esfuerzo: la transformación ya está completa, así que un fallo
+ *  (p. ej. migración sin aplicar) solo devuelve una advertencia. */
+async function guardarObservacionCierre(id: string, observacion: string | null | undefined): Promise<string | undefined> {
+  if (!observacion) return undefined;
+  const { error } = await supabaseAdmin.from('transformaciones').update({ observacion_cierre: observacion }).eq('id', id);
+  if (!error) return undefined;
+  logger.warn({ evento: 'transformacion_observacion_cierre_no_guardada', transformacionId: id, code: error.code, mensaje: error.message });
+  return MENSAJE_OBSERVACION_NO_GUARDADA;
+}
+
+const unirAdvertencias = (...partes: Array<string | undefined>): string | undefined => {
+  const textos = partes.filter((p): p is string => Boolean(p));
+  return textos.length > 0 ? textos.join(' ') : undefined;
+};
+
 /** Legacy: retira de lote-pool. */
 export async function crearTransformacion(
   input: CrearTransformacionInput,
@@ -433,7 +457,8 @@ export async function completarTransformacionFerroso(
   });
 
   if (error) return { error: error.message };
-  const { advertencia } = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
+  const merma = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
+  const advertencia = unirAdvertencias(merma.advertencia, await guardarObservacionCierre(id, input.observacion));
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer de vuelta.' };
   return { transformacion, ...(advertencia ? { advertencia } : {}) };
@@ -519,7 +544,8 @@ export async function completarTransformacionPCB(
   });
 
   if (error) return { error: error.message };
-  const { advertencia } = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
+  const merma = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
+  const advertencia = unirAdvertencias(merma.advertencia, await guardarObservacionCierre(id, input.observacion));
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer.' };
   return { transformacion, ...(advertencia ? { advertencia } : {}) };
@@ -636,7 +662,8 @@ export async function completarTransformacionMixta(
     if (esErrorFuncionInexistente(error)) return { error: MENSAJE_MIXTAS_NO_HABILITADAS, status: 409 };
     return { error: error.message, status: 400 };
   }
-  const { advertencia } = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
+  const merma = await registrarMermaAlCompletar(id, input.mermaDetalle, completadoPor);
+  const advertencia = unirAdvertencias(merma.advertencia, await guardarObservacionCierre(id, input.observacion));
   const transformacion = await obtenerTransformacion(id);
   if (!transformacion) return { error: 'La transformación se completó pero no se pudo leer.', status: 500 };
   return { transformacion, ...(advertencia ? { advertencia } : {}) };

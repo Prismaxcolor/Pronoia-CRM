@@ -1,7 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { supabaseAdmin } from '../config/supabase.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { mensajeDeErrorBd } from '../utils/errores-bd.js';
+import { logger } from '../utils/logger.js';
 import { MENSAJE_REPORTES_TELEGRAM_PENDIENTE } from './grupo-silencio-service.js';
 import type { CrearBancaInput, ActualizarBancaInput, CrearMovimientoInput } from '../schemas/cochinito.js';
+import { reglaDeBanca, type ReglaComisionAutomatica } from '../utils/comision-automatica.js';
+import { subtipoAdelantoDeMovimiento } from '../utils/movimiento-adelanto.js';
 
 /**
  * Espejo de shared/types/banca.ts y movimiento.ts. Se duplica intencionalmente
@@ -27,6 +32,8 @@ export interface Banca {
   telegramReportesActivos: boolean;
   /** URL pública de la imagen (logo / foto de la caja); null si no tiene (o la migración aún no se aplicó). */
   imagenUrl: string | null;
+  /** Comisión automática de la cuenta; null si no tiene (o la migración aún no se aplicó). */
+  comisionAuto: ReglaComisionAutomatica | null;
 }
 
 export interface Movimiento {
@@ -80,6 +87,8 @@ export interface Movimiento {
   comisionBancaria: number | null;
   /** Si es el cargo de una comisión bancaria: id del movimiento al que pertenece; null en los demás. */
   comisionDeId: string | null;
+  /** Solo en las lecturas de Wallet: USD a la tasa (Binance) del momento, para movimientos en Bs sin `montoUsd` guardado. */
+  equivalenteUsd?: number | null;
 }
 
 function mapBanca(row: Record<string, unknown>): Banca {
@@ -95,6 +104,8 @@ function mapBanca(row: Record<string, unknown>): Banca {
     telegramChatId: typeof row.telegram_chat_id === 'string' && row.telegram_chat_id ? row.telegram_chat_id : null,
     telegramReportesActivos: row.telegram_reportes_activos !== false,
     imagenUrl: typeof row.imagen_url === 'string' && row.imagen_url ? row.imagen_url : null,
+    // Sin la migración las columnas no vienen en la fila: null (sin comisión automática).
+    comisionAuto: reglaDeBanca(row),
   };
 }
 
@@ -376,19 +387,41 @@ export async function desarchivarBanca(id: string): Promise<boolean> {
   return !error;
 }
 
+export const MENSAJE_MONEDA_NO_COINCIDE =
+  'La moneda del movimiento no coincide con la de la cuenta de origen. Actualiza la pantalla e intenta de nuevo.';
+
+/** Moneda de una cuenta (mayúsculas), o null si no existe / no se puede leer. */
+async function monedaDeBanca(id: string): Promise<string | null> {
+  const { data } = await supabaseAdmin.from('bancas').select('moneda').eq('id', id).maybeSingle();
+  const moneda = (data as { moneda?: unknown } | null)?.moneda;
+  return typeof moneda === 'string' && moneda ? moneda.trim().toUpperCase() : null;
+}
+
 /** Crea un movimiento de ingreso, egreso o transferencia. El trigger SQL ajusta el saldo. */
 export async function crearMovimiento(
   input: CrearMovimientoInput,
-  registradoPor: string
+  registradoPor: string,
+  /** `montoUsd`: equivalente en USD que se guarda (adelanto/anticipo desde una cuenta en Bs). Sin él, el movimiento no guarda USD. */
+  extra: { montoUsd?: number | null } = {}
 ): Promise<{ movimiento: Movimiento } | { error: string }> {
   const esTransferencia = input.tipo === 'transferencia';
+  // La moneda efectiva es SIEMPRE la de la cuenta de origen: la del body no se confía (evita registrar Bs como USD).
+  const monedaOrigen = await monedaDeBanca(input.bancaId);
+  if (!monedaOrigen) return { error: 'La cuenta de origen no existe.' };
+  if (input.moneda.trim().toUpperCase() !== monedaOrigen) return { error: MENSAJE_MONEDA_NO_COINCIDE };
+  if (esTransferencia && (!input.bancaDestinoId || !(await monedaDeBanca(input.bancaDestinoId)))) {
+    return { error: 'La cuenta destino no existe.' };
+  }
+  // Egreso con proveedor = adelanto; ingreso con cliente = anticipo: nace como documento del estado de cuenta (con su
+  // correlativo AD-/AC- que asigna el trigger y su grupo), listo para cruzarlo con facturas.
+  const subtipoAdelanto = subtipoAdelantoDeMovimiento(input);
   const { data, error } = await supabaseAdmin
     .from('movimientos')
     .insert({
       tipo: input.tipo,
       monto: input.monto,
       monto_destino: esTransferencia ? (input.montoDestino ?? null) : null,
-      moneda: input.moneda,
+      moneda: monedaOrigen,
       descripcion: input.descripcion,
       banca_origen_id: input.bancaId,
       banca_destino_id: esTransferencia ? input.bancaDestinoId : null,
@@ -397,6 +430,8 @@ export async function crearMovimiento(
       registrado_por: registradoPor,
       proveedor_id: input.proveedorId ?? null,
       cliente_id: input.clienteId ?? null,
+      ...(subtipoAdelanto ? { subtipo: subtipoAdelanto, grupo_id: randomUUID() } : {}),
+      ...(subtipoAdelanto && extra.montoUsd != null ? { monto_usd: extra.montoUsd } : {}),
       // Solo si hay comprobante: así un movimiento sin imagen no depende de la columna.
       ...(input.comprobantes.length > 0 ? { comprobantes: input.comprobantes } : {}),
       // Solo si hay categoría: un movimiento sin categoría no depende de la columna.
@@ -405,6 +440,9 @@ export async function crearMovimiento(
     .select()
     .single();
 
-  if (error || !data) return { error: error?.message ?? 'No se pudo registrar el movimiento.' };
+  if (error || !data) {
+    if (error) logger.error({ evento: 'movimiento_insert_fallido', code: error.code, mensaje: error.message });
+    return { error: mensajeDeErrorBd(error, 'No se pudo registrar el movimiento.') };
+  }
   return { movimiento: mapMovimiento(data) };
 }

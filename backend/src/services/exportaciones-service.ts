@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { ExportacionResumen, KgLoteExportacion, ListadoExportaciones } from '../../../shared/types/packing-list.js';
 import { calcularNeto, redondear2, totalNeto } from '../utils/packing-list-calculo.js';
-import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { esColumnaInexistente, esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { logger } from '../utils/logger.js';
 import { proyeccionToPublica } from './packing-list-service.js';
 
@@ -44,22 +44,34 @@ export function kgPorLoteDeItems(items: readonly ItemExportacionRow[]): KgLoteEx
   return [...acumulado].map(([lote, kg]) => ({ lote, kg }));
 }
 
-/** Consulta con la valoración y, si la columna aún no existe, sin ella. */
-async function leerFilas(conValores: boolean) {
-  const consulta = (columnas: string) =>
-    supabaseAdmin
+/**
+ * Consulta con la valoración y, si la columna aún no existe, sin ella. Los borradores (es_borrador) nunca son
+ * exportaciones: son packing lists a medias, sin contenedor ni pesos confiables.
+ */
+async function leerFilasConFiltro(conValores: boolean, soloFinalizados: boolean) {
+  const consulta = (columnas: string) => {
+    const base = supabaseAdmin
       .from('packing_lists')
       .select(`${columnas}, ${ITEMS}`)
-      .not('cliente_id', 'is', null)
+      .not('cliente_id', 'is', null);
+    return (soloFinalizados ? base.eq('es_borrador', false) : base)
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(LIMITE_EXPORTACIONES);
+  };
   if (!conValores) return consulta(COLUMNAS_BASE);
   const conTotal = await consulta(`${COLUMNAS_BASE}, proyeccion, total_real_usd`);
   if (!conTotal.error || !esObjetoInexistente(conTotal.error)) return conTotal;
   const conProyeccion = await consulta(`${COLUMNAS_BASE}, proyeccion`);
   if (!conProyeccion.error || !esObjetoInexistente(conProyeccion.error)) return conProyeccion;
   return consulta(COLUMNAS_BASE);
+}
+
+/** Excluye los borradores; si la migración de borradores aún no está aplicada (no hay columna) no hay borradores que excluir. */
+async function leerFilas(conValores: boolean) {
+  const resultado = await leerFilasConFiltro(conValores, true);
+  if (resultado.error && esColumnaInexistente(resultado.error, 'es_borrador')) return leerFilasConFiltro(conValores, false);
+  return resultado;
 }
 
 async function nombresDeClientes(ids: readonly string[]): Promise<Map<string, string>> {

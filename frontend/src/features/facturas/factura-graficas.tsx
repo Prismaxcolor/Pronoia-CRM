@@ -64,6 +64,7 @@ function FacturaGraficas({ facturas, tipo, rutaNueva }: Props) {
 
       <div className="lg:col-span-2">
         <Bloque
+          id="principales-entidades"
           titulo={`Principales ${plural}`}
           queEstasViendo={`a quién se le ${esCompra ? 'compró' : 'vendió'} más en el periodo. Cada barra suma, en USD, las facturas emitidas y pagadas de ese ${esCompra ? 'proveedor' : 'cliente'}; no cuenta anuladas ni borradores.`}
         >

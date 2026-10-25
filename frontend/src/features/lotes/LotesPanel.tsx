@@ -223,7 +223,7 @@ function LotesPanel() {
 
       <div ref={detalleRef}>
         {loteDetalle && filaDetalle && (
-          <Bloque titulo={`Detalle de ${loteDetalle.nombre}`} queEstasViendo="Dónde está este lote y con qué composición, qué productos lo anclan, y las acciones de clase y embalado.">
+          <Bloque id="lote-detalle" titulo={`Detalle de ${loteDetalle.nombre}`} queEstasViendo="Dónde está este lote y con qué composición, qué productos lo anclan, y las acciones de clase y embalado.">
             <LoteDetalle
               lote={loteDetalle}
               fila={filaDetalle}

@@ -221,8 +221,19 @@ describe('editarPagoCobro', () => {
     const r = await editarPagoCobro('pago', G, {
       bancas: [{ bancaId: B2, monto: 2900, moneda: 'VES', montoUsd: 80 }], montoUsd: 80, items: [{ tipo: 'factura', id: F1, montoUsd: 80 }],
     }, ACTOR);
-    expect(r).toMatchObject({ codigo: 409, error: expect.stringContaining('comisión bancaria') });
+    expect(r).toMatchObject({ codigo: 409, error: 'Este pago lleva comisión bancaria y no se puede editar. Anúlalo y regístralo de nuevo.' });
     expect(autorizarEdicion).not.toHaveBeenCalled();
+    expect(rpcLlamadas).toHaveLength(0);
+  });
+
+  it('un cobro con comisión bancaria también rechaza cambios contables sin llamar a la RPC', async () => {
+    tablas.movimientos = { data: [{ proveedor_id: null, cliente_id: 'c1', subtipo: 'cobro' }], error: null };
+    detalles = [detallePago({ entidadTipo: 'cliente', entidadId: 'c1' })];
+    grupoConComision = true;
+    const r = await editarPagoCobro('cobro', G, {
+      bancas: [{ bancaId: B2, monto: 2900, moneda: 'VES', montoUsd: 80 }], montoUsd: 80, items: [{ tipo: 'factura', id: F1, montoUsd: 80 }],
+    }, ACTOR);
+    expect(r).toMatchObject({ codigo: 409, error: expect.stringContaining('lleva comisión bancaria') });
     expect(rpcLlamadas).toHaveLength(0);
   });
 

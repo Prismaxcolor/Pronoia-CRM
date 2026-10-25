@@ -50,8 +50,8 @@ function SelectorBanca({ bancas, valor, onChange, titulo = 'Elegir cuenta o caja
           <>
             <Miniatura entidad={actual} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-text-primary">{actual.nombre}</span>
-              <span className="block truncate text-xs text-text-muted">{actual.detalle}</span>
+              <span className="block break-words text-text-primary" title={actual.nombre}>{actual.nombre}</span>
+              <span className="block break-words text-xs text-text-muted" title={actual.detalle}>{actual.detalle}</span>
             </span>
           </>
         ) : (

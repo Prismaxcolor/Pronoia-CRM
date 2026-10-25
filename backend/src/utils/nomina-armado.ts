@@ -45,6 +45,7 @@ export function armarNomina(input: GuardarNominaInput, nombres: ReadonlyMap<stri
       montoBaseUsd: l.montoBaseUsd,
       montoBaseBs: l.montoBaseBs,
       bonificacionUsd: l.bonificacionUsd,
+      bonificacionBsUsd: l.bonificacionBsUsd,
       descuentoTrabajoUsd: l.descuentoTrabajoUsd,
       descuentoPrestamoUsd,
     }, input.tasaBs);

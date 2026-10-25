@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Save } from 'lucide-react';
 import { Bloque, BotonAccion, EncabezadoPagina, SkeletonBloque } from '../../components/ui';
 import PackingListProyeccion from '../packing-list/PackingListProyeccion';
 import PackingListResultados from '../packing-list/PackingListResultados';
+import { RUTA_EXPORTACIONES } from './rutas';
 import PasoEleccion from './PasoEleccion';
 import PasosIndicador from './PasosIndicador';
 import { pasoDesdeParametro, puedeAvanzarDesde, PASOS, type NumeroPaso } from './asistente';
@@ -56,7 +57,7 @@ function ExportacionAsistentePage() {
   // Guarda lo pendiente y recién entonces cambia de paso: así el siguiente paso siempre parte de lo guardado.
   const irA = async (destino: NumeroPaso) => {
     if (!e.detalle || !(await a.guardar())) return;
-    if (esNueva) navigate(`/exportaciones/${e.detalle.id}?paso=${destino}`);
+    if (esNueva) navigate(`${RUTA_EXPORTACIONES}/${e.detalle.id}?paso=${destino}`);
     else setParams({ paso: String(destino) });
   };
 
@@ -68,7 +69,7 @@ function ExportacionAsistentePage() {
     <div className="max-w-6xl">
       <EncabezadoPagina titulo={esNueva ? 'Nueva exportación' : `Exportación ${e.detalle?.contenedor ?? ''}`}
         subtitulo="Elige el packing list y el cliente, valora los lotes para la proyección de venta y compara con el resultado real."
-        migas={[{ etiqueta: 'Exportaciones', to: '/exportaciones' }, { etiqueta: esNueva ? 'Nueva' : e.detalle?.contenedor ?? '' }]} />
+        migas={[{ etiqueta: 'Exportaciones', to: RUTA_EXPORTACIONES }, { etiqueta: esNueva ? 'Nueva' : e.detalle?.contenedor ?? '' }]} />
       <PasosIndicador actual={paso} puedeIr={n => !esNueva && n !== paso && puedeAvanzarDesde(paso, eleccion)} onIr={n => { void irA(n); }} />
 
       {paso === 1 && (
@@ -84,7 +85,7 @@ function ExportacionAsistentePage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           {paso > 1 && <BotonAccion variante="secundario" icono={<ArrowLeft size={16} />} disabled={e.guardando} onClick={() => { void irA((paso - 1) as NumeroPaso); }}>Atrás</BotonAccion>}
-          <Link to="/exportaciones" className="text-sm text-text-secondary underline underline-offset-2">Volver a la lista</Link>
+          <Link to={RUTA_EXPORTACIONES} className="text-sm text-text-secondary underline underline-offset-2">Volver a la lista</Link>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!ultimo && <BotonAccion icono={<ArrowRight size={16} />} disabled={e.guardando || !e.detalle || !puedeContinuar} onClick={() => { void irA((paso + 1) as NumeroPaso); }}>

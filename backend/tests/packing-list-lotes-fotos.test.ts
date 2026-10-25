@@ -132,9 +132,9 @@ describe('esquema: almacén y fotos por paleta', () => {
     expect(() => entrada([{ numero: 1, pesoBruto: 10, fotos: [RUTA, RUTA] }])).toThrow(/repetid/i);
   });
 
-  it('sin PCB descarta lote, color y almacén pero conserva las fotos', () => {
+  it('sin PCB conserva lote, color, almacén y fotos tal como se envían', () => {
     const r = entrada([{ numero: 1, lote: '1', color: 'green', almacenId: ALM, pesoBruto: 10, fotos: [RUTA] }], { esPcb: false });
-    expect(r.items[0]).toMatchObject({ lote: null, color: null, almacenId: null, fotos: [RUTA] });
+    expect(r.items[0]).toMatchObject({ lote: '1', color: 'green', almacenId: ALM, fotos: [RUTA] });
   });
 });
 

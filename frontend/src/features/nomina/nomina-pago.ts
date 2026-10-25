@@ -41,8 +41,11 @@ export type Elecciones = Readonly<Partial<Record<MonedaPago, readonly EleccionPa
 export interface PayloadPago {
   fecha: string;
   referencia: string | null;
-  /** Una entrada por cuenta; `monto` solo viaja cuando la moneda se reparte entre varias cuentas. */
-  bancas: Array<{ moneda: MonedaPago; bancaId: string; llevaComision?: boolean; monto?: number }>;
+  /**
+   * Una entrada por cuenta; `monto` solo viaja cuando la moneda se reparte entre varias cuentas. Cada cuenta lleva SU referencia y
+   * SUS comprobantes (URLs ya subidas).
+   */
+  bancas: Array<{ moneda: MonedaPago; bancaId: string; llevaComision?: boolean; monto?: number; referencia?: string; comprobantes?: string[] }>;
 }
 
 /** Grupos con algo que pagar, a partir de los totales de la nómina (divisas primero). */
@@ -124,9 +127,13 @@ export function validarPago(
   return null;
 }
 
+/** Comprobantes ya subidos por cuenta (clave = id de la cuenta). */
+export type ComprobantesPorCuenta = ReadonlyMap<string, readonly string[]>;
+
 /**
  * Cuerpo del POST /nominas/:id/pagar. La comisión solo viaja en cuentas Bs donde se preguntó; el monto solo en un reparto
- * (con una cuenta el servidor calcula el total).
+ * (con una cuenta el servidor calcula el total). La referencia y los comprobantes viajan POR CUENTA (cada banca los suyos);
+ * `referencia` (general) queda como respaldo para quien no escribe una por cuenta.
  */
 export function construirPayloadPago(
   grupos: readonly GrupoPago[],
@@ -135,6 +142,7 @@ export function construirPayloadPago(
   comisionDisponible: boolean,
   fecha: string,
   referencia: string,
+  comprobantes: ComprobantesPorCuenta = new Map(),
 ): PayloadPago {
   return {
     fecha,
@@ -145,10 +153,14 @@ export function construirPayloadPago(
         const banca = bancas.find(b => b.id === fila.bancaId);
         const lleva = preguntaComision(banca, comisionDisponible) ? llevaDeOpcion(fila.comision) : null;
         const centavos = montoDeFila(filas, i, centavosDe(g.monto));
+        const refCuenta = (fila.referencia ?? '').trim();
+        const fotosCuenta = comprobantes.get(fila.bancaId) ?? [];
         return {
           moneda: g.moneda, bancaId: fila.bancaId,
           ...(esReparto(filas) && centavos !== null ? { monto: centavos / 100 } : {}),
           ...(lleva === null ? {} : { llevaComision: lleva }),
+          ...(refCuenta === '' ? {} : { referencia: refCuenta }),
+          ...(fotosCuenta.length === 0 ? {} : { comprobantes: [...fotosCuenta] }),
         };
       });
     }),
@@ -169,8 +181,8 @@ export function resumenDebitos(grupos: readonly GrupoPago[], elecciones: Eleccio
 
 /** Cuerpo del POST /nominas/:id/trabajadores/:trabajadorId/pagar: lo mismo que el pago de la nómina más los comprobantes. */
 export interface PayloadPagoTrabajador extends PayloadPago {
-  /** URLs ya subidas con subirComprobantePago (puede ir vacío). */
-  comprobantes: string[];
+  /** URLs generales (respaldo); lo normal es que cada cuenta lleve las suyas en `bancas[].comprobantes`. */
+  comprobantes?: string[];
 }
 
 export type EstadoPagoNomina = 'sin-pagar' | 'pagada' | 'pago-anulado';

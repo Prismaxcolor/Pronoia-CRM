@@ -5,6 +5,7 @@ type ErrorBd = { code?: string; message: string } | null;
 const bd = vi.hoisted(() => ({
   banca: null as Record<string, unknown> | null,
   movimientos: [] as Array<Record<string, unknown>>,
+  previos: [] as Array<Record<string, unknown>>,
   categorias: [] as Array<Record<string, unknown>>,
   nombres: [] as Array<Record<string, unknown>>,
   errorCategorias: null as { code?: string; message: string } | null,
@@ -19,8 +20,11 @@ vi.mock('../src/config/supabase.js', () => ({
       const c: Record<string, unknown> = {};
       const registrar = (m: string) => (...args: unknown[]) => { bd.filtros.push([`${tabla}.${m}`, ...args]); return c; };
       for (const m of ['select', 'eq', 'gte', 'lte', 'order', 'or', 'in', 'not', 'limit']) c[m] = registrar(m);
+      // `lt` es la lectura de movimientos anteriores al rango (saldo inicial): en estas pruebas no hay ninguno.
+      c.lt = (...args: unknown[]) => { bd.filtros.push([`${tabla}.lt`, ...args]); c.previo = true; return c; };
       c.maybeSingle = () => Promise.resolve({ data: bd.banca, error: null });
       c.range = (d: number, h: number) => {
+        if (c.previo) return Promise.resolve({ data: bd.previos.slice(d, Math.min(h, d + 999) + 1), error: null });
         bd.rangos.push([d, h]);
         const error: ErrorBd = bd.errorMovimientos;
         return Promise.resolve(error ? { data: null, error } : { data: bd.movimientos.slice(d, Math.min(h, d + 999) + 1), error: null });
@@ -47,7 +51,7 @@ const filaCat = (id: string, extra: Fila = {}): Fila => ({ id, nombre: id, tipo:
 
 beforeEach(() => {
   bd.banca = { id: U1, nombre: 'Banesco', moneda: 'USD' };
-  bd.movimientos = []; bd.categorias = []; bd.nombres = [];
+  bd.movimientos = []; bd.previos = []; bd.categorias = []; bd.nombres = [];
   bd.errorCategorias = null; bd.errorMovimientos = null; bd.rangos = []; bd.filtros = [];
 });
 
@@ -66,6 +70,17 @@ describe('obtenerReporteCuenta', () => {
     expect(f).toContain(`movimientos.or|banca_origen_id.eq.${U1},banca_destino_id.eq.${U1}`);
     expect(f).toContain('movimientos.gte|fecha|2026-10-01');
     expect(f).toContain('movimientos.lte|fecha|2026-10-31');
+  });
+
+  it('el saldo inicial suma los movimientos anteriores al rango y el saldo corrido parte de él', async () => {
+    bd.previos = [filaMov('p1', { tipo: 'ingreso', monto: 500, fecha: '2026-09-20' }), filaMov('p2', { monto: 120, fecha: '2026-09-25' })];
+    bd.movimientos = [filaMov('m1', { tipo: 'ingreso', monto: 100 }), filaMov('m2', { monto: 30, numero_sistema: 2 })];
+    const r = await obtenerReporteCuenta(filtro, null);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.reporte.saldoInicial).toBe(380);
+    expect(r.reporte.filas.map(f => f.saldo)).toEqual([480, 450]);
+    expect(r.reporte.saldoFinal).toBe(450);
+    expect(bd.filtros.map(x => x.join('|'))).toContain('movimientos.lt|fecha|2026-10-01');
   });
 
   it('pagina: con más de 1000 movimientos los trae todos', async () => {

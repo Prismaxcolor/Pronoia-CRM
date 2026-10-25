@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filasPagos } from '../../frontend/src/features/nomina/nomina-pdf-filas';
+import { filasPagos, nominaPagadaPorCompleto } from '../../frontend/src/features/nomina/nomina-pdf-filas';
 import {
   bloqueoComisionPago, construirPayloadPago, cuentasDeGrupo, estadoPagoNomina, estadoPagoTrabajador, formatearMontoPago, gruposDePago,
   gruposDePagoLinea, lineaDePago, modoPagoNomina, pagosDeTrabajador, preguntaComision, resumenPagoTrabajadores, sePuedePagar,
@@ -102,6 +102,34 @@ describe('construirPayloadPago', () => {
     expect(sinMigracion.bancas[1]).toEqual({ moneda: 'BS', bancaId: 'ves1' });
   });
 
+  it('cada cuenta lleva SU referencia y SUS comprobantes (las cuentas sin ellos no mandan nada)', () => {
+    const p = construirPayloadPago(
+      grupos,
+      { USD: [{ bancaId: 'usd1', comision: '', monto: '', referencia: ' R-USD ' }], BS: [{ bancaId: 'ves1', comision: 'no', monto: '', referencia: '   ' }] },
+      bancas, true, '2026-10-09', '',
+      new Map([['usd1', ['https://x/a.jpg', 'https://x/b.jpg']]]),
+    );
+    expect(p.bancas[0]).toEqual({ moneda: 'USD', bancaId: 'usd1', referencia: 'R-USD', comprobantes: ['https://x/a.jpg', 'https://x/b.jpg'] });
+    expect(p.bancas[1]).toEqual({ moneda: 'BS', bancaId: 'ves1', llevaComision: false });
+  });
+
+  it('con dos cuentas de la misma moneda, cada una conserva su propia referencia y comprobante', () => {
+    const grupoUsd = gruposDePago(totales({ totalDivisasUsd: 30, totalBs: 0 }));
+    const p = construirPayloadPago(
+      grupoUsd,
+      { USD: [
+        { bancaId: 'usd1', comision: '', monto: '20', referencia: 'A-1' },
+        { bancaId: 'usd2', comision: '', monto: '10', referencia: 'B-2' },
+      ] },
+      bancas, true, '2026-10-09', '',
+      new Map([['usd1', ['https://x/1.jpg']], ['usd2', ['https://x/2.jpg']]]),
+    );
+    expect(p.bancas).toEqual([
+      { moneda: 'USD', bancaId: 'usd1', monto: 20, referencia: 'A-1', comprobantes: ['https://x/1.jpg'] },
+      { moneda: 'USD', bancaId: 'usd2', monto: 10, referencia: 'B-2', comprobantes: ['https://x/2.jpg'] },
+    ]);
+  });
+
   it('con una cuenta por moneda nunca incluye montos ni categoría (los decide el servidor)', () => {
     const p = construirPayloadPago(grupos, { USD: [{ bancaId: 'usd1', comision: '', monto: '' }], BS: [{ bancaId: 'ves1', comision: 'no', monto: '' }] }, bancas, true, '2026-10-09', '');
     expect(JSON.stringify(p)).not.toMatch(/monto|categoria/i);
@@ -161,12 +189,23 @@ describe('bloqueoComisionPago', () => {
 });
 
 describe('filasPagos (PDF)', () => {
-  it('una fila por pago, "Pago anulado" si el egreso se anuló, sin datos personales', () => {
-    expect(filasPagos({ pagos: [pago('USD'), pago('BS', { anulado: true })] })).toEqual([
-      ['Pagada', 'USD 100,00 desde CAJA CHICA · MV-0012 · 09/10/2026'],
-      ['Pago anulado', 'Bs 2.000,00 desde CAJA BS · MV-0012 · 09/10/2026'],
-    ]);
-    expect(filasPagos({ pagos: [] })).toEqual([]);
+  it('pagada: UNA sola fila que dice que está correctamente pagada, sin cuentas, montos ni movimientos', () => {
+    expect(filasPagos({ pagos: [pago('USD'), pago('BS')], lineas: [linea()] })).toEqual([['Estado del pago', 'Pagada correctamente']]);
+    // un egreso anulado junto a uno vigente no cambia el mensaje y nunca se detalla
+    expect(filasPagos({ pagos: [pago('USD'), pago('BS', { anulado: true })], lineas: [linea()] })).toEqual([['Estado del pago', 'Pagada correctamente']]);
+  });
+  it('sin pagos no hay fila; con todos los pagos anulados lo dice', () => {
+    expect(filasPagos({ pagos: [], lineas: [linea()] })).toEqual([]);
+    expect(filasPagos({ pagos: [pago('USD', { anulado: true })], lineas: [linea()] })).toEqual([['Estado del pago', 'Pago anulado']]);
+  });
+  it('pago por trabajador: pagada solo cuando TODOS los que cobran están pagados; si no, cuántos van', () => {
+    const lineas = [linea(), linea({ trabajadorId: 't2', trabajadorNombre: 'Luis', pagarBs: 0, totalUsd: 60 })];
+    const unoPagado = [pago('USD', { trabajadorId: 't1' }), pago('BS', { trabajadorId: 't1' })];
+    expect(filasPagos({ pagos: unoPagado, lineas })).toEqual([['Estado del pago', 'Pago parcial: 1 de 2 trabajadores pagados']]);
+    expect(nominaPagadaPorCompleto({ pagos: unoPagado, lineas })).toBe(false);
+    const todos = [...unoPagado, pago('USD', { trabajadorId: 't2' })];
+    expect(filasPagos({ pagos: todos, lineas })).toEqual([['Estado del pago', 'Pagada correctamente']]);
+    expect(nominaPagadaPorCompleto({ pagos: todos, lineas })).toBe(true);
   });
 });
 
@@ -174,7 +213,7 @@ describe('filasPagos (PDF)', () => {
 
 const linea = (extra: Partial<LineaNomina> = {}): LineaNomina => ({
   trabajadorId: 't1', trabajadorNombre: 'Ana', monedaPago: 'MIXTO', diasTrabajados: 5, montoBaseUsd: 12, montoBaseBs: 10, totalBrutoUsd: 110,
-  brutoBs: 2000, montoRefBs: 4400, bonificacionUsd: 0, descuentoTrabajoUsd: 0, descuentoPrestamoUsd: 0, pagarUsd: 60, pagarBs: 2000,
+  brutoBs: 2000, montoRefBs: 4400, bonificacionUsd: 0, bonificacionBsUsd: 0, descuentoTrabajoUsd: 0, descuentoPrestamoUsd: 0, pagarUsd: 60, pagarBs: 2000,
   equivalenteBsUsd: 50, totalUsd: 110, totalBs: 4400, nota: null, cuotas: [], ...extra,
 });
 

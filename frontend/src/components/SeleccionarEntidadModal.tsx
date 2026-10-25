@@ -69,8 +69,8 @@ function SeleccionarEntidadModal<T extends EntidadConFoto>({ titulo, entidades, 
             )}
           </div>
           <div className="p-2">
-            <p className="text-xs text-text-primary truncate">{e.destacado ? '★ ' : ''}{e.nombre}</p>
-            {e.detalle && <p className="text-[11px] text-text-muted truncate">{e.detalle}</p>}
+            <p className="text-xs text-text-primary line-clamp-2 break-words" title={e.nombre}>{e.destacado ? '★ ' : ''}{e.nombre}</p>
+            {e.detalle && <p className="text-[11px] text-text-muted line-clamp-2 break-words" title={e.detalle}>{e.detalle}</p>}
           </div>
         </button>
         {esActual && (

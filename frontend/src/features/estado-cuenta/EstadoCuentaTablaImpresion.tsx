@@ -1,6 +1,6 @@
 import type { EntradaEstadoCuenta } from '../../services/estado-cuenta-service';
 import { totalesEstadoCuenta } from '@shared/types/estado-cuenta-totales.js';
-import { LABEL_POR_TIPO, fmt } from './estado-cuenta-comun';
+import { LABEL_POR_TIPO, fmt, notaAplicadaEnParte, textoNotaAplicadaEnParte } from './estado-cuenta-comun';
 import { paginarImpresion } from './paginar-impresion';
 
 interface Props {
@@ -21,6 +21,7 @@ function FilaImpresion({ e }: { e: EntradaEstadoCuenta }) {
         <span className={e.anulada ? 'line-through' : ''}>{e.descripcion}</span>
         {e.anulada && <span className="ml-2 text-xs font-medium">Anulada</span>}
         {e.pagada && !e.anulada && <span className="ml-2 text-xs text-text-muted">(pagada)</span>}
+        {notaAplicadaEnParte(e) && <span className="mt-0.5 block text-xs text-text-muted">{textoNotaAplicadaEnParte(e)}</span>}
         {e.facturaAsociadaCodigo && <span className="mt-0.5 block text-xs text-text-muted">→ {e.facturaAsociadaCodigo}</span>}
         {e.categoria && <span className="mt-0.5 block text-xs text-text-muted">Categoría: {e.categoria.nombre}</span>}
         {e.tipo === 'cruce' && (

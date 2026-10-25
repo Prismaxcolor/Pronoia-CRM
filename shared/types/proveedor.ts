@@ -8,6 +8,8 @@ export interface Proveedor {
   /** RFC / identificación fiscal — opcional, formato libre. */
   rfc: string | null;
   telefono: string | null;
+  /** Dirección del proveedor — opcional, texto libre. */
+  direccion: string | null;
   email: string | null;
   activo: boolean;
   /** ISO timestamp (created_at en BD). */

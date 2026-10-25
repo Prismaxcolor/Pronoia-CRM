@@ -211,3 +211,76 @@ describe('cargarDatosSaldos / obtenerSaldos (con BD falsa)', () => {
     expect(c.saldos[0]).toMatchObject({ entidadId: 'c1', pagado: 500, saldo: -500 });
   });
 });
+
+describe('adelantos y notas aplicadas en parte en los saldos', () => {
+  it('SaldoEntidad.adelantado suma todo lo entregado en adelantos vigentes y adelantoDisponible lo no aplicado', () => {
+    const r = calcularSaldos('proveedor', entidades, datosBase(), AHORA);
+    // p1: adelanto g2 de 40 con 10 aplicado; p2: adelanto legacy de 30 sin aplicar
+    expect(r.saldos[0]).toMatchObject({ adelantado: 40, adelantoDisponible: 30 });
+    expect(r.saldos[1]).toMatchObject({ adelantado: 30, adelantoDisponible: 30 });
+    expect(r.saldos[2]).toMatchObject({ adelantado: 0, adelantoDisponible: 0 });
+  });
+
+  it('los totales suman lo adelantado y lo disponible de todos los proveedores', () => {
+    const r = calcularSaldos('proveedor', entidades, datosBase(), AHORA);
+    expect(r.totales.adelantado).toBe(70);
+    expect(r.totales.adelantoDisponible).toBe(60);
+  });
+
+  it('un pago normal (subtipo pago) no cuenta como adelantado', () => {
+    const d = datosBase();
+    const r = calcularSaldos('proveedor', entidades, { ...d, pagos: d.pagos.filter(p => p.subtipo === 'pago') }, AHORA);
+    expect(r.totales.adelantado).toBe(0);
+  });
+
+  it('notasCreditoDisponibles descuenta lo ya aplicado de una nota de crédito (cruce parcial)', () => {
+    const d = datosBase();
+    const r = calcularSaldos('proveedor', entidades, { ...d, aplicadoPorNota: new Map([['n1', 6]]) }, AHORA);
+    // n1 (15) aplicada en 6 -> quedan 9; n2 anulada y n4 pagada no cuentan
+    expect(r.saldos[0].notasCreditoDisponibles).toBe(9);
+  });
+
+  it('aplicar una nota en parte no cambia el saldo de la cuenta', () => {
+    const d = datosBase();
+    const sin = calcularSaldos('proveedor', entidades, d, AHORA).saldos[0].saldo;
+    const con = calcularSaldos('proveedor', entidades, { ...d, aplicadoPorNota: new Map([['n1', 6], ['n3', 4]]) }, AHORA).saldos[0].saldo;
+    expect(con).toBe(sin);
+  });
+
+  it('una nota agotada por aplicaciones (más de su monto) no deja disponible negativo', () => {
+    const d = datosBase();
+    const r = calcularSaldos('proveedor', entidades, { ...d, aplicadoPorNota: new Map([['n1', 99]]) }, AHORA);
+    expect(r.saldos[0].notasCreditoDisponibles).toBe(0);
+  });
+});
+
+describe('cargarDatosSaldos: aplicaciones de adelantos y de notas', () => {
+  beforeEach(() => {
+    bdFalsa.reiniciar();
+    invalidarCacheSaldos();
+    bdFalsa.tablas.proveedores = [{ id: 'p1', nombre: 'Alfa', activo: true }];
+    bdFalsa.tablas.facturas_compra = [];
+    bdFalsa.tablas.movimientos = [];
+    bdFalsa.tablas.notas_ajuste_proveedor = [
+      { id: 'n1', proveedor_id: 'p1', tipo: 'credito', monto: 50, anulada: false, pagada: false, fecha: '2026-09-11' },
+    ];
+    bdFalsa.tablas.pago_aplicaciones = [
+      { id: 'a1', item_id: 'g1', tipo: 'adelanto', monto_usd: 10, anulada: false },
+      { id: 'a2', item_id: 'n1', tipo: 'nota_credito', monto_usd: 20, anulada: false },
+      { id: 'a3', item_id: 'n1', tipo: 'nota_credito', monto_usd: 5, anulada: false },
+      { id: 'a4', item_id: 'n1', tipo: 'nota_credito', monto_usd: 99, anulada: true },
+      { id: 'a5', item_id: 'f1', tipo: 'factura', monto_usd: 7, anulada: false },
+    ];
+  });
+
+  it('separa lo aplicado a adelantos de lo aplicado a notas y ignora anuladas y facturas', async () => {
+    const d = await cargarDatosSaldos('proveedor');
+    expect([...d.aplicadoPorAdelanto]).toEqual([['g1', 10]]);
+    expect([...(d.aplicadoPorNota ?? [])]).toEqual([['n1', 25]]);
+  });
+
+  it('la nota de crédito parcial aparece con lo que le queda en el saldo del proveedor', async () => {
+    const r = await obtenerSaldos('proveedor', { ahora: AHORA });
+    expect(r.saldos[0].notasCreditoDisponibles).toBe(25);
+  });
+});

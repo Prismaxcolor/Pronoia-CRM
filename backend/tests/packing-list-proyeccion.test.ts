@@ -76,7 +76,7 @@ describe('esquema: proyeccion', () => {
     expect(r.proyeccion).toEqual([{ lote: '1', valorKgUsd: 1 }]);
   });
   it('lote vacío corresponde a los ítems sin lote', () => {
-    const r = guardarPackingListSchema.parse({ ...base, esPcb: false, proyeccion: [{ lote: '', valorKgUsd: 4 }] });
+    const r = guardarPackingListSchema.parse({ ...base, esPcb: false, items: [{ numero: 1, pesoBruto: 100, pesoPaleta: 5 }], proyeccion: [{ lote: '', valorKgUsd: 4 }] });
     expect(r.proyeccion).toEqual([{ lote: '', valorKgUsd: 4 }]);
   });
 });

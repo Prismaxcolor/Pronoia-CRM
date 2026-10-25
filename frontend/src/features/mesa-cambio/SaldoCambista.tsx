@@ -1,9 +1,9 @@
 import { describirSaldo, type SentidoSaldo } from '@shared/types/mesa-cambio';
 
-/** El color solo acompaña: la etiqueta ("Les debemos" / "Nos deben" / "Al día") es lo que dice quién debe. */
+/** El color solo acompaña: la etiqueta ("Pendiente por cobrar" / "Se le debe" / "Al día") es lo que dice quién debe. */
 const CLASE_POR_SENTIDO: Record<SentidoSaldo, string> = {
-  les_debemos: 'text-amber-600',
-  nos_deben: 'text-brand-700',
+  por_cobrar: 'text-brand-700',
+  se_le_debe: 'text-amber-600',
   en_cero: 'text-text-secondary',
 };
 

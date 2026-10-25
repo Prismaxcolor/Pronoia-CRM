@@ -56,6 +56,7 @@ export function entradaDeExportacion(
     filasDesde(detalle),
     referencia,
     opciones.puedeVerValores ? opciones.valoracion : undefined,
-    opciones.puedeVerControl
+    opciones.puedeVerControl,
+    detalle.esBorrador === true
   );
 }
