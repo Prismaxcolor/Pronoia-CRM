@@ -3,6 +3,7 @@ import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, AlertTriangle } fr
 import { useAuth } from '../../hooks/use-auth-context';
 import { useToast } from '../../hooks/use-toast-context';
 import { mensajeAmigable } from '../../lib/mensaje-error';
+import BotonPasskeyLogin from './BotonPasskeyLogin';
 
 interface NivelFuerza { score: number; label: string; color: string }
 
@@ -257,6 +258,8 @@ function AuthPage() {
               {loading ? <><Loader2 size={16} className="animate-spin" /> Entrando...</> : 'Entrar'}
             </button>
           </form>
+
+          <BotonPasskeyLogin remember={remember} onError={setMensaje} disabled={loading} />
 
           {mensaje && (
             <div role="alert" className="mt-4 w-full max-w-xs flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">

@@ -468,6 +468,11 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   // --- Acceso (ignorables) --------------------------------------------------
   ev('auth.login', 'POST', '/api/auth/login', 'acceso', 'ignorable', '🔐', 'Inicio de sesión'),
   ev('auth.registro', 'POST', '/api/auth/register', 'acceso', 'ignorable', '🔐', 'Registro público'),
+  ev('auth.passkey_registro_opciones', 'POST', '/api/auth/passkey/register/options', 'acceso', 'ignorable', '🔑', 'Inicio de registro de passkey'),
+  ev('auth.passkey_registro', 'POST', '/api/auth/passkey/register/verify', 'acceso', 'normal', '🔑', 'Se registró una passkey'),
+  ev('auth.passkey_eliminada', 'DELETE', '/api/auth/passkeys/:id', 'acceso', 'critica', '🔑', 'Se eliminó una passkey'),
+  ev('auth.passkey_login_opciones', 'POST', '/api/auth/passkey/login/options', 'acceso', 'ignorable', '🔐', 'Inicio de sesión con passkey (opciones)'),
+  ev('auth.passkey_login', 'POST', '/api/auth/passkey/login/verify', 'acceso', 'ignorable', '🔐', 'Inicio de sesión con passkey'),
   ev('portal.login', 'POST', '/api/portal/login', 'acceso', 'ignorable', '🔐', 'Solicitud de acceso al portal'),
   ev('portal.verificar', 'POST', '/api/portal/verificar', 'acceso', 'ignorable', '🔐', 'Verificación de acceso al portal'),
   ev('portal.logout', 'POST', '/api/portal/logout', 'acceso', 'ignorable', '🔐', 'Cierre de sesión del portal'),

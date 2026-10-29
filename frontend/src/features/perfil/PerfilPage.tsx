@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { AlertCircle, AppWindow, LogOut, Palette, Send, Wifi } from 'lucide-react';
+import { AlertCircle, AppWindow, LogOut, KeyRound, Palette, Send, Wifi } from 'lucide-react';
 import { useAuth } from '../../hooks/use-auth-context';
 import { useEstadoConexion } from '../../lib/offline/conexion';
 import { useCola } from '../../lib/offline/cola';
@@ -9,6 +9,7 @@ import { formatearFechaNegocio } from '../../lib/fecha-negocio';
 import { COLOR_TEMA } from '../../lib/tema-marca';
 import { etiquetaRol, iniciales, motivosDeAviso, TEXTO_AVISO } from '../../lib/perfil-logica';
 import TelegramPerfil from '../../components/TelegramPerfil';
+import PasskeysPerfil from '../../components/PasskeysPerfil';
 import PinOfflinePerfil from '../../components/PinOfflinePerfil';
 import BuscarActualizacionPerfil from '../../components/BuscarActualizacionPerfil';
 import TarjetaPerfil from './TarjetaPerfil';
@@ -108,6 +109,10 @@ function PerfilPage() {
 
         <TarjetaPerfil id="telegram" titulo="Telegram" icono={<Send size={18} />}>
           <TelegramPerfil />
+        </TarjetaPerfil>
+
+        <TarjetaPerfil id="passkeys" titulo="Passkeys" icono={<KeyRound size={18} />}>
+          <PasskeysPerfil />
         </TarjetaPerfil>
 
         <TarjetaPerfil id="apariencia" titulo="Apariencia" icono={<Palette size={18} />}>

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@blobatar/react": "^2.7.0",
+    "@simplewebauthn/browser": "^14.0.0",
     "blobatar": "^2.7.0",
     "docx": "^9.7.1",
     "html-to-image": "^1.11.13",

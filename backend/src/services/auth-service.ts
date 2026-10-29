@@ -89,6 +89,16 @@ async function verificarPassword(email: string, password: string, hash: string):
   return !error && Array.isArray(data) && data.length > 0;
 }
 
+/** Reautenticacion: valida la contrasena actual de un usuario activo (acciones sensibles). */
+export async function verificarPasswordUsuario(id: string, password: string): Promise<boolean> {
+  if (!password) return false;
+  const { data, error } = await supabaseAdmin.from('users').select('*').eq('id', id).maybeSingle();
+  if (error || !data) return false;
+  const row = data as UsuarioRow;
+  if (!row.activo) return false;
+  return verificarPassword(row.email, password, row.password_hash);
+}
+
 export interface AuthResult {
   token: string;
   usuario: UsuarioPublico;
@@ -175,4 +185,21 @@ export async function obtenerUsuarioPorId(id: string): Promise<UsuarioPublico | 
   const row = data as UsuarioRow;
   if (!row.activo) return null;
   return toPublico(row);
+}
+
+/**
+ * Emite la misma sesión que login() para un usuario ya autenticado por otro medio (passkey).
+ * Devuelve null si el usuario no existe o está inactivo.
+ */
+export async function sesionPorUserId(id: string): Promise<AuthResult | null> {
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const row = data as UsuarioRow;
+  if (!row.activo) return null;
+  return { token: firmarToken(row), usuario: toPublico(row) };
 }

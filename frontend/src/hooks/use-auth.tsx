@@ -15,6 +15,7 @@ import { storageSeguro } from '../lib/borrador';
 import ConfirmarSalidaModal from '../components/ConfirmarSalidaModal';
 import PantallaDesbloqueoPin from '../components/PantallaDesbloqueoPin';
 import { mensajeAmigable } from '../lib/mensaje-error';
+import { entrarConPasskey } from '../services/passkey-service';
 
 interface UsuarioApi {
   id: string;
@@ -248,6 +249,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginConPasskey = async (remember = true) => {
+    setError(null);
+    try {
+      const { token, usuario: u } = await entrarConPasskey();
+      iniciarSesionLocalmente(token, mapUsuario(u as UsuarioApi), remember);
+    } catch (err) {
+      // Errores de la API: mensaje amigable. Los de la ceremonia (cancelar, sin soporte) se relanzan para clasificarlos.
+      if (err instanceof Error && typeof (err as Error & { status?: unknown }).status === 'number') {
+        const msg = mensajeAmigable(err, { porDefecto: 'Error inesperado al iniciar sesión.' });
+        setError(msg);
+        throw new Error(msg, { cause: err });
+      }
+      throw err;
+    }
+  };
+
   const registro = async (email: string, password: string, nombre: string) => {
     setError(null);
     try {
@@ -340,7 +357,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const bloqueadoPorPin = bloqueado && usuario !== null;
 
   return (
-    <AuthContext.Provider value={{ usuario, cargando, error, sesionLocal, offlineActivo, login, registro, logout, recargarUsuario, tienePermiso: tienePermisoFn }}>
+    <AuthContext.Provider value={{ usuario, cargando, error, sesionLocal, offlineActivo, login, loginConPasskey, registro, logout, recargarUsuario, tienePermiso: tienePermisoFn }}>
       {bloqueadoPorPin
         ? <PantallaDesbloqueoPin usuario={usuario} onDesbloqueado={() => setBloqueado(false)} onCerrarSesion={logout} onAgotado={alAgotarseElPin} />
         : children}

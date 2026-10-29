@@ -12,6 +12,8 @@ export interface AuthState {
 
 export interface AuthContextType extends AuthState {
   login: (email: string, password: string, remember?: boolean) => Promise<void>;
+  /** Entra con una passkey (WebAuthn); guarda la sesión igual que el login con contraseña. */
+  loginConPasskey: (remember?: boolean) => Promise<void>;
   registro: (email: string, password: string, nombre: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Relee /api/auth/me (p. ej. tras enlazar Telegram). */

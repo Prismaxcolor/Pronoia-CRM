@@ -122,3 +122,24 @@ export const tasasPublicasLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiadas consultas de tasas. Espera un minuto y reintenta.' },
 });
+
+/** 5 contrasenas incorrectas por usuario por minuto al reautenticar acciones de passkey (solo cuentan los fallos). */
+export const passkeyReauthLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espera un minuto y reintenta.' },
+  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req.ip ?? 'na'),
+});
+
+/** 10 solicitudes de login con passkey por IP por minuto (cada login usa 2: opciones + verificación). */
+export const passkeyLoginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espera un minuto y reintenta.' },
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? 'na'),
+});

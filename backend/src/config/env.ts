@@ -27,6 +27,13 @@ export const ENV = {
   SUPABASE_URL: process.env.SUPABASE_URL || '',
   SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || '',
   CORS_ORIGINS: parseOrigins(process.env.CORS_ORIGINS),
+  /** Orígenes donde se aceptan passkeys (WebAuthn). Opcional: si falta se usa CORS_ORIGINS. */
+  WEBAUTHN_ORIGINS: parseOrigins(process.env.WEBAUTHN_ORIGINS),
+  /** rpID de WebAuthn (dominio sin esquema ni puerto). Opcional: si falta se usa el host del Origin.
+   *  Debe ser el host del Origin o un dominio padre suyo (ej. pronoiascrap.com para app.pronoiascrap.com). */
+  WEBAUTHN_RP_ID: (process.env.WEBAUTHN_RP_ID || '').trim().toLowerCase(),
+  /** Nombre que muestra el sistema operativo al crear/usar la passkey. */
+  WEBAUTHN_RP_NAME: process.env.WEBAUTHN_RP_NAME || 'Pronoia',
   /** Username del bot de Telegram (sin @) para vincular proveedores/clientes. */
   TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || 'PronAIScrapbot',
   /** Webhook de n8n que recibe {tipoDocumento, chatId, nombreEntidad, url, nombreArchivo}

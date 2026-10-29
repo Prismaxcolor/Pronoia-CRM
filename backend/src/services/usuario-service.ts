@@ -1,3 +1,4 @@
+import { borrarPasskeysDeUsuario } from './passkey-service.js';
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearUsuarioInput, ActualizarUsuarioInput } from '../schemas/usuarios.js';
@@ -256,6 +257,7 @@ export async function actualizarUsuarioAdmin(
     };
   }
   if (!data) return { error: 'Usuario no encontrado.', status: 404 };
+  if (password) await borrarPasskeysDeUsuario(id, 'cambio_password_admin');
   invalidarUsuarioActivo(id); // rol/activo pueden haber cambiado: que el siguiente request relea la BD
   const usuario = await leerUsuarioPublico(id, {
     verChatId: actor ? puedeVerChatId({ id: actorId, rol: String(actor.rol) }, id) : actorId === id,
