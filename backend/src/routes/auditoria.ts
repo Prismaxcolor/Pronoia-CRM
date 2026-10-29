@@ -3,6 +3,7 @@ import { requireAuth, requirePermiso, reqTienePermiso } from '../middlewares/req
 import { listarAuditoria } from '../services/auditoria-service.js';
 import { paramsAuditoriaSchema } from '../schemas/auditoria.js';
 import { RECURSO_POR_ENTIDAD, quitarPrecioEstimado } from '../utils/auditoria.js';
+import { documentoVisible } from '../services/proveedor-documento.js';
 
 const router = Router();
 
@@ -18,7 +19,22 @@ function requireLecturaDeEntidad(req: Request, res: Response, next: NextFunction
   return requirePermiso(RECURSO_POR_ENTIDAD[params.data.entidadTipo], 'ver')(req, res, next);
 }
 
-router.get('/:entidadTipo/:entidadId', requireLecturaDeEntidad, async (req, res) => {
+
+/** El historial de un documento de un proveedor oculto (el proveedor, sus facturas, pagos, tickets, movimientos o notas) da 404 a quien no es superadmin. */
+async function exigirDocumentoDeProveedorVisible(req: Request, res: Response, next: NextFunction) {
+  const { entidadTipo, entidadId } = paramsAuditoriaSchema.parse(req.params);
+  try {
+    if (!(await documentoVisible(entidadTipo, entidadId))) {
+      res.status(404).json({ error: 'No encontrado.' });
+      return;
+    }
+    next();
+  } catch {
+    res.status(503).json({ error: 'No se pudo verificar el documento. Intenta de nuevo.' });
+  }
+}
+
+router.get('/:entidadTipo/:entidadId', requireLecturaDeEntidad, exigirDocumentoDeProveedorVisible, async (req, res) => {
   const { entidadTipo, entidadId } = paramsAuditoriaSchema.parse(req.params);
   const entradas = await listarAuditoria(entidadTipo, entidadId);
   // El historial de un lote pide solo productos:ver, pero trae el precio estimado: va con facturacion:ver.

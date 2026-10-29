@@ -1,5 +1,6 @@
 import { apiFetch } from './api-client';
 import { mensajeAmigable } from '../lib/mensaje-error';
+import type { CategoriaWallet } from '@shared/types/index.js';
 
 export interface RegistrarPagoInput {
   proveedorId: string;
@@ -65,6 +66,8 @@ export interface RegistrarPagoMultipleInput {
   fecha: string;
   items: ItemPagoMultiple[];
   comprobantes?: string[];
+  /** Categoría del Wallet elegida (una de /api/pagos/categorias); sin ella el servidor usa la fija por configuración. */
+  categoriaId?: string | null;
   /** Clave de idempotencia (uuid): con la misma clave el servidor devuelve el resultado original en vez de repetir la operación. */
   clientRequestId?: string;
 }
@@ -98,5 +101,14 @@ export async function registrarPagoMultiple(
     return result;
   } catch (err) {
     return { error: mensajeAmigable(err, { porDefecto: 'No se pudo registrar el pago.' }) };
+  }
+}
+
+/** Categorías entre las que se elige al pagar a un proveedor. Lista vacía = el pago usa la categoría fija por configuración. */
+export async function obtenerCategoriasPago(): Promise<{ categorias: CategoriaWallet[] } | { error: string }> {
+  try {
+    return await apiFetch<{ categorias: CategoriaWallet[] }>('/api/pagos/categorias');
+  } catch (err) {
+    return { error: mensajeAmigable(err, { porDefecto: 'No se pudieron cargar las categorías del pago.' }) };
   }
 }

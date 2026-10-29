@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
 import Modal from '../../components/Modal';
+import TextareaAutoCrecimiento from '../../components/TextareaAutoCrecimiento';
 import { X, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, ChevronDown } from 'lucide-react';
 import SeleccionarEntidadModal from '../../components/SeleccionarEntidadModal';
 import SelectorBanca from './SelectorBanca';
@@ -409,8 +410,8 @@ function CrearMovimientoModal({ bancas: todasLasBancas, onClose, onCreado, tasas
           {/* Descripción */}
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">Descripción</label>
-            <input
-              type="text"
+            <TextareaAutoCrecimiento
+              unaLinea
               required
               maxLength={200}
               value={descripcion}

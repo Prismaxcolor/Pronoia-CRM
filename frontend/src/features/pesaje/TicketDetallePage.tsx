@@ -37,6 +37,8 @@ import HistorialEdiciones from '../../components/HistorialEdiciones';
 import GenerarLlaveEdicion from '../../components/GenerarLlaveEdicion';
 import SolicitarLlave from '../../components/SolicitarLlave';
 import { obtenerConfigLlaves } from '../../services/llave-service';
+import NavegacionDocumentos from '../../components/NavegacionDocumentos';
+import { useVecinosTicket } from './useVecinosTicket';
 import CompartirBoton from '../../components/CompartirBoton';
 import PesajesGlobalesEditor from './PesajesGlobalesEditor';
 import { pesajeGlobalVacio, sumaPesajesGlobales, subirFotosPesajeGlobal, type PesajeGlobalFila } from './pesaje-global-fila';
@@ -96,6 +98,7 @@ function TicketDetallePage() {
 function TicketDetalleContenido() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const vecinos = useVecinosTicket(id);
   const { tienePermiso, usuario } = useAuth();
   const toast = useToast();
   const esSuperadmin = usuario?.rol === 'superadmin';
@@ -406,6 +409,8 @@ function TicketDetalleContenido() {
   return (
     <div data-compartir-imagen className="max-w-5xl print-documento print:max-w-none">
       <AvisoFacturaBanner avisos={avisosFactura} onIrEstadoCuenta={ruta => navigate(ruta)} onCerrar={() => setAvisosFactura([])} />
+
+      <NavegacionDocumentos nombre="ticket" {...vecinos} />
 
       {/* Cabecera de pantalla (la hoja impresa usa CabeceraImpresion, con el logo y el marcado de siempre). */}
       <div className="print:hidden">

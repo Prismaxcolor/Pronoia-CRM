@@ -47,12 +47,73 @@ export interface FilaEstado {
   saldoCorrido: number;
 }
 
+/**
+ * Comisión de la mesa de una transferencia, para mostrarla en el estado de cuenta del cambista. NO mueve el saldo:
+ * el CARGO ya es el bruto y los COBRO lo saldan completo (la comisión va incluida en lo cobrado).
+ */
+export interface ComisionTransferencia {
+  /** Comisión en la moneda de la cuenta destino. */
+  monto: number;
+  moneda: string;
+  /** Equivalente en USD, proporcional al CARGO (CARGO x comisión / bruto). */
+  montoUsd: number;
+  /** Correlativo del movimiento de Wallet (MV-); null en movimientos anteriores al correlativo. */
+  movimientoNumero: number | null;
+  /** true si la transferencia está completada: solo entonces la comisión ya está incluida en lo cobrado y existe su egreso. */
+  completada: boolean;
+}
+
+export interface FilaEstadoConComision extends FilaEstado {
+  /** Solo en el CARGO vigente de una transferencia con comisión; null en el resto. */
+  comision: ComisionTransferencia | null;
+}
+
 export interface EstadoCuentaCalculado {
   saldoInicial: number;
   filas: FilaEstado[];
   totalCargos: number;
   totalCobros: number;
   saldoFinal: number;
+}
+
+export interface EstadoCuentaConComisiones extends Omit<EstadoCuentaCalculado, 'filas'> {
+  filas: FilaEstadoConComision[];
+  /** Suma (USD) de la comisión pactada de las transferencias cargadas en el periodo (completadas o no); informativa. */
+  totalComisionesUsd: number;
+}
+
+/** Datos de la transferencia que hacen falta para calcular su comisión (leídos de movimientos y bancas). */
+export interface DatosComisionMovimiento {
+  comision: number;
+  montoBruto: number;
+  moneda: string;
+  numeroSistema: number | null;
+  /** mesa_estado === 'completada'. */
+  completada: boolean;
+}
+
+/** USD de la comisión, proporcional al CARGO: cargoUsd x comision / bruto, a centavos. 0 si no hay bruto. */
+export function comisionEnUsd(cargoUsd: number, comision: number, montoBruto: number): number {
+  if (!(montoBruto > 0) || !(comision > 0)) return 0;
+  return Math.round(((cargoUsd * comision) / montoBruto + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Agrega la comisión de la mesa a los CARGO vigentes de transferencias que la tengan. No toca saldos ni totales de
+ * cargos/cobros. Devuelve filas nuevas (no muta la entrada) y el total de comisiones en USD.
+ */
+export function conComisiones(
+  estado: EstadoCuentaCalculado, porMovimiento: ReadonlyMap<string, DatosComisionMovimiento>
+): EstadoCuentaConComisiones {
+  let totalCentavos = 0;
+  const filas = estado.filas.map((f): FilaEstadoConComision => {
+    const datos = f.movimientoId ? porMovimiento.get(f.movimientoId) : undefined;
+    if (!datos || f.tipo !== 'CARGO' || f.anulado || !(datos.comision > 0)) return { ...f, comision: null };
+    const montoUsd = comisionEnUsd(f.montoUsd, datos.comision, datos.montoBruto);
+    totalCentavos += aCentavos(montoUsd);
+    return { ...f, comision: { monto: datos.comision, moneda: datos.moneda, montoUsd, movimientoNumero: datos.numeroSistema, completada: datos.completada } };
+  });
+  return { ...estado, filas, totalComisionesUsd: totalCentavos / 100 };
 }
 
 export interface RangoFechas {

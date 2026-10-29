@@ -8,6 +8,7 @@
  */
 import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase.js';
+import { filtrarOcultos, sinOcultosDeTabla } from '../services/proveedor-oculto.js';
 import { obtenerEstadoCuenta, type TipoEntidad } from '../services/estado-cuenta-service.js';
 import { listarBancas } from '../services/banca-service.js';
 import { bancasPermitidasDeUsuario } from '../services/banca-acceso-service.js';
@@ -75,7 +76,7 @@ const estadoDe = (f: FacturaFila) =>
 
 async function idsPorNombre(tabla: 'proveedores' | 'clientes', nombre: string): Promise<string[]> {
   const { data } = await supabaseAdmin.from(tabla).select('id').ilike('nombre', patronBusqueda(nombre)).limit(30);
-  return ((data ?? []) as Array<{ id: string }>).map(r => r.id);
+  return (await sinOcultosDeTabla(tabla, (data ?? []) as Array<{ id: string }>)).map(r => r.id);
 }
 
 async function nombresPorId(tabla: 'proveedores' | 'clientes' | 'bancas', ids: string[]): Promise<Map<string, string>> {
@@ -140,7 +141,8 @@ export const consultarFacturas = definirHerramienta({
     if (hasta) q = q.lte('created_at', finDiaNegocio(hasta));
     if (ids) q = q.in(col, ids);
     const { data } = await q;
-    const leidas = ((data ?? []) as unknown as FacturaFila[]).filter(f => !estado || estadoDe(f) === estado);
+    const visibles = await filtrarOcultos((data ?? []) as unknown as FacturaFila[], f => (tipo === 'compra' ? f.proveedor_id : null));
+    const leidas = visibles.filter(f => !estado || estadoDe(f) === estado);
     const conSaldo = soloPendientes ? leidas.filter(f => pendiente(f) > 0.005) : leidas;
     const facturas = conSaldo.slice(0, limiteEfectivo(limite));
     const nombres = await nombresPorId(TABLA_ENTIDAD[tipo], conSaldo.map(f => String(f[col] ?? '')).filter(Boolean));
@@ -177,15 +179,17 @@ async function resumenTipo(tipo: TipoFactura, desde: string, hasta: string) {
   const [periodo, abiertas] = await Promise.all([
     supabaseAdmin
       .from(tabla)
-      .select('total, monto_pagado, estado, created_at')
+      .select(`total, monto_pagado, estado, created_at, ${COLUMNA_ENTIDAD[tipo]}`)
       .in('estado', ESTADOS_FACTURA_VIGENTE)
       .gte('created_at', inicioDiaNegocio(desde))
       .lte('created_at', finDiaNegocio(hasta))
       .limit(MAX_FACTURAS_RESUMEN),
-    supabaseAdmin.from(tabla).select('total, monto_pagado').eq('estado', 'emitida').limit(MAX_FACTURAS_RESUMEN),
+    supabaseAdmin.from(tabla).select(`total, monto_pagado, ${COLUMNA_ENTIDAD[tipo]}`).eq('estado', 'emitida').limit(MAX_FACTURAS_RESUMEN),
   ]);
-  const del = (periodo.data ?? []) as unknown as FacturaFila[];
-  const pend = (abiertas.data ?? []) as unknown as FacturaFila[];
+  // Las facturas de proveedores ocultos no cuentan para quien no es superadmin.
+  const proveedorDe = (f: FacturaFila) => (tipo === 'compra' ? f.proveedor_id : null);
+  const del = await filtrarOcultos((periodo.data ?? []) as unknown as FacturaFila[], proveedorDe);
+  const pend = await filtrarOcultos((abiertas.data ?? []) as unknown as FacturaFila[], proveedorDe);
   return {
     periodo: { facturas: del.length, totalUsd: dinero(sumar(del.map(f => f.total))), totalTexto: formatearMonto(sumar(del.map(f => f.total))) },
     pendientesDePagoEnGeneral: {
@@ -271,7 +275,7 @@ export async function resolverEntidad(p: Perfil, nombre: string) {
     .select('id, nombre')
     .ilike('nombre', patronBusqueda(nombre))
     .limit(6);
-  let filas = (data ?? []) as Array<{ id: string; nombre: string }>;
+  let filas = await sinOcultosDeTabla(p.tabla, (data ?? []) as Array<{ id: string; nombre: string }>);
   if (filas.length === 0) filas = (await filtrarPorPalabras(p, nombre)).slice(0, 6);
   const exacta = filas.filter(f => f.nombre.trim().toLowerCase() === nombre.trim().toLowerCase());
   const elegida = filas.length === 1 ? filas[0] : exacta.length === 1 ? exacta[0] : undefined;
@@ -284,7 +288,8 @@ const MAX_SUGERENCIAS_NOMBRE = 8;
 
 export async function todosLosNombres(p: Perfil): Promise<Array<{ id: string; nombre: string; activo?: boolean }>> {
   const { data } = await supabaseAdmin.from(p.tabla).select('id, nombre, activo').order('nombre').limit(MAX_NOMBRES_BUSQUEDA);
-  return ((data ?? []) as Array<{ id: string; nombre: string; activo?: boolean }>).filter(f => typeof f.nombre === 'string');
+  const filas = await sinOcultosDeTabla(p.tabla, (data ?? []) as Array<{ id: string; nombre: string; activo?: boolean }>);
+  return filas.filter(f => typeof f.nombre === 'string');
 }
 
 /** Coincidencia por palabras sueltas, sin importar el orden ni los acentos ("teques jesus"). */
@@ -545,8 +550,9 @@ export const consultarMovimientos = definirHerramienta({
     // El filtro por cuenta va en la consulta, ANTES del límite: filtrar después dejaría pocas filas visibles.
     if (permitidas !== null) q = q.or(filtroBancas(permitidas));
     const { data } = await q;
+    const sinOcultos = await filtrarOcultos((data ?? []) as unknown as MovimientoFila[], m => m.proveedor_id);
     const movs = filtrarMovimientos(
-      ((data ?? []) as unknown as MovimientoFila[]).map(m => ({ ...m, bancaOrigenId: m.banca_origen_id ?? '', bancaDestinoId: m.banca_destino_id })),
+      sinOcultos.map(m => ({ ...m, bancaOrigenId: m.banca_origen_id ?? '', bancaDestinoId: m.banca_destino_id })),
       permitidas
     );
     const [bancas, provs, clis] = await Promise.all([

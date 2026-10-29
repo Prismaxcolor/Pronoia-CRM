@@ -138,7 +138,11 @@ export function textoComisionMesa(
 export const tieneComision = (m: Pick<Movimiento, 'comisionBancaria'>): boolean => m.comisionBancaria != null;
 
 /** ¿Es el cargo de la comisión bancaria de otro movimiento? Se anula junto con su movimiento, no por separado. */
-export const esCargoDeComision = (m: Pick<Movimiento, 'comisionDeId'>): boolean => m.comisionDeId != null;
+export const esCargoDeComision = (m: Pick<Movimiento, 'comisionDeId' | 'mesaComisionDeId'>): boolean =>
+  m.comisionDeId != null || m.mesaComisionDeId != null;
+
+/** ¿Es el egreso de la comisión de una transferencia con mesa de cambio (y no una comisión bancaria)? */
+export const esComisionDeMesa = (m: Pick<Movimiento, 'mesaComisionDeId'>): boolean => m.mesaComisionDeId != null;
 
 // ---------------------------------------------------------------------------
 // Navegación entre movimientos (anterior / siguiente desde el detalle)

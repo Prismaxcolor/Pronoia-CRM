@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { exigirDocumentoVisible, exigirProveedorDelBodyVisible } from '../services/proveedor-documento.js';
 import {
   listarBancas,
   listarMovimientos,
@@ -232,6 +233,7 @@ router.post(
   '/movimientos',
   requirePermiso('cochinito', 'crear'),
   validateBody(crearMovimientoSchema),
+  exigirProveedorDelBodyVisible(),
   exigirAccesoBancas(),
   async (req, res) => {
     const categoriaInvalida = await validarCategoriaDeMovimiento(req.body.categoriaId, req.body.tipo);
@@ -269,8 +271,10 @@ router.post(
 router.patch(
   '/movimientos/:id',
   validarUuidParam('id'),
+  exigirDocumentoVisible('movimiento_banca'),
   requirePermisoOLlave('cochinito', 'editar'),
   validateBody(editarMovimientoSchema),
+  exigirProveedorDelBodyVisible(),
   exigirAccesoBancas(req => idsBancasDeMovimiento(String(req.params.id))),
   async (req, res) => {
     const { llaveEdicion, ...datos } = req.body as EditarMovimientoInput;
@@ -290,6 +294,7 @@ router.patch(
 router.post(
   '/movimientos/:id/anular',
   validarUuidParam('id'),
+  exigirDocumentoVisible('movimiento_banca'),
   requirePermisoOLlave('cochinito', 'editar'),
   cargarPermisosSiFaltan,
   validateBody(anularTransaccionSchema),

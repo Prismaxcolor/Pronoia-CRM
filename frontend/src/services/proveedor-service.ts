@@ -18,6 +18,7 @@ interface ProveedorApi {
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
   telegramReportesActivos?: boolean;
+  oculto?: boolean;
 }
 
 function mapApi(api: ProveedorApi): Proveedor {
@@ -96,6 +97,16 @@ export async function reactivarProveedor(id: string): Promise<{ ok: true } | { e
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo reactivar el proveedor.' };
+  }
+}
+
+/** Oculta o muestra un proveedor al resto de los usuarios (solo superadmin; el servidor lo vuelve a verificar). */
+export async function ocultarProveedor(id: string, oculto: boolean): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/proveedores/${id}/ocultar`, { method: 'POST', body: { oculto } });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo cambiar la visibilidad del proveedor.' };
   }
 }
 

@@ -34,6 +34,7 @@ vi.mock('../src/utils/segundo-plano.js', () => ({ ejecutarEnSegundoPlano: vi.fn(
 vi.mock('../src/services/montos-pago-service.js', () => ({ validarMontosDeLineas: async () => null }));
 vi.mock('../src/services/pago-categoria-service.js', () => ({
   categoriaFijaDePago: async () => 'cat-pago',
+  categoriaDelPago: async (elegida?: string | null) => ({ categoriaId: elegida ?? 'cat-pago' }),
   opcionesCategoriaCobro: async () => ({ categorias: [{ id: 'cat-cobro', nombre: 'NF', tipo: 'ingreso', activo: true }] }),
 }));
 vi.mock('../src/utils/categoria-pago-cobro.js', () => ({

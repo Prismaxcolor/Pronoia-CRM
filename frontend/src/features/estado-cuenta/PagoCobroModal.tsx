@@ -20,7 +20,7 @@ import { useComisionDisponible } from '../cochinito/useComisionDisponible';
 import CategoriaCobroBotones from './CategoriaCobroBotones';
 import { useCategoriasCobro } from './useCategoriasCobro';
 import AvisoCategoriasCobro from './AvisoCategoriasCobro';
-import { categoriasBloqueanCobro, cobroPideCategoria } from './categoria-cobro';
+import { categoriasBloqueanCobro, categoriasBloqueanPago, cobroPideCategoria } from './categoria-cobro';
 import type { LineaBanca } from './FilaBancaPago';
 import { FUENTE_TASA_PAGO_INICIAL, tasaDePago } from './pago-bs-tasa';
 import { fmt } from './pago-cobro-formato';
@@ -97,7 +97,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   const [comprobantes, setComprobantes] = useState<FotoLocal[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const categorias = useCategoriasCobro(!esProveedor);
+  const categorias = useCategoriasCobro(true, esProveedor ? 'pago' : 'cobro');
   const [categoriaCobroId, setCategoriaCobroId] = useState<string | null>(null);
   const envio = useIntentoEnvio();
   const agregarComprobantes = (files: File[]) => {
@@ -299,7 +299,9 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   }, [facturasSel, notasSel, notasCreditoSel, adelantosSel, adelantoCalculado, etiquetaAdelanto, esProveedor, esCrucePuro]);
 
   const bloqueoCarga = bloqueoPorCarga(datos.fase);
-  const bloqueoCategorias = categoriasBloqueanCobro(categorias, !esProveedor && !esCrucePuro);
+  const bloqueoCategorias = esProveedor
+    ? categoriasBloqueanPago(categorias, esCrucePuro)
+    : categoriasBloqueanCobro(categorias, !esCrucePuro);
 
   const registrar = async () => {
     const validacion = validarPagoCobro({
@@ -395,9 +397,9 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
               <input type="date" required value={fecha} onChange={e => setFecha(e.target.value)} className={inputClass} />
             </div>
 
-            {!esProveedor && !esCrucePuro && <AvisoCategoriasCobro cargando={categorias.cargando} fallo={categorias.fallo} onReintentar={categorias.reintentar} />}
-            {!esProveedor && cobroPideCategoria(categorias.opciones, !esCrucePuro) &&
-              <CategoriaCobroBotones opciones={categorias.opciones} valor={categoriaCobroId} onChange={setCategoriaCobroId} disabled={guardando} />}
+            {!esCrucePuro && <AvisoCategoriasCobro cargando={categorias.cargando} fallo={categorias.fallo} onReintentar={categorias.reintentar} esPago={esProveedor} />}
+            {!esCrucePuro && (esProveedor ? categorias.opciones.length > 0 : cobroPideCategoria(categorias.opciones, true)) &&
+              <CategoriaCobroBotones opciones={categorias.opciones} valor={categoriaCobroId} onChange={setCategoriaCobroId} disabled={guardando} opcional={esProveedor} />}
 
             <div>
               <label className={labelClass}>Descripción <span className="text-text-muted">(opcional)</span></label>

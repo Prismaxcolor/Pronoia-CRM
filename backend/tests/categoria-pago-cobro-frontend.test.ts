@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  categoriaParaEnviar, cobroPideCategoria, errorCategoriaCobro, opcionesDeCobro, categoriasBloqueanCobro,
+  categoriaParaEnviar, cobroPideCategoria, errorCategoriaCobro, opcionesDeCobro, categoriasBloqueanCobro, opcionesDePago, categoriaPagoParaEnviar, categoriasBloqueanPago,
 } from '../../frontend/src/features/estado-cuenta/categoria-cobro';
 import { construirReporteCategorias, type MovimientoReporte } from '../src/utils/reporte-wallet.js';
 import type { CategoriaFila } from '../src/utils/categoria-wallet.js';
@@ -90,5 +90,26 @@ describe('categoriasBloqueanCobro (las categorías no cargaron)', () => {
     expect(categoriasBloqueanCobro({ cargando: false, fallo: false }, true)).toBe(false);
     expect(categoriasBloqueanCobro({ cargando: false, fallo: true }, false)).toBe(false);
     expect(categoriasBloqueanCobro({ cargando: true, fallo: false }, false)).toBe(false);
+  });
+});
+
+describe('categoría en pagos a proveedor', () => {
+  const MAT = cat('mat', 'COMPRA DE MATERIA PRIMA', 'EGRESO');
+  it('opcionesDePago deja solo las vigentes que admiten egresos', () => {
+    expect(opcionesDePago([MAT, NF, cat('amb', 'Mixta', 'AMBOS'), cat('old', 'Vieja', 'EGRESO', false)]).map(c => c.id)).toEqual(['mat', 'amb']);
+  });
+  it('categoriaPagoParaEnviar envía la elegida válida y null si no eligió, no es opción o es cruce puro', () => {
+    expect(categoriaPagoParaEnviar([MAT], 'mat', false)).toBe('mat');
+    expect(categoriaPagoParaEnviar([MAT], null, false)).toBeNull();
+    expect(categoriaPagoParaEnviar([MAT], 'otra', false)).toBeNull();
+    expect(categoriaPagoParaEnviar([MAT], 'mat', true)).toBeNull();
+  });
+});
+
+describe('pago a proveedor mientras cargan las categorías', () => {
+  it('bloquea el registro solo mientras cargan; si falló la carga deja pasar (usa la predeterminada)', () => {
+    expect(categoriasBloqueanPago({ cargando: true }, false)).toBe(true);
+    expect(categoriasBloqueanPago({ cargando: false }, false)).toBe(false);
+    expect(categoriasBloqueanPago({ cargando: true }, true)).toBe(false);
   });
 });

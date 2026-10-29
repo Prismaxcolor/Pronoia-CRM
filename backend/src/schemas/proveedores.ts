@@ -38,3 +38,5 @@ export const actualizarProveedorSchema = crearProveedorSchema
 
 export type CrearProveedorInput = z.infer<typeof crearProveedorSchema>;
 export type ActualizarProveedorInput = z.infer<typeof actualizarProveedorSchema>;
+
+export const ocultarProveedorSchema = z.object({ oculto: z.boolean() });

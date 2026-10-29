@@ -14,6 +14,17 @@ export function categoriasParaTipo<T extends CategoriaFila>(categorias: readonly
   return categorias.filter(c => tipoAceptaMovimiento(c.tipo, tipo));
 }
 
+/**
+ * Agrega a las categorías asignadas al cobro las subcategorías vigentes de las que son categoría general
+ * (y admiten ingresos), para poder elegir tanto la categoría general como una subcategoría suya.
+ */
+export function conSubcategoriasDeCobro<T extends CategoriaFila>(asignadas: readonly T[], todas: readonly T[], tipo: 'egreso' | 'ingreso' = 'ingreso'): T[] {
+  const ids = new Set(asignadas.map(c => c.id));
+  const padres = new Set(asignadas.filter(c => c.padreId === null).map(c => c.id));
+  const hijas = todas.filter(c => c.activo && c.padreId !== null && padres.has(c.padreId) && !ids.has(c.id));
+  return [...asignadas, ...categoriasParaTipo(hijas, tipo)];
+}
+
 /** Id de la categoría fija de los pagos: la primera vigente que admite egresos; null si no hay. */
 export function elegirCategoriaDePago(categorias: readonly CategoriaFila[]): string | null {
   return categoriasParaTipo(categorias, 'egreso')[0]?.id ?? null;
@@ -36,4 +47,20 @@ export function resolverCategoriaDeCobro(
   if (!categoriaId) return { error: MENSAJE_COBRO_SIN_CATEGORIA };
   if (!validas.some(c => c.id === categoriaId)) return { error: MENSAJE_COBRO_CATEGORIA_INVALIDA };
   return { categoriaId };
+}
+
+export const MENSAJE_PAGO_CATEGORIA_INVALIDA = 'La categoría elegida no es válida para un pago a proveedor.';
+
+/**
+ * Categoría con la que se registra un pago: la elegida si es una de las opciones permitidas (egresos);
+ * si no se eligió ninguna, la fija por configuración (puede ser null). Una elegida fuera de las opciones se rechaza.
+ */
+export function resolverCategoriaDePago(
+  opciones: readonly CategoriaFila[],
+  elegidaId: string | null | undefined,
+  fijaId: string | null
+): ResolucionCategoriaCobro {
+  if (!elegidaId) return { categoriaId: fijaId };
+  if (!categoriasParaTipo(opciones, 'egreso').some(c => c.id === elegidaId)) return { error: MENSAJE_PAGO_CATEGORIA_INVALIDA };
+  return { categoriaId: elegidaId };
 }

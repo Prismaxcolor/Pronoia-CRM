@@ -11,6 +11,7 @@ import {
 } from '../utils/permisos.js';
 import { estadoUsuario } from '../utils/usuario-activo.js';
 import { logger } from '../utils/logger.js';
+import { contextoVisibilidadStaff } from '../services/proveedor-oculto.js';
 
 declare global {
   namespace Express {
@@ -57,7 +58,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 
   req.user = payload;
-  next();
+  // Todo lo que corra después ve (o no) los proveedores ocultos según el rol: ver services/proveedor-oculto.ts.
+  contextoVisibilidadStaff(req, res, next);
 }
 
 /**

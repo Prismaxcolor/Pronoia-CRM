@@ -8,12 +8,14 @@ import {
   reactivarProveedor,
   borrarProveedor,
 } from '../services/proveedor-service.js';
-import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { requireAuth, requirePermiso, requireSuperadmin } from '../middlewares/require-auth.js';
+import { establecerProveedorOculto, exigirProveedorVisible } from '../services/proveedor-oculto.js';
+import { invalidarCacheSaldos } from '../services/saldos-service.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
 import { estadoCuentaTelegramLimiter } from '../middlewares/rate-limit.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearProveedorSchema, actualizarProveedorSchema } from '../schemas/proveedores.js';
+import { crearProveedorSchema, actualizarProveedorSchema, ocultarProveedorSchema } from '../schemas/proveedores.js';
 import { obtenerEstadoCuenta } from '../services/estado-cuenta-service.js';
 import { generarLinkTelegram } from '../services/telegram-link-service.js';
 import { enviarEstadoCuentaTelegram } from '../services/telegram-estado-cuenta-service.js';
@@ -30,11 +32,17 @@ import { bancasPermitidas } from '../services/banca-acceso-service.js';
 import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION, tipoDeRecurso } from '../services/operaciones-idempotentes-cola.js';
 import { responderSaldos } from './saldos-handler.js';
 
+const MENSAJE_SOLO_SUPERADMIN_OCULTAR = 'Solo un superadmin puede ocultar o mostrar un proveedor.';
+
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/', requirePermiso('proveedores', 'ver'), async (_req, res) => {
+// Cualquier ruta con :id de un proveedor oculto responde 404 a quien no es superadmin (estado de cuenta,
+// notas, pagos, adelantos, Telegram, edición...). Corre antes de los permisos y de cada handler.
+router.param('id', exigirProveedorVisible);
+
+router.get('/',requirePermiso('proveedores', 'ver'), async (_req, res) => {
   const proveedores = await listarProveedores();
   res.json({ proveedores });
 });
@@ -274,6 +282,42 @@ router.post(
       proveedorId: id,
     });
     res.json(result);
+  }
+);
+
+// Ocultar / mostrar un proveedor al resto de los usuarios. Solo superadmin; queda en el historial de auditoría.
+router.post(
+  '/:id/ocultar',
+  requireSuperadmin(MENSAJE_SOLO_SUPERADMIN_OCULTAR),
+  validarUuidParam('id'),
+  validateBody(ocultarProveedorSchema),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const oculto: boolean = req.body.oculto;
+    const result = await establecerProveedorOculto(id, oculto);
+    if ('error' in result) {
+      res.status(result.codigo).json({ error: result.codigo === 404 ? result.error : 'No se pudo cambiar la visibilidad del proveedor.' });
+      return;
+    }
+    const auditada = await registrarAuditoria({
+      entidadTipo: 'proveedor',
+      entidadId: id,
+      accion: oculto ? 'ocultar' : 'mostrar',
+      usuarioId: req.user!.sub,
+      usuarioEmail: req.user!.email,
+      cambios: { oculto: { antes: result.anterior, despues: result.oculto } },
+    });
+    if (!auditada) {
+      // Auditoría obligatoria: sin constancia no se deja el cambio.
+      await establecerProveedorOculto(id, result.anterior);
+      logger.error({ evento: 'proveedor_oculto_sin_auditoria', userId: req.user!.sub, proveedorId: id });
+      res.status(500).json({ error: 'No se pudo dejar constancia en el historial de auditoría, así que el cambio no se aplicó. Intenta de nuevo.' });
+      return;
+    }
+    // Los saldos van en caché de pocos segundos y la lista de proveedores cambia para todos.
+    invalidarCacheSaldos();
+    logger.info({ evento: oculto ? 'proveedor_ocultado' : 'proveedor_mostrado', ip: clienteIp(req), userId: req.user!.sub, proveedorId: id });
+    res.json({ ok: true, oculto: result.oculto });
   }
 );
 

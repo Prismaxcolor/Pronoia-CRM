@@ -4,7 +4,7 @@ import { subirComprobantePago } from '../../services/storage-service';
 import { subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import { huellaDe } from '../../lib/intento-envio';
 import { mensajeAmigable } from '../../lib/mensaje-error';
-import { categoriaParaEnviar } from './categoria-cobro';
+import { categoriaPagoParaEnviar, categoriaParaEnviar } from './categoria-cobro';
 import type { CategoriaWallet } from '@shared/types/index.js';
 
 const ERROR_COMPROBANTES = 'No se pudo subir uno de los comprobantes. Probá de nuevo o registrá el pago sin ellos.';
@@ -36,7 +36,9 @@ export function huellaPagoCobro(d: DatosEnvioPagoCobro): string {
   return huellaDe({
     esProveedor: d.esProveedor, entidadId: d.entidadId, bancas: d.bancas, items: d.items, esCrucePuro: d.esCrucePuro,
     total: d.esCrucePuro ? 0 : d.totalEditadoNum, descripcion: d.descripcion, fecha: d.fecha,
-    categoria: categoriaParaEnviar(d.categoriaOpciones, d.categoriaCobroId, d.hayDinero),
+    categoria: d.esProveedor
+      ? categoriaPagoParaEnviar(d.categoriaOpciones, d.categoriaCobroId, d.esCrucePuro)
+      : categoriaParaEnviar(d.categoriaOpciones, d.categoriaCobroId, d.hayDinero),
     comprobantes: d.comprobantes.map(huellaFoto),
   });
 }
@@ -66,7 +68,9 @@ export async function enviarPagoCobro(d: DatosEnvioPagoCobro, clientRequestId: s
       });
       return 'error' in r ? r : { resultado: r };
     }
-    const r = await registrarPagoMultiple({ proveedorId: d.entidadId, ...comunes });
+    const r = await registrarPagoMultiple({
+      proveedorId: d.entidadId, ...comunes, categoriaId: categoriaPagoParaEnviar(d.categoriaOpciones, d.categoriaCobroId, d.esCrucePuro),
+    });
     if ('error' in r) return r;
     return {
       resultado: {

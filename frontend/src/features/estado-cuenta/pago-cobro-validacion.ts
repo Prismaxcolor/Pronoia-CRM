@@ -6,7 +6,7 @@ import type { EntradaEstadoCuenta } from '../../services/estado-cuenta-service';
 import { redondear2, validarMontoAplicable, type ResultadoCruce } from '../../lib/cruce';
 import { errorMontoDeNota, montoAplicadoDeNota } from '../../lib/cruce-notas';
 import { bloqueoPorComision, type EstadoComision } from '../cochinito/comision-formulario';
-import { categoriasBloqueanCobro, errorCategoriaCobro } from './categoria-cobro';
+import { categoriasBloqueanCobro, categoriasBloqueanPago, errorCategoriaCobro } from './categoria-cobro';
 import type { LineaBanca } from './FilaBancaPago';
 import { errorEleccionComisionPago, llevaComisionDeLinea, montoBsDePago } from './pago-bs-tasa';
 import { fmt } from './pago-cobro-formato';
@@ -80,6 +80,7 @@ function errorDeNotas(e: EntradaPagoCobro): string | null {
 }
 
 function errorDeCategoria(e: EntradaPagoCobro, hayDinero: boolean): string | null {
+  if (e.esProveedor && categoriasBloqueanPago(e.categorias, e.esCrucePuro)) return 'Las categorías del pago están cargando: espera un momento.';
   if (categoriasBloqueanCobro(e.categorias, hayDinero)) return 'Las categorías del cobro no han cargado: usa Reintentar.';
   return errorCategoriaCobro(e.categorias.opciones, e.categoriaCobroId, hayDinero);
 }

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { filtrarOcultos } from './proveedor-oculto.js';
 import { TABLA_ENTIDAD, type EntidadTelegram } from './telegram-link-service.js';
 import type { CrearCitaInput } from '../schemas/citas.js';
 import { notificarCita } from './telegram-eventos-service.js';
@@ -128,7 +129,9 @@ export async function listarCitasStaff(desde?: string, hasta?: string): Promise<
   if (hasta) q = q.lte('fecha', hasta);
 
   const { data } = await q;
-  const citas = ((data as CitaRow[] | null) ?? []).map(citaToPublica);
+  const todas = ((data as CitaRow[] | null) ?? []).map(citaToPublica);
+  // Las citas de proveedores ocultos no las ve quien no es superadmin.
+  const citas = await filtrarOcultos(todas, c => (c.entidadTipo === 'proveedor' ? c.entidadId : null));
   if (citas.length === 0) return [];
 
   const idsPorTipo: Record<EntidadTelegram, Set<string>> = { proveedor: new Set(), cliente: new Set() };

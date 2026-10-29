@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase.js';
+import { filtrarOcultos, sinOcultosDeTabla } from '../services/proveedor-oculto.js';
 import { obtenerInventario, obtenerInventarioAlmacen } from '../services/inventario-service.js';
 import { listarLotes } from '../services/lote-service.js';
 import { reporteMerma } from '../services/transformacion-service.js';
@@ -269,7 +270,7 @@ async function nombresPorId(tabla: 'proveedores' | 'clientes', ids: string[]): P
 
 async function idsPorNombre(tabla: 'proveedores' | 'clientes', nombre: string): Promise<string[]> {
   const { data } = await supabaseAdmin.from(tabla).select('id').ilike('nombre', patronBusqueda(nombre)).limit(30);
-  return ((data ?? []) as Array<{ id: string }>).map(r => r.id);
+  return (await sinOcultosDeTabla(tabla, (data ?? []) as Array<{ id: string }>)).map(r => r.id);
 }
 
 export const consultarPesajes = definirHerramienta({
@@ -301,8 +302,8 @@ export const consultarPesajes = definirHerramienta({
     if (hasta) q = q.lte('fecha', hasta);
     if (ids) q = q.in('entidad_id', ids);
     const { data } = await q;
-    const tickets = (data ?? []) as unknown as TicketFila[];
-    const entidadIds = (t: 'compra' | 'venta') => tickets.filter(x => x.tipo === t && x.entidad_id).map(x => x.entidad_id!);
+    const tickets = await filtrarOcultos((data ?? []) as unknown as TicketFila[], t => (t.tipo === 'compra' ? t.entidad_id : null));
+    const entidadIds =(t: 'compra' | 'venta') => tickets.filter(x => x.tipo === t && x.entidad_id).map(x => x.entidad_id!);
     const [provs, clis] = await Promise.all([nombresPorId('proveedores', entidadIds('compra')), nombresPorId('clientes', entidadIds('venta'))]);
     const filas = tickets.map(t => ({
       ticket: codigoTicket(t),
@@ -342,8 +343,8 @@ export const resumenPesajes = definirHerramienta({
       .gte('fecha', d)
       .lte('fecha', h)
       .limit(MAX_TICKETS_RESUMEN);
-    const tickets = (data ?? []) as unknown as TicketFila[];
-    const resumen = (t: 'compra' | 'venta') => {
+    const tickets = await filtrarOcultos((data ?? []) as unknown as TicketFila[], t => (t.tipo === 'compra' ? t.entidad_id : null));
+    const resumen =(t: 'compra' | 'venta') => {
       const del = tickets.filter(x => x.tipo === t);
       return {
         tickets: del.length,

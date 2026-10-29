@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ejecutarOperacionFinanciera } from '../services/operacion-financiera.js';
 import { TIPO_OPERACION, cuerpoConRepetida } from '../services/operaciones-idempotentes-cola.js';
 import { registrarPago, registrarPagoMultiple } from '../services/pago-service.js';
+import { opcionesCategoriaPago } from '../services/pago-categoria-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { requirePermisoOLlave } from '../middlewares/permiso-o-llave.js';
 import { anularPagoCobro, editarPagoCobro } from '../services/pago-edicion-service.js';
@@ -16,6 +17,8 @@ import { reintentarPasosPendientes } from '../services/pagos-pasos-service.js';
 import { exigirAccesoBancas } from '../middlewares/exigir-acceso-bancas.js';
 import { idsBancasDeGrupo } from '../services/banca-acceso-service.js';
 
+import { exigirDocumentoVisible, exigirProveedorDelBodyVisible } from '../services/proveedor-documento.js';
+
 const router = Router();
 
 // Cron: reintenta los pasos posteriores de pagos/cobros que quedaron pendientes (categoría, comprobante, comisión).
@@ -29,11 +32,22 @@ router.all('/reintentar-pasos-pendientes', cronLimiter, exigirCronSecret, async 
 
 router.use(requireAuth);
 
+// Categorías entre las que se elige al pagar (uso 'pago_proveedor' y sus subcategorías). Lista vacía = el pago usa la fija.
+router.get('/categorias', requirePermiso('cochinito', 'crear'), async (_req, res) => {
+  const result = await opcionesCategoriaPago();
+  if ('error' in result) {
+    res.status(500).json({ error: result.error });
+    return;
+  }
+  res.json({ categorias: result.categorias });
+});
+
 // Un pago mueve dinero de una banca (Cochinito) → permiso 'cochinito'.
 router.post(
   '/',
   requirePermiso('cochinito', 'crear'),
   validateBody(registrarPagoSchema),
+  exigirProveedorDelBodyVisible(),
   exigirAccesoBancas(),
   async (req, res) => {
     // Con clientRequestId un doble clic o reintento no registra el pago dos veces (responde 200 con `repetida`).
@@ -64,6 +78,7 @@ router.post(
   '/multiple',
   requirePermiso('cochinito', 'crear'),
   validateBody(registrarPagoMultipleSchema),
+  exigirProveedorDelBodyVisible(),
   exigirAccesoBancas(),
   async (req, res) => {
     const envio = await ejecutarOperacionFinanciera(res, TIPO_OPERACION.pagoProveedorMultiple, req.body, req.user!.sub,
@@ -95,6 +110,7 @@ router.post(
 router.patch(
   '/:grupoId',
   validarUuidParam('grupoId'),
+  exigirDocumentoVisible('pago', 'grupoId'),
   requirePermisoOLlave('cochinito', 'editar'),
   validateBody(editarPagoSchema),
   exigirAccesoBancas(req => idsBancasDeGrupo(String(req.params.grupoId))),
@@ -117,6 +133,7 @@ router.patch(
 router.post(
   '/:grupoId/anular',
   validarUuidParam('grupoId'),
+  exigirDocumentoVisible('pago', 'grupoId'),
   requirePermisoOLlave('cochinito', 'editar'),
   validateBody(anularTransaccionSchema),
   exigirAccesoBancas(req => idsBancasDeGrupo(String(req.params.grupoId))),

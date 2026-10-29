@@ -34,6 +34,8 @@ const MSG_ANULAR_MESA_SIN_PERMISO =
   'Esta transferencia usa una mesa de cambio: para anularla necesitas además acceso a la mesa de cambio.';
 const MSG_ES_COMISION =
   'Este movimiento es la comisión bancaria de otro: no se edita ni se anula por separado, se anula junto con su movimiento.';
+const MSG_ES_COMISION_MESA =
+  'Este movimiento es la comisión de una transferencia con mesa de cambio: no se edita ni se anula por separado, se anula junto con la transferencia.';
 const MSG_DE_UN_PAGO =
   'Este movimiento forma parte de un pago o cobro: edítalo o anúlalo desde el pago/cobro completo (estado de cuenta).';
 
@@ -54,6 +56,7 @@ async function cargarMovimientoManual(id: string): Promise<Movimiento | ErrorTra
   if (mov.grupoId !== null || mov.subtipo !== null) return { error: MSG_DE_UN_PAGO, codigo: 409 };
   if (mov.anulado) return { error: 'Este movimiento ya fue anulado.', codigo: 409 };
   if (mov.comisionDeId) return { error: MSG_ES_COMISION, codigo: 409 };
+  if (mov.mesaComisionDeId) return { error: MSG_ES_COMISION_MESA, codigo: 409 };
   return mov;
 }
 

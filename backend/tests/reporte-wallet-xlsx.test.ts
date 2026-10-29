@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generarXlsx } from '../../frontend/src/lib/xlsx';
 import {
-  hojaReporteCuenta, hojasReporteCategorias, nombreXlsxReporteCategorias, nombreXlsxReporteCuenta,
+  hojaReporteCuenta, hojasReportesCuentas, nombreXlsxReportesCuentas, hojasReporteCategorias, nombreXlsxReporteCategorias, nombreXlsxReporteCuenta,
 } from '../../frontend/src/features/cochinito/categorias/reporte-wallet-xlsx';
 import type { ReporteCategorias, ReporteCuenta } from '../../shared/types/categoria-wallet';
 import { leerXlsx } from './helpers/leer-xlsx';
@@ -83,5 +83,22 @@ describe('Excel: reporte por categorías', () => {
     expect(hojas).toHaveLength(1);
     expect(hojas[0].fila(5)[0]).toBe('No hay movimientos con estos filtros en el periodo.');
     expect(nombreXlsxReporteCategorias(categorias)).toBe('Reporte-categorias-2026-10-01-a-2026-10-31.xlsx');
+  });
+});
+
+describe('Excel: reporte de varias cuentas', () => {
+  const usd: ReporteCuenta = { ...cuentaBs, banca: { id: 'b2', nombre: 'Caja USD', moneda: 'USD' } };
+
+  it('arma una hoja por cuenta, cada una en su moneda, con el nombre de la cuenta', () => {
+    const hojas = hojasReportesCuentas([cuentaBs, usd]);
+    expect(hojas.map(h => h.nombre)).toEqual(['Banesco', 'Caja USD']);
+  });
+  it('con una sola cuenta mantiene la hoja y el archivo de siempre', () => {
+    expect(hojasReportesCuentas([cuentaBs]).map(h => h.nombre)).toEqual(['Movimientos']);
+    expect(nombreXlsxReportesCuentas([cuentaBs])).toBe(nombreXlsxReporteCuenta(cuentaBs));
+  });
+  it('el archivo de varias cuentas lo dice en el nombre', () => {
+    expect(nombreXlsxReportesCuentas([cuentaBs, usd], true)).toContain('Todas-las-cuentas');
+    expect(nombreXlsxReportesCuentas([cuentaBs, usd])).toContain('2-cuentas');
   });
 });

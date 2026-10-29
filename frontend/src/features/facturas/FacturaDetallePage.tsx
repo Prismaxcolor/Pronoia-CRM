@@ -5,6 +5,9 @@ import { obtenerFactura, consolidarItems, type FacturaCV, type TipoFactura } fro
 import { descargarFacturaPDF, descargarFacturaWord } from '../../services/factura-export';
 import { obtenerTicket } from '../../services/ticket-pesaje-service';
 import { useAuth } from '../../hooks/use-auth-context';
+import NavegacionDocumentos from '../../components/NavegacionDocumentos';
+import { useVecinosEstadoCuenta } from '../estado-cuenta/useVecinosEstadoCuenta';
+import { useVecinosFacturas } from './useVecinosFacturas';
 import FilaDocumento from '../../components/FilaDocumento';
 import HistorialEdiciones from '../../components/HistorialEdiciones';
 import { type TicketPesaje } from '@shared/types/index.js';
@@ -43,7 +46,13 @@ interface Props {
   tipo: TipoFactura;
 }
 
+/** El contenido va con `key` = id: al saltar de una factura a otra (botones Anterior/Siguiente) se reinicia su estado. */
 function FacturaDetallePage({ tipo }: Props) {
+  const { id = '' } = useParams();
+  return <FacturaDetalleContenido key={id} tipo={tipo} />;
+}
+
+function FacturaDetalleContenido({ tipo }: Props) {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -64,6 +73,12 @@ function FacturaDetallePage({ tipo }: Props) {
   const [factura, setFactura] = useState<FacturaCV | null>(null);
   const [tickets, setTickets] = useState<TicketPesaje[]>([]);
   const [cargando, setCargando] = useState(true);
+
+  // Desde el estado de cuenta se recorre su orden; desde la lista de Compras/Ventas, el de esa lista.
+  const vieneDeEstadoCuenta = navState?.volverA?.includes('/estado-cuenta') ?? false;
+  const vecinosEstadoCuenta = useVecinosEstadoCuenta(esCompra ? 'proveedor' : 'cliente', vieneDeEstadoCuenta ? factura?.entidadId : null, id);
+  const vecinosLista = useVecinosFacturas(tipo, id, !vieneDeEstadoCuenta);
+  const vecinos = vieneDeEstadoCuenta ? vecinosEstadoCuenta : vecinosLista;
 
   const cargarFactura = () => {
     obtenerFactura(tipo, id)
@@ -138,6 +153,7 @@ function FacturaDetallePage({ tipo }: Props) {
 
   return (
     <div className="max-w-4xl print-documento print:max-w-none">
+      <NavegacionDocumentos nombre="documento" {...vecinos} />
       {/* ---- Solo pantalla: cabecera, aviso, indicadores y progreso de pago (nada de esto se imprime). ---- */}
       <CabeceraFactura
         titulo={`${titulo} ${factura.codigo ?? ''}`.trim()}

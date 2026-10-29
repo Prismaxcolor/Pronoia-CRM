@@ -22,4 +22,6 @@ export interface Proveedor {
   telegramLinkedAt: string | null;
   /** false = el superadmin apagó los avisos de Telegram de los movimientos de este proveedor; ausente = activos. */
   telegramReportesActivos?: boolean;
+  /** true = el superadmin lo ocultó al resto de los usuarios. Solo el superadmin recibe proveedores ocultos. */
+  oculto?: boolean;
 }

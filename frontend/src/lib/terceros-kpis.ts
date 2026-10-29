@@ -236,7 +236,7 @@ export function alertasTerceros(tipo: TipoTercero, filas: readonly FilaTercero[]
 /** Entrada con el saldo acumulado después de ella (cargo suma, abono resta; cruces y notas anuladas valen 0). */
 export type EntradaConSaldo = EntradaEstadoCuenta & { saldoCorrido: number; /** Posición en la lista original (clave estable al filtrar). */ orden: number };
 
-/** Saldo corrido en el orden recibido (el servidor ya ordena por fecha). Del PERIODO consultado: si hay filtro de
+/** Saldo corrido en el orden recibido (el servidor ya ordena por creación del documento). Del PERIODO consultado: si hay filtro de
  *  fechas el servidor solo devuelve ese periodo, así que el corrido arranca en 0 en la primera entrada. */
 export function saldoCorrido(entradas: readonly EntradaEstadoCuenta[]): EntradaConSaldo[] {
   let acumulado = 0;

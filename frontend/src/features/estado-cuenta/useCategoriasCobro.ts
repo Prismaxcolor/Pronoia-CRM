@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CategoriaWallet } from '@shared/types/index.js';
 import { obtenerCategoriasCobro } from '../../services/cobro-service';
-import { opcionesDeCobro } from './categoria-cobro';
+import { obtenerCategoriasPago } from '../../services/pago-service';
+import { opcionesDeCobro, opcionesDePago } from './categoria-cobro';
 
 export interface CategoriasCobro {
   opciones: CategoriaWallet[];
@@ -14,9 +15,10 @@ export interface CategoriasCobro {
 /**
  * Carga las categorías entre las que se elige al registrar un cobro. Si no hay ninguna configurada la lista queda
  * vacía y el cobro no pide categoría; si la petición falla, `fallo` es true y la pantalla ofrece reintentar.
- * `habilitado = false` (pagos a proveedor) no hace la petición.
+ * Con `uso = 'pago'` carga las de un pago a proveedor (egresos): son opcionales, sin elección el servidor usa la fija.
+ * `habilitado = false` no hace la petición.
  */
-export function useCategoriasCobro(habilitado: boolean): CategoriasCobro {
+export function useCategoriasCobro(habilitado: boolean, uso: 'cobro' | 'pago' = 'cobro'): CategoriasCobro {
   const [opciones, setOpciones] = useState<CategoriaWallet[]>([]);
   const [cargando, setCargando] = useState(habilitado);
   const [fallo, setFallo] = useState(false);
@@ -27,15 +29,15 @@ export function useCategoriasCobro(habilitado: boolean): CategoriasCobro {
     let cancelado = false;
     setCargando(true);
     setFallo(false);
-    obtenerCategoriasCobro()
+    (uso === 'pago' ? obtenerCategoriasPago() : obtenerCategoriasCobro())
       .then(r => {
         if (cancelado) return;
-        if ('error' in r) { setOpciones([]); setFallo(true); } else setOpciones(opcionesDeCobro(r.categorias));
+        if ('error' in r) { setOpciones([]); setFallo(true); } else setOpciones((uso === 'pago' ? opcionesDePago : opcionesDeCobro)(r.categorias));
       })
       .catch(() => { if (!cancelado) { setOpciones([]); setFallo(true); } })
       .finally(() => { if (!cancelado) setCargando(false); });
     return () => { cancelado = true; };
-  }, [habilitado, intento]);
+  }, [habilitado, uso, intento]);
 
   const reintentar = useCallback(() => setIntento(n => n + 1), []);
   return { opciones, cargando, fallo, reintentar };

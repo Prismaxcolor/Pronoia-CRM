@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { puedeCambiarReportesTelegram } from '../utils/banca-acceso.js';
 import { cuentasDeBody } from './grupo-dinero.js';
+import { leerIdsOcultos } from './proveedor-oculto.js';
 import type { ContextoEvento, EventoCatalogo } from './grupo-eventos.js';
 
 /**
@@ -162,4 +163,24 @@ export async function escribirConReportes<R extends { error: ErrorEscritura }>(
   if (update.telegram_reportes_activos === false) return { pendiente: true, mensaje: MENSAJE_REPORTES_TELEGRAM_PENDIENTE };
   const resto = Object.fromEntries(Object.entries(update).filter(([k]) => k !== 'telegram_reportes_activos'));
   return Object.keys(resto).length > 0 ? ejecutar(resto) : resp;
+}
+
+/**
+ * ¿El evento toca a un proveedor oculto? Entonces no se avisa al grupo (el aviso nombraría al proveedor y sus montos
+ * a gente que no debe verlo). Corre como proceso interno (sin contexto de usuario): consulta los ocultos de forma explícita.
+ * Mira los ids de proveedor en la ruta, el body de la petición y la respuesta, y los de los movimientos del documento en BD.
+ * FAIL-CLOSED: si no se puede saber, no se avisa.
+ */
+export async function eventoTocaProveedorOculto(evento: EventoCatalogo, ctx: ContextoEvento): Promise<boolean> {
+  try {
+    const ocultos = await leerIdsOcultos();
+    if (ocultos.length === 0) return false;
+    const texto = JSON.stringify([ctx.params, ctx.reqBody, ctx.resBody]);
+    if (ocultos.some(id => texto.includes(id))) return true;
+    const refs = await referenciasDelEvento(evento, ctx);
+    return refs.terceros.some(t => t.tabla === 'proveedores' && ocultos.includes(t.id));
+  } catch (e) {
+    logger.error({ evento: 'grupo_proveedor_oculto_verificacion_fallida', clave: evento.clave, mensaje: e instanceof Error ? e.message : String(e) });
+    return true;
+  }
 }

@@ -28,6 +28,7 @@ vi.mock('../src/services/telegram-eventos-service.js', () => ({ notificarPago: v
 vi.mock('../src/utils/segundo-plano.js', () => ({ ejecutarEnSegundoPlano: vi.fn() }));
 vi.mock('../src/services/pago-categoria-service.js', () => ({
   categoriaFijaDePago: async () => 'materia',
+  categoriaDelPago: async (elegida?: string | null) => ({ categoriaId: elegida ?? 'materia' }),
   aplicarCategoriaAMovimientos: async (ids: string[], categoriaId: string | null) => { bd.categorias.push({ ids, categoriaId }); return {}; },
 }));
 vi.mock('../src/services/pago-comision-service.js', () => ({

@@ -58,6 +58,35 @@ export function armarArbol(categorias: readonly CategoriaWallet[], incluirArchiv
     }));
 }
 
+export interface DosPasos<T> {
+  /** Primer paso: categorías (y subcategorías cuyo padre no está entre las opciones, para no perderlas). */
+  raices: T[];
+  /** Segundo paso: subcategorías de cada categoría (id de la categoría → sus subcategorías). */
+  hijasDe: ReadonlyMap<string, T[]>;
+}
+
+/**
+ * Reparte una lista plana de opciones en los dos pasos del selector: primero las categorías y, al elegir una
+ * que tenga subcategorías, estas. Respeta el orden recibido.
+ */
+export function agruparDosPasos<T extends { id: string; padreId: string | null }>(opciones: readonly T[]): DosPasos<T> {
+  const ids = new Set(opciones.map(o => o.id));
+  const hijasDe = new Map<string, T[]>();
+  const raices: T[] = [];
+  for (const o of opciones) {
+    if (o.padreId && ids.has(o.padreId)) hijasDe.set(o.padreId, [...(hijasDe.get(o.padreId) ?? []), o]);
+    else raices.push(o);
+  }
+  return { raices, hijasDe };
+}
+
+/** Categoría cuyo segundo paso debe verse abierto para un valor ya elegido: el padre de una subcategoría; null si no aplica. */
+export function padreAbiertoDeValor<T extends { id: string; padreId: string | null }>(valor: string | null | undefined, opciones: readonly T[]): string | null {
+  if (!valor) return null;
+  const elegida = opciones.find(o => o.id === valor);
+  return elegida?.padreId && opciones.some(o => o.id === elegida.padreId) ? elegida.padreId : null;
+}
+
 export function indicePorId(categorias: readonly CategoriaWallet[]): ReadonlyMap<string, CategoriaWallet> {
   return new Map(categorias.map(c => [c.id, c]));
 }

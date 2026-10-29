@@ -31,7 +31,7 @@ const ESQUEMA_FILTROS: EsquemaFiltros = {
 
 const OPCIONES_ESTADO = [{ valor: 'si', etiqueta: 'Activos' }, { valor: 'no', etiqueta: 'Inactivos' }];
 
-type TerceroListable = TerceroBase & { direccion?: string | null };
+type TerceroListable = TerceroBase & { direccion?: string | null; oculto?: boolean };
 
 interface Props {
   tipo: TipoTercero;
@@ -53,6 +53,8 @@ interface Props {
   onReactivar: (id: string) => void;
   onBorrar: (id: string) => void;
   onVincularTelegram: (id: string) => void;
+  /** Solo se pasa al superadmin (proveedores): oculta o vuelve a mostrar el tercero al resto de los usuarios. */
+  onOcultar?: (id: string) => void;
 }
 
 /** Pantalla de lista de Proveedores y Clientes (la misma para ambos; solo cambia el tipo). Las cifras vienen de
@@ -83,14 +85,15 @@ function ListadoTerceros(props: Props) {
 
   const limpiarFiltros = useCallback(() => cambiar({ q: undefined, activo: undefined, conSaldo: undefined }), [cambiar]);
 
-  const { onEditar, onDesactivar, onReactivar, onBorrar, onVincularTelegram } = props;
+  const { onEditar, onDesactivar, onReactivar, onBorrar, onVincularTelegram, onOcultar } = props;
   const acciones = useMemo<AccionesTercero>(() => ({
     onEditar: puedeEditar ? f => onEditar(f.id) : undefined,
     onDesactivar: puedeEditar ? f => onDesactivar(f.id) : undefined,
     onReactivar: puedeEditar ? f => onReactivar(f.id) : undefined,
     onBorrar: puedeBorrar ? f => onBorrar(f.id) : undefined,
     onVincularTelegram: puedeEditar ? f => onVincularTelegram(f.id) : undefined,
-  }), [puedeEditar, puedeBorrar, onEditar, onDesactivar, onReactivar, onBorrar, onVincularTelegram]);
+    onOcultar: onOcultar ? f => onOcultar(f.id) : undefined,
+  }), [puedeEditar, puedeBorrar, onEditar, onDesactivar, onReactivar, onBorrar, onVincularTelegram, onOcultar]);
 
   const alertas = useMemo<AlertaDatos[]>(
     () => alertasTerceros(tipo, filas, { puedeVincularTelegram: puedeEditar }),

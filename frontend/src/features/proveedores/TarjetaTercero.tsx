@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Eye, EyeOff, FileText, Mail, MapPin, Pencil, Phone, Send, Trash2 } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, FileText, Mail, Lock, MapPin, Pencil, Phone, Send, Trash2, Unlock } from 'lucide-react';
 import { Insignia, formatearFecha, formatearNumero } from '../../components/ui';
 import { TEXTO_TERCERO, type FilaTercero, type TipoTercero } from '../../lib/terceros-kpis';
 
@@ -10,9 +10,11 @@ export interface AccionesTercero {
   onReactivar?: (t: FilaTerceroConExtra) => void;
   onBorrar?: (t: FilaTerceroConExtra) => void;
   onVincularTelegram?: (t: FilaTerceroConExtra) => void;
+  /** Solo superadmin (proveedores): ocultar o volver a mostrar al resto de los usuarios. */
+  onOcultar?: (t: FilaTerceroConExtra) => void;
 }
 
-export type FilaTerceroConExtra = FilaTercero & { direccion?: string | null };
+export type FilaTerceroConExtra = FilaTercero & { direccion?: string | null; oculto?: boolean };
 
 const BOTON_ICONO = 'rounded-md bg-surface-alt p-1.5 text-text-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
@@ -38,10 +40,10 @@ export function InsigniaTelegram({ fila, corto = false }: { fila: Pick<FilaTerce
 
 /** Botones de edición (lápiz, ojo, papelera) con nombre accesible. Visibles siempre en móvil; en escritorio al pasar o enfocar. */
 export function BotonesGestion({ fila, acciones }: { fila: FilaTerceroConExtra; acciones: AccionesTercero }) {
-  const { onEditar, onDesactivar, onReactivar, onBorrar } = acciones;
+  const { onEditar, onDesactivar, onReactivar, onBorrar, onOcultar } = acciones;
   const puedeDesactivar = fila.activo && onDesactivar;
   const puedeReactivar = !fila.activo && onReactivar;
-  if (!onEditar && !puedeDesactivar && !puedeReactivar && !onBorrar) return null;
+  if (!onEditar && !puedeDesactivar && !puedeReactivar && !onBorrar && !onOcultar) return null;
   return (
     <div className="flex gap-1">
       {onEditar && (
@@ -57,6 +59,17 @@ export function BotonesGestion({ fila, acciones }: { fila: FilaTerceroConExtra; 
       {puedeReactivar && (
         <button type="button" onClick={() => onReactivar(fila)} aria-label={`Reactivar ${fila.nombre}`} title="Reactivar" className={`${BOTON_ICONO} hover:bg-brand-50 hover:text-brand-700`}>
           <Eye size={13} aria-hidden="true" />
+        </button>
+      )}
+      {onOcultar && (
+        <button
+          type="button"
+          onClick={() => onOcultar(fila)}
+          aria-label={fila.oculto ? `Mostrar a ${fila.nombre} al resto de los usuarios` : `Ocultar a ${fila.nombre} al resto de los usuarios`}
+          title={fila.oculto ? 'Mostrar al resto de los usuarios' : 'Ocultar al resto de los usuarios'}
+          className={`${BOTON_ICONO} hover:bg-brand-50 hover:text-brand-700`}
+        >
+          {fila.oculto ? <Unlock size={13} aria-hidden="true" /> : <Lock size={13} aria-hidden="true" />}
         </button>
       )}
       {onBorrar && (
@@ -95,6 +108,7 @@ function TarjetaTercero({ tipo, fila, acciones, hayCifras, incrustada = false }:
           <h3 className="truncate text-sm font-semibold leading-tight text-text-primary">{fila.nombre}</h3>
           {fila.identificacion && <p className="mt-0.5 text-xs text-text-secondary">{fila.identificacion}</p>}
           {!fila.activo && <span className="mt-1 inline-block"><Insignia tono="neutral" forma="cuadrada">Inactivo</Insignia></span>}
+          {fila.oculto && <span className="mt-1 ml-1 inline-block"><Insignia tono="neutral" forma="cuadrada" icono={<Lock size={11} />} title="Solo el superadmin ve este proveedor.">Oculto</Insignia></span>}
         </div>
       </div>
 

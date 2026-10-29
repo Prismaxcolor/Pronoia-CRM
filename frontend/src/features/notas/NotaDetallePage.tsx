@@ -14,6 +14,8 @@ import EtiquetaCategoria from '../cochinito/categorias/EtiquetaCategoria';
 import CambiarCategoriaNotaModal from '../estado-cuenta/CambiarCategoriaNotaModal';
 import { formatearFechaHora, nombreYMomento } from '../../lib/fecha-negocio';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import NavegacionDocumentos from '../../components/NavegacionDocumentos';
+import { useVecinosEstadoCuenta } from '../estado-cuenta/useVecinosEstadoCuenta';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -51,6 +53,7 @@ function NotaDetallePage({ tipoEntidad }: Props) {
   const navState = location.state as { volverA?: string; volverALabel?: string } | null;
   const ruta = navState?.volverA ?? `/${esProveedor ? 'proveedores' : 'clientes'}/${entidadId}/estado-cuenta`;
   const etiquetaVolver = navState?.volverALabel ?? 'Estado de cuenta';
+  const vecinos = useVecinosEstadoCuenta(tipoEntidad, entidadId, notaId);
 
   // El resultado guarda la clave con la que se pidió: mientras no coincida con
   // la clave actual se muestra el spinner (sin setState síncrono en el efecto).
@@ -102,6 +105,8 @@ function NotaDetallePage({ tipoEntidad }: Props) {
       <div className="hidden print:flex items-center justify-end mb-6">
         <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
       </div>
+
+      <NavegacionDocumentos nombre="documento" {...vecinos} />
 
       {/* Cabecera del estándar. Las migas son navegación: no se imprimen. */}
       <div className="print:[&_nav]:hidden">

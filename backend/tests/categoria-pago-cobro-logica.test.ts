@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  categoriasParaTipo, elegirCategoriaDePago, resolverCategoriaDeCobro,
+  categoriasParaTipo, conSubcategoriasDeCobro, elegirCategoriaDePago, resolverCategoriaDePago, MENSAJE_PAGO_CATEGORIA_INVALIDA, resolverCategoriaDeCobro,
   MENSAJE_COBRO_CATEGORIA_INVALIDA, MENSAJE_COBRO_SIN_CATEGORIA,
 } from '../src/utils/categoria-pago-cobro.js';
 import { registrarCobroMultipleSchema } from '../src/schemas/cobros.js';
@@ -69,5 +69,41 @@ describe('registrarCobroMultipleSchema.categoriaId', () => {
   it('acepta un uuid y rechaza otro texto', () => {
     expect(registrarCobroMultipleSchema.safeParse({ ...base, categoriaId: '33333333-3333-4333-8333-333333333333' }).success).toBe(true);
     expect(registrarCobroMultipleSchema.safeParse({ ...base, categoriaId: 'venta' }).success).toBe(false);
+  });
+});
+
+describe('conSubcategoriasDeCobro', () => {
+  const hija = { ...cat('nf-sub', 'INGRESO'), padreId: 'nf' };
+  const hijaEgreso = { ...cat('nf-egr', 'EGRESO'), padreId: 'nf' };
+  const hijaArchivada = { ...cat('nf-old', 'INGRESO'), padreId: 'nf', activo: false };
+  const ajena = { ...cat('otra', 'INGRESO'), padreId: 'pcb' };
+
+  it('suma las subcategorías vigentes que admiten ingresos de la categoría general asignada', () => {
+    const r = conSubcategoriasDeCobro([NF], [NF, hija, hijaEgreso, hijaArchivada, ajena]);
+    expect(r.map(c => c.id)).toEqual(['nf', 'nf-sub']);
+  });
+  it('no repite una subcategoría ya asignada ni expande una subcategoría', () => {
+    expect(conSubcategoriasDeCobro([NF, hija], [NF, hija]).map(c => c.id)).toEqual(['nf', 'nf-sub']);
+    expect(conSubcategoriasDeCobro([hija], [NF, hija]).map(c => c.id)).toEqual(['nf-sub']);
+  });
+});
+
+describe('resolverCategoriaDePago', () => {
+  const MAT = cat('mat', 'EGRESO');
+  it('sin elección devuelve la fija (aunque sea null)', () => {
+    expect(resolverCategoriaDePago([MAT], undefined, 'mat')).toEqual({ categoriaId: 'mat' });
+    expect(resolverCategoriaDePago([], null, null)).toEqual({ categoriaId: null });
+  });
+  it('acepta una elegida que es opción de egreso', () => {
+    expect(resolverCategoriaDePago([MAT], 'mat', null)).toEqual({ categoriaId: 'mat' });
+  });
+  it('rechaza una fuera de las opciones o que solo admite ingresos', () => {
+    expect(resolverCategoriaDePago([MAT], 'otra', 'mat')).toEqual({ error: MENSAJE_PAGO_CATEGORIA_INVALIDA });
+    expect(resolverCategoriaDePago([NF], 'nf', null)).toEqual({ error: MENSAJE_PAGO_CATEGORIA_INVALIDA });
+  });
+  it('conSubcategoriasDeCobro puede expandir con el tipo egreso', () => {
+    const hija = { ...cat('h', 'EGRESO'), padreId: 'mat' };
+    const hijaIngreso = { ...cat('hi', 'INGRESO'), padreId: 'mat' };
+    expect(conSubcategoriasDeCobro([MAT], [MAT, hija, hijaIngreso], 'egreso').map(c => c.id)).toEqual(['mat', 'h']);
   });
 });

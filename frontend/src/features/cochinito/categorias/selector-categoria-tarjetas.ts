@@ -29,6 +29,8 @@ export interface TarjetaCategoria {
   nombre: string;
   /** Nombre de la categoría padre (solo en subcategorías). */
   padreNombre: string | null;
+  /** Id de la categoría padre (solo en subcategorías). */
+  padreId: string | null;
   color: string;
   imagenUrl: string | null;
   inicial: string;
@@ -67,6 +69,7 @@ export function tarjetasDeCategorias(categorias: readonly CategoriaWallet[], opc
       id: c.id,
       nombre: c.nombre,
       padreNombre: padre?.nombre ?? null,
+      padreId: padre?.id ?? null,
       color: c.color,
       imagenUrl: c.imagenUrl ?? null,
       inicial: inicialDeCategoria(c.nombre),

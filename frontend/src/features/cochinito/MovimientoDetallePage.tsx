@@ -21,7 +21,7 @@ import type { Banca } from '@shared/types/index.js';
 import EditarMovimientoModal from './EditarMovimientoModal';
 import { descargarMovimientoPDF } from './movimiento-pdf';
 import {
-  ETIQUETA_SUBTIPO_MOVIMIENTO, ETIQUETA_TIPO_MOVIMIENTO, esCargoDeComision, esManualVigente, tieneComision, esTransferenciaEnProceso, etiquetaEstadoMesa, etiquetaOperacion,
+  ETIQUETA_SUBTIPO_MOVIMIENTO, ETIQUETA_TIPO_MOVIMIENTO, esCargoDeComision, esComisionDeMesa, esManualVigente, tieneComision, esTransferenciaEnProceso, etiquetaEstadoMesa, etiquetaOperacion,
   idsDeNavegacion, montoQueRecibeElDestino, montosTransferencia, numeroMovimiento, ordenCronologico, rutaDetalleMovimiento, vecinosEnLista, textoComisionMesa,
   recursoComprobanteOperacion, rutaComprobanteOperacion, tasaDe, tituloCompartirMovimiento,
 } from './detalle-movimiento';
@@ -104,7 +104,7 @@ function Filas({ detalle, simboloDestino, categoria, equivalenteAparte }: { deta
       {tasa != null && <FilaDocumento label="Tasa" valor={`${formatearNumero(tasa, 2)} Bs por USD`} />}
       {usd != null && m.moneda !== 'USD' && !equivalenteAparte && <FilaDocumento label="Equivalente en USD" valor={`USD ${formatearNumero(usd, 2)}`} />}
       {tieneComision(m) && <FilaDocumento label="Comisión bancaria" valor={`Bs ${formatearNumero(m.comisionBancaria as number, 2)} (cargada a la misma cuenta como un egreso aparte)`} />}
-      {esCargoDeComision(m) && <FilaDocumento label="Comisión bancaria de" valor="Otro movimiento de Wallet: se anula junto con él" />}
+      {esCargoDeComision(m) && <FilaDocumento label={esComisionDeMesa(m) ? 'Comisión de la mesa de cambio de' : 'Comisión bancaria de'} valor={esComisionDeMesa(m) ? 'Una transferencia con mesa de cambio: se anula junto con ella' : 'Otro movimiento de Wallet: se anula junto con él'} />}
       {m.mesaCambistaId != null
         ? <FilasMesa detalle={detalle} simboloDestino={simboloDestino} />
         : m.montoDestino != null && <FilaDocumento label="Recibe la banca destino" valor={formatearNumero(m.montoDestino, 2)} />}

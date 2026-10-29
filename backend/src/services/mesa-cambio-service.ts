@@ -1,7 +1,11 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { ErrorLecturaBd, leerPaginado } from '../utils/paginacion.js';
-import { construirEstadoCuenta, type AsientoMesa, type EstadoCuentaCalculado, type RangoFechas } from '../utils/mesa-cambio.js';
+import {
+  conComisiones, construirEstadoCuenta, type AsientoMesa, type DatosComisionMovimiento, type EstadoCuentaConComisiones,
+  type RangoFechas,
+} from '../utils/mesa-cambio.js';
+import { logger } from '../utils/logger.js';
 import type { ActualizarCambistaInput, CrearAsientoInput, CrearCambistaInput } from '../schemas/mesa-cambio.js';
 
 /** Espejo de shared/types/mesa-cambio.ts (se duplica por la misma razón que utils/permisos.ts). */
@@ -20,7 +24,7 @@ export interface CambistaConSaldo extends Cambista {
   asientos: number;
 }
 
-export interface EstadoCuentaMesa extends EstadoCuentaCalculado {
+export interface EstadoCuentaMesa extends EstadoCuentaConComisiones {
   cambista: Cambista;
   desde: string | null;
   hasta: string | null;
@@ -126,6 +130,56 @@ export async function actualizarCambista(id: string, input: ActualizarCambistaIn
   return { cambista: mapCambista(data) };
 }
 
+/** Máximo de ids por consulta .in(): las URL de PostgREST tienen largo limitado. */
+const LOTE_IDS = 100;
+
+const porLotes = <T,>(items: readonly T[]): T[][] =>
+  Array.from({ length: Math.ceil(items.length / LOTE_IDS) }, (_, i) => items.slice(i * LOTE_IDS, (i + 1) * LOTE_IDS));
+
+/**
+ * Comisión de mesa de las transferencias citadas por los asientos (solo las que tienen comisión > 0). Es un dato
+ * informativo del estado de cuenta: si no se puede leer (p. ej. columna aún inexistente) se registra y el estado
+ * se entrega sin comisiones, con saldos intactos.
+ */
+async function leerComisionesDeTransferencias(ids: ReadonlyArray<string | null>): Promise<Map<string, DatosComisionMovimiento>> {
+  const resultado = new Map<string, DatosComisionMovimiento>();
+  const movimientoIds = [...new Set(ids.filter((id): id is string => !!id))];
+  if (movimientoIds.length === 0) return resultado;
+  const filas: Array<Record<string, unknown>> = [];
+  for (const lote of porLotes(movimientoIds)) {
+    const { data, error } = await supabaseAdmin
+      .from('movimientos')
+      .select('id, numero_sistema, mesa_comision, mesa_monto_bruto, banca_destino_id, mesa_estado')
+      .in('id', lote)
+      .gt('mesa_comision', 0);
+    if (error) {
+      logger.warn({ evento: 'mesa_estado_cuenta_comisiones_no_leidas', codigo: error.code, mensaje: error.message });
+      return new Map();
+    }
+    filas.push(...((data as Array<Record<string, unknown>> | null) ?? []));
+  }
+  const bancaIds = [...new Set(filas.map(f => f.banca_destino_id).filter((id): id is string => typeof id === 'string'))];
+  const monedas = new Map<string, string>();
+  for (const lote of porLotes(bancaIds)) {
+    const { data, error } = await supabaseAdmin.from('bancas').select('id, moneda').in('id', lote);
+    if (error) {
+      logger.warn({ evento: 'mesa_estado_cuenta_monedas_no_leidas', codigo: error.code, mensaje: error.message });
+      return new Map();
+    }
+    for (const b of (data as Array<{ id: string; moneda: string }> | null) ?? []) monedas.set(b.id, b.moneda);
+  }
+  for (const f of filas) {
+    const moneda = monedas.get(String(f.banca_destino_id));
+    if (!moneda) continue;
+    resultado.set(String(f.id), {
+      comision: Number(f.mesa_comision), montoBruto: Number(f.mesa_monto_bruto), moneda,
+      numeroSistema: f.numero_sistema != null ? Number(f.numero_sistema) : null,
+      completada: f.mesa_estado === 'completada',
+    });
+  }
+  return resultado;
+}
+
 export async function obtenerEstadoCuenta(id: string, rango: RangoFechas): Promise<{ estado: EstadoCuentaMesa } | Fallo> {
   // El cambista y sus asientos no dependen entre sí: se piden a la vez (una ida y vuelta a la BD en vez de dos).
   // PostgREST corta cada respuesta en 1000 filas: sin paginar, un cambista con más asientos tendría un saldo falso.
@@ -146,8 +200,9 @@ export async function obtenerEstadoCuenta(id: string, rango: RangoFechas): Promi
   }
   const filas = lecturaAsientos.filas;
   const calculado = construirEstadoCuenta(filas.map(mapAsiento), rango);
+  const comisiones = await leerComisionesDeTransferencias(calculado.filas.map(f => f.movimientoId));
   return {
-    estado: { ...calculado, cambista: encontrado.cambista, desde: rango.desde ?? null, hasta: rango.hasta ?? null },
+    estado: { ...conComisiones(calculado, comisiones), cambista: encontrado.cambista, desde: rango.desde ?? null, hasta: rango.hasta ?? null },
   };
 }
 

@@ -233,3 +233,11 @@ export function invalidarCacheSaldos(): void {
   caches.proveedor.invalidar();
   caches.cliente.invalidar();
 }
+
+/** Respuesta sin las entidades indicadas y con los totales recalculados (la caché es compartida: se filtra por petición). */
+export function excluirEntidadesDeSaldos(respuesta: RespuestaSaldos, ids: readonly string[]): RespuestaSaldos {
+  if (ids.length === 0) return respuesta;
+  const excluidas = new Set(ids);
+  const saldos = respuesta.saldos.filter(s => !excluidas.has(s.entidadId));
+  return { ...respuesta, saldos, totales: calcularTotales(respuesta.tipo, saldos) };
+}

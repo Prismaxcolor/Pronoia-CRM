@@ -1,6 +1,7 @@
 import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { escribirConReportes } from './grupo-silencio-service.js';
+import { idsProveedoresOcultos, sinProveedoresOcultos } from './proveedor-oculto.js';
 import type { CrearProveedorInput, ActualizarProveedorInput } from '../schemas/proveedores.js';
 
 interface ProveedorRow {
@@ -17,6 +18,8 @@ interface ProveedorRow {
   telegram_chat_id: string | null;
   telegram_linked_at: string | null;
   telegram_reportes_activos?: boolean | null;
+  /** Ausente mientras no se aplique docs/migration_proveedores_oculto.sql. */
+  oculto?: boolean | null;
 }
 
 export interface ProveedorPublico {
@@ -33,6 +36,8 @@ export interface ProveedorPublico {
   telegramLinkedAt: string | null;
   /** false = el superadmin apagó los avisos de Telegram de los movimientos de este proveedor. */
   telegramReportesActivos: boolean;
+  /** true = el superadmin lo ocultó al resto de los usuarios (solo el superadmin recibe estos proveedores). */
+  oculto: boolean;
 }
 
 function toPublico(row: ProveedorRow): ProveedorPublico {
@@ -49,14 +54,14 @@ function toPublico(row: ProveedorRow): ProveedorPublico {
     telegramChatId: row.telegram_chat_id,
     telegramLinkedAt: row.telegram_linked_at,
     telegramReportesActivos: row.telegram_reportes_activos !== false,
+    oculto: row.oculto === true,
   };
 }
 
 export async function listarProveedores(): Promise<ProveedorPublico[]> {
-  const { data, error } = await supabaseAdmin
-    .from('proveedores')
-    .select('*')
-    .order('created_at', { ascending: false });
+  // Quien no es superadmin no recibe los proveedores ocultos.
+  const visibles = sinProveedoresOcultos(supabaseAdmin.from('proveedores').select('*'), await idsProveedoresOcultos(), 'id');
+  const { data, error } = await visibles.order('created_at', { ascending: false });
 
   if (error || !data) return [];
   return (data as ProveedorRow[]).map(toPublico);

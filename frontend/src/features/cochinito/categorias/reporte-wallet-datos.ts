@@ -110,3 +110,37 @@ export function totalesDeFilas(filas: readonly FilaReporteCuenta[]): ReporteCuen
   const salidas = redondear(vigentes.reduce((s, f) => s + f.salida, 0));
   return { entradas, salidas, neto: redondear(entradas - salidas) };
 }
+
+/** Alterna una cuenta en la selección de un reporte (devuelve una lista nueva, no modifica la original). */
+export function alternarCuenta(seleccion: readonly string[], id: string): string[] {
+  return seleccion.includes(id) ? seleccion.filter(x => x !== id) : [...seleccion, id];
+}
+
+/** Reporte de cuenta con solo las filas que coinciden con el correlativo buscado y sus totales recalculados; sin texto, el mismo reporte. */
+export function reporteFiltrado(r: ReporteCuenta, texto: string): ReporteCuenta {
+  if (texto.trim() === '') return r;
+  const filas = filtrarFilasPorCorrelativo(r.filas, texto);
+  return { ...r, filas, totales: totalesDeFilas(filas) };
+}
+
+export interface FalloCuenta { bancaId: string; error: string }
+
+/** Reparte los resultados de pedir el reporte de varias cuentas (en el mismo orden que `ids`) en los que cargaron y los que fallaron. */
+export function separarResultadosCuentas(
+  ids: readonly string[],
+  resultados: ReadonlyArray<ReporteCuenta | { error: string }>
+): { reportes: ReporteCuenta[]; fallos: FalloCuenta[] } {
+  const reportes: ReporteCuenta[] = [];
+  const fallos: FalloCuenta[] = [];
+  resultados.forEach((r, i) => {
+    if ('error' in r) fallos.push({ bancaId: ids[i], error: r.error });
+    else reportes.push(r);
+  });
+  return { reportes, fallos };
+}
+
+/** Junta reportes ya cargados con los recién cargados (el nuevo reemplaza al de la misma cuenta) en el orden de `ordenIds`. */
+export function combinarReportesCuentas(actuales: readonly ReporteCuenta[], nuevos: readonly ReporteCuenta[], ordenIds: readonly string[]): ReporteCuenta[] {
+  const porId = new Map([...actuales, ...nuevos].map(r => [r.banca.id, r] as const));
+  return ordenIds.flatMap(id => { const r = porId.get(id); return r ? [r] : []; });
+}

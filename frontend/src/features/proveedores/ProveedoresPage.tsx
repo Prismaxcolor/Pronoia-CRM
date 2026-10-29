@@ -4,6 +4,7 @@ import {
   desactivarProveedor,
   reactivarProveedor,
   borrarProveedor,
+  ocultarProveedor,
   generarLinkTelegramProveedor,
 } from '../../services/proveedor-service';
 import { useAuth } from '../../hooks/use-auth-context';
@@ -21,7 +22,8 @@ function ProveedoresPage() {
   const [version, setVersion] = useState(0);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; proveedor: Proveedor | null } | { abierto: false }>({ abierto: false });
   const [telegramAbierto, setTelegramAbierto] = useState<Proveedor | null>(null);
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
+  const esSuperadmin = usuario?.rol === 'superadmin';
   const toast = useToast();
   const confirmar = useConfirm();
 
@@ -80,6 +82,25 @@ function ProveedoresPage() {
     cargar();
   }, [buscar, confirmar, toast, cargar]);
 
+  const handleOcultar = useCallback(async (id: string) => {
+    const p = buscar(id);
+    if (!p) return;
+    const ocultar = !p.oculto;
+    const ok = await confirmar({
+      titulo: ocultar ? `Ocultar a "${p.nombre}"` : `Mostrar a "${p.nombre}"`,
+      mensaje: ocultar
+        ? 'Dejará de verse para todos los usuarios que no son superadmin: su ficha, facturas, pesajes, pagos, saldos y reportes. Tú lo seguirás viendo. Puedes volver a mostrarlo cuando quieras.'
+        : 'Volverá a verse para todos los usuarios, con todo su historial.',
+      confirmarLabel: ocultar ? 'Ocultar' : 'Mostrar',
+      variante: 'warning',
+    });
+    if (!ok) return;
+    const result = await ocultarProveedor(p.id, ocultar);
+    if ('error' in result) { toast.errorMsg(result.error); return; }
+    toast.exito(ocultar ? `"${p.nombre}" ahora está oculto.` : `"${p.nombre}" vuelve a verse para todos.`);
+    cargar();
+  }, [buscar, confirmar, toast, cargar]);
+
   const generarLinkTelegram = useCallback(async () => {
     if (!telegramAbierto) return { error: 'Sin proveedor seleccionado.' };
     return generarLinkTelegramProveedor(telegramAbierto.id);
@@ -110,6 +131,7 @@ function ProveedoresPage() {
         onReactivar={handleReactivar}
         onBorrar={handleBorrar}
         onVincularTelegram={id => setTelegramAbierto(buscar(id) ?? null)}
+        onOcultar={esSuperadmin ? handleOcultar : undefined}
       />
 
       {formAbierto.abierto && (

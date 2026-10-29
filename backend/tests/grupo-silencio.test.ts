@@ -232,7 +232,7 @@ describe('fail-open', () => {
   });
 
   it('la consulta lanza una excepción: avisa igual', async () => {
-    tablas.proveedores = { lanza: true };
+    tablas.bancas = { lanza: true }; // la lectura del interruptor falla; la de proveedores ocultos (otra tabla) funciona
     ejecutar({ method: 'POST', originalUrl: '/api/pagos/multiple', user: ana, body: PAGO }, 201, { numeroPago: 1 });
     await esperarEnvios(1);
   });

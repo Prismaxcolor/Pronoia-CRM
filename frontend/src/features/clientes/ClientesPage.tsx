@@ -12,8 +12,8 @@ import { useToast } from '../../hooks/use-toast-context';
 import { useConfirm } from '../../hooks/use-confirm-context';
 import ClienteFormModal from './ClienteFormModal';
 import ListadoTerceros from '../proveedores/ListadoTerceros';
-import KpiPorPagarProveedores from './KpiPorPagarProveedores';
-import { usePorPagarProveedores } from './usePorPagarProveedores';
+import KpiPorPagarAClientes from './KpiPorPagarAClientes';
+import { usePorPagarAClientes } from './usePorPagarAClientes';
 import TelegramLinkModal from '../../components/TelegramLinkModal';
 import type { Cliente, TipoVentaCliente } from '@shared/types/index.js';
 
@@ -36,9 +36,7 @@ function ClientesPage() {
   const puedeCrear = tienePermiso('clientes', 'crear');
   const puedeEditar = tienePermiso('clientes', 'editar');
   const puedeBorrar = tienePermiso('clientes', 'eliminar');
-  // Lo que se debe a proveedores solo lo ve quien también puede ver proveedores (es su misma cifra).
-  const puedeVerProveedores = tienePermiso('proveedores', 'ver');
-  const porPagarProveedores = usePorPagarProveedores(puedeVerProveedores, version);
+  const porPagarAClientes = usePorPagarAClientes(version);
 
   // La lista no vuelve a mostrar el esqueleto al recargar: solo en la primera carga.
   const cargar = useCallback(
@@ -119,7 +117,7 @@ function ClientesPage() {
         segmento={ETIQUETA_SEGMENTO[segmento].toLowerCase()}
         cargando={cargando}
         version={version}
-        kpiExtra={puedeVerProveedores ? <KpiPorPagarProveedores {...porPagarProveedores} /> : undefined}
+        kpiExtra={<KpiPorPagarAClientes {...porPagarAClientes} />}
         puedeCrear={puedeCrear}
         puedeEditar={puedeEditar}
         puedeBorrar={puedeBorrar}

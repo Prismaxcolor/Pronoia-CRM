@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabaseAdmin } from '../config/supabase.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { idsProveedoresOcultos, proveedorVisible, sinProveedoresOcultos } from './proveedor-oculto.js';
 import { mensajeDeErrorBd } from '../utils/errores-bd.js';
 import { logger } from '../utils/logger.js';
 import { MENSAJE_REPORTES_TELEGRAM_PENDIENTE } from './grupo-silencio-service.js';
@@ -87,6 +88,8 @@ export interface Movimiento {
   comisionBancaria: number | null;
   /** Si es el cargo de una comisión bancaria: id del movimiento al que pertenece; null en los demás. */
   comisionDeId: string | null;
+  /** Si es el egreso de comisión de una transferencia con mesa de cambio: id de la transferencia; null en los demás (o sin la migración). */
+  mesaComisionDeId: string | null;
   /** Solo en las lecturas de Wallet: USD a la tasa (Binance) del momento, para movimientos en Bs sin `montoUsd` guardado. */
   equivalenteUsd?: number | null;
 }
@@ -139,6 +142,7 @@ function mapMovimiento(row: Record<string, unknown>): Movimiento {
     ...mapMesa(row),
     comisionBancaria: aNumeroONull(row.comision_bancaria),
     comisionDeId: (row.comision_de_id as string) ?? null,
+    mesaComisionDeId: (row.mesa_comision_de_id as string) ?? null,
   };
 }
 
@@ -175,10 +179,9 @@ export async function listarBancas(opts: ListarBancasOpts = {}): Promise<Banca[]
 }
 
 export async function listarMovimientos(): Promise<Movimiento[]> {
-  const { data, error } = await supabaseAdmin
-    .from('movimientos')
-    .select('*')
-    .order('creado_en', { ascending: false });
+  // Los pagos y adelantos a proveedores ocultos no aparecen para quien no es superadmin.
+  const visibles = sinProveedoresOcultos(supabaseAdmin.from('movimientos').select('*'), await idsProveedoresOcultos(), 'proveedor_id');
+  const { data, error } = await visibles.order('creado_en', { ascending: false });
 
   if (error || !data) return [];
   return data.map(mapMovimiento);
@@ -188,7 +191,8 @@ export async function listarMovimientos(): Promise<Movimiento[]> {
 export async function obtenerMovimiento(id: string): Promise<Movimiento | null> {
   const { data, error } = await supabaseAdmin.from('movimientos').select('*').eq('id', id).maybeSingle();
   if (error || !data) return null;
-  return mapMovimiento(data);
+  const movimiento = mapMovimiento(data);
+  return (await proveedorVisible(movimiento.proveedorId)) ? movimiento : null;
 }
 
 export interface DetalleMovimiento {

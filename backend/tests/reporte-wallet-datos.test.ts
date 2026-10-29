@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  etiquetaMoneda, filasPorMoneda, monedasDelReporte, nombreArchivoReporte, textoTipoFila, totalGeneral, textoMovimientosAcceso, mensajeRango, textoSeleccion,
+  etiquetaMoneda, filasPorMoneda, monedasDelReporte, nombreArchivoReporte, textoTipoFila, totalGeneral, textoMovimientosAcceso, mensajeRango, textoSeleccion, alternarCuenta, reporteFiltrado, separarResultadosCuentas, combinarReportesCuentas,
 } from '../../frontend/src/features/cochinito/categorias/reporte-wallet-datos';
-import type { ReporteCategorias } from '../../shared/types/categoria-wallet';
+import type { ReporteCategorias, ReporteCuenta } from '../../shared/types/categoria-wallet';
 
 const t = (moneda: string, ingresos: number, egresos: number) => ({ moneda, ingresos, egresos, total: ingresos - egresos });
 const reporte: ReporteCategorias = {
@@ -87,5 +87,43 @@ describe('textoSeleccion', () => {
     expect(textoSeleccion([], indice, true)).toBe('Todas las categorías y movimientos sin categoría');
     expect(textoSeleccion(['serv', 'luz'], indice, false)).toBe('Categorías: Servicios, Servicios › Luz');
     expect(textoSeleccion(['luz'], indice, true)).toBe('Categorías: Servicios › Luz y movimientos sin categoría');
+  });
+});
+
+describe('reporte de varias cuentas', () => {
+  it('alternarCuenta agrega y quita sin modificar la lista original', () => {
+    const original = ['a'];
+    expect(alternarCuenta(original, 'b')).toEqual(['a', 'b']);
+    expect(alternarCuenta(['a', 'b'], 'a')).toEqual(['b']);
+    expect(original).toEqual(['a']);
+  });
+  it('reporteFiltrado devuelve el mismo reporte sin texto y recalcula totales con texto', () => {
+    const fila = (id: string, n: number, entrada: number) => ({
+      id, fecha: '2026-10-02', tipo: 'ingreso' as const, subtipo: null, numero: null, numeroSistema: n, descripcion: '', referencia: '', cuentaContraria: null,
+      categoriaId: null, categoria: null, entrada, salida: 0, anulado: false, enProceso: false,
+    });
+    const r: ReporteCuenta = {
+      banca: { id: 'b', nombre: 'B', moneda: 'USD' }, desde: '2026-10-01', hasta: '2026-10-31',
+      filas: [fila('1', 1, 10), fila('2', 2, 5)], totales: { entradas: 15, salidas: 0, neto: 15 },
+    };
+    expect(reporteFiltrado(r, '  ')).toBe(r);
+    const f = reporteFiltrado(r, '2');
+    expect(f.filas.map(x => x.id)).toEqual(['2']);
+    expect(f.totales.entradas).toBe(5);
+  });
+});
+
+describe('carga parcial del reporte de varias cuentas', () => {
+  const rep = (id: string): ReporteCuenta => ({ banca: { id, nombre: id, moneda: 'USD' }, desde: '2026-10-01', hasta: '2026-10-31', filas: [], totales: { entradas: 0, salidas: 0, neto: 0 } });
+
+  it('separa las cuentas que cargaron de las que fallaron, con su id y mensaje', () => {
+    const r = separarResultadosCuentas(['a', 'b', 'c'], [rep('a'), { error: 'caída' }, rep('c')]);
+    expect(r.reportes.map(x => x.banca.id)).toEqual(['a', 'c']);
+    expect(r.fallos).toEqual([{ bancaId: 'b', error: 'caída' }]);
+  });
+  it('al reintentar, combina en el orden de la lista de cuentas y reemplaza duplicados', () => {
+    const r = combinarReportesCuentas([rep('a'), rep('c')], [rep('b')], ['a', 'b', 'c', 'd']);
+    expect(r.map(x => x.banca.id)).toEqual(['a', 'b', 'c']);
+    expect(combinarReportesCuentas([rep('a')], [rep('a')], ['a'])).toHaveLength(1);
   });
 });

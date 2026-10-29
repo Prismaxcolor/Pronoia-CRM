@@ -16,9 +16,14 @@ import { crearTicketSchema, completarTicketSchema, editarTicketSchema } from '..
 import type { EditarTicketInput } from '../schemas/tickets-pesaje.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
+import { exigirDocumentoVisible, exigirProveedorDelBodyVisible } from '../services/proveedor-documento.js';
+
 const router = Router();
 
 router.use(requireAuth);
+
+// Todo ticket por id de un proveedor oculto responde 404 a quien no es superadmin (ver, completar, editar, borrar).
+router.param('id', exigirDocumentoVisible('ticket_pesaje'));
 
 // El pesaje es parte del flujo de compra/facturación → permiso 'facturacion'.
 
@@ -44,6 +49,7 @@ router.post(
   '/',
   requirePermiso('pesaje', 'crear'),
   validateBody(crearTicketSchema),
+  exigirProveedorDelBodyVisible('entidadId', body => body.tipo !== 'venta'),
   async (req, res) => {
     let envio;
     try {

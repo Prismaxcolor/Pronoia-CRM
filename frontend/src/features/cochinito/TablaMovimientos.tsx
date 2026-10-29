@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Ban, CheckCircle2, Eye, Pencil, Tag } from 'lucide-react';
 import { Insignia, TablaDatos, formatearNumero, type ColumnaTabla, type EstadoVacioProps, type OrdenTabla } from '../../components/ui';
 import { diaDe, montoUsdDe } from '../../lib/cochinito-kpis';
-import { esCargoDeComision, esManualVigente, esTransferenciaEnProceso, etiquetaEstadoMesa, montosTransferencia, numeroMovimiento, ordenCronologico, rutaDetalleMovimiento, type EstadoNavegacionMovimiento } from './detalle-movimiento';
+import { esCargoDeComision, esComisionDeMesa, esManualVigente, esTransferenciaEnProceso, etiquetaEstadoMesa, montosTransferencia, numeroMovimiento, ordenCronologico, rutaDetalleMovimiento, type EstadoNavegacionMovimiento } from './detalle-movimiento';
 import type { Banca, CategoriaWallet, Movimiento, TipoMovimiento } from '@shared/types/index.js';
 import EtiquetaCategoria from './categorias/EtiquetaCategoria';
 import { etiquetaCategoria } from './categorias/categorias-logica';
@@ -137,7 +137,7 @@ function TablaMovimientos({ filas, bancas, nombreContraparte, vacio, onEditar, o
               className="rounded p-1.5 text-emerald-700 hover:bg-emerald-50"><CheckCircle2 size={14} /></button>
           )}
           {esCargoDeComision(m) ? (
-            m.anulado ? null : <span className="text-xs text-text-muted" title="Es la comisión bancaria de otro movimiento: se anula junto con él.">Comisión bancaria</span>
+            m.anulado ? null : <span className="text-xs text-text-muted" title={esComisionDeMesa(m) ? 'Es la comisión de una transferencia con mesa de cambio: se anula junto con ella.' : 'Es la comisión bancaria de otro movimiento: se anula junto con él.'}>{esComisionDeMesa(m) ? 'Comisión de la mesa' : 'Comisión bancaria'}</span>
           ) : esManualVigente(m) ? (
             <>
               {onEditar && (

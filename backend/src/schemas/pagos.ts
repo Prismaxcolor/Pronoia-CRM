@@ -34,6 +34,8 @@ export const registrarPagoSchema = z.object({
   comprobantes: z.array(comprobanteUrlSchema).default([]),
   /** Comisión bancaria (0.3%, mínimo 14 Bs) de un pago desde una cuenta en Bs: obligatoria si la migración está aplicada. */
   llevaComision: z.boolean().optional(),
+  /** Categoría del Wallet elegida; si se omite se usa la fija del pago por configuración. */
+  categoriaId: z.string().uuid('Categoría inválida.').optional().nullable(),
   ...clienteOperacionCampos,
 });
 
@@ -83,6 +85,8 @@ export const registrarPagoMultipleSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD).'),
   items: z.array(itemPagoMultipleSchema).default([]),
   comprobantes: z.array(comprobanteUrlSchema).default([]),
+  /** Categoría del Wallet elegida; si se omite se usa la fija del pago por configuración. */
+  categoriaId: z.string().uuid('Categoría inválida.').optional().nullable(),
   ...clienteOperacionCampos,
 }).superRefine((data, ctx) => validarPagoCombinado(data, ctx, 'pago'));
 

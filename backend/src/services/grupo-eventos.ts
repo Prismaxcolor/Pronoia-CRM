@@ -97,6 +97,12 @@ export interface EventoCatalogo {
   contexto?: (ctx: ContextoEvento) => ContextoRef | null;
   /** Líneas de detalle: solo campos seguros. */
   detalles?: (ctx: ContextoEvento) => string[];
+  /**
+   * Cuerpo con el que se arman las líneas "Cuenta origen/destino" cuando el body de la petición no trae las
+   * cuentas (p. ej. el cobro de una transferencia con mesa: sus cuentas salen de la respuesta). Solo afecta a
+   * esas líneas; el chat de destino del aviso sigue saliendo del body de la petición.
+   */
+  cuerpoCuentas?: (ctx: ContextoEvento) => Record<string, unknown>;
   /** true: el detalle ya nombra cada cuenta con su monto, así que no se agregan las líneas "Cuenta: ..." leídas del body. */
   omitirLineasCuenta?: boolean;
   /** Cambia icono/acción/clave según el resultado (ej. pesaje global por recepcionar vs completo). */
@@ -493,6 +499,8 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
     entidad: { rotulo: 'Factura', resp: 'factura' }, detalles: detallesFactura, enriquecer: 'factura',
   }),
   ...entidadComercial('/api/proveedores', 'proveedor', 'Proveedor', 'proveedores', 'notas_ajuste_proveedor', 'el', 'proveedor'),
+  // Ocultar un proveedor es justamente que el resto del equipo no lo vea: nunca se avisa al grupo.
+  ev('proveedor.oculto_cambiado', 'POST', '/api/proveedores/:id/ocultar', 'maestros', 'ignorable', '🙈', 'Se cambió la visibilidad de un proveedor'),
   ...entidadComercial('/api/clientes', 'cliente', 'Cliente', 'clientes', 'notas_ajuste_cliente', 'el', 'cliente'),
 
   // --- Tesorería (pagos, cobros, cruces, bancas) ---------------------------
@@ -569,15 +577,9 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
     },
   }),
   ev('banca.transferencia_mesa_completada', 'POST', '/api/cochinito/movimientos/:id/completar', 'tesoreria', 'critica', '✅', 'Se COMPLETÓ una transferencia con mesa de cambio', {
-    etiqueta: etiquetaDinero('Movimiento de banca', 'movimiento'),
-    // Cobro parcial: el cambista entregó solo una parte; avisa cuánto falta (moneda de la cuenta destino).
-    detalles: ctx => {
-      const pendiente = num(ctx.resBody.montoPendiente);
-      return [
-        ...(pendiente !== null && pendiente > 0 ? [`Cobro PARCIAL: faltan ${pendiente.toFixed(2)} por cobrar al cambista`] : []),
-        ...linea('Observación', txt(ctx.reqBody.observacion)),
-      ];
-    },
+    etiqueta: etiquetaTransferenciaMesa,
+    cuerpoCuentas: cuerpoCuentasTransferenciaMesa,
+    detalles: detallesTransferenciaMesaCompletada,
   }),
 
   ...eventosModificacionDinero('pago', '/api/pagos', 'grupoId', 'Pago', 'pago', 'el'),
@@ -747,6 +749,47 @@ function detallesCita(ctx: ContextoEvento): string[] {
 /** Montos de banca vienen en la moneda de la banca: se muestra el número sin símbolo. */
 function formatMontoBanca(monto: number, moneda: string | null): string {
   return moneda ? `${monto} ${moneda}` : String(monto);
+}
+
+// --- Transferencias con mesa de cambio: aviso de cobro / completada -------------------------
+
+/** "Transferencia MV-0005" (correlativo del movimiento, en la respuesta); sin correlativo, solo el rótulo. */
+export function etiquetaTransferenciaMesa(ctx: ContextoEvento): string {
+  const numero = num(rec(ctx.resBody.movimiento).numeroSistema);
+  return numero === null ? 'Transferencia con mesa de cambio' : `Transferencia MV-${pad4(numero)}`;
+}
+
+/** Cuentas de la transferencia (origen y destino) leídas de la respuesta: el body del cobro no las trae. */
+export function cuerpoCuentasTransferenciaMesa(ctx: ContextoEvento): Record<string, unknown> {
+  const movimiento = rec(ctx.resBody.movimiento);
+  const origen = txt(movimiento.bancaOrigenId);
+  if (!origen) return {};
+  const acreditado = num(ctx.resBody.montoAcreditado);
+  return {
+    tipo: 'transferencia',
+    bancaId: origen,
+    bancaDestinoId: txt(movimiento.bancaDestinoId),
+    monto: num(movimiento.monto),
+    moneda: txt(movimiento.moneda),
+    // Lo que llegó al destino en ESTE cobro; si no acreditó nada (ya completada), el monto destino del movimiento.
+    montoDestino: acreditado !== null && acreditado > 0 ? acreditado : num(movimiento.montoDestino),
+  };
+}
+
+/** Monto de la transferencia, comisión de la mesa (si la hay) y, si el cobro fue parcial, cuánto falta. */
+export function detallesTransferenciaMesaCompletada(ctx: ContextoEvento): string[] {
+  const movimiento = rec(ctx.resBody.movimiento);
+  const monto = num(movimiento.monto);
+  const comision = num(movimiento.mesaComision);
+  const pendiente = num(ctx.resBody.montoPendiente);
+  return [
+    ...(monto !== null ? [`Monto: ${formatMontoBanca(monto, txt(movimiento.moneda))}`] : []),
+    // El egreso de la comisión solo existe cuando el cobro completa la transferencia.
+    ...(comision !== null && comision > 0 && ctx.resBody.completada === true ? [`Comisión de la mesa: ${comision.toFixed(2)}`] : []),
+    // Cobro parcial: el cambista entregó solo una parte; avisa cuánto falta (moneda de la cuenta destino).
+    ...(pendiente !== null && pendiente > 0 ? [`Cobro PARCIAL: faltan ${pendiente.toFixed(2)} por cobrar al cambista`] : []),
+    ...linea('Observación', txt(ctx.reqBody.observacion)),
+  ];
 }
 
 // --- Modificación y anulación de dinero (pagos, cobros, movimientos de banca, notas) ---------

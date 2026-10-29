@@ -19,7 +19,7 @@ const sumaSaldos = (filas: readonly FilaTercero[]) => filas.reduce((s, f) => s +
  *  la tabla se apila como tarjetas (las mismas de la otra vista). */
 function TercerosTabla({ tipo, filas, acciones, hayCifras, vacio }: Props) {
   const t = TEXTO_TERCERO[tipo];
-  const hayAcciones = Boolean(acciones.onEditar || acciones.onDesactivar || acciones.onReactivar || acciones.onBorrar || acciones.onVincularTelegram);
+  const hayAcciones = Boolean(acciones.onEditar || acciones.onDesactivar || acciones.onReactivar || acciones.onBorrar || acciones.onVincularTelegram || acciones.onOcultar);
 
   const columnas = useMemo<Array<ColumnaTabla<FilaTerceroConExtra>>>(() => {
     const base: Array<ColumnaTabla<FilaTerceroConExtra>> = [
@@ -58,7 +58,12 @@ function TercerosTabla({ tipo, filas, acciones, hayCifras, vacio }: Props) {
         )),
         valorCsv: f => (f.telegramChatId ? 'Vinculado' : 'Sin vincular'),
       },
-      { clave: 'estado', titulo: 'Estado', valorOrden: f => (f.activo ? 'Activo' : 'Inactivo'), celda: f => <Insignia tono={f.activo ? 'marca' : 'neutral'}>{f.activo ? 'Activo' : 'Inactivo'}</Insignia> },
+      { clave: 'estado', titulo: 'Estado', valorOrden: f => (f.activo ? 'Activo' : 'Inactivo'), celda: f => (
+        <span className="inline-flex items-center gap-1">
+          <Insignia tono={f.activo ? 'marca' : 'neutral'}>{f.activo ? 'Activo' : 'Inactivo'}</Insignia>
+          {f.oculto && <Insignia tono="neutral" title="Solo el superadmin ve este proveedor.">Oculto</Insignia>}
+        </span>
+      ) },
     ];
     const acc: Array<ColumnaTabla<FilaTerceroConExtra>> = hayAcciones ? [
       { clave: 'acciones', titulo: 'Acciones', celda: f => <BotonesGestion fila={f} acciones={acciones} />, valorCsv: false },

@@ -11,7 +11,7 @@ import { obtenerTransformacion } from './transformacion-service.js';
 import { generarFacturaPdf, generarTicketPdf, nombreArchivoFactura, nombreArchivoTicket } from './document-generator.js';
 import { comprobantesReenviables } from './grupo-dinero.js';
 import { enviarACajas, lineaDeCategoria, lineasDeCuentas, chatIdParaBody, puedeEnviarACajas } from './grupo-cajas-service.js';
-import { avisoCajasSilenciado } from './grupo-silencio-service.js';
+import { avisoCajasSilenciado, eventoTocaProveedorOculto } from './grupo-silencio-service.js';
 import type { FacturaPublica } from './factura-service.js';
 import { columnasDiff, detallesDeCambios, esTablaDiff, type TablaDiff } from './grupo-diff.js';
 import {
@@ -452,6 +452,8 @@ export async function construirPayloadGrupo(
   const destino = destinoEvento(evento, filtro);
   // Dinero sin grupo de cajas configurado: no se envía (ni se gastan consultas armándolo).
   if (!destino) return null;
+  // Proveedor oculto por el superadmin: ni su nombre ni sus montos salen al grupo.
+  if (await eventoTocaProveedorOculto(evento, ctxBase)) return null;
   // Cajas apagadas por el superadmin (cuenta, proveedor o cliente): sin aviso ni más consultas.
   if (destino === 'cajas' && await avisoCajasSilenciado(evento, ctxBase)) return null;
   // Cajas: el chat es el de la banca que interviene o el general; sin ninguno no se arma el aviso.
@@ -468,7 +470,7 @@ export async function construirPayloadGrupo(
       ? leerAuditoriaReciente(evento.clave, encontrado.params.id ?? encontrado.params.grupoId ?? '', ahora)
       : Promise.resolve<ExtraEvento>({}),
     detallesPorDiff(hallado, pet, ctxBase.reqBody).catch((): undefined => undefined),
-    destino === 'cajas' && !evento.omitirLineasCuenta ? lineasDeCuentas(ctxBase.reqBody) : Promise.resolve<string[]>([]),
+    destino === 'cajas' && !evento.omitirLineasCuenta ? lineasDeCuentas(evento.cuerpoCuentas?.(ctxBase) ?? ctxBase.reqBody) : Promise.resolve<string[]>([]),
     leerExtraTransformacion(evento.clave, ctxBase, pet, encontrado.params.id ?? ''),
     destino === 'cajas' ? lineaDeCategoria(ctxBase.reqBody) : Promise.resolve<string[]>([]),
   ]);

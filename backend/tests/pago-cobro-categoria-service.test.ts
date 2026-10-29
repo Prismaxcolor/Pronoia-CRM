@@ -8,6 +8,7 @@ const bd = vi.hoisted(() => ({
   rpcLlamadas: [] as Array<{ nombre: string; args: Record<string, unknown> }>,
   updates: [] as Array<{ tabla: string; valores: Record<string, unknown>; ids: unknown }>,
   usos: {} as Record<string, unknown>,
+  todas: [] as unknown[],
 }));
 
 vi.mock('../src/config/supabase.js', () => ({
@@ -36,12 +37,15 @@ vi.mock('../src/config/supabase.js', () => ({
 vi.mock('../src/services/categorias-uso-service.js', () => ({
   categoriasDeUso: async (uso: string) => bd.usos[uso] ?? { categorias: [] },
 }));
+vi.mock('../src/services/categoria-service.js', () => ({
+  listarCategorias: async () => ({ categorias: bd.todas }),
+}));
 vi.mock('../src/services/telegram-eventos-service.js', () => ({ notificarPago: vi.fn() }));
 vi.mock('../src/utils/segundo-plano.js', () => ({ ejecutarEnSegundoPlano: vi.fn() }));
 
 import { registrarPago, registrarPagoMultiple } from '../src/services/pago-service.js';
 import { registrarCobroMultiple } from '../src/services/cobro-service.js';
-import { opcionesCategoriaCobro } from '../src/services/pago-categoria-service.js';
+import { opcionesCategoriaCobro, opcionesCategoriaPago } from '../src/services/pago-categoria-service.js';
 import type { RegistrarCobroMultipleInput } from '../src/schemas/cobros.js';
 import type { RegistrarPagoInput, RegistrarPagoMultipleInput } from '../src/schemas/pagos.js';
 
@@ -61,7 +65,7 @@ const pagoSimple: RegistrarPagoInput =
 
 beforeEach(() => {
   bd.rpcResultado = resultadoRpc; bd.rpcError = null; bd.errorUpdate = null;
-  bd.rpcLlamadas = []; bd.updates = []; bd.usos = {};
+  bd.rpcLlamadas = []; bd.updates = []; bd.usos = {}; bd.todas = [];
 });
 
 describe('registrarPagoMultiple: categoría fija', () => {
@@ -101,6 +105,49 @@ describe('registrarPagoMultiple: categoría fija', () => {
     bd.rpcError = { message: 'sin fondos' };
     expect(await registrarPagoMultiple(pagoMulti(), 'u1')).toEqual({ error: 'sin fondos' });
     expect(bd.updates).toHaveLength(0);
+  });
+});
+
+describe('registrarPagoMultiple: categoría elegida', () => {
+  const SERV = cat('serv', 'EGRESO');
+  const LUZ = { ...cat('luz', 'EGRESO'), padreId: 'serv' };
+  beforeEach(() => { bd.usos.pago_proveedor = { categorias: [MATERIA, SERV] }; bd.todas = [MATERIA, SERV, LUZ]; });
+
+  it('aplica la categoría elegida (general) en vez de la fija', async () => {
+    const r = await registrarPagoMultiple(pagoMulti({ categoriaId: 'serv' }), 'u1');
+    expect(r).toMatchObject({ categoriaId: 'serv' });
+    expect(bd.updates[0]).toMatchObject({ valores: { categoria_id: 'serv' } });
+  });
+  it('acepta una subcategoría de una categoría asignada', async () => {
+    const r = await registrarPagoMultiple(pagoMulti({ categoriaId: 'luz' }), 'u1');
+    expect(r).toMatchObject({ categoriaId: 'luz' });
+  });
+  it('sin elegir usa la fija por configuración', async () => {
+    const r = await registrarPagoMultiple(pagoMulti(), 'u1');
+    expect(r).toMatchObject({ categoriaId: 'materia' });
+  });
+  it('rechaza una categoría que no es de pago y no registra nada', async () => {
+    const r = await registrarPagoMultiple(pagoMulti({ categoriaId: 'nf' }), 'u1');
+    expect(r).toEqual({ error: expect.stringContaining('no es válida') });
+    expect(bd.rpcLlamadas).toHaveLength(0);
+  });
+  it('un cruce puro ignora la categoría elegida', async () => {
+    bd.rpcResultado = { ...resultadoRpc, movimientoPrincipalId: null, movimientoIds: [], numeroCruce: 3 };
+    const r = await registrarPagoMultiple(pagoMulti({ bancas: [], montoUsd: 0, categoriaId: 'serv' }), 'u1');
+    expect(r).toMatchObject({ categoriaId: null });
+  });
+});
+
+describe('opcionesCategoriaPago', () => {
+  it('lista las de egreso asignadas y las subcategorías vigentes de las generales', async () => {
+    const hija = { ...cat('luz', 'EGRESO'), padreId: 'materia' };
+    bd.usos.pago_proveedor = { categorias: [MATERIA, NF] };
+    bd.todas = [MATERIA, hija, NF];
+    const r = await opcionesCategoriaPago();
+    expect('categorias' in r && r.categorias.map(c => c.id)).toEqual(['materia', 'luz']);
+  });
+  it('vacío si no hay nada configurado', async () => {
+    expect(await opcionesCategoriaPago()).toEqual({ categorias: [] });
   });
 });
 
@@ -163,6 +210,15 @@ describe('opcionesCategoriaCobro', () => {
     bd.usos.cobro_cliente = { categorias: [NF, MATERIA, PCB] };
     const r = await opcionesCategoriaCobro();
     expect('categorias' in r && r.categorias.map(c => c.id)).toEqual(['nf', 'pcb']);
+  });
+  it('suma las subcategorías vigentes de la categoría general asignada', async () => {
+    const hija = { ...cat('nf-sub', 'INGRESO'), padreId: 'nf' };
+    const archivada = { ...cat('nf-vieja', 'INGRESO'), padreId: 'nf', activo: false };
+    bd.usos.cobro_cliente = { categorias: [NF] };
+    bd.todas = [NF, hija, archivada, PCB];
+    const r = await opcionesCategoriaCobro();
+    expect('categorias' in r && r.categorias.map(c => c.id)).toEqual(['nf', 'nf-sub']);
+    bd.todas = [];
   });
   it('vacío si no hay nada configurado y error si falla la lectura', async () => {
     expect(await opcionesCategoriaCobro()).toEqual({ categorias: [] });

@@ -7,6 +7,8 @@ import { validateBody } from '../middlewares/validate.js';
 import { crearFacturaSchema } from '../schemas/facturas.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
+import { exigirProveedorDelBodyVisible } from '../services/proveedor-documento.js';
+
 const router = Router();
 
 router.use(requireAuth);
@@ -34,6 +36,7 @@ router.post(
   '/',
   requirePermiso('facturacion', 'crear'),
   validateBody(crearFacturaSchema),
+  exigirProveedorDelBodyVisible('entidadId'),
   async (req, res) => {
     // Con clientRequestId un doble clic o reintento no crea una segunda factura (responde 200 con `repetida`).
     const envio = await ejecutarOperacionFinanciera(res, TIPO_OPERACION.facturaCompraCrear, req.body, req.user!.sub,

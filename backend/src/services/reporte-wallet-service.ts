@@ -4,6 +4,7 @@ import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { MENSAJE_ERROR_GENERICO } from '../utils/errores-bd.js';
 import { bancaPermitida, MENSAJE_SIN_ACCESO_BANCA, type BancasPermitidas } from '../utils/banca-acceso.js';
 import { logger } from '../utils/logger.js';
+import { idsProveedoresOcultos, sinProveedoresOcultos } from './proveedor-oculto.js';
 import { finDeDiaCaracas, type TasaHistorica } from '../utils/equivalente-usd.js';
 import { resolverSeleccion } from '../utils/categoria-wallet.js';
 import {
@@ -111,10 +112,10 @@ async function leerTasasDelRango(f: FiltroReporteCuenta): Promise<TasaHistorica[
 }
 
 async function leerMovimientosDeCuenta(f: FiltroReporteCuenta): Promise<MovimientoReporte[]> {
+  // Los pagos a proveedores ocultos no salen del reporte para quien no es superadmin (ni en las filas ni en el saldo inicial).
+  const ocultos = await idsProveedoresOcultos();
   const filas = await leerPaginado<Fila>((desde, hasta) =>
-    supabaseAdmin
-      .from('movimientos')
-      .select('*')
+    sinProveedoresOcultos(supabaseAdmin.from('movimientos').select('*'), ocultos, 'proveedor_id')
       .or(`banca_origen_id.eq.${f.bancaId},banca_destino_id.eq.${f.bancaId}`)
       .gte('fecha', f.desde)
       .lte('fecha', f.hasta)
@@ -127,10 +128,10 @@ async function leerMovimientosDeCuenta(f: FiltroReporteCuenta): Promise<Movimien
 
 /** Saldo de la cuenta al empezar el rango: lo que dejan todos sus movimientos vigentes anteriores a `desde`. */
 async function leerSaldoInicial(f: FiltroReporteCuenta): Promise<number> {
+  // Coherente con las filas del reporte: sin los movimientos de proveedores ocultos (el saldo mostrado es el visible para este usuario).
+  const ocultos = await idsProveedoresOcultos();
   const filas = await leerPaginado<Fila>((desde, hasta) =>
-    supabaseAdmin
-      .from('movimientos')
-      .select('*')
+    sinProveedoresOcultos(supabaseAdmin.from('movimientos').select('*'), ocultos, 'proveedor_id')
       .or(`banca_origen_id.eq.${f.bancaId},banca_destino_id.eq.${f.bancaId}`)
       .lt('fecha', f.desde)
       .order('fecha')
@@ -174,10 +175,9 @@ async function leerMovimientosParaCategorias(f: FiltroReporteCategorias, selecci
   const ids = seleccion ? [...seleccion] : null;
   // Con una selección acotada y sin "sin categoría" se pide a la BD solo lo necesario.
   const acotar = ids !== null && !f.sinCategoria && ids.length <= IDS_POR_CONSULTA;
+  const ocultos = await idsProveedoresOcultos();
   const filas = await leerPaginado<Fila>((desde, hasta) => {
-    let q = supabaseAdmin
-      .from('movimientos')
-      .select(COLUMNAS_REPORTE_CATEGORIAS)
+    let q = sinProveedoresOcultos(supabaseAdmin.from('movimientos').select(COLUMNAS_REPORTE_CATEGORIAS), ocultos, 'proveedor_id')
       .in('tipo', ['ingreso', 'egreso'])
       .eq('anulado', false)
       .gte('fecha', f.desde)

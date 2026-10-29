@@ -107,7 +107,12 @@
 --        round(m.mesa_monto_bruto - coalesce(m.mesa_comision, 0), 2) as neto_esperado
 --   from public.movimientos m
 --  where m.mesa_estado = 'completada' and not m.anulado
---    and coalesce(m.monto_destino, m.monto) <> round(m.mesa_monto_bruto - coalesce(m.mesa_comision, 0), 2);
+--    and coalesce(m.monto_destino, m.monto) - coalesce((select c.monto from public.movimientos c
+--                                                         where c.mesa_comision_de_id = m.id and not c.anulado), 0)
+--        <> round(m.mesa_monto_bruto - coalesce(m.mesa_comision, 0), 2);
+--    (con migration_mesa_cambio_comision_movimiento.sql la transferencia registra el BRUTO y su egreso de comisión resta la
+--     comisión; sin ella, o en transferencias anteriores, no hay egreso y monto_destino ya es el neto. Quita la subconsulta
+--     si esa migración aún no está aplicada: la columna mesa_comision_de_id no existe.)
 
 
 -- 5. Comisiones bancarias huérfanas (todas deben dar 0 filas) -------------------------------------------------------

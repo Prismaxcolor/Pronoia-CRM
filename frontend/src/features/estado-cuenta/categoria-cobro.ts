@@ -44,3 +44,29 @@ export function categoriaParaEnviar(
 export function categoriasBloqueanCobro(estado: { cargando: boolean; fallo: boolean }, hayDinero: boolean): boolean {
   return hayDinero && (estado.cargando || estado.fallo);
 }
+
+/** Opciones vigentes que admiten egresos (categorías para elegir al pagar a un proveedor). */
+export function opcionesDePago(categorias: readonly CategoriaWallet[]): CategoriaWallet[] {
+  return categorias.filter(c => c.activo && c.tipo !== 'INGRESO');
+}
+
+/**
+ * Categoría que se envía en un pago a proveedor: la elegida si es una de las opciones; null si no eligió (el servidor
+ * usa la fija por configuración) o si es un cruce puro, que no mueve dinero.
+ */
+export function categoriaPagoParaEnviar(
+  opciones: readonly CategoriaWallet[],
+  elegidaId: string | null,
+  esCrucePuro: boolean
+): string | null {
+  if (esCrucePuro) return null;
+  return opciones.some(c => c.id === elegidaId) ? elegidaId : null;
+}
+
+/**
+ * Pago a proveedor: mientras las categorías cargan no se puede registrar (se enviaría sin la elegida y sin que se note).
+ * Si la carga falló sí se puede: el pago usa la categoría predeterminada y el aviso ofrece Reintentar.
+ */
+export function categoriasBloqueanPago(estado: { cargando: boolean }, esCrucePuro: boolean): boolean {
+  return !esCrucePuro && estado.cargando;
+}

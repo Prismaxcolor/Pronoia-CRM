@@ -7,6 +7,7 @@ import { derivarEstadoFactura, type EstadoFacturaDerivado, type EstadoFacturaGua
 import { inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
 import { nombresDeUsuarios, ultimaEdicionDe, type AutoriaEdicion } from './autoria-documento.js';
 import { logger } from '../utils/logger.js';
+import { idsProveedoresOcultos, proveedorVisible, sinProveedoresOcultos } from './proveedor-oculto.js';
 
 export type TipoFactura = 'compra' | 'venta';
 /** 'anulada': se conserva para historial, pero ya no es deuda ni se puede pagar. */
@@ -171,10 +172,10 @@ export async function listarFacturas(
   opts: ListarFacturasOpts = {}
 ): Promise<FacturaPublica[]> {
   const cfg = CONFIG[tipo];
-  let query = supabaseAdmin
-    .from(cfg.tabla)
-    .select(selectJoins(cfg))
-    .order('created_at', { ascending: false });
+  const base = supabaseAdmin.from(cfg.tabla).select(selectJoins(cfg));
+  // Las facturas de compra de proveedores ocultos no las ve quien no es superadmin.
+  const visibles = tipo === 'compra' ? sinProveedoresOcultos(base, await idsProveedoresOcultos(), cfg.entidadCol) : base;
+  let query = visibles.order('created_at', { ascending: false });
 
   if (opts.desde) query = query.gte('created_at', inicioDiaNegocio(opts.desde));
   if (opts.hasta) query = query.lte('created_at', finDiaNegocio(opts.hasta));
@@ -200,6 +201,7 @@ export async function obtenerFactura(tipo: TipoFactura, id: string): Promise<Fac
     .maybeSingle();
 
   if (error || !data) return null;
+  if (tipo === 'compra' && !(await proveedorVisible((data as unknown as FacturaRow).proveedor_id))) return null;
   const publica = toPublico(data as unknown as FacturaRow, tipo);
   const [nombres, ultimaEdicion] = await Promise.all([
     nombresDeUsuarios([publica.createdBy]),

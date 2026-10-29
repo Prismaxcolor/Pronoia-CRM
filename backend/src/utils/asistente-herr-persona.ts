@@ -26,6 +26,7 @@ import {
   type Perfil,
 } from './asistente-herr-dinero.js';
 import { supabaseAdmin } from '../config/supabase.js';
+import { filtrarOcultos, sinOcultosDeTabla } from '../services/proveedor-oculto.js';
 import { coincidePorPalabras } from './asistente-similitud.js';
 
 const MAX_SUGERENCIAS = 5;
@@ -103,8 +104,8 @@ export const saldoPersona = definirHerramienta({
 });
 
 async function buscarEnLado(p: Perfil, nombre: string, limite: number) {
-  const { data } = await supabaseAdmin.from(p.tabla).select('nombre, activo').ilike('nombre', patronBusqueda(nombre)).order('nombre').limit(limite);
-  let encontrados = (data ?? []) as Array<{ nombre: string; activo?: boolean }>;
+  const { data } = await supabaseAdmin.from(p.tabla).select('id, nombre, activo').ilike('nombre', patronBusqueda(nombre)).order('nombre').limit(limite);
+  let encontrados = await sinOcultosDeTabla(p.tabla, (data ?? []) as Array<{ id: string; nombre: string; activo?: boolean }>);
   if (encontrados.length === 0) {
     encontrados = (await todosLosNombres(p)).filter(f => coincidePorPalabras(f.nombre, nombre)).slice(0, limite);
   }

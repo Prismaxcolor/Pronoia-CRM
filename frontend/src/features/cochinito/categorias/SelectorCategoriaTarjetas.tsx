@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Check, Search, Tag } from 'lucide-react';
+import { Check, ChevronLeft, Search, Tag } from 'lucide-react';
 import type { CategoriaWallet } from '@shared/types/index.js';
-import { colorTextoSobre } from './categorias-logica';
+import { agruparDosPasos, colorTextoSobre, padreAbiertoDeValor } from './categorias-logica';
 import { tarjetasDeCategorias, type TarjetaCategoria } from './selector-categoria-tarjetas';
 
 export interface SelectorCategoriaTarjetasProps {
@@ -44,7 +44,7 @@ function Tarjeta({ nombre, detalle, seleccionada, onElegir, imagen }: TarjetaPro
         <span className="flex aspect-[4/3] max-h-28 w-full items-center justify-center overflow-hidden">{imagen}</span>
         <span className="block p-2">
           <span className="block line-clamp-2 break-words text-xs text-text-primary" title={nombre}>{nombre}</span>
-          {detalle && <span className="block line-clamp-2 break-words text-[11px] text-text-muted" title={`en ${detalle}`}>en {detalle}</span>}
+          {detalle && <span className="block line-clamp-2 break-words text-[11px] text-text-muted" title={detalle}>{detalle}</span>}
         </span>
         {seleccionada && (
           <span className="pointer-events-none absolute left-1.5 top-1.5 rounded-full bg-brand-600 p-1 text-white" aria-hidden="true"><Check size={12} /></span>
@@ -63,19 +63,52 @@ function ImagenCategoria({ t }: { t: TarjetaCategoria }) {
   );
 }
 
+const enPadre = (t: TarjetaCategoria): string | null => (t.padreNombre ? `en ${t.padreNombre}` : null);
+
 /**
- * Selector de categoría en cuadrícula de tarjetas (imagen o color con inicial + nombre; la subcategoría muestra su categoría).
+ * Selector de categoría en cuadrícula de tarjetas (imagen o color con inicial + nombre) y en dos pasos:
+ * primero las categorías y, al tocar una que tiene subcategorías, aparecen estas junto a la opción de elegir
+ * solo la categoría general. Con texto en el buscador se muestran todas juntas (la subcategoría indica su categoría).
  * Mismo estilo que el selector de material de Pesaje y el de cuentas con imagen. Cada tarjeta es un botón real con aria-pressed.
  */
 function SelectorCategoriaTarjetas({ categorias, valor, onChange, tipoMovimiento, permitirSinCategoria = false, soloIds, etiqueta = 'Categoría' }: SelectorCategoriaTarjetasProps) {
   const [busqueda, setBusqueda] = useState('');
-  const tarjetas = useMemo(
-    () => tarjetasDeCategorias(categorias, { tipoMovimiento, soloIds, busqueda }),
-    [categorias, tipoMovimiento, soloIds, busqueda],
+  const disponibles = useMemo(
+    () => tarjetasDeCategorias(categorias, { tipoMovimiento, soloIds }),
+    [categorias, tipoMovimiento, soloIds],
   );
-  // "Sin categoría" se oculta mientras se busca: no es un resultado de la búsqueda.
-  const mostrarSin = permitirSinCategoria && busqueda.trim() === '';
-  const hayResultados = tarjetas.length > 0 || mostrarSin;
+  const [padreAbierto, setPadreAbierto] = useState<string | null>(() => padreAbiertoDeValor(valor, disponibles));
+  const buscando = busqueda.trim() !== '';
+  const tarjetas = useMemo(
+    () => (buscando ? tarjetasDeCategorias(categorias, { tipoMovimiento, soloIds, busqueda }) : disponibles),
+    [buscando, categorias, tipoMovimiento, soloIds, busqueda, disponibles],
+  );
+  const { raices, hijasDe } = useMemo(() => agruparDosPasos(disponibles), [disponibles]);
+  const padre = padreAbierto ? raices.find(r => r.id === padreAbierto) ?? null : null;
+  const subcategorias = padre ? hijasDe.get(padre.id) ?? [] : [];
+  const enSegundoPaso = !buscando && padre !== null && subcategorias.length > 0;
+  // "Sin categoría" solo en el primer paso y fuera de la búsqueda: no es un resultado de la búsqueda.
+  const mostrarSin = permitirSinCategoria && !buscando && !enSegundoPaso;
+  const visibles = buscando ? tarjetas : enSegundoPaso ? subcategorias : raices;
+  const hayResultados = visibles.length > 0 || mostrarSin || enSegundoPaso;
+
+  const tarjeta = (t: TarjetaCategoria) => {
+    const hijas = buscando ? [] : hijasDe.get(t.id) ?? [];
+    if (hijas.length === 0) {
+      return <Tarjeta key={t.id} nombre={t.nombre} detalle={enPadre(t)} seleccionada={valor === t.id} onElegir={() => onChange(t.id)} imagen={<ImagenCategoria t={t} />} />;
+    }
+    const marcada = valor === t.id || hijas.some(h => h.id === valor);
+    return (
+      <Tarjeta
+        key={t.id}
+        nombre={t.nombre}
+        detalle={`${hijas.length} ${hijas.length === 1 ? 'subcategoría' : 'subcategorías'} ›`}
+        seleccionada={marcada}
+        onElegir={() => setPadreAbierto(t.id)}
+        imagen={<ImagenCategoria t={t} />}
+      />
+    );
+  };
 
   return (
     <div>
@@ -90,9 +123,18 @@ function SelectorCategoriaTarjetas({ categorias, valor, onChange, tipoMovimiento
           className={CAMPO_BUSQUEDA}
         />
       </div>
-      <p className="sr-only" role="status">{tarjetas.length === 1 ? '1 categoría' : `${tarjetas.length} categorías`}</p>
+      {enSegundoPaso && padre && (
+        <button
+          type="button"
+          onClick={() => setPadreAbierto(null)}
+          className="mb-3 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-brand-700 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+        >
+          <ChevronLeft size={16} aria-hidden="true" /> Categorías · <span className="text-text-primary">{padre.nombre}</span>
+        </button>
+      )}
+      <p className="sr-only" role="status">{visibles.length === 1 ? '1 categoría' : `${visibles.length} categorías`}</p>
       {hayResultados ? (
-        <ul aria-label={etiqueta} className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <ul aria-label={enSegundoPaso && padre ? `Subcategorías de ${padre.nombre}` : etiqueta} className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {mostrarSin && (
             <Tarjeta
               nombre="Sin categoría"
@@ -101,20 +143,20 @@ function SelectorCategoriaTarjetas({ categorias, valor, onChange, tipoMovimiento
               imagen={<span className="flex h-full w-full items-center justify-center bg-surface-alt text-text-muted" aria-hidden="true"><Tag size={28} /></span>}
             />
           )}
-          {tarjetas.map(t => (
+          {enSegundoPaso && padre && (
             <Tarjeta
-              key={t.id}
-              nombre={t.nombre}
-              detalle={t.padreNombre}
-              seleccionada={valor === t.id}
-              onElegir={() => onChange(t.id)}
-              imagen={<ImagenCategoria t={t} />}
+              nombre={`Solo ${padre.nombre}`}
+              detalle="categoría general, sin subcategoría"
+              seleccionada={valor === padre.id}
+              onElegir={() => onChange(padre.id)}
+              imagen={<ImagenCategoria t={padre} />}
             />
-          ))}
+          )}
+          {visibles.map(tarjeta)}
         </ul>
       ) : (
         <p className="py-6 text-center text-sm text-text-muted">
-          {busqueda.trim() ? 'Ninguna categoría coincide con la búsqueda.' : 'No hay categorías disponibles para elegir.'}
+          {buscando ? 'Ninguna categoría coincide con la búsqueda.' : 'No hay categorías disponibles para elegir.'}
         </p>
       )}
     </div>

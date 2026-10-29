@@ -45,6 +45,19 @@ export interface CambistaConSaldo extends Cambista {
   asientos: number;
 }
 
+/** Comisión de la mesa de una transferencia; informativa (no mueve el saldo: ya va incluida en lo cobrado). */
+export interface ComisionTransferenciaMesa {
+  /** En la moneda de la cuenta destino. */
+  monto: number;
+  moneda: string;
+  /** Equivalente en USD, proporcional al CARGO. */
+  montoUsd: number;
+  /** Correlativo del movimiento de Wallet (MV-); null si es anterior al correlativo. */
+  movimientoNumero: number | null;
+  /** true si la transferencia está completada (la comisión ya va incluida en lo cobrado). */
+  completada: boolean;
+}
+
 export interface FilaEstadoCuentaMesa {
   id: string;
   numero: number;
@@ -64,6 +77,8 @@ export interface FilaEstadoCuentaMesa {
   cargo: number;
   cobro: number;
   saldoCorrido: number;
+  /** Comisión de la mesa de la transferencia (solo en su CARGO vigente); null/ausente si no hay. */
+  comision?: ComisionTransferenciaMesa | null;
 }
 
 export interface EstadoCuentaMesa {
@@ -75,6 +90,8 @@ export interface EstadoCuentaMesa {
   totalCargos: number;
   totalCobros: number;
   saldoFinal: number;
+  /** Comisión pactada (USD) de las transferencias cargadas en el periodo; informativo. Ausente en backends anteriores. */
+  totalComisionesUsd?: number;
 }
 
 /** Correlativo propio por asiento: MC-0001. Espejo de backend/src/utils/mesa-cambio.ts. */

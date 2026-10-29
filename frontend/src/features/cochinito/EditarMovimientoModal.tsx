@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Modal from '../../components/Modal';
+import TextareaAutoCrecimiento from '../../components/TextareaAutoCrecimiento';
 import { X } from 'lucide-react';
 import { editarMovimiento, type EditarMovimientoInput } from '../../services/transaccion-edicion-service';
 import type { Banca, Movimiento } from '@shared/types/index.js';
@@ -156,7 +157,7 @@ function EditarMovimientoModal({ movimiento, bancas, onClose, onGuardado }: Prop
 
         <div>
           <label className={labelClass}>Concepto</label>
-          <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={200} className={inputClass} />
+          <TextareaAutoCrecimiento unaLinea value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={200} className={inputClass} />
         </div>
 
         <CampoLlaveEdicion entidadTipo="movimiento_banca" entidadId={movimiento.id} valor={llave} onChange={setLlave} />

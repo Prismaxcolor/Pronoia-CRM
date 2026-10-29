@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
+import { proveedorVisible } from './proveedor-oculto.js';
 import { cuentaVisible, TEXTO_CUENTA_RESTRINGIDA, type BancasPermitidas } from '../utils/banca-acceso.js';
 import { totalesEstadoCuenta } from '../utils/estado-cuenta-totales.js';
 import { leerPaginado, trocear } from '../utils/paginacion.js';
@@ -138,6 +139,8 @@ export interface CruceCrudo {
   grupoId: string;
   numero: number | null;
   fecha: string;
+  /** Instante de registro (cruces.created_at). */
+  instante?: string | null;
   descripcion: string | null;
   /** Suma de las facturas saldadas por este cruce (USD). */
   montoCruzado: number;
@@ -203,12 +206,33 @@ export function agruparPagos(rows: PagoCrudo[]): PagoCrudo[] {
     const existente = grupos.get(clave);
     if (existente) {
       existente.monto = Number(existente.monto) + Number(r.monto);
+      // El documento nace con su primera fila: se queda con el instante más temprano del grupo.
+      if (r.instante && (!existente.instante || Date.parse(r.instante) < Date.parse(existente.instante))) existente.instante = r.instante;
     } else {
       grupos.set(clave, { ...r, monto: Number(r.monto) });
     }
   }
 
   return [...grupos.values()];
+}
+
+const idDeEntrada = (e: EntradaEstadoCuenta): string => e.facturaId ?? e.notaId ?? e.pagoId ?? '';
+
+/**
+ * Orden del estado de cuenta: por instante de creación del documento (created_at / creado_en), no por la fecha
+ * del documento. Sin instante (dato legacy) se usa el inicio de su fecha. Empate: correlativo (numérico, así
+ * C-0002 va antes que C-0010) y luego id, para que el orden y el saldo corrido sean siempre los mismos.
+ * Ordena `entradas` in situ (es un arreglo recién armado, no un dato externo).
+ */
+export function ordenarPorCreacion(entradas: EntradaEstadoCuenta[]): EntradaEstadoCuenta[] {
+  const momento = (e: EntradaEstadoCuenta): number => {
+    const ms = Date.parse(e.instante ?? e.fecha);
+    return Number.isNaN(ms) ? 0 : ms;
+  };
+  return entradas.sort((a, b) =>
+    momento(a) - momento(b)
+    || (a.referencia ?? '').localeCompare(b.referencia ?? '', 'es', { numeric: true })
+    || idDeEntrada(a).localeCompare(idDeEntrada(b)));
 }
 
 /**
@@ -262,6 +286,7 @@ export function construirEstadoCuenta(
   for (const c of datosCruce.cruces) {
     entradas.push({
       fecha: soloFecha(c.fecha),
+      instante: c.instante ?? null,
       tipo: 'cruce',
       descripcion: sinTextoCombinado(c.descripcion) ?? 'Cruce de facturas con adelantos y notas',
       referencia: c.numero != null ? (entidad.tipo === 'proveedor' ? formatCodigoCruce(c.numero) : formatCodigoCruceCliente(c.numero)) : null,
@@ -298,7 +323,7 @@ export function construirEstadoCuenta(
     });
   }
 
-  entradas.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  ordenarPorCreacion(entradas);
 
   // Única función de totales (compartida con el frontend): cargos, abonos y saldo en centavos exactos.
   const { totalCargos: facturado, totalAbonos: pagado, saldoFinal: saldo } = totalesEstadoCuenta(entradas);
@@ -348,6 +373,7 @@ export async function obtenerEstadoCuenta(
     .eq('id', id)
     .maybeSingle();
   if (errEnt || !entidad) return null;
+  if (esProveedor && !(await proveedorVisible(id))) return null; // proveedor oculto: igual que si no existiera
 
   // Las facturas anuladas (ticket corregido con llave de edición) no son deuda: no entran al estado de cuenta.
   let qFacturas = supabaseAdmin.from(tablaFacturas).select('id, numero, total, descripcion, created_at').eq(columnaEntidad, id).neq('estado', 'anulada');
@@ -478,12 +504,12 @@ async function cargarDatosCruce(
   };
   const columnaEntidad = esProveedor ? 'proveedor_id' : 'cliente_id';
 
-  let qCruces = supabaseAdmin.from('cruces').select('grupo_id, numero, fecha, descripcion').eq(columnaEntidad, entidadId).eq('anulado', false);
+  let qCruces = supabaseAdmin.from('cruces').select('grupo_id, numero, fecha, descripcion, created_at').eq(columnaEntidad, entidadId).eq('anulado', false);
   if (desde) qCruces = qCruces.gte('fecha', desde);
   if (hasta) qCruces = qCruces.lte('fecha', hasta);
   const { data: crucesData, error: errCruces } = await qCruces;
   if (errCruces) return incompleto('cruces', errCruces.message);
-  const crucesRows = (crucesData as Array<{ grupo_id: string; numero: number | null; fecha: string; descripcion: string | null }> | null) ?? [];
+  const crucesRows = (crucesData as Array<{ grupo_id: string; numero: number | null; fecha: string; descripcion: string | null; created_at?: string | null }> | null) ?? [];
 
   const adelantoIds = [...new Set(pagos.filter(p => p.subtipo === 'adelanto' || p.subtipo === 'anticipo').map(p => p.grupoId ?? p.id))];
   const crucesIds = crucesRows.map(c => c.grupo_id);
@@ -496,6 +522,7 @@ async function cargarDatosCruce(
         grupoId: c.grupo_id,
         numero: c.numero,
         fecha: c.fecha,
+        instante: c.created_at ?? null,
         descripcion: c.descripcion,
         montoCruzado: Math.round((cruzadoPorGrupo.get(c.grupo_id) ?? 0) * 100) / 100,
       })),

@@ -270,21 +270,6 @@ function CochinitPage() {
       />
       <NavegacionWallet />
 
-      <FiltrosBarra
-        rango={{ desde: str(filtros.desde), hasta: str(filtros.hasta), onCambiar: r => cambiar({ desde: r.desde, hasta: r.hasta }) }}
-        selectores={[
-          { id: 'cochinito-tipo', etiqueta: 'Tipo de movimiento', valor: str(filtros.tipo), opciones: OPCIONES_TIPO, onCambiar: v => cambiar({ tipo: v }) },
-          { id: 'cochinito-categoria', etiqueta: 'Categoría', valor: categoriaFiltro, opciones: opcionesCategoria, cargando: false, deshabilitado: sinCategorias, aviso: avisoSinCategorias, textoTodas: sinCategorias ? 'Sin categorías' : undefined, onCambiar: (v: string | undefined) => cambiar({ categoria: v, subcategoria: undefined }) },
-        ]}
-        buscador={{ id: 'cochinito-q', valor: str(filtros.q), onCambiar: v => cambiar({ q: v }), placeholder: 'Descripción, referencia, N° o proveedor…' }}
-        avanzados={[
-          { id: 'cochinito-banca', etiqueta: 'Banca', valor: bancaFiltro, opciones: bancas.map(b => ({ valor: b.id, etiqueta: b.nombre })), cargando: false, onCambiar: v => cambiar({ banca: v }) },
-          { id: 'cochinito-subcategoria', etiqueta: 'Subcategoría', valor: subcategoriaFiltro, opciones: opcionesSubcategoria, cargando: false, deshabilitado: sinCategorias || opcionesSubcategoria.length === 0, aviso: avisoSinCategorias, textoTodas: sinCategorias ? 'Sin categorías' : undefined, onCambiar: (v: string | undefined) => cambiar({ subcategoria: v }) },
-          { id: 'cochinito-subtipo', etiqueta: 'Pago o adelanto', valor: str(filtros.subtipo), opciones: OPCIONES_SUBTIPO, onCambiar: v => cambiar({ subtipo: v }) },
-        ]}
-        onLimpiar={limpiar}
-      />
-
       <section aria-label="Indicadores principales">
         <KpisCochinito kpis={kpis} movimientos={movimientosPeriodo} periodo={periodo} tasaBinance={tasasUsd.cargando ? undefined : tasasUsd.tasas.binance} />
       </section>
@@ -364,8 +349,22 @@ function CochinitPage() {
 
       <Bloque
         titulo="Movimientos"
-        queEstasViendo={`Los movimientos con fecha dentro del periodo (${bancaFiltro ? 'solo de la banca elegida, ' : ''}según los filtros de arriba), con su monto en la moneda de la banca y en USD. ${movFiltrados.length} ${movFiltrados.length === 1 ? 'resultado' : 'resultados'}.`}
+        queEstasViendo={`Los movimientos con fecha dentro del periodo (${bancaFiltro ? 'solo de la banca elegida, ' : ''}según los filtros de aquí abajo), con su monto en la moneda de la banca y en USD. ${movFiltrados.length} ${movFiltrados.length === 1 ? 'resultado' : 'resultados'}.`}
       >
+        <FiltrosBarra
+          rango={{ desde: str(filtros.desde), hasta: str(filtros.hasta), onCambiar: r => cambiar({ desde: r.desde, hasta: r.hasta }) }}
+          selectores={[
+            { id: 'cochinito-tipo', etiqueta: 'Tipo de movimiento', valor: str(filtros.tipo), opciones: OPCIONES_TIPO, onCambiar: v => cambiar({ tipo: v }) },
+            { id: 'cochinito-categoria', etiqueta: 'Categoría', valor: categoriaFiltro, opciones: opcionesCategoria, cargando: false, deshabilitado: sinCategorias, aviso: avisoSinCategorias, textoTodas: sinCategorias ? 'Sin categorías' : undefined, onCambiar: (v: string | undefined) => cambiar({ categoria: v, subcategoria: undefined }) },
+          ]}
+          buscador={{ id: 'cochinito-q', valor: str(filtros.q), onCambiar: v => cambiar({ q: v }), placeholder: 'Descripción, referencia, N° o proveedor…' }}
+          avanzados={[
+            { id: 'cochinito-banca', etiqueta: 'Banca', valor: bancaFiltro, opciones: bancas.map(b => ({ valor: b.id, etiqueta: b.nombre })), cargando: false, onCambiar: v => cambiar({ banca: v }) },
+            { id: 'cochinito-subcategoria', etiqueta: 'Subcategoría', valor: subcategoriaFiltro, opciones: opcionesSubcategoria, cargando: false, deshabilitado: sinCategorias || opcionesSubcategoria.length === 0, aviso: avisoSinCategorias, textoTodas: sinCategorias ? 'Sin categorías' : undefined, onCambiar: (v: string | undefined) => cambiar({ subcategoria: v }) },
+            { id: 'cochinito-subtipo', etiqueta: 'Pago o adelanto', valor: str(filtros.subtipo), opciones: OPCIONES_SUBTIPO, onCambiar: v => cambiar({ subtipo: v }) },
+          ]}
+          onLimpiar={limpiar}
+        />
         <Suspense fallback={<SkeletonBloque alto="h-64" etiqueta="Cargando movimientos" />}>
           <TablaMovimientos
             filas={movFiltrados}

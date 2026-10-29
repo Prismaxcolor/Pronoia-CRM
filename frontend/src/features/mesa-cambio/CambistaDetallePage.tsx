@@ -74,6 +74,9 @@ function CambistaDetallePage() {
             <div className="rounded-xl border border-border bg-surface p-4">
               <p className="text-xs text-text-secondary">Cargos del periodo</p>
               <p className="text-xl font-bold tabular-nums">USD {fmt(estado.totalCargos)}</p>
+              {(estado.totalComisionesUsd ?? 0) > 0 && (
+                <p className="text-xs text-text-muted mt-1">Comisión pactada de las transferencias: USD {fmt(estado.totalComisionesUsd ?? 0)}</p>
+              )}
             </div>
             <div className="rounded-xl border border-border bg-surface p-4">
               <p className="text-xs text-text-secondary">Cobros del periodo</p>
@@ -131,6 +134,11 @@ function CambistaDetallePage() {
                         </span>
                         {f.movimientoId && (
                           <Link to={rutaDetalleMovimiento(f.movimientoId)} className="block text-xs text-brand-600 hover:underline">Ver la transferencia de Wallet</Link>
+                        )}
+                        {f.comision && (
+                          <span className="block text-xs text-text-muted">
+                            {f.comision.completada ? 'Comisión de la mesa' : 'Comisión pactada'}: {f.comision.moneda} {fmt(f.comision.monto)} (≈ USD {fmt(f.comision.montoUsd)}{f.comision.completada ? ', incluida en lo cobrado' : ''})
+                          </span>
                         )}
                         {f.tasa != null && <span className="block text-xs text-text-muted">Tasa informativa: {fmt(f.tasa)}</span>}
                         {f.anulado && <span className="block text-xs">Anulado: {f.anuladoMotivo} (era USD {fmt(f.montoUsd)})</span>}

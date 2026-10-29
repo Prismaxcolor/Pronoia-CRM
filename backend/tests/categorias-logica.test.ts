@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  armarArbol, categoriaIdDeEleccion, colorTextoSobre, eleccionDeCategoriaId, esHexValido, etiquetaCategoria, indicePorId,
+  agruparDosPasos, padreAbiertoDeValor, armarArbol, categoriaIdDeEleccion, colorTextoSobre, eleccionDeCategoriaId, esHexValido, etiquetaCategoria, indicePorId,
   mensajeEleccion, normalizarHex, opcionesParaTipo, resolverFiltroCategoria, ELECCION_VACIA,
   hayOpcionesCategoria, AVISO_SIN_CATEGORIAS, RUTA_CATEGORIAS, filtrosCategoriaDeshabilitados,
 } from '../../frontend/src/features/cochinito/categorias/categorias-logica';
@@ -126,5 +126,26 @@ describe('categorias siempre visibles (sin categorias creadas)', () => {
   it('los filtros de categoria se deshabilitan solo si no existe ninguna categoria', () => {
     expect(filtrosCategoriaDeshabilitados([])).toBe(true);
     expect(filtrosCategoriaDeshabilitados(todas)).toBe(false);
+  });
+});
+
+describe('selector de categoría en dos pasos', () => {
+  const op = (id: string, padreId: string | null = null) => ({ id, padreId });
+  const lista = [op('serv'), op('luz', 'serv'), op('agua', 'serv'), op('ventas'), op('huerfana', 'archivada')];
+
+  it('agrupa: primero las categorías, después las subcategorías de cada una', () => {
+    const { raices, hijasDe } = agruparDosPasos(lista);
+    expect(raices.map(r => r.id)).toEqual(['serv', 'ventas', 'huerfana']);
+    expect(hijasDe.get('serv')?.map(h => h.id)).toEqual(['luz', 'agua']);
+    expect(hijasDe.get('ventas')).toBeUndefined();
+  });
+  it('una categoría sin subcategorías se elige directo (queda en el primer paso)', () => {
+    expect(agruparDosPasos([op('ventas')]).raices.map(r => r.id)).toEqual(['ventas']);
+  });
+  it('abre el segundo paso solo cuando el valor es una subcategoría', () => {
+    expect(padreAbiertoDeValor('luz', lista)).toBe('serv');
+    expect(padreAbiertoDeValor('serv', lista)).toBeNull();
+    expect(padreAbiertoDeValor('huerfana', lista)).toBeNull();
+    expect(padreAbiertoDeValor(null, lista)).toBeNull();
   });
 });

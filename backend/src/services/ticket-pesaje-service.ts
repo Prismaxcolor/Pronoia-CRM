@@ -4,6 +4,7 @@ import { llamarRpcCrear } from './idempotencia-service.js';
 import type { CrearTicketInput, CompletarTicketInput, EditarTicketInput, PesajeGlobalInput } from '../schemas/tickets-pesaje.js';
 import { notificarTicket, notificarFacturasAnuladas, huboCambioVisible } from './telegram-eventos-service.js';
 import { obtenerFactura } from './factura-service.js';
+import { idsProveedoresOcultos, proveedorVisible, sinProveedoresOcultos } from './proveedor-oculto.js';
 import { parsearEfectosFactura } from '../utils/factura-ticket-edicion.js';
 import {
   contarSecundarios,
@@ -235,10 +236,9 @@ export interface ListarTicketsOpts {
 }
 
 export async function listarTickets(opts: ListarTicketsOpts = {}): Promise<TicketPublico[]> {
-  let query = supabaseAdmin
-    .from('tickets_pesaje')
-    .select(SELECT_TICKET)
-    .order('created_at', { ascending: false });
+  // entidad_id es un proveedor solo en los tickets de compra; los de proveedores ocultos no los ve quien no es superadmin.
+  const base = sinProveedoresOcultos(supabaseAdmin.from('tickets_pesaje').select(SELECT_TICKET), await idsProveedoresOcultos(), 'entidad_id', 'tipo.neq.compra');
+  let query = base.order('created_at', { ascending: false });
 
   if (opts.soloNoFacturados) query = query.eq('facturado', false);
   if (opts.entidadId) query = query.eq('entidad_id', opts.entidadId);
@@ -282,6 +282,7 @@ export async function obtenerTicket(id: string): Promise<TicketPublico | null> {
 
   if (error || !data) return null;
   const row = data as unknown as TicketRow;
+  if (row.tipo === 'compra' && !(await proveedorVisible(row.entidad_id))) return null;
   const codigos = await codigosDePrincipales([row]);
   const pesajesGlobalesUnidos = row.estado === 'completo' ? await pesajesGlobalesDeUnidos(row.id, formatCodigoPesaje) : [];
   const [nombres, ultimaEdicion] = await Promise.all([

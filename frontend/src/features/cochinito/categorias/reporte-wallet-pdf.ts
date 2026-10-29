@@ -106,18 +106,13 @@ function opcionesTablaCuenta(doc: any, filas: readonly FilaCuenta[], moneda: str
   };
 }
 
-/**
- * Reporte imprimible de los movimientos de una cuenta o caja en un rango de fechas (con categoría, entradas, salidas y neto).
- * Máximo FILAS_POR_PAGINA_PDF movimientos por página; la última lleva los totales. En cuentas en Bs agrega el equivalente en USD.
- * `filtro` (opcional) solo se imprime como aviso: las filas y totales que llegan en `r` ya vienen filtrados.
- */
-export async function descargarReporteCuentaPDF(r: ReporteCuenta, modo: ModoPdf = 'descargar', filtro?: string): Promise<ArchivoPdf | undefined> {
-  const { doc, autoTable } = await nuevoDocumento();
+/** Dibuja una cuenta (encabezado y tablas) desde la página actual del documento. */
+function dibujarCuenta(doc: any, autoTable: any, r: ReporteCuenta, filtro: string | undefined, titulo: string): void {
   const moneda = etiquetaMoneda(r.banca.moneda);
   const conUsd = r.banca.moneda === 'VES';
   const aviso = filtro?.trim() ? [`Filtrado por N°: ${filtro.trim()}`] : [];
   const saldos = r.saldoInicial != null && r.saldoFinal != null ? [`Saldo inicial: ${moneda} ${fmt(r.saldoInicial)} · Saldo final: ${moneda} ${fmt(r.saldoFinal)}`] : [];
-  const y = encabezado(doc, 'Movimientos de la cuenta', [`${r.banca.nombre} · ${moneda}`, `Del ${formatearFecha(r.desde)} al ${formatearFecha(r.hasta)}`, ...saldos, ...aviso]);
+  const y = encabezado(doc, titulo, [`${r.banca.nombre} · ${moneda}`, `Del ${formatearFecha(r.desde)} al ${formatearFecha(r.hasta)}`, ...saldos, ...aviso]);
   const trozos = partirEnTrozos(r.filas);
   const paginas: readonly FilaCuenta[][] = trozos.length > 0 ? trozos : [[]];
   paginas.forEach((filas, i) => {
@@ -129,8 +124,39 @@ export async function descargarReporteCuentaPDF(r: ReporteCuenta, modo: ModoPdf 
       ...(esUltimo ? { foot: pieCuenta(r, conUsd, aviso.length > 0) } : {}),
     });
   });
+}
+
+/**
+ * Reporte imprimible de los movimientos de una cuenta o caja en un rango de fechas (con categoría, entradas, salidas y neto).
+ * Máximo FILAS_POR_PAGINA_PDF movimientos por página; la última lleva los totales. En cuentas en Bs agrega el equivalente en USD.
+ * `filtro` (opcional) solo se imprime como aviso: las filas y totales que llegan en `r` ya vienen filtrados.
+ */
+export async function descargarReporteCuentaPDF(r: ReporteCuenta, modo: ModoPdf = 'descargar', filtro?: string): Promise<ArchivoPdf | undefined> {
+  return descargarReportesCuentasPDF([r], modo, filtro);
+}
+
+/**
+ * Reporte de varias cuentas (o todas) en un solo PDF: cada cuenta empieza en su propia página con sus tablas y totales,
+ * en su moneda (nunca se suman Bs con USD). Con una sola cuenta es el mismo reporte de siempre.
+ * `todas` solo cambia el nombre del archivo.
+ */
+export async function descargarReportesCuentasPDF(
+  reportes: readonly ReporteCuenta[],
+  modo: ModoPdf = 'descargar',
+  filtro?: string,
+  todas = false,
+): Promise<ArchivoPdf | undefined> {
+  const primero = reportes[0];
+  if (!primero) return undefined;
+  const { doc, autoTable } = await nuevoDocumento();
+  const varias = reportes.length > 1;
+  reportes.forEach((r, i) => {
+    if (i > 0) doc.addPage();
+    dibujarCuenta(doc, autoTable, r, filtro, varias ? `Movimientos de la cuenta (${i + 1} de ${reportes.length})` : 'Movimientos de la cuenta');
+  });
   pieDeFecha(doc);
-  return entregarPdf(doc, nombreArchivoReporte('Movimientos', r.banca.nombre, r.desde, r.hasta), modo);
+  const entidad = !varias ? primero.banca.nombre : todas ? 'Todas las cuentas' : `${reportes.length} cuentas`;
+  return entregarPdf(doc, nombreArchivoReporte('Movimientos', entidad, primero.desde, primero.hasta), modo);
 }
 
 type FilaCategoria = ReturnType<typeof filasPorMoneda>[number];

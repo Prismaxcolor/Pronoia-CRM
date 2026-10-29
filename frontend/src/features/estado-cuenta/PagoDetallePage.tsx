@@ -15,6 +15,8 @@ import { anularPagoCobro } from '../../services/transaccion-edicion-service';
 import { useToast } from '../../hooks/use-toast-context';
 import EditarPagoModal from './EditarPagoModal';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
+import NavegacionDocumentos from '../../components/NavegacionDocumentos';
+import { useVecinosEstadoCuenta } from './useVecinosEstadoCuenta';
 
 interface Props {
   tipoEntidad: TipoEntidad;
@@ -55,6 +57,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
   const toast = useToast();
   const [modal, setModal] = useState<'editar' | 'anular' | null>(null);
   const tipoOperacion = esProveedor ? 'pago' : 'cobro';
+  const vecinos = useVecinosEstadoCuenta(tipoEntidad, entidadId, grupoId);
 
   useEffect(() => {
     let vigente = true;
@@ -97,6 +100,8 @@ function PagoDetallePage({ tipoEntidad }: Props) {
       <div className="hidden print:flex items-center justify-end mb-6">
         <img src="/pronoia-icon.png" alt="Pronoia" className="w-14 h-14" />
       </div>
+
+      <NavegacionDocumentos nombre="documento" {...vecinos} />
 
       {/* Cabecera del estándar. Las migas son navegación: no se imprimen. */}
       <div className="print:[&_nav]:hidden">

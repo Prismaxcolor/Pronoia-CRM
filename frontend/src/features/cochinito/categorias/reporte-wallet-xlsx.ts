@@ -46,7 +46,7 @@ function totalesCuenta(r: ReporteCuenta, conUsd: boolean, filtrado: boolean): Ro
 }
 
 /** Hoja de los movimientos de una cuenta o caja. `filtro` es el texto de búsqueda por N° (si lo hay); las filas de `r` ya vienen filtradas. */
-export function hojaReporteCuenta(r: ReporteCuenta, filtro = ''): HojaXlsx {
+export function hojaReporteCuenta(r: ReporteCuenta, filtro = '', nombreHoja = 'Movimientos'): HojaXlsx {
   const moneda = etiquetaMoneda(r.banca.moneda);
   const conUsd = r.banca.moneda === 'VES';
   const aviso = filtro.trim() ? ` · Filtrado por N°: ${filtro.trim()}` : '';
@@ -58,7 +58,7 @@ export function hojaReporteCuenta(r: ReporteCuenta, filtro = ''): HojaXlsx {
     [],
   ];
   return {
-    nombre: 'Movimientos',
+    nombre: nombreHoja,
     filas: [...encabezado, cabeceraCuenta(moneda, conUsd), ...r.filas.map(f => filaCuenta(f, conUsd)), [], ...totalesCuenta(r, conUsd, aviso !== '')],
     anchos: [12, 12, 20, 36, 18, 22, 26, 16, 16, 16, ...(conUsd ? [14] : []), 12],
     filasFijas: encabezado.length + 1,
@@ -120,6 +120,20 @@ export function hojasReporteCategorias(r: ReporteCategorias, seleccion: string):
 
 export const nombreXlsxReporteCuenta = (r: ReporteCuenta): string => nombreArchivoXlsx(['Reporte', r.banca.nombre, `${r.desde}-a-${r.hasta}`]);
 export const nombreXlsxReporteCategorias = (r: ReporteCategorias): string => nombreArchivoXlsx(['Reporte-categorias', `${r.desde}-a-${r.hasta}`]);
+
+/** Una hoja por cuenta (cada una en su moneda). Con una sola cuenta la hoja se llama "Movimientos", como siempre. */
+export const hojasReportesCuentas = (reportes: readonly ReporteCuenta[], filtro = ''): HojaXlsx[] =>
+  reportes.map(r => hojaReporteCuenta(r, filtro, reportes.length > 1 ? r.banca.nombre : 'Movimientos'));
+
+export function nombreXlsxReportesCuentas(reportes: readonly ReporteCuenta[], todas = false): string {
+  const [primero] = reportes;
+  if (!primero) return nombreArchivoXlsx(['Reporte']);
+  if (reportes.length === 1) return nombreXlsxReporteCuenta(primero);
+  return nombreArchivoXlsx(['Reporte', todas ? 'Todas-las-cuentas' : `${reportes.length}-cuentas`, `${primero.desde}-a-${primero.hasta}`]);
+}
+
+export const descargarReportesCuentasXlsx = (reportes: readonly ReporteCuenta[], filtro = '', todas = false): Promise<void> =>
+  descargarXlsx(nombreXlsxReportesCuentas(reportes, todas), hojasReportesCuentas(reportes, filtro));
 
 export const descargarReporteCuentaXlsx = (r: ReporteCuenta, filtro = ''): Promise<void> => descargarXlsx(nombreXlsxReporteCuenta(r), [hojaReporteCuenta(r, filtro)]);
 

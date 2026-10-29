@@ -13,7 +13,7 @@ interface Props {
   estadoSaldos: EstadoSaldos;
   /** Segmento de la lista que se está viendo (p. ej. «nacionales»); va en el rótulo del saldo. */
   segmento?: string;
-  /** Indicador adicional al final de la grilla (p. ej. lo que se debe a proveedores, en la pantalla de Clientes). */
+  /** Indicador adicional al final de la grilla (p. ej. lo que se debe a clientes, en la pantalla de Clientes). */
   extra?: ReactNode;
 }
 

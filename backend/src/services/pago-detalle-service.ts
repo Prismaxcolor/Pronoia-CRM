@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { proveedorVisible } from './proveedor-oculto.js';
 import type { TipoEntidad } from './estado-cuenta-service.js';
 import {
   formatCodigoPagoProveedor,
@@ -156,6 +157,8 @@ export async function obtenerPagoDetalle(
   const esProveedor = tipoEntidad === 'proveedor';
   const columnaEntidad = esProveedor ? 'proveedor_id' : 'cliente_id';
   const tipoMov = esProveedor ? 'egreso' : 'ingreso';
+  // Proveedor oculto: igual que si el pago no existiera (también cubre editar y anular, que pasan por aquí).
+  if (esProveedor && !(await proveedorVisible(entidadId))) return { error: 'Pago no encontrado para esta entidad.' };
 
   const { data, error } = await supabaseAdmin
     .from('movimientos')

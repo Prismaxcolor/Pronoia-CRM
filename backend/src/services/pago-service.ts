@@ -3,7 +3,7 @@ import type { RegistrarPagoInput, RegistrarPagoMultipleInput } from '../schemas/
 import { notificarPago } from './telegram-eventos-service.js';
 import { logger } from '../utils/logger.js';
 import { ejecutarEnSegundoPlano } from '../utils/segundo-plano.js';
-import { categoriaFijaDePago } from './pago-categoria-service.js';
+import { categoriaDelPago } from './pago-categoria-service.js';
 import {
   conComisionAutomatica, lineaCargaComision, validarEleccionComisionPago, type ComisionPagoCreada,
 } from './pago-comision-service.js';
@@ -53,7 +53,9 @@ export async function registrarPago(
     ?? (await validarMontosDeLineas([{ monto: input.monto, montoUsd: input.montoUsd, moneda: input.moneda, tasa: input.tasa }]));
   if (rechazo) return { error: rechazo };
 
-  const categoriaId = await categoriaFijaDePago();
+  const categoria = await categoriaDelPago(input.categoriaId);
+  if ('error' in categoria) return { error: categoria.error };
+  const categoriaId = categoria.categoriaId;
   const r = await registrarConPasos({
     envoltorio: 'registrar_pago_proveedor_completo',
     original: 'registrar_pago_proveedor',
@@ -135,7 +137,9 @@ export async function registrarPagoMultiple(
   if (rechazo) return { error: rechazo };
 
   // La categoría fija solo aplica si hay movimiento de dinero (un cruce puro no lo tiene).
-  const categoriaId = input.bancas.length > 0 ? await categoriaFijaDePago() : null;
+  const categoria = input.bancas.length > 0 ? await categoriaDelPago(input.categoriaId) : { categoriaId: null };
+  if ('error' in categoria) return { error: categoria.error };
+  const categoriaId = categoria.categoriaId;
   const r = await registrarConPasos({
     envoltorio: 'registrar_pago_proveedor_multi_banca_completo',
     original: 'registrar_pago_proveedor_multi_banca',
