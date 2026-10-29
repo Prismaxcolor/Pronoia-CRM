@@ -67,7 +67,7 @@ function recibirFoto(req: Request, res: Response, next: NextFunction) {
 
 router.post(
   '/fotos',
-  requireAlgunPermiso({ recurso: 'despachos', accion: 'crear' }, { recurso: 'despachos', accion: 'editar' }),
+  requireAlgunPermiso({ recurso: 'despachos', accion: 'crear' }, { recurso: 'packing_list', accion: 'editar' }),
   // Las fotos son control interno: sin permiso de inventario no se pueden ver después, así que tampoco se suben.
   (req, res, next) => {
     if (puedeVerControlInterno(req)) return next();
@@ -127,7 +127,7 @@ router.get('/empresas', requirePermiso('despachos', 'ver'), async (req, res) => 
 
 router.put(
   '/empresas/:idioma',
-  requirePermiso('despachos', 'editar'),
+  requirePermiso('packing_list', 'editar'),
   validateParams(empresaParamsSchema),
   validateBody(guardarEmpresaSchema),
   async (req, res) => {
@@ -173,7 +173,7 @@ router.put(
   '/:id',
   validateParams(packingListParamsSchema),
   rechazarCapturaAntigua,
-  requirePermiso('despachos', 'editar'),
+  requirePermiso('packing_list', 'editar'),
   validateBody(guardarPackingListSchema),
   async (req, res) => {
     const id = String(req.params.id);

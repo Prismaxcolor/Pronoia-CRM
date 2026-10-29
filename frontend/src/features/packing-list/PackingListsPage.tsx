@@ -26,7 +26,7 @@ function PackingListsPage() {
   const [modalEmpresas, setModalEmpresas] = useState(false);
 
   const puedeCrear = tienePermiso('despachos', 'crear');
-  const puedeEditar = tienePermiso('despachos', 'editar');
+  const puedeEditar = tienePermiso('packing_list', 'editar');
   const puedeBorrar = tienePermiso('despachos', 'eliminar');
 
   const cargar = () => {

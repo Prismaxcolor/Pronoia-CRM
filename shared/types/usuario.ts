@@ -39,6 +39,7 @@ export const RECURSOS = [
   'traslados',
   'transformaciones',
   'despachos',
+  'packing_list',
   'toma_fisica',
 ] as const;
 export type Recurso = (typeof RECURSOS)[number];
@@ -81,6 +82,7 @@ export const PERMISOS_POR_ROL: Record<RolUsuario, Permiso[]> = {
     { recurso: 'traslados', accion: 'ver' }, { recurso: 'traslados', accion: 'crear' }, { recurso: 'traslados', accion: 'editar' }, { recurso: 'traslados', accion: 'eliminar' },
     { recurso: 'transformaciones', accion: 'ver' }, { recurso: 'transformaciones', accion: 'crear' }, { recurso: 'transformaciones', accion: 'editar' }, { recurso: 'transformaciones', accion: 'eliminar' },
     { recurso: 'despachos', accion: 'ver' }, { recurso: 'despachos', accion: 'crear' }, { recurso: 'despachos', accion: 'editar' }, { recurso: 'despachos', accion: 'eliminar' },
+    { recurso: 'packing_list', accion: 'editar' },
     { recurso: 'toma_fisica', accion: 'ver' }, { recurso: 'toma_fisica', accion: 'crear' }, { recurso: 'toma_fisica', accion: 'editar' }, { recurso: 'toma_fisica', accion: 'eliminar' },
   ],
   administracion: [
@@ -99,6 +101,7 @@ export const PERMISOS_POR_ROL: Record<RolUsuario, Permiso[]> = {
     { recurso: 'traslados', accion: 'ver' }, { recurso: 'traslados', accion: 'crear' }, { recurso: 'traslados', accion: 'editar' },
     { recurso: 'transformaciones', accion: 'ver' },
     { recurso: 'despachos', accion: 'ver' }, { recurso: 'despachos', accion: 'crear' }, { recurso: 'despachos', accion: 'editar' },
+    { recurso: 'packing_list', accion: 'editar' },
     { recurso: 'toma_fisica', accion: 'ver' }, { recurso: 'toma_fisica', accion: 'crear' }, { recurso: 'toma_fisica', accion: 'editar' },
   ],
   trabajador: [

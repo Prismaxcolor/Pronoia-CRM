@@ -19,6 +19,12 @@ describe('matriz de permisos por rol', () => {
     expect(tienePermiso(PERMISOS_POR_ROL.trabajador, 'pesaje', 'crear')).toBe(true);
   });
 
+  it('editar packing lists es un permiso propio: administración lo tiene, el trabajador no', () => {
+    expect(tienePermiso(PERMISOS_POR_ROL.administracion, 'packing_list', 'editar')).toBe(true);
+    expect(tienePermiso(PERMISOS_POR_ROL.trabajador, 'packing_list', 'editar')).toBe(false);
+    expect(tienePermiso(PERMISOS_POR_ROL.trabajador, 'despachos', 'ver')).toBe(true);
+  });
+
   it('el trabajador NO tiene facturación', () => {
     expect(tienePermiso(PERMISOS_POR_ROL.trabajador, 'facturacion', 'ver')).toBe(false);
   });
@@ -29,8 +35,10 @@ describe('matriz de permisos por rol', () => {
   });
 
   it('superadmin tiene todos los recursos definidos', () => {
+    // packing_list solo tiene la acción 'editar' (no hay 'ver' propio: se ve con despachos:ver).
     for (const r of RECURSOS) {
-      expect(tienePermiso(PERMISOS_POR_ROL.superadmin, r, 'ver')).toBe(true);
+      const tieneAlguna = ['ver', 'crear', 'editar', 'eliminar'].some(a => tienePermiso(PERMISOS_POR_ROL.superadmin, r, a as 'ver'));
+      expect(tieneAlguna).toBe(true);
     }
   });
 

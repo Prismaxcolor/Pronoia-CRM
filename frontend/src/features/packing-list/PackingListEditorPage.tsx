@@ -57,7 +57,7 @@ function PackingListEditorPage() {
 
   // El almacén, las fotos de las paletas y los kg disponibles son control interno: productos:ver (inventario) o facturacion:ver.
   const puedeVerControl = tienePermiso('productos', 'ver') || tienePermiso('facturacion', 'ver');
-  const puedeEditar = esNuevo ? tienePermiso('despachos', 'crear') : tienePermiso('despachos', 'editar');
+  const puedeEditar = esNuevo ? tienePermiso('despachos', 'crear') : tienePermiso('packing_list', 'editar');
 
   const aplicar = useCallback((p: PackingListDetalle) => {
     const c = cabeceraDesde(p);

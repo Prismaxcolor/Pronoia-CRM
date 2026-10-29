@@ -78,6 +78,7 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
               <>
                 <li>Facturación, wallet, clientes, proveedores, pesaje, traslados, despachos y toma física: ver, crear y editar</li>
                 <li>Dashboard, productos, categorías, taras, vehículos, almacenes, listas de precios y transformaciones: solo ver</li>
+                <li>Puede editar packing lists (permiso propio)</li>
                 <li>No gestiona usuarios y no puede eliminar</li>
               </>
             )}
@@ -85,7 +86,7 @@ function CrearUsuarioModal({ onClose, onCreado }: Props) {
               <>
                 <li>Productos, categorías, taras, vehículos, almacenes y listas de precios: ver, crear y editar</li>
                 <li>Pesaje, traslados, transformaciones y toma física: ver y crear</li>
-                <li>Clientes, proveedores y despachos: solo ver</li>
+                <li>Clientes, proveedores y despachos: solo ver (sin editar packing lists)</li>
                 <li>No tiene facturación, wallet ni usuarios, y no puede eliminar</li>
               </>
             )}

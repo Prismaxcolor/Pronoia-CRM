@@ -30,16 +30,19 @@ interface Props {
   onGuardado: () => void;
 }
 
-const RECURSOS: { recurso: Recurso; label: string }[] = [
+/** `acciones`: si se indica, solo esas columnas aplican al recurso (el resto se muestra vacío). */
+const RECURSOS: { recurso: Recurso; label: string; acciones?: Accion[] }[] = [
   { recurso: 'dashboard', label: 'Dashboard' },
   { recurso: 'productos', label: 'Productos' },
   { recurso: 'categorias', label: 'Categorías' },
   { recurso: 'taras', label: 'Taras' },
+  { recurso: 'vehiculos', label: 'Vehículos' },
   { recurso: 'almacenes', label: 'Almacenes' },
   { recurso: 'listas_precios', label: 'Listas de precios' },
   { recurso: 'pesaje', label: 'Pesaje' },
   { recurso: 'traslados', label: 'Traslados' },
   { recurso: 'transformaciones', label: 'Transformaciones' },
+  { recurso: 'toma_fisica', label: 'Toma física' },
   { recurso: 'facturacion', label: 'Facturacion' },
   { recurso: 'cochinito', label: 'Wallet (Tesoreria)' },
   { recurso: 'mesa_cambio', label: 'Mesa de cambio (Tesoreria)' },
@@ -47,6 +50,7 @@ const RECURSOS: { recurso: Recurso; label: string }[] = [
   { recurso: 'clientes', label: 'Clientes' },
   { recurso: 'proveedores', label: 'Proveedores' },
   { recurso: 'despachos', label: 'Despachos' },
+  { recurso: 'packing_list', label: 'Packing list (solo edición)', acciones: ['editar'] },
   { recurso: 'usuarios', label: 'Usuarios' },
 ];
 
@@ -185,10 +189,12 @@ function EditarPermisosModal({ usuario, onClose, onGuardado }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {RECURSOS.map(({ recurso, label }) => (
+                {RECURSOS.map(({ recurso, label, acciones }) => (
                   <tr key={recurso} className="border-b border-border last:border-0">
                     <td className="p-3 font-medium text-text-primary">{label}</td>
-                    {ACCIONES.map(accion => (
+                    {ACCIONES.map(accion => acciones && !acciones.includes(accion) ? (
+                      <td key={accion} className="p-3" />
+                    ) : (
                       <td key={accion} className="text-center p-3">
                         <button
                           type="button"
