@@ -67,7 +67,8 @@ export function useExportacionAsistente(id: string): { estado: EstadoAsistente; 
     obtenerClientes().then(setClientes);
     if (esNueva) {
       obtenerPackingLists().then(r => {
-        if (Array.isArray(r)) setPackingLists(r.filter(p => packingListTemporal(p.id) === null && !p.esBorrador)); else setError(mensajeDe(r));
+        // Con cliente internacional ya es una exportación: no se ofrece de nuevo.
+        if (Array.isArray(r)) setPackingLists(r.filter(p => packingListTemporal(p.id) === null && !p.esBorrador && !p.clienteId)); else setError(mensajeDe(r));
         setCargando(false);
       });
       return;
@@ -111,6 +112,7 @@ export function useExportacionAsistente(id: string): { estado: EstadoAsistente; 
     setGuardando(false);
     if ('error' in res) { toast.errorMsg(res.error); return false; }
     toast.exito(res.enCola ? 'Guardado en el teléfono. Se enviará al volver la conexión.' : 'Exportación guardada.');
+    if (res.packingList.avisoInventario) toast.advertencia(res.packingList.avisoInventario);
     aplicar(res.packingList);
     return true;
   };

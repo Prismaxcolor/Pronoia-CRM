@@ -101,6 +101,8 @@ export interface PackingListDetalle extends PackingList {
    * quien tiene facturacion:ver (null = sin cargar o columna aún no creada); ausente para el resto. Nunca va en los PDF.
    */
   totalRealUsd?: number | null;
+  /** Solo en la respuesta de guardar: algo quedó por revisar al descontar del inventario la exportación (el packing sí se guardó). */
+  avisoInventario?: string | null;
 }
 
 /** Datos de la empresa que encabeza el documento en cada idioma (es = Venezuela, en = EE.UU.). */

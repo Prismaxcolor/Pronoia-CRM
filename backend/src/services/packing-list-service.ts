@@ -17,6 +17,7 @@ import { mensajeDeErrorBd } from '../utils/errores-bd.js';
 import { logger } from '../utils/logger.js';
 import { nombresDeUsuarios } from './autoria-documento.js';
 import { rpcConIdempotencia } from './rpc-idempotente.js';
+import { darBajaExportacion, yaEraExportacion } from './exportacion-baja-inventario.js';
 import { borrarFotosSinReferencia, firmarFotosPacking, leerFotosGuardadas } from './packing-list-fotos-service.js';
 
 export const MENSAJE_PACKING_NO_HABILITADO =
@@ -29,6 +30,7 @@ const COLUMNAS_EMPRESA = 'idioma, nombre, direccion, telefono, email';
 const LIMITE_LISTADO = 200;
 
 interface ListaRow {
+  cliente_id?: string | null;
   id: string;
   contenedor: string;
   fecha: string;
@@ -169,8 +171,9 @@ export async function listarPackingLists(): Promise<PackingListResumen[]> {
     .order('fecha', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(LIMITE_LISTADO);
-  // es_borrador viaja en la misma consulta; si falta la columna (migración pendiente) se reintenta sin ella.
-  let { data, error } = await leer(`${COLUMNAS_LISTA}, es_borrador`);
+  // es_borrador y cliente_id viajan en la misma consulta; si falta alguna columna (migración pendiente) se reintenta sin ella.
+  let { data, error } = await leer(`${COLUMNAS_LISTA}, es_borrador, cliente_id`);
+  if (error && esObjetoInexistente(error)) ({ data, error } = await leer(`${COLUMNAS_LISTA}, es_borrador`));
   if (error && esObjetoInexistente(error)) ({ data, error } = await leer(COLUMNAS_LISTA));
   if (error) {
     if (esObjetoInexistente(error)) return [];
@@ -181,7 +184,7 @@ export async function listarPackingLists(): Promise<PackingListResumen[]> {
   const nombres = await nombresDeUsuarios(filas.map(f => f.creado_por));
   return filas.map(f => {
     const pesos = f.packing_list_items.map(i => ({ pesoBruto: Number(i.peso_bruto), pesoPaleta: Number(i.peso_paleta) }));
-    return { ...listaToPublico(f, nombres), esBorrador: f.es_borrador === true, totalBultos: pesos.length, totalNeto: totalNeto(pesos) };
+    return { ...listaToPublico(f, nombres), clienteId: f.cliente_id ?? null, esBorrador: f.es_borrador === true, totalBultos: pesos.length, totalNeto: totalNeto(pesos) };
   });
 }
 
@@ -410,6 +413,7 @@ export async function guardarPackingList(
   const items = input.items.map(i => itemParaRpc(i, puedeVerControl));
   // Fotos guardadas antes: las que se quiten de las paletas se borran del bucket tras guardar (ver borrarFotosSinReferencia).
   const fotosAntes = id !== null && puedeVerControl ? await leerFotosGuardadas(id) : [];
+  const dabaDeBaja = Boolean(input.clienteId) && !input.esBorrador && (id === null || !(await yaEraExportacion(id)));
   // Al CREAR con clave, el envoltorio garantiza una sola fila; editar ya lo protege la versión (PL409).
   const { data, error } = id === null && input.clientRequestId
     ? await rpcConIdempotencia({
@@ -431,9 +435,12 @@ export async function guardarPackingList(
   if (error || !data) return { ok: false, ...clasificarError(error ?? { message: 'No se pudo guardar el packing list.' }) };
   const guardadoId = String((data as { id?: string }).id ?? '');
   if (fotosAntes.length > 0) await borrarFotosSinReferencia(fotosAntes);
+  // Al asignar el cliente internacional (primera vez) el packing es una exportación: su material sale del inventario como una venta.
+  // Va ANTES de leer de vuelta: si esa lectura falla, el cliente ya quedó guardado y la baja no se repetiría.
+  const avisoInventario = dabaDeBaja && guardadoId ? await darBajaExportacion(guardadoId, userId) : null;
   const detalle = guardadoId ? await obtenerPackingList(guardadoId, { puedeVerValores, puedeVerControl }) : null;
   if (!detalle) return { ok: false, error: 'El packing list se guardó pero no se pudo leer de vuelta.', status: 500 };
-  return { ok: true, valor: detalle };
+  return { ok: true, valor: avisoInventario ? { ...detalle, avisoInventario } : detalle };
 }
 
 export async function eliminarPackingList(id: string): Promise<ResultadoPacking<true>> {
