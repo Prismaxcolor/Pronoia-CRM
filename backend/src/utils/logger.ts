@@ -30,11 +30,9 @@ export const logger = {
   },
 };
 
-/** Extrae IP del cliente respetando X-Forwarded-For (cuando hay proxy). */
-export function clienteIp(req: { ip?: string; headers: Record<string, string | string[] | undefined> }): string {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string') return fwd.split(',')[0].trim();
-  if (Array.isArray(fwd) && fwd.length > 0) return fwd[0];
+/** IP del cliente segun Express (req.ip, que ya respeta 'trust proxy'). No se lee X-Forwarded-For
+ *  a mano: el primer valor lo controla el cliente y permitiria falsear la IP en los logs. */
+export function clienteIp(req: { ip?: string; headers?: Record<string, string | string[] | undefined> }): string {
   return req.ip ?? 'desconocida';
 }
 

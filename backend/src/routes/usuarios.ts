@@ -7,18 +7,96 @@ import {
   reactivarUsuario,
   borrarUsuario,
 } from '../services/usuario-service.js';
+import {
+  generarLinkTelegramUsuario,
+  desvincularTelegramUsuario,
+  puedeGestionarTelegramDe,
+} from '../services/usuario-telegram-service.js';
+import { esSuperadminEnBd } from '../services/edicion-autorizada-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearUsuarioSchema, actualizarUsuarioSchema } from '../schemas/usuarios.js';
+import { crearUsuarioSchema, actualizarUsuarioSchema, asignarBancasSchema } from '../schemas/usuarios.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
+import { listarBancasDeUsuario, reemplazarBancasDeUsuario } from '../services/banca-acceso-service.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/', requirePermiso('usuarios', 'ver'), async (_req, res) => {
-  const usuarios = await listarUsuarios();
+router.get('/', requirePermiso('usuarios', 'ver'), async (req, res) => {
+  const usuarios = await listarUsuarios({ verChatId: req.user!.rol === 'superadmin' });
   res.json({ usuarios });
+});
+
+/**
+ * Enlace de Telegram. `:id` puede ser 'me' (el propio usuario) o el id de otra persona, lo que solo
+ * puede hacer un superadmin. Se declara antes de las rutas '/:id' genéricas.
+ */
+function resolverObjetivoTelegram(
+  req: { params: Record<string, unknown>; user?: { sub: string; rol: string } }
+): { usuarioId: string; paraOtraPersona: boolean } | null {
+  const param = String(req.params.id);
+  const usuarioId = param === 'me' ? req.user!.sub : param;
+  if (!puedeGestionarTelegramDe({ id: req.user!.sub, rol: req.user!.rol }, usuarioId)) return null;
+  return { usuarioId, paraOtraPersona: usuarioId !== req.user!.sub };
+}
+
+router.post('/:id/telegram/generar-link', async (req, res) => {
+  const objetivo = resolverObjetivoTelegram(req);
+  if (!objetivo) {
+    res.status(403).json({ error: 'Solo un superadmin puede enlazar el Telegram de otra persona.' });
+    return;
+  }
+  if (objetivo.paraOtraPersona && !(await esSuperadminEnBd(req.user!.sub))) {
+    res.status(403).json({ error: 'Solo un superadmin activo puede enlazar el Telegram de otra persona.' });
+    return;
+  }
+  const result = await generarLinkTelegramUsuario(objetivo.usuarioId);
+  if ('error' in result) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  logger.info({
+    evento: 'usuario_telegram_link_generado',
+    ip: clienteIp(req),
+    userId: req.user!.sub,
+    targetUserId: objetivo.usuarioId,
+    paraOtraPersona: objetivo.paraOtraPersona,
+  });
+  res.json({
+    deepLink: result.deepLink,
+    expiraEn: result.expiraEn,
+    paraOtraPersona: objetivo.paraOtraPersona,
+    ...(objetivo.paraOtraPersona
+      ? { aviso: 'Este enlace debe abrirlo la propia persona desde su Telegram; si lo abre otra, quedará enlazado el Telegram equivocado.' }
+      : {}),
+  });
+});
+
+router.delete('/:id/telegram', async (req, res) => {
+  const objetivo = resolverObjetivoTelegram(req);
+  if (!objetivo) {
+    res.status(403).json({ error: 'Solo un superadmin puede desvincular el Telegram de otra persona.' });
+    return;
+  }
+  if (objetivo.paraOtraPersona && !(await esSuperadminEnBd(req.user!.sub))) {
+    res.status(403).json({ error: 'Solo un superadmin activo puede desvincular el Telegram de otra persona.' });
+    return;
+  }
+  const result = await desvincularTelegramUsuario(objetivo.usuarioId);
+  if ('error' in result) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  logger.warn({
+    evento: 'usuario_telegram_desvinculado',
+    ip: clienteIp(req),
+    userId: req.user!.sub,
+    targetUserId: objetivo.usuarioId,
+    paraOtraPersona: objetivo.paraOtraPersona,
+  });
+  res.json({ ok: true });
 });
 
 router.post(
@@ -26,9 +104,9 @@ router.post(
   requirePermiso('usuarios', 'crear'),
   validateBody(crearUsuarioSchema),
   async (req, res) => {
-    const result = await crearUsuarioAdmin(req.body);
+    const result = await crearUsuarioAdmin(req.body, req.user!.sub);
     if ('error' in result) {
-      res.status(400).json(result);
+      res.status(result.status ?? 400).json({ error: result.error });
       return;
     }
     logger.info({
@@ -42,20 +120,65 @@ router.post(
   }
 );
 
+// Acceso del usuario a cuentas/cajas. Sin filas = ninguna; solo el superadmin ve todas sin filas.
+const MENSAJE_BANCAS_SOLO_SUPERADMIN =
+  'Solo un superadmin puede ver o cambiar el acceso de los usuarios a cuentas y cajas.';
+
+/** Solo un superadmin activo (según la BD) ve o cambia el acceso de cualquier usuario a cuentas/cajas. */
+async function puedeGestionarBancasDe(actorId: string, _objetivoId: string): Promise<boolean> {
+  return esSuperadminEnBd(actorId);
+}
+
+router.get('/:id/bancas', validarUuidParam('id'), requirePermiso('usuarios', 'ver'), async (req, res) => {
+  if (!(await puedeGestionarBancasDe(req.user!.sub, String(req.params.id)))) {
+    res.status(403).json({ error: MENSAJE_BANCAS_SOLO_SUPERADMIN });
+    return;
+  }
+  const result = await listarBancasDeUsuario(String(req.params.id));
+  if ('error' in result) {
+    res.status(409).json(result);
+    return;
+  }
+  res.json(result);
+});
+
+router.put(
+  '/:id/bancas',
+  validarUuidParam('id'),
+  requirePermiso('usuarios', 'editar'),
+  validateBody(asignarBancasSchema),
+  async (req, res) => {
+    const id = String(req.params.id);
+    if (!(await puedeGestionarBancasDe(req.user!.sub, id))) {
+      res.status(403).json({ error: MENSAJE_BANCAS_SOLO_SUPERADMIN });
+      return;
+    }
+    const result = await reemplazarBancasDeUsuario(id, req.body.bancaIds, req.body.bancaIdsEditar);
+    if ('error' in result) {
+      res.status(result.pendiente ? 409 : 500).json({ error: result.error });
+      return;
+    }
+    logger.info({
+      evento: 'usuario_bancas_actualizadas',
+      ip: clienteIp(req),
+      adminId: req.user!.sub,
+      targetUserId: id,
+      cantidad: req.body.bancaIds.length,
+      cantidadEditar: (req.body.bancaIdsEditar ?? req.body.bancaIds).length,
+    });
+    res.json({ ok: true });
+  }
+);
+
 router.patch(
   '/:id',
   requirePermiso('usuarios', 'editar'),
   validateBody(actualizarUsuarioSchema),
   async (req, res) => {
     const id = String(req.params.id);
-    if (id === req.user!.sub && req.body.activo === false) {
-      res.status(400).json({ error: 'No puedes desactivarte a ti mismo.' });
-      return;
-    }
-
-    const result = await actualizarUsuarioAdmin(id, req.body);
+    const result = await actualizarUsuarioAdmin(req.user!.sub, id, req.body);
     if ('error' in result) {
-      res.status(400).json(result);
+      res.status(result.status).json({ error: result.error });
       return;
     }
     logger.info({
@@ -64,6 +187,7 @@ router.patch(
       adminId: req.user!.sub,
       targetUserId: id,
       cambios: Object.keys(req.body),
+      ...(req.body.temaMarca !== undefined ? { temaMarca: req.body.temaMarca } : {}),
     });
     res.json(result);
   }

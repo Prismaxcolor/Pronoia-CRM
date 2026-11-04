@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# e2e (Playwright)
+dist-e2e
+e2e/resultados
+test-results

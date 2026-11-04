@@ -3,7 +3,10 @@ import { z } from 'zod';
 export const crearTaraSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(80),
   peso: z.number().positive('El peso debe ser mayor a 0.'),
-  foto: z.string().url('URL de foto inválida.').nullable().optional(),
+  // .optional() en vez de .default([]) a propósito: ver nota en clientes.ts —
+  // con default, este schema (usado por actualizarTaraSchema.partial())
+  // dejaría "fotos" siempre presente y borraría fotos existentes en PATCH.
+  fotos: z.array(z.string().url('URL de foto inválida.')).optional(),
 });
 
 export const actualizarTaraSchema = crearTaraSchema

@@ -9,13 +9,15 @@ import {
   type CitaPortal,
   type EstadoCita,
 } from '../../services/portal-agendar-service';
-import PortalHeader from '../../components/PortalHeader';
-import PortalSkeleton from '../../components/PortalSkeleton';
-import { useConfirm } from '../../hooks/use-confirm';
-import { useToast } from '../../hooks/use-toast';
+import { Bloque, EstadoVacio, Insignia, SkeletonBloque } from '../../components/ui';
+import type { Tono } from '../../lib/paleta';
+import PortalLayout from './PortalLayout';
+import { useConfirm } from '../../hooks/use-confirm-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { hoyNegocio } from '../../lib/fecha-negocio';
 
 function hoyISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hoyNegocio();
 }
 
 function fechaLegible(iso: string): string {
@@ -23,12 +25,20 @@ function fechaLegible(iso: string): string {
   return new Date(y, m - 1, d).toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-const ESTADO_LABEL: Record<EstadoCita, { texto: string; clase: string }> = {
-  pendiente: { texto: 'Pendiente', clase: 'bg-amber-100 text-amber-700' },
-  confirmada: { texto: 'Confirmada', clase: 'bg-green-100 text-green-700' },
-  reprogramada: { texto: 'Reprogramada', clase: 'bg-blue-100 text-blue-700' },
-  cancelada: { texto: 'Cancelada', clase: 'bg-red-100 text-red-700' },
-  completada: { texto: 'Completada', clase: 'bg-gray-100 text-gray-600' },
+const ESTADO_LABEL: Record<EstadoCita, { texto: string; tono: Tono }> = {
+  pendiente: { texto: 'Pendiente', tono: 'aviso' },
+  confirmada: { texto: 'Confirmada', tono: 'exito' },
+  reprogramada: { texto: 'Reprogramada', tono: 'info' },
+  cancelada: { texto: 'Cancelada', tono: 'neutral' },
+  completada: { texto: 'Completada', tono: 'neutral' },
+};
+
+const ESTADO_AYUDA: Record<EstadoCita, string> = {
+  pendiente: 'Pediste la cita y falta que Pronoia la confirme.',
+  confirmada: 'Pronoia confirmó la cita.',
+  reprogramada: 'La cita se movió a otra fecha u hora.',
+  cancelada: 'La cita se canceló.',
+  completada: 'El despacho ya se realizó.',
 };
 
 const CANCELABLES: EstadoCita[] = ['pendiente', 'confirmada'];
@@ -105,88 +115,86 @@ function PortalAgendarPage() {
     cargarCitas();
   };
 
-  if (cargando) {
-    return (
-      <div className="min-h-screen bg-surface-alt">
-        <PortalHeader title="Agendar despacho" backTo="/portal" />
-        <PortalSkeleton filas={2} />
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-surface-alt">
-      <PortalHeader title="Agendar despacho" backTo="/portal" />
+    <PortalLayout titulo="Agendar despacho" subtitulo="Elige el día y la hora de tu próxima entrega y revisa tus citas.">
+      {cargando ? (
+        <SkeletonBloque alto="h-48" />
+      ) : (
+        <>
+          <Bloque titulo="Elige el día y la hora" queEstasViendo="Las horas del día elegido. Las que están tachadas ya están ocupadas; toca una libre para pedir tu despacho y te pediremos confirmar antes de agendarlo.">
+            <div className="rounded-xl border border-border bg-surface p-4">
+              <label htmlFor="portal-agendar-fecha" className="mb-2 block text-xs font-medium text-text-secondary">Día del despacho</label>
+              <input
+                id="portal-agendar-fecha"
+                type="date"
+                value={fecha}
+                min={hoyISO()}
+                onChange={e => handleFecha(e.target.value)}
+                className="min-h-[44px] w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 sm:w-auto"
+              />
 
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        <section className="bg-surface rounded-2xl shadow-sm p-5">
-          <label className="block text-xs font-medium text-text-secondary mb-2">Elige el día</label>
-          <input
-            type="date"
-            value={fecha}
-            min={hoyISO()}
-            onChange={e => handleFecha(e.target.value)}
-            className="w-full px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
-          />
-
-          <p className="text-xs font-medium text-text-secondary mt-4 mb-2">Horarios disponibles</p>
-          <div className="grid grid-cols-3 gap-2">
-            {horarios.map(h => (
-              <button
-                key={h.hora}
-                type="button"
-                disabled={!h.disponible || procesando !== null}
-                onClick={() => handleAgendar(h.hora)}
-                className={`py-2 rounded-lg text-sm font-medium border transition-colors ${
-                  h.disponible
-                    ? 'border-brand-300 text-brand-700 hover:bg-brand-50'
-                    : 'border-border text-text-muted opacity-40 cursor-not-allowed'
-                } ${procesando === h.hora ? 'opacity-60' : ''}`}
-              >
-                {h.hora}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-sm font-semibold text-text-secondary mb-2">Tus citas</h2>
-          <div className="bg-surface rounded-2xl shadow-sm divide-y divide-border">
-            {misCitas.length ? (
-              misCitas.map(c => (
-                <div key={c.id} className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-3">
-                    <Clock size={16} className="text-text-muted shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-text-primary capitalize">{fechaLegible(c.fecha)}</p>
-                      <p className="text-xs text-text-muted">{c.hora}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_LABEL[c.estado].clase}`}>
-                      {ESTADO_LABEL[c.estado].texto}
-                    </span>
-                    {CANCELABLES.includes(c.estado) && (
-                      <button
-                        type="button"
-                        onClick={() => handleCancelar(c)}
-                        disabled={procesando !== null}
-                        className="p-1.5 rounded-md hover:bg-surface-alt text-text-muted hover:text-red-600 transition-colors disabled:opacity-50"
-                        title="Cancelar"
-                      >
-                        <X size={15} />
-                      </button>
-                    )}
-                  </div>
+              <p className="mb-2 mt-4 text-xs font-medium text-text-secondary">Horarios disponibles</p>
+              {horarios.length ? (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                  {horarios.map(h => (
+                    <button
+                      key={h.hora}
+                      type="button"
+                      disabled={!h.disponible || procesando !== null}
+                      onClick={() => handleAgendar(h.hora)}
+                      aria-label={h.disponible ? `Agendar a las ${h.hora}` : `${h.hora}, no disponible`}
+                      className={`min-h-[44px] rounded-lg border text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                        h.disponible
+                          ? 'border-brand-300 text-brand-700 hover:bg-brand-50'
+                          : 'cursor-not-allowed border-border text-text-muted line-through opacity-50'
+                      } ${procesando === h.hora ? 'opacity-60' : ''}`}
+                    >
+                      {h.hora}
+                    </button>
+                  ))}
                 </div>
-              ))
+              ) : (
+                <EstadoVacio mensaje="No hay horarios para este día." descripcion="Prueba con otra fecha." />
+              )}
+            </div>
+          </Bloque>
+
+          <Bloque titulo="Tus citas" queEstasViendo="Los despachos que has pedido, con su estado. Puedes cancelar los que están pendientes o confirmados.">
+            {misCitas.length ? (
+              <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+                {misCitas.map(c => (
+                  <li key={c.id} className="flex items-center justify-between gap-3 p-4">
+                    <div className="flex items-center gap-3">
+                      <Clock size={16} className="shrink-0 text-text-muted" aria-hidden="true" />
+                      <div>
+                        <p className="text-sm font-medium capitalize text-text-primary">{fechaLegible(c.fecha)}</p>
+                        <p className="text-xs text-text-secondary">{c.hora}</p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Insignia tono={ESTADO_LABEL[c.estado].tono} title={ESTADO_AYUDA[c.estado]}>{ESTADO_LABEL[c.estado].texto}</Insignia>
+                      {CANCELABLES.includes(c.estado) && (
+                        <button
+                          type="button"
+                          onClick={() => handleCancelar(c)}
+                          disabled={procesando !== null}
+                          aria-label={`Cancelar el despacho del ${fechaLegible(c.fecha)} a las ${c.hora}`}
+                          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-alt hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-50"
+                        >
+                          <X size={16} aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             ) : (
-              <p className="p-4 text-sm text-text-muted">Todavía no tienes citas agendadas.</p>
+              <EstadoVacio mensaje="Todavía no tienes citas agendadas." descripcion="Elige un día y una hora arriba para pedir tu primer despacho." />
             )}
-          </div>
-        </section>
-      </main>
-    </div>
+          </Bloque>
+        </>
+      )}
+    </PortalLayout>
   );
 }
 

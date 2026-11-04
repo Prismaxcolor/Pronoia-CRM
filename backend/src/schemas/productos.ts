@@ -6,7 +6,13 @@ const baseSchema = z.object({
   tipoMaterialId: z.string().uuid('Debes elegir una categoría de material.'),
   moneda: z.enum(['USD', 'VES']),
   activo: z.boolean().default(true),
-  imagenUrl: z.string().url('URL de imagen inválida.').nullable().optional(),
+  fotos: z.array(z.string().url('URL de imagen inválida.')).default([]),
+  /** Lotes posibles del producto (producto_lotes). Vacío = no pertenece a ningún lote.
+   *  Si se omite al actualizar, los anclajes actuales no se tocan. */
+  loteIds: z.array(z.string().uuid('ID de lote inválido.')).max(100).optional(),
+  /** Estado del material para separar limpio/sucio en el inventario (solo Ferroso y No ferroso).
+   *  null = sin definir. Si se omite al actualizar, el valor actual no se toca. */
+  estadoLimpieza: z.enum(['limpio', 'sucio']).nullable().optional(),
 });
 
 const varianteSchema = z.object({
@@ -65,3 +71,10 @@ export const actualizarProductoSchema = crearProductoSchema;
 
 export type CrearProductoInput = z.infer<typeof crearProductoSchema>;
 export type ActualizarProductoInput = z.infer<typeof actualizarProductoSchema>;
+
+/** ids de TODOS los productos, en el orden deseado de arriba a abajo. */
+export const reordenarProductosSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, 'La lista de productos no puede estar vacía.'),
+});
+
+export type ReordenarProductosInput = z.infer<typeof reordenarProductosSchema>;

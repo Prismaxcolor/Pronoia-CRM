@@ -1,6 +1,8 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { filtrarOcultos } from './proveedor-oculto.js';
 import { TABLA_ENTIDAD, type EntidadTelegram } from './telegram-link-service.js';
 import type { CrearCitaInput } from '../schemas/citas.js';
+import { notificarCita } from './telegram-eventos-service.js';
 
 export type EstadoCita = 'pendiente' | 'confirmada' | 'reprogramada' | 'cancelada' | 'completada';
 
@@ -96,7 +98,14 @@ export async function crearCita(
     .select('*')
     .single();
 
-  if (error || !data) return { error: error?.message ?? 'No se pudo agendar la cita.' };
+  if (error || !data) {
+    // 23505 = violación del índice único idx_citas_despacho_slot (Bloque 31):
+    // el SELECT de arriba es una verificación de cortesía, no atómica: dos
+    // agendamientos simultáneos pueden pasarla ambos. El índice es la
+    // garantía real.
+    if (error?.code === '23505') return { error: 'Ese horario ya fue tomado. Elige otro.' };
+    return { error: error?.message ?? 'No se pudo agendar la cita.' };
+  }
   return { cita: citaToPublica(data as CitaRow) };
 }
 
@@ -120,7 +129,9 @@ export async function listarCitasStaff(desde?: string, hasta?: string): Promise<
   if (hasta) q = q.lte('fecha', hasta);
 
   const { data } = await q;
-  const citas = ((data as CitaRow[] | null) ?? []).map(citaToPublica);
+  const todas = ((data as CitaRow[] | null) ?? []).map(citaToPublica);
+  // Las citas de proveedores ocultos no las ve quien no es superadmin.
+  const citas = await filtrarOcultos(todas, c => (c.entidadTipo === 'proveedor' ? c.entidadId : null));
   if (citas.length === 0) return [];
 
   const idsPorTipo: Record<EntidadTelegram, Set<string>> = { proveedor: new Set(), cliente: new Set() };
@@ -164,6 +175,10 @@ export async function cancelarCitaPropia(
 }
 
 export async function actualizarEstadoCita(id: string, estado: EstadoCita): Promise<CitaPublica | null> {
+  // Estado previo: si no cambió, no se vuelve a avisar por Telegram (idempotencia).
+  const { data: previa } = await supabaseAdmin.from('citas_despacho').select('estado').eq('id', id).maybeSingle();
+  const estadoPrevio = (previa as { estado: string } | null)?.estado;
+
   const { data, error } = await supabaseAdmin
     .from('citas_despacho')
     .update({ estado })
@@ -172,5 +187,8 @@ export async function actualizarEstadoCita(id: string, estado: EstadoCita): Prom
     .maybeSingle();
 
   if (error || !data) return null;
-  return citaToPublica(data as CitaRow);
+  const cita = citaToPublica(data as CitaRow);
+  // Telegram (fire-and-forget): el cliente/proveedor se entera del cambio de estado de su cita.
+  if (estadoPrevio !== estado) notificarCita(cita.entidadTipo, cita.entidadId, cita);
+  return cita;
 }

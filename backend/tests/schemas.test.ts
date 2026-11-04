@@ -1,14 +1,35 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Los esquemas validan comprobantes contra ENV.SUPABASE_URL: se fija para no depender del .env local.
+vi.mock('../src/config/env.js', async importOriginal => {
+  const real = await importOriginal<typeof import('../src/config/env.js')>();
+  return { ...real, ENV: { ...real.ENV, SUPABASE_URL: 'https://x.supabase.co' } };
+});
 import { crearFacturaSchema } from '../src/schemas/facturas.js';
-import { crearTransformacionSchema } from '../src/schemas/transformaciones.js';
+import { crearTransformacionSchema, completarTransformacionSchema } from '../src/schemas/transformaciones.js';
 import { crearTicketSchema, completarTicketSchema } from '../src/schemas/tickets-pesaje.js';
-import { crearListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
+import { crearListaSchema, actualizarListaSchema, upsertPrecioSchema } from '../src/schemas/listas-precios.js';
 import { crearProveedorSchema } from '../src/schemas/proveedores.js';
 import { crearTaraSchema, actualizarTaraSchema } from '../src/schemas/tara.js';
-import { registrarPagoSchema } from '../src/schemas/pagos.js';
+import { registrarPagoSchema, registrarPagoMultipleSchema } from '../src/schemas/pagos.js';
+import { actualizarUsuarioSchema } from '../src/schemas/usuarios.js';
+import { parsearAlmacenId } from '../src/schemas/inventario.js';
+import { RECURSOS, ACCIONES } from '../src/utils/permisos.js';
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const UUID2 = '22222222-2222-4222-8222-222222222222';
+
+describe('parsearAlmacenId (inventario)', () => {
+  it('acepta UUID y ausencia', () => {
+    expect(parsearAlmacenId(UUID)).toEqual({ ok: true, almacenId: UUID });
+    expect(parsearAlmacenId(undefined)).toEqual({ ok: true });
+  });
+  it('rechaza valores que inyectarían filtros PostgREST', () => {
+    expect(parsearAlmacenId('x,almacen_destino_id.not.is.null').ok).toBe(false);
+    expect(parsearAlmacenId('abc').ok).toBe(false);
+    expect(parsearAlmacenId([UUID, UUID]).ok).toBe(false);
+  });
+});
 
 describe('crearFacturaSchema', () => {
   const item = { productoId: UUID2, peso: 10, precioUnitario: 5 };
@@ -37,8 +58,13 @@ describe('crearFacturaSchema', () => {
     expect(r.success).toBe(false);
   });
 
-  it('rechaza precio unitario <= 0', () => {
+  it('acepta precio unitario 0 (la venta lo rechaza en el servicio)', () => {
     const r = crearFacturaSchema.safeParse({ ...base, items: [{ ...item, precioUnitario: 0 }] });
+    expect(r.success).toBe(true);
+  });
+
+  it('rechaza precio unitario negativo', () => {
+    const r = crearFacturaSchema.safeParse({ ...base, items: [{ ...item, precioUnitario: -1 }] });
     expect(r.success).toBe(false);
   });
 
@@ -59,35 +85,64 @@ describe('crearFacturaSchema', () => {
 });
 
 describe('crearTransformacionSchema', () => {
-  const base = { materialEntradaId: UUID, cantidadEntrada: 100 };
+  const base = { loteOrigenId: UUID, pesoBruto: 100, fecha: '2026-08-14' };
 
-  it('acepta cuando la suma de salidas <= entrada', () => {
-    const r = crearTransformacionSchema.safeParse({
-      ...base,
-      detalles: [
-        { materialSalidaId: UUID2, cantidad: 80 },
-        { materialSalidaId: UUID, cantidad: 19 },
+  it('acepta con tara por defecto 0', () => {
+    const r = crearTransformacionSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.tara).toBe(0);
+  });
+
+  it('rechaza pesoBruto <= 0', () => {
+    const r = crearTransformacionSchema.safeParse({ ...base, pesoBruto: 0 });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza fecha con formato inválido', () => {
+    const r = crearTransformacionSchema.safeParse({ ...base, fecha: '14-08-2026' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza loteOrigenId que no es uuid', () => {
+    const r = crearTransformacionSchema.safeParse({ ...base, loteOrigenId: 'no-uuid' });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('completarTransformacionSchema', () => {
+  it('acepta con al menos una salida, tara por defecto 0', () => {
+    const r = completarTransformacionSchema.safeParse({
+      salidas: [{ loteDestinoId: UUID, pesoBruto: 50 }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.salidas[0].tara).toBe(0);
+  });
+
+  it('acepta varias salidas', () => {
+    const r = completarTransformacionSchema.safeParse({
+      salidas: [
+        { loteDestinoId: UUID, pesoBruto: 50 },
+        { loteDestinoId: UUID2, pesoBruto: 30, tara: 2 },
       ],
     });
     expect(r.success).toBe(true);
   });
 
-  it('rechaza cuando la suma de salidas supera la entrada', () => {
-    const r = crearTransformacionSchema.safeParse({
-      ...base,
-      detalles: [{ materialSalidaId: UUID2, cantidad: 101 }],
-    });
+  it('rechaza sin salidas', () => {
+    const r = completarTransformacionSchema.safeParse({ salidas: [] });
     expect(r.success).toBe(false);
   });
 
-  it('rechaza sin materiales de salida', () => {
-    const r = crearTransformacionSchema.safeParse({ ...base, detalles: [] });
+  it('rechaza pesoBruto <= 0 en una salida', () => {
+    const r = completarTransformacionSchema.safeParse({
+      salidas: [{ loteDestinoId: UUID, pesoBruto: 0 }],
+    });
     expect(r.success).toBe(false);
   });
 });
 
 describe('crearTicketSchema', () => {
-  const material = { productoId: UUID2, pesoBruto: 100, tara: 10 };
+  const material = { productoId: UUID2, pesoBruto: 100, tara: 10, fotos: ['https://x.com/foto.jpg'] };
   const base = { entidadId: UUID, pesoGlobal: 90, materiales: [material] };
 
   it('aplica tipo "compra" y devolucion 0 por defecto', () => {
@@ -99,10 +154,87 @@ describe('crearTicketSchema', () => {
     }
   });
 
+  it('rechaza un material sin fotos (Bloque 46)', () => {
+    const { fotos: _fotos, ...sinFotos } = material;
+    const r = crearTicketSchema.safeParse({ ...base, materiales: [sinFotos] });
+    expect(r.success).toBe(false);
+  });
+
+  it('acepta fotos por material', () => {
+    const r = crearTicketSchema.safeParse({
+      ...base,
+      materiales: [{ ...material, fotos: ['https://x.com/a.jpg', 'https://x.com/b.jpg'] }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.materiales[0].fotos).toEqual(['https://x.com/a.jpg', 'https://x.com/b.jpg']);
+  });
+
   it('rechaza sin peso global', () => {
     const { pesoGlobal: _pesoGlobal, ...sinPesoGlobal } = base;
     const r = crearTicketSchema.safeParse(sinPesoGlobal);
     expect(r.success).toBe(false);
+  });
+
+  describe('peso global obligatorio en compra y venta (excepción: peso exterior)', () => {
+    const sinGlobal = { entidadId: UUID, materiales: [material] };
+    const pesada = { peso: 90, tara: 0, fotos: ['https://x.com/p.jpg'] };
+
+    it('rechaza compra sin peso global ni peso exterior', () => {
+      expect(crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'compra' }).success).toBe(false);
+    });
+
+    it('rechaza compra con peso global 0 y sin peso exterior', () => {
+      expect(crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'compra', pesoGlobal: 0 }).success).toBe(false);
+    });
+
+    it('acepta compra con peso exterior y sin peso global', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'compra', pesajeExterior: true });
+      expect(r.success).toBe(true);
+    });
+
+    it('acepta compra con peso exterior y pesoGlobal null', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'compra', pesajeExterior: true, pesoGlobal: null });
+      expect(r.success).toBe(true);
+    });
+
+    it('rechaza peso exterior junto con peso global (contradictorio)', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, pesajeExterior: true, pesoGlobal: 90 });
+      expect(r.success).toBe(false);
+    });
+
+    it('rechaza peso exterior junto con pesadas globales (contradictorio)', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, pesajeExterior: true, pesajesGlobales: [pesada] });
+      expect(r.success).toBe(false);
+    });
+
+    it('acepta venta con peso exterior y sin peso global', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesajeExterior: true });
+      expect(r.success).toBe(true);
+    });
+
+    it('acepta venta con peso exterior y pesoGlobal null', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesajeExterior: true, pesoGlobal: null });
+      expect(r.success).toBe(true);
+    });
+
+    it('rechaza venta con peso exterior junto con peso global', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesajeExterior: true, pesoGlobal: 90 });
+      expect(r.success).toBe(false);
+    });
+
+    it('rechaza venta con peso exterior junto con pesadas globales', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesajeExterior: true, pesajesGlobales: [pesada] });
+      expect(r.success).toBe(false);
+    });
+
+    it('rechaza venta sin peso global ni peso exterior', () => {
+      expect(crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta' }).success).toBe(false);
+    });
+
+    it('acepta venta con peso global y sin peso exterior', () => {
+      const r = crearTicketSchema.safeParse({ ...sinGlobal, tipo: 'venta', pesoGlobal: 90, pesajesGlobales: [pesada] });
+      expect(r.success).toBe(true);
+    });
   });
 
   it('rechaza peso global negativo', () => {
@@ -113,7 +245,7 @@ describe('crearTicketSchema', () => {
   it('acepta varios materiales', () => {
     const r = crearTicketSchema.safeParse({
       ...base,
-      materiales: [material, { productoId: UUID, pesoBruto: 50, tara: 5 }],
+      materiales: [material, { productoId: UUID, pesoBruto: 50, tara: 5, fotos: ['https://x.com/otra.jpg'] }],
     });
     expect(r.success).toBe(true);
   });
@@ -146,7 +278,7 @@ describe('crearTicketSchema', () => {
 });
 
 describe('completarTicketSchema', () => {
-  const material = { productoId: UUID2, pesoBruto: 100, tara: 10 };
+  const material = { productoId: UUID2, pesoBruto: 100, tara: 10, fotos: ['https://x.com/foto.jpg'] };
 
   it('exige al menos un material', () => {
     const r = completarTicketSchema.safeParse({ materiales: [] });
@@ -160,13 +292,23 @@ describe('completarTicketSchema', () => {
 });
 
 describe('listas de precios', () => {
-  it('crearListaSchema exige nombre', () => {
-    expect(crearListaSchema.safeParse({ nombre: '' }).success).toBe(false);
-    expect(crearListaSchema.safeParse({ nombre: 'Precios Junio' }).success).toBe(true);
+  it('crearListaSchema exige nombre y tipo', () => {
+    expect(crearListaSchema.safeParse({ nombre: '', tipo: 'compra' }).success).toBe(false);
+    expect(crearListaSchema.safeParse({ nombre: 'Precios Junio' }).success).toBe(false);
+    expect(crearListaSchema.safeParse({ nombre: 'Precios Junio', tipo: 'compra' }).success).toBe(true);
+    expect(crearListaSchema.safeParse({ nombre: 'Lista clientes', tipo: 'venta' }).success).toBe(true);
+    expect(crearListaSchema.safeParse({ nombre: 'X', tipo: 'otro' }).success).toBe(false);
   });
 
-  it('upsertPrecioSchema exige precio > 0', () => {
-    expect(upsertPrecioSchema.safeParse({ productoId: UUID, precio: 0 }).success).toBe(false);
+  it('actualizarListaSchema ignora tipo (no editable después de crear)', () => {
+    const r = actualizarListaSchema.safeParse({ activo: false, tipo: 'venta' });
+    expect(r.success).toBe(true);
+    if (r.success) expect((r.data as Record<string, unknown>).tipo).toBeUndefined();
+  });
+
+  it('upsertPrecioSchema acepta precio 0 pero no negativo', () => {
+    expect(upsertPrecioSchema.safeParse({ productoId: UUID, precio: 0 }).success).toBe(true);
+    expect(upsertPrecioSchema.safeParse({ productoId: UUID, precio: -1 }).success).toBe(false);
     expect(upsertPrecioSchema.safeParse({ productoId: UUID, precio: 15 }).success).toBe(true);
   });
 });
@@ -197,9 +339,10 @@ describe('crearTaraSchema', () => {
     expect(crearTaraSchema.safeParse({ nombre: 'Camión 3 ejes', peso: 8500 }).success).toBe(true);
   });
 
-  it('foto es opcional pero debe ser una URL válida si se envía', () => {
-    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, foto: 'no-es-url' }).success).toBe(false);
-    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, foto: 'https://x.test/f.jpg' }).success).toBe(true);
+  it('fotos es opcional pero cada una debe ser una URL válida si se envía', () => {
+    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, fotos: ['no-es-url'] }).success).toBe(false);
+    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, fotos: ['https://x.test/f.jpg'] }).success).toBe(true);
+    expect(crearTaraSchema.safeParse({ nombre: 'X', peso: 10, fotos: ['https://x.test/f1.jpg', 'https://x.test/f2.jpg'] }).success).toBe(true);
   });
 });
 
@@ -247,17 +390,108 @@ describe('registrarPagoSchema', () => {
     expect(registrarPagoSchema.safeParse({ ...base, fecha: '08/07/2026' }).success).toBe(false);
   });
 
-  it('acepta un pago con comprobanteUrl', () => {
-    const r = registrarPagoSchema.safeParse({ ...base, comprobanteUrl: 'https://x.supabase.co/storage/v1/object/public/comprobantes/abc.jpg' });
+  it('acepta un pago con comprobantes', () => {
+    const r = registrarPagoSchema.safeParse({ ...base, comprobantes: ['https://x.supabase.co/storage/v1/object/public/comprobantes/abc.jpg'] });
     expect(r.success).toBe(true);
   });
 
-  it('acepta un pago sin comprobanteUrl (opcional)', () => {
+  it('acepta un pago sin comprobantes (opcional, default vacío)', () => {
     const r = registrarPagoSchema.safeParse(base);
-    expect(r.success && (r.data.comprobanteUrl ?? null)).toBeNull();
+    expect(r.success && r.data.comprobantes).toEqual([]);
   });
 
-  it('rechaza comprobanteUrl que no es una URL válida', () => {
-    expect(registrarPagoSchema.safeParse({ ...base, comprobanteUrl: 'no-es-una-url' }).success).toBe(false);
+  it('rechaza un comprobante que no es una URL válida', () => {
+    expect(registrarPagoSchema.safeParse({ ...base, comprobantes: ['no-es-una-url'] }).success).toBe(false);
+  });
+});
+
+const UUID3 = '33333333-3333-4333-8333-333333333333';
+
+describe('registrarPagoMultipleSchema', () => {
+  const base = {
+    proveedorId: UUID,
+    bancas: [{ bancaId: UUID2, monto: 1000, moneda: 'USD' as const, montoUsd: 1000 }],
+    montoUsd: 1000,
+    fecha: '2026-08-12',
+    items: [] as never[],
+  };
+
+  it('acepta un pago con una sola banca que cubre el total exacto', () => {
+    const r = registrarPagoMultipleSchema.safeParse(base);
+    expect(r.success).toBe(true);
+  });
+
+  it('acepta un pago repartido entre 2 bancas cuya suma coincide con el total', () => {
+    const r = registrarPagoMultipleSchema.safeParse({
+      ...base,
+      bancas: [
+        { bancaId: UUID2, monto: 700, moneda: 'USD' as const, montoUsd: 700 },
+        { bancaId: UUID3, monto: 300, moneda: 'USD' as const, montoUsd: 300 },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rechaza si la suma de las bancas no coincide con el total a pagar', () => {
+    const r = registrarPagoMultipleSchema.safeParse({ ...base, montoUsd: 1500 });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza bancas repetidas', () => {
+    const r = registrarPagoMultipleSchema.safeParse({
+      ...base,
+      bancas: [
+        { bancaId: UUID2, monto: 500, moneda: 'USD' as const, montoUsd: 500 },
+        { bancaId: UUID2, monto: 500, moneda: 'USD' as const, montoUsd: 500 },
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza sin ninguna banca', () => {
+    const r = registrarPagoMultipleSchema.safeParse({ ...base, bancas: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza si el total a pagar es menor a la suma de los ítems seleccionados', () => {
+    const r = registrarPagoMultipleSchema.safeParse({
+      ...base,
+      montoUsd: 100,
+      bancas: [{ bancaId: UUID2, monto: 100, moneda: 'USD' as const, montoUsd: 100 }],
+      items: [{ tipo: 'factura' as const, id: UUID3, montoUsd: 500 }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('acepta el excedente del total sobre los ítems como adelanto implícito (sin error)', () => {
+    const r = registrarPagoMultipleSchema.safeParse({
+      ...base,
+      montoUsd: 1000,
+      bancas: [{ bancaId: UUID2, monto: 1000, moneda: 'USD' as const, montoUsd: 1000 }],
+      items: [{ tipo: 'factura' as const, id: UUID3, montoUsd: 400 }],
+    });
+    expect(r.success).toBe(true);
+  });
+});
+
+// Regresión: schemas/usuarios.ts tenía su propia lista de recursos hardcodeada
+// y desincronizada (8 de 15) — guardar permisos personalizados de cualquiera de
+// los 7 recursos faltantes (categorias, taras, almacenes, listas_precios,
+// traslados, transformaciones, despachos) tiraba "Datos inválidos" con un error
+// por cada uno. Ahora el schema deriva el enum de utils/permisos.ts, así que
+// cualquier recurso/acción real de la matriz tiene que pasar.
+describe('actualizarUsuarioSchema — permisos personalizados', () => {
+  it('acepta un permiso para cada recurso y acción reales de la matriz', () => {
+    for (const recurso of RECURSOS) {
+      for (const accion of ACCIONES) {
+        const r = actualizarUsuarioSchema.safeParse({ permisos: [{ recurso, accion }] });
+        expect(r.success, `${recurso}:${accion} debería ser válido`).toBe(true);
+      }
+    }
+  });
+
+  it('rechaza un recurso que no existe en la matriz', () => {
+    const r = actualizarUsuarioSchema.safeParse({ permisos: [{ recurso: 'no_existe', accion: 'ver' }] });
+    expect(r.success).toBe(false);
   });
 });

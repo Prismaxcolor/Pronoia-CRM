@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Modal from './Modal';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Send, Copy, Check } from 'lucide-react';
 
@@ -61,63 +62,61 @@ function TelegramLinkModal({ nombreEntidad, generarLink, yaVinculado, onClose, o
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-sm">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">Vincular Telegram</h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4 text-center">
-          <p className="text-sm text-text-secondary">
-            Que <strong>{nombreEntidad}</strong> escanee este código o toque el link desde su
-            teléfono, y le dé <strong>Iniciar</strong> al bot. Es un solo paso, una sola vez.
-          </p>
-
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-
-          {!error && !deepLink && (
-            <div className="flex justify-center py-8">
-              <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
-            </div>
-          )}
-
-          {deepLink && (
-            <>
-              <div className="flex justify-center p-4 bg-white rounded-xl">
-                <QRCodeSVG value={deepLink} size={180} />
-              </div>
-
-              <div className="flex gap-2">
-                <a
-                  href={deepLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-                >
-                  <Send size={16} />
-                  Abrir en Telegram
-                </a>
-                <button
-                  type="button"
-                  onClick={copiarLink}
-                  className="px-3 py-2.5 border border-border rounded-lg text-text-secondary hover:bg-surface-alt transition-colors"
-                  title="Copiar link"
-                >
-                  {copiado ? <Check size={16} /> : <Copy size={16} />}
-                </button>
-              </div>
-
-              <p className="text-xs text-text-muted">
-                Esperando a que {nombreEntidad} inicie el bot...
-              </p>
-            </>
-          )}
-        </div>
+    <Modal onClose={onClose} panelClassName="bg-surface rounded-2xl shadow-xl w-full max-w-sm">
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 className="text-lg font-bold text-text-primary">Vincular Telegram</h2>
+        <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <X size={20} />
+        </button>
       </div>
-    </div>
+
+      <div className="p-5 space-y-4 text-center">
+        <p className="text-sm text-text-secondary">
+          Que <strong>{nombreEntidad}</strong> escanee este código o toque el link desde su
+          teléfono, y le dé <strong>Iniciar</strong> al bot. Es un solo paso, una sola vez.
+        </p>
+
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+
+        {!error && !deepLink && (
+          <div className="flex justify-center py-8">
+            <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+          </div>
+        )}
+
+        {deepLink && (
+          <>
+            <div className="flex justify-center p-4 bg-white rounded-xl">
+              <QRCodeSVG value={deepLink} size={180} />
+            </div>
+
+            <div className="flex gap-2">
+              <a
+                href={deepLink}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+              >
+                <Send size={16} />
+                Abrir en Telegram
+              </a>
+              <button
+                type="button"
+                onClick={copiarLink}
+                className="px-3 py-2.5 border border-border rounded-lg text-text-secondary hover:bg-surface-alt transition-colors"
+                title="Copiar link"
+              >
+                {copiado ? <Check size={16} /> : <Copy size={16} />}
+              </button>
+            </div>
+
+            <p className="text-xs text-text-muted">
+              Esperando a que {nombreEntidad} inicie el bot...
+            </p>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 

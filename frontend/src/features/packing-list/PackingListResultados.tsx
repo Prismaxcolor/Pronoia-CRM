@@ -1,0 +1,110 @@
+import { useMemo } from 'react';
+import { formatearPeso } from '../../lib/packing-list';
+import { parsearValorKg, textoValorKg, type KgLote } from '../../lib/proyeccion-packing';
+import { calcularResultados, textoComparacionTotal } from '../../lib/resultados-exportacion';
+import type { ValoracionForm } from './formulario';
+import PackingListResultadoTotal from './PackingListResultadoTotal';
+
+interface Props {
+  kgs: KgLote[];
+  valoracion: ValoracionForm;
+  puedeEditar: boolean;
+  onCambiarReal: (lote: string, texto: string) => void;
+  onCambiarTotalReal: (texto: string) => void;
+}
+
+const TH = 'px-2 py-2 text-xs font-semibold text-text-secondary whitespace-nowrap';
+const INPUT = 'w-28 px-2 py-1.5 bg-surface-alt border border-border rounded-md text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:opacity-70';
+const SIN_DATO = '—';
+
+const usd = (n: number | null): string => (n === null ? SIN_DATO : `USD ${formatearPeso(n)}`);
+const signo = (n: number): string => (n > 0 ? '+' : '');
+const diferencia = (n: number | null): string => (n === null ? SIN_DATO : `${signo(n)}${usd(n)}`);
+const porcentaje = (n: number | null): string => (n === null ? SIN_DATO : `${signo(n)}${formatearPeso(n)} %`);
+const colorDiferencia = (n: number | null): string => (n === null || n === 0 ? '' : n > 0 ? 'text-green-700' : 'text-red-600');
+
+const numericos = (textos: Record<string, string>) =>
+  Object.fromEntries(Object.entries(textos).map(([lote, t]) => [lote, parsearValorKg(t)]));
+
+/**
+ * Resultados de la exportación (interno, no sale en el PDF): proyección inicial frente a lo realmente obtenido,
+ * en TOTAL (lo cobrado) y por lote (valor real por kg de cada lote).
+ */
+function PackingListResultados({ kgs, valoracion, puedeEditar, onCambiarReal, onCambiarTotalReal }: Props) {
+  const resumen = useMemo(
+    () => calcularResultados(kgs, numericos(valoracion.estimado), numericos(valoracion.real)),
+    [kgs, valoracion]
+  );
+
+  if (kgs.length === 0) {
+    return <p className="text-sm text-text-muted">Agrega paletas al detalle para comparar los resultados por lote.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <PackingListResultadoTotal kgs={kgs} valoracion={valoracion} porLote={resumen} puedeEditar={puedeEditar} onCambiarTotalReal={onCambiarTotalReal} />
+      <section aria-label="Comparación por lote">
+      <h3 className="text-sm font-semibold text-text-primary mb-2">Por lote (valor real por kg de cada lote)</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[46rem] text-sm tabular-nums">
+          <thead>
+            <tr className="border-b border-border">
+              <th className={`${TH} text-left`}>Lote</th>
+              <th className={`${TH} text-right`}>Neto (kg)</th>
+              <th className={`${TH} text-right`}>Proyección (USD/kg)</th>
+              <th className={`${TH} text-right`}>Real obtenido (USD/kg)</th>
+              <th className={`${TH} text-right`}>Total proyectado</th>
+              <th className={`${TH} text-right`}>Total real</th>
+              <th className={`${TH} text-right`}>Diferencia (USD)</th>
+              <th className={`${TH} text-right`}>Diferencia (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resumen.lineas.map(l => {
+              const nombre = l.lote === '' ? 'Sin lote' : l.lote;
+              const texto = valoracion.real[l.lote] ?? '';
+              const invalido = texto.trim() !== '' && l.valorRealKgUsd === null;
+              return (
+                <tr key={l.lote} className="border-b border-border/60">
+                  <td className="px-2 py-1.5">{nombre}</td>
+                  <td className="px-2 py-1.5 text-right">{formatearPeso(l.kg)}</td>
+                  <td className="px-2 py-1.5 text-right">{l.valorEstimadoKgUsd === null ? SIN_DATO : textoValorKg(l.valorEstimadoKgUsd)}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    <input
+                      aria-label={`Valor real obtenido por kg del lote ${nombre}`}
+                      aria-invalid={invalido}
+                      inputMode="decimal"
+                      value={texto}
+                      disabled={!puedeEditar}
+                      onChange={e => onCambiarReal(l.lote, e.target.value)}
+                      className={`${INPUT} ${invalido ? 'border-red-500' : ''}`}
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-right">{usd(l.estimadoUsd)}</td>
+                  <td className="px-2 py-1.5 text-right">{usd(l.realUsd)}</td>
+                  <td className={`px-2 py-1.5 text-right font-medium ${colorDiferencia(l.diferenciaUsd)}`}>{diferencia(l.diferenciaUsd)}</td>
+                  <td className={`px-2 py-1.5 text-right font-medium ${colorDiferencia(l.diferenciaPct)}`}>{porcentaje(l.diferenciaPct)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="font-bold">
+              <td className="px-2 py-2" colSpan={4}>Total de lotes comparados</td>
+              <td className="px-2 py-2 text-right">{usd(resumen.totalEstimadoUsd)}</td>
+              <td className="px-2 py-2 text-right">{usd(resumen.totalRealUsd)}</td>
+              <td className={`px-2 py-2 text-right ${colorDiferencia(resumen.diferenciaUsd)}`}>{diferencia(resumen.diferenciaUsd)}</td>
+              <td className={`px-2 py-2 text-right ${colorDiferencia(resumen.diferenciaPct)}`}>{porcentaje(resumen.diferenciaPct)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-text-muted" role="status">
+        {textoComparacionTotal(resumen.lotesComparados, resumen.lotesIncompletos)} Diferencia = real menos proyectado; «{SIN_DATO}» significa que falta el dato.
+      </p>
+      </section>
+    </div>
+  );
+}
+
+export default PackingListResultados;

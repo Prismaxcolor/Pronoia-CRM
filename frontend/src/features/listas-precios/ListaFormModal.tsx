@@ -1,21 +1,25 @@
 import { useState } from 'react';
+import Modal from '../../components/Modal';
 import { X } from 'lucide-react';
 import { crearLista, actualizarLista } from '../../services/lista-precios-service';
-import { useToast } from '../../hooks/use-toast';
+import { useToast } from '../../hooks/use-toast-context';
 import type { ListaPrecios } from '@shared/types/index.js';
 
 interface Props {
   /** Si se pasa, modo "editar". Si no, modo "crear". */
   lista?: ListaPrecios | null;
+  /** Tipo preseleccionado al crear (ej. la pestaña activa en la lista). */
+  tipoInicial?: 'compra' | 'venta';
   onClose: () => void;
   onGuardado: () => void;
 }
 
-function ListaFormModal({ lista, onClose, onGuardado }: Props) {
+function ListaFormModal({ lista, tipoInicial, onClose, onGuardado }: Props) {
   const toast = useToast();
   const editando = !!lista;
 
   const [nombre, setNombre] = useState(lista?.nombre ?? '');
+  const [tipo, setTipo] = useState<'compra' | 'venta'>(lista?.tipo ?? tipoInicial ?? 'compra');
   const [vigenteDesde, setVigenteDesde] = useState(lista?.vigenteDesde ?? '');
   const [activo, setActivo] = useState(lista?.activo ?? true);
   const [guardando, setGuardando] = useState(false);
@@ -32,7 +36,7 @@ function ListaFormModal({ lista, onClose, onGuardado }: Props) {
           vigenteDesde: vigenteDesde || null,
           activo,
         })
-      : await crearLista({ nombre: nombre.trim(), vigenteDesde: vigenteDesde || null });
+      : await crearLista({ nombre: nombre.trim(), tipo, vigenteDesde: vigenteDesde || null });
 
     setGuardando(false);
 
@@ -48,65 +52,85 @@ function ListaFormModal({ lista, onClose, onGuardado }: Props) {
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">
-            {editando ? 'Editar lista' : 'Nueva lista de precios'}
-          </h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
-          </button>
+    <Modal onClose={onClose} bloqueado={guardando} ancho="max-w-md">
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 className="text-lg font-bold text-text-primary">
+          {editando ? 'Editar lista' : 'Nueva lista de precios'}
+        </h2>
+        <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+          <X size={20} />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <div>
+          <label className={labelClass}>Nombre *</label>
+          <input
+            type="text"
+            required
+            value={nombre}
+            onChange={e => setNombre(e.target.value)}
+            className={inputClass}
+            placeholder="Ej. Precios Junio"
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        {editando ? (
           <div>
-            <label className={labelClass}>Nombre *</label>
-            <input
-              type="text"
-              required
-              value={nombre}
-              onChange={e => setNombre(e.target.value)}
-              className={inputClass}
-              placeholder="Ej. Precios Junio"
-            />
+            <label className={labelClass}>Tipo</label>
+            <p className="text-sm text-text-primary px-3 py-2 bg-surface-alt border border-border rounded-lg">
+              {lista?.tipo === 'venta' ? 'Venta (a clientes)' : 'Compra (a proveedores)'}
+            </p>
+            <p className="text-[11px] text-text-muted mt-1">El tipo no se puede cambiar después de crear la lista.</p>
           </div>
-
+        ) : (
           <div>
-            <label className={labelClass}>Vigente desde</label>
+            <label className={labelClass}>Tipo *</label>
+            <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
+              <button type="button" onClick={() => setTipo('compra')} className={`px-4 py-1.5 ${tipo === 'compra' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                Compra
+              </button>
+              <button type="button" onClick={() => setTipo('venta')} className={`px-4 py-1.5 ${tipo === 'venta' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}>
+                Venta
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className={labelClass}>Vigente desde</label>
+          <input
+            type="date"
+            value={vigenteDesde}
+            onChange={e => setVigenteDesde(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+
+        {editando && (
+          <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
             <input
-              type="date"
-              value={vigenteDesde}
-              onChange={e => setVigenteDesde(e.target.value)}
-              className={inputClass}
+              type="checkbox"
+              checked={activo}
+              onChange={e => setActivo(e.target.checked)}
+              className="rounded border-border text-brand-600 focus:ring-brand-400"
             />
-          </div>
+            Lista activa (aparece en los selectores de factura)
+          </label>
+        )}
 
-          {editando && (
-            <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-              <input
-                type="checkbox"
-                checked={activo}
-                onChange={e => setActivo(e.target.checked)}
-                className="rounded border-border text-brand-600 focus:ring-brand-400"
-              />
-              Lista activa (aparece en los selectores de factura)
-            </label>
-          )}
+        {error && <p className="text-red-500 text-sm">{error}</p>}
 
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear lista'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear lista'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

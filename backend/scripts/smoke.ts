@@ -3,7 +3,7 @@ import {
   construirGruposInventario,
   type ProductoInventario,
   type MovimientoInventario,
-  type CantidadPorMaterial,
+  type RetiroTransformacion,
 } from '../src/services/inventario-service.js';
 import {
   construirEstadoCuenta,
@@ -23,7 +23,7 @@ function check(nombre: string, cond: boolean, extra = '') {
 
 // IDs a limpiar
 const ids: Record<string, string | null> = {
-  cat: null, prod: null, lista: null, prov: null, cli: null,
+  cat: null, prod: null, lista: null, prov: null, cli: null, lote: null,
   banca: null, tCompra: null, tVenta: null, fCompra: null, fVenta: null, mov: null, transf: null,
 };
 
@@ -53,7 +53,9 @@ async function main() {
   ids.prov = prov.id;
   const cli = await ins('clientes', { nombre: `${TAG} Cliente`, activo: true, creado_por: userId });
   ids.cli = cli.id;
-  console.log(`  creados: categoría, producto, lista (precio 15), proveedor, cliente`);
+  const lote = await ins('lotes', { nombre: `${TAG} MPP`, activo: true });
+  ids.lote = lote.id;
+  console.log(`  creados: categoría, producto, lista (precio 15), proveedor, cliente, lote`);
 
   console.log('\n2) Pesaje (columna generada peso_neto)');
   const tCompra = await ins('tickets_pesaje', {
@@ -62,6 +64,12 @@ async function main() {
   });
   ids.tCompra = tCompra.id;
   check('peso_neto compra = 100-10-5 = 85', Number(tCompra.peso_neto) === 85, `→ ${tCompra.peso_neto}`);
+  // detalle real (lo que lee stock_lote_por_producto() y el inventario) — el
+  // header de arriba solo prueba las columnas legacy por-material.
+  await ins('detalle_tickets_pesaje', {
+    ticket_id: tCompra.id, producto_id: prod.id, peso_bruto: 100, tara: 10,
+    destino_tipo: 'lote', lote_id: lote.id,
+  });
 
   const tVenta = await ins('tickets_pesaje', {
     tipo: 'venta', entidad_id: cli.id, producto_id: prod.id, fecha: today,
@@ -102,26 +110,35 @@ async function main() {
   ids.mov = mov.id;
   console.log('  egreso de 500 atribuido al proveedor');
 
-  console.log('\n5) Transformación vía RPC atómica (entra 30, sale 20 → neto -10)');
+  console.log('\n5) Transformación vía RPC atómica (Bloque 40 — retira 30 del lote, único producto adentro)');
+  const pesoLote = 90; // detalle_tickets_pesaje: 100 bruto - 10 tara (sin devolución ahí)
   const { data: transfId, error: rpcErr } = await sb.rpc('crear_transformacion', {
-    p_material_entrada_id: prod.id, p_cantidad_entrada: 30, p_notas: `${TAG}`, p_fecha: today,
-    p_detalles: [{ material_salida_id: prod.id, cantidad: 20 }],
+    p_lote_origen_id: lote.id, p_peso_bruto: 30, p_tara: 0, p_fecha: today,
+    p_notas: TAG, p_registrado_por: userId,
   });
   if (rpcErr) throw new Error(`rpc: ${rpcErr.message}`);
   ids.transf = transfId as string;
-  const { count: detCount } = await sb.from('detalle_transformaciones').select('id', { count: 'exact', head: true }).eq('transformacion_id', transfId);
-  check('RPC creó cabecera + 1 detalle (atómico)', detCount === 1, `→ ${detCount}`);
+  const { count: detCount } = await sb.from('transformacion_entrada_detalle').select('id', { count: 'exact', head: true }).eq('transformacion_id', transfId);
+  check('RPC creó cabecera + 1 detalle de entrada (único producto en el lote)', detCount === 1, `→ ${detCount}`);
+  const { data: stockLote } = await sb.rpc('stock_lote_total', { p_lote_id: lote.id });
+  check('stock_lote_total tras el retiro = 90 - 30 = 60', Number(stockLote) === 60, `→ ${stockLote}`);
 
-  console.log('\n6) Inventario (función real): 85 compra − 40 venta − 10 transf = 35');
+  console.log('\n6) Inventario (función real): 90 compra (en el lote) − 30 retirado = 60; venta (en MPP) = -40');
   const productos: ProductoInventario[] = [{ id: prod.id, nombre: prod.nombre, tipoMaterialId: cat.id, nombreCategoria: 'Cobre' }];
-  const mppMov = (peso: number): MovimientoInventario => ({ productoId: prod.id, destinoTipo: 'mpp', loteId: null, destinoLabel: 'MPP', peso });
-  const compras: MovimientoInventario[] = [mppMov(pesoC)];
-  const ventas: MovimientoInventario[] = [mppMov(pesoV)];
-  const tE: CantidadPorMaterial[] = [{ materialId: prod.id, cantidad: 30 }];
-  const tS: CantidadPorMaterial[] = [{ materialId: prod.id, cantidad: 20 }];
-  const grupos = construirGruposInventario(productos, compras, ventas, tE, tS);
-  const stock = grupos[0]?.articulos[0]?.stock;
-  check('stock del material = 35', stock === 35, `→ ${stock}`);
+  const compras: MovimientoInventario[] = [
+    { productoId: prod.id, destinoTipo: 'lote', loteId: lote.id, destinoLabel: lote.nombre, peso: pesoLote },
+  ];
+  const ventas: MovimientoInventario[] = [
+    { productoId: prod.id, destinoTipo: 'mpp', loteId: null, destinoLabel: 'MPP', peso: pesoV },
+  ];
+  const retiros: RetiroTransformacion[] = [
+    { productoId: prod.id, loteOrigenId: lote.id, nombreLoteOrigen: lote.nombre, peso: 30 },
+  ];
+  const grupos = construirGruposInventario(productos, compras, ventas, retiros);
+  const bucketLote = grupos[0]?.articulos.find(a => a.loteId === lote.id);
+  const bucketMpp = grupos[0]?.articulos.find(a => a.destinoTipo === 'mpp');
+  check('stock del lote = 90 − 30 = 60', bucketLote?.stock === 60, `→ ${bucketLote?.stock}`);
+  check('stock en MPP = -40 (solo la venta, sin compra ahí)', bucketMpp?.stock === -pesoV, `→ ${bucketMpp?.stock}`);
 
   console.log('\n7) Estado de cuenta del proveedor (función real)');
   const facturasCruda: FacturaCruda[] = [{ id: fCompra.id, total: 1275, descripcion: null, fecha: `${today}T10:00:00Z` }];
@@ -135,16 +152,16 @@ async function main() {
 async function limpiar() {
   console.log('\n8) Limpieza de datos de prueba');
   const del = async (tabla: string, id: string | null) => { if (id) await sb.from(tabla).delete().eq('id', id); };
-  if (ids.transf) await sb.from('detalle_transformaciones').delete().eq('transformacion_id', ids.transf);
-  await del('transformaciones', ids.transf);
+  await del('transformaciones', ids.transf); // entrada/salida_detalle caen por cascade
   await del('movimientos', ids.mov);
   await del('facturas_compra', ids.fCompra);
   await del('facturas_venta', ids.fVenta);
-  await del('tickets_pesaje', ids.tCompra);
+  await del('tickets_pesaje', ids.tCompra); // detalle_tickets_pesaje cae por cascade
   await del('tickets_pesaje', ids.tVenta);
   if (ids.lista) await sb.from('precios_lista').delete().eq('lista_id', ids.lista);
   await del('listas_precios', ids.lista);
   await del('bancas', ids.banca);
+  await del('lotes', ids.lote);
   await del('productos', ids.prod);
   await del('tipos_material', ids.cat);
   await del('proveedores', ids.prov);

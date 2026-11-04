@@ -1,15 +1,22 @@
 import { apiFetch } from './api-client';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import type { TipoMaterial } from '@shared/types/index.js';
 
 export interface TipoMaterialInput {
   nombre: string;
   descripcion?: string | null;
+  /** true si esta categoría nunca va a un lote específico al pesarla — va
+   *  directo a inventario general (MPP). Ej. "No Ferroso". */
+  sinLote?: boolean;
 }
 
 export async function obtenerTiposMaterial(): Promise<TipoMaterial[]> {
   try {
-    const { tipos } = await apiFetch<{ tipos: TipoMaterial[] }>('/api/tipos-material');
-    return tipos;
+    const { datos } = await obtenerCatalogo('tipos-material', async () => {
+      const { tipos } = await apiFetch<{ tipos: TipoMaterial[] }>('/api/tipos-material');
+      return tipos;
+    });
+    return datos;
   } catch {
     return [];
   }
@@ -59,5 +66,14 @@ export async function reactivarTipoMaterial(id: string): Promise<{ ok: true } | 
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo reactivar la categoría.' };
+  }
+}
+
+export async function borrarTipoMaterial(id: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/tipos-material/${id}`, { method: 'DELETE' });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo eliminar la categoría.' };
   }
 }

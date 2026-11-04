@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
+import { normalizarTemaMarca, type TemaMarca } from '../utils/tema-marca.js';
 
 const TOKEN_EXPIRY = '7d';
 const BCRYPT_ROUNDS = 10;
@@ -15,6 +16,11 @@ export interface UsuarioRow {
   activo: boolean;
   password_hash: string;
   creado_en: string;
+  /** Ausente mientras no se aplique la migración de tema_marca (select '*'). */
+  tema_marca?: unknown;
+  /** Ausentes mientras no se aplique migration_users_telegram.sql. */
+  telegram_chat_id?: string | null;
+  telegram_linked_at?: string | null;
 }
 
 export interface UsuarioPublico {
@@ -25,6 +31,11 @@ export interface UsuarioPublico {
   permisos: unknown;
   activo: boolean;
   creadoEn: string;
+  temaMarca: TemaMarca | null;
+  /** Esta respuesta es siempre del propio usuario (login / me), por eso lleva el chat id. */
+  telegramChatId: string | null;
+  telegramLinkedAt: string | null;
+  telegramVinculado: boolean;
 }
 
 export interface JwtPayload {
@@ -42,6 +53,10 @@ function toPublico(row: UsuarioRow): UsuarioPublico {
     permisos: row.permisos,
     activo: row.activo,
     creadoEn: row.creado_en,
+    temaMarca: normalizarTemaMarca(row.tema_marca),
+    telegramChatId: row.telegram_chat_id ?? null,
+    telegramLinkedAt: row.telegram_linked_at ?? null,
+    telegramVinculado: Boolean(row.telegram_chat_id),
   };
 }
 
@@ -72,6 +87,16 @@ async function verificarPassword(email: string, password: string, hash: string):
     p_password: password,
   });
   return !error && Array.isArray(data) && data.length > 0;
+}
+
+/** Reautenticacion: valida la contrasena actual de un usuario activo (acciones sensibles). */
+export async function verificarPasswordUsuario(id: string, password: string): Promise<boolean> {
+  if (!password) return false;
+  const { data, error } = await supabaseAdmin.from('users').select('*').eq('id', id).maybeSingle();
+  if (error || !data) return false;
+  const row = data as UsuarioRow;
+  if (!row.activo) return false;
+  return verificarPassword(row.email, password, row.password_hash);
 }
 
 export interface AuthResult {
@@ -160,4 +185,21 @@ export async function obtenerUsuarioPorId(id: string): Promise<UsuarioPublico | 
   const row = data as UsuarioRow;
   if (!row.activo) return null;
   return toPublico(row);
+}
+
+/**
+ * Emite la misma sesión que login() para un usuario ya autenticado por otro medio (passkey).
+ * Devuelve null si el usuario no existe o está inactivo.
+ */
+export async function sesionPorUserId(id: string): Promise<AuthResult | null> {
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const row = data as UsuarioRow;
+  if (!row.activo) return null;
+  return { token: firmarToken(row), usuario: toPublico(row) };
 }

@@ -1,25 +1,6 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import ToastContainer from '../components/Toast';
-
-export type ToastTipo = 'success' | 'error' | 'info' | 'warning';
-
-export interface Toast {
-  id: string;
-  tipo: ToastTipo;
-  mensaje: string;
-  duracionMs: number;
-}
-
-interface ToastContextType {
-  mostrar: (mensaje: string, tipo?: ToastTipo, duracionMs?: number) => void;
-  exito: (mensaje: string) => void;
-  errorMsg: (mensaje: string) => void;
-  info: (mensaje: string) => void;
-  advertencia: (mensaje: string) => void;
-  cerrar: (id: string) => void;
-}
-
-const ToastContext = createContext<ToastContextType | null>(null);
+import { ToastContext, type Toast, type ToastTipo } from './use-toast-context';
 
 const DEFAULT_DURATION = 4000;
 const ERROR_DURATION = 6000;
@@ -51,10 +32,4 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <ToastContainer toasts={toasts} onClose={cerrar} />
     </ToastContext.Provider>
   );
-}
-
-export function useToast(): ToastContextType {
-  const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error('useToast debe usarse dentro de ToastProvider');
-  return ctx;
 }

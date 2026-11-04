@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AlertTriangle, AlertOctagon, HelpCircle, X } from 'lucide-react';
-import type { ConfirmVariant } from '../hooks/use-confirm';
+import type { ConfirmVariant } from '../hooks/use-confirm-context';
+import Modal from './Modal';
 
 interface VariantStyles {
   icon: React.ReactNode;
@@ -53,12 +54,11 @@ function ConfirmDialog({
 }: Props) {
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
-  // foco al botón confirmar al abrir + cierre con ESC
+  // foco al botón confirmar al abrir; Enter confirma (Escape y foco los resuelve <Modal>)
   useEffect(() => {
     if (!abierto) return;
     confirmBtnRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancelar();
       if (e.key === 'Enter') onConfirmar();
     };
     window.addEventListener('keydown', onKey);
@@ -70,17 +70,13 @@ function ConfirmDialog({
   const cfg = VARIANTES[variante];
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-titulo"
-      className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/50 animate-[fade-in_0.15s_ease-out]"
-      onClick={onCancelar}
+    <Modal
+      onClose={onCancelar}
+      tituloId="confirm-titulo"
+      cerrarAlClicFondo
+      overlayClassName="z-[90] flex items-center justify-center p-4 bg-black/50 animate-[fade-in_0.15s_ease-out]"
+      panelClassName="bg-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-[scale-in_0.18s_ease-out]"
     >
-      <div
-        className="bg-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-[scale-in_0.18s_ease-out]"
-        onClick={e => e.stopPropagation()}
-      >
         <div className="flex items-start gap-4 p-5">
           <div className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center ${cfg.iconBg} ${cfg.iconColor}`}>
             {cfg.icon}
@@ -120,8 +116,7 @@ function ConfirmDialog({
             {confirmarLabel}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

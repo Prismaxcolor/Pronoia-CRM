@@ -1,11 +1,22 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { X, Plus, Trash2, ImagePlus } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
+import Modal from '../../components/Modal';
+import { altaEnColaActiva } from '../../services/maestros-cola';
+import { X, Plus, Trash2 } from 'lucide-react';
 import { crearProducto, actualizarProducto, obtenerProductos } from '../../services/producto-service';
 import { obtenerTiposMaterial } from '../../services/tipo-material-service';
+import { obtenerLotes } from '../../services/lote-service';
+import LotesPosiblesPicker from './LotesPosiblesPicker';
 import { subirImagenProducto } from '../../services/storage-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial } from '@shared/types/index.js';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import AvisoBorrador from '../../components/AvisoBorrador';
+import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
+import { TTL_ALTA_BORRADOR_MS, difiereEstado, huellaDocumento } from '../../lib/borrador';
+import { admiteEstadoLimpieza, estadoLimpiezaAApi, ETIQUETA_ESTADO_LIMPIEZA, type EstadoLimpiezaForm } from './estado-limpieza';
+import type { Producto, TipoProducto, VarianteProducto, SubProductoRef, TipoMaterial, Lote } from '@shared/types/index.js';
 
 interface Props {
   /** Si se pasa, el form arranca en modo "editar". Si no, modo "crear". */
@@ -38,14 +49,21 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       setCategorias(tipos.filter(t => t.activo || t.id === producto?.tipoMaterialId))
     );
   }, [producto?.tipoMaterialId]);
+  const [lotesDisponibles, setLotesDisponibles] = useState<Lote[]>([]);
+  const [loteIds, setLoteIds] = useState<string[]>(producto?.loteIds ?? []);
+  useEffect(() => {
+    obtenerLotes().then(lotes =>
+      setLotesDisponibles(lotes.filter(l => l.activo || (producto?.loteIds ?? []).includes(l.id)))
+    );
+  }, [producto?.loteIds]);
   const [activo, setActivo] = useState(producto?.activo ?? true);
+  const [estadoLimpieza, setEstadoLimpieza] = useState<EstadoLimpiezaForm>(producto?.estadoLimpieza ?? '');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Imagen
-  const [imagenFile, setImagenFile] = useState<File | null>(null);
-  const [imagenPreview, setImagenPreview] = useState<string | null>(producto?.imagenUrl ?? null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Fotos
+  const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(producto?.fotos ?? []));
+  useLiberarVistasPrevias(fotos);
 
   // Amarillo
   const initialAmarillo = producto?.tipo === 'amarillo' ? producto : null;
@@ -63,6 +81,45 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     initialVerde?.subProductos ?? [{ tipo: 'ref', productoId: '', cantidad: 1 }]
   );
 
+  // Borrador del formulario (uno por producto, o uno para "nuevo"): sobrevive a F5. La base
+  // para detectar cambios se captura una sola vez, con los valores con que arrancó el formulario.
+  const estadoBorrador = { tipo, nombre, descripcion, tipoMaterialId, moneda, loteIds, activo, fotos, peso, variantes, subProductos, estadoLimpieza };
+  const [estadoInicial] = useState(() => estadoBorrador);
+  const aplicarEstado = (e: typeof estadoBorrador) => {
+    setTipo(e.tipo); setNombre(e.nombre); setDescripcion(e.descripcion); setTipoMaterialId(e.tipoMaterialId);
+    setMoneda(e.moneda); setLoteIds(e.loteIds); setActivo(e.activo); setFotos(e.fotos);
+    setPeso(e.peso); setVariantes(e.variantes); setSubProductos(e.subProductos); setEstadoLimpieza(e.estadoLimpieza);
+  };
+  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+    formulario: 'producto',
+    docId: producto?.id ?? null,
+    version: 1,
+    // Alta de maestro: sin pesos de operación ni dinero, conserva el TTL largo.
+    ttlMs: TTL_ALTA_BORRADOR_MS,
+    // Editar: si el producto cambió en el servidor desde que se guardó el borrador, este se descarta con aviso.
+    huellaBase: producto ? huellaDocumento(producto) : null,
+    estado: estadoBorrador,
+    hayCambios: difiereEstado(estadoBorrador, estadoInicial),
+    aplicar: d => aplicarEstado({
+      tipo: d.tipo ?? estadoInicial.tipo,
+      nombre: d.nombre ?? estadoInicial.nombre,
+      descripcion: d.descripcion ?? estadoInicial.descripcion,
+      tipoMaterialId: d.tipoMaterialId ?? estadoInicial.tipoMaterialId,
+      moneda: d.moneda ?? estadoInicial.moneda,
+      loteIds: d.loteIds ?? estadoInicial.loteIds,
+      activo: d.activo ?? estadoInicial.activo,
+      fotos: d.fotos ?? estadoInicial.fotos,
+      peso: d.peso ?? estadoInicial.peso,
+      variantes: d.variantes && d.variantes.length > 0 ? d.variantes : estadoInicial.variantes,
+      subProductos: d.subProductos && d.subProductos.length > 0 ? d.subProductos : estadoInicial.subProductos,
+      // Borradores guardados antes de este campo no lo traen: se usa el valor inicial ('' = sin definir es un valor válido).
+      estadoLimpieza: d.estadoLimpieza ?? estadoInicial.estadoLimpieza,
+    }),
+    restablecer: () => aplicarEstado(estadoInicial),
+  });
+  // Cerrar (X o Cancelar) descarta el borrador guardado.
+  const cerrar = () => { borrador.limpiar(); onClose(); };
+
   // Catálogo para el select de subproductos (solo se carga cuando el tipo es verde)
   const [catalogo, setCatalogo] = useState<Producto[]>([]);
   useEffect(() => {
@@ -76,12 +133,10 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     [catalogo, producto?.id]
   );
 
-  const handleImagenChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImagenFile(file);
-    setImagenPreview(URL.createObjectURL(file));
-  };
+  const admiteLimpieza = admiteEstadoLimpieza(categorias.find(c => c.id === tipoMaterialId)?.nombre ?? producto?.tipoMaterialNombre);
+
+  const agregarFotos = (files: File[]) => setFotos(prev => [...prev, ...files.map(fotoLocalDeFile)]);
+  const quitarFoto = (idx: number) => setFotos(prev => prev.filter((_, i) => i !== idx));
 
   const addVariante = () => setVariantes([...variantes, { id: crypto.randomUUID(), nombre: '', cantidad: 0, precioUnitario: 0 }]);
   const removeVariante = (idx: number) => setVariantes(variantes.filter((_, i) => i !== idx));
@@ -115,15 +170,12 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
     setGuardando(true);
     setError(null);
 
-    let imagenUrl: string | null = producto?.imagenUrl ?? null;
-    if (imagenFile) {
-      const subida = await subirImagenProducto(imagenFile);
-      if (!subida) {
-        setError('Error al subir la imagen. Intenta de nuevo.');
-        setGuardando(false);
-        return;
-      }
-      imagenUrl = subida;
+    const enCola = !editando && altaEnColaActiva();
+    const urls = enCola ? [] : await subirFotosLocal(fotos, subirImagenProducto);
+    if (!urls) {
+      setError('Error al subir una de las fotos. Intenta de nuevo.');
+      setGuardando(false);
+      return;
     }
 
     if (!tipoMaterialId) {
@@ -132,7 +184,11 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
       return;
     }
 
-    const base = { nombre, descripcion, tipoMaterialId, moneda, activo, imagenUrl };
+    // Fuera de Ferroso / No ferroso el estado no aplica: viaja null (borra un valor viejo si cambió de categoría).
+    const base = {
+      nombre, descripcion, tipoMaterialId, moneda, activo, fotos: urls, loteIds,
+      estadoLimpieza: admiteLimpieza ? estadoLimpiezaAApi(estadoLimpieza) : null,
+    };
 
     let payload;
     if (tipo === 'amarillo') {
@@ -145,12 +201,13 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
 
     const result = editando && producto
       ? await actualizarProducto(producto.id, payload as never)
-      : await crearProducto({ ...payload, creadoPor: usuario?.id ?? '' } as never);
+      : await crearProducto({ ...payload, creadoPor: usuario?.id ?? '' } as never, enCola ? fotos : undefined);
 
     setGuardando(false);
 
     if ('producto' in result) {
-      toast.exito(editando ? `"${result.producto.nombre}" actualizado.` : `"${result.producto.nombre}" creado.`);
+      toast.exito(editando ? `"${result.producto.nombre}" actualizado.` : `"${result.producto.nombre}" ${'enCola' in result ? 'guardado en el teléfono; se enviará al volver la conexión' : 'creado'}.`);
+      borrador.limpiar();
       onGuardado(editando ? 'editar' : 'crear');
     } else {
       setError(result.error);
@@ -161,279 +218,275 @@ function ProductoForm({ producto, onClose, onGuardado }: Props) {
   const labelClass = "block text-xs font-medium text-text-secondary mb-1";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">
-            {editando ? 'Editar producto' : 'Nuevo producto'}
-          </h2>
-          <button type="button" onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
-            <X size={20} />
-          </button>
-        </div>
+    <Modal onClose={cerrar} bloqueado={guardando}>
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <h2 className="text-lg font-bold text-text-primary">
+          {editando ? 'Editar producto' : 'Nuevo producto'}
+        </h2>
+        <button type="button" onClick={cerrar} className="text-text-muted hover:text-text-primary transition-colors">
+          <X size={20} />
+        </button>
+      </div>
 
-        {/* Selector de tipo (bloqueado en edit) */}
-        <div className="flex gap-2 p-5 pb-0">
-          {TIPO_TABS.map(tab => {
-            const seleccionado = tipo === tab.tipo;
-            const deshabilitado = editando && !seleccionado;
-            return (
-              <button
-                key={tab.tipo}
-                type="button"
-                onClick={() => !editando && setTipo(tab.tipo)}
-                disabled={deshabilitado}
-                className={`flex-1 p-3 rounded-xl border-2 transition-all text-center ${
-                  seleccionado
-                    ? 'border-brand-500 bg-brand-50 shadow-sm'
-                    : 'border-border hover:border-brand-200'
-                } ${deshabilitado ? 'opacity-40 cursor-not-allowed' : ''}`}
-              >
-                <div className={`w-3 h-3 rounded-full ${tab.color} mx-auto mb-1.5`} />
-                <p className="text-xs font-semibold text-text-primary">{tab.label}</p>
-                <p className="text-xs text-text-muted mt-0.5 hidden sm:block">{tab.desc}</p>
-              </button>
-            );
-          })}
-        </div>
-        {editando && (
-          <p className="text-xs text-text-muted px-5 pt-2">El tipo no se puede cambiar después de creado.</p>
-        )}
-
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className={labelClass}>Imagen del producto</label>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border rounded-xl p-4 cursor-pointer hover:border-brand-400 transition-colors flex flex-col items-center justify-center min-h-[120px]"
+      {/* Selector de tipo (bloqueado en edit) */}
+      <div className="flex gap-2 p-5 pb-0">
+        {TIPO_TABS.map(tab => {
+          const seleccionado = tipo === tab.tipo;
+          const deshabilitado = editando && !seleccionado;
+          return (
+            <button
+              key={tab.tipo}
+              type="button"
+              onClick={() => !editando && setTipo(tab.tipo)}
+              disabled={deshabilitado}
+              className={`flex-1 p-3 rounded-xl border-2 transition-all text-center ${
+                seleccionado
+                  ? 'border-brand-500 bg-brand-50 shadow-sm'
+                  : 'border-border hover:border-brand-200'
+              } ${deshabilitado ? 'opacity-40 cursor-not-allowed' : ''}`}
             >
-              {imagenPreview ? (
-                <img src={imagenPreview} alt="Preview" className="max-h-28 object-contain rounded-lg" />
-              ) : (
-                <>
-                  <ImagePlus size={32} className="text-text-muted mb-2" />
-                  <p className="text-xs text-text-muted">Click para seleccionar imagen</p>
-                </>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImagenChange}
-              className="hidden"
-            />
-            {imagenFile && (
-              <p className="text-xs text-text-secondary mt-1">{imagenFile.name}</p>
+              <div className={`w-3 h-3 rounded-full ${tab.color} mx-auto mb-1.5`} />
+              <p className="text-xs font-semibold text-text-primary">{tab.label}</p>
+              <p className="text-xs text-text-muted mt-0.5 hidden sm:block">{tab.desc}</p>
+            </button>
+          );
+        })}
+      </div>
+      {editando && (
+        <p className="text-xs text-text-muted px-5 pt-2">El tipo no se puede cambiar después de creado.</p>
+      )}
+
+      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <AvisoBorrador formulario="este producto" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+        <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos del producto" />
+
+        <div>
+          <label className={labelClass}>Nombre</label>
+          <input type="text" required value={nombre} onChange={e => setNombre(e.target.value)} className={inputClass} placeholder="Nombre del producto" />
+        </div>
+        <div>
+          <label className={labelClass}>Descripcion</label>
+          <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Descripcion breve" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className={labelClass}>Categoría</label>
+            <select
+              required
+              value={tipoMaterialId}
+              onChange={e => setTipoMaterialId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">— Selecciona —</option>
+              {categorias.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}{!c.activo ? ' (inactiva)' : ''}
+                </option>
+              ))}
+            </select>
+            {categorias.length === 0 && (
+              <p className="text-xs text-text-muted mt-1">
+                No hay categorías. Créalas desde Productos → Gestionar categorías.
+              </p>
             )}
           </div>
-
           <div>
-            <label className={labelClass}>Nombre</label>
-            <input type="text" required value={nombre} onChange={e => setNombre(e.target.value)} className={inputClass} placeholder="Nombre del producto" />
+            <label className={labelClass}>Moneda</label>
+            <select value={moneda} onChange={e => setMoneda(e.target.value)} className={inputClass}>
+              <option value="USD">USD</option>
+              <option value="VES">VES</option>
+            </select>
           </div>
+        </div>
+
+        {admiteLimpieza && (
           <div>
-            <label className={labelClass}>Descripcion</label>
-            <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} className={`${inputClass} resize-none`} rows={2} placeholder="Descripcion breve" />
+            <label className={labelClass} htmlFor="producto-estado-limpieza">Estado del material</label>
+            <select
+              id="producto-estado-limpieza"
+              value={estadoLimpieza}
+              onChange={e => setEstadoLimpieza(e.target.value as EstadoLimpiezaForm)}
+              className={inputClass}
+            >
+              {(Object.keys(ETIQUETA_ESTADO_LIMPIEZA) as EstadoLimpiezaForm[]).map(v => (
+                <option key={v || 'sin-definir'} value={v}>{ETIQUETA_ESTADO_LIMPIEZA[v]}</option>
+              ))}
+            </select>
+            <p className="text-xs text-text-muted mt-1">Material limpio: sin residuos. Material sucio: trae residuos. Sirve para separarlos en el inventario; si no lo indicas queda como “Sin definir”.</p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+        )}
+
+        <div>
+          <label className={labelClass}>Lotes ancla <span className="text-text-muted">(opcional)</span></label>
+          <LotesPosiblesPicker lotes={lotesDisponibles} seleccionados={loteIds} onChange={setLoteIds} />
+        </div>
+
+        {editando && (
+          <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={activo}
+              onChange={e => setActivo(e.target.checked)}
+              className="w-4 h-4 accent-brand-600"
+            />
+            Producto activo (aparece en el catálogo de facturación)
+          </label>
+        )}
+
+        {tipo === 'amarillo' && (
+          <div className="grid grid-cols-2 gap-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
             <div>
-              <label className={labelClass}>Categoría</label>
-              <select
-                required
-                value={tipoMaterialId}
-                onChange={e => setTipoMaterialId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">— Selecciona —</option>
-                {categorias.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}{!c.activo ? ' (inactiva)' : ''}
-                  </option>
-                ))}
-              </select>
-              {categorias.length === 0 && (
-                <p className="text-xs text-text-muted mt-1">
-                  No hay categorías. Créalas desde Productos → Gestionar categorías.
-                </p>
-              )}
-            </div>
-            <div>
-              <label className={labelClass}>Moneda</label>
-              <select value={moneda} onChange={e => setMoneda(e.target.value)} className={inputClass}>
-                <option value="USD">USD</option>
-                <option value="VES">VES</option>
-              </select>
+              <label className={labelClass}>Peso (kg)</label>
+              <input type="number" step="0.001" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
             </div>
           </div>
+        )}
 
-          {editando && (
-            <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={activo}
-                onChange={e => setActivo(e.target.checked)}
-                className="w-4 h-4 accent-brand-600"
-              />
-              Producto activo (aparece en el catálogo de facturación)
-            </label>
-          )}
-
-          {tipo === 'amarillo' && (
-            <div className="grid grid-cols-2 gap-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-              <div>
-                <label className={labelClass}>Peso (kg)</label>
-                <input type="number" step="0.01" min="0" value={peso} onChange={e => setPeso(Number(e.target.value))} className={inputClass} />
-              </div>
+        {tipo === 'azul' && (
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-text-secondary">Variantes</label>
+              <button type="button" onClick={addVariante} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-800">
+                <Plus size={14} /> Agregar
+              </button>
             </div>
-          )}
-
-          {tipo === 'azul' && (
-            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-text-secondary">Variantes</label>
-                <button type="button" onClick={addVariante} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-800">
-                  <Plus size={14} /> Agregar
-                </button>
+            {variantes.map((v, idx) => (
+              <div key={v.id} className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <input type="text" placeholder="Nombre" value={v.nombre} onChange={e => updateVariante(idx, 'nombre', e.target.value)} className={inputClass} />
+                </div>
+                <div className="w-20">
+                  <input type="number" min="0" placeholder="Cant" value={v.cantidad} onChange={e => updateVariante(idx, 'cantidad', Number(e.target.value))} className={inputClass} />
+                </div>
+                <div className="w-24">
+                  <input type="number" step="0.01" min="0" placeholder="Precio" value={v.precioUnitario} onChange={e => updateVariante(idx, 'precioUnitario', Number(e.target.value))} className={inputClass} />
+                </div>
+                {variantes.length > 1 && (
+                  <button type="button" onClick={() => removeVariante(idx)} className="text-red-400 hover:text-red-600 p-1">
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
-              {variantes.map((v, idx) => (
-                <div key={v.id} className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <input type="text" placeholder="Nombre" value={v.nombre} onChange={e => updateVariante(idx, 'nombre', e.target.value)} className={inputClass} />
+            ))}
+          </div>
+        )}
+
+        {tipo === 'verde' && (
+          <div className="p-3 bg-green-50 rounded-lg border border-green-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-text-secondary">Subproductos</label>
+              <button type="button" onClick={addSubProducto} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-800">
+                <Plus size={14} /> Agregar
+              </button>
+            </div>
+
+            {subProductos.map((s, idx) => (
+              <div key={idx} className="bg-white border border-green-200 rounded-lg p-2 space-y-2">
+                {/* Selector de modo */}
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-md overflow-hidden border border-border text-xs">
+                    <button
+                      type="button"
+                      onClick={() => cambiarTipoSubProducto(idx, 'ref')}
+                      className={`px-2 py-1 ${s.tipo === 'ref' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}
+                    >
+                      Del catálogo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cambiarTipoSubProducto(idx, 'manual')}
+                      className={`px-2 py-1 ${s.tipo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}
+                    >
+                      Manual
+                    </button>
                   </div>
-                  <div className="w-20">
-                    <input type="number" min="0" placeholder="Cant" value={v.cantidad} onChange={e => updateVariante(idx, 'cantidad', Number(e.target.value))} className={inputClass} />
-                  </div>
-                  <div className="w-24">
-                    <input type="number" step="0.01" min="0" placeholder="Precio" value={v.precioUnitario} onChange={e => updateVariante(idx, 'precioUnitario', Number(e.target.value))} className={inputClass} />
-                  </div>
-                  {variantes.length > 1 && (
-                    <button type="button" onClick={() => removeVariante(idx)} className="text-red-400 hover:text-red-600 p-1">
+                  {subProductos.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeSubProducto(idx)}
+                      className="ml-auto text-red-400 hover:text-red-600 p-1"
+                      title="Quitar subproducto"
+                    >
                       <Trash2 size={16} />
                     </button>
                   )}
                 </div>
-              ))}
-            </div>
-          )}
 
-          {tipo === 'verde' && (
-            <div className="p-3 bg-green-50 rounded-lg border border-green-200 space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-text-secondary">Subproductos</label>
-                <button type="button" onClick={addSubProducto} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-800">
-                  <Plus size={14} /> Agregar
-                </button>
-              </div>
-
-              {subProductos.map((s, idx) => (
-                <div key={idx} className="bg-white border border-green-200 rounded-lg p-2 space-y-2">
-                  {/* Selector de modo */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex rounded-md overflow-hidden border border-border text-xs">
-                      <button
-                        type="button"
-                        onClick={() => cambiarTipoSubProducto(idx, 'ref')}
-                        className={`px-2 py-1 ${s.tipo === 'ref' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}
+                {s.tipo === 'ref' ? (
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <select
+                        value={s.productoId}
+                        onChange={e =>
+                          setSubProducto(idx, { ...s, productoId: e.target.value })
+                        }
+                        className={inputClass}
                       >
-                        Del catálogo
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => cambiarTipoSubProducto(idx, 'manual')}
-                        className={`px-2 py-1 ${s.tipo === 'manual' ? 'bg-brand-600 text-white' : 'bg-surface-alt text-text-secondary'}`}
-                      >
-                        Manual
-                      </button>
+                        <option value="">— Selecciona un producto —</option>
+                        {opcionesCatalogo.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.nombre} ({p.tipo === 'amarillo' ? 'básico' : 'variantes'})
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    {subProductos.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeSubProducto(idx)}
-                        className="ml-auto text-red-400 hover:text-red-600 p-1"
-                        title="Quitar subproducto"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
+                    <div className="w-20">
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Cant"
+                        value={s.cantidad}
+                        onChange={e =>
+                          setSubProducto(idx, { ...s, cantidad: Number(e.target.value) })
+                        }
+                        className={inputClass}
+                      />
+                    </div>
                   </div>
-
-                  {s.tipo === 'ref' ? (
-                    <div className="flex gap-2 items-end">
-                      <div className="flex-1">
-                        <select
-                          value={s.productoId}
-                          onChange={e =>
-                            setSubProducto(idx, { ...s, productoId: e.target.value })
-                          }
-                          className={inputClass}
-                        >
-                          <option value="">— Selecciona un producto —</option>
-                          {opcionesCatalogo.map(p => (
-                            <option key={p.id} value={p.id}>
-                              {p.nombre} ({p.tipo === 'amarillo' ? 'básico' : 'variantes'})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="w-20">
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="Cant"
-                          value={s.cantidad}
-                          onChange={e =>
-                            setSubProducto(idx, { ...s, cantidad: Number(e.target.value) })
-                          }
-                          className={inputClass}
-                        />
-                      </div>
+                ) : (
+                  <div className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-9">
+                      <input
+                        type="text"
+                        placeholder="Nombre del subproducto"
+                        value={s.nombre}
+                        onChange={e =>
+                          setSubProducto(idx, { ...s, nombre: e.target.value })
+                        }
+                        className={inputClass}
+                      />
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-9">
-                        <input
-                          type="text"
-                          placeholder="Nombre del subproducto"
-                          value={s.nombre}
-                          onChange={e =>
-                            setSubProducto(idx, { ...s, nombre: e.target.value })
-                          }
-                          className={inputClass}
-                        />
-                      </div>
-                      <div className="col-span-3">
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="Cant"
-                          value={s.cantidad}
-                          onChange={e =>
-                            setSubProducto(idx, { ...s, cantidad: Number(e.target.value) })
-                          }
-                          className={inputClass}
-                        />
-                      </div>
+                    <div className="col-span-3">
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Cant"
+                        value={s.cantidad}
+                        onChange={e =>
+                          setSubProducto(idx, { ...s, cantidad: Number(e.target.value) })
+                        }
+                        className={inputClass}
+                      />
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-              {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear producto'}
-            </button>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={cerrar} className="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-hover transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear producto'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

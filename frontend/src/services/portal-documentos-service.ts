@@ -7,7 +7,7 @@ export interface PortalFactura {
   codigo: string | null;
   tipo: 'compra' | 'venta';
   total: number;
-  estado: 'borrador' | 'emitida' | 'pagada';
+  estado: 'borrador' | 'emitida' | 'pendiente' | 'pagada' | 'anulada';
   createdAt: string;
 }
 
@@ -24,7 +24,7 @@ export interface PortalComprobante {
   id: string;
   fecha: string;
   montoUsd: number;
-  comprobanteUrl: string;
+  comprobantes: string[];
 }
 
 export interface PortalDocumentos {

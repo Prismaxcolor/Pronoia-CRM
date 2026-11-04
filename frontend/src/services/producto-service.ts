@@ -1,4 +1,8 @@
 import { apiFetch } from './api-client';
+import { altaMaestroF4, fotosYaSubidas, provisionalesDeMaestro } from './maestros-cola';
+import { offlineHabilitado } from '../lib/offline/sesion';
+import type { FotoLocal } from '../lib/foto-picker';
+import { obtenerCatalogo } from '../lib/offline/catalogos';
 import { PRODUCTOS_MOCK } from './mock-data';
 import type {
   Producto,
@@ -13,10 +17,13 @@ interface ProductoApi {
   descripcion: string;
   tipoMaterialId: string | null;
   tipoMaterialNombre: string | null;
+  tipoMaterialSinLote: boolean | null;
+  loteIds?: string[];
+  estadoLimpieza?: 'limpio' | 'sucio' | null;
   moneda: string;
   activo: boolean;
   tipo: TipoProducto;
-  imagenUrl: string | null;
+  fotos: string[];
   creadoPor: string;
   creadoEn: string;
   peso?: number;
@@ -31,9 +38,12 @@ function mapApi(api: ProductoApi): Producto {
     descripcion: api.descripcion,
     tipoMaterialId: api.tipoMaterialId,
     tipoMaterialNombre: api.tipoMaterialNombre,
+    tipoMaterialSinLote: api.tipoMaterialSinLote,
+    loteIds: api.loteIds ?? [],
+    estadoLimpieza: api.estadoLimpieza ?? null,
     moneda: api.moneda,
     activo: api.activo,
-    imagenUrl: api.imagenUrl,
+    fotos: api.fotos,
     creadoPor: api.creadoPor,
     creadoEn: api.creadoEn,
   };
@@ -56,8 +66,11 @@ function mapApi(api: ProductoApi): Producto {
 
 export async function obtenerProductos(): Promise<Producto[]> {
   try {
-    const { productos } = await apiFetch<{ productos: ProductoApi[] }>('/api/productos');
-    return productos.map(mapApi);
+    const { datos } = await obtenerCatalogo('productos', async () => {
+      const { productos } = await apiFetch<{ productos: ProductoApi[] }>('/api/productos');
+      return productos.map(mapApi);
+    });
+    return [...datos, ...(await provisionalesDeMaestro<Producto>('producto'))];
   } catch {
     return PRODUCTOS_MOCK;
   }
@@ -66,8 +79,15 @@ export async function obtenerProductos(): Promise<Producto[]> {
 export type ProductoInput = Omit<Producto, 'id' | 'creadoEn' | 'creadoPor'>;
 
 export async function crearProducto(
-  producto: ProductoInput
-): Promise<{ producto: Producto } | { error: string }> {
+  producto: ProductoInput,
+  fotosLocales?: FotoLocal[]
+): Promise<{ producto: Producto; enCola?: true } | { error: string }> {
+  if (offlineHabilitado()) {
+    const { fotos, ...datos } = producto;
+    const r = await altaMaestroF4<ProductoApi>('producto', datos, fotosLocales ?? fotosYaSubidas(fotos));
+    if ('error' in r) return r;
+    return { producto: mapApi(r.entidad), ...(r.enCola ? { enCola: true as const } : {}) };
+  }
   try {
     const { producto: creado } = await apiFetch<{ producto: ProductoApi }>('/api/productos', {
       method: 'POST',
@@ -118,5 +138,15 @@ export async function borrarProducto(id: string): Promise<{ ok: true } | { error
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo borrar el producto.' };
+  }
+}
+
+/** Persiste el nuevo orden del catálogo: ids en el orden deseado, de arriba a abajo. */
+export async function reordenarProductos(ids: string[]): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch('/api/productos/reordenar', { method: 'PATCH', body: { ids } });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo reordenar el catálogo.' };
   }
 }

@@ -7,6 +7,7 @@ import {
   eliminarLista,
   upsertPrecioEnLista,
   eliminarPrecio,
+  reordenarPrecios,
   listasParaProducto,
 } from '../services/lista-precios-service.js';
 import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
@@ -15,6 +16,7 @@ import {
   crearListaSchema,
   actualizarListaSchema,
   upsertPrecioSchema,
+  reordenarPreciosSchema,
 } from '../schemas/listas-precios.js';
 import { logger, clienteIp } from '../utils/logger.js';
 
@@ -22,22 +24,25 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Listas de precios = configuración del catálogo de compra → permiso 'productos'.
+// Listas de precios = configuración del catálogo → permiso 'listas_precios'. Hay
+// listas de compra (a proveedores) y de venta (a clientes), ver Bloque 32.
 
-router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
-  const listas = await listarListas();
+router.get('/', requirePermiso('listas_precios', 'ver'), async (req, res) => {
+  const tipo = req.query.tipo === 'compra' || req.query.tipo === 'venta' ? req.query.tipo : undefined;
+  const listas = await listarListas(tipo);
   res.json({ listas });
 });
 
 // IMPORTANTE: declarar antes de '/:id' para que no lo capture la ruta dinámica.
-router.get('/para-producto/:productoId', requirePermiso('productos', 'ver'), async (req, res) => {
-  const listas = await listasParaProducto(String(req.params.productoId));
+router.get('/para-producto/:productoId', requirePermiso('listas_precios', 'ver'), async (req, res) => {
+  const tipo = req.query.tipo === 'venta' ? 'venta' : 'compra';
+  const listas = await listasParaProducto(String(req.params.productoId), tipo);
   res.json({ listas });
 });
 
 router.post(
   '/',
-  requirePermiso('productos', 'crear'),
+  requirePermiso('listas_precios', 'crear'),
   validateBody(crearListaSchema),
   async (req, res) => {
     const result = await crearLista(req.body);
@@ -55,7 +60,7 @@ router.post(
   }
 );
 
-router.get('/:id', requirePermiso('productos', 'ver'), async (req, res) => {
+router.get('/:id', requirePermiso('listas_precios', 'ver'), async (req, res) => {
   const detalle = await obtenerListaDetalle(String(req.params.id));
   if (!detalle) {
     res.status(404).json({ error: 'Lista no encontrada.' });
@@ -66,7 +71,7 @@ router.get('/:id', requirePermiso('productos', 'ver'), async (req, res) => {
 
 router.patch(
   '/:id',
-  requirePermiso('productos', 'editar'),
+  requirePermiso('listas_precios', 'editar'),
   validateBody(actualizarListaSchema),
   async (req, res) => {
     const id = String(req.params.id);
@@ -86,7 +91,7 @@ router.patch(
   }
 );
 
-router.delete('/:id', requirePermiso('productos', 'eliminar'), async (req, res) => {
+router.delete('/:id', requirePermiso('listas_precios', 'eliminar'), async (req, res) => {
   const id = String(req.params.id);
   const result = await eliminarLista(id);
   if (!result.ok) {
@@ -106,7 +111,7 @@ router.delete('/:id', requirePermiso('productos', 'eliminar'), async (req, res) 
 
 router.put(
   '/:id/precios',
-  requirePermiso('productos', 'editar'),
+  requirePermiso('listas_precios', 'editar'),
   validateBody(upsertPrecioSchema),
   async (req, res) => {
     const listaId = String(req.params.id);
@@ -119,9 +124,31 @@ router.put(
   }
 );
 
+router.patch(
+  '/:id/precios/reordenar',
+  requirePermiso('listas_precios', 'editar'),
+  validateBody(reordenarPreciosSchema),
+  async (req, res) => {
+    const listaId = String(req.params.id);
+    const result = await reordenarPrecios(listaId, req.body.productoIds);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    logger.info({
+      evento: 'lista_precios_reordenada',
+      ip: clienteIp(req),
+      userId: req.user!.sub,
+      listaId,
+      cantidad: req.body.productoIds.length,
+    });
+    res.json(result);
+  }
+);
+
 router.delete(
   '/:id/precios/:productoId',
-  requirePermiso('productos', 'editar'),
+  requirePermiso('listas_precios', 'editar'),
   async (req, res) => {
     const ok = await eliminarPrecio(String(req.params.id), String(req.params.productoId));
     if (!ok) {

@@ -1,34 +1,68 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, EyeOff, Eye, Trash2, Tags } from 'lucide-react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, Tags } from 'lucide-react';
 import {
   obtenerProductos,
   desactivarProducto,
   reactivarProducto,
   borrarProducto,
+  reordenarProductos,
 } from '../../services/producto-service';
-import { useAuth } from '../../hooks/use-auth';
-import { useToast } from '../../hooks/use-toast';
-import { useConfirm } from '../../hooks/use-confirm';
+import { useAuth } from '../../hooks/use-auth-context';
+import { useToast } from '../../hooks/use-toast-context';
+import { useConfirm } from '../../hooks/use-confirm-context';
+import {
+  Bloque, BotonAccion, Chip, ControlSegmentado, EncabezadoPagina, EstadoVacio, FiltrosBarra, SkeletonBloque, SkeletonKpis,
+  useFiltrosUrl,
+} from '../../components/ui';
+import type { OpcionFiltro } from '../../components/ui';
+import { estiloCategoria } from '../../lib/colores-categoria';
+import type { EsquemaFiltros } from '../../lib/filtros-url';
+import {
+  TIPOS_PRODUCTO, categoriasPresentes, derivarKpisProductos, filtrarProductos,
+  type FiltroActivo, type FiltrosProductos,
+} from '../../lib/productos-kpis';
 import ProductoForm from './ProductoForm';
 import CategoriasModal from './CategoriasModal';
+import ProductosKpis from './ProductosKpis';
+import ProductosTarjetas from './ProductosTarjetas';
+import { TIPO_INSIGNIA } from './productos-tipos';
+import type { AccionesComunes } from './AccionesProducto';
 import type { Producto, TipoProducto } from '@shared/types/index.js';
+import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 
-const SIN_CATEGORIA = 'Sin categoría';
+// Lo pesado se carga después de los indicadores.
+const ProductosDona = lazy(() => import('./ProductosDona'));
+const ProductosTabla = lazy(() => import('./ProductosTabla'));
 
-const TIPO_CONFIG: Record<TipoProducto, { label: string; color: string; bg: string }> = {
-  amarillo: { label: 'Basico', color: 'text-yellow-700', bg: 'bg-yellow-100' },
-  azul: { label: 'Variantes', color: 'text-blue-700', bg: 'bg-blue-100' },
-  verde: { label: 'Compuesto', color: 'text-green-700', bg: 'bg-green-100' },
+type Vista = 'tarjetas' | 'tabla';
+
+/** Filtros en la URL (se pueden compartir y sobreviven a F5): q, categoria, activo, tipo, sinestado y vista. */
+const ESQUEMA: EsquemaFiltros = {
+  campos: {
+    q: { tipo: 'texto' },
+    categoria: { tipo: 'texto' },
+    activo: { tipo: 'opcion', opciones: ['activos', 'inactivos'] },
+    tipo: { tipo: 'opcion', opciones: TIPOS_PRODUCTO },
+    sinestado: { tipo: 'bandera' },
+    vista: { tipo: 'opcion', opciones: ['tarjetas', 'tabla'] },
+  },
 };
+
+const OPCIONES_ACTIVO: ReadonlyArray<OpcionFiltro> = [
+  { valor: 'activos', etiqueta: 'Activos' },
+  { valor: 'inactivos', etiqueta: 'Inactivos' },
+];
+
+/** Espera antes de montar los bloques pesados, para que los indicadores pinten primero. */
+const RETARDO_BLOQUES_PESADOS_MS = 150;
 
 function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [mostrarPesados, setMostrarPesados] = useState(false);
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; producto: Producto | null } | { abierto: false }>({ abierto: false });
   const [categoriasAbierto, setCategoriasAbierto] = useState(false);
-  const [busqueda, setBusqueda] = useState('');
-  const [categoriaFiltro, setCategoriaFiltro] = useState('');
-  const [tipoFiltro, setTipoFiltro] = useState<TipoProducto | null>(null);
+  const { filtros: valores, cambiar } = useFiltrosUrl(ESQUEMA);
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
@@ -37,33 +71,39 @@ function ProductosPage() {
   const puedeEditar = tienePermiso('productos', 'editar');
   const puedeBorrar = tienePermiso('productos', 'eliminar');
 
-  // Categorías presentes en el catálogo (para el filtro).
-  const categoriasDisponibles = useMemo(() => {
-    const set = new Set(productos.map(p => p.tipoMaterialNombre ?? SIN_CATEGORIA));
-    return Array.from(set).sort();
-  }, [productos]);
+  const filtros = useMemo<FiltrosProductos>(() => ({
+    q: valores.q as string | undefined,
+    categoria: valores.categoria as string | undefined,
+    activo: valores.activo as FiltroActivo | undefined,
+    tipo: valores.tipo as TipoProducto | undefined,
+    // Modo rápido: solo Ferroso / No ferroso cuyo estado (limpio/sucio) aún no se definió.
+    sinEstado: valores.sinestado === true,
+  }), [valores]);
+  const vista: Vista = valores.vista === 'tabla' ? 'tabla' : 'tarjetas';
 
-  const filtrados = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
-    return productos.filter(p => {
-      const cat = p.tipoMaterialNombre ?? SIN_CATEGORIA;
-      if (tipoFiltro && p.tipo !== tipoFiltro) return false;
-      if (categoriaFiltro && cat !== categoriaFiltro) return false;
-      if (!q) return true;
-      return (
-        p.nombre.toLowerCase().includes(q) ||
-        p.descripcion.toLowerCase().includes(q) ||
-        cat.toLowerCase().includes(q)
-      );
-    });
-  }, [productos, busqueda, categoriaFiltro, tipoFiltro]);
+  const kpis = useMemo(() => derivarKpisProductos(productos), [productos]);
+  const categorias = useMemo(() => categoriasPresentes(productos), [productos]);
+  const filtrados = useMemo(() => filtrarProductos(productos, filtros), [productos, filtros]);
+  const opcionesCategoria = useMemo<OpcionFiltro[]>(
+    () => categorias.map(c => ({ valor: c, etiqueta: `${estiloCategoria(c).simbolo} ${c}` })),
+    [categorias],
+  );
 
-  const cargar = () => {
-    setCargando(true);
-    obtenerProductos().then(setProductos).finally(() => setCargando(false));
-  };
+  const recargar = () => obtenerProductos().then(setProductos).finally(() => setCargando(false));
+  const cargar = () => { setCargando(true); recargar(); };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { recargar(); }, []);
+
+  useEffect(() => {
+    if (cargando) return;
+    const t = setTimeout(() => setMostrarPesados(true), RETARDO_BLOQUES_PESADOS_MS);
+    return () => clearTimeout(t);
+  }, [cargando]);
+
+  const limpiarFiltros = useCallback(
+    () => cambiar({ q: undefined, categoria: undefined, activo: undefined, tipo: undefined, sinestado: undefined }),
+    [cambiar],
+  );
 
   const handleDesactivar = async (p: Producto) => {
     const ok = await confirmar({
@@ -109,180 +149,149 @@ function ProductosPage() {
     cargar();
   };
 
+  // Mueve contra el arreglo completo (no el filtrado) — así el orden real
+  // no se corrompe si hay una búsqueda o filtro activo mientras se reordena.
+  const mover = (id: string, direccion: 'arriba' | 'abajo') => {
+    const idx = productos.findIndex(p => p.id === id);
+    const destino = direccion === 'arriba' ? idx - 1 : idx + 1;
+    if (idx === -1 || destino < 0 || destino >= productos.length) return;
+
+    const reordenados = [...productos];
+    [reordenados[idx], reordenados[destino]] = [reordenados[destino], reordenados[idx]];
+    setProductos(reordenados);
+
+    reordenarProductos(reordenados.map(p => p.id)).then(result => {
+      if ('error' in result) {
+        toast.errorMsg(result.error);
+        cargar();
+      }
+    });
+  };
+
+  const acciones: AccionesComunes = {
+    puedeEditar,
+    puedeBorrar,
+    onMover: mover,
+    onEditar: p => setFormAbierto({ abierto: true, producto: p }),
+    onDesactivar: handleDesactivar,
+    onReactivar: handleReactivar,
+    onBorrar: handleBorrar,
+  };
+
+  const encabezado = (
+    <EncabezadoPagina lecturas={LECTURAS.catalogos}
+      titulo="Productos"
+      subtitulo="Los materiales que se pesan, se compran y se venden: su categoría, su estado y a qué lotes pertenecen."
+      acciones={
+        <>
+          {puedeEditar && (
+            <BotonAccion variante="secundario" icono={<Tags size={16} />} onClick={() => setCategoriasAbierto(true)}>
+              Gestionar categorías
+            </BotonAccion>
+          )}
+          {puedeCrear && (
+            <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setFormAbierto({ abierto: true, producto: null })}>
+              Nuevo producto
+            </BotonAccion>
+          )}
+        </>
+      }
+    />
+  );
+
   if (cargando) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div className="max-w-7xl">
+        {encabezado}
+        <SkeletonKpis />
+        <SkeletonBloque alto="h-64" conMargen etiqueta="Cargando productos" />
       </div>
     );
   }
 
+  const hayFiltros = Boolean(filtros.q || filtros.categoria || filtros.activo || filtros.tipo || filtros.sinEstado);
+  const vacio = productos.length === 0
+    ? {
+        mensaje: 'Todavía no hay productos en el catálogo',
+        descripcion: 'Un producto es un material que se puede pesar, comprar o vender (por ejemplo, "Placa verde"). Sin productos no se puede registrar un pesaje ni una factura.',
+        accion: puedeCrear ? { etiqueta: 'Crear el primer producto', onClick: () => setFormAbierto({ abierto: true, producto: null }) } : undefined,
+      }
+    : {
+        mensaje: 'Ningún producto coincide con los filtros',
+        descripcion: 'Prueba con otra palabra, otra categoría o quita algún filtro para ver todo el catálogo.',
+        accion: { etiqueta: 'Quitar los filtros', onClick: limpiarFiltros },
+      };
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">Productos</h1>
-        <div className="flex items-center gap-2">
-          {puedeEditar && (
-            <button
-              type="button"
-              onClick={() => setCategoriasAbierto(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg
-                         text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
-            >
-              <Tags size={18} />
-              Gestionar categorías
-            </button>
+    <div className="max-w-7xl">
+      {encabezado}
+
+      <FiltrosBarra
+        selectores={[
+          { id: 'prod-categoria', etiqueta: 'Categoría', valor: filtros.categoria, opciones: opcionesCategoria, textoTodas: 'Todas', onCambiar: v => cambiar({ categoria: v }) },
+          { id: 'prod-activo', etiqueta: 'Estado', valor: filtros.activo, opciones: OPCIONES_ACTIVO, textoTodas: 'Todos', onCambiar: v => cambiar({ activo: v }) },
+        ]}
+        buscador={{ id: 'prod-buscar', valor: filtros.q, placeholder: 'Nombre, descripción o categoría', onCambiar: v => cambiar({ q: v }) }}
+        onLimpiar={limpiarFiltros}
+      />
+
+      <section aria-label="Indicadores principales">
+        <ProductosKpis kpis={kpis} />
+      </section>
+
+      {mostrarPesados ? (
+        <Suspense fallback={<SkeletonBloque alto="h-56" conMargen etiqueta="Cargando gráfica" />}>
+          <ProductosDona kpis={kpis} />
+        </Suspense>
+      ) : (
+        <SkeletonBloque alto="h-56" conMargen etiqueta="Cargando gráfica" />
+      )}
+
+      <Bloque
+        titulo="Catálogo"
+        queEstasViendo={`${filtrados.length === productos.length ? 'todos los productos' : `${filtrados.length} de ${productos.length} productos, según los filtros`}. Puedes verlos como tarjetas o como tabla; en la tabla se ordena por columna y se exporta a CSV.`}
+        acciones={
+          <ControlSegmentado<Vista>
+            etiquetaAria="Vista del catálogo"
+            valor={vista}
+            onCambiar={v => cambiar({ vista: v === 'tarjetas' ? undefined : v })}
+            opciones={[
+              { valor: 'tarjetas', etiqueta: 'Tarjetas' },
+              { valor: 'tabla', etiqueta: 'Tabla' },
+            ]}
+          />
+        }
+      >
+        <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por tipo y estado de limpieza">
+          {TIPOS_PRODUCTO.map(tipo => (
+            <Chip key={tipo} seleccionado={filtros.tipo === tipo} onClick={() => cambiar({ tipo: filtros.tipo === tipo ? undefined : tipo })}>
+              {TIPO_INSIGNIA[tipo].etiqueta}
+            </Chip>
+          ))}
+          {(kpis.sinEstado > 0 || filtros.sinEstado) && (
+            <span title="Productos Ferroso y No ferroso a los que todavía no se les indicó si son limpios (sin residuos) o sucios (con residuos)">
+              <Chip seleccionado={Boolean(filtros.sinEstado)} onClick={() => cambiar({ sinestado: filtros.sinEstado ? undefined : true })}>
+                Sin definir limpio/sucio ({kpis.sinEstado})
+              </Chip>
+            </span>
           )}
-          {puedeCrear && (
-            <button
-              type="button"
-              onClick={() => setFormAbierto({ abierto: true, producto: null })}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg
-                         text-sm font-medium hover:bg-brand-700 transition-colors"
-            >
-              <Plus size={18} />
-              Nuevo producto
+          {hayFiltros && (
+            <button type="button" onClick={limpiarFiltros} className="ml-1 text-xs text-text-muted underline hover:text-text-primary">
+              Quitar filtros
             </button>
           )}
         </div>
-      </div>
 
-      {/* Filtros */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <input
-          type="search"
-          placeholder="Buscar por nombre, descripción o categoría..."
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          className="flex-1 px-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent"
-        />
-        <select
-          value={categoriaFiltro}
-          onChange={e => setCategoriaFiltro(e.target.value)}
-          className="px-3 py-2 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent sm:w-56"
-        >
-          <option value="">Todas las categorías</option>
-          {categoriasDisponibles.map(c => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Leyenda de tipos (clicable: filtra por tipo) */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        {(Object.entries(TIPO_CONFIG) as [TipoProducto, typeof TIPO_CONFIG[TipoProducto]][]).map(([tipo, cfg]) => {
-          const activo = tipoFiltro === tipo;
-          return (
-            <button
-              key={tipo}
-              type="button"
-              onClick={() => setTipoFiltro(activo ? null : tipo)}
-              aria-pressed={activo}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all ${cfg.bg} ${cfg.color} ${
-                activo ? 'ring-2 ring-offset-1 ring-brand-400' : 'opacity-80 hover:opacity-100'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tipo === 'amarillo' ? '#F59E0B' : tipo === 'azul' ? '#3B82F6' : '#10B981' }} />
-              {cfg.label}
-            </button>
-          );
-        })}
-        {tipoFiltro && (
-          <button
-            type="button"
-            onClick={() => setTipoFiltro(null)}
-            className="text-xs text-text-muted hover:text-text-primary underline ml-1"
-          >
-            Quitar filtro
-          </button>
+        {vista === 'tabla' ? (
+          <Suspense fallback={<SkeletonBloque alto="h-64" etiqueta="Cargando tabla" />}>
+            <ProductosTabla productos={filtrados} catalogo={productos} acciones={acciones} vacio={vacio} />
+          </Suspense>
+        ) : filtrados.length === 0 ? (
+          <EstadoVacio mensaje={vacio.mensaje} descripcion={vacio.descripcion} accion={vacio.accion} />
+        ) : (
+          <ProductosTarjetas productos={filtrados} catalogo={productos} acciones={acciones} />
         )}
-      </div>
-
-      {/* Grid de productos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filtrados.map(p => {
-          const cfg = TIPO_CONFIG[p.tipo];
-          return (
-            <div
-              key={p.id}
-              className={`group relative bg-surface rounded-xl p-5 shadow-sm border border-border hover:shadow-md transition-shadow ${
-                !p.activo ? 'opacity-60' : ''
-              }`}
-            >
-              {/* Acciones (top-right, hover) */}
-              {(puedeEditar || puedeBorrar) && (
-                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {puedeEditar && (
-                    <button
-                      type="button"
-                      onClick={() => setFormAbierto({ abierto: true, producto: p })}
-                      className="p-1.5 rounded-md bg-surface-alt hover:bg-brand-50 text-text-muted hover:text-brand-600 transition-colors"
-                      title="Editar producto"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                  )}
-                  {puedeEditar && p.activo && (
-                    <button
-                      type="button"
-                      onClick={() => handleDesactivar(p)}
-                      className="p-1.5 rounded-md bg-surface-alt hover:bg-amber-50 text-text-muted hover:text-amber-600 transition-colors"
-                      title="Desactivar"
-                    >
-                      <EyeOff size={13} />
-                    </button>
-                  )}
-                  {puedeEditar && !p.activo && (
-                    <button
-                      type="button"
-                      onClick={() => handleReactivar(p)}
-                      className="p-1.5 rounded-md bg-surface-alt hover:bg-green-50 text-text-muted hover:text-green-600 transition-colors"
-                      title="Reactivar"
-                    >
-                      <Eye size={13} />
-                    </button>
-                  )}
-                  {puedeBorrar && (
-                    <button
-                      type="button"
-                      onClick={() => handleBorrar(p)}
-                      className="p-1.5 rounded-md bg-surface-alt hover:bg-red-50 text-text-muted hover:text-red-600 transition-colors"
-                      title="Borrar definitivamente"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </div>
-              )}
-
-              <div className="flex items-start justify-between mb-3">
-                <h3 className="font-semibold text-text-primary text-sm leading-tight pr-20">{p.nombre}</h3>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color} shrink-0`}>
-                  {cfg.label}
-                </span>
-              </div>
-              <p className="text-text-secondary text-xs mb-3 line-clamp-2">{p.descripcion}</p>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-muted">{p.tipoMaterialNombre ?? SIN_CATEGORIA}</span>
-                {p.tipo === 'azul' && (
-                  <span className="text-xs text-text-muted">{p.variantes.length} variante(s)</span>
-                )}
-              </div>
-              {!p.activo && (
-                <span className="mt-2 inline-block px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">Inactivo</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {filtrados.length === 0 && (
-        <p className="text-center text-text-muted py-12">
-          {productos.length === 0
-            ? 'No hay productos registrados'
-            : 'No hay productos que coincidan con el filtro'}
-        </p>
-      )}
+      </Bloque>
 
       {formAbierto.abierto && (
         <ProductoForm

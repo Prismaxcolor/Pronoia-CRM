@@ -2,16 +2,16 @@
 
 @theme {
   /* Paleta corporativa Pronoia */
-  --color-brand-50: #EBF5FF;
-  --color-brand-100: #D6EBFF;
-  --color-brand-200: #ADD6FF;
-  --color-brand-300: #85C2FF;
-  --color-brand-400: #5CADFF;
-  --color-brand-500: #3399FF;
-  --color-brand-600: #1A80E6;
-  --color-brand-700: #0066CC;
-  --color-brand-800: #004D99;
-  --color-brand-900: #003366;
+  --color-brand-50: #EEF8F2;
+  --color-brand-100: #D5EEDF;
+  --color-brand-200: #AADDBF;
+  --color-brand-300: #78C497;
+  --color-brand-400: #45A36A;
+  --color-brand-500: #2E8650;
+  --color-brand-600: #1B6B3A;
+  --color-brand-700: #165A31;
+  --color-brand-800: #124927;
+  --color-brand-900: #0C3319;
 
   --color-surface: #FFFFFF;
   --color-surface-alt: #F7F8FA;
@@ -31,10 +31,38 @@
   --color-tipo-verde: #10B981;
 }
 
+/* Marca azul (la anterior), solo para los usuarios con temaMarca = 'azul'.
+ * Sobrescribe la escala verde de @theme; las utilidades brand-* de Tailwind
+ * leen estas variables. La selección viene de public.users.tema_marca. */
+:root[data-marca='azul'] {
+  --color-brand-50: #EBF5FF;
+  --color-brand-100: #D6EBFF;
+  --color-brand-200: #ADD6FF;
+  --color-brand-300: #85C2FF;
+  --color-brand-400: #5CADFF;
+  --color-brand-500: #3399FF;
+  --color-brand-600: #1A80E6;
+  --color-brand-700: #0066CC;
+  --color-brand-800: #004D99;
+  --color-brand-900: #003366;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background-color: var(--color-surface-alt);
   color: var(--color-text-primary);
+}
+
+/* Oculta la barra de scroll visualmente sin desactivar el scroll — el
+ * scrollbar por defecto del navegador se ve mal sobre fondos oscuros
+ * (ej. el menú lateral). El contenido sigue siendo scrolleable normalmente
+ * con mouse, trackpad o teclado. */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes slide-in {
@@ -68,6 +96,37 @@ body {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+/* Aparición suave del contenido de cada pantalla al cargar/navegar — se
+ * aplica una sola vez al montar, no en cada re-render (ver Layout.tsx). */
+@keyframes content-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hoja/tarjeta de actualización de la app y barra de progreso indeterminada. */
+@keyframes hoja-in {
+  from { opacity: 0; transform: translateY(1.5rem); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes barra-indeterminada {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 
