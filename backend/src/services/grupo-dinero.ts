@@ -101,15 +101,16 @@ export function detallesExtraDinero(body: Cuerpo): string[] {
  * subió este mismo sistema al bucket "comprobantes" (el body lo controla el cliente y
  * Telegram descarga la URL desde sus servidores: no se acepta cualquier https).
  */
-export function comprobantesReenviables(body: Cuerpo, supabaseUrl: string): string[] {
+export function comprobantesReenviables(body: Cuerpo, supabaseUrl: string, adicionales: readonly unknown[] = []): string[] {
   if (!supabaseUrl) return [];
-  // Los generales del body y los de cada cuenta (pago de nómina por banca: cada cuenta sube su propio comprobante).
+  // Los generales del body, los de cada cuenta (pago de nómina por banca) y los del desembolso de un préstamo.
   const generales = Array.isArray(body.comprobantes) ? body.comprobantes : [];
-  const porCuenta = (Array.isArray(body.bancas) ? body.bancas : []).flatMap(b => {
+  const porCuenta = [...(Array.isArray(body.bancas) ? body.bancas : []), ...(Array.isArray(body.pagos) ? body.pagos : [])].flatMap(b => {
     const c = registro(b).comprobantes;
     return Array.isArray(c) ? c : [];
   });
-  const lista = [...generales, ...porCuenta];
+  const desembolso = registro(body.desembolso).comprobantes;
+  const lista = [...generales, ...porCuenta, ...(Array.isArray(desembolso) ? desembolso : []), ...adicionales];
   const validas = lista.filter((u): u is string => esUrlComprobanteValida(u, supabaseUrl));
   return [...new Set(validas)].slice(0, MAX_COMPROBANTES_AVISO);
 }

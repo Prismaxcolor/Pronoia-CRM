@@ -30,10 +30,12 @@ function GestionarMenu() {
         Gestionar <ChevronDown size={14} aria-hidden="true" />
       </button>
       {abierto && (
-        <ul role="menu" className="absolute right-0 z-30 mt-1 w-44 rounded-lg border border-border bg-surface py-1 shadow-lg">
+        // En vertical el botón queda a la izquierda: anclar el menú a la derecha lo sacaba de la pantalla. Se ancla a la izquierda
+        // del botón (y a la derecha desde sm) y nunca pasa del ancho de la pantalla.
+        <ul role="menu" className="absolute left-0 z-30 mt-1 w-44 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-surface py-1 shadow-lg sm:left-auto sm:right-0">
           {ENLACES.map(e => (
             <li key={e.a} role="none">
-              <Link role="menuitem" to={e.a} className="block px-3 py-2 text-sm text-text-primary hover:bg-brand-50">{e.etiqueta}</Link>
+              <Link role="menuitem" to={e.a} onClick={() => setAbierto(false)} className="block px-3 py-3 text-sm text-text-primary hover:bg-brand-50 sm:py-2">{e.etiqueta}</Link>
             </li>
           ))}
         </ul>

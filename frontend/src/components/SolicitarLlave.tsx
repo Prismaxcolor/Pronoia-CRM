@@ -47,6 +47,8 @@ function SolicitarLlave({ entidadTipo, entidadId, onLlave, className = '' }: Pro
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [solicitud, setSolicitud] = useState<SolicitudLlave | null>(null);
+  /** true si el servidor creó la solicitud pero no pudo avisar a ningún administrador por Telegram. */
+  const [sinAviso, setSinAviso] = useState(false);
   const [codigo, setCodigo] = useState<string | null>(null);
   const [solicitudId, setSolicitudId] = useState<string | null>(() => leerSesion(claveSesion(entidadTipo, entidadId)));
   const onLlaveRef = useRef(onLlave);
@@ -96,12 +98,13 @@ function SolicitarLlave({ entidadTipo, entidadId, onLlave, className = '' }: Pro
     setEnviando(false);
     if (!r.ok) { setError(r.error); return; }
     guardarSesion(clave, r.data.solicitud.id);
+    setSinAviso(r.data.avisados === 0);
     setSolicitud(r.data.solicitud);
     setSolicitudId(r.data.solicitud.id);
   };
 
   const cerrar = () => setAbierto(false);
-  const nueva = () => { setSolicitud(null); setCodigo(null); setError(null); setMotivo(''); };
+  const nueva = () => { setSolicitud(null); setCodigo(null); setError(null); setMotivo(''); setSinAviso(false); };
   const enCurso = solicitud?.estado === 'pendiente' || (!!solicitudId && !solicitud);
 
   return (
@@ -143,6 +146,7 @@ function SolicitarLlave({ entidadTipo, entidadId, onLlave, className = '' }: Pro
               onNueva={nueva}
               onCerrar={cerrar}
               codigo={codigo}
+              sinAviso={sinAviso}
             />
         </Modal>
       )}
@@ -161,19 +165,27 @@ interface ContenidoProps {
   onNueva: () => void;
   onCerrar: () => void;
   codigo: string | null;
+  sinAviso: boolean;
 }
 
 const BOTON_PRIMARIO = 'w-full min-h-11 py-2.5 rounded-lg text-sm font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-60 transition-colors';
 
-function Contenido({ solicitud, enCurso, motivo, setMotivo, enviando, error, onEnviar, onNueva, onCerrar, codigo }: ContenidoProps) {
+function Contenido({ solicitud, enCurso, motivo, setMotivo, enviando, error, onEnviar, onNueva, onCerrar, codigo, sinAviso }: ContenidoProps) {
   if (enCurso) {
     return (
       <div role="status" aria-live="polite" className="text-center py-4">
         <Loader2 className="mx-auto animate-spin text-brand-600" size={32} aria-hidden="true" />
         <p className="mt-3 font-medium text-text-primary">Esperando la aprobación del administrador…</p>
-        <p className="mt-1 text-sm text-text-secondary">
-          Ya le avisamos. Puedes dejar esta ventana abierta: la llave se pone sola en el formulario.
-        </p>
+        {sinAviso ? (
+          <p role="alert" className="mt-1 text-sm text-amber-800">
+            La solicitud quedó registrada, pero no se pudo avisar al administrador por Telegram. Avísale directamente para que la apruebe
+            desde «Solicitudes de llave»: la llave se pone sola en el formulario cuando la apruebe.
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-text-secondary">
+            Ya le avisamos. Puedes dejar esta ventana abierta: la llave se pone sola en el formulario.
+          </p>
+        )}
         {solicitud && <p className="mt-2 text-xs text-text-muted">{solicitud.descripcion} · vence {formatearHoraNegocio(solicitud.expiraEn)}</p>}
         <button type="button" onClick={onCerrar} className="mt-4 min-h-11 text-sm text-text-secondary underline">Cerrar y seguir esperando</button>
       </div>

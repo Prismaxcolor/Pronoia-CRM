@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Plus, RefreshCw, Users } from 'lucide-react';
+import { ArrowLeftRight, Plus, RefreshCw, Users } from 'lucide-react';
 import {
   Bloque, BotonAccion, ControlSegmentado, EncabezadoPagina, EstadoVacio, FiltrosBarra, ListaAlertas, SkeletonBloque, SkeletonKpis,
   SkeletonTabla, useFiltrosUrl, type AlertaDatos,
@@ -11,6 +11,7 @@ import {
 import type { EsquemaFiltros } from '../../lib/filtros-url';
 import TarjetaTercero, { type AccionesTercero } from './TarjetaTercero';
 import TercerosKpis from './TercerosKpis';
+import { useOrdenTerceros } from './useOrdenTerceros';
 import { useSaldosTerceros } from './useSaldosTerceros';
 
 const TercerosTabla = lazy(() => import('./TercerosTabla'));
@@ -62,7 +63,7 @@ interface Props {
 function ListadoTerceros(props: Props) {
   const { tipo, terceros, cargando, version, puedeCrear, puedeEditar, puedeBorrar, segmento } = props;
   const t = TEXTO_TERCERO[tipo];
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
   const { filtros, cambiar } = useFiltrosUrl(ESQUEMA_FILTROS);
   const saldos = useSaldosTerceros(tipo, version);
   const [mostrarPesados, setMostrarPesados] = useState(false);
@@ -75,11 +76,14 @@ function ListadoTerceros(props: Props) {
 
   const filas = useMemo(() => unirSaldos(terceros, saldos.datos?.saldos ?? null), [terceros, saldos.datos]);
   const hayCifras = saldos.estado === 'listo';
-  const visibles = useMemo(() => filtrarTerceros(filas, {
+  // Orden personal de las tarjetas (como el de las bancas): se guarda por usuario y por tipo; sin orden elegido no cambia nada.
+  const [ordenando, setOrdenando] = useState(false);
+  const { ordenadas, mover, restablecer: restablecerOrden, personalizado: ordenPersonalizado } = useOrdenTerceros(tipo, usuario?.id, filas);
+  const visibles = useMemo(() => filtrarTerceros(ordenadas, {
     q: filtros.q as string | undefined,
     activo: filtros.activo as 'si' | 'no' | undefined,
     conSaldo: filtros.conSaldo === true,
-  }), [filas, filtros]);
+  }), [ordenadas, filtros]);
   const hayFiltros = Boolean(filtros.q || filtros.activo || filtros.conSaldo);
   const vista = filtros.vista === 'tabla' ? 'tabla' : 'tarjetas';
 
@@ -166,13 +170,29 @@ function ListadoTerceros(props: Props) {
         titulo={`Listado de ${t.plural}`}
         queEstasViendo={`Cada ${t.singular} con sus datos de contacto${hayCifras ? `, su saldo en USD (lo facturado menos lo ${tipo === 'proveedor' ? 'pagado' : 'cobrado'}, igual que en su estado de cuenta) y los días que lleva su factura pendiente más vieja` : ''}. Los filtros de arriba solo cambian esta lista, no los indicadores.`}
         acciones={(
-          <div className="hidden md:block">
-            <ControlSegmentado
-              etiquetaAria={`Forma de ver los ${t.plural}`}
-              valor={vista}
-              onCambiar={v => cambiar({ vista: v })}
-              opciones={[{ valor: 'tarjetas', etiqueta: 'Tarjetas' }, { valor: 'tabla', etiqueta: 'Tabla' }]}
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            {vista === 'tarjetas' && terceros.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setOrdenando(o => !o)}
+                aria-pressed={ordenando}
+                title={`Mueve los ${t.plural} para verlos en el orden que prefieras; se recuerda para tu usuario`}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${ordenando ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-border bg-surface text-text-secondary hover:bg-surface-hover'}`}
+              >
+                <ArrowLeftRight size={14} aria-hidden="true" /> {ordenando ? 'Listo' : `Ordenar ${t.plural}`}
+              </button>
+            )}
+            {vista === 'tarjetas' && ordenando && ordenPersonalizado && (
+              <button type="button" onClick={restablecerOrden} className="text-xs text-text-secondary underline hover:text-text-primary">Restablecer orden</button>
+            )}
+            <div className="hidden md:block">
+              <ControlSegmentado
+                etiquetaAria={`Forma de ver los ${t.plural}`}
+                valor={vista}
+                onCambiar={v => cambiar({ vista: v })}
+                opciones={[{ valor: 'tarjetas', etiqueta: 'Tarjetas' }, { valor: 'tabla', etiqueta: 'Tabla' }]}
+              />
+            </div>
           </div>
         )}
       >
@@ -190,7 +210,20 @@ function ListadoTerceros(props: Props) {
               {hayFiltros ? `Mostrando ${visibles.length} de ${terceros.length} ${t.plural}` : `${terceros.length} ${terceros.length === 1 ? t.singular : t.plural}`}
             </p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {visibles.map(f => <TarjetaTercero key={f.id} tipo={tipo} fila={f} acciones={acciones} hayCifras={hayCifras} />)}
+              {visibles.map((f, i) => (
+                <TarjetaTercero
+                  key={f.id}
+                  tipo={tipo}
+                  fila={f}
+                  acciones={acciones}
+                  hayCifras={hayCifras}
+                  orden={ordenando ? {
+                    // El vecino es el que se ve al lado (con filtros puede haber otros ocultos entre medio).
+                    onAntes: i > 0 ? () => mover(f.id, visibles[i - 1].id) : undefined,
+                    onDespues: i < visibles.length - 1 ? () => mover(f.id, visibles[i + 1].id) : undefined,
+                  } : undefined}
+                />
+              ))}
             </div>
           </>
         )}

@@ -35,7 +35,7 @@ const BASE = '/api/llaves-solicitudes';
 
 /** Crea la solicitud, o devuelve la pendiente que el usuario ya tenía para ese documento. */
 export const crearSolicitudLlave = (entidadTipo: EntidadConLlave, entidadId: string, motivo: string) =>
-  llamar<{ solicitud: SolicitudLlave; existente: boolean }>(BASE, 'POST', { entidadTipo, entidadId, motivo });
+  llamar<{ solicitud: SolicitudLlave; existente: boolean; avisados?: number }>(BASE, 'POST', { entidadTipo, entidadId, motivo });
 
 /** Estado de una solicitud. Si está aprobada y es del usuario, trae `codigo` (una sola vez). */
 export const obtenerSolicitudLlave = (id: string) => llamar<SolicitudLlave>(`${BASE}/${id}`);

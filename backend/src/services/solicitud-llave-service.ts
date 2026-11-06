@@ -2,7 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { ENV } from '../config/env.js';
 import { crearLlave, verificarEntidad } from './llave-edicion-service.js';
 import { nombreDeUsuario, registrarAuditoria } from './auditoria-service.js';
-import { avisarResolucionLlave, avisarSolicitudLlave } from './solicitud-llave-aviso.js';
+import { avisarResolucionLlave, avisarSuperadmins } from './solicitud-llave-aviso.js';
 import { hashLlave } from '../utils/llave-edicion.js';
 import type { EntidadConLlave } from '../utils/auditoria.js';
 import type { EstadoSolicitudLlave, SolicitudLlaveAviso } from '../utils/solicitud-llave-tipos.js';
@@ -163,7 +163,7 @@ export async function crearSolicitud(
   entidadTipo: EntidadConLlave,
   entidadId: string,
   motivo: string
-): Promise<ResultadoSolicitud<{ solicitud: SolicitudLlaveDto; existente: boolean }>> {
+): Promise<ResultadoSolicitud<{ solicitud: SolicitudLlaveDto; existente: boolean; avisados?: number }>> {
   const rechazo = await verificarEntidad(entidadTipo, entidadId);
   if (rechazo) return { ok: false, ...rechazo };
 
@@ -203,8 +203,8 @@ export async function crearSolicitud(
   }
   const row = data as SolicitudRow;
   logger.info({ evento: 'solicitud_llave_creada', userId: actor.userId, solicitudId: row.id, entidadTipo, entidadId });
-  await avisarSolicitudLlave(toAviso(row, 'pendiente'));
-  return { ok: true, data: { solicitud: toDto(row, 'pendiente'), existente: false } };
+  const avisados = await avisarSuperadmins(toAviso(row, 'pendiente'));
+  return { ok: true, data: { solicitud: toDto(row, 'pendiente'), existente: false, avisados } };
 }
 
 async function leerFila(id: string): Promise<ResultadoSolicitud<SolicitudRow>> {

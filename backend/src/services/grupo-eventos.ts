@@ -105,6 +105,8 @@ export interface EventoCatalogo {
   cuerpoCuentas?: (ctx: ContextoEvento) => Record<string, unknown>;
   /** true: el detalle ya nombra cada cuenta con su monto, así que no se agregan las líneas "Cuenta: ..." leídas del body. */
   omitirLineasCuenta?: boolean;
+  /** URLs de comprobantes que trae la RESPUESTA del servidor (se suman a las del body; se validan igual al enviarlas). */
+  comprobantes?: (ctx: ContextoEvento) => unknown[];
   /** Cambia icono/acción/clave según el resultado (ej. pesaje global por recepcionar vs completo). */
   variante?: (ctx: ContextoEvento) => Partial<Pick<EventoCatalogo, 'clave' | 'icono' | 'accion'>> | null;
   enriquecer?: Enriquecimiento;
@@ -315,6 +317,54 @@ export function detallesPagoNomina(ctx: ContextoEvento): string[] {
     ...(ctx.resBody.yaPagada === true || ctx.resBody.yaPagado === true ? ['Ya estaba pagado: no se registró ningún egreso nuevo'] : pagos),
     ...linea('Fecha del pago', fechaCorta(txt(ctx.reqBody.fecha))),
   ];
+}
+
+/** Comprobantes de los pagos vigentes de la nómina que devuelve la respuesta (los mismos que se guardaron en el egreso). */
+export function comprobantesPagoNomina(ctx: ContextoEvento): unknown[] {
+  const trabajadorId = ctx.params.trabajadorId ?? null;
+  return arr(rec(ctx.resBody.nomina).pagos).map(rec)
+    .filter(p => p.anulado !== true && (trabajadorId ? p.trabajadorId === trabajadorId : p.trabajadorId == null))
+    .flatMap(p => arr(p.comprobantes));
+}
+
+/** Cantidad de cuotas semanales de un préstamo: monto / cuota, redondeado hacia arriba; null si no hay cuota. */
+export function cantidadCuotas(montoUsd: number, cuotaUsd: number | null): number | null {
+  return cuotaUsd !== null && cuotaUsd > 0 ? Math.ceil(Math.round((montoUsd / cuotaUsd) * 100) / 100) : null;
+}
+
+/**
+ * Detalle completo de un préstamo o adelanto: quién, de qué tipo, cuánto, en cuántas cuotas de cuánto y, si ya se pagó desde el
+ * Wallet, la cuenta, la referencia y el movimiento. Sale del préstamo que devuelve el servidor; nada de la ficha del trabajador.
+ */
+export function detallesPrestamo(ctx: ContextoEvento): string[] {
+  const p = rec(ctx.resBody.prestamo);
+  const monto = num(p.montoUsd);
+  const cuota = num(p.cuotaSemanalUsd);
+  const cuotas = monto !== null ? cantidadCuotas(monto, cuota) : null;
+  const d = rec(p.desembolso);
+  const numero = num(p.numero);
+  const mv = num(d.movimientoNumero);
+  const cuenta = txt(d.bancaNombre);
+  const montoCuenta = num(d.monto);
+  return [
+    ...linea('Personal', txt(p.trabajadorNombre)),
+    ...linea('Tipo', p.tipo === 'ADELANTO' ? 'Adelanto' : p.tipo === 'PRESTAMO' ? 'Préstamo' : null),
+    ...(numero !== null ? [`Código: PRE-${pad4(numero)}`] : []),
+    ...(monto !== null ? [`Monto del ${p.tipo === 'ADELANTO' ? 'adelanto' : 'préstamo'}: ${usd(monto)}`] : []),
+    ...(cuota !== null ? [`Monto de cada cuota: ${usd(cuota)}`] : []),
+    ...(cuotas !== null ? [`Cantidad de cuotas: ${cuotas}`] : ['Cuotas: sin cuota semanal definida']),
+    ...(cuenta ? [`Pagado desde: ${sanitizarValor(cuenta)}${montoCuenta !== null ? ` · ${montoDePago(txt(d.moneda), montoCuenta)}` : ''}`] : ['Pago: aún no registrado desde el Wallet']),
+    ...linea('Referencia', txt(d.referencia)),
+    ...(mv !== null ? [`Movimiento: MV-${pad4(mv)}`] : []),
+    ...linea('Fecha del préstamo', fechaCorta(txt(p.fecha))),
+    ...linea('Fecha del pago', fechaCorta(txt(d.fecha))),
+    ...linea('Nota', txt(p.nota)),
+  ];
+}
+
+/** Comprobante del pago (desembolso) del préstamo que devuelve la respuesta. */
+export function comprobantesPrestamo(ctx: ContextoEvento): unknown[] {
+  return arr(rec(rec(ctx.resBody.prestamo).desembolso).comprobantes);
 }
 
 /** Anulación de una nómina: cuál y por qué (el motivo es obligatorio); si estaba pagada, el dinero volvió a las cuentas. */
@@ -607,18 +657,22 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   ev('nomina.trabajador_creado', 'POST', '/api/nomina/trabajadores', 'maestros', 'ignorable', '👤', 'Se registró un trabajador de nómina'),
   ev('nomina.trabajador_editado', 'PATCH', '/api/nomina/trabajadores/:id', 'maestros', 'ignorable', '✏️', 'Se editó un trabajador de nómina'),
   ev('nomina.trabajador_desactivado', 'POST', '/api/nomina/trabajadores/:id/desactivar', 'maestros', 'ignorable', '🗑️', 'Se desactivó un trabajador de nómina'),
-  ev('nomina.prestamo_creado', 'POST', '/api/nomina/prestamos', 'tesoreria', 'critica', '💵', 'Se registró un préstamo de nómina', { detalles: ctx => detallesExtraDinero(ctx.reqBody) }),
+  ev('nomina.prestamo_creado', 'POST', '/api/nomina/prestamos', 'tesoreria', 'critica', '💵', 'Se registró un préstamo de nómina', {
+    detalles: ctx => [...detallesPrestamo(ctx), ...detallesExtraDinero(ctx.reqBody)], comprobantes: comprobantesPrestamo, omitirLineasCuenta: true,
+  }),
   ev('nomina.prestamo_editado', 'PATCH', '/api/nomina/prestamos/:id', 'tesoreria', 'ignorable', '✏️', 'Se editó un préstamo de nómina'),
   ev('nomina.prestamo_anulado', 'POST', '/api/nomina/prestamos/:id/anular', 'tesoreria', 'critica', '🗑️', 'Se anuló un préstamo de nómina'),
   ev('nomina.guardada', 'POST', '/api/nomina/nominas', 'tesoreria', 'ignorable', '🧾', 'Se guardó una nómina'),
   ev('nomina.cerrada', 'POST', '/api/nomina/nominas/:id/cerrar', 'tesoreria', 'ignorable', '🔒', 'Se cerró una nómina'),
   ev('nomina.pagada', 'POST', '/api/nomina/nominas/:id/pagar', 'tesoreria', 'critica', '💸', 'Se pagó una nómina desde el Wallet', {
-    etiqueta: etiquetaNomina, detalles: detallesPagoNomina, omitirLineasCuenta: true,
+    etiqueta: etiquetaNomina, detalles: detallesPagoNomina, omitirLineasCuenta: true, comprobantes: comprobantesPagoNomina,
   }),
   ev('nomina.trabajador_pagado', 'POST', '/api/nomina/nominas/:id/trabajadores/:trabajadorId/pagar', 'tesoreria', 'critica', '💸', 'Se pagó a un trabajador de una nómina desde el Wallet', {
-    etiqueta: etiquetaNomina, detalles: detallesPagoNomina, omitirLineasCuenta: true,
+    etiqueta: etiquetaNomina, detalles: detallesPagoNomina, omitirLineasCuenta: true, comprobantes: comprobantesPagoNomina,
   }),
-  ev('nomina.prestamo_pagado', 'POST', '/api/nomina/prestamos/:id/pagar', 'tesoreria', 'critica', '💸', 'Se registró el pago de un préstamo de nómina desde el Wallet', { detalles: ctx => detallesExtraDinero(ctx.reqBody) }),
+  ev('nomina.prestamo_pagado', 'POST', '/api/nomina/prestamos/:id/pagar', 'tesoreria', 'critica', '💸', 'Se registró el pago de un préstamo de nómina desde el Wallet', {
+    detalles: ctx => [...detallesPrestamo(ctx), ...detallesExtraDinero(ctx.reqBody)], comprobantes: comprobantesPrestamo, omitirLineasCuenta: true,
+  }),
   ev('nomina.anulada', 'POST', '/api/nomina/nominas/:id/anular', 'tesoreria', 'critica', '🗑️', 'Se anuló una nómina', { etiqueta: etiquetaNomina, detalles: detallesAnulacionNomina }),
 
   // --- Inventario: maestros y precios --------------------------------------

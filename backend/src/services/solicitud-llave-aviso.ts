@@ -114,26 +114,34 @@ async function enviarPrivado(destino: DestinoPrivado, mensaje: string, botones: 
   return resultado.ok;
 }
 
-/** Avisa por privado, con botones Aprobar/Rechazar, a cada superadmin vinculado. Si no hay ninguno, solo advierte en el log. */
-export async function avisarSolicitudLlave(s: SolicitudLlaveAviso): Promise<void> {
+/**
+ * Avisa por privado, con botones Aprobar/Rechazar, a cada superadmin vinculado y devuelve a CUÁNTOS les llegó (0 si no hay ninguno
+ * vinculado, si el webhook no está configurado o si todos fallaron). Nunca lanza: así quien pide la llave puede enterarse de que
+ * nadie recibió el aviso en vez de esperar una respuesta que no va a llegar.
+ */
+export async function avisarSuperadmins(s: SolicitudLlaveAviso): Promise<number> {
   try {
     const destinos = await superadminsVinculados();
     if (destinos.length === 0) {
       logger.warn({ evento: 'llave_aviso_sin_superadmin_vinculado', solicitudId: s.id });
-      return;
+      return 0;
     }
     const texto = textoSolicitud(s);
     const botones = botonesDe(s.id);
     const resultados = await Promise.all(destinos.map(d => enviarPrivado(d, texto, botones, 'llave_solicitud.creada')));
-    logger.info({
-      evento: 'llave_aviso_superadmins',
-      solicitudId: s.id,
-      avisados: resultados.filter(Boolean).length,
-      vinculados: destinos.length,
-    });
+    const avisados = resultados.filter(Boolean).length;
+    logger.info({ evento: 'llave_aviso_superadmins', solicitudId: s.id, avisados, vinculados: destinos.length });
+    if (avisados === 0) logger.warn({ evento: 'llave_aviso_nadie_recibio', solicitudId: s.id, webhookConfigurado: Boolean(ENV.N8N_WEBHOOK_ENVIAR_CONTENIDO) });
+    return avisados;
   } catch (err) {
     logger.error({ evento: 'llave_aviso_error', mensaje: err instanceof Error ? err.message : String(err) });
+    return 0;
   }
+}
+
+/** Avisa por privado a cada superadmin vinculado. Si no hay ninguno, solo advierte en el log. */
+export async function avisarSolicitudLlave(s: SolicitudLlaveAviso): Promise<void> {
+  await avisarSuperadmins(s);
 }
 
 /** Avisa al SOLICITANTE (por privado, si vinculó Telegram) que su solicitud fue aprobada o rechazada. Nunca incluye el código. */

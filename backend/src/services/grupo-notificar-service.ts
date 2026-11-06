@@ -498,7 +498,7 @@ async function adjuntosDeEvento(
   destino: DestinoGrupo, evento: EventoCatalogo, ctx: ContextoEvento, contexto: string | null
 ): Promise<Partial<PayloadGrupo>> {
   if (destino === 'cajas') {
-    const fotos = comprobantesReenviables(ctx.reqBody, ENV.SUPABASE_URL);
+    const fotos = comprobantesReenviables(ctx.reqBody, ENV.SUPABASE_URL, evento.comprobantes?.(ctx) ?? []);
     const pdf = evento.enriquecer === 'factura' ? await adjuntosDeFactura(ctx.resBody) : {};
     return { destino, ...pdf, ...(fotos.length > 0 ? { fotos } : {}) };
   }

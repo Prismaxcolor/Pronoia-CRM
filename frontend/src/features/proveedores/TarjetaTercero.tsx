@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Eye, EyeOff, FileText, Mail, Lock, MapPin, Pencil, Phone, Send, Trash2, Unlock } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Mail, Lock, MapPin, Pencil, Phone, Send, Trash2, Unlock } from 'lucide-react';
 import { Insignia, formatearFecha, formatearNumero } from '../../components/ui';
 import { TEXTO_TERCERO, type FilaTercero, type TipoTercero } from '../../lib/terceros-kpis';
 
@@ -89,10 +89,14 @@ interface TarjetaProps {
   hayCifras: boolean;
   /** Dentro de otra tarjeta (vista móvil de la tabla): sin borde ni relleno propios. */
   incrustada?: boolean;
+  /** Reordenar (solo con el modo "Ordenar" activo): mover la tarjeta antes o después. Si falta uno de los dos, ese botón queda inactivo. */
+  orden?: { onAntes?: () => void; onDespues?: () => void };
 }
 
+const BOTON_ORDEN = 'flex flex-1 items-center justify-center gap-1 rounded-lg border border-border py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-alt hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40';
+
 /** Tarjeta de un proveedor o cliente: datos de contacto, saldo, acceso al estado de cuenta y Telegram. */
-function TarjetaTercero({ tipo, fila, acciones, hayCifras, incrustada = false }: TarjetaProps) {
+function TarjetaTercero({ tipo, fila, acciones, hayCifras, incrustada = false, orden }: TarjetaProps) {
   const s = fila.saldo;
   const saldo = hayCifras ? textoSaldo(tipo, s?.saldo ?? 0) : null;
   const gestion = <BotonesGestion fila={fila} acciones={acciones} />;
@@ -135,6 +139,17 @@ function TarjetaTercero({ tipo, fila, acciones, hayCifras, incrustada = false }:
             </div>
           )}
         </dl>
+      )}
+
+      {orden && (
+        <div className="mt-3 flex gap-2 border-t border-border pt-3">
+          <button type="button" onClick={orden.onAntes} disabled={!orden.onAntes} className={BOTON_ORDEN} aria-label={`Mover a ${fila.nombre} antes`}>
+            <ChevronLeft size={14} aria-hidden="true" /> Antes
+          </button>
+          <button type="button" onClick={orden.onDespues} disabled={!orden.onDespues} className={BOTON_ORDEN} aria-label={`Mover a ${fila.nombre} después`}>
+            Después <ChevronRight size={14} aria-hidden="true" />
+          </button>
+        </div>
       )}
 
       <div className="mt-auto pt-4">

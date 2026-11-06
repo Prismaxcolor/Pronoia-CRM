@@ -40,7 +40,7 @@ vi.mock('../src/config/supabase.js', () => ({
   },
 }));
 
-import { avisarSolicitudLlave, avisarResolucionLlave } from '../src/services/solicitud-llave-aviso.js';
+import { avisarSolicitudLlave, avisarResolucionLlave, avisarSuperadmins } from '../src/services/solicitud-llave-aviso.js';
 import { validarBotones } from '../src/utils/botones-aviso.js';
 import { configurarSecretosParaPruebas } from '../src/config/secretos.js';
 import { notificarGrupoMiddleware } from '../src/middlewares/notificar-grupo.js';
@@ -165,6 +165,22 @@ describe('avisos privados de solicitud de llave', () => {
     fetchMock.mockRejectedValueOnce(new Error('red caída'));
     await expect(avisarSolicitudLlave(pendiente)).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(3); // el fallo de red se reintenta y el otro superadmin recibe su aviso
+  });
+
+  it('devuelve a cuántos superadmins llegó el aviso (para avisar al solicitante si fue a nadie)', async () => {
+    superadmins(abraham, rosa);
+    await expect(avisarSuperadmins(pendiente)).resolves.toBe(2);
+  });
+
+  it('devuelve 0 si no hay superadmin vinculado', async () => {
+    tablas.users = { data: [] };
+    await expect(avisarSuperadmins(pendiente)).resolves.toBe(0);
+  });
+
+  it('devuelve 0 si el webhook rechaza el aviso', async () => {
+    superadmins(abraham);
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    await expect(avisarSuperadmins(pendiente)).resolves.toBe(0);
   });
 
   it('webhook con 500 no lanza', async () => {
