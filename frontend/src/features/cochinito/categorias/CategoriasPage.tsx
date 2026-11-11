@@ -53,7 +53,8 @@ function FilaCategoria({ categoria: c, esSub, puedeCrear, puedeEditar, onEditar,
 }
 
 /** Sección "Categorías" del Wallet: crear, editar y archivar categorías y subcategorías de ingresos y egresos. */
-function CategoriasPage() {
+/** `embebido`: se muestra dentro del marco de la Wallet nueva (que ya trae encabezado y pestañas). */
+function CategoriasPage({ embebido = false }: { embebido?: boolean }) {
   const { tienePermiso } = useAuth();
   const toast = useToast();
   const confirmar = useConfirm();
@@ -91,22 +92,25 @@ function CategoriasPage() {
   const padreDe = (c: CategoriaWallet) => categorias.find(x => x.id === c.padreId) ?? null;
 
   return (
-    <div className="max-w-4xl">
-      <EncabezadoPagina
+    <div className={embebido ? undefined : "max-w-4xl"}>
+      {!embebido && <EncabezadoPagina
         lecturas={LECTURAS.cochinito}
         titulo="Wallet"
         subtitulo="Categorías y subcategorías para clasificar los ingresos y egresos. El color ayuda a reconocerlas en la tabla de movimientos."
         acciones={puedeCrear ? <BotonAccion soloEnLinea icono={<Plus size={16} />} onClick={() => setFormulario({ categoria: null, padre: null })}>Nueva categoría</BotonAccion> : undefined}
-      />
-      <NavegacionWallet />
+      />}
+      {!embebido && <NavegacionWallet />}
       <Bloque
         titulo="Categorías"
         queEstasViendo="Las categorías de ingresos y egresos, cada una con sus subcategorías. Archivar una la oculta al registrar movimientos pero no cambia los movimientos que ya la usan."
         acciones={
+          <div className="flex flex-wrap items-center gap-3">
+          {embebido && puedeCrear && <BotonAccion soloEnLinea variante="secundario" icono={<Plus size={14} />} onClick={() => setFormulario({ categoria: null, padre: null })}>Nueva categoría</BotonAccion>}
           <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-text-secondary">
             <input type="checkbox" checked={verArchivadas} onChange={e => setVerArchivadas(e.target.checked)} className="h-4 w-4 accent-brand-600" />
             Ver archivadas
           </label>
+          </div>
         }
       >
         {cargando ? <SkeletonBloque alto="h-40" etiqueta="Cargando categorías" /> : error ? (

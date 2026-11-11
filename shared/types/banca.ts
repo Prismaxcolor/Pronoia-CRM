@@ -8,7 +8,12 @@ export interface ComisionAutomaticaBanca {
   minimo: number;
 }
 
+/** Grupo de la cuenta en la Wallet nueva. */
+export type GrupoWallet = 'efectivo' | 'corriente' | 'ahorros' | 'inversiones' | 'general';
+
 export interface Banca {
+  /** Grupo de la Wallet nueva; null o ausente = se deduce del tipo de cuenta. */
+  grupoWallet?: GrupoWallet | null;
   id: string;
   nombre: string;
   tipo: TipoBanca;

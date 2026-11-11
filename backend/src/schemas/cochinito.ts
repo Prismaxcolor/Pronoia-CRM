@@ -62,7 +62,11 @@ export const comisionAutomaticaSchema = z
   .refine(v => !v.activa || aTasa(v.porcentaje) > 0 || aMinimo(v.minimo) > 0, { message: 'Indica un porcentaje o un mínimo mayor a 0, o desactiva la comisión.', path: ['porcentaje'] });
 export type ComisionAutomaticaInput = z.infer<typeof comisionAutomaticaSchema>;
 
+/** Grupo de la cuenta en la Wallet nueva. null = se deduce del tipo. */
+const grupoWalletSchema = z.enum(['efectivo', 'corriente', 'ahorros', 'inversiones', 'general']).nullable().optional();
+
 export const crearBancaSchema = z.object({
+  grupoWallet: grupoWalletSchema,
   nombre: z.string().trim().min(1, 'El nombre es obligatorio.').max(100),
   tipo: z.enum(['banco_nacional', 'banco_internacional', 'exchange', 'efectivo']),
   moneda: z.string().trim().min(1, 'La moneda es obligatoria.').max(10),
@@ -74,6 +78,7 @@ export const crearBancaSchema = z.object({
 });
 
 export const actualizarBancaSchema = z.object({
+  grupoWallet: grupoWalletSchema,
   nombre: z.string().trim().min(1).max(100).optional(),
   tipo: z.enum(['banco_nacional', 'banco_internacional', 'exchange', 'efectivo']).optional(),
   descripcion: textoOpcional(200),

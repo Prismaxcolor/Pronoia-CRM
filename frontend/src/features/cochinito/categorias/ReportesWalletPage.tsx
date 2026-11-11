@@ -14,7 +14,8 @@ const PESTANAS = [
 ] as const;
 
 /** Sección "Reportes" del Wallet: reportes imprimibles (PDF) de una cuenta o caja y de gastos e ingresos por categoría. */
-function ReportesWalletPage() {
+/** `embebido`: se muestra dentro del marco de la Wallet nueva (que ya trae encabezado y pestañas). */
+function ReportesWalletPage({ embebido = false }: { embebido?: boolean }) {
   const [reporte, setReporte] = useState<Reporte>('cuenta');
   // Las categorías solo hacen falta en la pestaña "Por categorías": no se piden al abrir la pantalla (compiten con la
   // carga de la cuenta y, con el servidor frío, retrasan la primera vista).
@@ -26,13 +27,13 @@ function ReportesWalletPage() {
   };
 
   return (
-    <div className="max-w-6xl">
-      <EncabezadoPagina
+    <div className={embebido ? undefined : "max-w-6xl"}>
+      {!embebido && <EncabezadoPagina
         lecturas={LECTURAS.cochinito}
         titulo="Wallet"
         subtitulo="Reportes para imprimir o guardar en PDF. Los montos se muestran en la moneda de cada cuenta; nunca se suman Bs con USD."
-      />
-      <NavegacionWallet />
+      />}
+      {!embebido && <NavegacionWallet />}
       <Pestanas pestanas={PESTANAS} valor={reporte} onCambiar={cambiarReporte} etiquetaAria="Tipo de reporte">
         {reporte === 'cuenta' ? (
           <Bloque titulo="Movimientos de una cuenta o caja" queEstasViendo="Todos los movimientos de la cuenta elegida entre las fechas indicadas, con su categoría, lo que entró, lo que salió y el neto. Se puede filtrar por categorías: los totales cuentan solo esos movimientos y los saldos siguen siendo los de la cuenta.">

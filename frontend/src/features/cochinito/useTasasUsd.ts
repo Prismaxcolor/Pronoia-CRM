@@ -7,16 +7,20 @@ import { TASAS_USD_VACIAS, aTasaUsd, type EstadoTasasUsd } from './equivalente-u
  * la pantalla las pasa a quien las necesite. Una tasa que no carga queda en null y se dice, no se inventa.
  */
 export function useTasasUsd(activo = true): EstadoTasasUsd {
-  const [estado, setEstado] = useState<EstadoTasasUsd>({ tasas: TASAS_USD_VACIAS, cargando: activo });
+  const [tasas, setTasas] = useState<EstadoTasasUsd['tasas']>(TASAS_USD_VACIAS);
+  const [resuelto, setResuelto] = useState(false);
 
   useEffect(() => {
     if (!activo) return undefined;
     let vigente = true;
     Promise.all([obtenerTasa('binance'), obtenerTasa('bcv')]).then(([binance, bcv]) => {
-      if (vigente) setEstado({ tasas: { binance: aTasaUsd(binance), bcv: aTasaUsd(bcv) }, cargando: false });
+      if (!vigente) return;
+      setTasas({ binance: aTasaUsd(binance), bcv: aTasaUsd(bcv) });
+      setResuelto(true);
     });
     return () => { vigente = false; };
   }, [activo]);
 
-  return estado;
+  // Derivado: mientras esté activo y aún no haya respuesta, está cargando (incluso si se activó después de montar).
+  return { tasas, cargando: activo && !resuelto };
 }

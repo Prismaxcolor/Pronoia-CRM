@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { Ban, CheckCircle2, ChevronLeft, ChevronRight, FileDown, Pencil } from 'lucide-react';
+import { Ban, CheckCircle2, ChevronLeft, ChevronRight, EyeOff, FileDown, Pencil } from 'lucide-react';
 import { BotonAccion, EncabezadoPagina, EstadoVacio, Insignia, SkeletonBloque, formatearNumero } from '../../components/ui';
 import FilaDocumento from '../../components/FilaDocumento';
 import CompartirBoton from '../../components/CompartirBoton';
@@ -28,10 +28,21 @@ import {
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 import { useCategorias } from './categorias/useCategorias';
 import { etiquetaCategoria } from './categorias/categorias-logica';
+import { destinoVolver } from './origen-detalle';
+import { MONTO_OCULTO } from '../wallet/wallet-grupos';
+import { movimientoConMontoOculto, textoLibreSegunPrivacidad } from '../wallet/registros/registros-privacidad';
+import { useWalletPrefsOpcional } from '../wallet/wallet-prefs';
 
-const RUTA_WALLET = '/cochinito';
 const simbolo = (moneda: string) => (moneda === 'USD' ? 'USD' : moneda === 'VES' ? 'Bs' : moneda);
 const fmtMonto = (n: number, moneda: string) => `${simbolo(moneda)} ${formatearNumero(n, 2)}`;
+
+/** Privacidad de la Wallet nueva aplicada a esta pantalla: `mk` enmascara un monto; `tx` los importes escritos en un texto libre.
+ *  Sin nada oculto (o abierta desde la Wallet clásica sin preferencias) devuelven el texto tal cual. */
+interface Vista { mk: (texto: string) => string; tx: (texto: string) => string }
+
+function crearVista(ocultar: boolean): Vista {
+  return { mk: t => (ocultar ? MONTO_OCULTO : t), tx: t => textoLibreSegunPrivacidad(t, ocultar) };
+}
 
 interface Resultado { id: string; version: number; detalle: DetalleMovimiento | null; bancas: Banca[] }
 
@@ -65,7 +76,8 @@ function BannerAnulado({ detalle }: { detalle: DetalleMovimiento }) {
 }
 
 /** Filas etiqueta/valor del documento (las vacías no se muestran). */
-function FilasMesa({ detalle, simboloDestino }: { detalle: DetalleMovimiento; simboloDestino: string }) {
+function FilasMesa({ detalle, simboloDestino, vista }: { detalle: DetalleMovimiento; simboloDestino: string; vista: Vista }) {
+  const { mk } = vista;
   const m = detalle.movimiento;
   const recibe = montoQueRecibeElDestino(m);
   const enProceso = esTransferenciaEnProceso(m);
@@ -73,18 +85,19 @@ function FilasMesa({ detalle, simboloDestino }: { detalle: DetalleMovimiento; si
     <>
       <FilaDocumento label="Mesa de cambio" valor={detalle.cambistaNombre ?? 'Cambista (sin permiso para ver el nombre)'} />
       <FilaDocumento label="Estado de la transferencia" valor={m.anulado ? 'Anulada' : (etiquetaEstadoMesa(m) ?? '—')} />
-      {m.mesaMontoBruto != null && <FilaDocumento label="Entrega el cambista" valor={`${simboloDestino} ${formatearNumero(m.mesaMontoBruto, 2)}`} />}
-      <FilaDocumento label="Comisión del cambio" valor={textoComisionMesa(m, simboloDestino)} />
-      {recibe != null && <FilaDocumento label={enProceso ? 'Recibirá la banca destino al completar' : 'Recibe la banca destino'} valor={`${simboloDestino} ${formatearNumero(recibe, 2)}`} />}
-      {m.mesaEstado === 'parcial' && montoCobradoMesa(m) != null && <FilaDocumento label="Ya cobrado" valor={`${simboloDestino} ${formatearNumero(montoCobradoMesa(m) ?? 0, 2)}`} />}
-      {enProceso && montoPendienteMesa(m) != null && <FilaDocumento label="Pendiente por cobrar (el cambista nos debe)" valor={`${simboloDestino} ${formatearNumero(montoPendienteMesa(m) ?? 0, 2)}`} />}
+      {m.mesaMontoBruto != null && <FilaDocumento label="Entrega el cambista" valor={mk(`${simboloDestino} ${formatearNumero(m.mesaMontoBruto, 2)}`)} />}
+      <FilaDocumento label="Comisión del cambio" valor={mk(textoComisionMesa(m, simboloDestino))} />
+      {recibe != null && <FilaDocumento label={enProceso ? 'Recibirá la banca destino al completar' : 'Recibe la banca destino'} valor={mk(`${simboloDestino} ${formatearNumero(recibe, 2)}`)} />}
+      {m.mesaEstado === 'parcial' && montoCobradoMesa(m) != null && <FilaDocumento label="Ya cobrado" valor={mk(`${simboloDestino} ${formatearNumero(montoCobradoMesa(m) ?? 0, 2)}`)} />}
+      {enProceso && montoPendienteMesa(m) != null && <FilaDocumento label="Pendiente por cobrar (el cambista nos debe)" valor={mk(`${simboloDestino} ${formatearNumero(montoPendienteMesa(m) ?? 0, 2)}`)} />}
       {m.mesaCompletadaEn && <FilaDocumento label="Completada" valor={formatearFechaHora(m.mesaCompletadaEn)} />}
-      {m.mesaObservacion && <FilaDocumento label="Observación" valor={m.mesaObservacion} />}
+      {m.mesaObservacion && <FilaDocumento label="Observación" valor={vista.tx(m.mesaObservacion)} />}
     </>
   );
 }
 
-function Filas({ detalle, simboloDestino, categoria, equivalenteAparte }: { detalle: DetalleMovimiento; simboloDestino: string; categoria: string | null; equivalenteAparte: boolean }) {
+function Filas({ detalle, simboloDestino, categoria, equivalenteAparte, vista }: { detalle: DetalleMovimiento; simboloDestino: string; categoria: string | null; equivalenteAparte: boolean; vista: Vista }) {
+  const { mk, tx } = vista;
   const m = detalle.movimiento;
   const tasa = tasaDe(m);
   const usd = montoUsdDe(m);
@@ -99,15 +112,15 @@ function Filas({ detalle, simboloDestino, categoria, equivalenteAparte }: { deta
       {m.bancaDestinoId && <FilaDocumento label="Banca destino" valor={detalle.bancaDestinoNombre ?? 'Banca desconocida'} />}
       {(m.proveedorId || m.clienteId) && <FilaDocumento label={rolTercero} valor={tercero ?? `${rolTercero} (sin permiso para ver el nombre)`} />}
       {categoria && <FilaDocumento label="Categoría" valor={categoria} />}
-      {m.descripcion && <FilaDocumento label="Descripción" valor={m.descripcion} />}
-      {m.referencia && <FilaDocumento label="Referencia" valor={m.referencia} />}
+      {m.descripcion && <FilaDocumento label="Descripción" valor={tx(m.descripcion)} />}
+      {m.referencia && <FilaDocumento label="Referencia" valor={tx(m.referencia)} />}
       {tasa != null && <FilaDocumento label="Tasa" valor={`${formatearNumero(tasa, 2)} Bs por USD`} />}
-      {usd != null && m.moneda !== 'USD' && !equivalenteAparte && <FilaDocumento label="Equivalente en USD" valor={`USD ${formatearNumero(usd, 2)}`} />}
-      {tieneComision(m) && <FilaDocumento label="Comisión bancaria" valor={`Bs ${formatearNumero(m.comisionBancaria as number, 2)} (cargada a la misma cuenta como un egreso aparte)`} />}
+      {usd != null && m.moneda !== 'USD' && !equivalenteAparte && <FilaDocumento label="Equivalente en USD" valor={mk(`USD ${formatearNumero(usd, 2)}`)} />}
+      {tieneComision(m) && <FilaDocumento label="Comisión bancaria" valor={`${mk(`Bs ${formatearNumero(m.comisionBancaria as number, 2)}`)} (cargada a la misma cuenta como un egreso aparte)`} />}
       {esCargoDeComision(m) && <FilaDocumento label={esComisionDeMesa(m) ? 'Comisión de la mesa de cambio de' : 'Comisión bancaria de'} valor={esComisionDeMesa(m) ? 'Una transferencia con mesa de cambio: se anula junto con ella' : 'Otro movimiento de Wallet: se anula junto con él'} />}
       {m.mesaCambistaId != null
-        ? <FilasMesa detalle={detalle} simboloDestino={simboloDestino} />
-        : m.montoDestino != null && <FilaDocumento label="Recibe la banca destino" valor={formatearNumero(m.montoDestino, 2)} />}
+        ? <FilasMesa detalle={detalle} simboloDestino={simboloDestino} vista={vista} />
+        : m.montoDestino != null && <FilaDocumento label="Recibe la banca destino" valor={mk(formatearNumero(m.montoDestino, 2))} />}
     </>
   );
 }
@@ -116,10 +129,11 @@ const ENLACE_VECINO = 'inline-flex items-center gap-1 rounded-lg border border-b
 const ENLACE_VECINO_INACTIVO = 'inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text-muted opacity-50';
 
 /** Ir al movimiento anterior o siguiente (en el tiempo) de la lista que se estaba viendo, sin volver atrás. */
-function NavegacionMovimientos({ ids, id }: { ids: string[]; id: string }) {
+function NavegacionMovimientos({ ids, id, origen }: { ids: string[]; id: string; origen: string | null }) {
   const { anteriorId, siguienteId, posicion, total } = vecinosEnLista(ids, id);
   if (posicion === null) return null;
-  const estado = { navegacion: ids };
+  // El origen (p. ej. Registros con sus filtros) viaja con la navegación para poder volver al mismo lugar.
+  const estado = origen ? { navegacion: ids, origen } : { navegacion: ids };
   return (
     <nav aria-label="Navegar entre movimientos" className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
       {anteriorId
@@ -138,13 +152,19 @@ function MovimientoDetallePage() {
   const { id = '' } = useParams();
   const { tienePermiso } = useAuth();
   const toast = useToast();
+  // Privacidad de la Wallet nueva (no lanza fuera de ella: en la clásica no hay nada oculto y todo se ve como siempre).
+  const prefs = useWalletPrefsOpcional();
   const [version, setVersion] = useState(0);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [modal, setModal] = useState<'editar' | 'anular' | 'cobrar' | null>(null);
   const [fotoAbierta, setFotoAbierta] = useState<number | null>(null);
   const categorias = useCategorias();
   // Lista de la que viene la persona (la tabla ya filtrada); sin ella (enlace directo) se usan todos los movimientos.
-  const idsEstado = idsDeNavegacion(useLocation().state);
+  const estadoRuta = useLocation().state;
+  const idsEstado = idsDeNavegacion(estadoRuta);
+  // A dónde vuelve: la lista de origen (Registros con sus filtros) o, sin ella, la Wallet clásica.
+  const volver = destinoVolver(estadoRuta);
+  const origenExplicito = (estadoRuta as { origen?: unknown } | null)?.origen ? volver.ruta : null;
   const [idsCargados, setIdsCargados] = useState<string[]>([]);
   useEffect(() => {
     if (idsEstado) return;
@@ -178,12 +198,15 @@ function MovimientoDetallePage() {
   if (!detalle) {
     return (
       <div className="max-w-xl">
-        <EstadoVacio mensaje="No se encontró el movimiento" descripcion="Puede que el enlace sea incorrecto o que no tengas permiso para verlo." accion={{ etiqueta: 'Volver a Wallet', to: RUTA_WALLET }} />
+        <EstadoVacio mensaje="No se encontró el movimiento" descripcion="Puede que el enlace sea incorrecto o que no tengas permiso para verlo." accion={{ etiqueta: volver.etiqueta === 'Registros' ? 'Volver a Registros' : 'Volver a Wallet', to: volver.ruta }} />
       </div>
     );
   }
 
   const m = detalle.movimiento;
+  const ocultar = movimientoConMontoOculto(prefs, m);
+  const vista = crearVista(ocultar);
+  const { mk, tx } = vista;
   const nombreCategoria = etiquetaCategoria(m.categoriaId, categorias.indice)?.nombre ?? null;
   const numero = numeroMovimiento(m);
   const terceroOBanca = detalle.proveedorNombre ?? detalle.clienteNombre ?? detalle.bancaOrigenNombre;
@@ -202,7 +225,7 @@ function MovimientoDetallePage() {
       {puedeCompletar && <BotonAccion soloEnLinea icono={<CheckCircle2 size={16} />} onClick={() => setModal('cobrar')}>{(montoCobradoMesa(m) ?? 0) > 0 ? 'Cobrar el resto' : 'Completar'}</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Pencil size={16} />} onClick={() => setModal('editar')}>Editar</BotonAccion>}
       {manual && <BotonAccion soloEnLinea variante="secundario" icono={<Ban size={16} />} onClick={() => setModal('anular')}>Anular</BotonAccion>}
-      <BotonAccion variante="secundario" icono={<FileDown size={16} />} onClick={() => void descargarMovimientoPDF(detalle, 'descargar', nombreCategoria, monedaDestino)}>PDF</BotonAccion>
+      <BotonAccion variante="secundario" disabled={ocultar} icono={<FileDown size={16} />} onClick={() => void descargarMovimientoPDF(detalle, 'descargar', nombreCategoria, monedaDestino)}>PDF</BotonAccion>
       <CompartirBoton titulo={tituloCompartirMovimiento(m, terceroOBanca)} />
     </div>
   );
@@ -210,13 +233,20 @@ function MovimientoDetallePage() {
   return (
     <div className="max-w-2xl print:max-w-none">
       <EncabezadoPagina lecturas={LECTURAS.cochinito}
-        migas={[{ etiqueta: 'Wallet', to: RUTA_WALLET }, { etiqueta: `Movimiento ${numero}` }]}
+        migas={[{ etiqueta: volver.etiqueta, to: volver.ruta },{ etiqueta: `Movimiento ${numero}` }]}
         titulo={`Movimiento ${numero}`}
         subtitulo={formatearFecha(m.fecha)}
         acciones={acciones}
       />
 
-      <NavegacionMovimientos ids={idsNavegacion} id={id} />
+      <NavegacionMovimientos ids={idsNavegacion} id={id} origen={origenExplicito} />
+
+      {ocultar && (
+        <p role="status" className="mb-4 flex items-start gap-2 rounded-lg border border-border bg-surface p-3 text-sm text-text-secondary print:hidden">
+          <EyeOff size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+          Las cantidades de este movimiento están ocultas (preferencia de la Wallet): se enmascaran los montos, el historial de cambios y los comprobantes adjuntos, y el PDF no está disponible.
+        </p>
+      )}
 
       <div data-compartir-imagen className="mb-6 rounded-xl border border-border bg-surface p-4 sm:p-6 print:rounded-none print:border-0 print:bg-transparent print:p-0">
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -233,28 +263,30 @@ function MovimientoDetallePage() {
             <p>
               El dinero ya salió de {detalle.bancaOrigenNombre ?? 'la cuenta origen'}.{' '}
               {m.mesaEstado === 'parcial'
-                ? `${detalle.bancaDestinoNombre ?? 'La cuenta destino'} solo recibió ${simboloDestino} ${formatearNumero(montoCobradoMesa(m) ?? 0, 2)}; el resto se acredita cuando el cambista lo entregue.`
+                ? `${detalle.bancaDestinoNombre ?? 'La cuenta destino'} solo recibió ${mk(`${simboloDestino} ${formatearNumero(montoCobradoMesa(m) ?? 0, 2)}`)}; el resto se acredita cuando el cambista lo entregue.`
                 : `${detalle.bancaDestinoNombre ?? 'La cuenta destino'} todavía no lo recibe. Se acredita cuando se complete.`}
             </p>
           </div>
         )}
 
-        <div className="mb-2"><Filas detalle={detalle} simboloDestino={simboloDestino} categoria={nombreCategoria} equivalenteAparte={montosBs !== null} /></div>
+        <div className="mb-2"><Filas detalle={detalle} simboloDestino={simboloDestino} categoria={nombreCategoria} equivalenteAparte={montosBs !== null} vista={vista} /></div>
 
         <div className={`mt-4 border-t-2 border-brand-700 pt-3 print:border-black ${m.anulado ? 'text-text-muted line-through' : ''}`}>
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-lg font-semibold text-text-primary">Monto</span>
-            <span className="text-2xl font-bold text-brand-700 tabular-nums">{montosBs ? fmtMonto(montosBs.bs, 'VES') : fmtMonto(m.monto, m.moneda)}</span>
+            <span className="text-2xl font-bold text-brand-700 tabular-nums">{mk(montosBs ? fmtMonto(montosBs.bs, 'VES') : fmtMonto(m.monto, m.moneda))}</span>
           </div>
           {montosBs && (
             <div className="mt-1 flex items-baseline justify-between gap-3 text-sm text-text-secondary">
               <span>Equivalente en USD{tasaDe(m) != null ? ` (${formatearNumero(tasaDe(m) as number, 2)} Bs por USD)` : ''}</span>
-              <span className="font-semibold tabular-nums">{montosBs.usd != null ? `USD ${formatearNumero(montosBs.usd, 2)}` : 'Sin tasa de ese momento'}</span>
+              <span className="font-semibold tabular-nums">{montosBs.usd != null ? mk(`USD ${formatearNumero(montosBs.usd, 2)}`) : 'Sin tasa de ese momento'}</span>
             </div>
           )}
         </div>
 
-        {m.comprobantes.length > 0 && <Galeria fotos={m.comprobantes} onAbrir={setFotoAbierta} />}
+        {m.comprobantes.length > 0 && (ocultar
+          ? <p className="mt-4 border-t border-border pt-3 text-xs text-text-secondary">{m.comprobantes.length === 1 ? 'Hay 1 comprobante adjunto' : `Hay ${m.comprobantes.length} comprobantes adjuntos`} (oculto mientras las cantidades están ocultas).</p>
+          : <Galeria fotos={m.comprobantes} onAbrir={setFotoAbierta} />)}
 
         <LeyendaRegistro className="mt-4 text-xs text-text-muted" nombre={detalle.registradoPorNombre} instante={m.creadoEn} />
 
@@ -268,10 +300,10 @@ function MovimientoDetallePage() {
       </div>
 
       <div className="print:hidden">
-        <HistorialEdiciones key={`${m.id}|${m.anulado}|${m.monto}|${m.fecha}`} entidadTipo="movimiento_banca" entidadId={m.id} />
+        {!ocultar && <HistorialEdiciones key={`${m.id}|${m.anulado}|${m.monto}|${m.fecha}`} entidadTipo="movimiento_banca" entidadId={m.id} />}
       </div>
 
-      {fotoAbierta != null && (
+      {fotoAbierta != null && !ocultar && (
         <VisorFotos fotos={m.comprobantes} indice={fotoAbierta} onCambiar={setFotoAbierta} onCerrar={() => setFotoAbierta(null)} alt="Comprobante ampliado" />
       )}
 
@@ -310,8 +342,8 @@ function MovimientoDetallePage() {
           }}
         >
           <div className="rounded-lg border border-border bg-surface-alt p-3 text-sm">
-            <p className="font-medium text-text-primary">{m.descripcion || 'Movimiento sin concepto'}</p>
-            <p className="text-text-secondary">{fmtMonto(m.monto, m.moneda)} · {formatearFecha(m.fecha)}</p>
+            <p className="font-medium text-text-primary">{tx(m.descripcion || 'Movimiento sin concepto')}</p>
+            <p className="text-text-secondary">{mk(fmtMonto(m.monto, m.moneda))} · {formatearFecha(m.fecha)}</p>
           </div>
           <p className="text-xs text-text-muted">
             El saldo de la banca se corrige y el movimiento queda marcado como anulado en el historial (no se borra). Se rechaza si alguna banca quedaría sin fondos.

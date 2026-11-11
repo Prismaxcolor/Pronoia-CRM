@@ -14,7 +14,8 @@ import { errorImagenBanca, imagenParaGuardar } from './imagen-banca';
 import ComisionAutomaticaSeccion from './ComisionAutomaticaSeccion';
 import { comisionCambio, estadoInicialComision, validarComision, type EstadoComisionAuto } from './comision-automatica-form';
 import { esChatIdTelegramValido, gruposTelegramConocidos, normalizarChatIdTelegram } from './telegram-banca';
-import type { Banca, TipoBanca } from '@shared/types/index.js';
+import { GRUPOS } from '../wallet/wallet-grupos';
+import type { Banca, GrupoWallet, TipoBanca } from '@shared/types/index.js';
 
 interface TipoOption {
   value: TipoBanca;
@@ -135,6 +136,7 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
   const editando = !!banca;
   const [nombre, setNombre] = useState(banca?.nombre ?? '');
   const [tipo, setTipo] = useState<TipoBanca>(banca?.tipo ?? 'banco_nacional');
+  const [grupoWallet, setGrupoWallet] = useState<GrupoWallet | ''>(banca?.grupoWallet ?? '');
   const [moneda, setMoneda] = useState(banca?.moneda ?? 'USD');
   const [descripcion, setDescripcion] = useState(banca?.descripcion ?? '');
   const [color, setColor] = useState<string | null>(banca?.color ?? null);
@@ -202,6 +204,7 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
         tipo,
         descripcion: descripcion.trim(),
         color,
+        grupoWallet: grupoWallet || null,
         ...(imagenUrl !== undefined ? { imagenUrl } : {}),
         telegramChatId: chatId,
         ...(puedeCambiarTelegram ? { telegramReportesActivos: reportesActivos } : {}),
@@ -213,6 +216,7 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
         moneda,
         descripcion: descripcion.trim(),
         color,
+        ...(grupoWallet ? { grupoWallet } : {}),
         ...(imagenUrl ? { imagenUrl } : {}),
         telegramChatId: chatId,
         ...(puedeCambiarTelegram && !reportesActivos ? { telegramReportesActivos: false } : {}),
@@ -279,6 +283,16 @@ function BancaFormModal({ banca, bancas = [], onClose, onGuardado }: Props) {
               );
             })}
           </div>
+        </div>
+
+        {/* Grupo en la Wallet nueva */}
+        <div>
+          <label htmlFor="banca-grupo-wallet" className="block text-xs font-medium text-text-secondary mb-1">Grupo en la Wallet nueva</label>
+          <select id="banca-grupo-wallet" value={grupoWallet} onChange={e => setGrupoWallet(e.target.value as GrupoWallet | '')} className={inputClass}>
+            <option value="">Automático según el tipo de banca</option>
+            {GRUPOS.map(g => <option key={g.clave} value={g.clave}>{g.etiqueta}</option>)}
+          </select>
+          <p className="mt-1 text-xs text-text-muted">Ordena la cuenta dentro de la Wallet nueva (Efectivo, Cuenta corriente, Ahorros, Inversiones o General).</p>
         </div>
 
         {/* Nombre */}

@@ -128,6 +128,49 @@ describe('obtenerCatalogo', () => {
     expect(almacen.mapa.get(claveCompleta('u1', 'p'))?.datos).toBe('nuevo');
   });
 
+  it('con guardado y red más lenta que el timeout por defecto, timeoutMs mayor espera y devuelve la red', async () => {
+    const { gestor } = armar();
+    await gestor.obtenerCatalogo('p', async () => 'viejo');
+    const lento = () => new Promise<string>(res => setTimeout(() => res('nuevo'), 80));
+    const r = await gestor.obtenerCatalogo('p', lento, { timeoutMs: 500 });
+    expect(r).toMatchObject({ datos: 'nuevo', origen: 'red', obsoleto: false });
+  });
+
+  it('con timeoutMs mayor y la red caída sigue sirviendo el guardado', async () => {
+    const { gestor } = armar();
+    await gestor.obtenerCatalogo('p', async () => 'viejo');
+    const r = await gestor.obtenerCatalogo('p', async () => { throw errorDeRed(); }, { timeoutMs: 500 });
+    expect(r).toMatchObject({ datos: 'viejo', origen: 'cache' });
+  });
+
+  it('paraGuardar reduce solo lo guardado: quien lee recibe el dato completo', async () => {
+    const { gestor, almacen } = armar();
+    const r = await gestor.obtenerCatalogo<number[]>('p', async () => [1, 2, 3, 4], { paraGuardar: d => (d as number[]).slice(0, 2) });
+    expect(r).toMatchObject({ datos: [1, 2, 3, 4], origen: 'red' });
+    expect(almacen.mapa.get(claveCompleta('u1', 'p'))?.datos).toEqual([1, 2]);
+  });
+
+  it('dos lecturas simultáneas de la misma clave reciben AMBAS el dato completo (no el recortado)', async () => {
+    const { gestor } = armar();
+    const lento = () => new Promise<number[]>(res => setTimeout(() => res([1, 2, 3, 4]), 20));
+    const opciones = { paraGuardar: (d: unknown) => (d as number[]).slice(0, 2) };
+    const [a, b] = await Promise.all([
+      gestor.obtenerCatalogo<number[]>('p', lento, opciones),
+      gestor.obtenerCatalogo<number[]>('p', lento, opciones),
+    ]);
+    expect(a.datos).toEqual([1, 2, 3, 4]);
+    expect(b.datos).toEqual([1, 2, 3, 4]);
+  });
+
+  it('sin red se sirve la copia reducida (lo guardado), no el dato completo', async () => {
+    let enLinea = true;
+    const { gestor } = armar({ estaOnline: () => enLinea });
+    await gestor.obtenerCatalogo<number[]>('p', async () => [1, 2, 3, 4], { paraGuardar: d => (d as number[]).slice(0, 2) });
+    enLinea = false;
+    const r = await gestor.obtenerCatalogo<number[]>('p', async () => { throw errorDeRed(); });
+    expect(r).toMatchObject({ datos: [1, 2], origen: 'cache' });
+  });
+
   it('con guardado NO se espera menos que el timeout si la red responde', async () => {
     const { gestor } = armar();
     await gestor.obtenerCatalogo('p', async () => 'viejo');

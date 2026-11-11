@@ -195,7 +195,7 @@ export function recortarCampo<T extends object>(datos: T, campo: keyof T, recort
 export interface ResultadoLectura<T> { datos: T; descargadoEn: number; origen: OrigenLectura }
 
 export interface DependenciasLectura {
-  obtener: <T>(clave: string, cargar: () => Promise<T>, opciones?: { maxEdadMs?: number }) => Promise<ResultadoLectura<T>>;
+  obtener: <T>(clave: string, cargar: () => Promise<T>, opciones?: { maxEdadMs?: number; timeoutMs?: number; paraGuardar?: (datos: unknown) => unknown }) => Promise<ResultadoLectura<T>>;
   registro: RegistroLecturas;
   esErrorDeRed: (err: unknown) => boolean;
   /** Mensaje con el que la caché avisa "sin red y sin nada guardado". */
@@ -206,6 +206,25 @@ export interface OpcionesLectura<T> {
   /** Reduce lo que se GUARDA en caché (no lo que ve el usuario conectado). */
   recortar?: (datos: T) => T;
   maxEdadMs?: number;
+  /** Espera máxima a la red antes de servir la copia guardada (por defecto, la del gestor: 4 s).
+   *  Para lecturas donde la copia recortada daría totales incompletos (ver ESPERA_TOTALES_MS). */
+  esperaMs?: number;
+}
+
+/** Espera a la red para listas que se suman (movimientos): la copia guardada está recortada y,
+ *  servida por lentitud, daría totales equivocados sin avisar. */
+export const ESPERA_TOTALES_MS = 25000;
+
+/** Opciones que viajan al gestor de catálogos; undefined si no hay ninguna (comportamiento por defecto). */
+function opcionesDeGestor<T>(
+  o: { maxEdadMs?: number; esperaMs?: number; recortar?: (datos: T) => T },
+): { maxEdadMs?: number; timeoutMs?: number; paraGuardar?: (datos: unknown) => unknown } | undefined {
+  if (o.maxEdadMs === undefined && o.esperaMs === undefined && o.recortar === undefined) return undefined;
+  return {
+    ...(o.maxEdadMs === undefined ? {} : { maxEdadMs: o.maxEdadMs }),
+    ...(o.esperaMs === undefined ? {} : { timeoutMs: o.esperaMs }),
+    ...(o.recortar === undefined ? {} : { paraGuardar: datos => o.recortar?.(datos as T) }),
+  };
 }
 
 /** Lee `cargar` a través de la caché de catálogos y deja constancia (para banner y pie de documentos).
@@ -214,16 +233,12 @@ export interface OpcionesLectura<T> {
 export async function leerRegistrando<T>(
   deps: DependenciasLectura, clave: string, cargar: () => Promise<T>, opciones: OpcionesLectura<T> = {},
 ): Promise<T> {
-  let completo: { valor: T } | undefined;
-  const cargarYRecortar = async (): Promise<T> => {
-    const valor = await cargar();
-    completo = { valor };
-    return opciones.recortar ? opciones.recortar(valor) : valor;
-  };
   try {
-    const r = await deps.obtener(clave, cargarYRecortar, opciones.maxEdadMs === undefined ? undefined : { maxEdadMs: opciones.maxEdadMs });
+    // El recorte solo afecta a lo que se guarda: con red, TODA llamada (incluidas las simultáneas que comparten
+    // la misma petición) recibe el dato completo; la copia recortada solo se sirve sin red o si la red falla.
+    const r = await deps.obtener(clave, cargar, opcionesDeGestor(opciones));
     deps.registro.registrar(clave, { descargadoEn: r.descargadoEn, origen: r.origen });
-    return r.origen === 'red' && completo ? completo.valor : r.datos;
+    return r.datos;
   } catch (err) {
     const sinDatos = deps.esErrorDeRed(err) || (err instanceof Error && err.message === deps.mensajeSinDatos);
     if (sinDatos) deps.registro.registrarSinDatos(clave);

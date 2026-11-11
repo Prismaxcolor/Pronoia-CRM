@@ -32,6 +32,10 @@ interface CompartirBotonProps {
   className?: string;
   /** Oculta el texto (para barras donde Imprimir también es solo icono). */
   soloIcono?: boolean;
+  /** false = no renderiza la imagen al montar (solo al acercarse, enfocar o tocar): útil con muchos botones en una pantalla. */
+  precalentarAlMontar?: boolean;
+  /** Nombre accesible del botón cuando hay varios en la pantalla ("Compartir Flujo de caja como imagen"). */
+  etiquetaAria?: string;
 }
 
 const CLASE_BASE =
@@ -53,7 +57,7 @@ function mensajeResultado(resultado: ResultadoCompartir, varias: boolean): strin
  * hoja de compartir del sistema; en escritorio copia la imagen o la descarga.
  * Para compartir el documento en PDF se descarga con el botón PDF.
  */
-export default function CompartirBoton({ titulo, obtenerElemento, renderizarImagenes, className, soloIcono }: CompartirBotonProps) {
+export default function CompartirBoton({ titulo, obtenerElemento, renderizarImagenes, className, soloIcono, precalentarAlMontar = true, etiquetaAria }: CompartirBotonProps) {
   const toast = useToast();
   const [cargando, setCargando] = useState(false);
   const cache = useRef<CachePrerender>({ blobs: null, vigenteHasta: 0, enCurso: null });
@@ -96,9 +100,10 @@ export default function CompartirBoton({ titulo, obtenerElemento, renderizarImag
   }, [generarImagenes]);
 
   useEffect(() => {
+    if (!precalentarAlMontar) return undefined;
     const t = window.setTimeout(precalentar, RETRASO_PRERENDER_MS);
     return () => window.clearTimeout(t);
-  }, [precalentar]);
+  }, [precalentar, precalentarAlMontar]);
 
   async function compartir() {
     if (!renderizarImagenes && !(obtenerElemento ?? buscarElementoCompartible)()) {
@@ -139,6 +144,7 @@ export default function CompartirBoton({ titulo, obtenerElemento, renderizarImag
       disabled={cargando}
       className={className ?? CLASE_BASE}
       title="Compartir como imagen"
+      aria-label={etiquetaAria}
     >
       {cargando ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />}
       {!soloIcono && 'Compartir'}

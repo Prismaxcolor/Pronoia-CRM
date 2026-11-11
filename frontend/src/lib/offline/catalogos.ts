@@ -12,6 +12,7 @@ import {
   crearGestorCatalogos,
   usuarioIdDeToken,
   type MetaAntiguedad,
+  type OpcionesCatalogo,
   type ResultadoCatalogo,
 } from './catalogos-nucleo';
 
@@ -97,7 +98,7 @@ function solicitarPersistencia(): void {
 export function obtenerCatalogo<T>(
   clave: string,
   cargar: () => Promise<T>,
-  opciones?: { maxEdadMs?: number },
+  opciones?: OpcionesCatalogo,
 ): Promise<ResultadoCatalogo<T>> {
   solicitarPersistencia();
   return gestor.obtenerCatalogo(clave, cargar, opciones);

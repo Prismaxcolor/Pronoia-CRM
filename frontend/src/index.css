@@ -29,6 +29,19 @@
   --color-tipo-amarillo: #F59E0B;
   --color-tipo-azul: #3B82F6;
   --color-tipo-verde: #10B981;
+
+  /* Wallet nueva: usa la paleta del sistema (alias), así se ve como el resto de Pronoia y sigue la marca (verde/azul). */
+  --color-w-fondo: var(--color-surface-alt);
+  --color-w-barra: var(--color-surface);
+  --color-w-tarjeta: var(--color-surface);
+  --color-w-grupo: var(--color-surface-alt);
+  --color-w-borde: var(--color-border);
+  --color-w-texto: var(--color-text-primary);
+  --color-w-texto2: var(--color-text-secondary);
+  --color-w-acento: var(--color-brand-600);
+  --color-w-sobre-acento: #FFFFFF;
+  --color-w-positivo: #15803D;
+  --color-w-negativo: #B91C1C;
 }
 
 /* Marca azul (la anterior), solo para los usuarios con temaMarca = 'azul'.

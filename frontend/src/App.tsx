@@ -94,6 +94,13 @@ const CochinitPage = lazyConReintento(() => import('./features/cochinito/Cochini
 const MovimientoDetallePage = lazyConReintento(() => import('./features/cochinito/MovimientoDetallePage'));
 const CategoriasPage = lazyConReintento(() => import('./features/cochinito/categorias/CategoriasPage'));
 const ReportesWalletPage = lazyConReintento(() => import('./features/cochinito/categorias/ReportesWalletPage'));
+const WalletShell = lazyConReintento(() => import('./features/wallet/WalletShell'));
+const WalletInicioPage = lazyConReintento(() => import('./features/wallet/WalletInicioPage'));
+const WalletCuentasPage = lazyConReintento(() => import('./features/wallet/WalletCuentasPage'));
+const WalletRegistrosPage = lazyConReintento(() => import('./features/wallet/registros/WalletRegistrosPage'));
+const WalletEstadisticasPage = lazyConReintento(() => import('./features/wallet/estadisticas/WalletEstadisticasPage'));
+const WalletTasasPage = lazyConReintento(() => import('./features/wallet/WalletTasasPage'));
+const WalletCuentaDetallePage = lazyConReintento(() => import('./features/wallet/WalletCuentaDetallePage'));
 const MesaCambioPage = lazyConReintento(() => import('./features/mesa-cambio/MesaCambioPage'));
 const CambistaDetallePage = lazyConReintento(() => import('./features/mesa-cambio/CambistaDetallePage'));
 const NominaPage = lazyConReintento(() => import('./features/nomina/NominaPage'));
@@ -252,6 +259,17 @@ function AppRoutes() {
         <Route path="/cochinito/movimientos/:id" element={<ProtectedRoute recurso="cochinito"><MovimientoDetallePage /></ProtectedRoute>} />
         <Route path="/cochinito/categorias" element={<ProtectedRoute recurso="cochinito"><CategoriasPage /></ProtectedRoute>} />
         <Route path="/cochinito/reportes" element={<ProtectedRoute recurso="cochinito"><ReportesWalletPage /></ProtectedRoute>} />
+        {/* Wallet nueva: dentro del Layout del sistema (mismo menú, encabezado y colores). */}
+        <Route path="/wallet" element={<ProtectedRoute recurso="cochinito"><WalletShell /></ProtectedRoute>}>
+          <Route index element={<WalletInicioPage />} />
+          <Route path="cuentas" element={<WalletCuentasPage />} />
+          <Route path="cuentas/:id" element={<WalletCuentaDetallePage />} />
+          <Route path="registros" element={<WalletRegistrosPage />} />
+          <Route path="estadisticas" element={<WalletEstadisticasPage />} />
+          <Route path="categorias" element={<CategoriasPage embebido />} />
+          <Route path="reportes" element={<ReportesWalletPage embebido />} />
+          <Route path="tasas" element={<WalletTasasPage />} />
+        </Route>
         <Route path="/mesa-cambio" element={<ProtectedRoute recurso="mesa_cambio"><RequiereConexion seccion="Mesa de cambio"><MesaCambioPage /></RequiereConexion></ProtectedRoute>} />
         <Route path="/mesa-cambio/:id" element={<ProtectedRoute recurso="mesa_cambio"><RequiereConexion seccion="Mesa de cambio"><CambistaDetallePage /></RequiereConexion></ProtectedRoute>} />
         <Route path="/nomina" element={<ProtectedRoute recurso="nomina"><RequiereConexion seccion="Nómina"><NominaPage /></RequiereConexion></ProtectedRoute>} />

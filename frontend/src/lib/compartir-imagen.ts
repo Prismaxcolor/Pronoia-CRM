@@ -44,14 +44,33 @@ export function buscarElementoCompartible(raiz: ParentNode = document): HTMLElem
   return null;
 }
 
-function colorFondo(): string {
-  const fondo = getComputedStyle(document.body).backgroundColor;
-  const transparente = !fondo || fondo === 'transparent' || fondo === 'rgba(0, 0, 0, 0)';
-  return transparente ? COLOR_FONDO_RESPALDO : fondo;
+/** true si un color CSS calculado no pinta nada (vacío, 'transparent' o alfa 0). */
+export function esFondoTransparente(fondo: string | null | undefined): boolean {
+  if (!fondo) return true;
+  const f = fondo.trim().toLowerCase();
+  if (f === 'transparent') return true;
+  const alfa = /^(?:rgba|hsla)\(.*,\s*([\d.]+)\s*\)$/.exec(f);
+  return alfa !== null && Number(alfa[1]) === 0;
 }
 
-function esNodoExcluido(nodo: Node): boolean {
-  return nodo instanceof Element && nodo.matches(SELECTOR_EXCLUIDOS);
+function colorFondo(): string {
+  const fondo = getComputedStyle(document.body).backgroundColor;
+  return esFondoTransparente(fondo) ? COLOR_FONDO_RESPALDO : fondo;
+}
+
+/** Fondo real de un elemento: el suyo o el del ancestro más cercano que pinte algo (no el del body si hay uno intermedio). */
+export function colorFondoReal(elemento: Element): string {
+  for (let el: Element | null = elemento; el; el = el.parentElement) {
+    const fondo = getComputedStyle(el).backgroundColor;
+    if (!esFondoTransparente(fondo)) return fondo;
+  }
+  return COLOR_FONDO_RESPALDO;
+}
+
+const SELECTOR_EXCLUIDOS_CON_BOTONES = 'nav, [data-no-imagen]';
+
+function esNodoExcluido(nodo: Node, conservarBotones = false): boolean {
+  return nodo instanceof Element && nodo.matches(conservarBotones ? SELECTOR_EXCLUIDOS_CON_BOTONES : SELECTOR_EXCLUIDOS);
 }
 
 /** Escala de la imagen: 2x, o menos si el elemento es tan grande que superaría el límite de canvas del navegador. */
@@ -62,17 +81,24 @@ export function pixelRatioSeguro(ancho: number, alto: number): number {
   return Math.max(PIXEL_RATIO_MINIMO, Math.min(PIXEL_RATIO, porArea, porLado));
 }
 
+export interface OpcionesRenderizado {
+  /** Color de fondo de la imagen; por defecto el del body. */
+  fondo?: string;
+  /** true = los botones salen en la imagen (solo se omite lo marcado con data-no-imagen y los nav). */
+  conservarBotones?: boolean;
+}
+
 /** Renderiza el elemento a un PNG. Lanza ErrorCompartirImagen si no se puede. */
-export async function renderizarElementoAPng(elemento: HTMLElement): Promise<Blob> {
+export async function renderizarElementoAPng(elemento: HTMLElement, opciones: OpcionesRenderizado = {}): Promise<Blob> {
   try {
     const { toBlob } = await import('html-to-image');
     const blob = await toBlob(elemento, {
       pixelRatio: pixelRatioSeguro(elemento.scrollWidth, elemento.scrollHeight),
       imagePlaceholder: IMAGEN_RESPALDO,
-      backgroundColor: colorFondo(),
+      backgroundColor: opciones.fondo ?? colorFondo(),
       // Sin red, añadir ?parámetros a las imágenes locales las saca de la caché del service worker: se omite.
       cacheBust: typeof navigator === 'undefined' || navigator.onLine !== false,
-      filter: nodo => !esNodoExcluido(nodo),
+      filter: nodo => !esNodoExcluido(nodo, opciones.conservarBotones),
     });
     if (!blob) throw new Error('El navegador devolvió una imagen vacía');
     return blob;

@@ -1,8 +1,8 @@
 import { apiFetch } from './api-client';
 import { leerGet } from './lectura-service';
-import { LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
+import { ESPERA_TOTALES_MS, LIMITES_CACHE, recortarCampo, ultimasFilas } from '../lib/offline/lectura-logica';
 import { obtenerCatalogo } from '../lib/offline/catalogos';
-import type { Banca, Movimiento, TipoBanca } from '@shared/types/index.js';
+import type { Banca, GrupoWallet, Movimiento, TipoBanca } from '@shared/types/index.js';
 
 export interface ObtenerBancasOpts {
   incluirArchivadas?: boolean;
@@ -34,6 +34,7 @@ export async function obtenerMovimientos(): Promise<Movimiento[]> {
   try {
     const { movimientos } = await leerGet<{ movimientos: Movimiento[] }>('/api/cochinito/movimientos', {
       recortar: d => recortarCampo(d, 'movimientos', f => ultimasFilas(f as Movimiento[], LIMITES_CACHE.maxMovimientos, m => m.fecha)),
+      esperaMs: ESPERA_TOTALES_MS,
     });
     return movimientos;
   } catch {
@@ -54,6 +55,8 @@ export interface CrearBancaInput {
   telegramChatId?: string | null;
   /** false = sin avisos de Telegram para esta cuenta. Solo superadmin; omitido = activos. */
   telegramReportesActivos?: boolean;
+  /** Grupo de la Wallet nueva; null/omitido = se deduce del tipo. */
+  grupoWallet?: GrupoWallet | null;
 }
 
 /** Crea una banca con saldo 0. Para establecer saldo inicial se debe registrar un ingreso. */
@@ -82,6 +85,8 @@ export interface ActualizarBancaInput {
   telegramChatId?: string | null;
   /** Solo superadmin; omitido = no cambia. */
   telegramReportesActivos?: boolean;
+  /** null vuelve a deducirlo del tipo; omitido = no cambia. */
+  grupoWallet?: GrupoWallet | null;
 }
 
 export async function actualizarBanca(id: string, campos: ActualizarBancaInput): Promise<boolean> {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   LIMITES_CACHE, MS_DIA, MS_HORA, MS_MINUTO, TEXTO_SIN_DATOS, crearRegistroLecturas, deshabilitarSiOffline, filasRecientes,
-  leerRegistrando, pieDocumento, recortarCampo, reglaSoloEnLinea, textoBanner, textoHace, ticketsParaCache, ultimasFilas,
+  ESPERA_TOTALES_MS, leerRegistrando, pieDocumento, recortarCampo, reglaSoloEnLinea, textoBanner, textoHace, ticketsParaCache, ultimasFilas,
   type DependenciasLectura, type ResumenLecturas,
 } from '../../frontend/src/lib/offline/lectura-logica';
 import { conPieCsv } from '../../frontend/src/lib/csv';
@@ -159,14 +159,29 @@ describe('leerRegistrando', () => {
 
   it('con red devuelve la respuesta COMPLETA aunque lo guardado esté recortado', async () => {
     let guardado: number[] = [];
-    const { deps, registro } = armar((async (_c: string, cargar: () => Promise<unknown>) => {
-      guardado = (await cargar()) as number[];
-      return { datos: guardado, descargadoEn: AHORA, origen: 'red' };
+    // El doble imita al gestor real: guarda la versión reducida (paraGuardar) y devuelve el dato completo.
+    const { deps, registro } = armar((async (_c: string, cargar: () => Promise<unknown>, o?: { paraGuardar?: (d: unknown) => unknown }) => {
+      const datos = await cargar();
+      guardado = (o?.paraGuardar ? o.paraGuardar(datos) : datos) as number[];
+      return { datos, descargadoEn: AHORA, origen: 'red' };
     }) as DependenciasLectura['obtener']);
     const r = await leerRegistrando(deps, '/api/x', async () => [1, 2, 3, 4], { recortar: d => d.slice(0, 2) });
     expect(r).toEqual([1, 2, 3, 4]);
     expect(guardado).toEqual([1, 2]);
     expect(registro.resumen(['/api/x']).hayRed).toBe(true);
+  });
+
+  it('esperaMs viaja al gestor como timeoutMs; sin opciones no se pasa nada', async () => {
+    const recibidas: unknown[] = [];
+    const { deps } = armar((async (_c: string, cargar: () => Promise<unknown>, o?: unknown) => {
+      recibidas.push(o);
+      return { datos: await cargar(), descargadoEn: AHORA, origen: 'red' };
+    }) as DependenciasLectura['obtener']);
+    await leerRegistrando(deps, '/api/x', async () => 1);
+    await leerRegistrando(deps, '/api/x', async () => 1, { esperaMs: ESPERA_TOTALES_MS });
+    await leerRegistrando(deps, '/api/x', async () => 1, { maxEdadMs: 5, esperaMs: 7 });
+    expect(recibidas).toEqual([undefined, { timeoutMs: ESPERA_TOTALES_MS }, { maxEdadMs: 5, timeoutMs: 7 }]);
+    expect(ESPERA_TOTALES_MS).toBe(25000);
   });
 
   it('sin red devuelve lo guardado y lo marca como caché con su antigüedad', async () => {

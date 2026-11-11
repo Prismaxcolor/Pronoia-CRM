@@ -9,14 +9,14 @@ const SECCIONES = [
 /** Secciones del Wallet (Movimientos, Categorías, Reportes). Va arriba de cada pantalla del Wallet. */
 function NavegacionWallet() {
   return (
-    <nav aria-label="Secciones del Wallet" className="mb-4 flex gap-1 overflow-x-auto border-b border-border">
+    <nav aria-label="Secciones del Wallet" className="mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-border scrollbar-none">
       {SECCIONES.map(s => (
         <NavLink
           key={s.to}
           to={s.to}
           end={s.end}
           className={({ isActive }) =>
-            `-mb-px whitespace-nowrap border-b-2 px-3.5 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${isActive ? 'border-brand-600 text-brand-700' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+            `-mb-px whitespace-nowrap border-b-2 px-3.5 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400 ${isActive ? 'border-brand-600 text-brand-700' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
         >
           {s.etiqueta}
         </NavLink>

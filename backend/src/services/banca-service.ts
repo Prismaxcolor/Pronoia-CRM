@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { idsProveedoresOcultos, proveedorVisible, sinProveedoresOcultos } from './proveedor-oculto.js';
 import { mensajeDeErrorBd } from '../utils/errores-bd.js';
+import { leerPaginado } from '../utils/paginacion.js';
 import { logger } from '../utils/logger.js';
 import { MENSAJE_REPORTES_TELEGRAM_PENDIENTE } from './grupo-silencio-service.js';
 import type { CrearBancaInput, ActualizarBancaInput, CrearMovimientoInput } from '../schemas/cochinito.js';
@@ -16,6 +17,8 @@ import { subtipoAdelantoDeMovimiento } from '../utils/movimiento-adelanto.js';
  */
 export type TipoBanca = 'banco_nacional' | 'banco_internacional' | 'exchange' | 'efectivo';
 export type TipoMovimiento = 'ingreso' | 'egreso' | 'transferencia';
+export const GRUPOS_WALLET = ['efectivo', 'corriente', 'ahorros', 'inversiones', 'general'] as const;
+export type GrupoWallet = (typeof GRUPOS_WALLET)[number];
 
 export interface Banca {
   id: string;
@@ -33,6 +36,8 @@ export interface Banca {
   telegramReportesActivos: boolean;
   /** URL pública de la imagen (logo / foto de la caja); null si no tiene (o la migración aún no se aplicó). */
   imagenUrl: string | null;
+  /** Grupo de la Wallet nueva (efectivo, corriente, ahorros, inversiones, general); null = se deduce del tipo (o la migración no se aplicó). */
+  grupoWallet: GrupoWallet | null;
   /** Comisión automática de la cuenta; null si no tiene (o la migración aún no se aplicó). */
   comisionAuto: ReglaComisionAutomatica | null;
 }
@@ -107,6 +112,7 @@ function mapBanca(row: Record<string, unknown>): Banca {
     telegramChatId: typeof row.telegram_chat_id === 'string' && row.telegram_chat_id ? row.telegram_chat_id : null,
     telegramReportesActivos: row.telegram_reportes_activos !== false,
     imagenUrl: typeof row.imagen_url === 'string' && row.imagen_url ? row.imagen_url : null,
+    grupoWallet: (GRUPOS_WALLET as readonly string[]).includes(row.grupo_wallet as string) ? (row.grupo_wallet as GrupoWallet) : null,
     // Sin la migración las columnas no vienen en la fila: null (sin comisión automática).
     comisionAuto: reglaDeBanca(row),
   };
@@ -180,11 +186,16 @@ export async function listarBancas(opts: ListarBancasOpts = {}): Promise<Banca[]
 
 export async function listarMovimientos(): Promise<Movimiento[]> {
   // Los pagos y adelantos a proveedores ocultos no aparecen para quien no es superadmin.
-  const visibles = sinProveedoresOcultos(supabaseAdmin.from('movimientos').select('*'), await idsProveedoresOcultos(), 'proveedor_id');
-  const { data, error } = await visibles.order('creado_en', { ascending: false });
-
-  if (error || !data) return [];
-  return data.map(mapMovimiento);
+  const ocultos = await idsProveedoresOcultos();
+  // Se lee por páginas: PostgREST corta cada respuesta en 1000 filas y el historial de un año pasa de ahí.
+  // El desempate por id mantiene estable el orden entre páginas (creado_en puede repetirse).
+  // Si la lectura falla se lanza el error (la ruta responde 500): una lista vacía se confundiría con "no hay movimientos".
+  const filas = await leerPaginado<Record<string, unknown>>((desde, hasta) =>
+    sinProveedoresOcultos(supabaseAdmin.from('movimientos').select('*'), ocultos, 'proveedor_id')
+      .order('creado_en', { ascending: false })
+      .order('id')
+      .range(desde, hasta));
+  return filas.map(mapMovimiento);
 }
 
 /** Un movimiento por id (null si no existe o la BD falla). */
@@ -238,20 +249,21 @@ export async function obtenerDetalleMovimiento(id: string, opts: OpcionesDetalle
 }
 
 /** Campos opcionales de bancas que dependen de una migración: si la columna falta se degrada sin ellos. */
-type CamposBanca = { color?: unknown; telegramChatId?: unknown; telegramReportesActivos?: unknown; imagenUrl?: unknown };
+type CamposBanca = { color?: unknown; telegramChatId?: unknown; telegramReportesActivos?: unknown; imagenUrl?: unknown; grupoWallet?: unknown };
 
 /** Pasa los campos del schema a columnas de BD (telegramChatId -> telegram_chat_id, imagenUrl -> imagen_url). */
 function aColumnas<T extends CamposBanca>(campos: T): Record<string, unknown> {
-  const { telegramChatId, telegramReportesActivos, imagenUrl, ...resto } = campos;
+  const { telegramChatId, telegramReportesActivos, imagenUrl, grupoWallet, ...resto } = campos;
   return {
     ...resto,
+    ...(grupoWallet === undefined ? {} : { grupo_wallet: grupoWallet }),
     ...(telegramChatId === undefined ? {} : { telegram_chat_id: telegramChatId }),
     ...(telegramReportesActivos === undefined ? {} : { telegram_reportes_activos: telegramReportesActivos }),
     ...(imagenUrl === undefined ? {} : { imagen_url: imagenUrl }),
   };
 }
 
-const COLUMNAS_OPCIONALES = ['color', 'telegram_chat_id', 'telegram_reportes_activos', 'imagen_url'] as const;
+const COLUMNAS_OPCIONALES = ['color', 'telegram_chat_id', 'telegram_reportes_activos', 'imagen_url', 'grupo_wallet'] as const;
 
 export const MENSAJE_TELEGRAM_BANCA_PENDIENTE =
   'El grupo de Telegram por cuenta aún no está habilitado en la base de datos (falta aplicar migration_bancas_telegram_chat.sql). Guarda sin grupo o aplica la migración.';
@@ -259,10 +271,14 @@ export const MENSAJE_TELEGRAM_BANCA_PENDIENTE =
 export const MENSAJE_IMAGEN_BANCA_PENDIENTE =
   'La imagen por cuenta aún no está habilitada en la base de datos (falta aplicar migration_bancas_imagen.sql). Guarda sin imagen o aplica la migración.';
 
+export const MENSAJE_GRUPO_WALLET_PENDIENTE =
+  'El grupo de cuenta de la Wallet aún no está habilitado en la base de datos (falta aplicar migration_bancas_grupo_wallet.sql). Guarda sin grupo o aplica la migración.';
+
 /** Columnas que no se descartan en silencio si faltan y se intentaba guardar un valor (no el de por defecto), con su mensaje. */
 const MENSAJE_PENDIENTE_POR_COLUMNA: Readonly<Record<string, string>> = {
   telegram_chat_id: MENSAJE_TELEGRAM_BANCA_PENDIENTE,
   imagen_url: MENSAJE_IMAGEN_BANCA_PENDIENTE,
+  grupo_wallet: MENSAJE_GRUPO_WALLET_PENDIENTE,
   telegram_reportes_activos: MENSAJE_REPORTES_TELEGRAM_PENDIENTE,
 };
 
@@ -324,6 +340,7 @@ export async function crearBanca(input: CrearBancaInput): Promise<ResultadoBanca
     // Solo si se apaga: una banca con avisos activos no depende de la columna.
     ...(input.telegramReportesActivos === false ? { telegram_reportes_activos: false } : {}),
     ...(input.imagenUrl ? { imagen_url: input.imagenUrl } : {}),
+    ...(input.grupoWallet ? { grupo_wallet: input.grupoWallet } : {}),
   };
   const r = await escribirDegradando(completo, c => supabaseAdmin.from('bancas').insert(c).select().single());
   if ('pendiente' in r) return { error: r.mensaje, pendiente: true };

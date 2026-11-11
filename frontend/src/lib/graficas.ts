@@ -59,11 +59,80 @@ export function rutaLinea(puntos: readonly Punto[]): string {
   return puntos.map((p, i) => `${i === 0 ? 'M' : 'L'}${r2(p.x)} ${r2(p.y)}`).join(' ');
 }
 
+/** Curva suave (Catmull-Rom convertida a Béziers cúbicas) que pasa por todos los puntos. Los puntos de control se
+ *  acotan en vertical al rango de los dos puntos vecinos para que la curva no se salga de los datos (nada de "valles"
+ *  bajo cero entre dos puntos en cero). Con menos de 3 puntos es una polilínea. */
+export function rutaCurvaSuave(puntos: readonly Punto[]): string {
+  if (puntos.length < 3) return rutaLinea(puntos);
+  const partes = [`M${r2(puntos[0].x)} ${r2(puntos[0].y)}`];
+  for (let i = 0; i < puntos.length - 1; i++) {
+    const p0 = puntos[Math.max(0, i - 1)];
+    const p1 = puntos[i];
+    const p2 = puntos[i + 1];
+    const p3 = puntos[Math.min(puntos.length - 1, i + 2)];
+    const yMin = Math.min(p1.y, p2.y);
+    const yMax = Math.max(p1.y, p2.y);
+    const c1y = clamp(p1.y + (p2.y - p0.y) / 6, yMin, yMax);
+    const c2y = clamp(p2.y - (p3.y - p1.y) / 6, yMin, yMax);
+    partes.push(`C${r2(p1.x + (p2.x - p0.x) / 6)} ${r2(c1y)} ${r2(p2.x - (p3.x - p1.x) / 6)} ${r2(c2y)} ${r2(p2.x)} ${r2(p2.y)}`);
+  }
+  return partes.join(' ');
+}
+
 /** Ruta cerrada del área bajo la línea hasta `yBase`. */
 export function rutaArea(puntos: readonly Punto[], yBase: number): string {
   if (puntos.length === 0) return '';
   const ult = puntos[puntos.length - 1];
   return `${rutaLinea(puntos)} L${r2(ult.x)} ${r2(yBase)} L${r2(puntos[0].x)} ${r2(yBase)} Z`;
+}
+
+/** Como `rutaArea`, pero con el borde superior suavizado (`rutaCurvaSuave`). */
+export function rutaAreaSuave(puntos: readonly Punto[], yBase: number): string {
+  if (puntos.length === 0) return '';
+  const ult = puntos[puntos.length - 1];
+  return `${rutaCurvaSuave(puntos)} L${r2(ult.x)} ${r2(yBase)} L${r2(puntos[0].x)} ${r2(yBase)} Z`;
+}
+
+/** Pendientes de la curva monótona (Fritsch-Carlson): en un máximo o mínimo local y entre valores iguales valen 0, y se
+ *  limitan para que ningún tramo se salga del rango de sus dos puntos. */
+function pendientesMonotonas(puntos: readonly Punto[]): number[] {
+  const n = puntos.length;
+  const secantes = puntos.slice(1).map((p, i) => (p.x > puntos[i].x ? (p.y - puntos[i].y) / (p.x - puntos[i].x) : 0));
+  const t = puntos.map((_, i) => {
+    if (i === 0) return secantes[0];
+    if (i === n - 1) return secantes[n - 2];
+    return secantes[i - 1] * secantes[i] <= 0 ? 0 : (secantes[i - 1] + secantes[i]) / 2;
+  });
+  secantes.forEach((m, i) => {
+    if (m === 0) { t[i] = 0; t[i + 1] = 0; return; }
+    const a = t[i] / m;
+    const b = t[i + 1] / m;
+    const s = a * a + b * b;
+    if (s > 9) { const tau = 3 / Math.sqrt(s); t[i] = tau * a * m; t[i + 1] = tau * b * m; }
+  });
+  return t;
+}
+
+/** Curva suave MONÓTONA por tramo que pasa por todos los puntos: con valores constantes o ceros es una recta y nunca
+ *  sobrepasa ni cruza el eje entre dos puntos (a diferencia de Catmull-Rom, no ondula). Con menos de 3 puntos es una polilínea. */
+export function rutaCurvaMonotona(puntos: readonly Punto[]): string {
+  if (puntos.length < 3) return rutaLinea(puntos);
+  const t = pendientesMonotonas(puntos);
+  const partes = [`M${r2(puntos[0].x)} ${r2(puntos[0].y)}`];
+  for (let i = 0; i < puntos.length - 1; i++) {
+    const p1 = puntos[i];
+    const p2 = puntos[i + 1];
+    const dx = (p2.x - p1.x) / 3;
+    partes.push(`C${r2(p1.x + dx)} ${r2(p1.y + t[i] * dx)} ${r2(p2.x - dx)} ${r2(p2.y - t[i + 1] * dx)} ${r2(p2.x)} ${r2(p2.y)}`);
+  }
+  return partes.join(' ');
+}
+
+/** Como `rutaArea`, pero con el borde superior de `rutaCurvaMonotona`. */
+export function rutaAreaMonotona(puntos: readonly Punto[], yBase: number): string {
+  if (puntos.length === 0) return '';
+  const ult = puntos[puntos.length - 1];
+  return `${rutaCurvaMonotona(puntos)} L${r2(ult.x)} ${r2(yBase)} L${r2(puntos[0].x)} ${r2(yBase)} Z`;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -119,11 +188,11 @@ export const MAX_PORCIONES_DONA = 5;
 
 /** Máximo `max` porciones + "Otros" (suma del resto). Descarta valores <= 0. Ordena de mayor a menor (Otros al final).
  *  Una dona con más de 5 partes no se lee: por eso el tope es parte de la regla de estilo, no una opción. */
-export function porcionesDona(items: readonly ItemDona[], max = MAX_PORCIONES_DONA, etiquetaOtros = 'Otros'): PorcionDona[] {
+export function porcionesDona(items: readonly ItemDona[], max = MAX_PORCIONES_DONA, etiquetaOtros = 'Otros', limiteDuro = MAX_PORCIONES_DONA): PorcionDona[] {
   const validos = items.filter(i => Number.isFinite(i.valor) && i.valor > 0).sort((a, b) => b.valor - a.valor);
   const total = validos.reduce((s, i) => s + i.valor, 0);
   if (total === 0) return [];
-  const tope = Math.max(1, Math.min(max, MAX_PORCIONES_DONA));
+  const tope = Math.max(1, Math.min(max, limiteDuro));
   const principales = validos.length > tope ? validos.slice(0, tope) : validos;
   const resto = validos.length > tope ? validos.slice(tope) : [];
   const porciones: PorcionDona[] = principales.map(i => ({ ...i, pct: (i.valor / total) * 100, esOtros: false }));

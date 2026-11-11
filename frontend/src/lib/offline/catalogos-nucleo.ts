@@ -131,11 +131,19 @@ export function esFalloDegradable(err: unknown, esErrorDeRed: (e: unknown) => bo
   return typeof status === 'number' && status >= 500;
 }
 
+export interface OpcionesCatalogo {
+  maxEdadMs?: number;
+  /** Cuánto esperar a la red cuando hay copia guardada antes de servir la copia (por defecto, el timeout del gestor). */
+  timeoutMs?: number;
+  /** Transforma lo que se GUARDA en la copia (p. ej. recortar filas). Quien lee recibe siempre el dato completo de la red. */
+  paraGuardar?: (datos: unknown) => unknown;
+}
+
 export interface GestorCatalogos {
   obtenerCatalogo<T>(
     clave: string,
     cargar: () => Promise<T>,
-    opciones?: { maxEdadMs?: number },
+    opciones?: OpcionesCatalogo,
   ): Promise<ResultadoCatalogo<T>>;
   invalidarCatalogo(clave: string): Promise<void>;
   limpiarCatalogos(): Promise<void>;
@@ -205,14 +213,17 @@ export function crearGestorCatalogos(deps: DependenciasCatalogos): GestorCatalog
   }
 
   async function resolver<T>(
-    clave: string, cargar: () => Promise<T>, maxEdadMs: number,
+    clave: string, cargar: () => Promise<T>, maxEdadMs: number, esperaMs: number, paraGuardar?: (datos: unknown) => unknown,
   ): Promise<ResultadoCatalogo<T>> {
     const ctx = contextoActivo();
     const desdeRed = async (): Promise<ResultadoCatalogo<T>> => {
       const datos = await cargar();
       const descargadoEn = deps.ahora();
       // Si mientras cargaba cambió el usuario (o se cerró la sesión), no se escribe en la caché de otro usuario.
-      if (ctx && deps.usuarioId() === ctx.usuarioId) await guardar(ctx.almacen, ctx.usuarioId, clave, datos, descargadoEn);
+      // Se guarda la versión reducida (si hay), pero a quien lee se le devuelve el dato completo.
+      if (ctx && deps.usuarioId() === ctx.usuarioId) {
+        await guardar(ctx.almacen, ctx.usuarioId, clave, paraGuardar ? paraGuardar(datos) : datos, descargadoEn);
+      }
       return { datos, descargadoEn, obsoleto: false, origen: 'red' };
     };
     // Caché desactivada (interruptor apagado, sin IndexedDB o sin sesión): como hoy.
@@ -228,7 +239,7 @@ export function crearGestorCatalogos(deps: DependenciasCatalogos): GestorCatalog
         // petición termina tarde igual refresca la caché para la próxima vez.
         const pendiente = desdeRed();
         pendiente.catch(() => undefined);
-        resultado = await conTimeout(pendiente, timeoutMs);
+        resultado = await conTimeout(pendiente, esperaMs);
       } else {
         resultado = await desdeRed();
       }
@@ -243,12 +254,13 @@ export function crearGestorCatalogos(deps: DependenciasCatalogos): GestorCatalog
   }
 
   return {
-    obtenerCatalogo<T>(clave: string, cargar: () => Promise<T>, opciones?: { maxEdadMs?: number }) {
+    obtenerCatalogo<T>(clave: string, cargar: () => Promise<T>, opciones?: OpcionesCatalogo) {
       const maxEdadMs = opciones?.maxEdadMs ?? MAX_EDAD_POR_DEFECTO_MS;
+      const esperaMs = opciones?.timeoutMs ?? timeoutMs;
       const llave = claveCompleta(deps.usuarioId() ?? '', clave);
       const previo = enVuelo.get(llave);
       if (previo) return previo as Promise<ResultadoCatalogo<T>>;
-      const p = resolver<T>(clave, cargar, maxEdadMs).finally(() => { enVuelo.delete(llave); });
+      const p = resolver<T>(clave, cargar, maxEdadMs, esperaMs, opciones?.paraGuardar).finally(() => { enVuelo.delete(llave); });
       enVuelo.set(llave, p as Promise<ResultadoCatalogo<unknown>>);
       return p;
     },
