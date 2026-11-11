@@ -5,7 +5,7 @@
  * Nunca se mezclan monedas en un total. Todo devuelve valores nuevos.
  */
 import { bancaPermitida, tieneExtremoOculto, TEXTO_CUENTA_RESTRINGIDA, type BancasPermitidas } from './banca-acceso.js';
-import { nombreCompletoCategoria, type CategoriaFila } from './categoria-wallet.js';
+import { nombreCompletoCategoria, resolverSeleccion, type CategoriaFila } from './categoria-wallet.js';
 import { equivalenteUsd, type TasaHistorica } from './equivalente-usd.js';
 
 export interface MovimientoReporte {
@@ -168,7 +168,18 @@ export interface ReporteCuentaCalculo {
   /** Saldo de la cuenta al empezar el rango y al terminarlo. */
   saldoInicial: number;
   saldoFinal: number;
+  /** Presente solo si se filtró por categorías: qué se pidió, para rotular el reporte. */
+  filtroCategorias?: { nombres: string[]; sinCategoria: boolean };
 }
+
+/** Filtro por categorías de un reporte de cuenta. Con `categoriaIds` vacío y `incluirSinCategoria` falso no hay filtro. */
+export interface FiltroCategoriasCuenta {
+  categoriaIds: readonly string[];
+  incluirSinCategoria: boolean;
+}
+
+export const hayFiltroCategorias = (f?: FiltroCategoriasCuenta): f is FiltroCategoriasCuenta =>
+  !!f && (f.categoriaIds.length > 0 || f.incluirSinCategoria);
 
 export interface EntradaReporteCuenta {
   bancaId: string;
@@ -182,6 +193,13 @@ export interface EntradaReporteCuenta {
   tasas?: readonly TasaHistorica[];
   /** Saldo de la cuenta antes del primer movimiento del rango (0 si se desconoce). */
   saldoInicial?: number;
+  /**
+   * Filtro por categorías. Solo acota las FILAS y los totales de entradas/salidas/neto: el saldo inicial, el saldo
+   * de cada fila y el saldo final siguen siendo los reales de la cuenta (calculados con todos los movimientos).
+   * Una categoría padre incluye sus subcategorías. Las transferencias no tienen categoría: quedan fuera del filtro
+   * (también de "sin categoría", que solo abarca ingresos y egresos, igual que el reporte por categorías).
+   */
+  filtroCategorias?: FiltroCategoriasCuenta;
 }
 
 /** Lo que entra y sale de la cuenta por un movimiento (una transferencia con mesa en proceso aún no acredita al destino). */
@@ -254,8 +272,25 @@ export function construirReporteCuenta(e: EntradaReporteCuenta): ReporteCuentaCa
     acumulado += Math.round(netoDeFila(f) * 100);
     return { ...f, saldo: acumulado / 100 };
   });
-  const vigentes = filas.filter(f => !f.anulado);
+  const saldoFinal = acumulado / 100;
+  const filtro = hayFiltroCategorias(e.filtroCategorias) ? e.filtroCategorias : undefined;
+  const visibles = filtro ? filas.filter(coincideConFiltro(filtro, e.categorias)) : filas;
+  const vigentes = visibles.filter(f => !f.anulado);
   const entradas = redondear2(vigentes.reduce((s, f) => s + f.entrada, 0));
   const salidas = redondear2(vigentes.reduce((s, f) => s + f.salida, 0));
-  return { filas, totales: { entradas, salidas, neto: redondear2(entradas - salidas) }, saldoInicial, saldoFinal: acumulado / 100 };
+  const calculo: ReporteCuentaCalculo = { filas: visibles, totales: { entradas, salidas, neto: redondear2(entradas - salidas) }, saldoInicial, saldoFinal };
+  return filtro ? { ...calculo, filtroCategorias: describirFiltro(filtro, e.categorias) } : calculo;
+}
+
+/** Predicado de fila para el filtro: categoría elegida (o hija de una padre elegida) o, si se pidió, ingreso/egreso sin categoría. */
+function coincideConFiltro(filtro: FiltroCategoriasCuenta, categorias: readonly CategoriaFila[]): (f: FilaCuentaCalculo) => boolean {
+  const seleccion = resolverSeleccion(filtro.categoriaIds, categorias) ?? new Set<string>();
+  return f => (f.categoriaId !== null
+    ? seleccion.has(f.categoriaId)
+    : filtro.incluirSinCategoria && f.tipo !== 'transferencia');
+}
+
+function describirFiltro(filtro: FiltroCategoriasCuenta, categorias: readonly CategoriaFila[]): { nombres: string[]; sinCategoria: boolean } {
+  const nombres = filtro.categoriaIds.flatMap(id => { const n = nombreCompletoCategoria(id, categorias); return n ? [n] : []; });
+  return { nombres, sinCategoria: filtro.incluirSinCategoria };
 }

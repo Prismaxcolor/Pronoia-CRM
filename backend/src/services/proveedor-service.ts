@@ -2,6 +2,7 @@ import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idemp
 import { supabaseAdmin } from '../config/supabase.js';
 import { escribirConReportes } from './grupo-silencio-service.js';
 import { idsProveedoresOcultos, sinProveedoresOcultos } from './proveedor-oculto.js';
+import { esColumnaInexistente } from '../utils/migracion-pendiente.js';
 import type { CrearProveedorInput, ActualizarProveedorInput } from '../schemas/proveedores.js';
 
 interface ProveedorRow {
@@ -20,7 +21,12 @@ interface ProveedorRow {
   telegram_reportes_activos?: boolean | null;
   /** Ausente mientras no se aplique docs/migration_proveedores_oculto.sql. */
   oculto?: boolean | null;
+  /** Ausente mientras no se aplique docs/migration_terceros_imagen.sql. */
+  imagen_url?: string | null;
 }
+
+export const MENSAJE_IMAGEN_PROVEEDOR_PENDIENTE =
+  'La imagen del proveedor aún no está habilitada en la base de datos (falta aplicar migration_terceros_imagen.sql). Guarda sin imagen o aplica la migración.';
 
 export interface ProveedorPublico {
   id: string;
@@ -38,6 +44,8 @@ export interface ProveedorPublico {
   telegramReportesActivos: boolean;
   /** true = el superadmin lo ocultó al resto de los usuarios (solo el superadmin recibe estos proveedores). */
   oculto: boolean;
+  /** URL pública de la imagen junto al nombre; null si no tiene (o la migración aún no se aplicó). */
+  imagenUrl: string | null;
 }
 
 function toPublico(row: ProveedorRow): ProveedorPublico {
@@ -55,6 +63,7 @@ function toPublico(row: ProveedorRow): ProveedorPublico {
     telegramLinkedAt: row.telegram_linked_at,
     telegramReportesActivos: row.telegram_reportes_activos !== false,
     oculto: row.oculto === true,
+    imagenUrl: row.imagen_url ? row.imagen_url : null,
   };
 }
 
@@ -78,8 +87,11 @@ export async function crearProveedor(
     fotos: input.fotos ?? [],
     // Solo si viene: sin dirección el alta no depende de la columna nueva.
     ...(input.direccion ? { direccion: input.direccion } : {}),
+    // Igual: sin imagen el alta no depende de la columna de imagen.
+    ...(input.imagenUrl ? { imagen_url: input.imagenUrl } : {}),
   }, { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn });
 
+  if (esColumnaInexistente(error, 'imagen_url')) return { error: MENSAJE_IMAGEN_PROVEEDOR_PENDIENTE };
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el proveedor.' };
   return { proveedor: toPublico(data as ProveedorRow) };
 }
@@ -95,6 +107,7 @@ export async function actualizarProveedor(
   if (cambios.direccion !== undefined) update.direccion = cambios.direccion;
   if (cambios.email !== undefined) update.email = cambios.email;
   if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
+  if (cambios.imagenUrl !== undefined) update.imagen_url = cambios.imagenUrl;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
   if (cambios.telegramReportesActivos !== undefined) update.telegram_reportes_activos = cambios.telegramReportesActivos;
 
@@ -103,6 +116,7 @@ export async function actualizarProveedor(
   );
   if ('pendiente' in r) return { error: r.mensaje, pendiente: true };
   const { data, error } = r;
+  if (esColumnaInexistente(error, 'imagen_url')) return { error: MENSAJE_IMAGEN_PROVEEDOR_PENDIENTE, pendiente: true };
   if (error) return { error: error.message };
   if (!data) return { error: 'Proveedor no encontrado.' };
   return { proveedor: toPublico(data as ProveedorRow) };

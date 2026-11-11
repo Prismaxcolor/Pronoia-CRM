@@ -34,8 +34,8 @@ type Categoria = 'ferroso_no_ferroso' | 'pcb';
 // Página principal
 // ---------------------------------------------------------------------------
 const OPCIONES_CATEGORIA_NUEVA = [
-  { valor: 'ferroso_no_ferroso' as const, etiqueta: 'Ferroso / No ferroso' },
-  { valor: 'pcb' as const, etiqueta: 'PCB' },
+  { valor: 'ferroso_no_ferroso' as const, etiqueta: 'Transformaciones de productos' },
+  { valor: 'pcb' as const, etiqueta: 'Transformaciones de lote' },
 ];
 
 function TransformacionesPage() {
@@ -137,7 +137,7 @@ function TransformacionesPage() {
               {puedeCrear ? (
                 <>
                   <h2 className="text-lg font-semibold text-text-primary">
-                    Nueva transformación — {categoria === 'pcb' ? 'PCB' : 'Ferroso / No Ferroso'}
+                    Nueva transformación — {categoria === 'pcb' ? 'Transformaciones de lote' : 'Transformaciones de productos'}
                   </h2>
                   <p className="mb-4 mt-0.5 text-xs text-text-secondary">
                     Registra el material que sale del inventario para procesarlo. Al terminar, la completas desde Pendientes con lo que salió.

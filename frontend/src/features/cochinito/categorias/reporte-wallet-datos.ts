@@ -81,6 +81,18 @@ export function textoSeleccion(ids: readonly string[], indice: ReadonlyMap<strin
   return nombres.length === 0 ? `Todas las categorías${sin}` : `Categorías: ${nombres.join(', ')}${sin}`;
 }
 
+/** Aviso de lo que significa el filtro por categorías en un reporte de cuenta (totales filtrados, saldos de la cuenta completos). */
+export const AVISO_SALDOS_FILTRO_CATEGORIAS = 'Los totales abarcan solo estos movimientos; los saldos son los reales de la cuenta (sin filtrar).';
+
+/** Línea que rotula un reporte de cuenta filtrado por categorías ("Filtrado por categorías: Servicios y movimientos sin categoría"); null si no hay filtro. */
+export function textoFiltroCategorias(r: Pick<ReporteCuenta, 'filtroCategorias'>): string | null {
+  const f = r.filtroCategorias;
+  if (!f) return null;
+  const sin = f.sinCategoria ? 'movimientos sin categoría' : '';
+  const partes = [f.nombres.join(', '), sin].filter(Boolean).join(' y ');
+  return `Filtrado por categorías: ${partes || 'ninguna coincide'}`;
+}
+
 /** Máximo de filas por página impresa en los PDF de reportes del Wallet. */
 export const FILAS_POR_PAGINA_PDF = 15;
 

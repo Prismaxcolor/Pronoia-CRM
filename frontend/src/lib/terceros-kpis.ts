@@ -45,6 +45,8 @@ export interface TerceroBase {
   activo: boolean;
   telegramChatId: string | null;
   telegramLinkedAt: string | null;
+  /** Imagen (logo / foto) que se muestra junto al nombre; null o ausente = se muestra la inicial. */
+  imagenUrl?: string | null;
 }
 
 export interface FilaTercero extends TerceroBase {

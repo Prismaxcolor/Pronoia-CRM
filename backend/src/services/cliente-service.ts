@@ -1,6 +1,7 @@
 import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { escribirConReportes } from './grupo-silencio-service.js';
+import { esColumnaInexistente } from '../utils/migracion-pendiente.js';
 import type { TipoVentaCliente, CrearClienteInput, ActualizarClienteInput } from '../schemas/clientes.js';
 
 interface ClienteRow {
@@ -19,7 +20,12 @@ interface ClienteRow {
   telegram_linked_at: string | null;
   tipo_venta: TipoVentaCliente | null;
   telegram_reportes_activos?: boolean | null;
+  /** Ausente mientras no se aplique docs/migration_terceros_imagen.sql. */
+  imagen_url?: string | null;
 }
+
+export const MENSAJE_IMAGEN_CLIENTE_PENDIENTE =
+  'La imagen del cliente aún no está habilitada en la base de datos (falta aplicar migration_terceros_imagen.sql). Guarda sin imagen o aplica la migración.';
 
 export interface ClientePublico {
   id: string;
@@ -38,6 +44,8 @@ export interface ClientePublico {
   tipoVenta: TipoVentaCliente;
   /** false = el superadmin apagó los avisos de Telegram de los movimientos de este cliente. */
   telegramReportesActivos: boolean;
+  /** URL pública de la imagen junto al nombre; null si no tiene (o la migración aún no se aplicó). */
+  imagenUrl: string | null;
 }
 
 function toPublico(row: ClienteRow): ClientePublico {
@@ -57,6 +65,7 @@ function toPublico(row: ClienteRow): ClientePublico {
     telegramLinkedAt: row.telegram_linked_at,
     tipoVenta: row.tipo_venta ?? 'nacional',
     telegramReportesActivos: row.telegram_reportes_activos !== false,
+    imagenUrl: row.imagen_url ? row.imagen_url : null,
   };
 }
 
@@ -84,8 +93,11 @@ export async function crearCliente(
     fotos: input.fotos ?? [],
     tipo_venta: input.tipoVenta,
     creado_por: creadoPor,
+    // Solo si viene: sin imagen el alta no depende de la columna de imagen.
+    ...(input.imagenUrl ? { imagen_url: input.imagenUrl } : {}),
   }, { clientRequestId: input.clientRequestId, capturadoEn: input.capturadoEn });
 
+  if (esColumnaInexistente(error, 'imagen_url')) return { error: MENSAJE_IMAGEN_CLIENTE_PENDIENTE };
   if (error || !data) return { error: error?.message ?? 'No se pudo crear el cliente.' };
   return { cliente: toPublico(data as ClienteRow) };
 }
@@ -102,6 +114,7 @@ export async function actualizarCliente(
   if (cambios.direccion !== undefined) update.direccion = cambios.direccion;
   if (cambios.notas !== undefined) update.notas = cambios.notas;
   if (cambios.fotos !== undefined) update.fotos = cambios.fotos;
+  if (cambios.imagenUrl !== undefined) update.imagen_url = cambios.imagenUrl;
   if (cambios.tipoVenta !== undefined) update.tipo_venta = cambios.tipoVenta;
   if (cambios.activo !== undefined) update.activo = cambios.activo;
   if (cambios.telegramReportesActivos !== undefined) update.telegram_reportes_activos = cambios.telegramReportesActivos;
@@ -111,6 +124,7 @@ export async function actualizarCliente(
   );
   if ('pendiente' in r) return { error: r.mensaje, pendiente: true };
   const { data, error } = r;
+  if (esColumnaInexistente(error, 'imagen_url')) return { error: MENSAJE_IMAGEN_CLIENTE_PENDIENTE, pendiente: true };
   if (error) return { error: error.message };
   if (!data) return { error: 'Cliente no encontrado.' };
   return { cliente: toPublico(data as ClienteRow) };

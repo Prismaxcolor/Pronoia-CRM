@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { derivarEstadoFactura, saldoFactura, tieneSaldoPendiente, type DatosEstadoFactura } from '../src/utils/estado-factura';
+import { derivarEstadoFactura, esFacturaEnCero, saldoFactura, tieneSaldoPendiente, type DatosEstadoFactura } from '../src/utils/estado-factura';
 import * as espejoFront from '../../frontend/src/lib/estado-factura';
 
 const f = (total: number, montoPagado: number, estado: DatosEstadoFactura['estado'] = 'emitida'): DatosEstadoFactura => ({ estado, total, montoPagado });
@@ -65,6 +65,25 @@ describe('saldoFactura / tieneSaldoPendiente', () => {
   it('solo emitida y pendiente tienen deuda viva', () => {
     expect(['emitida', 'pendiente'].every(e => tieneSaldoPendiente(e as 'emitida'))).toBe(true);
     expect(['pagada', 'borrador', 'anulada'].some(e => tieneSaldoPendiente(e as 'pagada'))).toBe(false);
+  });
+});
+
+describe('esFacturaEnCero', () => {
+  it('solo una factura de total 0 (con tolerancia de un centavo) se puede cerrar con monto 0', () => {
+    expect(esFacturaEnCero(f(0, 0))).toBe(true);
+    expect(esFacturaEnCero(f(0.01, 0))).toBe(true);
+    expect(esFacturaEnCero(f(0.02, 0))).toBe(false);
+    expect(esFacturaEnCero(f(100, 100))).toBe(false);
+  });
+
+  it('una factura en 0 sin pagos sigue figurando con deuda viva: el modal de pago la ofrece', () => {
+    expect(tieneSaldoPendiente(derivarEstadoFactura(f(0, 0)))).toBe(true);
+  });
+
+  it('paridad con el espejo del frontend', () => {
+    for (const total of [0, 0.01, 0.02, 100, Number.NaN]) {
+      expect(espejoFront.esFacturaEnCero({ total })).toBe(esFacturaEnCero({ total }));
+    }
   });
 });
 

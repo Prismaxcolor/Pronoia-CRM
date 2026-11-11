@@ -10,6 +10,8 @@ export interface BancaPagoDetalle {
   referencia: string | null;
   /** Comisión bancaria (Bs) cargada a esta cuenta por el pago; null/ausente si no lleva. */
   comisionBancaria?: number | null;
+  /** Comprobantes guardados en el movimiento de esta cuenta; ausente/vacío si no tiene. */
+  comprobantes?: string[];
 }
 
 export interface ItemPagoDetalle {

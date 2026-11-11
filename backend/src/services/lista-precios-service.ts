@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { mensajeDeErrorBd } from '../utils/errores-bd.js';
+import { filtrarProductosOcultos, idsProductosOcultos, productoVisible } from './producto-oculto.js';
 import type {
   CrearListaInput,
   ActualizarListaInput,
@@ -122,7 +123,7 @@ async function leerPreciosOrdenados(listaId: string): Promise<PrecioRow[] | null
     .eq('lista_id', listaId)
     .order('orden', { ascending: true })
     .order('created_at', { ascending: true });
-  if (!conOrden.error) return (conOrden.data as PrecioRow[] | null) ?? [];
+  if (!conOrden.error) return filtrarProductosOcultos((conOrden.data as PrecioRow[] | null) ?? [], p => p.producto_id);
 
   const sinOrden = await supabaseAdmin
     .from('precios_lista')
@@ -130,7 +131,7 @@ async function leerPreciosOrdenados(listaId: string): Promise<PrecioRow[] | null
     .eq('lista_id', listaId)
     .order('created_at', { ascending: true });
   if (sinOrden.error) return null;
-  return (sinOrden.data as PrecioRow[] | null) ?? [];
+  return filtrarProductosOcultos((sinOrden.data as PrecioRow[] | null) ?? [], p => p.producto_id);
 }
 
 /** Posición al final para un material nuevo; null si la columna `orden` no existe aún. */
@@ -146,6 +147,14 @@ async function ordenAlFinal(listaId: string): Promise<number | null> {
   return ((data as { orden: number } | null)?.orden ?? -1) + 1;
 }
 
+/** Ids de materiales ocultos (para esta petición) que tiene la lista; [] si no hay o no se ocultan. */
+async function idsOcultosEnLista(listaId: string): Promise<string[]> {
+  const ocultos = await idsProductosOcultos();
+  if (ocultos.length === 0) return [];
+  const { data } = await supabaseAdmin.from('precios_lista').select('producto_id').eq('lista_id', listaId).in('producto_id', ocultos);
+  return ((data ?? []) as Array<{ producto_id: string }>).map(r => r.producto_id);
+}
+
 export const MENSAJE_ORDEN_NO_HABILITADO =
   'Falta aplicar la migración del orden de listas de precios (docs/migration_reordenar_precios_lista.sql).';
 
@@ -156,9 +165,11 @@ export async function reordenarPrecios(
   listaId: string,
   productoIds: string[]
 ): Promise<{ ok: true } | { error: string }> {
+  // Quien no es superadmin no ve los materiales ocultos de la lista, pero la función SQL exige cubrirlos todos:
+  // se dejan al final, en su orden actual.
   const { error } = await supabaseAdmin.rpc('reordenar_precios_lista', {
     p_lista_id: listaId,
-    p_producto_ids: productoIds,
+    p_producto_ids: [...productoIds, ...(await idsOcultosEnLista(listaId))],
   });
   if (!error) return { ok: true };
   if (esObjetoInexistente(error)) return { error: MENSAJE_ORDEN_NO_HABILITADO };
@@ -213,6 +224,7 @@ export async function upsertPrecioEnLista(
   listaId: string,
   input: UpsertPrecioInput
 ): Promise<{ precio: PrecioPublico } | { error: string }> {
+  if (!(await productoVisible(input.productoId))) return { error: 'Producto no encontrado.' };
   // Un material nuevo entra al final; uno existente conserva su posición.
   const { data: existente } = await supabaseAdmin
     .from('precios_lista')
@@ -244,6 +256,7 @@ export async function eliminarPrecio(
   listaId: string,
   productoId: string
 ): Promise<boolean> {
+  if (!(await productoVisible(productoId))) return false;
   const { error } = await supabaseAdmin
     .from('precios_lista')
     .delete()
@@ -258,6 +271,7 @@ export async function listasParaProducto(
   productoId: string,
   tipo: 'compra' | 'venta'
 ): Promise<ListaParaProducto[]> {
+  if (!(await productoVisible(productoId))) return [];
   const { data, error } = await supabaseAdmin
     .from('precios_lista')
     .select('precio, listas_precios!inner(id, nombre, vigente_desde, activo, tipo)')

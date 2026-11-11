@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { imagenTerceroSchema } from './imagen-tercero.js';
 
 const opcionalTrim = (max: number) =>
   z
@@ -32,6 +33,8 @@ const datosClienteSchema = z.object({
   // clave presente en el resultado — rompe el refine "algún campo enviado" y
   // borraría las fotos existentes en cualquier PATCH que no las reenvíe.
   fotos: z.array(z.string().trim().max(500)).optional(),
+  // Imagen junto al nombre (aparte de las fotos). .optional() como "fotos": un PATCH sin ella no la toca.
+  imagenUrl: imagenTerceroSchema('clientes'),
 });
 
 /**

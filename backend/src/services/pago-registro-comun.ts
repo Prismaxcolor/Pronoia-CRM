@@ -10,7 +10,8 @@ import { esFuncionInexistente } from '../utils/transaccion-edicion.js';
 import { aplicarCategoriaAComisiones } from './comision-categoria-service.js';
 import { auditarOmisiones, type ComisionPagoCreada, type LineaComisionPago } from './pago-comision-service.js';
 import {
-  aplicarPasosEnBackend, repararPasosAnotados, type EstadoPasos, type PasoAnotado,
+  aplicarComprobantes, aplicarPasosEnBackend, repararPasosAnotados, repararPasosFallidos,
+  type ComprobantesDeBanca, type EstadoPasos, type PasoAnotado,
 } from './pagos-pasos-service.js';
 
 export type NombreEnvoltorio =
@@ -36,6 +37,8 @@ export interface RegistroComun {
   clientRequestId?: string;
   categoriaId: string | null;
   comprobantes: string[];
+  /** Comprobantes propios de cada banca (opcional). Además viajan dentro de `args.p_bancas` para el envoltorio SQL. */
+  comprobantesPorBanca?: ComprobantesDeBanca[];
   lineas: LineaComisionPago[];
   usuarioId: string;
   mensajeError: string;
@@ -48,18 +51,33 @@ export type ResultadoRegistro = { creado: Record<string, unknown>; ids: IdsRegis
 interface PasosSql {
   comisiones: ComisionPagoCreada[];
   pasosPendientes: PasoAnotado[];
+  /** true si la versión vigente de `aplicar_pasos_pago` ya repartió los comprobantes por banca (docs/migration_pagos_comprobante_por_banca.sql). */
+  comprobantesPorBancaAplicados: boolean;
 }
 
-/** Separa de la respuesta del envoltorio lo que añade `aplicar_pasos_pago` (comisiones y pasos anotados). */
+/** Separa de la respuesta del envoltorio lo que añade `aplicar_pasos_pago` (comisiones, pasos anotados y reparto de comprobantes). */
 function separarPasosSql(data: Record<string, unknown>): { limpio: Record<string, unknown>; pasos: PasosSql } {
-  const { comisiones, pasosPendientes, ...limpio } = data;
+  const { comisiones, pasosPendientes, comprobantesPorBanca, ...limpio } = data;
   return {
     limpio,
     pasos: {
       comisiones: Array.isArray(comisiones) ? (comisiones as ComisionPagoCreada[]) : [],
       pasosPendientes: Array.isArray(pasosPendientes) ? (pasosPendientes as PasoAnotado[]) : [],
+      comprobantesPorBancaAplicados: typeof comprobantesPorBanca === 'number',
     },
   };
+}
+
+const hayComprobantesPorBanca = (o: RegistroComun): boolean => (o.comprobantesPorBanca ?? []).some(b => b.comprobantes.length > 0);
+
+/** Envoltorio anterior a la migración de comprobante por banca: no repartió los comprobantes de cada cuenta; se hace aquí (idempotente). */
+async function completarComprobantesPorBanca(o: RegistroComun, ids: IdsRegistro): Promise<Pick<EstadoPasos, 'pendientes'>> {
+  const fallidos = await aplicarComprobantes({
+    movimientoIds: ids.movimientoIds, principalId: ids.principalId, grupoId: ids.grupoId,
+    comprobantes: o.comprobantes, comprobantesPorBanca: o.comprobantesPorBanca,
+  });
+  const { pendientes } = await repararPasosFallidos(fallidos);
+  return { pendientes };
 }
 
 async function completarTrasEnvoltorio(o: RegistroComun, data: unknown): Promise<ResultadoRegistro> {
@@ -69,7 +87,13 @@ async function completarTrasEnvoltorio(o: RegistroComun, data: unknown): Promise
   const reparados = await repararPasosAnotados(pasos.pasosPendientes);
   const categoria = await aplicarCategoriaAComisiones(pasos.comisiones.map(c => c.movimientoId).filter(Boolean));
   const avisos = categoria.advertencia ? [categoria.advertencia] : [];
-  return { creado, ids, estado: { comisiones: [...pasos.comisiones, ...reparados.comisiones], pendientes: reparados.pendientes, avisos } };
+  const faltantes = hayComprobantesPorBanca(o) && !pasos.comprobantesPorBancaAplicados
+    ? (await completarComprobantesPorBanca(o, ids)).pendientes
+    : [];
+  return {
+    creado, ids,
+    estado: { comisiones: [...pasos.comisiones, ...reparados.comisiones], pendientes: [...reparados.pendientes, ...faltantes], avisos },
+  };
 }
 
 async function registrarConFlujoAnterior(o: RegistroComun): Promise<ResultadoRegistro> {
@@ -77,7 +101,8 @@ async function registrarConFlujoAnterior(o: RegistroComun): Promise<ResultadoReg
   if (error || !data) return { error: error?.message ?? o.mensajeError };
   const { creado, ids } = await o.normalizar(data, false);
   const estado = await aplicarPasosEnBackend({
-    ...ids, categoriaId: o.categoriaId, comprobantes: o.comprobantes, lineas: o.lineas, usuarioId: o.usuarioId,
+    ...ids, categoriaId: o.categoriaId, comprobantes: o.comprobantes, comprobantesPorBanca: o.comprobantesPorBanca,
+    lineas: o.lineas, usuarioId: o.usuarioId,
   });
   return { creado, ids, estado };
 }

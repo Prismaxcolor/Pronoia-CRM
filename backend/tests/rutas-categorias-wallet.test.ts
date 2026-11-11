@@ -214,7 +214,7 @@ describe('reportes', () => {
     expect(r.status).toBe(200);
     // El acceso se pasa sin esperar (promesa) para que corra a la vez que las consultas del reporte.
     const [filtro, permitidas] = s.obtenerReporteCuenta.mock.calls[0];
-    expect(filtro).toEqual({ bancaId: BANCA, desde: '2026-10-01', hasta: '2026-10-31' });
+    expect(filtro).toEqual({ bancaId: BANCA, desde: '2026-10-01', hasta: '2026-10-31', categoriaIds: [], sinCategoria: false });
     expect(await permitidas).toEqual(new Set([BANCA]));
   });
 

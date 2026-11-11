@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { leerPaginado } from '../utils/paginacion.js';
+import { idsProductosOcultos, sinProductosOcultos } from './producto-oculto.js';
 import { logger } from '../utils/logger.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { diaNegocio } from '../utils/fecha-negocio.js';
@@ -35,8 +36,10 @@ interface ProductoFila {
 
 const COLUMNAS_PRODUCTO = 'id, nombre, tipo_material_id, tipos_material(nombre)';
 
-const leerProductosCon = (columnas: string) =>
-  leerPaginado<ProductoFila>((d, h) => supabaseAdmin.from('productos').select(columnas).order('id').range(d, h));
+const leerProductosCon = async (columnas: string) => {
+  const ocultos = await idsProductosOcultos();
+  return leerPaginado<ProductoFila>((d, h) => sinProductosOcultos(supabaseAdmin.from('productos').select(columnas).order('id').range(d, h), ocultos, 'id'));
+};
 
 /** Productos con su estado de limpieza. Si la columna estado_limpieza aún no existe (migración pendiente), se lee sin ella. */
 export async function leerProductos(): Promise<ProductoMeta[]> {
@@ -67,11 +70,12 @@ export async function leerTickets(): Promise<TicketMov[]> {
       .order('id')
       .range(d, h)
   );
+  const ocultos = new Set(await idsProductosOcultos());
   return filas.map(t => ({
     tipo: t.tipo,
     fecha: dia(t.fecha),
     almacenId: t.almacen_id,
-    detalle: (t.detalle_tickets_pesaje ?? []).map(x => ({
+    detalle: (t.detalle_tickets_pesaje ?? []).filter(x => !ocultos.has(x.producto_id ?? '')).map(x => ({
       productoId: x.producto_id,
       pesoNeto: num(x.peso_neto),
       loteId: x.destino_tipo === 'lote' ? x.lote_id : null,
@@ -123,6 +127,7 @@ export async function leerTransformaciones(): Promise<LecturaTransformaciones> {
     filas = await leerTransformacionesCon(COLUMNAS_TRANSFORMACION);
     sinMermaTipificada = true;
   }
+  const ocultos = new Set(await idsProductosOcultos());
   return {
     sinMermaTipificada,
     transformaciones: filas.map(t => ({
@@ -134,8 +139,8 @@ export async function leerTransformaciones(): Promise<LecturaTransformaciones> {
       almacenId: t.almacen_id,
       loteOrigenId: t.lote_origen_id,
       pesoNeto: num(t.peso_neto),
-      entradas: (t.transformacion_entrada_detalle ?? []).map(e => ({ productoId: e.producto_id, pesoKg: num(e.peso_kg) })),
-      salidas: (t.transformacion_salida_detalle ?? []).map(s => ({ productoId: s.producto_id, loteDestinoId: s.lote_destino_id, pesoNeto: num(s.peso_neto) })),
+      entradas: (t.transformacion_entrada_detalle ?? []).filter(e => !ocultos.has(e.producto_id ?? '')).map(e => ({ productoId: e.producto_id, pesoKg: num(e.peso_kg) })),
+      salidas: (t.transformacion_salida_detalle ?? []).filter(s => !ocultos.has(s.producto_id ?? '')).map(s => ({ productoId: s.producto_id, loteDestinoId: s.lote_destino_id, pesoNeto: num(s.peso_neto) })),
       merma: (t.transformacion_merma_detalle ?? []).flatMap((m): DetalleMerma[] => {
         const tipo = tipoMermaParaDetalle(m.tipo);
         return tipo ? [{ tipo, pesoKg: num(m.peso_kg) }] : [];
@@ -154,8 +159,10 @@ export async function leerAjustes(): Promise<AjusteMov[]> {
   }>((d, h) =>
     supabaseAdmin.from('ajustes_inventario').select('producto_id, lote_id, almacen_id, diferencia, created_at').order('id').range(d, h)
   );
+  const ocultos = new Set(await idsProductosOcultos());
   return filas.flatMap(a => {
     const fecha = dia(a.created_at);
+    if (a.producto_id && ocultos.has(a.producto_id)) return [];
     return fecha ? [{ productoId: a.producto_id, loteId: a.lote_id, almacenId: a.almacen_id, diferencia: num(a.diferencia), fecha }] : [];
   });
 }

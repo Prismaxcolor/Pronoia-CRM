@@ -11,6 +11,7 @@ import { ComisionAutomaticaNoDisponibleError } from './comision-automatica-servi
 import { registrarConPasos, type IdsRegistro } from './pago-registro-comun.js';
 import { advertenciaDePasos } from './pagos-pasos-service.js';
 import { validarMontosDeLineas } from './montos-pago-service.js';
+import { comprobantesPorBanca, todosLosComprobantes } from '../utils/comprobantes-banca.js';
 
 type Lineas = Awaited<ReturnType<typeof conComisionAutomatica>>;
 
@@ -145,7 +146,11 @@ export async function registrarPagoMultiple(
     original: 'registrar_pago_proveedor_multi_banca',
     args: {
       p_proveedor_id: input.proveedorId,
-      p_bancas: input.bancas.map(b => ({ bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, referencia: b.referencia ?? null })),
+      // `comprobantes` viaja dentro de cada banca: el envoltorio SQL los reparte por movimiento (la RPC de dinero lo ignora).
+      p_bancas: input.bancas.map(b => ({
+        bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, referencia: b.referencia ?? null,
+        comprobantes: b.comprobantes ?? [],
+      })),
       p_monto_usd: input.montoUsd,
       p_descripcion: input.descripcion,
       p_referencia: input.referencia,
@@ -155,7 +160,8 @@ export async function registrarPagoMultiple(
     },
     extraEnvoltorio: { p_bancas_con_comision: lineas.filter(lineaCargaComision).map(l => l.bancaId) },
     clientRequestId: input.clientRequestId,
-    categoriaId, comprobantes: input.comprobantes, lineas, usuarioId: registradoPor,
+    categoriaId, comprobantes: input.comprobantes, comprobantesPorBanca: comprobantesPorBanca(input.bancas),
+    lineas, usuarioId: registradoPor,
     mensajeError: 'No se pudo registrar el pago.',
     normalizar: normalizarMulti,
   });
@@ -167,7 +173,7 @@ export async function registrarPagoMultiple(
   };
   // Telegram (fire-and-forget): comprobante del pago/adelanto o del cruce puro (sin dinero).
   notificarPago('proveedor', input.proveedorId, resultado.grupoId, {
-    comprobantes: resultado.movimientoPrincipalId ? input.comprobantes : [],
+    comprobantes: resultado.movimientoPrincipalId ? todosLosComprobantes(input.comprobantes, input.bancas) : [],
     esCruce: resultado.movimientoPrincipalId === null,
   });
 

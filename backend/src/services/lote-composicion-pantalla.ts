@@ -9,6 +9,7 @@ import {
   type EntradaTransformacionLote,
   type SalidaHaciaLote,
 } from '../utils/lote-composicion-pantalla.js';
+import { idsProductosOcultos } from './producto-oculto.js';
 
 /**
  * Composición de un lote por producto (solo kilos). Solo lectura.
@@ -128,12 +129,19 @@ export async function obtenerComposicionLote(loteId: string, opts: OpcionesCompo
   if (error) throw new Error(`No se pudo leer el lote: ${error.message}`);
   if (!lote) return null;
 
-  const [stockPorProducto, stockTotalKg, compras, salidas] = await Promise.all([
+  const [stockTotal, stockTotalKg, comprasTodas, salidasTodas] = await Promise.all([
     leerStockPorProducto(loteId, opts.almacenId),
     leerStockTotal(loteId, opts.almacenId),
     leerCompras(loteId),
     leerSalidasHaciaLote(loteId),
   ]);
+  // Los productos ocultos no aparecen en la composición; sus kilos siguen en el total del lote (quedan sin desglosar).
+  const ocultos = new Set(await idsProductosOcultos());
+  const stockPorProducto = stockTotal.filter(s => !ocultos.has(s.productoId));
+  const compras = comprasTodas.filter(c => !ocultos.has(c.productoId));
+  const salidas = salidasTodas
+    .filter(s => !s.productoId || !ocultos.has(s.productoId))
+    .map(s => ({ ...s, entradas: s.entradas.filter(e => !e.productoId || !ocultos.has(e.productoId)) }));
 
   const comprado = calcularCompradoPeriodo(compras, salidas, opts);
   const ids = [...new Set([...stockPorProducto.map(s => s.productoId), ...comprado.porProducto.keys()])];

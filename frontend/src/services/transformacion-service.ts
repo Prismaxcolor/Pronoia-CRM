@@ -309,7 +309,7 @@ export async function crearTransformacionPCB(
     });
     return { transformacion };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo registrar la transformación PCB.' };
+    return { error: err instanceof Error ? err.message : 'No se pudo registrar la transformación de lote.' };
   }
 }
 
@@ -325,7 +325,7 @@ export async function completarTransformacionPCB(
     );
     return { transformacion, ...(advertencia ? { advertencia } : {}) };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación PCB.' };
+    return { error: err instanceof Error ? err.message : 'No se pudo completar la transformación de lote.' };
   }
 }
 

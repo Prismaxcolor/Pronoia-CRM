@@ -13,6 +13,7 @@ import {
 } from '../utils/movimientos-almacen.js';
 import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
 import { leerSalidasAlmacen } from './inventario-salidas-lectura.js';
+import { idsProductosOcultos, sinProductosOcultos } from './producto-oculto.js';
 
 export interface ArticuloInventario {
   productoId: string;
@@ -316,6 +317,8 @@ async function cargarProductos(filtros: FiltrosInventario = {}): Promise<Product
     .select('id, nombre, tipo_material_id, tipos_material(nombre)');
   if (filtros.tipoMaterialId) qProductos = qProductos.eq('tipo_material_id', filtros.tipoMaterialId);
   if (filtros.productoId) qProductos = qProductos.eq('id', filtros.productoId);
+  // Los productos ocultos no existen para quien no es superadmin: sin ellos tampoco hay sus kilos en el stock.
+  qProductos = sinProductosOcultos(qProductos, await idsProductosOcultos(), 'id');
   const { data: productosData } = await qProductos;
   return ((productosData as unknown as ProductoRow[]) ?? []).map(p => ({
     id: p.id,

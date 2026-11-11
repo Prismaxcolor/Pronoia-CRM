@@ -35,7 +35,11 @@ export interface CrearTrasladoInput {
 
 export interface RecepcionMaterialInput {
   detalleId: string;
+  /** Neto recibido (bruto − tara), a 3 decimales. */
   pesoRecibido: number;
+  /** Bruto y tara de la recepción (opcionales para compatibilidad con peticiones ya encoladas). */
+  pesoBrutoRecibido?: number;
+  taraRecibida?: number;
 }
 
 export async function obtenerTraslados(): Promise<Traslado[]> {

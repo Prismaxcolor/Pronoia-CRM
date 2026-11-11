@@ -1,5 +1,5 @@
 import { apiFetch } from './api-client';
-import type { Cambista, CambistaConSaldo, EstadoCuentaMesa, TipoAsiento } from '@shared/types/mesa-cambio';
+import type { Cambista, CambistaConSaldo, EstadoCuentaMesa, TipoAsiento, TipoAsientoManual } from '@shared/types/mesa-cambio';
 
 export interface CambistaInput {
   nombre: string;
@@ -10,7 +10,7 @@ export interface CambistaInput {
 
 export interface AsientoInput {
   cambistaId: string;
-  tipo: TipoAsiento;
+  tipo: TipoAsientoManual;
   montoUsd: number;
   tasa: number | null;
   fecha: string;

@@ -22,6 +22,7 @@ interface ProductoApi {
   estadoLimpieza?: 'limpio' | 'sucio' | null;
   moneda: string;
   activo: boolean;
+  oculto?: boolean;
   tipo: TipoProducto;
   fotos: string[];
   creadoPor: string;
@@ -43,6 +44,7 @@ function mapApi(api: ProductoApi): Producto {
     estadoLimpieza: api.estadoLimpieza ?? null,
     moneda: api.moneda,
     activo: api.activo,
+    oculto: api.oculto === true,
     fotos: api.fotos,
     creadoPor: api.creadoPor,
     creadoEn: api.creadoEn,
@@ -129,6 +131,16 @@ export async function reactivarProducto(id: string): Promise<{ ok: true } | { er
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'No se pudo reactivar el producto.' };
+  }
+}
+
+/** Oculta o muestra un producto al resto de los usuarios (solo superadmin; el servidor lo vuelve a verificar). */
+export async function ocultarProducto(id: string, oculto: boolean): Promise<{ ok: true } | { error: string }> {
+  try {
+    await apiFetch(`/api/productos/${id}/ocultar`, { method: 'POST', body: { oculto } });
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'No se pudo cambiar la visibilidad del producto.' };
   }
 }
 

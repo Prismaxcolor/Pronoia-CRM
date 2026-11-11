@@ -16,6 +16,8 @@ export interface Proveedor {
   createdAt: string;
   /** URLs públicas de las fotos del proveedor (bucket "proveedores" en Storage). */
   fotos: string[];
+  /** URL pública de la imagen (logo / foto) que se muestra junto al nombre; null o ausente = sin imagen. */
+  imagenUrl?: string | null;
   /** chat_id de Telegram una vez vinculado (ver integración Telegram). */
   telegramChatId: string | null;
   /** ISO timestamp de cuándo se vinculó, null si nunca se vinculó. */

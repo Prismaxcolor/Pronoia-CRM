@@ -321,6 +321,7 @@ function EstadoCuentaPage({ tipo }: Props) {
         <PagoCobroModal
           tipoEntidad={tipo}
           entidadId={estado.entidad.id}
+          nombreEntidad={estado.entidad.nombre}
           notasDebitoPendientes={notasDebitoPendientes}
           notasCreditoPendientes={notasCreditoPendientes}
           onClose={() => setPagoAbierto(false)}

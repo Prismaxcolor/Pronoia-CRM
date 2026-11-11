@@ -7,6 +7,7 @@ import type { CostosInventario } from '../../../shared/types/inventario-pantalla
 import type { ActualizarCostosInput } from '../schemas/inventario-costos.js';
 import { registrarAuditoria } from './auditoria-service.js';
 import { obtenerBasePantalla } from './inventario-pantalla-service.js';
+import { filtrarProductosOcultos } from './producto-oculto.js';
 import { invalidarCacheResumen } from './resumen-cache.js';
 
 export const ADVERTENCIA_AUDITORIA_COSTOS =
@@ -48,7 +49,9 @@ export async function actualizarCostosReferencia(entrada: ActualizarCostosInput,
     logger.error({ evento: 'costos_referencia_no_leidos', userId: actor.userId, motivo: error.message });
     return { ok: false, error: mensajeDeErrorBd(error, 'No se pudieron leer los productos.'), status: 500 };
   }
-  const actuales = new Map(((data ?? []) as ProductoCostoRow[]).map(p => [p.id, p]));
+  // Un producto oculto para quien edita cuenta como inexistente.
+  const visibles = await filtrarProductosOcultos((data ?? []) as ProductoCostoRow[], p => p.id);
+  const actuales = new Map(visibles.map(p => [p.id, p]));
   const desconocido = ids.find(id => !actuales.has(id));
   if (desconocido) return { ok: false, error: 'Algún producto no existe.', status: 400 };
 

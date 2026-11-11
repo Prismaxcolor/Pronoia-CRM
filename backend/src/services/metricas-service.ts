@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { filtrarOcultos } from './proveedor-oculto.js';
+import { filtrarProductosOcultos } from './producto-oculto.js';
 import { formatCodigoCompra } from '../utils/codigos.js';
 import { diaNegocio, inicioDiaNegocio, finDiaNegocio } from '../utils/fecha-negocio.js';
 
@@ -58,7 +59,8 @@ export async function obtenerMetricasCompras(desde: string, hasta: string): Prom
     .from('detalle_facturas_compra')
     .select('factura_id, producto_id, peso, subtotal')
     .in('factura_id', facturaIds);
-  const detalle = (detalleData as DetalleRow[] | null) ?? [];
+  // Las compras de productos ocultos no cuentan para quien no es superadmin.
+  const detalle = await filtrarProductosOcultos((detalleData as DetalleRow[] | null) ?? [], d => d.producto_id);
 
   const proveedorIds = [...new Set(facturas.map(f => f.proveedor_id).filter((x): x is string => x != null))];
   const productoIds = [...new Set(detalle.map(d => d.producto_id).filter((x): x is string => x != null))];

@@ -242,7 +242,7 @@ export function peticionTransformacionCrear(
     tipoOperacion: categoria === 'pcb' ? TIPO_F4.transformacionPcbCrear : TIPO_F4.transformacionFerrosoCrear,
     endpoint: `${ENDPOINT_F4.transformaciones}/${categoria === 'pcb' ? 'pcb' : 'ferroso'}`,
     metodo: 'POST',
-    descripcion: `Nueva transformación ${categoria === 'pcb' ? 'PCB' : 'Ferroso/No Ferroso'} (${etiqueta})`,
+    descripcion: `Nueva transformación ${categoria === 'pcb' ? 'de lote' : 'de productos'} (${etiqueta})`,
     grupos: pesadas.map(p => p.fotos),
     cuerpo: fotos => ({
       ...datos,

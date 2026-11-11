@@ -8,6 +8,7 @@ import { calcularCruce, sugerirMontoCredito, type ItemCruce } from '../../lib/cr
 import { montoAplicadoDeNota, montoSugeridoDeNota } from '../../lib/cruce-notas';
 import { fotoLocalDeFile, type FotoLocal } from '../../lib/foto-picker';
 import { filtrarComprobantes } from '../../lib/comprobante-imagen';
+import { esFacturaEnCero } from '../../lib/estado-factura';
 import { fechaRestaurable, recortarSeleccionPago } from '../../lib/borrador-vigentes';
 import { hoyNegocio } from '../../lib/fecha-negocio';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
@@ -27,6 +28,7 @@ import { fmt } from './pago-cobro-formato';
 import { bloqueoPorCarga } from './pago-cobro-carga';
 import { validarPagoCobro } from './pago-cobro-validacion';
 import { enviarPagoCobro, huellaPagoCobro } from './pago-cobro-envio';
+import { fotosPorBanca } from './pago-cobro-comprobantes';
 import { usePagoCobroDatos } from './usePagoCobroDatos';
 import AvisoCargaPago from './AvisoCargaPago';
 import ListaFacturasPago from './ListaFacturasPago';
@@ -38,6 +40,8 @@ import SeccionBancasPago from './SeccionBancasPago';
 interface Props {
   tipoEntidad: TipoEntidad;
   entidadId: string;
+  /** Nombre del proveedor/cliente: se muestra arriba del modal para saber a quién se le registra. */
+  nombreEntidad: string;
   /** Notas de débito pendientes (sin anular, sin pagar) — filtradas por el padre. */
   notasDebitoPendientes: EntradaEstadoCuenta[];
   /** Notas de crédito disponibles (sin anular, sin aplicar) — se pueden usar
@@ -54,7 +58,7 @@ const labelClass = 'block text-xs font-medium text-text-secondary mb-1';
 /** "Registrar pago" (proveedor) / "Registrar cobro" (cliente) — misma
  *  pantalla (Bloque 45), la única diferencia real es el sentido del dinero
  *  (sale de una banca vs entra a una banca) y a qué RPC/tabla apunta. */
-function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCreditoPendientes, onClose, onRegistrado }: Props) {
+function PagoCobroModal({ tipoEntidad, entidadId, nombreEntidad, notasDebitoPendientes, notasCreditoPendientes, onClose, onRegistrado }: Props) {
   const esProveedor = tipoEntidad === 'proveedor';
   const verbo = esProveedor ? 'pagar' : 'cobrar';
   const etiquetaAccion = esProveedor ? 'Registrar pago' : 'Registrar cobro';
@@ -119,7 +123,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     Object.keys(montosFactura).length > 0 || notaIdsSel.length > 0 || notaCreditoIdsSel.length > 0 || Object.keys(montosNota).length > 0
     || Object.keys(montosAdelanto).length > 0 || totalEditadoManual !== null || descripcion !== ''
     || comprobantes.length > 0 || bancaLineaTocada || lineasBanca.length > 1
-    || lineasBanca.some(l => l.montoUsd !== '' || l.referencia !== '');
+    || lineasBanca.some(l => l.montoUsd !== '' || l.referencia !== '' || (l.comprobantes?.length ?? 0) > 0);
   const borrador = useBorradorPersistente<typeof estadoBorrador>({
     formulario: `${esProveedor ? 'pago' : 'cobro'}-registrar`,
     docId: entidadId,
@@ -232,7 +236,8 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
   // hay que pagar en efectivo/banco (ver lib/cruce.ts). Los adelantos y las
   // notas de crédito se usan como método de pago: reducen lo que se paga con banca.
   const itemsCruce: ItemCruce[] = [
-    ...facturasSel.map(f => ({ tipo: 'factura' as const, montoUsd: parseFloat(montosFactura[f.id]) || 0 })),
+    // Una factura de total 0 se cierra con monto 0: no suma al total y la operación queda como cruce, sin banca.
+    ...facturasSel.map(f => ({ tipo: 'factura' as const, montoUsd: parseFloat(montosFactura[f.id]) || 0, permiteCero: esFacturaEnCero(f) })),
     ...notasSel.map(n => ({ tipo: 'nota_debito' as const, montoUsd: montoAplicadoDeNota(n, montosNota, n.notaId ?? '') })),
     ...adelantosSel.map(a => ({ tipo: 'adelanto' as const, montoUsd: parseFloat(montosAdelanto[a.id]) || 0 })),
     ...notasCreditoSel.map(n => ({ tipo: 'nota_credito' as const, montoUsd: montoAplicadoDeNota(n, montosNota, n.notaId ?? '') })),
@@ -279,6 +284,16 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     },
     setReferencia: (id: number, referencia: string) => actualizarLinea(id, { referencia }),
     setCampos: actualizarLinea,
+    agregarComprobantes: (id: number, files: File[]) => {
+      const actuales = lineasBanca.find(l => l.id === id)?.comprobantes ?? [];
+      const { validos, errores } = filtrarComprobantes(files, actuales.length);
+      setError(errores.length > 0 ? errores.join(' ') : null);
+      actualizarLinea(id, { comprobantes: [...actuales, ...validos.map(fotoLocalDeFile)] });
+    },
+    quitarComprobante: (id: number, idx: number) => {
+      const actuales = lineasBanca.find(l => l.id === id)?.comprobantes ?? [];
+      actualizarLinea(id, { comprobantes: actuales.filter((_, i) => i !== idx) });
+    },
   };
   /** Bs por USD de una línea: en el pago a proveedor la que se eligió (Binance, BCV o manual); en el cobro, la BCV de siempre. */
   const tasaDeLinea = (l: LineaBanca): number | null =>
@@ -315,7 +330,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
     const datosEnvio = {
       esProveedor, entidadId, bancas: validacion.bancas, items: validacion.items, esCrucePuro, hayDinero: validacion.hayDinero,
       totalEditadoNum, descripcion: descripcion.trim() || descripcionSugerida, fecha, comprobantes,
-      categoriaOpciones: categorias.opciones, categoriaCobroId,
+      comprobantesBanca: fotosPorBanca(lineasEfectivas), categoriaOpciones: categorias.opciones, categoriaCobroId,
     };
     // Misma clave mientras no cambien los datos: un reintento tras un corte no duplica el registro.
     const resultado = await enviarPagoCobro(datosEnvio, envio.idPara(huellaPagoCobro(datosEnvio)));
@@ -339,6 +354,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
         <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
           <div>
             <h2 id={tituloId} className="text-lg font-bold text-text-primary">{etiquetaAccion}</h2>
+            <p className="text-sm font-semibold text-brand-700 break-words">{esProveedor ? 'Proveedor' : 'Cliente'}: {nombreEntidad}</p>
             <p className="text-sm text-text-secondary">Selecciona facturas y/o notas de débito y cruzalas con {esProveedor ? 'adelantos' : 'anticipos'} y notas de crédito, o regístralo como {etiquetaAdelanto}.</p>
           </div>
           <button type="button" onClick={cerrar} aria-label="Cerrar" className="text-text-muted hover:text-text-primary transition-colors p-2 -m-2">
@@ -417,7 +433,7 @@ function PagoCobroModal({ tipoEntidad, entidadId, notasDebitoPendientes, notasCr
                 fotos={comprobantes}
                 onAgregar={agregarComprobantes}
                 onQuitar={quitarComprobante}
-                label={`Comprobante de ${esProveedor ? 'pago' : 'cobro'} (opcional)`}
+                label={`Comprobante ${lineasEfectivas.length > 1 ? 'general ' : ''}de${lineasEfectivas.length > 1 ? 'l' : ''} ${esProveedor ? 'pago' : 'cobro'} (opcional)`}
               />
             )}
           </div>

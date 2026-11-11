@@ -8,6 +8,7 @@ import { cargarEmbalajesAFecha, cargarEmbalajesVigentes } from './lote-embalaje-
 import { leerPrimerRegistro } from './inventario-pantalla-datos.js';
 import { reportesMermaDosPeriodos } from './transformacion-service.js';
 import { cacheResumen } from './resumen-cache.js';
+import { claveVisibilidadProductos } from './producto-oculto.js';
 import { conLimiteDeTiempo } from '../utils/tiempo-limite.js';
 import { resumirMerma } from '../utils/merma-transformacion.js';
 import { resumirMermaPorTipo } from '../utils/merma-tipificada.js';
@@ -337,6 +338,6 @@ export async function obtenerResumenInventario(opts: OpcionesResumenInventario =
   // Sin rango pedido, la merma por defecto (últimos 30 días) se cuenta hasta la fecha del saldo.
   const rango = resolverRangoMerma(corte && !opts.desde && !opts.hasta ? { ...opts, hoy: corte } : opts);
   if (!rango) throw new Error('Rango de fechas inválido: usa desde y hasta (YYYY-MM-DD) con desde <= hasta.');
-  const clave = `valor:${opts.incluirValor === true && !corte ? 1 : 0}|${rango.desde}|${rango.hasta}|al:${corte ?? ''}`;
+  const clave = `valor:${opts.incluirValor === true && !corte ? 1 : 0}|${rango.desde}|${rango.hasta}|al:${corte ?? ''}|${claveVisibilidadProductos()}`;
   return cacheResumen.obtener(clave, () => calcularResumen(opts, rango, corte));
 }

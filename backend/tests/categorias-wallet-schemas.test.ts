@@ -52,6 +52,17 @@ describe('filtros de reportes', () => {
     expect(filtroReporteCuentaSchema.safeParse({ bancaId: U1, desde: '2026-01-01', hasta: '2026-12-31' }).success).toBe(true);
     expect(filtroReporteCuentaSchema.safeParse({ bancaId: U1, desde: '2025-01-01', hasta: '2026-12-31' }).success).toBe(false);
   });
+  it('cuenta: categoriaIds (coma) y sinCategoria son opcionales; ids inválidos se rechazan', () => {
+    const base = { bancaId: U1, desde: '2026-10-01', hasta: '2026-10-31' };
+    const sin = filtroReporteCuentaSchema.parse(base);
+    expect(sin.categoriaIds).toEqual([]);
+    expect(sin.sinCategoria).toBe(false);
+    const con = filtroReporteCuentaSchema.parse({ ...base, categoriaIds: `${U1}, ${U2}`, sinCategoria: 'true' });
+    expect(con.categoriaIds).toEqual([U1, U2]);
+    expect(con.sinCategoria).toBe(true);
+    expect(filtroReporteCuentaSchema.safeParse({ ...base, categoriaIds: 'x' }).success).toBe(false);
+    expect(filtroReporteCuentaSchema.safeParse({ ...base, categoriaIds: Array(101).fill(U1).join(',') }).success).toBe(false);
+  });
   it('categorías: lista separada por comas, opcional, y sinCategoria booleano', () => {
     const r = filtroReporteCategoriasSchema.parse({ categorias: `${U1},${U2}`, desde: '2026-10-01', hasta: '2026-10-31', sinCategoria: 'true' });
     expect(r.categorias).toEqual([U1, U2]);

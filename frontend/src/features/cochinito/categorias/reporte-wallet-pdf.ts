@@ -6,7 +6,7 @@ import {
 } from '../../../services/pdf-documento';
 import { numeroMovimiento } from '../detalle-movimiento';
 import {
-  etiquetaMoneda, filasPorMoneda, monedasDelReporte, nombreArchivoReporte, partirEnTrozos, textoMovimientosAcceso, textoTipoFila, totalGeneral,
+  AVISO_SALDOS_FILTRO_CATEGORIAS, etiquetaMoneda, filasPorMoneda, monedasDelReporte, nombreArchivoReporte, partirEnTrozos, textoFiltroCategorias, textoMovimientosAcceso, textoTipoFila, totalGeneral,
 } from './reporte-wallet-datos';
 import { esHexValido } from './categorias-logica';
 
@@ -110,7 +110,8 @@ function opcionesTablaCuenta(doc: any, filas: readonly FilaCuenta[], moneda: str
 function dibujarCuenta(doc: any, autoTable: any, r: ReporteCuenta, filtro: string | undefined, titulo: string): void {
   const moneda = etiquetaMoneda(r.banca.moneda);
   const conUsd = r.banca.moneda === 'VES';
-  const aviso = filtro?.trim() ? [`Filtrado por N°: ${filtro.trim()}`] : [];
+  const porCategorias = textoFiltroCategorias(r);
+  const aviso = [...(filtro?.trim() ? [`Filtrado por N°: ${filtro.trim()}`] : []), ...(porCategorias ? [porCategorias, AVISO_SALDOS_FILTRO_CATEGORIAS] : [])];
   const saldos = r.saldoInicial != null && r.saldoFinal != null ? [`Saldo inicial: ${moneda} ${fmt(r.saldoInicial)} · Saldo final: ${moneda} ${fmt(r.saldoFinal)}`] : [];
   const y = encabezado(doc, titulo, [`${r.banca.nombre} · ${moneda}`, `Del ${formatearFecha(r.desde)} al ${formatearFecha(r.hasta)}`, ...saldos, ...aviso]);
   const trozos = partirEnTrozos(r.filas);

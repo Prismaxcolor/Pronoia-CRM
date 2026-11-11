@@ -8,9 +8,12 @@
 
 /**
  * CARGO y ND (nota de débito) aumentan lo que el cambista nos debe (pendiente por cobrar); COBRO y NC (nota de crédito) lo reducen.
+ * COMISION (la crea la RPC de cobro al completar una transferencia con comisión de mesa) es un gasto a favor del cambista:
+ * lo reduce igual que un COBRO, o sea aumenta lo que se le debe. Para invertir su efecto basta añadirla a TIPOS_QUE_SUMAN
+ * (y a los 'in (CARGO, ND)' de la vista cambistas_saldos).
  * Saldo positivo = nos debe el cambista; negativo = se le debe al cambista.
  */
-export type TipoAsiento = 'CARGO' | 'COBRO' | 'NC' | 'ND';
+export type TipoAsiento = 'CARGO' | 'COBRO' | 'NC' | 'ND' | 'COMISION';
 
 export interface AsientoMesa {
   id: string;
@@ -49,7 +52,9 @@ export interface FilaEstado {
 
 /**
  * Comisión de la mesa de una transferencia, para mostrarla en el estado de cuenta del cambista. NO mueve el saldo:
- * el CARGO ya es el bruto y los COBRO lo saldan completo (la comisión va incluida en lo cobrado).
+ * el CARGO ya es el bruto y los COBRO lo saldan completo (la comisión va incluida en lo cobrado). Solo se informa en
+ * transferencias SIN asiento COMISION (históricas o aún pendientes): las que lo tienen ya la muestran como fila propia
+ * que sí mueve el saldo, y repetirla aquí la contaría dos veces.
  */
 export interface ComisionTransferencia {
   /** Comisión en la moneda de la cuenta destino. */
@@ -106,9 +111,13 @@ export function conComisiones(
   estado: EstadoCuentaCalculado, porMovimiento: ReadonlyMap<string, DatosComisionMovimiento>
 ): EstadoCuentaConComisiones {
   let totalCentavos = 0;
+  const conAsientoComision = new Set(
+    estado.filas.filter(f => f.tipo === 'COMISION' && !f.anulado && f.movimientoId).map(f => f.movimientoId)
+  );
   const filas = estado.filas.map((f): FilaEstadoConComision => {
     const datos = f.movimientoId ? porMovimiento.get(f.movimientoId) : undefined;
     if (!datos || f.tipo !== 'CARGO' || f.anulado || !(datos.comision > 0)) return { ...f, comision: null };
+    if (conAsientoComision.has(f.movimientoId)) return { ...f, comision: null };
     const montoUsd = comisionEnUsd(f.montoUsd, datos.comision, datos.montoBruto);
     totalCentavos += aCentavos(montoUsd);
     return { ...f, comision: { monto: datos.comision, moneda: datos.moneda, montoUsd, movimientoNumero: datos.numeroSistema, completada: datos.completada } };
@@ -127,7 +136,7 @@ const aCentavos = (n: number): number => Math.round((Number(n) || 0) * 100);
 
 const TIPOS_QUE_SUMAN: ReadonlySet<TipoAsiento> = new Set<TipoAsiento>(['CARGO', 'ND']);
 
-/** Efecto del asiento en el saldo, en centavos: CARGO y ND suman, COBRO y NC restan, anulado 0. */
+/** Efecto del asiento en el saldo, en centavos: CARGO y ND suman; COBRO, NC y COMISION restan; anulado 0. */
 function centavosFirmados(a: ConImporte): number {
   if (a.anulado) return 0;
   const c = aCentavos(a.montoUsd);

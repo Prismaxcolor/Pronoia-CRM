@@ -188,7 +188,7 @@ function TransformacionDetallePage() {
       <div className="print:hidden">
         <EncabezadoPagina lecturas={LECTURAS.transformaciones}
           titulo={`Transformación ${referencia}`}
-          subtitulo={`${completa ? 'Completada' : 'Pendiente de completar'} · ${t.categoria === 'pcb' ? 'PCB' : 'Ferroso / No ferroso'} · ${formatearFecha(t.fecha)}`}
+          subtitulo={`${completa ? 'Completada' : 'Pendiente de completar'} · ${t.categoria === 'pcb' ? 'Transformaciones de lote' : 'Transformaciones de productos'} · ${formatearFecha(t.fecha)}`}
           migas={[{ etiqueta: 'Transformaciones', to: '/transformaciones' }, { etiqueta: referencia }]}
           acciones={
             <>
@@ -217,7 +217,7 @@ function TransformacionDetallePage() {
             </span>
           </div>
           <p className="text-sm text-text-muted mt-1">
-            Ref. {referencia} · {t.categoria === 'pcb' ? 'PCB' : 'Ferroso / No ferroso'} · {t.fecha}
+            Ref. {referencia} · {t.categoria === 'pcb' ? 'Transformaciones de lote' : 'Transformaciones de productos'} · {t.fecha}
           </p>
         </div>
       </div>

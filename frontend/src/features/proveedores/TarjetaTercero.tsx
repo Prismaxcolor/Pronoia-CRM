@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle2, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Mail, Lock, MapPin, Pencil, Phone, Send, Trash2, Unlock } from 'lucide-react';
 import { Insignia, formatearFecha, formatearNumero } from '../../components/ui';
 import { TEXTO_TERCERO, type FilaTercero, type TipoTercero } from '../../lib/terceros-kpis';
+import AvatarTercero from './AvatarTercero';
 
 /** Acciones por fila (las mismas que tenía la tarjeta). Una acción ausente no se muestra: el padre decide por permiso. */
 export interface AccionesTercero {
@@ -105,9 +106,7 @@ function TarjetaTercero({ tipo, fila, acciones, hayCifras, incrustada = false, o
       <div className="absolute right-2 top-2 opacity-100 transition-opacity sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">{gestion}</div>
 
       <div className="mb-3 flex items-start gap-3 pr-24">
-        <div aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-700">
-          {fila.nombre.charAt(0).toUpperCase()}
-        </div>
+        <AvatarTercero nombre={fila.nombre} imagenUrl={fila.imagenUrl} />
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold leading-tight text-text-primary">{fila.nombre}</h3>
           {fila.identificacion && <p className="mt-0.5 text-xs text-text-secondary">{fila.identificacion}</p>}

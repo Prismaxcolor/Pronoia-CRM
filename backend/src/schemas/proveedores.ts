@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { imagenTerceroSchema } from './imagen-tercero.js';
 
 const opcionalTrim = (max: number) =>
   z
@@ -26,6 +27,8 @@ export const crearProveedorSchema = z.object({
   // con default, este schema (usado por actualizarProveedorSchema.partial())
   // dejaría "fotos" siempre presente y borraría fotos existentes en PATCH.
   fotos: z.array(z.string().trim().max(500)).optional(),
+  // Imagen junto al nombre (aparte de las fotos). .optional() como "fotos": un PATCH sin ella no la toca.
+  imagenUrl: imagenTerceroSchema('proveedores'),
 });
 
 export const actualizarProveedorSchema = crearProveedorSchema

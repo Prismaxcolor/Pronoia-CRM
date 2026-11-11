@@ -18,6 +18,8 @@ export const ENTIDADES_AUDITABLES = [
   'banca',
   // Ocultar / mostrar un proveedor (solo superadmin).
   'proveedor',
+  // Ocultar / mostrar un producto (solo superadmin).
+  'producto',
   'nota_ajuste_proveedor',
   'nota_ajuste_cliente',
 ] as const;
@@ -69,6 +71,7 @@ export const RECURSO_POR_ENTIDAD: Record<EntidadAuditable, Recurso> = {
   movimiento_banca: 'cochinito',
   banca: 'cochinito',
   proveedor: 'proveedores',
+  producto: 'productos',
   nota_ajuste_proveedor: 'proveedores',
   nota_ajuste_cliente: 'clientes',
 };

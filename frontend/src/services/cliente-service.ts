@@ -21,6 +21,7 @@ interface ClienteApi {
   telegramLinkedAt: string | null;
   telegramReportesActivos?: boolean;
   tipoVenta?: TipoVentaCliente | null;
+  imagenUrl?: string | null;
 }
 
 function mapApi(api: ClienteApi): Cliente {
@@ -36,6 +37,8 @@ export interface ClienteInput {
   direccion?: string | null;
   notas?: string | null;
   fotos?: string[];
+  /** URL de la imagen subida con subirFotoCliente; null quita la imagen; omitido la deja como está. */
+  imagenUrl?: string | null;
 }
 
 export async function obtenerClientes(): Promise<Cliente[]> {

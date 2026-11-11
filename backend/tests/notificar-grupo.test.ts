@@ -489,7 +489,7 @@ describe('transformaciones: el aviso nombra el material', () => {
   it('inicio: material, almacén (consultado por id) y kilos; el mensaje no lleva dinero', async () => {
     ejecutar({ method: 'POST', originalUrl: '/api/transformaciones/ferroso', user: ana, body: {} }, 201, { transformacion: { ...tr, estado: 'bruto', salidas: [] } });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(texto()).toContain('Se inició una transformación ferrosa');
+    expect(texto()).toContain('Se inició una transformación de productos');
     expect(texto()).toContain('Transformación TR-0003');
     expect(texto()).toContain('Material de entrada: Chatarra mixta');
     expect(texto()).toContain('Almacén: Patio 1');
@@ -502,7 +502,7 @@ describe('transformaciones: el aviso nombra el material', () => {
     });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const t = texto();
-    expect(t).toContain('Tipo: PCB');
+    expect(t).toContain('Tipo: Transformaciones de lote');
     expect(t).toContain('Lote de origen: Lote Tarjetas');
     expect(t).toContain('• Hierro (almacén Patio 1): 480 kg');
     expect(t).toContain('Merma: 20 kg');

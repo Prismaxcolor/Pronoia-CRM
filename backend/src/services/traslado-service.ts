@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import { llamarRpcCrear } from './idempotencia-service.js';
+import { idsProductosOcultos } from './producto-oculto.js';
 import type { CrearTrasladoInput, CompletarTrasladoInput } from '../schemas/traslados.js';
 
 /** Formatea el correlativo de traslado: 1 → "Traslado-0001". Duplicado
@@ -17,6 +18,8 @@ interface DetalleRow {
   tara: number | null;
   peso_neto: number | null;
   peso_recibido: number | null;
+  peso_bruto_recibido?: number | null;
+  tara_recibida?: number | null;
   lote_id: string | null;
   fotos: string[] | null;
   productos?: { nombre: string } | null;
@@ -50,6 +53,9 @@ export interface TrasladoMaterialPublico {
   tara: number;
   pesoNeto: number;
   pesoRecibido: number | null;
+  /** Bruto y tara de la recepción; null en recepciones previas a las taras o pendientes. */
+  pesoBrutoRecibido: number | null;
+  taraRecibida: number | null;
   /** Presente cuando esta línea es un lote (PCB) trasladado completo, no material suelto. */
   loteId: string | null;
   nombreLote: string | null;
@@ -89,6 +95,8 @@ function detalleToPublico(d: DetalleRow): TrasladoMaterialPublico {
     tara: Number(d.tara ?? 0),
     pesoNeto: Number(d.peso_neto ?? 0),
     pesoRecibido: d.peso_recibido === null ? null : Number(d.peso_recibido),
+    pesoBrutoRecibido: d.peso_bruto_recibido == null ? null : Number(d.peso_bruto_recibido),
+    taraRecibida: d.tara_recibida == null ? null : Number(d.tara_recibida),
     loteId: d.lote_id,
     nombreLote: d.lotes?.nombre ?? null,
     fotos: d.fotos ?? [],
@@ -154,6 +162,10 @@ export async function crearTraslado(
   input: CrearTrasladoInput,
   pesadoPor: string
 ): Promise<{ traslado: TrasladoPublico } | { error: string }> {
+  // Un producto oculto no se puede mover aunque alguien conozca su id (el selector ya no lo ofrece).
+  const ocultos = new Set(await idsProductosOcultos());
+  if (input.materiales.some(m => ocultos.has(m.productoId))) return { error: 'Producto no encontrado.' };
+
   const { data: trasladoId, error } = await llamarRpcCrear('crear_traslado', 'tickets_traslado', {
     p_almacen_origen_id: input.almacenOrigenId,
     p_almacen_destino_id: input.almacenDestinoId,
@@ -192,6 +204,8 @@ export async function completarTraslado(
     p_recepciones: input.recepciones.map(r => ({
       detalle_id: r.detalleId,
       peso_recibido: r.pesoRecibido,
+      // Solo si la recepción trae bruto y tara (clientes anteriores mandan solo el neto).
+      ...(r.pesoBrutoRecibido !== undefined ? { peso_bruto_recibido: r.pesoBrutoRecibido, tara_recibida: r.taraRecibida ?? 0 } : {}),
     })),
     p_fotos: input.fotos,
     p_completado_por: completadoPor,

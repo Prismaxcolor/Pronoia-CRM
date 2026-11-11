@@ -4,6 +4,7 @@ import { Send } from 'lucide-react';
 import { Insignia, TablaDatos, formatearFecha, formatearNumero, formatearUsdDecimales, type ColumnaTabla, type EstadoVacioProps } from '../../components/ui';
 import { TEXTO_TERCERO, type FilaTercero, type TipoTercero } from '../../lib/terceros-kpis';
 import TarjetaTercero, { BotonesGestion, InsigniaTelegram, type AccionesTercero, type FilaTerceroConExtra } from './TarjetaTercero';
+import AvatarTercero from './AvatarTercero';
 
 interface Props {
   tipo: TipoTercero;
@@ -25,7 +26,12 @@ function TercerosTabla({ tipo, filas, acciones, hayCifras, vacio }: Props) {
     const base: Array<ColumnaTabla<FilaTerceroConExtra>> = [
       {
         clave: 'nombre', titulo: 'Nombre', valorOrden: f => f.nombre,
-        celda: f => <Link to={`/${t.ruta}/${f.id}/estado-cuenta`} className="font-medium text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">{f.nombre}</Link>,
+        celda: f => (
+          <Link to={`/${t.ruta}/${f.id}/estado-cuenta`} className="inline-flex items-center gap-2 font-medium text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+            {f.imagenUrl && <AvatarTercero nombre={f.nombre} imagenUrl={f.imagenUrl} className="h-6 w-6 text-xs" />}
+            {f.nombre}
+          </Link>
+        ),
       },
       { clave: 'identificacion', titulo: 'Identificación', valorOrden: f => f.identificacion },
       { clave: 'telefono', titulo: 'Teléfono', valorOrden: f => f.telefono },

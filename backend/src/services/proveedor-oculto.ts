@@ -16,8 +16,9 @@ import { logger } from '../utils/logger.js';
 
 interface ContextoVisibilidad {
   ocultar: boolean;
-  /** Ids ocultos leídos una sola vez por petición. */
+  /** Ids ocultos leídos una sola vez por petición, por tabla (proveedores, productos). */
   ids?: Promise<string[]>;
+  idsProductos?: Promise<string[]>;
 }
 
 const almacen = new AsyncLocalStorage<ContextoVisibilidad>();
@@ -34,34 +35,53 @@ export function contextoVisibilidadStaff(req: Request, _res: Response, next: Nex
 
 const CODIGO_COLUMNA_INEXISTENTE = '42703';
 
-/** Lee los ids ocultos sin mirar el contexto de la petición (para procesos internos, p. ej. los avisos del grupo). */
-export async function leerIdsOcultos(): Promise<string[]> {
-  const { data, error } = await supabaseAdmin.from('proveedores').select('id, oculto').eq('oculto', true);
+/** Tablas con columna `oculto` que comparten este contexto de visibilidad. */
+export type TablaOculta = 'proveedores' | 'productos';
+
+const MIGRACION_POR_TABLA: Record<TablaOculta, string> = {
+  proveedores: 'migration_proveedores_oculto.sql',
+  productos: 'migration_productos_oculto.sql',
+};
+
+/** Lee los ids ocultos de una tabla sin mirar el contexto de la petición (para procesos internos, p. ej. los avisos del grupo). */
+export async function leerIdsOcultosDeTabla(tabla: TablaOculta): Promise<string[]> {
+  const { data, error } = await supabaseAdmin.from(tabla).select('id, oculto').eq('oculto', true);
   if (error) {
     // Migración sin aplicar: todavía no existe la columna, así que no hay nada oculto.
     if (error.code === CODIGO_COLUMNA_INEXISTENTE) {
-      logger.warn({ evento: 'proveedores_oculto_columna_inexistente', mensaje: 'Falta aplicar migration_proveedores_oculto.sql: ningún proveedor queda oculto.' });
+      logger.warn({ evento: `${tabla}_oculto_columna_inexistente`, mensaje: `Falta aplicar ${MIGRACION_POR_TABLA[tabla]}: nada queda oculto en ${tabla}.` });
       return [];
     }
-    logger.error({ evento: 'proveedores_ocultos_lectura_fallida', error: error.message });
-    throw new Error('No se pudo verificar la visibilidad de los proveedores.');
+    logger.error({ evento: `${tabla}_ocultos_lectura_fallida`, error: error.message });
+    throw new Error(`No se pudo verificar la visibilidad de ${tabla}.`);
   }
   // Se vuelve a comprobar la marca: solo cuenta lo que la fila dice expresamente (oculto === true).
   return (Array.isArray(data) ? (data as Array<{ id: string; oculto?: boolean }>) : []).filter(p => p.oculto === true).map(p => p.id);
 }
 
-/** Ids de proveedores que ESTA petición no debe ver ([] para superadmin y procesos internos). */
-export async function idsProveedoresOcultos(): Promise<string[]> {
+export const leerIdsOcultos = (): Promise<string[]> => leerIdsOcultosDeTabla('proveedores');
+
+/** true si ESTA petición debe ocultar lo oculto (todo rol distinto de superadmin y el portal). Sin contexto: false. */
+export function peticionOcultaOcultos(): boolean {
+  return almacen.getStore()?.ocultar === true;
+}
+
+/** Ids ocultos de una tabla para ESTA petición ([] para superadmin y procesos internos), leídos una vez por petición y tabla. */
+export async function idsOcultosDePeticion(tabla: TablaOculta): Promise<string[]> {
   const ctx = almacen.getStore();
   if (!ctx?.ocultar) return [];
-  ctx.ids ??= leerIdsOcultos();
+  const clave = tabla === 'proveedores' ? 'ids' : 'idsProductos';
+  ctx[clave] ??= leerIdsOcultosDeTabla(tabla);
   try {
-    return await ctx.ids;
+    return await ctx[clave];
   } catch (e) {
-    ctx.ids = undefined; // el próximo intento vuelve a consultar
+    ctx[clave] = undefined; // el próximo intento vuelve a consultar
     throw e;
   }
 }
+
+/** Ids de proveedores que ESTA petición no debe ver ([] para superadmin y procesos internos). */
+export const idsProveedoresOcultos = (): Promise<string[]> => idsOcultosDePeticion('proveedores');
 
 /** false si el proveedor está oculto para quien hace la petición. */
 export async function proveedorVisible(id: string | null | undefined): Promise<boolean> {

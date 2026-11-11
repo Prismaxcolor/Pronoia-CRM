@@ -159,7 +159,7 @@ function TrasladosPanel() {
             ayuda="Kg recibidos menos kg enviados, sumando los traslados completados del periodo. Cero es lo ideal. Negativo: llegó menos de lo que salió; positivo: llegó más. Pide revisar las básculas o el traslado, pero no es una pérdida confirmada."
             estado={kpis.completados === 0 ? 'vacio' : 'listo'}
             mensajeVacio="Aparece al recepcionar el primer traslado"
-            valor={`${kpis.diferenciaKg > 0 ? '+' : ''}${formatearKgDecimales(kpis.diferenciaKg, 2)}`}
+            valor={`${kpis.diferenciaKg > 0 ? '+' : ''}${formatearKgDecimales(kpis.diferenciaKg, 3)}`}
             subtitulo={kpis.conDiferencia > 0 ? `${formatearNumero(kpis.conDiferencia, 0)} traslado${kpis.conDiferencia === 1 ? '' : 's'} con diferencia` : 'todos coinciden'}
             comparacion={null}
           />
@@ -201,7 +201,7 @@ function TrasladosPanel() {
                     </Insignia>
                   </div>
                   <p className="mt-2 text-sm text-text-primary">
-                    <span className="font-medium tabular-nums">{formatearKgDecimales(t.pesoNetoEnviado, 2)}</span>
+                    <span className="font-medium tabular-nums">{formatearKgDecimales(t.pesoNetoEnviado, 3)}</span>
                     <span className="text-text-secondary"> · {resumenMaterialesTraslado(t)}</span>
                   </p>
                   <div className="mt-3 flex justify-end border-t border-border pt-2">

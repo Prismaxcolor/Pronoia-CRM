@@ -72,6 +72,24 @@ describe('obtenerReporteCuenta', () => {
     expect(f).toContain('movimientos.lte|fecha|2026-10-31');
   });
 
+  it('con categoriaIds filtra las filas y totales, pero el saldo inicial sigue sin filtrar por categoría', async () => {
+    bd.categorias = [filaCat('c1', { nombre: 'Servicios' }), filaCat('c2', { nombre: 'Luz', padre_id: 'c1' }), filaCat('c3', { nombre: 'Nómina' })];
+    bd.previos = [filaMov('p1', { tipo: 'ingreso', monto: 500, fecha: '2026-09-20', categoria_id: 'c3' })];
+    bd.movimientos = [filaMov('m1', { monto: 30, categoria_id: 'c2' }), filaMov('m2', { monto: 40, categoria_id: 'c3', numero_sistema: 2 })];
+    const r = await obtenerReporteCuenta({ ...filtro, categoriaIds: ['c1'], sinCategoria: false }, null);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.reporte.filas.map(f => f.id)).toEqual(['m1']);
+    expect(r.reporte.totales).toEqual({ entradas: 0, salidas: 30, neto: -30 });
+    expect(r.reporte.saldoInicial).toBe(500);
+    expect(r.reporte.saldoFinal).toBe(430);
+    expect(r.reporte.filtroCategorias).toEqual({ nombres: ['Servicios'], sinCategoria: false });
+  });
+
+  it('con categoriaIds que no existen responde 400', async () => {
+    bd.categorias = [filaCat('c1')];
+    expect(await obtenerReporteCuenta({ ...filtro, categoriaIds: ['zzz'], sinCategoria: false }, null)).toMatchObject({ codigo: 400 });
+  });
+
   it('el saldo inicial suma los movimientos anteriores al rango y el saldo corrido parte de él', async () => {
     bd.previos = [filaMov('p1', { tipo: 'ingreso', monto: 500, fecha: '2026-09-20' }), filaMov('p2', { monto: 120, fecha: '2026-09-25' })];
     bd.movimientos = [filaMov('m1', { tipo: 'ingreso', monto: 100 }), filaMov('m2', { monto: 30, numero_sistema: 2 })];

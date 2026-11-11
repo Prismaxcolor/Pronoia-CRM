@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearTomaFisicaInput, RegistrarPesajeTomaFisicaInput } from '../schemas/toma-fisica.js';
+import { idsProductosOcultos, sinProductosOcultos } from './producto-oculto.js';
 import { categoriaIdsConProductosAnclados } from './tipo-material-service.js';
 import { lotesElegiblesDeCategorias } from './toma-fisica-opciones-service.js';
 import {
@@ -186,11 +187,11 @@ async function validarProductos(
 ): Promise<{ error: string } | { productoIds: string[] | null }> {
   if (input.productoIds === undefined) return { productoIds: null };
   if (alcance !== 'categoria') return { error: 'Elegir materiales solo aplica al alcance "Por categoría".' };
-  const { data } = await supabaseAdmin
-    .from('productos')
-    .select('id, tipo_material_id')
-    .eq('activo', true)
-    .in('tipo_material_id', input.categoriaIds);
+  const { data } = await sinProductosOcultos(
+    supabaseAdmin.from('productos').select('id, tipo_material_id').eq('activo', true).in('tipo_material_id', input.categoriaIds),
+    await idsProductosOcultos(),
+    'id'
+  );
   const activos = (data ?? []).map(p => ({ id: p.id as string, categoriaId: p.tipo_material_id as string | null }));
   return resolverProductosToma(input.productoIds, activos, input.categoriaIds);
 }

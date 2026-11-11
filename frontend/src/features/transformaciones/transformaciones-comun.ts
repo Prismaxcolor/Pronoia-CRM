@@ -27,8 +27,8 @@ export const ESQUEMA_FILTROS_TRANSFORMACIONES: EsquemaFiltros = {
 };
 
 export const ETIQUETA_CATEGORIA: Record<string, string> = {
-  ferroso_no_ferroso: 'Ferroso / No ferroso',
-  pcb: 'PCB',
+  ferroso_no_ferroso: 'Transformaciones de productos',
+  pcb: 'Transformaciones de lote',
 };
 
 export const etiquetaCategoria = (c: string): string => ETIQUETA_CATEGORIA[c] ?? c;

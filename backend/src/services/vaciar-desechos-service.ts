@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
 import { esProductoDesechos, leerVaciados, sumarKg, type VaciadoAlmacen } from '../utils/desechos.js';
 import { invalidarCacheResumen } from './resumen-cache.js';
+import { productoVisible } from './producto-oculto.js';
 import { logger } from '../utils/logger.js';
 
 export type ResultadoVaciado =
@@ -20,7 +21,7 @@ export async function vaciarDesechos(productoId: string, usuarioId: string): Pro
     .eq('id', productoId)
     .maybeSingle();
   if (errorProducto) return { ok: false, status: 500, error: 'No se pudo leer el producto.' };
-  if (!producto) return { ok: false, status: 404, error: 'Producto no encontrado.' };
+  if (!producto || !(await productoVisible(productoId))) return { ok: false, status: 404, error: 'Producto no encontrado.' };
   if (!esProductoDesechos(producto.nombre as string)) {
     return { ok: false, status: 400, error: 'Solo el producto DESECHOS se puede vaciar.' };
   }

@@ -300,7 +300,7 @@ describe('transformaciones: el aviso dice EXACTAMENTE qué material se transform
   it('inicio ferroso/no ferroso: tipo, material, almacén y kilos de entrada (sin salidas aún)', () => {
     const t = { ...ferroso, estado: 'bruto', salidas: [] };
     const out = texto('transformacion.ferroso_creada', ctx('POST', '/api/transformaciones/ferroso', t, { almacenEntrada: 'Patio 1' }));
-    expect(out).toContain('Tipo: Ferroso / No ferroso');
+    expect(out).toContain('Tipo: Transformaciones de productos');
     expect(out).toContain('Material de entrada: Chatarra mixta');
     expect(out).toContain('Almacén: Patio 1');
     expect(out).toContain('Kilos de entrada: 1.000 kg');
@@ -322,7 +322,7 @@ describe('transformaciones: el aviso dice EXACTAMENTE qué material se transform
       categoria: 'pcb', estado: 'bruto', nombreProductoEntrada: null, nombreLoteOrigen: 'Lote Tarjetas 12', pesoNeto: 80, salidas: [],
     };
     const ini = texto('transformacion.pcb_creada', ctx('POST', '/api/transformaciones/pcb', pcb));
-    expect(ini).toContain('Tipo: PCB');
+    expect(ini).toContain('Tipo: Transformaciones de lote');
     expect(ini).toContain('Lote de origen: Lote Tarjetas 12');
     expect(ini).toContain('Kilos de entrada: 80 kg');
     const fin = texto('transformacion.pcb_completada', ctx('PATCH', '/api/transformaciones/t1/completar-pcb', {

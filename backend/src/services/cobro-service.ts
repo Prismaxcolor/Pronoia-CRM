@@ -5,6 +5,7 @@ import { opcionesCategoriaCobro } from './pago-categoria-service.js';
 import { registrarConPasos } from './pago-registro-comun.js';
 import { advertenciaDePasos } from './pagos-pasos-service.js';
 import { validarMontosDeLineas } from './montos-pago-service.js';
+import { comprobantesPorBanca, todosLosComprobantes } from '../utils/comprobantes-banca.js';
 
 /** Espejo de pago-service.ts (registrarPagoMultiple) para cobros a cliente —
  *  ver nota en nota-ajuste-cliente-service.ts sobre por qué es un archivo
@@ -51,7 +52,11 @@ export async function registrarCobroMultiple(
     original: 'registrar_cobro_cliente_multi_banca',
     args: {
       p_cliente_id: input.clienteId,
-      p_bancas: input.bancas.map(b => ({ bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, referencia: b.referencia ?? null })),
+      // `comprobantes` viaja dentro de cada banca: el envoltorio SQL los reparte por movimiento (la RPC de dinero lo ignora).
+      p_bancas: input.bancas.map(b => ({
+        bancaId: b.bancaId, monto: b.monto, montoUsd: b.montoUsd, moneda: b.moneda, referencia: b.referencia ?? null,
+        comprobantes: b.comprobantes ?? [],
+      })),
       p_monto_usd: input.montoUsd,
       p_descripcion: input.descripcion,
       p_referencia: input.referencia,
@@ -61,7 +66,8 @@ export async function registrarCobroMultiple(
     },
     extraEnvoltorio: {},
     clientRequestId: input.clientRequestId,
-    categoriaId: categoria.categoriaId, comprobantes: input.comprobantes, lineas: [], usuarioId: registradoPor,
+    categoriaId: categoria.categoriaId, comprobantes: input.comprobantes, comprobantesPorBanca: comprobantesPorBanca(input.bancas),
+    lineas: [], usuarioId: registradoPor,
     mensajeError: 'No se pudo registrar el cobro.',
     normalizar: async data => {
       const creado = data as Omit<ResultadoCobroMulti, 'categoriaId' | 'advertencia'>;
@@ -81,7 +87,7 @@ export async function registrarCobroMultiple(
   };
   // Telegram (fire-and-forget): comprobante del cobro/anticipo o del cruce puro (sin dinero).
   notificarPago('cliente', input.clienteId, resultado.grupoId, {
-    comprobantes: resultado.movimientoPrincipalId ? input.comprobantes : [],
+    comprobantes: resultado.movimientoPrincipalId ? todosLosComprobantes(input.comprobantes, input.bancas) : [],
     esCruce: resultado.movimientoPrincipalId === null,
   });
 

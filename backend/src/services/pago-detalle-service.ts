@@ -57,6 +57,8 @@ export interface BancaPagoDetalle {
   referencia: string | null;
   /** Comisión bancaria (Bs) cargada a esta cuenta por el pago; null si no lleva (o la migración no está aplicada). */
   comisionBancaria: number | null;
+  /** Comprobantes guardados en el movimiento de esta cuenta (vacío si no tiene o la cuenta es restringida). */
+  comprobantes: string[];
 }
 
 export interface ItemPagoDetalle {
@@ -202,7 +204,7 @@ export async function obtenerPagoDetalle(
 
   const filaPago = propias.find(f => f.subtipo === 'pago' || f.subtipo === 'cobro') ?? null;
   const filaAdelanto = propias.find(f => f.subtipo === 'adelanto' || f.subtipo === 'anticipo') ?? null;
-  const filaComprobante = propias.find(f => visible(f) && f.comprobantes && f.comprobantes.length > 0) ?? null;
+  const comprobantes = unirComprobantes(propias.filter(visible));
   const filaDescripcion = propias.find(f => f.descripcion) ?? propias[0];
 
   const { items, facturas } = await cargarItems(tipoEntidad, entidadId, grupoId);
@@ -218,7 +220,7 @@ export async function obtenerPagoDetalle(
     nombreEntidad,
     fecha: propias[0].fecha.slice(0, 10),
     descripcion: filaDescripcion.descripcion,
-    comprobantes: filaComprobante?.comprobantes ?? [],
+    comprobantes,
     registradoPor: nombreRegistradoPor,
     registradoEn: propias.map(f => f.creado_en).filter((x): x is string => !!x).sort()[0] ?? null,
     bancas: propias.map(f => aBancaPagoDetalle(f, visible(f), nombrePorBancaId, comisiones.get(f.id) ?? null)),
@@ -247,8 +249,14 @@ async function comisionesDeMovimientos(ids: readonly string[]): Promise<Map<stri
   return porMovimiento;
 }
 
+/** Comprobantes de la operación: los de todos sus movimientos (cada banca puede tener los suyos), sin repetidos. */
+export function unirComprobantes(filas: ReadonlyArray<{ comprobantes: string[] | null }>): string[] {
+  return [...new Set(filas.flatMap(f => f.comprobantes ?? []))];
+}
+
 function aBancaPagoDetalle(f: MovimientoRow, visible: boolean, nombrePorBancaId: ReadonlyMap<string, string>, comision: number | null): BancaPagoDetalle {
   return {
+    comprobantes: visible ? (f.comprobantes ?? []) : [],
     bancaId: visible ? f.banca_origen_id : null,
     bancaNombre: !visible ? TEXTO_CUENTA_RESTRINGIDA : f.banca_origen_id ? (nombrePorBancaId.get(f.banca_origen_id) ?? null) : null,
     monto: Number(f.monto),

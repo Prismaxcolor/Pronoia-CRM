@@ -1,4 +1,5 @@
 import type { FacturaCV } from '../../services/factura-cv-service';
+import { esFacturaEnCero } from '../../lib/estado-factura';
 import { fmt } from './pago-cobro-formato';
 
 interface Props {
@@ -18,17 +19,20 @@ function ListaFacturasPago({ facturas, montos, esProveedor, onToggle, onMonto }:
         {facturas.map(f => {
           const marcada = f.id in montos;
           const saldoFactura = f.total - f.montoPagado;
+          const enCero = esFacturaEnCero(f);
           return (
             <div key={f.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-alt transition-colors">
               <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
                 <input type="checkbox" checked={marcada} onChange={() => onToggle(f)} className="w-4 h-4 accent-brand-600 shrink-0" />
                 <span className="text-sm text-text-primary truncate">{f.codigo ?? f.id.slice(0, 8)}</span>
+                {enCero && <span className="text-[10px] font-medium text-text-muted border border-border rounded px-1 shrink-0">Total $0</span>}
               </label>
               {marcada ? (
                 <div className="relative shrink-0">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-xs">$</span>
                   <input
-                    type="number" step="0.01" min="0.01" max={saldoFactura.toFixed(2)}
+                    type="number" step="0.01" min={enCero ? '0' : '0.01'} max={Math.max(saldoFactura, 0).toFixed(2)}
+                    readOnly={enCero}
                     value={montos[f.id]}
                     onChange={e => onMonto(f.id, e.target.value)}
                     className="w-24 pl-5 pr-2 py-1 text-right text-xs bg-surface border border-border rounded focus:outline-none focus:ring-2 focus:ring-brand-400"
@@ -41,6 +45,11 @@ function ListaFacturasPago({ facturas, montos, esProveedor, onToggle, onMonto }:
           );
         })}
       </div>
+      {facturas.some(f => esFacturaEnCero(f) && f.id in montos) && (
+        <p className="text-xs text-text-muted mt-1">
+          Una factura de total $0 se cierra como pagada sin mover dinero: no necesita banca y queda registrada como cruce.
+        </p>
+      )}
       <p className="text-xs text-text-muted mt-1">
         Al marcar una factura se aplica su saldo completo por defecto — el monto es editable para un {esProveedor ? 'pago' : 'cobro'} parcial.
       </p>

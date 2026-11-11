@@ -51,8 +51,16 @@ export const cambiarCategoriaMovimiento = (movimientoId: string, categoriaId: st
     'No se pudo cambiar la categoría del movimiento.',
   );
 
-export const obtenerReporteCuenta = (bancaId: string, desde: string, hasta: string) => {
+export interface FiltroCategoriasCuenta {
+  /** Vacío = sin filtro por categorías. Una categoría padre incluye sus subcategorías. */
+  categoriaIds: readonly string[];
+  incluirSinCategoria: boolean;
+}
+
+export const obtenerReporteCuenta = (bancaId: string, desde: string, hasta: string, filtro?: FiltroCategoriasCuenta) => {
   const q = new URLSearchParams({ bancaId, desde, hasta });
+  if (filtro && filtro.categoriaIds.length > 0) q.set('categoriaIds', filtro.categoriaIds.join(','));
+  if (filtro?.incluirSinCategoria) q.set('sinCategoria', 'true');
   return ejecutar(() => apiFetch<ReporteCuenta>(`/api/cochinito/reportes/cuenta?${q.toString()}`), 'No se pudo generar el reporte de la cuenta.');
 };
 

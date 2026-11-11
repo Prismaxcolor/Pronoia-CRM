@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import { registrarAsiento } from '../../services/mesa-cambio-service';
 import { useToast } from '../../hooks/use-toast-context';
 import { hoyNegocio } from '../../lib/fecha-negocio';
-import { ETIQUETA_TIPO_ASIENTO, TIPOS_ASIENTO, formatearNumeroDocumento, type TipoAsiento } from '@shared/types/mesa-cambio';
+import { ETIQUETA_TIPO_ASIENTO, TIPOS_ASIENTO, formatearNumeroDocumento, type TipoAsientoManual } from '@shared/types/mesa-cambio';
 
 interface Props {
   cambistaId: string;
@@ -27,7 +27,7 @@ function leerNumero(texto: string): number | null {
 function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Props) {
   const toast = useToast();
   // Sin valor por defecto: el tipo hay que elegirlo a propósito.
-  const [tipo, setTipo] = useState<TipoAsiento | ''>('');
+  const [tipo, setTipo] = useState<TipoAsientoManual | ''>('');
   const [monto, setMonto] = useState('');
   const [tasa, setTasa] = useState('');
   const [fecha, setFecha] = useState(hoyNegocio());
@@ -70,7 +70,7 @@ function AsientoModal({ cambistaId, cambistaNombre, onClose, onRegistrado }: Pro
         </p>
         <div>
           <label htmlFor="asiento-tipo" className={labelClass}>Tipo de asiento *</label>
-          <select id="asiento-tipo" required value={tipo} onChange={e => setTipo(e.target.value as TipoAsiento | '')} className={inputClass}>
+          <select id="asiento-tipo" required value={tipo} onChange={e => setTipo(e.target.value as TipoAsientoManual | '')} className={inputClass}>
             <option value="">— Selecciona —</option>
             {TIPOS_ASIENTO.map(t => <option key={t} value={t}>{ETIQUETA_TIPO_ASIENTO[t]}</option>)}
           </select>

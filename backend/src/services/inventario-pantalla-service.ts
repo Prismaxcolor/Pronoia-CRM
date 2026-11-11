@@ -7,6 +7,7 @@ import type {
   VistaInventario,
 } from '../../../shared/types/inventario-pantalla.js';
 import { crearCacheCorto } from '../utils/cache-corto.js';
+import { claveVisibilidadProductos } from './producto-oculto.js';
 import { construirAlertas } from '../utils/alertas-inventario.js';
 import {
   armarDetalle,
@@ -174,7 +175,7 @@ async function prepararContexto(opts: OpcionesPantalla): Promise<Contexto> {
   if (!rango) throw new Error('Rango de fechas inválido: usa desde y hasta (YYYY-MM-DD) con desde <= hasta.');
   // Con fecha solo hay kilos: los costos y precios son de hoy y no valen para un saldo pasado.
   const incluirValor = opts.incluirValor === true && !corte;
-  const base = await cacheBase.obtener(`valor:${incluirValor ? 1 : 0}|al:${corte ?? ''}`, () =>
+  const base = await cacheBase.obtener(`valor:${incluirValor ? 1 : 0}|al:${corte ?? ''}|${claveVisibilidadProductos()}`, () =>
     calcularBase(incluirValor, opts.presupuestoMs ?? PRESUPUESTO_PANTALLA_MS, corte)
   );
   const avisos = corte && opts.incluirValor === true ? [...base.avisos, AVISO_SOLO_KILOS] : [...base.avisos];
@@ -186,7 +187,7 @@ async function prepararContexto(opts: OpcionesPantalla): Promise<Contexto> {
 
 /** Base compartida (caché corta) con o sin costos; la usa también el servicio de costos. */
 export async function obtenerBasePantalla(incluirValor: boolean, presupuestoMs = PRESUPUESTO_PANTALLA_MS): Promise<BasePantalla> {
-  return cacheBase.obtener(`valor:${incluirValor ? 1 : 0}`, () => calcularBase(incluirValor, presupuestoMs));
+  return cacheBase.obtener(`valor:${incluirValor ? 1 : 0}|${claveVisibilidadProductos()}`, () => calcularBase(incluirValor, presupuestoMs));
 }
 
 const meta = (c: Contexto): MetaPantalla => ({

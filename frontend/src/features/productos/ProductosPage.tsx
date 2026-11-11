@@ -3,6 +3,7 @@ import { Plus, Tags } from 'lucide-react';
 import {
   obtenerProductos,
   desactivarProducto,
+  ocultarProducto,
   reactivarProducto,
   borrarProducto,
   reordenarProductos,
@@ -63,7 +64,8 @@ function ProductosPage() {
   const [formAbierto, setFormAbierto] = useState<{ abierto: true; producto: Producto | null } | { abierto: false }>({ abierto: false });
   const [categoriasAbierto, setCategoriasAbierto] = useState(false);
   const { filtros: valores, cambiar } = useFiltrosUrl(ESQUEMA);
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
+  const esSuperadmin = usuario?.rol === 'superadmin';
   const toast = useToast();
   const confirmar = useConfirm();
 
@@ -149,6 +151,26 @@ function ProductosPage() {
     cargar();
   };
 
+  const handleOcultar = async (p: Producto) => {
+    const ocultar = !p.oculto;
+    const ok = await confirmar({
+      titulo: ocultar ? `Ocultar "${p.nombre}"` : `Mostrar "${p.nombre}"`,
+      mensaje: ocultar
+        ? 'Dejará de verse para todos los usuarios que no son superadmin: en el catálogo, el inventario, los selectores y las listas de precios. Las facturas y movimientos existentes no se modifican. Tú lo seguirás viendo. Puedes volver a mostrarlo cuando quieras.'
+        : 'Volverá a verse para todos los usuarios.',
+      confirmarLabel: ocultar ? 'Ocultar' : 'Mostrar',
+      variante: 'warning',
+    });
+    if (!ok) return;
+    const result = await ocultarProducto(p.id, ocultar);
+    if ('error' in result) {
+      toast.errorMsg(result.error);
+      return;
+    }
+    toast.exito(ocultar ? `"${p.nombre}" ahora está oculto.` : `"${p.nombre}" vuelve a verse para todos.`);
+    cargar();
+  };
+
   // Mueve contra el arreglo completo (no el filtrado) — así el orden real
   // no se corrompe si hay una búsqueda o filtro activo mientras se reordena.
   const mover = (id: string, direccion: 'arriba' | 'abajo') => {
@@ -176,6 +198,7 @@ function ProductosPage() {
     onDesactivar: handleDesactivar,
     onReactivar: handleReactivar,
     onBorrar: handleBorrar,
+    onOcultar: esSuperadmin ? handleOcultar : undefined,
   };
 
   const encabezado = (

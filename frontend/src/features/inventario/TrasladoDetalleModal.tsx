@@ -12,7 +12,14 @@ interface Props {
   onClose: () => void;
 }
 
-const fmtKg = (n: number) => formatearKgDecimales(n, 2);
+const fmtKg = (n: number) => formatearKgDecimales(n, 3);
+
+/** "bruto − tara" de la recepción, solo si cuadra con el neto guardado (una edición posterior del recibido lo invalida). */
+function desgloseRecibido(m: Traslado['materiales'][number]): string | null {
+  if (m.pesoRecibido == null || m.pesoBrutoRecibido == null || m.taraRecibida == null) return null;
+  if (Math.abs(m.pesoBrutoRecibido - m.taraRecibida - m.pesoRecibido) > 0.0005) return null;
+  return `bruto ${fmtKg(m.pesoBrutoRecibido)} − tara ${fmtKg(m.taraRecibida)}`;
+}
 
 /** Detalle de solo lectura de un traslado: ruta, fechas, vehículo, cada material con lo enviado y lo recibido, y las fotos. */
 function TrasladoDetalleModal({ traslado: t, onClose }: Props) {
@@ -90,7 +97,9 @@ function TrasladoDetalleModal({ traslado: t, onClose }: Props) {
                         <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-text-secondary">{fmtKg(m.pesoBruto)}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-text-secondary">{fmtKg(m.tara)}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums text-text-primary">{fmtKg(m.pesoNeto)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-text-primary">{m.pesoRecibido != null ? fmtKg(m.pesoRecibido) : '—'}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-text-primary">{m.pesoRecibido != null ? fmtKg(m.pesoRecibido) : '—'}
+                          {desgloseRecibido(m) && <span className="block text-xs font-normal text-text-secondary">{desgloseRecibido(m)}</span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

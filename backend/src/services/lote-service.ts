@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearLoteInput, ActualizarLoteInput } from '../schemas/lotes.js';
 import type { ComposicionPCBItem, ClaseLote, EmbaladoLote } from '../../../shared/types/lote.js';
 import { registrarAuditoria } from './auditoria-service.js';
+import { nombresProductosOcultos } from './producto-oculto.js';
 import { ADVERTENCIA_AUDITORIA, cargarEmbalajesVigentes, nombresDeUsuarios } from './lote-embalaje-service.js';
 import { mensajeDeErrorBd } from '../utils/errores-bd.js';
 import { logger } from '../utils/logger.js';
@@ -113,13 +114,13 @@ interface ComposicionLoteRow {
  *  mano: si entraron 250kg de A y 250kg de B, el sistema ya sabe que es
  *  50%/50%, no hace falta que nadie lo configure. */
 async function composicionPorLote(ids: string[]): Promise<Map<string, ComposicionPCBItem[]>> {
+  const ocultos = await nombresProductosOcultos();
   const entradas = await Promise.all(
     ids.map(async id => {
       const { data } = await supabaseAdmin.rpc('composicion_lote', { p_lote_id: id });
-      const items: ComposicionPCBItem[] = ((data as ComposicionLoteRow[] | null) ?? []).map(r => ({
-        item: r.producto_nombre,
-        porcentaje: Number(r.porcentaje),
-      }));
+      const items: ComposicionPCBItem[] = ((data as ComposicionLoteRow[] | null) ?? [])
+        .filter(r => !ocultos.has(String(r.producto_nombre).trim().toLowerCase()))
+        .map(r => ({ item: r.producto_nombre, porcentaje: Number(r.porcentaje) }));
       return [id, items] as const;
     })
   );
@@ -161,10 +162,10 @@ async function composicionDeLoteEnAlmacen(loteId: string, almacenId: string): Pr
     p_lote_id: loteId,
     p_almacen_id: almacenId,
   });
-  return ((data as ComposicionLoteAlmacenRow[] | null) ?? []).map(r => ({
-    item: r.producto_nombre,
-    porcentaje: Number(r.porcentaje),
-  }));
+  const ocultos = await nombresProductosOcultos();
+  return ((data as ComposicionLoteAlmacenRow[] | null) ?? [])
+    .filter(r => !ocultos.has(String(r.producto_nombre).trim().toLowerCase()))
+    .map(r => ({ item: r.producto_nombre, porcentaje: Number(r.porcentaje) }));
 }
 
 /** stock_lote_por_almacen() por lote — desglose de en qué almacén(es) vive

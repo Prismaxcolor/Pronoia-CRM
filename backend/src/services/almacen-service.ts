@@ -1,4 +1,5 @@
 import { insertarMaestroIdempotente, type MetaOperacion } from './insertar-idempotente.js';
+import { idsProductosOcultos } from './producto-oculto.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearAlmacenInput, ActualizarAlmacenInput } from '../schemas/almacen.js';
 
@@ -178,8 +179,9 @@ export async function stockAlmacen(almacenId: string): Promise<Map<string, numbe
   const { data, error } = await supabaseAdmin.rpc('stock_almacen', { p_almacen_id: almacenId });
   const mapa = new Map<string, number>();
   if (error || !data) return mapa;
+  const ocultos = new Set(await idsProductosOcultos());
   for (const fila of data as Array<{ producto_id: string; stock: number }>) {
-    mapa.set(fila.producto_id, Number(fila.stock));
+    if (!ocultos.has(fila.producto_id)) mapa.set(fila.producto_id, Number(fila.stock));
   }
   return mapa;
 }
@@ -191,8 +193,9 @@ export async function stockGlobal(): Promise<Map<string, number>> {
   const { data, error } = await supabaseAdmin.rpc('stock_global');
   const mapa = new Map<string, number>();
   if (error || !data) return mapa;
+  const ocultos = new Set(await idsProductosOcultos());
   for (const fila of data as Array<{ producto_id: string; stock: number }>) {
-    mapa.set(fila.producto_id, Number(fila.stock));
+    if (!ocultos.has(fila.producto_id)) mapa.set(fila.producto_id, Number(fila.stock));
   }
   return mapa;
 }

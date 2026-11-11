@@ -43,6 +43,11 @@ export function derivarEstadoFactura(f: DatosEstadoFactura): EstadoFacturaDeriva
   return saldoFactura(f) === 0 ? 'pagada' : 'pendiente';
 }
 
+/** Factura cuyo total es 0 (con tolerancia de un centavo): no hay dinero que pagar, pero se puede "pagar" con monto 0 para cerrarla. */
+export function esFacturaEnCero(f: Pick<DatosEstadoFactura, 'total'>): boolean {
+  return aCentavos(f.total) <= TOLERANCIA_CENTAVOS;
+}
+
 /** Estados con deuda viva: la factura se puede pagar o cruzar. */
 export function tieneSaldoPendiente(estado: EstadoFacturaDerivado): boolean {
   return estado === 'emitida' || estado === 'pendiente';

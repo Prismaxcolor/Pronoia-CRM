@@ -14,6 +14,7 @@ import AnularConLlaveModal from '../../components/AnularConLlaveModal';
 import { anularPagoCobro } from '../../services/transaccion-edicion-service';
 import { useToast } from '../../hooks/use-toast-context';
 import EditarPagoModal from './EditarPagoModal';
+import { comprobantesPorBanca } from './detalle-comprobantes';
 import { LECTURAS } from '../../lib/offline/prefijos-lectura';
 import NavegacionDocumentos from '../../components/NavegacionDocumentos';
 import { useVecinosEstadoCuenta } from './useVecinosEstadoCuenta';
@@ -90,6 +91,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
 
   const actualizar = (detalle: PagoDetalle) => setResultado({ clave, pago: detalle });
   const esCruce = pago.codigoCruce != null;
+  const porBanca = comprobantesPorBanca(pago.bancas);
   const titulo = esCruce ? 'Comprobante de cruce' : esProveedor ? 'Comprobante de pago' : 'Comprobante de cobro';
   const tieneDesglose = pago.items.length > 0;
   const filasResumen = (pago.resumen ?? []).filter(f => f.clave !== 'pagado');
@@ -220,6 +222,15 @@ function PagoDetallePage({ tipoEntidad }: Props) {
                   Comisión bancaria (0.3%): <span className="font-medium text-text-primary">Bs {fmt(b.comisionBancaria)}</span>, cargada a esta misma cuenta
                 </p>
               )}
+              {porBanca && (b.comprobantes?.length ?? 0) > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {b.comprobantes?.map((url, idx) => (
+                    <a key={idx} href={url} target="_blank" rel="noreferrer">
+                      <img decoding="async" src={url} alt={`Comprobante ${idx + 1} de ${b.bancaNombre ?? 'la banca'}`} className="max-h-40 rounded-lg border border-border" />
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -231,7 +242,7 @@ function PagoDetallePage({ tipoEntidad }: Props) {
         </div>
       </div>
 
-      {pago.comprobantes.length > 0 && (
+      {pago.comprobantes.length > 0 && !porBanca && (
         <div className="mb-6">
           <p className="text-xs font-medium text-text-secondary mb-2">
             {pago.comprobantes.length === 1 ? 'Comprobante adjunto' : 'Comprobantes adjuntos'}

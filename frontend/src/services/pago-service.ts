@@ -40,7 +40,7 @@ export interface ItemPagoMultiple {
    *  de obtenerAdelantosDisponibles); resta como una nota de crédito. */
   tipo: 'factura' | 'nota_debito' | 'nota_credito' | 'adelanto';
   id: string;
-  /** Monto (USD) que se le aplica de este pago a este ítem. */
+  /** Monto (USD) que se le aplica de este pago a este ítem. Una factura de total 0 se cierra con 0 (sin movimiento de dinero). */
   montoUsd: number;
 }
 
@@ -52,6 +52,8 @@ export interface BancaPago {
   montoUsd: number;
   /** Referencia propia de esta banca (ej. número de transferencia). */
   referencia?: string | null;
+  /** URLs de los comprobantes propios de esta banca (ya subidos). Opcional: sin ellos vale el comprobante general. */
+  comprobantes?: string[];
 }
 
 export interface RegistrarPagoMultipleInput {

@@ -26,7 +26,7 @@ interface Props {
   onCreada: () => void;
 }
 
-/** Formulario: nueva transformación PCB. */
+/** Formulario: nueva transformación de lote. */
 function NuevaPCBForm({ lotes, almacenes, taras, catalogosListos, onCreada }: Props) {
   const toast = useToast();
 
@@ -89,8 +89,8 @@ function NuevaPCBForm({ lotes, almacenes, taras, catalogosListos, onCreada }: Pr
     );
     setGuardando(false);
     if ('error' in result) { setError(result.error); return; }
-    if (result.enCola) toast.info('Transformación PCB guardada en el teléfono. Se enviará al volver la conexión.');
-    else toast.exito('Transformación PCB iniciada. Complétala cuando tengas las salidas pesadas.');
+    if (result.enCola) toast.info('Transformación de lote guardada en el teléfono. Se enviará al volver la conexión.');
+    else toast.exito('Transformación de lote iniciada. Complétala cuando tengas las salidas pesadas.');
     borrador.limpiar();
     restablecer();
     onCreada();
@@ -98,7 +98,7 @@ function NuevaPCBForm({ lotes, almacenes, taras, catalogosListos, onCreada }: Pr
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
-      <AvisoBorrador className="mb-3" formulario="nueva transformación PCB" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
+      <AvisoBorrador className="mb-3" formulario="nueva transformación de lote" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
       <AvisoSaneoBorrador mensaje={avisoSaneo} />
       <div>
         <label className={LABEL_CLASS}>Lote de origen *</label>
@@ -130,7 +130,7 @@ function NuevaPCBForm({ lotes, almacenes, taras, catalogosListos, onCreada }: Pr
       {error && <p className="text-red-500 text-sm">{error}</p>}
       <button type="submit" disabled={guardando}
         className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
-        {guardando ? <><Loader2 size={15} className="animate-spin" /> Registrando...</> : 'Iniciar transformación PCB'}
+        {guardando ? <><Loader2 size={15} className="animate-spin" /> Registrando...</> : 'Iniciar transformación de lote'}
       </button>
       {mostrarSelectorLote && (
         <SeleccionarEntidadModal

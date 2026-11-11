@@ -44,11 +44,11 @@ export function BloqueMermaPorCategoria({ estado }: { estado: EstadoReporte }) {
     })), [reporte]);
 
   return (
-    <Bloque titulo="Merma por categoría" queEstasViendo="qué porcentaje del peso que entró se perdió en cada categoría de transformación (ferroso / no ferroso y PCB) en el periodo: kg de merma ÷ kg de entrada de las transformaciones completadas.">
+    <Bloque titulo="Merma por categoría" queEstasViendo="qué porcentaje del peso que entró se perdió en cada categoría de transformación (transformaciones de productos y de lote) en el periodo: kg de merma ÷ kg de entrada de las transformaciones completadas.">
       {cargando && !reporte ? <SkeletonGrafica alto="h-48" /> : error && !reporte ? <ErrorBloque mensaje={error} onReintentar={reintentar} /> : categorias.length < 2 ? (
         <EstadoVacio
           mensaje={categorias.length === 1 ? `Solo hay una categoría con datos en el periodo: ${categorias[0].etiqueta}, ${formatearPct(categorias[0].valor, 2)} de merma.` : 'Sin transformaciones completadas en el periodo.'}
-          descripcion="La comparación aparece cuando hay completadas en las dos categorías (ferroso / no ferroso y PCB)."
+          descripcion="La comparación aparece cuando hay completadas en las dos categorías (transformaciones de productos y de lote)."
         />
       ) : (
         <div className={`rounded-xl border border-border bg-surface p-4 ${cargando ? 'opacity-60 transition-opacity' : ''}`}>

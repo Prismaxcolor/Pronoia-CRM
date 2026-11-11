@@ -28,6 +28,14 @@ const categorias: ReporteCategorias = {
 };
 
 describe('Excel: reporte de cuenta', () => {
+  it('con filtro por categorías rotula el filtro y aclara que los saldos son los de la cuenta', async () => {
+    const hoja = hojaReporteCuenta({ ...cuentaBs, saldoInicial: 0, saldoFinal: 700, filtroCategorias: { nombres: ['Ventas › Mayor'], sinCategoria: false } });
+    const [h] = await leerXlsx(await generarXlsx([hoja]));
+    const textos = [1, 2, 3, 4, 5, 6].map(n => String(h.fila(n)[0] ?? ''));
+    expect(textos).toContain('Filtrado por categorías: Ventas › Mayor');
+    expect(textos.some(t => t.includes('los saldos son los reales de la cuenta'))).toBe(true);
+  });
+
   it('lleva cabecera, todas las filas con números y fechas reales, equivalente USD y totales de la vista', async () => {
     const [h] = await leerXlsx(await generarXlsx([hojaReporteCuenta(cuentaBs)]));
     expect(h.nombre).toBe('Movimientos');

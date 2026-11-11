@@ -18,6 +18,8 @@ export interface ItemCruce {
   tipo: TipoItemCruce;
   /** USD, positivo. */
   montoUsd: number;
+  /** Solo una factura cuyo total es 0 (ver `esFacturaEnCero`): admite monto 0 para cerrarla sin mover dinero. */
+  permiteCero?: boolean;
 }
 
 export interface ResultadoCruce {
@@ -57,6 +59,8 @@ export function calcularCruce(items: ItemCruce[]): ResultadoCruce {
   let montoInvalido = false;
 
   for (const item of items) {
+    const esCero = Number.isFinite(item.montoUsd) && aCentavos(item.montoUsd) === 0;
+    if (esCero && item.tipo === 'factura' && item.permiteCero) continue; // cierre de una factura en 0: no suma nada
     if (!Number.isFinite(item.montoUsd) || aCentavos(item.montoUsd) <= 0) {
       montoInvalido = true;
       continue;

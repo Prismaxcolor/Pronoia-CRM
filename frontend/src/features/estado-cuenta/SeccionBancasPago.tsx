@@ -12,6 +12,8 @@ export interface AccionesLineasBanca {
   setMonto: (id: number, montoUsd: string) => void;
   setReferencia: (id: number, referencia: string) => void;
   setCampos: (id: number, campos: Partial<LineaBanca>) => void;
+  agregarComprobantes: (id: number, files: File[]) => void;
+  quitarComprobante: (id: number, idx: number) => void;
 }
 
 interface Props {
@@ -31,7 +33,7 @@ interface Props {
   cuadra: boolean;
 }
 
-/** Bancas de origen (pago) o destino (cobro): una línea por cuenta, con su monto, referencia y tasa. */
+/** Bancas de origen (pago) o destino (cobro): una línea por cuenta, con su monto, referencia, comprobante (si son varias) y tasa. */
 function SeccionBancasPago(p: Props) {
   const usadas = new Set(p.lineas.map(l => l.bancaId).filter(Boolean));
   const hayCuentaEnBs = p.lineas.some(l => p.bancas.find(b => b.id === l.bancaId)?.moneda === 'VES');
@@ -55,6 +57,7 @@ function SeccionBancasPago(p: Props) {
             bancasElegibles={p.bancas.filter(b => b.id === linea.bancaId || !usadas.has(b.id))}
             esProveedor={p.esProveedor}
             puedeQuitar={p.lineas.length > 1}
+            conComprobante={p.lineas.length > 1}
             tasaBs={p.tasaDeLinea(linea)}
             tasasUsd={p.tasasUsd}
             comisionEstado={p.comisionEstado}
@@ -62,6 +65,8 @@ function SeccionBancasPago(p: Props) {
             onMonto={monto => p.acciones.setMonto(linea.id, monto)}
             onReferencia={ref => p.acciones.setReferencia(linea.id, ref)}
             onCampos={campos => p.acciones.setCampos(linea.id, campos)}
+            onAgregarComprobantes={files => p.acciones.agregarComprobantes(linea.id, files)}
+            onQuitarComprobante={idx => p.acciones.quitarComprobante(linea.id, idx)}
             onQuitar={() => p.acciones.quitar(linea.id)}
             onReintentarComision={p.onReintentarComision}
           />

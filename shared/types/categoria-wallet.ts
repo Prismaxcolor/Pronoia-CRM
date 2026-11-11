@@ -82,6 +82,11 @@ export interface ReporteCuenta {
   /** Saldo de la cuenta al empezar y al terminar el rango. */
   saldoInicial?: number;
   saldoFinal?: number;
+  /**
+   * Presente solo si el reporte se filtró por categorías. En ese caso `filas` y `totales` abarcan solo esos movimientos;
+   * `saldoInicial`, el `saldo` de cada fila y `saldoFinal` son los reales de la cuenta (con todos sus movimientos).
+   */
+  filtroCategorias?: { nombres: string[]; sinCategoria: boolean };
 }
 
 /** Categoría de una nota de crédito/débito ya resuelta para mostrar. Espejo de backend/src/utils/categoria-nota.ts. */

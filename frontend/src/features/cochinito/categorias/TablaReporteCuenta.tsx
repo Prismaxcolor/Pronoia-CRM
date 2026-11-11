@@ -13,6 +13,7 @@ interface Props {
   reporte: ReporteCuenta;
   /** Cuántos movimientos tiene el reporte sin filtrar. */
   totalSinFiltrar: number;
+  /** Hay búsqueda por N° o filtro por categorías: los totales son solo de las filas mostradas. */
   filtrado: boolean;
 }
 

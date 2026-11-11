@@ -78,3 +78,6 @@ export const reordenarProductosSchema = z.object({
 });
 
 export type ReordenarProductosInput = z.infer<typeof reordenarProductosSchema>;
+
+/** Ocultar / mostrar un producto al resto de los usuarios (solo superadmin). */
+export const ocultarProductoSchema = z.object({ oculto: z.boolean() });

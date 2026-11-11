@@ -69,6 +69,9 @@ export const crearTrasladoSchema = z
     path: ['materiales'],
   });
 
+/** Diferencia máxima (kg) entre el neto enviado por el cliente y bruto − tara: solo ruido de punto flotante. */
+const TOLERANCIA_NETO_RECIBIDO_KG = 0.0005;
+
 /** Recepción de un traslado pendiente: cuánto llegó realmente por línea de
  *  material (puede diferir de lo enviado) + evidencia fotográfica obligatoria. */
 export const completarTrasladoSchema = z.object({
@@ -77,8 +80,20 @@ export const completarTrasladoSchema = z.object({
     .array(
       z.object({
         detalleId: z.string().uuid('Línea de material inválida.'),
+        /** Neto recibido (bruto − tara), a 3 decimales. */
         pesoRecibido: z.number().nonnegative('El peso recibido no puede ser negativo.'),
+        /** Bruto y tara de la recepción. Opcionales: clientes y colas offline anteriores mandan solo el neto. */
+        pesoBrutoRecibido: z.number().nonnegative('El peso bruto recibido no puede ser negativo.').optional(),
+        taraRecibida: z.number().nonnegative('La tara recibida no puede ser negativa.').optional(),
       })
+      .refine(r => r.taraRecibida === undefined || r.pesoBrutoRecibido !== undefined, {
+        message: 'La tara recibida requiere el peso bruto recibido.',
+        path: ['pesoBrutoRecibido'],
+      })
+      .refine(
+        r => r.pesoBrutoRecibido === undefined || Math.abs(r.pesoBrutoRecibido - (r.taraRecibida ?? 0) - r.pesoRecibido) <= TOLERANCIA_NETO_RECIBIDO_KG,
+        { message: 'El peso recibido debe ser el bruto menos la tara.', path: ['pesoRecibido'] }
+      )
     )
     .min(1, 'Registra lo recibido de al menos un material.'),
   fotos: z.array(z.string()).min(1, 'La recepción requiere al menos una foto de evidencia.'),

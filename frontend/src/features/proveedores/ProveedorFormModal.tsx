@@ -8,6 +8,9 @@ import { subirFotoProveedor } from '../../services/storage-service';
 import { useToast } from '../../hooks/use-toast-context';
 import { fotoLocalDeFile, fotosLocalDeUrls, subirFotosLocal, type FotoLocal } from '../../lib/foto-picker';
 import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import ImagenTerceroCampo from '../proveedores/ImagenTerceroCampo';
+import { subirImagenTercero } from '../proveedores/imagen-tercero';
+import { imagenParaGuardar } from '../cochinito/imagen-banca';
 import SwitchAvisosTelegram from '../../components/SwitchAvisosTelegram';
 import { useAuth } from '../../hooks/use-auth-context';
 import AvisoBorrador from '../../components/AvisoBorrador';
@@ -37,6 +40,9 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
   const [direccion, setDireccion] = useState(proveedor?.direccion ?? '');
   const [fotos, setFotos] = useState<FotoLocal[]>(() => fotosLocalDeUrls(proveedor?.fotos ?? []));
   useLiberarVistasPrevias(fotos);
+  // Imagen junto al nombre (una sola). Aparte de las fotos y fuera del borrador: se vuelve a elegir si se pierde.
+  const [imagen, setImagen] = useState<FotoLocal[]>(() => fotosLocalDeUrls(proveedor?.imagenUrl ? [proveedor.imagenUrl] : []));
+  useLiberarVistasPrevias(imagen);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,12 +88,25 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
     setError(null);
 
     const enCola = !editando && altaEnColaActiva();
+    if (enCola && imagen.length > 0) {
+      setError('Sin conexión no se puede subir la imagen. Guarda sin imagen y agrégala al editar cuando vuelva la conexión.');
+      setGuardando(false);
+      return;
+    }
     const urls = enCola ? [] : await subirFotosLocal(fotos, subirFotoProveedor);
     if (!urls) {
       setError('Error al subir una de las fotos. Intenta de nuevo.');
       setGuardando(false);
       return;
     }
+    const subidaImagen = enCola ? { url: null } : await subirImagenTercero(imagen, subirFotoProveedor);
+    if (!subidaImagen) {
+      setError('No se pudo subir la imagen. Revisa tu conexión e intenta de nuevo.');
+      setGuardando(false);
+      return;
+    }
+    // undefined = no tocar (sin cambios); null = quitar; texto = URL nueva. Al crear solo viaja si hay imagen.
+    const imagenUrl = imagenParaGuardar(proveedor?.imagenUrl, subidaImagen.url);
 
     const payload = {
       nombre: nombre.trim(),
@@ -97,6 +116,7 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
       // Solo si cambió: mientras la columna no exista en la base, guardar sin tocar la dirección sigue funcionando.
       ...(direccion.trim() !== (proveedor?.direccion ?? '') ? { direccion: direccion.trim() || null } : {}),
       fotos: urls,
+      ...(imagenUrl !== undefined && (editando || imagenUrl) ? { imagenUrl } : {}),
       ...(puedeCambiarAvisos ? { telegramReportesActivos: avisosActivos } : {}),
     };
 
@@ -132,6 +152,7 @@ function ProveedorFormModal({ proveedor, onClose, onGuardado }: Props) {
       <form onSubmit={handleSubmit} className="p-5 space-y-4">
         <AvisoBorrador formulario="este proveedor" aviso={borrador.aviso} onDescartar={borrador.descartar} onCerrar={borrador.cerrarAviso} />
         <FotoMultiplePicker fotos={fotos} onAgregar={agregarFotos} onQuitar={quitarFoto} label="Fotos" />
+        <ImagenTerceroCampo fotos={imagen} onCambiar={setImagen} onError={setError} />
 
         <div>
           <label className={labelClass}>Nombre *</label>

@@ -1,4 +1,4 @@
-import { Pencil, EyeOff, Eye, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { Pencil, EyeOff, Eye, Trash2, ArrowUp, ArrowDown, Lock, Unlock } from 'lucide-react';
 import type { Producto } from '@shared/types/index.js';
 
 /** Permisos y manejadores compartidos por todas las filas y tarjetas. */
@@ -10,6 +10,8 @@ export interface AccionesComunes {
   onDesactivar: (p: Producto) => void;
   onReactivar: (p: Producto) => void;
   onBorrar: (p: Producto) => void;
+  /** Solo superadmin: ocultar o volver a mostrar el producto al resto de los usuarios. */
+  onOcultar?: (p: Producto) => void;
 }
 
 export interface AccionesProductoProps extends AccionesComunes {
@@ -22,7 +24,7 @@ const BASE = 'p-1.5 rounded-md bg-surface-alt text-text-muted transition-colors 
 
 /** Botones de acción de un producto (mover, editar, desactivar/reactivar, borrar). Mismos permisos y mismas acciones
  *  que antes del rediseño; se usan en la tarjeta y en la tabla. */
-function AccionesProducto({ producto: p, puedeEditar, puedeBorrar, esPrimero, esUltimo, onMover, onEditar, onDesactivar, onReactivar, onBorrar }: AccionesProductoProps) {
+function AccionesProducto({ producto: p, puedeEditar, puedeBorrar, esPrimero, esUltimo, onMover, onEditar, onDesactivar, onReactivar, onBorrar, onOcultar }: AccionesProductoProps) {
   return (
     <div className="flex gap-1">
       {puedeEditar && (
@@ -53,6 +55,14 @@ function AccionesProducto({ producto: p, puedeEditar, puedeBorrar, esPrimero, es
         <button type="button" onClick={() => onReactivar(p)} title="Reactivar" aria-label={`Reactivar ${p.nombre}`}
           className={`${BASE} hover:bg-brand-50 hover:text-brand-600`}>
           <Eye size={13} />
+        </button>
+      )}
+      {onOcultar && (
+        <button type="button" onClick={() => onOcultar(p)}
+          title={p.oculto ? 'Mostrar al resto de los usuarios' : 'Ocultar al resto de los usuarios'}
+          aria-label={p.oculto ? `Mostrar ${p.nombre} al resto de los usuarios` : `Ocultar ${p.nombre} al resto de los usuarios`}
+          className={`${BASE} hover:bg-brand-50 hover:text-brand-600`}>
+          {p.oculto ? <Unlock size={13} aria-hidden="true" /> : <Lock size={13} aria-hidden="true" />}
         </button>
       )}
       {puedeBorrar && (

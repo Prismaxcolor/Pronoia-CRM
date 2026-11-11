@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import type { CrearProductoInput, ActualizarProductoInput } from '../schemas/productos.js';
 import { logger } from '../utils/logger.js';
 import { esObjetoInexistente } from '../utils/migracion-pendiente.js';
+import { idsProductosOcultos, sinProductosOcultos } from './producto-oculto.js';
 import { esCategoriaConLimpieza, esLimpiezaMaterial } from '../utils/inventario-vistas.js';
 
 type TipoProducto = 'amarillo' | 'azul' | 'verde';
@@ -23,6 +24,8 @@ interface ProductoRow {
   sub_productos: unknown;
   /** Ausente si la migración migration_productos_estado_limpieza.sql aún no se aplicó. */
   estado_limpieza?: string | null;
+  /** Ausente si la migración migration_productos_oculto.sql aún no se aplicó. */
+  oculto?: boolean | null;
   // join con tipos_material(nombre, sin_lote)
   tipos_material?: { nombre: string; sin_lote: boolean } | null;
   // join con producto_lotes(lote_id)
@@ -45,6 +48,8 @@ export interface ProductoPublico {
   estadoLimpieza: 'limpio' | 'sucio' | null;
   moneda: string;
   activo: boolean;
+  /** true = solo lo ve el superadmin. */
+  oculto: boolean;
   tipo: TipoProducto;
   fotos: string[];
   creadoPor: string;
@@ -66,6 +71,7 @@ function toPublico(row: ProductoRow): ProductoPublico {
     estadoLimpieza: esLimpiezaMaterial(row.estado_limpieza) ? row.estado_limpieza : null,
     moneda: row.moneda,
     activo: row.activo,
+    oculto: row.oculto === true,
     tipo: row.tipo,
     fotos: row.fotos ?? [],
     creadoPor: row.creado_por ?? '',
@@ -157,10 +163,12 @@ async function guardarLotesProducto(productoId: string, loteIds: string[]): Prom
 }
 
 export async function listarProductos(): Promise<ProductoPublico[]> {
-  const { data, error } = await supabaseAdmin
-    .from('productos')
-    .select(SELECT_PRODUCTO)
-    .order('orden', { ascending: true });
+  const ocultos = await idsProductosOcultos();
+  const { data, error } = await sinProductosOcultos(
+    supabaseAdmin.from('productos').select(SELECT_PRODUCTO).order('orden', { ascending: true }),
+    ocultos,
+    'id'
+  );
 
   if (error || !data) return [];
   return (data as unknown as ProductoRow[]).map(toPublico);

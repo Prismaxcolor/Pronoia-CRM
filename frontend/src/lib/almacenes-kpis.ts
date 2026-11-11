@@ -20,7 +20,8 @@ export const INICIO_DATOS_REALES = '2026-09-14';
 /** Un traslado pendiente desde hace este número de días (o más) se avisa como "Atención". No hay umbral rojo. */
 export const DIAS_PENDIENTE_ATENCION = 3;
 /** Diferencia enviado vs recibido (kg) por debajo de la cual se considera redondeo de la báscula. */
-export const TOLERANCIA_DIFERENCIA_KG = 0.01;
+/** Tolerancia al comparar lo recibido con lo enviado: 1 g (los traslados se pesan a 3 decimales). */
+export const TOLERANCIA_DIFERENCIA_KG = 0.001;
 const MS_POR_DIA = 86_400_000;
 
 const redondear = (n: number, decimales = 3): number => {

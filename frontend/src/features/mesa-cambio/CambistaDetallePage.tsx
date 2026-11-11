@@ -49,12 +49,13 @@ function CambistaDetallePage() {
   };
 
   const rangoInvalido = !!desde && !!hasta && desde > hasta;
+  const comisionesAsentadasUsd = (estado?.filas ?? []).filter(f => f.tipo === 'COMISION').reduce((acc, f) => acc + f.cobro, 0);
 
   return (
     <div>
       <EncabezadoPagina
         titulo={estado?.cambista.nombre ?? 'Estado de cuenta'}
-        subtitulo="Estado de cuenta en USD. Cargo y nota de débito aumentan lo que el cambista nos debe (pendiente por cobrar); cobro y nota de crédito lo reducen. Si el saldo queda negativo, se le debe al cambista."
+        subtitulo="Estado de cuenta en USD. Cargo y nota de débito aumentan lo que el cambista nos debe (pendiente por cobrar); cobro, nota de crédito y comisión de la mesa lo reducen. Si el saldo queda negativo, se le debe al cambista."
         migas={[{ etiqueta: 'Mesa de cambio', to: '/mesa-cambio' }, { etiqueta: estado?.cambista.nombre ?? 'Estado de cuenta' }]}
        
         acciones={puedeCrear && estado?.cambista.activo && (
@@ -81,6 +82,9 @@ function CambistaDetallePage() {
             <div className="rounded-xl border border-border bg-surface p-4">
               <p className="text-xs text-text-secondary">Cobros del periodo</p>
               <p className="text-xl font-bold tabular-nums">USD {fmt(estado.totalCobros)}</p>
+              {comisionesAsentadasUsd > 0 && (
+                <p className="text-xs text-text-muted mt-1">Incluye comisiones de la mesa a favor del cambista: USD {fmt(comisionesAsentadasUsd)}</p>
+              )}
             </div>
           </section>
 

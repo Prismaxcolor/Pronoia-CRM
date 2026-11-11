@@ -390,8 +390,8 @@ const MAX_SALIDAS = 8;
 const TOLERANCIA_KG = 0.005;
 
 const CATEGORIAS_TRANSFORMACION: Record<string, string> = {
-  pcb: 'PCB',
-  ferroso_no_ferroso: 'Ferroso / No ferroso',
+  pcb: 'Transformaciones de lote',
+  ferroso_no_ferroso: 'Transformaciones de productos',
   mixta: 'Mixta',
 };
 
@@ -677,6 +677,7 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
 
   // --- Inventario: maestros y precios --------------------------------------
   ...maestro('/api/productos', 'producto', 'inventario', 'Producto', 'productos', 'el', 'producto', true, 'producto'),
+  ev('producto.oculto_cambiado', 'POST', '/api/productos/:id/ocultar', 'inventario', 'ignorable', '🙈', 'Se cambió la visibilidad de un producto'),
   ev('producto.reordenado', 'PATCH', '/api/productos/reordenar', 'inventario', 'ignorable', '↕️', 'Se reordenaron los productos'),
   ...maestro('/api/tipos-material', 'tipo_material', 'inventario', 'Categoría', 'tipos_material', 'la', 'categoría de material', true, 'tipo'),
   ...maestro('/api/almacenes', 'almacen', 'inventario', 'Almacén', 'almacenes', 'el', 'almacén', false, 'almacen'),
@@ -713,10 +714,10 @@ export const CATALOGO_EVENTOS: ReadonlyArray<EventoCatalogo> = [
   }),
   ev('transformacion.creada', 'POST', '/api/transformaciones', 'transformacion', 'normal', '♻️', 'Se inició una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
   ev('transformacion.completada', 'PATCH', '/api/transformaciones/:id/completar', 'transformacion', 'normal', '✅', 'Se completó una transformación', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
-  ev('transformacion.ferroso_creada', 'POST', '/api/transformaciones/ferroso', 'transformacion', 'normal', '♻️', 'Se inició una transformación ferrosa / no ferrosa', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
-  ev('transformacion.ferroso_completada', 'PATCH', '/api/transformaciones/:id/completar-ferroso', 'transformacion', 'normal', '✅', 'Se completó una transformación ferrosa / no ferrosa', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
-  ev('transformacion.pcb_creada', 'POST', '/api/transformaciones/pcb', 'transformacion', 'normal', '♻️', 'Se inició una transformación PCB', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
-  ev('transformacion.pcb_completada', 'PATCH', '/api/transformaciones/:id/completar-pcb', 'transformacion', 'normal', '✅', 'Se completó una transformación PCB', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.ferroso_creada', 'POST', '/api/transformaciones/ferroso', 'transformacion', 'normal', '♻️', 'Se inició una transformación de productos', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.ferroso_completada', 'PATCH', '/api/transformaciones/:id/completar-ferroso', 'transformacion', 'normal', '✅', 'Se completó una transformación de productos', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.pcb_creada', 'POST', '/api/transformaciones/pcb', 'transformacion', 'normal', '♻️', 'Se inició una transformación de lote', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
+  ev('transformacion.pcb_completada', 'PATCH', '/api/transformaciones/:id/completar-pcb', 'transformacion', 'normal', '✅', 'Se completó una transformación de lote', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
   ev('transformacion.mixta_completada', 'PATCH', '/api/transformaciones/:id/completar-mixta', 'transformacion', 'normal', '✅', 'Se completó una transformación con salida mixta', { entidad: { rotulo: 'Transformación', resp: 'transformacion' }, detalles: detallesTransformacion }),
   ev('transformacion.eliminada', 'DELETE', '/api/transformaciones/:id', 'transformacion', 'critica', '🗑️', 'Se ELIMINÓ una transformación', { entidad: { rotulo: 'Transformación', tabla: 'transformaciones' }, detalles: detallesTransformacion }),
 

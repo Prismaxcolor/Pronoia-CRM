@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  etiquetaMoneda, filasPorMoneda, monedasDelReporte, nombreArchivoReporte, textoTipoFila, totalGeneral, textoMovimientosAcceso, mensajeRango, textoSeleccion, alternarCuenta, reporteFiltrado, separarResultadosCuentas, combinarReportesCuentas,
+  etiquetaMoneda, filasPorMoneda, monedasDelReporte, nombreArchivoReporte, textoTipoFila, totalGeneral, textoMovimientosAcceso, mensajeRango, textoSeleccion, alternarCuenta, reporteFiltrado, separarResultadosCuentas, combinarReportesCuentas, textoFiltroCategorias,
 } from '../../frontend/src/features/cochinito/categorias/reporte-wallet-datos';
 import type { ReporteCategorias, ReporteCuenta } from '../../shared/types/categoria-wallet';
 
@@ -125,5 +125,16 @@ describe('carga parcial del reporte de varias cuentas', () => {
     const r = combinarReportesCuentas([rep('a'), rep('c')], [rep('b')], ['a', 'b', 'c', 'd']);
     expect(r.map(x => x.banca.id)).toEqual(['a', 'b', 'c']);
     expect(combinarReportesCuentas([rep('a')], [rep('a')], ['a'])).toHaveLength(1);
+  });
+});
+
+describe('textoFiltroCategorias', () => {
+  it('sin filtro no hay rótulo', () => {
+    expect(textoFiltroCategorias({})).toBeNull();
+  });
+  it('lista las categorías elegidas y los movimientos sin categoría', () => {
+    expect(textoFiltroCategorias({ filtroCategorias: { nombres: ['Servicios', 'Nómina'], sinCategoria: false } })).toBe('Filtrado por categorías: Servicios, Nómina');
+    expect(textoFiltroCategorias({ filtroCategorias: { nombres: ['Servicios'], sinCategoria: true } })).toBe('Filtrado por categorías: Servicios y movimientos sin categoría');
+    expect(textoFiltroCategorias({ filtroCategorias: { nombres: [], sinCategoria: true } })).toBe('Filtrado por categorías: movimientos sin categoría');
   });
 });

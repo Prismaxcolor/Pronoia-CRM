@@ -7,7 +7,7 @@ import type { Traslado } from '@shared/types/index.js';
 import { formatearFechaHora } from '../../lib/fecha-negocio';
 import { useSoloEnLinea } from '../../lib/offline/solo-en-linea';
 
-const kg2 = (n: number) => formatearNumero(n, 2);
+const kg3 = (n: number) => formatearNumero(n, 3);
 const BOTON_FILA = 'rounded px-1 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400';
 
 export interface AccionesTraslado {
@@ -40,7 +40,7 @@ function celdaDiferencia(t: Traslado) {
   if (!hayDiferencia(d)) return <span className="text-text-secondary">Sin diferencia</span>;
   return (
     <Insignia tono="aviso" forma="cuadrada" title="Los kg pesados al llegar no coinciden con los pesados al salir (recibido menos enviado).">
-      {d > 0 ? '+' : ''}{kg2(d)} kg · revisar
+      {d > 0 ? '+' : ''}{kg3(d)} kg · revisar
     </Insignia>
   );
 }
@@ -64,23 +64,23 @@ function columnasTraslados(a: AccionesTraslado, hoy: Date): ColumnaTabla<Traslad
     },
     { clave: 'materiales', titulo: 'Material', valorOrden: t => resumenMaterialesTraslado(t), ocultaEnMovil: false },
     {
-      clave: 'enviado', titulo: 'Enviado (kg)', alinear: 'derecha', valorOrden: t => t.pesoNetoEnviado, celda: t => kg2(t.pesoNetoEnviado),
-      decimalesCsv: 2, total: ts => kg2(ts.reduce((s, t) => s + t.pesoNetoEnviado, 0)),
+      clave: 'enviado', titulo: 'Enviado (kg)', alinear: 'derecha', valorOrden: t => t.pesoNetoEnviado, celda: t => kg3(t.pesoNetoEnviado),
+      decimalesCsv: 3, total: ts => kg3(ts.reduce((s, t) => s + t.pesoNetoEnviado, 0)),
     },
     {
       clave: 'recibido', titulo: 'Recibido (kg)', alinear: 'derecha', valorOrden: t => (t.estado === 'completo' ? t.pesoNetoRecibido : null),
-      celda: t => (t.estado === 'completo' ? kg2(t.pesoNetoRecibido ?? 0) : '—'), decimalesCsv: 2,
-      total: ts => kg2(ts.filter(t => t.estado === 'completo').reduce((s, x) => s + (x.pesoNetoRecibido ?? 0), 0)),
+      celda: t => (t.estado === 'completo' ? kg3(t.pesoNetoRecibido ?? 0) : '—'), decimalesCsv: 3,
+      total: ts => kg3(ts.filter(t => t.estado === 'completo').reduce((s, x) => s + (x.pesoNetoRecibido ?? 0), 0)),
       ayuda: 'Kg que se pesaron al llegar al almacén destino. Un traslado pendiente todavía no tiene este dato.',
     },
     {
       clave: 'diferencia', titulo: 'Diferencia (kg)', alinear: 'derecha', valorOrden: t => diferenciaTraslado(t), celda: celdaDiferencia,
-      valorCsv: t => diferenciaTraslado(t), decimalesCsv: 2,
+      valorCsv: t => diferenciaTraslado(t), decimalesCsv: 3,
       total: ts => {
         const s = ts.reduce((acc, t) => acc + (diferenciaTraslado(t) ?? 0), 0);
-        return Math.abs(s) > TOLERANCIA_DIFERENCIA_KG ? `${s > 0 ? '+' : ''}${kg2(s)}` : '0,00';
+        return Math.abs(s) > TOLERANCIA_DIFERENCIA_KG ? `${s > 0 ? '+' : ''}${kg3(s)}` : '0,000';
       },
-      ayuda: 'Kg recibidos menos kg enviados. Negativo: llegó menos de lo que salió; positivo: llegó más. Solo se calcula cuando el traslado ya fue recibido; diferencias de 0,01 kg o menos se tratan como redondeo de la báscula.',
+      ayuda: 'Kg recibidos menos kg enviados. Negativo: llegó menos de lo que salió; positivo: llegó más. Solo se calcula cuando el traslado ya fue recibido; diferencias de 0,001 kg o menos se tratan como redondeo de la báscula.',
     },
     {
       clave: 'estado', titulo: 'Estado', valorOrden: t => t.estado,

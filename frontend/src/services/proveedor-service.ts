@@ -19,6 +19,7 @@ interface ProveedorApi {
   telegramLinkedAt: string | null;
   telegramReportesActivos?: boolean;
   oculto?: boolean;
+  imagenUrl?: string | null;
 }
 
 function mapApi(api: ProveedorApi): Proveedor {
@@ -32,6 +33,8 @@ export interface ProveedorInput {
   direccion?: string | null;
   email?: string | null;
   fotos?: string[];
+  /** URL de la imagen subida con subirFotoProveedor; null quita la imagen; omitido la deja como está. */
+  imagenUrl?: string | null;
 }
 
 export async function obtenerProveedores(): Promise<Proveedor[]> {

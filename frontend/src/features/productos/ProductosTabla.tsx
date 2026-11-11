@@ -19,7 +19,7 @@ interface Props {
 
 /** Vista de tabla del catálogo: ordenable (aria-sort), exportable a CSV y apilada como tarjetas en móvil. Sin precios. */
 function ProductosTabla({ productos, catalogo, acciones, vacio }: Props) {
-  const hayAcciones = acciones.puedeEditar || acciones.puedeBorrar;
+  const hayAcciones = acciones.puedeEditar || acciones.puedeBorrar || Boolean(acciones.onOcultar);
 
   const columnas = useMemo<ColumnaTabla<Producto>[]>(() => {
     const base: ColumnaTabla<Producto>[] = [
@@ -33,6 +33,7 @@ function ProductosTabla({ productos, catalogo, acciones, vacio }: Props) {
               {p.fotos[0] ? <img src={p.fotos[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package size={16} aria-hidden="true" />}
             </span>
             <span className="min-w-0 font-medium text-text-primary">{p.nombre}</span>
+            {p.oculto && <Insignia tono="neutral" title="Solo el superadmin ve este producto.">Oculto</Insignia>}
           </span>
         ),
       },

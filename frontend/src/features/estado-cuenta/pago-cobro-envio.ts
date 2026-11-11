@@ -6,6 +6,7 @@ import { huellaDe } from '../../lib/intento-envio';
 import { mensajeAmigable } from '../../lib/mensaje-error';
 import { categoriaPagoParaEnviar, categoriaParaEnviar } from './categoria-cobro';
 import type { CategoriaWallet } from '@shared/types/index.js';
+import { conComprobantesDeBanca, subirComprobantesPorBanca, type FotosPorBanca } from './pago-cobro-comprobantes';
 
 const ERROR_COMPROBANTES = 'No se pudo subir uno de los comprobantes. Probá de nuevo o registrá el pago sin ellos.';
 
@@ -22,6 +23,8 @@ export interface DatosEnvioPagoCobro {
   descripcion: string;
   fecha: string;
   comprobantes: FotoLocal[];
+  /** Comprobantes propios de cada banca (bancaId -> fotos); opcional, sin ellos vale solo el general. */
+  comprobantesBanca?: FotosPorBanca;
   categoriaOpciones: CategoriaWallet[];
   categoriaCobroId: string | null;
 }
@@ -40,14 +43,24 @@ export function huellaPagoCobro(d: DatosEnvioPagoCobro): string {
       ? categoriaPagoParaEnviar(d.categoriaOpciones, d.categoriaCobroId, d.esCrucePuro)
       : categoriaParaEnviar(d.categoriaOpciones, d.categoriaCobroId, d.hayDinero),
     comprobantes: d.comprobantes.map(huellaFoto),
+    comprobantesBanca: Object.entries(d.comprobantesBanca ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([id, fotos]) => [id, fotos.map(huellaFoto)]),
   });
 }
 
-async function subirComprobantes(d: DatosEnvioPagoCobro): Promise<string[] | null> {
+interface ComprobantesSubidos {
+  generales: string[];
+  porBanca: Record<string, string[]>;
+}
+
+async function subirComprobantes(d: DatosEnvioPagoCobro): Promise<ComprobantesSubidos | null> {
   // Un cruce puro no mueve dinero: no hay movimiento al que colgar comprobantes.
-  if (d.esCrucePuro) return [];
+  if (d.esCrucePuro) return { generales: [], porBanca: {} };
   try {
-    return await subirFotosLocal(d.comprobantes, subirComprobantePago);
+    const [generales, porBanca] = await Promise.all([
+      subirFotosLocal(d.comprobantes, subirComprobantePago),
+      subirComprobantesPorBanca(d.comprobantesBanca ?? {}),
+    ]);
+    return generales && porBanca ? { generales, porBanca } : null;
   } catch {
     return null;
   }
@@ -55,10 +68,11 @@ async function subirComprobantes(d: DatosEnvioPagoCobro): Promise<string[] | nul
 
 /** Sube los comprobantes y registra el pago o el cobro con la clave de idempotencia dada. Nunca lanza. */
 export async function enviarPagoCobro(d: DatosEnvioPagoCobro, clientRequestId: string): Promise<{ error: string } | { resultado: ResultadoCobroMultiple }> {
-  const comprobantes = await subirComprobantes(d);
-  if (!comprobantes) return { error: ERROR_COMPROBANTES };
+  const subidos = await subirComprobantes(d);
+  if (!subidos) return { error: ERROR_COMPROBANTES };
+  const comprobantes = subidos.generales;
   const comunes = {
-    bancas: d.bancas, montoUsd: d.esCrucePuro ? 0 : d.totalEditadoNum, descripcion: d.descripcion || null,
+    bancas: conComprobantesDeBanca(d.bancas, subidos.porBanca), montoUsd: d.esCrucePuro ? 0 : d.totalEditadoNum, descripcion: d.descripcion || null,
     fecha: d.fecha, items: d.items, comprobantes, clientRequestId,
   };
   try {

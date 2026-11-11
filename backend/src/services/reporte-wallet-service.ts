@@ -140,10 +140,14 @@ async function leerSaldoInicial(f: FiltroReporteCuenta): Promise<number> {
   return saldoDeMovimientos(f.bancaId, filas.map(aMovimientoReporte));
 }
 
+/** El filtro por categorías es opcional para quien pide el reporte sin él (el esquema de la ruta ya lo rellena). */
+export type FiltroCuentaEntrada = Omit<FiltroReporteCuenta, 'categoriaIds' | 'sinCategoria'> & Partial<Pick<FiltroReporteCuenta, 'categoriaIds' | 'sinCategoria'>>;
+
 export async function obtenerReporteCuenta(
-  f: FiltroReporteCuenta,
+  filtro: FiltroCuentaEntrada,
   permitidasOPromesa: PermitidasOPromesa
 ): Promise<{ reporte: ReporteCuentaResultado } | FalloCategoria> {
+  const f = { ...filtro, categoriaIds: filtro.categoriaIds ?? [], sinCategoria: filtro.sinCategoria ?? false };
   // Cuenta, accesos, movimientos y categorías no dependen entre sí: una sola ida y vuelta a la BD en vez de cuatro en serie.
   // La lectura de movimientos captura su error para que 404 / 403 sigan teniendo prioridad sobre un fallo de lectura.
   const [bancaRes, permitidas, lecturaMovimientos, categorias, lecturaSaldo] = await Promise.all([
@@ -158,13 +162,17 @@ export async function obtenerReporteCuenta(
   if (!bancaPermitida(permitidas, f.bancaId)) return { error: MENSAJE_SIN_ACCESO_BANCA, codigo: 403 };
   if ('e' in lecturaMovimientos) return falloDeLectura(lecturaMovimientos.e, 'cuenta');
   if ('e' in lecturaSaldo) return falloDeLectura(lecturaSaldo.e, 'cuenta');
+  if (f.categoriaIds.length > 0 && resolverSeleccion(f.categoriaIds, categorias)?.size === 0) {
+    return { error: 'Las categorías elegidas no existen.', codigo: 400 };
+  }
   try {
     const { movimientos } = lecturaMovimientos;
     const otras = movimientos.flatMap(m => [m.bancaOrigenId, m.bancaDestinoId]).filter((x): x is string => !!x);
     const nombresBancas = await nombresDeBancas(otras);
     const b = banca as { id: string; nombre: string; moneda: string };
     const tasas = b.moneda === 'VES' ? await leerTasasDelRango(f) : [];
-    const calculo = construirReporteCuenta({ bancaId: f.bancaId, movimientos, categorias, nombresBancas, permitidas, monedaCuenta: b.moneda, tasas, saldoInicial: lecturaSaldo.saldo });
+    const calculo = construirReporteCuenta({ bancaId: f.bancaId, movimientos, categorias, nombresBancas, permitidas, monedaCuenta: b.moneda, tasas, saldoInicial: lecturaSaldo.saldo,
+      filtroCategorias: { categoriaIds: f.categoriaIds, incluirSinCategoria: f.sinCategoria } });
     return { reporte: { banca: { id: b.id, nombre: b.nombre, moneda: b.moneda }, desde: f.desde, hasta: f.hasta, ...calculo } };
   } catch (e) {
     return falloDeLectura(e, 'cuenta');

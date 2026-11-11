@@ -3,6 +3,8 @@ import SelectorBanca from '../cochinito/SelectorBanca';
 import type { EstadoTasasUsd } from '../cochinito/equivalente-usd';
 import type { EstadoComision, OpcionComision } from '../cochinito/comision-formulario';
 import type { Banca } from '@shared/types/index.js';
+import FotoMultiplePicker from '../../components/FotoMultiplePicker';
+import type { FotoLocal } from '../../lib/foto-picker';
 import LineaPagoBs from './LineaPagoBs';
 import { FUENTE_TASA_PAGO_INICIAL, type FuenteTasaPago } from './pago-bs-tasa';
 
@@ -19,6 +21,8 @@ export interface LineaBanca {
   tasaManual?: string;
   /** ¿Lleva comisión bancaria? '' = aún sin elegir. */
   comision?: OpcionComision;
+  /** Comprobantes (fotos) propios de esta banca. Opcional: un borrador viejo no los trae. */
+  comprobantes?: FotoLocal[];
 }
 
 interface Props {
@@ -29,6 +33,8 @@ interface Props {
   bancasElegibles: Banca[];
   esProveedor: boolean;
   puedeQuitar: boolean;
+  /** Muestra el selector de comprobantes de esta banca (solo cuando el pago se reparte entre varias). */
+  conComprobante: boolean;
   /** Bs por USD con la que se calcula esta línea (la elegida en pago a proveedor; la BCV en cobro); null si no hay. */
   tasaBs: number | null;
   tasasUsd: EstadoTasasUsd;
@@ -37,6 +43,8 @@ interface Props {
   onMonto: (montoUsd: string) => void;
   onReferencia: (referencia: string) => void;
   onCampos: (campos: Partial<LineaBanca>) => void;
+  onAgregarComprobantes: (files: File[]) => void;
+  onQuitarComprobante: (idx: number) => void;
   onQuitar: () => void;
   onReintentarComision: () => void;
 }
@@ -47,10 +55,10 @@ function fmt(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
-/** Un renglón del "Registrar pago/cobro": cuenta, monto en USD, referencia y, en un pago a proveedor desde Bs, tasa y comisión. */
+/** Un renglón del "Registrar pago/cobro": cuenta, monto en USD, referencia, comprobante propio (si hay varias bancas) y, en un pago a proveedor desde Bs, tasa y comisión. */
 function FilaBancaPago({
-  linea, banca, bancasElegibles, esProveedor, puedeQuitar, tasaBs, tasasUsd, comisionEstado,
-  onBanca, onMonto, onReferencia, onCampos, onQuitar, onReintentarComision,
+  linea, banca, bancasElegibles, esProveedor, puedeQuitar, conComprobante, tasaBs, tasasUsd, comisionEstado,
+  onBanca, onMonto, onReferencia, onCampos, onAgregarComprobantes, onQuitarComprobante, onQuitar, onReintentarComision,
 }: Props) {
   const esBsLinea = banca?.moneda === 'VES';
   const montoUsdLinea = parseFloat(linea.montoUsd) || 0;
@@ -101,6 +109,14 @@ function FilaBancaPago({
         className={`${inputClass} text-xs`}
         placeholder="Referencia de esta banca (opcional) — ej: TRF-432"
       />
+      {conComprobante && (
+        <FotoMultiplePicker
+          fotos={linea.comprobantes ?? []}
+          onAgregar={onAgregarComprobantes}
+          onQuitar={onQuitarComprobante}
+          label="Comprobante de esta banca (opcional)"
+        />
+      )}
       {esProveedor && esBsLinea && (
         <LineaPagoBs
           idLinea={linea.id}

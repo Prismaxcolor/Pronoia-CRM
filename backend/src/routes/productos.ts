@@ -8,15 +8,24 @@ import {
   borrarProducto,
   reordenarProductos,
 } from '../services/producto-service.js';
-import { requireAuth, requirePermiso } from '../middlewares/require-auth.js';
+import { requireAuth, requirePermiso, requireSuperadmin } from '../middlewares/require-auth.js';
 import { validateBody } from '../middlewares/validate.js';
-import { crearProductoSchema, actualizarProductoSchema, reordenarProductosSchema } from '../schemas/productos.js';
+import { crearProductoSchema, actualizarProductoSchema, reordenarProductosSchema, ocultarProductoSchema } from '../schemas/productos.js';
+import { establecerProductoOculto, exigirProductoVisible } from '../services/producto-oculto.js';
+import { registrarAuditoria } from '../services/auditoria-service.js';
+import { invalidarCacheResumen } from '../services/resumen-cache.js';
+import { validarUuidParam } from '../middlewares/validate-uuid-param.js';
 import { logger, clienteIp } from '../utils/logger.js';
 import { conOperacionCliente, cuerpoConRepetida, ejecutarOperacion, TIPO_OPERACION } from '../services/operaciones-idempotentes-cola.js';
 
 const router = Router();
 
+const MENSAJE_SOLO_SUPERADMIN_OCULTAR = 'Solo un superadmin puede ocultar o mostrar un producto.';
+
 router.use(requireAuth);
+
+// Un producto oculto responde 404 a quien no es superadmin en TODA ruta con :id (editar, activar, borrar...).
+router.param('id', exigirProductoVisible);
 
 router.get('/', requirePermiso('productos', 'ver'), async (_req, res) => {
   const productos = await listarProductos();
@@ -89,6 +98,42 @@ router.patch(
       estadoLimpieza: req.body.estadoLimpieza,
     });
     res.json(result);
+  }
+);
+
+// Ocultar / mostrar un producto al resto de los usuarios. Solo superadmin; queda en el historial de auditoría.
+router.post(
+  '/:id/ocultar',
+  requireSuperadmin(MENSAJE_SOLO_SUPERADMIN_OCULTAR),
+  validarUuidParam('id'),
+  validateBody(ocultarProductoSchema),
+  async (req, res) => {
+    const id = String(req.params.id);
+    const oculto: boolean = req.body.oculto;
+    const result = await establecerProductoOculto(id, oculto);
+    if ('error' in result) {
+      res.status(result.codigo).json({ error: result.codigo === 404 ? result.error : 'No se pudo cambiar la visibilidad del producto.' });
+      return;
+    }
+    const auditada = await registrarAuditoria({
+      entidadTipo: 'producto',
+      entidadId: id,
+      accion: oculto ? 'ocultar' : 'mostrar',
+      usuarioId: req.user!.sub,
+      usuarioEmail: req.user!.email,
+      cambios: { oculto: { antes: result.anterior, despues: result.oculto } },
+    });
+    if (!auditada) {
+      // Auditoría obligatoria: sin constancia no se deja el cambio.
+      await establecerProductoOculto(id, result.anterior);
+      logger.error({ evento: 'producto_oculto_sin_auditoria', userId: req.user!.sub, productoId: id });
+      res.status(500).json({ error: 'No se pudo dejar constancia en el historial de auditoría, así que el cambio no se aplicó. Intenta de nuevo.' });
+      return;
+    }
+    // Las cachés de inventario son compartidas y cambian para todos.
+    invalidarCacheResumen();
+    logger.info({ evento: oculto ? 'producto_ocultado' : 'producto_mostrado', ip: clienteIp(req), userId: req.user!.sub, productoId: id });
+    res.json({ ok: true, oculto: result.oculto });
   }
 );
 

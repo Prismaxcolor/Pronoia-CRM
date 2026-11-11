@@ -14,19 +14,24 @@
  * tipos del contrato y la descripción legible del saldo, que usa la pantalla.
  */
 
+/** Tipos que un usuario puede registrar a mano. */
 export const TIPOS_ASIENTO = ['CARGO', 'COBRO', 'NC', 'ND'] as const;
-export type TipoAsiento = (typeof TIPOS_ASIENTO)[number];
+export type TipoAsientoManual = (typeof TIPOS_ASIENTO)[number];
+/** Además de los manuales, 'COMISION' lo crea solo la RPC de cobro de una transferencia con comisión de mesa (nunca a mano):
+ *  gasto a favor del cambista, reduce el saldo igual que un COBRO / N/C (aumenta lo que se le debe). */
+export type TipoAsiento = TipoAsientoManual | 'COMISION';
 
 export const ETIQUETA_TIPO_ASIENTO: Record<TipoAsiento, string> = {
   CARGO: 'Cargo (aumenta lo que nos debe el cambista)',
   COBRO: 'Cobro / abono (reduce lo que nos debe el cambista)',
   NC: 'Nota de crédito (reduce lo que nos debe el cambista)',
   ND: 'Nota de débito (aumenta lo que nos debe el cambista)',
+  COMISION: 'Comisión de la mesa (gasto a favor del cambista: aumenta lo que se le debe)',
 };
 
 /** Etiqueta corta del tipo, para la columna "Detalle" del estado de cuenta. */
 export const ETIQUETA_CORTA_TIPO_ASIENTO: Record<TipoAsiento, string> = {
-  CARGO: 'Cargo', COBRO: 'Cobro', NC: 'Nota de crédito', ND: 'Nota de débito',
+  CARGO: 'Cargo', COBRO: 'Cobro', NC: 'Nota de crédito', ND: 'Nota de débito', COMISION: 'Comisión de la mesa',
 };
 
 export interface Cambista {

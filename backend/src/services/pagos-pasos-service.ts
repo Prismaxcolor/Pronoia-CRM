@@ -215,6 +215,47 @@ export async function reintentarPasosPendientes(limite: number = LIMITE_REINTENT
   return { revisados: filas.length, resueltos: filas.length - estado.pendientes.length, pendientes: estado.pendientes.length };
 }
 
+/** Comprobantes propios de una banca de un pago/cobro. */
+export interface ComprobantesDeBanca {
+  bancaId: string;
+  comprobantes: string[];
+}
+
+/** Lo mínimo de un movimiento para repartirle comprobantes por banca (en pagos y cobros la banca está en banca_origen_id). */
+export interface MovimientoDeBanca {
+  id: string;
+  banca_origen_id: string | null;
+  subtipo: string | null;
+}
+
+const SUBTIPOS_DE_PAGO = new Set(['pago', 'cobro']);
+
+/**
+ * Reparte los comprobantes de un pago/cobro entre sus movimientos (misma regla que `aplicar_pasos_pago` en SQL):
+ * los de cada banca van al movimiento de esa banca (el «pago»/«cobro» si además hay adelanto/anticipo de la misma
+ * cuenta; si no, el primero) y los generales al movimiento principal. Sin duplicados dentro de un movimiento. Una banca
+ * sin movimiento se omite. Devuelve solo los movimientos que reciben algo.
+ */
+export function repartirComprobantes(
+  movimientos: readonly MovimientoDeBanca[],
+  principalId: string | null,
+  generales: readonly string[],
+  porBanca: readonly ComprobantesDeBanca[],
+): Array<{ movimientoId: string; comprobantes: string[] }> {
+  const reparto = new Map<string, string[]>();
+  const agregar = (id: string, urls: readonly string[]): void => {
+    if (urls.length === 0) return;
+    reparto.set(id, [...new Set([...(reparto.get(id) ?? []), ...urls])]);
+  };
+  for (const banca of porBanca) {
+    const propios = movimientos.filter(m => m.banca_origen_id === banca.bancaId);
+    const destino = propios.find(m => m.subtipo !== null && SUBTIPOS_DE_PAGO.has(m.subtipo)) ?? propios[0];
+    if (destino) agregar(destino.id, banca.comprobantes);
+  }
+  if (principalId) agregar(principalId, generales);
+  return [...reparto].map(([movimientoId, comprobantes]) => ({ movimientoId, comprobantes }));
+}
+
 /** Todo lo que el backend necesita para completar un pago o cobro ya registrado por la RPC de dinero. */
 export interface DatosPasos {
   movimientoIds: string[];
@@ -222,6 +263,8 @@ export interface DatosPasos {
   grupoId: string | null;
   categoriaId: string | null;
   comprobantes: string[];
+  /** Comprobantes propios de cada banca (opcional: sin ellos solo se guardan los generales en el principal). */
+  comprobantesPorBanca?: ComprobantesDeBanca[];
   lineas: LineaComisionPago[];
   usuarioId: string;
 }
@@ -234,16 +277,39 @@ async function intentarCategoria(d: DatosPasos): Promise<PasoFallido[]> {
   return [{ detalle, grupoId: d.grupoId, movimientoId: d.principalId, error: 'No se pudo aplicar la categoría.' }];
 }
 
-async function intentarComprobante(d: DatosPasos): Promise<PasoFallido[]> {
-  if (!d.principalId || d.comprobantes.length === 0) return [];
-  const detalle: DetallePaso = { paso: 'comprobante', movimientoId: d.principalId, comprobantes: d.comprobantes };
-  const r = await repetirPasoSeguro(detalle);
-  return r.ok ? [] : [{ detalle, grupoId: d.grupoId, movimientoId: d.principalId, error: r.error }];
+async function movimientosDeBanca(ids: readonly string[]): Promise<MovimientoDeBanca[]> {
+  const { data, error } = await supabaseAdmin.from('movimientos').select('id, banca_origen_id, subtipo').in('id', [...ids]);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as MovimientoDeBanca[];
+}
+
+/** Guarda en cada movimiento los comprobantes que le tocan (ver `repartirComprobantes`). Cada fallo se devuelve como paso a reintentar. */
+export async function aplicarComprobantes(d: Pick<DatosPasos, 'movimientoIds' | 'principalId' | 'grupoId' | 'comprobantes' | 'comprobantesPorBanca'>): Promise<PasoFallido[]> {
+  const porBanca = d.comprobantesPorBanca ?? [];
+  let reparto: Array<{ movimientoId: string; comprobantes: string[] }>;
+  try {
+    // Sin comprobantes por banca no hace falta leer los movimientos: todo va al principal, como siempre.
+    const movimientos = porBanca.some(b => b.comprobantes.length > 0) ? await movimientosDeBanca(d.movimientoIds) : [];
+    reparto = repartirComprobantes(movimientos, d.principalId, d.comprobantes, porBanca);
+  } catch (e) {
+    // No se pudo leer los movimientos: se anota el paso para los generales (si hay) y el cron reintenta.
+    logger.error({ evento: 'pago_comprobantes_banca_no_repartidos', grupoId: d.grupoId, mensaje: textoDe(e) });
+    if (!d.principalId || d.comprobantes.length === 0) return [];
+    const detalle: DetallePaso = { paso: 'comprobante', movimientoId: d.principalId, comprobantes: d.comprobantes };
+    return [{ detalle, grupoId: d.grupoId, movimientoId: d.principalId, error: textoDe(e) }];
+  }
+  const fallidos: PasoFallido[] = [];
+  for (const { movimientoId, comprobantes } of reparto) {
+    const detalle: DetallePaso = { paso: 'comprobante', movimientoId, comprobantes };
+    const r = await repetirPasoSeguro(detalle);
+    if (!r.ok) fallidos.push({ detalle, grupoId: d.grupoId, movimientoId, error: r.error });
+  }
+  return fallidos;
 }
 
 /** Flujo sin envoltorio SQL: cada paso se intenta aquí; los fallidos se anotan y se reintentan una vez. */
 export async function aplicarPasosEnBackend(d: DatosPasos): Promise<EstadoPasos> {
-  const fallidos = [...(await intentarCategoria(d)), ...(await intentarComprobante(d))];
+  const fallidos = [...(await intentarCategoria(d)), ...(await aplicarComprobantes(d))];
   const comisiones: ComisionPagoCreada[] = [];
   const avisos: string[] = [];
   if (d.lineas.length > 0) {

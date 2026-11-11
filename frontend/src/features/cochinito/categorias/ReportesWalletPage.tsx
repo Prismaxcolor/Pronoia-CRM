@@ -35,8 +35,8 @@ function ReportesWalletPage() {
       <NavegacionWallet />
       <Pestanas pestanas={PESTANAS} valor={reporte} onCambiar={cambiarReporte} etiquetaAria="Tipo de reporte">
         {reporte === 'cuenta' ? (
-          <Bloque titulo="Movimientos de una cuenta o caja" queEstasViendo="Todos los movimientos de la cuenta elegida entre las fechas indicadas, con su categoría, lo que entró, lo que salió y el neto.">
-            <ReporteCuentaPanel />
+          <Bloque titulo="Movimientos de una cuenta o caja" queEstasViendo="Todos los movimientos de la cuenta elegida entre las fechas indicadas, con su categoría, lo que entró, lo que salió y el neto. Se puede filtrar por categorías: los totales cuentan solo esos movimientos y los saldos siguen siendo los de la cuenta.">
+            <ReporteCuentaPanel categorias={categorias} onNecesitaCategorias={() => setCategoriasPedidas(true)} />
           </Bloque>
         ) : (
           <Bloque titulo="Ingresos y egresos por categoría" queEstasViendo="Para las categorías elegidas y el periodo: ingresos, egresos y total por categoría, con el subtotal de cada subcategoría. Una tabla por moneda.">

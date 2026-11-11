@@ -44,6 +44,8 @@ export interface ProductoBase {
   estadoLimpieza?: EstadoLimpiezaProducto | null;
   creadoPor: string;
   creadoEn: string;
+  /** true = el superadmin lo ocultó al resto de los usuarios. Solo el superadmin recibe productos ocultos. */
+  oculto?: boolean;
 }
 
 /** Amarillo: producto básico con peso */

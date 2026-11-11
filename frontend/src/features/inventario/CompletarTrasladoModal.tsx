@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiberarVistasPrevias } from '../../hooks/use-liberar-vistas-previas';
 import Modal from '../../components/Modal';
 import { X, Loader2, ImagePlus, Camera } from 'lucide-react';
@@ -6,7 +6,14 @@ import { completarTraslado } from '../../services/traslado-service';
 import { iniciarEnvio, enviarOEncolar } from '../pesaje/pesaje-envio';
 import { mensajeGuardadoEnTelefono } from '../../lib/offline/cola-guardado';
 import { useToast } from '../../hooks/use-toast-context';
-import type { Traslado } from '@shared/types/index.js';
+import type { Traslado, Tara } from '@shared/types/index.js';
+import { obtenerTaras } from '../../services/tara-service';
+import TaraFilaEditor from '../pesaje/TaraFilaEditor';
+import {
+  diferenciaRecepcion, filaRecepcionDesdeNeto, filaRecepcionInicial, netoRecibidoFila, recepcionAPayload, validarRecepcion,
+  type FilaRecepcion,
+} from './recepcion-traslado';
+import { TOLERANCIA_DIFERENCIA_KG } from '../../lib/almacenes-kpis';
 import AvisoBorrador from '../../components/AvisoBorrador';
 import { useBorradorPersistente } from '../../hooks/use-borrador-persistente';
 import { difiereEstado } from '../../lib/borrador';
@@ -21,15 +28,30 @@ interface Props {
 /** Fotos de evidencia: siempre nuevas (en esta pantalla no hay fotos ya subidas). */
 type FotoNueva = Extract<FotoLocal, { tipo: 'nueva' }>;
 
+interface EstadoBorradorRecepcion {
+  filas?: Record<string, FilaRecepcion>;
+  /** Borradores anteriores: neto recibido por línea, sin taras. */
+  recibido?: Record<string, string>;
+  fotos?: FotoNueva[];
+}
+
 function fmt(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-VE', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
 
 function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
   const toast = useToast();
-  const [recibido, setRecibido] = useState<Record<string, string>>(
-    Object.fromEntries(traslado.materiales.map(m => [m.id, String(m.pesoNeto)]))
-  );
+  const filasIniciales = (): Record<string, FilaRecepcion> =>
+    Object.fromEntries(traslado.materiales.map(m => [m.id, filaRecepcionInicial(m.pesoNeto)]));
+  const [filas, setFilas] = useState<Record<string, FilaRecepcion>>(filasIniciales);
+  const [taras, setTaras] = useState<Tara[]>([]);
+  useEffect(() => {
+    let vivo = true;
+    obtenerTaras().then(lista => { if (vivo) setTaras(lista.filter(t => t.activo)); }).catch(() => { /* sin catálogo: solo tara manual */ });
+    return () => { vivo = false; };
+  }, []);
+  const cambiarFila = (id: string, cambios: Partial<FilaRecepcion>) =>
+    setFilas(prev => ({ ...prev, [id]: { ...prev[id], ...cambios } }));
   const [fotos, setFotos] = useState<FotoNueva[]>([]);
   useLiberarVistasPrevias(fotos);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -38,21 +60,22 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
   const idEnvioRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Borrador de lo recibido por material y de las fotos de evidencia (los Blobs van a IndexedDB,
-  // ver lib/borrador-imagenes.ts). Sobrevive a F5. Los borradores anteriores no traen `fotos`.
-  const recibidoInicial = () => Object.fromEntries(traslado.materiales.map(m => [m.id, String(m.pesoNeto)])) as Record<string, string>;
-  const estadoBorrador = { recibido, fotos };
-  const borrador = useBorradorPersistente<typeof estadoBorrador>({
+  // Borrador de lo recibido por material (bruto + taras) y de las fotos de evidencia (los Blobs van a
+  // IndexedDB, ver lib/borrador-imagenes.ts). Sobrevive a F5. Los borradores anteriores guardaban solo
+  // `recibido` (neto por línea, sin taras) y a veces no traen `fotos`: se convierten al restaurar.
+  const estadoBorrador: EstadoBorradorRecepcion = { filas, fotos };
+  const borrador = useBorradorPersistente<EstadoBorradorRecepcion>({
     formulario: 'traslado-recepcion',
     docId: traslado.id,
     version: 1,
     estado: estadoBorrador,
-    hayCambios: difiereEstado(estadoBorrador, { recibido: recibidoInicial(), fotos: [] }),
+    hayCambios: difiereEstado(estadoBorrador, { filas: filasIniciales(), fotos: [] }),
     aplicar: d => {
-      setRecibido({ ...recibidoInicial(), ...d.recibido });
+      const antiguas = Object.fromEntries(Object.entries(d.recibido ?? {}).map(([id, v]) => [id, filaRecepcionDesdeNeto(v)]));
+      setFilas({ ...filasIniciales(), ...antiguas, ...d.filas });
       setFotos(d.fotos ?? []);
     },
-    restablecer: () => { setRecibido(recibidoInicial()); setFotos([]); },
+    restablecer: () => { setFilas(filasIniciales()); setFotos([]); },
   });
   // Cerrar (X o Cancelar) descarta el borrador guardado.
   const cerrar = () => { borrador.limpiar(); onClose(); };
@@ -69,10 +92,8 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
     setError(null);
 
     if (fotos.length === 0) { setError('La recepción requiere al menos una foto de evidencia.'); return; }
-    if (traslado.materiales.some(m => !recibido[m.id] || Number(recibido[m.id]) < 0)) {
-      setError('Registra lo recibido de cada material (0 o más).');
-      return;
-    }
+    const errorRecepcion = validarRecepcion(traslado.materiales.map(m => filas[m.id]), taras);
+    if (errorRecepcion) { setError(errorRecepcion); return; }
 
     setGuardando(true);
 
@@ -86,7 +107,7 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
       return;
     }
 
-    const recepciones = traslado.materiales.map(m => ({ detalleId: m.id, pesoRecibido: Number(recibido[m.id]) || 0 }));
+    const recepciones = traslado.materiales.map(m => recepcionAPayload(m.id, filas[m.id], taras));
     const r = await enviarOEncolar({
       envio,
       tipo: 'traslado_completar',
@@ -126,31 +147,39 @@ function CompletarTrasladoModal({ traslado, onClose, onCompletado }: Props) {
 
         <div className="space-y-2">
           {traslado.materiales.map(m => {
-            const recibidoNum = Number(recibido[m.id]) || 0;
-            const diferencia = recibidoNum - m.pesoNeto;
+            const fila = filas[m.id];
+            const recibidoNum = netoRecibidoFila(fila, taras);
+            const diferencia = diferenciaRecepcion(recibidoNum, m.pesoNeto);
             return (
               <div key={m.id} className="border border-border rounded-lg p-3 bg-surface-alt/40">
                 <p className="text-sm font-medium text-text-primary mb-2">
-                  {m.loteId ? `${m.nombreLote ?? 'Lote'} — ${m.pesoNeto.toLocaleString('es-VE', { maximumFractionDigits: 2 })} kg` : m.nombreProducto ?? 'Material'}
+                  {m.loteId ? `${m.nombreLote ?? 'Lote'} — ${m.pesoNeto.toLocaleString('es-VE', { maximumFractionDigits: 3 })} kg` : m.nombreProducto ?? 'Material'}
                 </p>
                 <div className="grid grid-cols-2 gap-3 items-end">
                   <div>
-                    <p className="text-xs text-text-muted mb-1">Enviado</p>
+                    <p className="text-xs text-text-muted mb-1">Enviado (neto)</p>
                     <p className="text-sm font-semibold text-text-secondary">{fmt(m.pesoNeto)} kg</p>
                   </div>
                   <div>
-                    <label className="block text-xs text-text-muted mb-1">Recibido (kg)</label>
+                    <label className="block text-xs text-text-muted mb-1">Peso bruto recibido (kg)</label>
                     <input
                       type="number"
-                      step="0.01"
+                      step="0.001"
                       min="0"
-                      value={recibido[m.id] ?? ''}
-                      onChange={e => setRecibido(prev => ({ ...prev, [m.id]: e.target.value }))}
+                      value={fila.pesoBruto}
+                      onChange={e => cambiarFila(m.id, { pesoBruto: e.target.value })}
                       className={inputClass}
                     />
                   </div>
                 </div>
-                {Math.abs(diferencia) > 0.01 && (
+                <div className="mt-3">
+                  <TaraFilaEditor fila={fila} taras={taras} onChange={cambios => cambiarFila(m.id, cambios)} />
+                </div>
+                <div className="mt-2 flex items-center justify-end gap-2 text-sm">
+                  <span className="text-text-muted">Neto recibido</span>
+                  <span className={`font-semibold ${recibidoNum < 0 ? 'text-red-600' : 'text-text-primary'}`}>{fmt(recibidoNum)} kg</span>
+                </div>
+                {Math.abs(diferencia) > TOLERANCIA_DIFERENCIA_KG && (
                   <p className={`text-xs mt-2 font-medium ${diferencia < 0 ? 'text-red-600' : 'text-amber-600'}`}>
                     Discrepancia: {diferencia > 0 ? '+' : ''}{fmt(diferencia)} kg
                   </p>

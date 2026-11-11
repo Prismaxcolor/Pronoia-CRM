@@ -14,7 +14,7 @@ interface Props {
 
 /** Vista de tarjetas del catálogo (la de siempre, con el lenguaje del kit). */
 function ProductosTarjetas({ productos, catalogo, acciones }: Props) {
-  const hayAcciones = acciones.puedeEditar || acciones.puedeBorrar;
+  const hayAcciones = acciones.puedeEditar || acciones.puedeBorrar || Boolean(acciones.onOcultar);
   return (
     <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {productos.map(p => (
@@ -56,6 +56,7 @@ function ProductosTarjetas({ productos, catalogo, acciones }: Props) {
               </Insignia>
             )}
             {!p.activo && <Insignia tono="neutral">Inactivo</Insignia>}
+            {p.oculto && <Insignia tono="neutral" title="Solo el superadmin ve este producto.">Oculto</Insignia>}
           </div>
         </li>
       ))}

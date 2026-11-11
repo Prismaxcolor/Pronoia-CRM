@@ -4,6 +4,7 @@ import type { FacturaCV } from '../../services/factura-cv-service';
 import type { BancaPago, ItemPagoMultiple } from '../../services/pago-service';
 import type { EntradaEstadoCuenta } from '../../services/estado-cuenta-service';
 import { redondear2, validarMontoAplicable, type ResultadoCruce } from '../../lib/cruce';
+import { esFacturaEnCero } from '../../lib/estado-factura';
 import { errorMontoDeNota, montoAplicadoDeNota } from '../../lib/cruce-notas';
 import { bloqueoPorComision, type EstadoComision } from '../cochinito/comision-formulario';
 import { categoriasBloqueanCobro, categoriasBloqueanPago, errorCategoriaCobro } from './categoria-cobro';
@@ -61,7 +62,8 @@ function errorDeItems(e: EntradaPagoCobro): string | null {
     const monto = numero(e.montosFactura[f.id]);
     const saldoFactura = f.total - f.montoPagado;
     const nombre = f.codigo ?? f.id.slice(0, 8);
-    if (monto <= 0) return `El monto de ${nombre} debe ser mayor a 0.`;
+    // Una factura de total 0 se cierra con monto 0 (no hay dinero que mover); cualquier otra exige monto > 0.
+    if (monto < 0 || (monto === 0 && !esFacturaEnCero(f))) return `El monto de ${nombre} debe ser mayor a 0.`;
     if (monto > saldoFactura + TOLERANCIA_USD) return `El monto de ${nombre} supera su saldo pendiente ($${fmt(saldoFactura)}).`;
   }
   for (const a of e.adelantosSel) {

@@ -13,6 +13,7 @@ const bd = vi.hoisted(() => ({
   auditorias: [] as unknown[],
   categoriaComision: [] as string[][],
   pasosBackend: [] as unknown[],
+  comprobantesBackend: [] as unknown[],
 }));
 
 vi.mock('../src/config/supabase.js', () => ({
@@ -52,6 +53,8 @@ vi.mock('../src/services/pago-comision-service.js', () => ({
 vi.mock('../src/services/pagos-pasos-service.js', () => ({
   repararPasosAnotados: async (a: unknown[]) => { bd.reparados.push(a); return bd.repararResultado; },
   aplicarPasosEnBackend: async (d: unknown) => { bd.pasosBackend.push(d); return { comisiones: [], pendientes: [], avisos: [] }; },
+  aplicarComprobantes: async (d: unknown) => { bd.comprobantesBackend.push(d); return []; },
+  repararPasosFallidos: async () => ({ comisiones: [], pendientes: [] }),
   advertenciaDePasos: (e: { pendientes: string[] }) => (e.pendientes.length > 0 ? `pendiente: ${e.pendientes.join(',')}` : undefined),
 }));
 
@@ -62,6 +65,7 @@ import type { RegistrarCobroMultipleInput } from '../src/schemas/cobros.js';
 
 const U = '11111111-1111-4111-8111-111111111111';
 const B1 = '22222222-2222-4222-8222-222222222222';
+const B2 = '66666666-6666-4666-8666-666666666666';
 const P1 = '33333333-3333-4333-8333-333333333333';
 const F1 = '44444444-4444-4444-8444-444444444444';
 const REQ = '55555555-5555-4555-8555-555555555555';
@@ -87,7 +91,7 @@ const multiResp = {
 
 beforeEach(() => {
   bd.llamadas = []; bd.envoltorioDisponible = true; bd.errorEnvoltorio = null; bd.respuestaOriginal = null;
-  bd.reparados = []; bd.repararResultado = { comisiones: [], pendientes: [] }; bd.auditorias = []; bd.categoriaComision = []; bd.pasosBackend = [];
+  bd.reparados = []; bd.repararResultado = { comisiones: [], pendientes: [] }; bd.auditorias = []; bd.categoriaComision = []; bd.pasosBackend = []; bd.comprobantesBackend = [];
   bd.respuestaEnvoltorio = { ...multiResp, comisiones: [], pasosPendientes: [] };
 });
 
@@ -141,6 +145,62 @@ describe('pago combinado con el envoltorio SQL', () => {
   it('audita la omisión de comisión con el grupo que devolvió la BD', async () => {
     await registrarPagoMultiple(pagoMulti({ bancas: [{ bancaId: B1, monto: 5000, moneda: 'VES', montoUsd: 100, referencia: null, llevaComision: false }] }), U);
     expect(bd.auditorias[0]).toEqual([[{ bancaId: B1, moneda: 'VES', llevaComision: false }], 'g1', U]);
+  });
+});
+
+describe('comprobante propio de cada banca', () => {
+  const dosBancas = (c1: string[], c2: string[]) => pagoMulti({
+    bancas: [
+      { bancaId: B1, monto: 60, moneda: 'USD', montoUsd: 60, referencia: null, comprobantes: c1 },
+      { bancaId: B2, monto: 40, moneda: 'USD', montoUsd: 40, referencia: null, comprobantes: c2 },
+    ],
+    montoUsd: 100, comprobantes: [],
+  });
+
+  it('envía los comprobantes dentro de cada banca (p_bancas) para que la BD los reparta por movimiento', async () => {
+    bd.respuestaEnvoltorio = { ...multiResp, comisiones: [], pasosPendientes: [], comprobantesPorBanca: 2 };
+    await registrarPagoMultiple(dosBancas(['https://x/1.jpg'], ['https://x/2.jpg']), U);
+    expect(bd.llamadas[0].args.p_bancas).toEqual([
+      expect.objectContaining({ bancaId: B1, comprobantes: ['https://x/1.jpg'] }),
+      expect.objectContaining({ bancaId: B2, comprobantes: ['https://x/2.jpg'] }),
+    ]);
+    expect(bd.comprobantesBackend).toHaveLength(0); // la BD ya los repartió (devolvió comprobantesPorBanca)
+  });
+
+  it('el resultado no expone la clave interna comprobantesPorBanca', async () => {
+    bd.respuestaEnvoltorio = { ...multiResp, comisiones: [], pasosPendientes: [], comprobantesPorBanca: 2 };
+    const r = await registrarPagoMultiple(dosBancas(['https://x/1.jpg'], []), U);
+    expect(r).not.toHaveProperty('comprobantesPorBanca');
+  });
+
+  it('si el envoltorio es anterior a la migración (no devuelve comprobantesPorBanca) el backend los reparte', async () => {
+    bd.respuestaEnvoltorio = { ...multiResp, comisiones: [], pasosPendientes: [] };
+    await registrarPagoMultiple(dosBancas(['https://x/1.jpg'], ['https://x/2.jpg']), U);
+    expect(bd.comprobantesBackend).toEqual([expect.objectContaining({
+      movimientoIds: ['m1', 'm2'], principalId: 'm1',
+      comprobantesPorBanca: [{ bancaId: B1, comprobantes: ['https://x/1.jpg'] }, { bancaId: B2, comprobantes: ['https://x/2.jpg'] }],
+    })]);
+  });
+
+  it('sin comprobantes por banca no hace nada extra aunque el envoltorio sea anterior (compatibilidad)', async () => {
+    bd.respuestaEnvoltorio = { ...multiResp, comisiones: [], pasosPendientes: [] };
+    await registrarPagoMultiple(pagoMulti(), U);
+    expect(bd.comprobantesBackend).toHaveLength(0);
+  });
+
+  it('flujo anterior (sin envoltorio): los pasos del backend reciben los comprobantes por banca', async () => {
+    bd.envoltorioDisponible = false;
+    bd.respuestaOriginal = multiResp;
+    await registrarPagoMultiple(dosBancas(['https://x/1.jpg'], []), U);
+    expect(bd.pasosBackend).toEqual([expect.objectContaining({ comprobantesPorBanca: [{ bancaId: B1, comprobantes: ['https://x/1.jpg'] }] })]);
+  });
+
+  it('cobro: también manda los comprobantes de cada banca', async () => {
+    bd.respuestaEnvoltorio = { ...multiResp, comisiones: [], pasosPendientes: [], comprobantesPorBanca: 1 };
+    await registrarCobroMultiple(cobroMulti({
+      bancas: [{ bancaId: B1, monto: 100, moneda: 'USD', montoUsd: 100, referencia: null, comprobantes: ['https://x/c1.jpg'] }],
+    }), U);
+    expect(bd.llamadas[0].args.p_bancas).toEqual([expect.objectContaining({ bancaId: B1, comprobantes: ['https://x/c1.jpg'] })]);
   });
 });
 

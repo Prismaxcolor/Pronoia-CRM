@@ -183,4 +183,48 @@ describe('construirReporteCuenta', () => {
     expect(r.filas.map(f => f.id)).toEqual(['a', 'b']);
     expect(r.filas.map(f => f.saldo)).toEqual([30, 15]);
   });
+
+  describe('filtro por categorías', () => {
+    const movs = () => [
+      mov({ id: 'f0', tipo: 'ingreso', monto: 1000, categoriaId: 'nom', fecha: '2026-10-01' }),
+      mov({ id: 'f1', monto: 30, categoriaId: 'luz', fecha: '2026-10-02' }),
+      mov({ id: 'f2', monto: 20, categoriaId: 'agua', fecha: '2026-10-03' }),
+      mov({ id: 'f3', monto: 5, categoriaId: null, fecha: '2026-10-04' }),
+      mov({ id: 'f4', tipo: 'transferencia', bancaDestinoId: 'b2', monto: 50, fecha: '2026-10-05' }),
+      mov({ id: 'f5', monto: 7, categoriaId: 'luz', anulado: true, fecha: '2026-10-06' }),
+    ];
+    const completo = { ...base, saldoInicial: 100, movimientos: movs() };
+
+    it('sin filtro el reporte no cambia y no trae rótulo de filtro', () => {
+      const r = construirReporteCuenta({ ...completo, filtroCategorias: { categoriaIds: [], incluirSinCategoria: false } });
+      expect(r.filas).toHaveLength(6);
+      expect(r.filtroCategorias).toBeUndefined();
+    });
+
+    it('una categoría padre incluye sus subcategorías y los totales cuentan solo esas filas vigentes', () => {
+      const r = construirReporteCuenta({ ...completo, filtroCategorias: { categoriaIds: ['serv'], incluirSinCategoria: false } });
+      expect(r.filas.map(f => f.id)).toEqual(['f1', 'f2', 'f5']);
+      expect(r.totales).toEqual({ entradas: 0, salidas: 50, neto: -50 });
+      expect(r.filtroCategorias).toEqual({ nombres: ['Servicios'], sinCategoria: false });
+    });
+
+    it('una subcategoría elige solo esa; el saldo inicial, el de cada fila y el final siguen siendo los reales de la cuenta', () => {
+      const lleno = construirReporteCuenta(completo);
+      const r = construirReporteCuenta({ ...completo, filtroCategorias: { categoriaIds: ['agua'], incluirSinCategoria: false } });
+      expect(r.filas.map(f => f.id)).toEqual(['f2']);
+      expect(r.saldoInicial).toBe(100);
+      expect(r.saldoFinal).toBe(lleno.saldoFinal);
+      expect(r.filas[0].saldo).toBe(lleno.filas.find(f => f.id === 'f2')?.saldo);
+      expect(r.filtroCategorias?.nombres).toEqual(['Servicios › Agua']);
+    });
+
+    it('"sin categoría" incluye ingresos/egresos sin categoría pero no transferencias', () => {
+      const r = construirReporteCuenta({ ...completo, filtroCategorias: { categoriaIds: [], incluirSinCategoria: true } });
+      expect(r.filas.map(f => f.id)).toEqual(['f3']);
+      expect(r.totales.salidas).toBe(5);
+      const mixto = construirReporteCuenta({ ...completo, filtroCategorias: { categoriaIds: ['nom'], incluirSinCategoria: true } });
+      expect(mixto.filas.map(f => f.id)).toEqual(['f0', 'f3']);
+      expect(mixto.filtroCategorias).toEqual({ nombres: ['Nómina'], sinCategoria: true });
+    });
+  });
 });

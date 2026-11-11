@@ -70,15 +70,22 @@ function validarRango(d: { desde: string; hasta: string }, ctx: z.RefinementCtx)
   }
 }
 
-export const filtroReporteCuentaSchema = z
-  .object({ bancaId: z.string().uuid('Cuenta inválida.'), desde: fechaSchema, hasta: fechaSchema })
-  .superRefine(validarRango);
-
 const listaUuids = z
   .string()
   .optional()
   .transform(v => (v ? v.split(',').map(x => x.trim()).filter(Boolean) : []))
   .pipe(z.array(z.string().uuid('Categoría inválida.')).max(MAX_CATEGORIAS_REPORTE, 'Demasiadas categorías.'));
+
+/** `categoriaIds` (opcional, separadas por coma) y `sinCategoria` acotan los movimientos del reporte; el saldo inicial no se filtra. */
+export const filtroReporteCuentaSchema = z
+  .object({
+    bancaId: z.string().uuid('Cuenta inválida.'),
+    desde: fechaSchema,
+    hasta: fechaSchema,
+    categoriaIds: listaUuids,
+    sinCategoria: z.enum(['true', 'false']).optional().transform(v => v === 'true'),
+  })
+  .superRefine(validarRango);
 
 export const filtroReporteCategoriasSchema = z
   .object({

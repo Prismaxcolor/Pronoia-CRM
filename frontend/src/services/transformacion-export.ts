@@ -31,7 +31,7 @@ export async function descargarTransformacionPDF(t: Transformacion, nombres: Nom
   let y = 56 + 52;
   tituloConBadge(doc, y, 'Transformación', [badgeEstado(t)]);
   y += 16;
-  subtitulo(doc, y, `Ref. ${codigo}  ·  ${t.categoria === 'pcb' ? 'PCB' : 'Ferroso / No ferroso'}  ·  ${t.fecha}`);
+  subtitulo(doc, y, `Ref. ${codigo}  ·  ${t.categoria === 'pcb' ? 'Transformaciones de lote' : 'Transformaciones de productos'}  ·  ${t.fecha}`);
 
   y += 26;
   y = filaEncabezado(doc, y, 'Material de entrada', t.nombreProductoEntrada ?? t.nombreLoteOrigen ?? '—');

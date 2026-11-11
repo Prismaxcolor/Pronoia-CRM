@@ -9,7 +9,7 @@ import {
 import { formatearFecha, formatearNumero } from '../../../lib/formato';
 import { numeroMovimiento } from '../detalle-movimiento';
 import {
-  etiquetaMoneda, filasPorMoneda, monedasDelReporte, textoMovimientosAcceso, textoTipoFila, totalGeneral,
+  AVISO_SALDOS_FILTRO_CATEGORIAS, etiquetaMoneda, filasPorMoneda, monedasDelReporte, textoFiltroCategorias, textoMovimientosAcceso, textoTipoFila, totalGeneral,
 } from './reporte-wallet-datos';
 
 type FilaCuenta = ReporteCuenta['filas'][number];
@@ -50,16 +50,18 @@ export function hojaReporteCuenta(r: ReporteCuenta, filtro = '', nombreHoja = 'M
   const moneda = etiquetaMoneda(r.banca.moneda);
   const conUsd = r.banca.moneda === 'VES';
   const aviso = filtro.trim() ? ` · Filtrado por N°: ${filtro.trim()}` : '';
+  const porCategorias = textoFiltroCategorias(r);
   const encabezado: Row[] = [
     [celdaTitulo('Movimientos de la cuenta')],
     [celdaTexto(`${r.banca.nombre} · ${moneda}`, true)],
     [celdaTexto(`${textoPeriodo(r.desde, r.hasta)}${aviso} · ${textoGenerado()}`)],
     ...(r.saldoInicial != null && r.saldoFinal != null ? [[celdaTexto(`Saldo inicial: ${moneda} ${formatearNumero(r.saldoInicial, 2)} · Saldo final: ${moneda} ${formatearNumero(r.saldoFinal, 2)}`)]] : []),
+    ...(porCategorias ? [[celdaTexto(porCategorias, true)], [celdaTexto(AVISO_SALDOS_FILTRO_CATEGORIAS)]] : []),
     [],
   ];
   return {
     nombre: nombreHoja,
-    filas: [...encabezado, cabeceraCuenta(moneda, conUsd), ...r.filas.map(f => filaCuenta(f, conUsd)), [], ...totalesCuenta(r, conUsd, aviso !== '')],
+    filas: [...encabezado, cabeceraCuenta(moneda, conUsd), ...r.filas.map(f => filaCuenta(f, conUsd)), [], ...totalesCuenta(r, conUsd, aviso !== '' || porCategorias !== null)],
     anchos: [12, 12, 20, 36, 18, 22, 26, 16, 16, 16, ...(conUsd ? [14] : []), 12],
     filasFijas: encabezado.length + 1,
   };
